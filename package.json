@@ -20,6 +20,7 @@
     "lucide-react": "^1.48.0",
     "next": "16.3.6",
     "next-intl": "^4.14.7",
+    "papaparse": "^5.7.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "@types/papaparse": "^5.5.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",

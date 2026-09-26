@@ -9,7 +9,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M1. Database + demo seed** — Supabase migrations for `04-data-model.md`, RLS on, demo café seed (realistic 90-day dataset), magic-link login. **Not yet verified against a live Supabase project — see "Needs connecting".**
 - [x] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.
 - [x] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
-- [ ] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV/PDF), receipt photos, vendor rule learning, dedupe.
+- [x] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV; PDF not yet — see decisions), receipt photos, vendor rule learning, dedupe.
 - [ ] **M5. Square connection** — OAuth (sandbox first), backfill, webhooks + poll, rollups, onboarding wizard.
 - [ ] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
 - [ ] **M7. Alerts + milestones** — Missing bill, voids, meal break, early clock-in, overstaffed slot, covered milestone cards.
@@ -56,11 +56,59 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Menu screen's 5-segment bar overrides `menu.html`.** The mockup shows 3 segments (ingredients, staff, yours); `docs/03-screens.md` S6 explicitly says "update it: add the rent & bills layer" and calls for 5 segments (+ card fee). Built as specified, not as pictured.
 - **Break-even what-ifs use two documented placeholder assumptions.** "One less person 2–5 PM" needs a specific employee's hourly wage and "milk up $1/gal" needs ingredient-quantity-per-average-drink — both finer-grained than the current snapshot (`BusinessSnapshot` carries 28-day aggregates and per-item *totals*, not per-shift wages or per-drink recipe quantities at the aggregate level). `lib/viewmodels/breakEvenViewModel.ts` uses `ASSUMED_HOURLY_WAGE_CENTS` ($19.50) and `ASSUMED_ML_MILK_PER_DRINK` (150ml) as clearly-commented stand-ins. The price what-if has no such assumption and is exact. Revisit once Staff (v1.5) and per-item recipe data flow into the snapshot.
 - **Recovery-order reordering ships now, via up/down buttons, not literal drag.** `docs/03-screens.md` S4 says "drag handle to reorder." Built as accessible up/down buttons (a `<form action={serverAction}>` per button, no client JS/DnD library) that call a real server action (`lib/actions/recoveryOrder.ts`) updating `recovery_order` and revalidating — functionally equivalent ("owner can reorder the expenses, saves order, recalculates") without a drag gesture. No-ops gracefully in fixture mode (nothing to persist to).
+- **PDF bank statements deferred to a fast-follow.** `docs/06-integrations.md` says CSV first, then PDF; M4's acceptance criteria only requires CSV. Building PDF text extraction (`pdf-parse`) plus a vision fallback for scanned PDFs is real additional scope — not started. The statement upload screen accepts `.csv` only for now.
+- **Receipt-line ingredient mapping UI deferred.** `docs/06-integrations.md` describes mapping a receipt line to an ingredient (which writes an `ingredient_prices` row). `saveReceiptExpense` accepts an `ingredientMappings` param and is ready for it, but the review screen doesn't yet offer that mapping step — it saves the receipt and its lines without linking any to `ingredients`. Revisit once the Menu screen's recipe editor exists (same M4 gap noted in M3's decisions) so there's a natural place to do the mapping.
+- **Landlord-name keyword rule not wired.** `docs/06-integrations.md` step 5 says the landlord's name (entered in onboarding) should auto-categorize matching statement lines as rent, but `docs/04-data-model.md`'s `businesses` table has no column to store it. `matchKeywordCategory()` accepts an optional `landlordName` and works correctly without one; nothing currently passes one in. Add a `businesses.landlord_name` column (or reuse the `rent` recurring cost's `label`) once onboarding (M5) collects it.
 - **200%-text-zoom bugs are real bugs, found by testing, not by inspection.** Several cards (Home's 3 sales tiles, the Profit & costs teaser's 2-column legend, the cost-recovery hero number, bucket rows, the login language pills) used fixed-width flex/grid layouts with unbreakable money strings (`$8,104.32` has no space to wrap at). At 200% root font-size these overflowed the 375px viewport — a real WCAG 1.4.4 failure, not a hypothetical one. Fixed with `flex-wrap` + `min-w-0`/`break-words` on the money-bearing containers; verified overflow is gone screen-by-screen (`document.body.scrollWidth` check) after each fix, not just visually.
 
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M4 Cost capture (done)
+Built:
+- `lib/ai/` — provider-agnostic `completeStructured(task, {system,user,imageDataUrl?,schema})`
+  (`complete.ts`): picks the provider from `AI_PROVIDER`, validates the response with zod, retries
+  once on invalid JSON, logs token usage only (never prompt/response content). Three thin
+  fetch-based provider adapters (`providers/anthropic.ts` default model `claude-haiku-4-5-20251001`,
+  `openai.ts` `gpt-4o-mini`, `moonshot.ts`, all overridable via `*_MODEL` env vars), each supporting
+  an optional vision image (needed for receipt reading). The three prompts from
+  `docs/06-integrations.md` verbatim (`prompts/statementCategorizing.ts`, `receiptReading.ts`,
+  `voiceExpense.ts`).
+- `lib/expenses/` — `dedupeKey.ts` (sha256 per `docs/04-data-model.md`'s exact spec),
+  `keywordRules.ts` (PG&E/EBMUD/Comcast-AT&T/Safeway-Costco-Restaurant Depot →
+  category, from `docs/06-integrations.md` step 5), `categorize.ts` (the full waterfall:
+  vendor_rules → keyword rules → AI, AI called only for lines neither could place, and skipped
+  cleanly with an "uncategorized" result if no AI provider is configured — never blocks the rest
+  of the flow), `parseStatementCsv.ts` (column-detection CSV parser: single amount column or
+  debit/credit pair, common US date formats, opening+lines=closing balance check). PDF statements
+  are **not built** — CSV first per the M4 acceptance criteria; see decisions.
+- `lib/actions/` — server actions for manual entry, recurring-bill CRUD, statement-line review
+  (`statementReview.ts`), receipt review/save (`receiptReview.ts`, one `expenses` row + N
+  `expense_lines`), voice review (`voiceReview.ts`). All duplicate-`dedupe_key` inserts are caught
+  (Postgres `23505`) and silently skipped rather than erroring — this is the "a receipt and its
+  bank line don't double count" mechanism. Corrections made in the statement review screen are
+  written to `vendor_rules` so the next upload uses them automatically.
+- Screens: `/add-cost` (S10, 4-option picker), `/add-cost/type` (amount keypad → category tiles →
+  date), `/add-cost/statement` (upload → review list with per-line category override and
+  confidence flag → save all), `/add-cost/receipt` (camera capture, client-side compressed to
+  ≤1600px JPEG before it ever leaves the browser, → AI review card → save), `/add-cost/voice`
+  (hold-to-talk via the browser's `SpeechRecognition` API → AI parse → confirm card), `/more/bills`
+  (S11, tap a category tile to add/edit/remove a recurring bill).
+
+Every AI-dependent and DB-dependent path degrades to a clear, translated message instead of
+crashing when unconfigured (same pattern as M1) — verified in-browser for all 5 new screens: the
+"Type it" flow was driven end-to-end (keypad → category → save) and correctly showed "Sign in to
+add a cost"; a real sample CSV (PG&E, Costco, a Square payout) was fed through the actual file
+input and came back with "Sign in and connect Supabase..." only at the DB-write step, confirming
+`parseStatementCsv` + `categorizeLines`'s keyword path ran correctly first (also covered by 4
+Vitest tests using the same kind of real bank-CSV text). Voice entry correctly fell back to "not
+supported in this browser" copy. RTL and 200% zoom checked on `/add-cost` and `/add-cost/type`
+(grids, no overflow).
+
+Verified: `npm run build`/`lint`/`test` clean (44 tests total).
+
+Next: M5 (Square OAuth — sandbox first, backfill, webhooks + poll, rollups, onboarding wizard).
 
 ### 2026-09-26 — M3 Core screens on demo data (done)
 Built Home (`app/[locale]/page.tsx`), Money (`app/[locale]/money/page.tsx`, cost recovery + profit &
