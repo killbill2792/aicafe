@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply h-full;
+  }
+
+  body {
+    @apply h-full bg-paper text-ink font-body text-[17px] leading-[1.4] antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-headline;
+  }
+
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-ink;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

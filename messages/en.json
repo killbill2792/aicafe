@@ -1,0 +1,33 @@
+{
+  "LocaleLayout": {
+    "title": "Café Profit"
+  },
+  "Nav": {
+    "ariaLabel": "Primary navigation",
+    "home": "Home",
+    "money": "Money",
+    "menu": "Menu",
+    "staff": "Staff",
+    "more": "More"
+  },
+  "Home": {
+    "title": "Home",
+    "placeholder": "Your money picture will show up here."
+  },
+  "Money": {
+    "title": "Money",
+    "placeholder": "Cost recovery and profit & costs will show up here."
+  },
+  "Menu": {
+    "title": "Menu",
+    "placeholder": "True cost per drink will show up here."
+  },
+  "Staff": {
+    "title": "Staff",
+    "placeholder": "Staffing and breaks will show up here."
+  },
+  "More": {
+    "title": "More",
+    "placeholder": "Settings, language, and account will show up here."
+  }
+}

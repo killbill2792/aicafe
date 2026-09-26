@@ -1,0 +1,33 @@
+{
+  "LocaleLayout": {
+    "title": "Café Profit"
+  },
+  "Nav": {
+    "ariaLabel": "Navegación principal",
+    "home": "Inicio",
+    "money": "Dinero",
+    "menu": "Menú",
+    "staff": "Personal",
+    "more": "Más"
+  },
+  "Home": {
+    "title": "Inicio",
+    "placeholder": "Aquí verás el panorama de tu dinero."
+  },
+  "Money": {
+    "title": "Dinero",
+    "placeholder": "Aquí verás la recuperación de costos y las ganancias y gastos."
+  },
+  "Menu": {
+    "title": "Menú",
+    "placeholder": "Aquí verás el costo real de cada bebida."
+  },
+  "Staff": {
+    "title": "Personal",
+    "placeholder": "Aquí verás el personal y los descansos."
+  },
+  "More": {
+    "title": "Más",
+    "placeholder": "Aquí verás ajustes, idioma y cuenta."
+  }
+}
