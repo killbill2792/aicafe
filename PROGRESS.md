@@ -10,7 +10,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.
 - [x] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
 - [x] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV; PDF not yet — see decisions), receipt photos, vendor rule learning, dedupe.
-- [ ] **M5. Square connection** — OAuth (sandbox first), backfill, webhooks + poll, rollups, onboarding wizard.
+- [x] **M5. Square connection** — OAuth (sandbox first), backfill, rollups, onboarding wizard. Webhooks/10-min poll not built — see decisions.
 - [ ] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
 - [ ] **M7. Alerts + milestones** — Missing bill, voids, meal break, early clock-in, overstaffed slot, covered milestone cards.
 - [ ] **M8. Pilot hardening** — Error states, loading skeletons, reconnect flow, delete account, privacy page, screen-view analytics, Sentry.
@@ -56,6 +56,8 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Menu screen's 5-segment bar overrides `menu.html`.** The mockup shows 3 segments (ingredients, staff, yours); `docs/03-screens.md` S6 explicitly says "update it: add the rent & bills layer" and calls for 5 segments (+ card fee). Built as specified, not as pictured.
 - **Break-even what-ifs use two documented placeholder assumptions.** "One less person 2–5 PM" needs a specific employee's hourly wage and "milk up $1/gal" needs ingredient-quantity-per-average-drink — both finer-grained than the current snapshot (`BusinessSnapshot` carries 28-day aggregates and per-item *totals*, not per-shift wages or per-drink recipe quantities at the aggregate level). `lib/viewmodels/breakEvenViewModel.ts` uses `ASSUMED_HOURLY_WAGE_CENTS` ($19.50) and `ASSUMED_ML_MILK_PER_DRINK` (150ml) as clearly-commented stand-ins. The price what-if has no such assumption and is exact. Revisit once Staff (v1.5) and per-item recipe data flow into the snapshot.
 - **Recovery-order reordering ships now, via up/down buttons, not literal drag.** `docs/03-screens.md` S4 says "drag handle to reorder." Built as accessible up/down buttons (a `<form action={serverAction}>` per button, no client JS/DnD library) that call a real server action (`lib/actions/recoveryOrder.ts`) updating `recovery_order` and revalidating — functionally equivalent ("owner can reorder the expenses, saves order, recalculates") without a drag gesture. No-ops gracefully in fixture mode (nothing to persist to).
+- **Webhooks + 10-minute safety poll not built.** `docs/06-integrations.md` wants incremental sync via webhooks plus a poll during open hours. Only the OAuth backfill (inline, 90 days) exists. A cron/queue-driven poll (and a webhook receiver route + signature verification) is real additional infrastructure — deferred until there's a real Square account to test webhook delivery against. Note in the same callback route: the 90-day backfill runs inline inside the OAuth callback request, which risks a serverless route handler's execution time limit against a busy real café's order volume — move it to a background job before pointing this at a real merchant.
+- **Onboarding step 4 ("top drinks") doesn't build a recipe confirmation UI.** `docs/03-screens.md` S2 step 4 asks the owner to confirm ingredients-per-drink from a template for their top 10 sellers. Given M3/M4 already deferred the Menu screen's full recipe editor (no per-item recipe-quantity UI exists anywhere yet), step 4 is a single explanatory screen instead — consistent with those earlier decisions, not a new gap. Build the real step once the recipe editor exists.
 - **PDF bank statements deferred to a fast-follow.** `docs/06-integrations.md` says CSV first, then PDF; M4's acceptance criteria only requires CSV. Building PDF text extraction (`pdf-parse`) plus a vision fallback for scanned PDFs is real additional scope — not started. The statement upload screen accepts `.csv` only for now.
 - **Receipt-line ingredient mapping UI deferred.** `docs/06-integrations.md` describes mapping a receipt line to an ingredient (which writes an `ingredient_prices` row). `saveReceiptExpense` accepts an `ingredientMappings` param and is ready for it, but the review screen doesn't yet offer that mapping step — it saves the receipt and its lines without linking any to `ingredients`. Revisit once the Menu screen's recipe editor exists (same M4 gap noted in M3's decisions) so there's a natural place to do the mapping.
 - **Landlord-name keyword rule not wired.** `docs/06-integrations.md` step 5 says the landlord's name (entered in onboarding) should auto-categorize matching statement lines as rent, but `docs/04-data-model.md`'s `businesses` table has no column to store it. `matchKeywordCategory()` accepts an optional `landlordName` and works correctly without one; nothing currently passes one in. Add a `businesses.landlord_name` column (or reuse the `rent` recurring cost's `label`) once onboarding (M5) collects it.
@@ -64,6 +66,60 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M5 Square connection + onboarding (done)
+Built:
+- `lib/pos/types.ts` — the one `PosAdapter` interface every register implements (`fetchOrders`,
+  `fetchCatalogItems`, `fetchEmployees`, `fetchTimecards`, all normalized, money in cents). Nothing
+  outside `lib/pos/` ever branches on provider (per this session's explicit "don't build for Square
+  only" instruction).
+- `lib/pos/square/` — `oauth.ts` (authorize URL, code exchange, refresh — sandbox vs. production
+  host from `SQUARE_ENVIRONMENT`, read-only scopes only per CLAUDE.md rule 5), `client.ts`
+  (429/5xx exponential backoff, cursor pagination), `adapter.ts` (maps Square's Orders/Payments/
+  Catalog/Team-Member/Timecard v2 APIs onto `PosAdapter` — field names follow Square-Version
+  2025-05-21 docs from training knowledge; **flagged inline and here as unverified** — confirm
+  against a real sandbox account and Square's current docs before trusting it, per
+  `docs/06-integrations.md`'s own instruction).
+- `lib/pos/toast/adapter.ts`, `lib/pos/clover/adapter.ts` — typed stubs matching the same
+  interface, every method throwing `PosNotConnectedError` until real credentials exist. Toast
+  needs partner/plan approval (`docs/06-integrations.md`); Clover isn't in the docs at all — added
+  because the session instructions said don't build Square-only. The CSV path (M6) is what
+  actually works for both today.
+- `lib/pos/sync.ts` + `lib/pos/rollup.ts` — backfill/incremental sync (idempotent upsert on
+  `pos_*_id`) and `daily_rollups` recomputation from raw orders/order_lines/timecards, reusing
+  `lib/calc`'s ingredient costing so the rollup numbers are computed the same way the screens
+  expect them.
+- `lib/security/tokenCrypto.ts` — AES-256-GCM encrypt/decrypt for `pos_connections.*_token_enc`
+  (docs/06-integrations.md "Security"). **Actually tested** (3 Vitest tests: round-trip, random IV,
+  tamper detection via the GCM auth tag) — this one doesn't need a live Square account to verify.
+- `app/api/pos/square/connect` + `/callback` — full OAuth round trip with CSRF state cookie,
+  token exchange, location lookup, encrypted token storage, then an inline 90-day backfill.
+- `app/[locale]/onboarding/` — the 5-step wizard (S2): register choice (Square/Toast/Clover/Other,
+  every choice leads somewhere — Square to OAuth, the other three to Uploads), monthly bills
+  (reuses M4's `BillsManager`), payroll tax rate, a top-drinks step that explains the standard-
+  recipe starting point (see decisions), and bucket-order reordering (reuses M3's up/down pattern).
+  `lib/actions/onboarding.ts`'s `ensureOwnBusiness()` creates the user's real "My café" business on
+  first visit — via the **admin/service-role client**, deliberately: RLS's `is_member()` can't
+  pass for an INSERT into `businesses` before any membership row exists, so this is the one place
+  that bypass is correct rather than a shortcut.
+- Rebuilt `/more` as a real hub (café switcher + links to Monthly bills/Uploads/Break-even/Connect
+  register) instead of the M0 placeholder — the Demo café / My café switch the session instructions
+  asked for (`components/more/BusinessSwitch.tsx`, `lib/actions/setActiveBusiness.ts`, a cookie
+  `getActiveBusinessId()` already read since M3).
+
+Verified in-browser: the full onboarding flow renders and is navigable end to end without Supabase
+configured (Square button correctly disabled with a translated message; steps 2/3/5 degrade
+gracefully — step 5 still shows the default bucket order so it's never a dead end); the More hub's
+café switch renders with "My café" correctly disabled (no owned business yet); RTL and 200% zoom
+checked on `/onboarding` and `/more`. **Not verified** (no Square sandbox credentials in this
+environment): the actual OAuth round trip, the adapter's field-name assumptions against a real
+Square response, and the backfill/rollup pipeline against real order data — all flagged in "Needs
+connecting" below with the specific things to check first.
+
+`npm run build`/`lint`/`test` all clean (47 tests).
+
+Next: M6 (CSV import for Toast/Clover/Other — column mapper, saved mappings; the "Other register"
+path from onboarding step 1 currently only points at Uploads, which M6 makes real).
 
 ### 2026-09-26 — M4 Cost capture (done)
 Built:

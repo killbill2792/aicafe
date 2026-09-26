@@ -198,7 +198,15 @@
   },
   "More": {
     "title": "More",
-    "placeholder": "Settings, language, and account will show up here."
+    "placeholder": "Settings, language, and account will show up here.",
+    "businessSwitchTitle": "Café",
+    "demoCafe": "Demo café",
+    "myCafe": "My café",
+    "noOwnBusinessYet": "Connect your register to set up your own café.",
+    "monthlyBills": "Monthly bills",
+    "uploads": "Uploads",
+    "breakEven": "Break-even plan",
+    "connectRegister": "Connect your register"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -217,6 +225,38 @@
     "whatIf_staffing": "One less person 2–5 PM",
     "whatIf_milk": "Milk goes up $1 a gallon",
     "whatIfFooter": "Drinks needed per day in each case"
+  },
+  "Onboarding": {
+    "step1Title": "Connect your register",
+    "step1Subtitle": "Takes about a minute",
+    "step2Title": "Your monthly bills",
+    "step2Subtitle": "Most cafés have these — add what applies to you",
+    "step3Title": "Your staff costs",
+    "step3Subtitle": "We use this to work out your true staff cost",
+    "step4Title": "Your top drinks",
+    "step4Subtitle": "We'll start you off with standard recipes",
+    "step5Title": "What gets paid first?",
+    "step5Subtitle": "Drag to set the order your bills get paid back in — you can change this anytime",
+    "connectSquare": "Connect Square",
+    "squareNotConfigured": "Square isn't connected in this environment yet.",
+    "useToast": "I use Toast",
+    "useClover": "I use Clover",
+    "useOther": "Other register",
+    "csvHint": "Upload a sales report file instead — works with any register.",
+    "skipForNow": "Skip for now",
+    "continue": "Continue",
+    "payrollTaxLabel": "Payroll tax rate",
+    "payrollTaxHint": "The employer taxes you pay on top of wages. 12% is a common starting point — ask your accountant for your exact rate.",
+    "step4Body": "We start every drink with a standard recipe (like a latte = espresso + milk + cup + lid) so your numbers work right away. Fine-tune any recipe later from the Menu tab.",
+    "finish": "You're set — go to Home",
+    "errorGeneric": "Something went wrong. Try again.",
+    "error_square_not_configured": "Square isn't connected in this environment yet.",
+    "error_invalid_state": "That connection link expired. Try again.",
+    "error_connection_failed": "Couldn't connect to Square. Try again."
+  },
+  "Uploads": {
+    "title": "Uploads",
+    "placeholder": "Bank statements, receipts, and POS sales file imports will show up here."
   },
   "Login": {
     "headline": "See how much money your café really keeps.",

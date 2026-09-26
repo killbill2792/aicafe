@@ -198,7 +198,15 @@
   },
   "More": {
     "title": "Más",
-    "placeholder": "Aquí verás ajustes, idioma y cuenta."
+    "placeholder": "Aquí verás ajustes, idioma y cuenta.",
+    "businessSwitchTitle": "Café",
+    "demoCafe": "Café de muestra",
+    "myCafe": "Mi café",
+    "noOwnBusinessYet": "Conecta tu caja registradora para configurar tu propio café.",
+    "monthlyBills": "Cuentas mensuales",
+    "uploads": "Archivos subidos",
+    "breakEven": "Plan de punto de equilibrio",
+    "connectRegister": "Conecta tu caja registradora"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -217,6 +225,38 @@
     "whatIf_staffing": "Una persona menos de 2 a 5 PM",
     "whatIf_milk": "La leche sube $1 el galón",
     "whatIfFooter": "Bebidas necesarias al día en cada caso"
+  },
+  "Onboarding": {
+    "step1Title": "Conecta tu caja registradora",
+    "step1Subtitle": "Toma alrededor de un minuto",
+    "step2Title": "Tus cuentas mensuales",
+    "step2Subtitle": "La mayoría de los cafés tienen estas — agrega las que apliquen",
+    "step3Title": "Tus costos de personal",
+    "step3Subtitle": "Lo usamos para calcular tu costo real de personal",
+    "step4Title": "Tus bebidas principales",
+    "step4Subtitle": "Empezamos con recetas estándar",
+    "step5Title": "¿Qué se paga primero?",
+    "step5Subtitle": "Arrastra para fijar el orden en que se pagan tus cuentas — puedes cambiarlo cuando quieras",
+    "connectSquare": "Conectar Square",
+    "squareNotConfigured": "Square aún no está conectado en este entorno.",
+    "useToast": "Uso Toast",
+    "useClover": "Uso Clover",
+    "useOther": "Otra caja registradora",
+    "csvHint": "Sube un archivo de reporte de ventas — funciona con cualquier caja.",
+    "skipForNow": "Omitir por ahora",
+    "continue": "Continuar",
+    "payrollTaxLabel": "Tasa de impuestos de nómina",
+    "payrollTaxHint": "Los impuestos patronales que pagas además de los salarios. 12% es un punto de partida común — pregunta a tu contador tu tasa exacta.",
+    "step4Body": "Empezamos cada bebida con una receta estándar (como un latte = espresso + leche + vaso + tapa) para que tus números funcionen de inmediato. Ajusta cualquier receta después desde la pestaña Menú.",
+    "finish": "Listo — ir a Inicio",
+    "errorGeneric": "Algo salió mal. Inténtalo de nuevo.",
+    "error_square_not_configured": "Square aún no está conectado en este entorno.",
+    "error_invalid_state": "Ese enlace de conexión expiró. Inténtalo de nuevo.",
+    "error_connection_failed": "No se pudo conectar con Square. Inténtalo de nuevo."
+  },
+  "Uploads": {
+    "title": "Archivos subidos",
+    "placeholder": "Aquí verás estados de cuenta, recibos e importaciones de ventas del POS."
   },
   "Login": {
     "headline": "Descubre cuánto dinero realmente te queda de tu café.",
