@@ -256,7 +256,37 @@
   },
   "Uploads": {
     "title": "Archivos subidos",
-    "placeholder": "Aquí verás estados de cuenta, recibos e importaciones de ventas del POS."
+    "placeholder": "Aquí verás estados de cuenta, recibos e importaciones de ventas del POS.",
+    "intro": "Para Toast, Clover o cualquier otra caja — exporta un archivo y súbelo aquí.",
+    "salesLink": "Reporte de ventas",
+    "salesLinkHint": "Mezcla de productos / ventas por artículo y día",
+    "laborLink": "Horas trabajadas",
+    "laborLinkHint": "Entrada, salida, salario",
+    "bankLink": "Estado de cuenta bancario",
+    "bankLinkHint": "CSV de tu banco"
+  },
+  "CsvImport": {
+    "salesTitle": "Importar reporte de ventas",
+    "salesSubtitle": "Desde Toast, Clover o el reporte de cualquier caja",
+    "laborTitle": "Importar horas trabajadas",
+    "laborSubtitle": "Desde Toast, Clover o el reporte de cualquier caja",
+    "uploadPrompt": "Sube el archivo CSV que exportaste",
+    "chooseFile": "Elegir archivo",
+    "mapTitle": "Empareja las columnas",
+    "fieldDate": "Fecha",
+    "fieldItem": "Nombre del artículo",
+    "fieldQuantity": "Cantidad vendida",
+    "fieldNetSales": "Ventas netas",
+    "fieldCategory": "Categoría (opcional)",
+    "fieldEmployee": "Nombre del empleado",
+    "fieldClockIn": "Entrada",
+    "fieldClockOut": "Salida",
+    "fieldHourlyWage": "Salario por hora",
+    "none": "— Selecciona una columna —",
+    "salesPreview": "'{count}' filas de venta listas para importar",
+    "laborPreview": "'{count}' turnos listos para importar",
+    "import": "Importar",
+    "imported": "Importado"
   },
   "Login": {
     "headline": "Descubre cuánto dinero realmente te queda de tu café.",

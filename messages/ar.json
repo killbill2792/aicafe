@@ -256,7 +256,37 @@
   },
   "Uploads": {
     "title": "الملفات المرفوعة",
-    "placeholder": "ستظهر هنا كشوفات الحساب البنكية والإيصالات واستيرادات مبيعات نقاط البيع."
+    "placeholder": "ستظهر هنا كشوفات الحساب البنكية والإيصالات واستيرادات مبيعات نقاط البيع.",
+    "intro": "لـ Toast أو Clover أو أي جهاز بيع آخر — صدّر ملفًا وارفعه هنا.",
+    "salesLink": "تقرير المبيعات",
+    "salesLinkHint": "مزيج المنتجات / مبيعات الأصناف يوميًا",
+    "laborLink": "ساعات العمل",
+    "laborLinkHint": "وقت الدخول والخروج والأجر",
+    "bankLink": "كشف الحساب البنكي",
+    "bankLinkHint": "ملف CSV من بنكك"
+  },
+  "CsvImport": {
+    "salesTitle": "استيراد تقرير المبيعات",
+    "salesSubtitle": "من Toast أو Clover أو تصدير أي جهاز بيع",
+    "laborTitle": "استيراد ساعات العمل",
+    "laborSubtitle": "من Toast أو Clover أو تصدير أي جهاز بيع",
+    "uploadPrompt": "ارفع ملف CSV الذي صدّرته",
+    "chooseFile": "اختر ملفًا",
+    "mapTitle": "طابق الأعمدة",
+    "fieldDate": "التاريخ",
+    "fieldItem": "اسم الصنف",
+    "fieldQuantity": "الكمية المباعة",
+    "fieldNetSales": "صافي المبيعات",
+    "fieldCategory": "الفئة (اختياري)",
+    "fieldEmployee": "اسم الموظف",
+    "fieldClockIn": "وقت الدخول",
+    "fieldClockOut": "وقت الخروج",
+    "fieldHourlyWage": "الأجر بالساعة",
+    "none": "— اختر عمودًا —",
+    "salesPreview": "'{count}' صف مبيعات جاهز للاستيراد",
+    "laborPreview": "'{count}' وردية جاهزة للاستيراد",
+    "import": "استيراد",
+    "imported": "تم الاستيراد"
   },
   "Login": {
     "headline": "اعرف كم من المال يبقى لك فعلًا من مقهاك.",

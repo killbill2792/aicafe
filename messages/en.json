@@ -256,7 +256,37 @@
   },
   "Uploads": {
     "title": "Uploads",
-    "placeholder": "Bank statements, receipts, and POS sales file imports will show up here."
+    "placeholder": "Bank statements, receipts, and POS sales file imports will show up here.",
+    "intro": "For Toast, Clover, or any other register — export a file and upload it here.",
+    "salesLink": "Sales report",
+    "salesLinkHint": "Product mix / item sales by day",
+    "laborLink": "Labor / time entries",
+    "laborLinkHint": "Clock in, clock out, wage",
+    "bankLink": "Bank statement",
+    "bankLinkHint": "CSV from your bank"
+  },
+  "CsvImport": {
+    "salesTitle": "Import sales report",
+    "salesSubtitle": "From Toast, Clover, or any register's export",
+    "laborTitle": "Import labor / time entries",
+    "laborSubtitle": "From Toast, Clover, or any register's export",
+    "uploadPrompt": "Upload the CSV file you exported",
+    "chooseFile": "Choose file",
+    "mapTitle": "Match the columns",
+    "fieldDate": "Date",
+    "fieldItem": "Item name",
+    "fieldQuantity": "Quantity sold",
+    "fieldNetSales": "Net sales",
+    "fieldCategory": "Category (optional)",
+    "fieldEmployee": "Employee name",
+    "fieldClockIn": "Clock in",
+    "fieldClockOut": "Clock out",
+    "fieldHourlyWage": "Hourly wage",
+    "none": "— Select a column —",
+    "salesPreview": "'{count}' sale rows ready to import",
+    "laborPreview": "'{count}' shifts ready to import",
+    "import": "Import",
+    "imported": "Imported"
   },
   "Login": {
     "headline": "See how much money your café really keeps.",

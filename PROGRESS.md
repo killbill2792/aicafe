@@ -11,7 +11,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
 - [x] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV; PDF not yet — see decisions), receipt photos, vendor rule learning, dedupe.
 - [x] **M5. Square connection** — OAuth (sandbox first), backfill, rollups, onboarding wizard. Webhooks/10-min poll not built — see decisions.
-- [ ] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
+- [x] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
 - [ ] **M7. Alerts + milestones** — Missing bill, voids, meal break, early clock-in, overstaffed slot, covered milestone cards.
 - [ ] **M8. Pilot hardening** — Error states, loading skeletons, reconnect flow, delete account, privacy page, screen-view analytics, Sentry.
 
@@ -56,6 +56,7 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Menu screen's 5-segment bar overrides `menu.html`.** The mockup shows 3 segments (ingredients, staff, yours); `docs/03-screens.md` S6 explicitly says "update it: add the rent & bills layer" and calls for 5 segments (+ card fee). Built as specified, not as pictured.
 - **Break-even what-ifs use two documented placeholder assumptions.** "One less person 2–5 PM" needs a specific employee's hourly wage and "milk up $1/gal" needs ingredient-quantity-per-average-drink — both finer-grained than the current snapshot (`BusinessSnapshot` carries 28-day aggregates and per-item *totals*, not per-shift wages or per-drink recipe quantities at the aggregate level). `lib/viewmodels/breakEvenViewModel.ts` uses `ASSUMED_HOURLY_WAGE_CENTS` ($19.50) and `ASSUMED_ML_MILK_PER_DRINK` (150ml) as clearly-commented stand-ins. The price what-if has no such assumption and is exact. Revisit once Staff (v1.5) and per-item recipe data flow into the snapshot.
 - **Recovery-order reordering ships now, via up/down buttons, not literal drag.** `docs/03-screens.md` S4 says "drag handle to reorder." Built as accessible up/down buttons (a `<form action={serverAction}>` per button, no client JS/DnD library) that call a real server action (`lib/actions/recoveryOrder.ts`) updating `recovery_order` and revalidating — functionally equivalent ("owner can reorder the expenses, saves order, recalculates") without a drag gesture. No-ops gracefully in fixture mode (nothing to persist to).
+- **`orders` has no `provider` column, despite the doc saying CSV imports write `provider = 'csv'`.** `docs/04-data-model.md`'s `orders` table has no such column at all (same category of doc/schema mismatch as the missing `landlord_name` noted in M4). Resolution: CSV-imported orders are identified by their `pos_order_id` prefix (`csv-...`) instead, which already can't collide with a real register's own ids. No schema change made — flag this if a future feature actually needs to branch on "was this order CSV-imported."
 - **Webhooks + 10-minute safety poll not built.** `docs/06-integrations.md` wants incremental sync via webhooks plus a poll during open hours. Only the OAuth backfill (inline, 90 days) exists. A cron/queue-driven poll (and a webhook receiver route + signature verification) is real additional infrastructure — deferred until there's a real Square account to test webhook delivery against. Note in the same callback route: the 90-day backfill runs inline inside the OAuth callback request, which risks a serverless route handler's execution time limit against a busy real café's order volume — move it to a background job before pointing this at a real merchant.
 - **Onboarding step 4 ("top drinks") doesn't build a recipe confirmation UI.** `docs/03-screens.md` S2 step 4 asks the owner to confirm ingredients-per-drink from a template for their top 10 sellers. Given M3/M4 already deferred the Menu screen's full recipe editor (no per-item recipe-quantity UI exists anywhere yet), step 4 is a single explanatory screen instead — consistent with those earlier decisions, not a new gap. Build the real step once the recipe editor exists.
 - **PDF bank statements deferred to a fast-follow.** `docs/06-integrations.md` says CSV first, then PDF; M4's acceptance criteria only requires CSV. Building PDF text extraction (`pdf-parse`) plus a vision fallback for scanned PDFs is real additional scope — not started. The statement upload screen accepts `.csv` only for now.
@@ -66,6 +67,50 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M6 CSV import for Toast/other POS (done)
+Built the generic column mapper docs/06-integrations.md asks for — works for Toast, Clover, or any
+other register's exports (not Toast-specific), matching this session's "don't build Square-only"
+instruction:
+- `supabase/migrations/20260926000010_csv_import_mappings.sql` — a `csv_import_mappings` table
+  (business_id, kind, column_mapping jsonb) with RLS, added because `docs/04-data-model.md` has no
+  table for saved mappings even though `docs/06-integrations.md` explicitly asks for them.
+- `lib/pos/csv/` — `csvUtils.ts` (shared date/cents/timestamp parsing, extracted from M4's bank-
+  statement parser rather than duplicated), `parseSalesCsv.ts` and `parseLaborCsv.ts` (mapping-
+  driven, not auto-detecting like the bank importer — the owner picks which column is which).
+  3 Vitest tests against realistic Toast-shaped export text (product-mix row, AM/PM clock times,
+  an open shift with no clock-out).
+- `lib/actions/csvImport.ts` — `getSavedMapping`/`saveMapping` (one per business+kind, upserted so
+  the next upload can reuse it) and `importSalesRows`/`importLaborRows`, which write into the same
+  `orders`/`order_lines`/`timecards` tables real POS syncs use, then call M5's
+  `recomputeDailyRollup` for every affected date — the rest of the app can't tell a CSV import from
+  a Square sync. One synthetic order per item per day (the doc's own suggestion, since Toast's
+  product-mix export is already aggregated), `pos_order_id` prefixed `csv-` so it never collides
+  with a real register's own ids.
+- `/more/uploads` is now a real hub (sales report / labor / bank statement) instead of a
+  placeholder; `/more/uploads/sales` and `/more/uploads/labor` are the mapper screens: upload →
+  columns auto-detected client-side (Papaparse, no round trip needed for that part) → the owner
+  matches fields from dropdowns (pre-filled from the saved mapping when its columns still match
+  the new file's headers) → live row-count preview → import.
+
+Verified in-browser, driven end to end through the real file input (not just built-and-assumed): a
+Toast-shaped product-mix CSV was uploaded, its columns were correctly detected, mapped, and the
+preview correctly showed "2 sale rows ready to import" — confirming `detectCsvColumns` +
+`parseSalesCsv` run correctly client-side before any server call. **Caught and fixed a real bug
+this way**: the preview string contained a literal `{count}` meant for a client-side
+`.replace()`, but next-intl parses `{count}` in any translated string as an ICU MessageFormat
+placeholder — calling `t("salesPreview")` with no `count` argument threw a `FORMATTING_ERROR` that
+next-intl's default error handling silently rendered as the literal text "CsvImport.salesPreview"
+instead of the sentence. Fixed by escaping the braces in all three locales (`'{count}'`) rather
+than passing the count through next-intl var substitution, since the value isn't known until the
+client parses the file. Also caught (via the same browser test) that a failed import showed no
+error at all — added error state/display to both importer components.
+
+`npm run build`/`lint`/`test` all clean (50 tests). RTL and 200% zoom checked on `/more/uploads`.
+
+Next: M7 (alerts — missing bill, voids, meal break, early clock-in, overstaffed slot, covered
+milestone — the calc-layer predicates already exist from M2, this wires them to real data,
+generation, and the alert screens).
 
 ### 2026-09-26 — M5 Square connection + onboarding (done)
 Built:
