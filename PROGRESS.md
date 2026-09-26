@@ -7,7 +7,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 - [x] **M0. Skeleton** — Next.js + TS + Tailwind + Supabase + next-intl (en/es/ar, RTL) + PWA manifest, design tokens, fonts, bottom tab bar (5 tabs, empty screens), CLAUDE.md commands work.
 - [x] **M1. Database + demo seed** — Supabase migrations for `04-data-model.md`, RLS on, demo café seed (realistic 90-day dataset), magic-link login. **Not yet verified against a live Supabase project — see "Needs connecting".**
-- [ ] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.
+- [x] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.
 - [ ] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
 - [ ] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV/PDF), receipt photos, vendor rule learning, dedupe.
 - [ ] **M5. Square connection** — OAuth (sandbox first), backfill, webhooks + poll, rollups, onboarding wizard.
@@ -56,6 +56,37 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M2 Calculations (done)
+`lib/calc/`: `types.ts`, `money.ts` (round-half-up-to-cent, only ever applied at the end of a
+calculation, never on intermediates), `staff.ts` (paid hours from timecard + unpaid breaks, open
+shifts count to `now`, payroll tax, loaded staff cost), `runningCosts.ts` (`monthlyAmountForCategory`,
+period proration), `profit.ts` (owner profit, total costs, health bands), `perDrink.ts`, `breakEven.ts`
+(+ 3 what-ifs), `costRecovery.ts` (the sequential-fill algorithm from the doc's pseudocode, ported
+faithfully including the "slipped back" un-covering rule and the projected-days-never-un-cover
+behavior, plus `computeTodayInCups`), `ingredients.ts` (theoretical recipe costing), `alerts.ts` (pure
+predicates for all 6 alert rules — M7 wires these to real data/UI). Fixture A lives in
+`lib/calc/__fixtures__/fixtureA.ts`, Fixture B in `fixtureB.ts`, consumed only by tests (see M1
+decisions for why the seeded demo data is separate).
+
+**Found and fixed a real bug via testing, not inspection:** `runningCostsForPeriodCents` initially
+built month boundaries with `Date.UTC(...)` and fed them to date-fns's `getDaysInMonth`/
+`differenceInCalendarDays`, which read the Date object's *local* getters. In any timezone behind UTC
+(all of the US, including the business's default `America/Los_Angeles`), that silently miscounted a
+30-day September as 31 days — every running-cost proration would have been ~3% low. Caught immediately
+by the Fixture A owner-profit test (`$15,092.48` expected, `$14,668...` got) before it ever reached a
+screen. Fixed by using local `Date` construction throughout `runningCosts.ts` (date-fns's `parseISO`
+already parses date-only strings as local midnight for exactly this reason — the bug was in mixing
+UTC construction into a local-calendar-math module, not in date-fns itself). Left a comment in the
+file so nobody reintroduces it.
+
+Verified: all 40 Vitest tests pass, including every expected value in Fixture A's table (cost recovery
+covered-on dates, the Sep 9 "as of" snapshot, yours-so-far, projected month-end, month-to-date and
+single-day owner profit, break-even + the price what-if, rent share per drink, all three health bands)
+and Fixture B (staff cost per prep-second, per-item staff time, card fee, extra money from one more
+latte). `npm run build` and `npm run lint` clean.
+
+Next: M3 (Home, Money, Menu, Break-even screens on demo data, built from the mockups).
 
 ### 2026-09-26 — M1 Database + demo seed (done)
 Built (not yet run against a live Supabase project — see "Needs connecting"):
