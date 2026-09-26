@@ -16,6 +16,8 @@ export default function TabBar() {
   const t = useTranslations("Nav");
   const pathname = usePathname();
 
+  if (pathname === "/login") return null;
+
   return (
     <nav
       aria-label={t("ariaLabel")}

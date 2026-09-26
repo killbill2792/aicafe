@@ -1,18 +1,36 @@
-import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 /**
- * Server-side client for use in Server Components/actions.
- * Uses the anon key so RLS still applies. Cookie-based session forwarding
- * (via @supabase/ssr) is wired up in M1 alongside magic-link/OTP login.
+ * Server-side client for Server Components, route handlers and server actions.
+ * Uses the anon key so RLS still applies; the user's session comes from cookies
+ * (refreshed by proxy.ts on every request via lib/supabase/middleware.ts).
  */
-export function createServerSupabaseClient() {
+export async function createServerSupabaseClient() {
   if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error(
       "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY. Copy .env.local.example to .env.local and fill them in.",
     );
   }
-  return createClient(supabaseUrl, supabaseAnonKey);
+  const cookieStore = await cookies();
+  return createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return cookieStore.getAll();
+      },
+      setAll(cookiesToSet) {
+        try {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options);
+          });
+        } catch {
+          // Called from a Server Component render — the middleware already refreshes
+          // the session on every request, so a failed set here is safe to ignore.
+        }
+      },
+    },
+  });
 }

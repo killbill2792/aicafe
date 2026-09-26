@@ -1,6 +1,11 @@
 import { getTranslations } from "next-intl/server";
+import { requireUser } from "@/lib/auth/requireUser";
+
+// Personalized, session-dependent — never statically prerendered.
+export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
+  await requireUser();
   const t = await getTranslations("Home");
 
   return (

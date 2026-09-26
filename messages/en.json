@@ -29,5 +29,17 @@
   "More": {
     "title": "More",
     "placeholder": "Settings, language, and account will show up here."
+  },
+  "Login": {
+    "headline": "See how much money your café really keeps.",
+    "subhead": "Connect your register. We'll do the math.",
+    "trustLine": "We only read your sales and timecards. We never change anything or touch your money.",
+    "emailLabel": "Your email",
+    "emailPlaceholder": "you@yourcafe.com",
+    "sendLink": "Email me a link",
+    "sending": "Sending…",
+    "checkEmail": "Check your email — we sent a link to {email}. Tap it to sign in.",
+    "error": "That didn't work. Check the email and try again.",
+    "notConfigured": "Sign-in isn't connected yet. Add Supabase keys to .env.local first."
   }
 }

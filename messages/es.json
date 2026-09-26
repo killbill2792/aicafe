@@ -29,5 +29,17 @@
   "More": {
     "title": "Más",
     "placeholder": "Aquí verás ajustes, idioma y cuenta."
+  },
+  "Login": {
+    "headline": "Descubre cuánto dinero realmente te queda de tu café.",
+    "subhead": "Conecta tu caja registradora. Nosotros hacemos las cuentas.",
+    "trustLine": "Solo leemos tus ventas y horarios. Nunca cambiamos nada ni tocamos tu dinero.",
+    "emailLabel": "Tu correo electrónico",
+    "emailPlaceholder": "tu@tucafe.com",
+    "sendLink": "Enviarme un enlace",
+    "sending": "Enviando…",
+    "checkEmail": "Revisa tu correo — enviamos un enlace a {email}. Tócalo para iniciar sesión.",
+    "error": "Eso no funcionó. Verifica el correo e inténtalo de nuevo.",
+    "notConfigured": "El inicio de sesión aún no está conectado. Agrega las claves de Supabase en .env.local primero."
   }
 }
