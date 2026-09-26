@@ -1,6 +1,7 @@
 import "server-only";
 import { formatInTimeZone } from "date-fns-tz";
 import { itemIngredientCostCents, type DailyFacts, type ExpenseCategoryCode } from "@/lib/calc";
+import { generateAlerts } from "@/lib/alerts/generate";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine } from "./types";
 
@@ -161,7 +162,9 @@ export async function getBusinessSnapshotFromDb(
 
   const menuItems = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
 
-  // M7 wires real alert rules; for now just report how many are open and their $ impact.
+  // Regenerate alerts opportunistically (no cron yet — see PROGRESS.md) so the Home teaser and
+  // the Alerts screen never disagree, then report how many are open and their $ impact.
+  await generateAlerts(supabase, businessId);
   const { count: alertsCount, data: alertRows } = await supabase
     .from("alerts")
     .select("impact_cents", { count: "exact" })

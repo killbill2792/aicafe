@@ -32,3 +32,6 @@ export const DEFAULT_RECOVERY_ORDER: ExpenseCategoryCode[] = [
   "repairs",
   "other",
 ];
+
+/** Every category that counts toward "running costs" (everything except ingredients). */
+export const RUNNING_COST_CODES: ExpenseCategoryCode[] = [...DEFAULT_RECOVERY_ORDER];

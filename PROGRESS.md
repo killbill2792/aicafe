@@ -12,7 +12,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV; PDF not yet — see decisions), receipt photos, vendor rule learning, dedupe.
 - [x] **M5. Square connection** — OAuth (sandbox first), backfill, rollups, onboarding wizard. Webhooks/10-min poll not built — see decisions.
 - [x] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
-- [ ] **M7. Alerts + milestones** — Missing bill, voids, meal break, early clock-in, overstaffed slot, covered milestone cards.
+- [x] **M7. Alerts + milestones** — Missing bill, voids, meal break generated and screened. Early clock-in, overstaffed slot, covered milestone not generated — see decisions.
 - [ ] **M8. Pilot hardening** — Error states, loading skeletons, reconnect flow, delete account, privacy page, screen-view analytics, Sentry.
 
 v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly text, native-speaker translation review.
@@ -56,6 +56,22 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Menu screen's 5-segment bar overrides `menu.html`.** The mockup shows 3 segments (ingredients, staff, yours); `docs/03-screens.md` S6 explicitly says "update it: add the rent & bills layer" and calls for 5 segments (+ card fee). Built as specified, not as pictured.
 - **Break-even what-ifs use two documented placeholder assumptions.** "One less person 2–5 PM" needs a specific employee's hourly wage and "milk up $1/gal" needs ingredient-quantity-per-average-drink — both finer-grained than the current snapshot (`BusinessSnapshot` carries 28-day aggregates and per-item *totals*, not per-shift wages or per-drink recipe quantities at the aggregate level). `lib/viewmodels/breakEvenViewModel.ts` uses `ASSUMED_HOURLY_WAGE_CENTS` ($19.50) and `ASSUMED_ML_MILK_PER_DRINK` (150ml) as clearly-commented stand-ins. The price what-if has no such assumption and is exact. Revisit once Staff (v1.5) and per-item recipe data flow into the snapshot.
 - **Recovery-order reordering ships now, via up/down buttons, not literal drag.** `docs/03-screens.md` S4 says "drag handle to reorder." Built as accessible up/down buttons (a `<form action={serverAction}>` per button, no client JS/DnD library) that call a real server action (`lib/actions/recoveryOrder.ts`) updating `recovery_order` and revalidating — functionally equivalent ("owner can reorder the expenses, saves order, recalculates") without a drag gesture. No-ops gracefully in fixture mode (nothing to persist to).
+- **Only 3 of the 6 alert rules generate.** `covered_milestone` needs last month's cost-recovery
+  cover dates recomputed (the algorithm only runs forward from `days`, so "when did rent get
+  covered last month" means re-running it over last month's actual days — not built, would also
+  need to know last month's bucket order/amounts which can differ from this month's). `overstaffed_slot`
+  needs an hour-of-week staff-cost-to-sales breakdown across the last 4 weeks — real aggregation
+  work not started. `early_clockin` needs scheduled shift start times, and no table in
+  `docs/04-data-model.md` stores a schedule (only actual `timecards.clock_in`/`clock_out`) —
+  flagged the same way back in M2's own decisions, still true.
+- **Voided order_lines lose their dollar value.** M1's demo seed and the current Square adapter
+  both write `net_sales_cents = 0` for a voided line, since that's correct for revenue sums (a
+  voided item shouldn't count as a sale). But it means `order_lines` can't answer "how much would
+  this void have been worth" or "which employee voided the most $" — `daily_rollups.voids_cents`
+  (written directly, correct) is the only place the dollar total survives. This is why the voids
+  alert reports a total but not the mockup's per-employee breakdown. Fix by keeping a voided
+  line's original price in `net_sales_cents` and deriving "counts toward revenue" from `voided`
+  instead of zeroing the amount — touches the seed generator and the Square adapter.
 - **`orders` has no `provider` column, despite the doc saying CSV imports write `provider = 'csv'`.** `docs/04-data-model.md`'s `orders` table has no such column at all (same category of doc/schema mismatch as the missing `landlord_name` noted in M4). Resolution: CSV-imported orders are identified by their `pos_order_id` prefix (`csv-...`) instead, which already can't collide with a real register's own ids. No schema change made — flag this if a future feature actually needs to branch on "was this order CSV-imported."
 - **Webhooks + 10-minute safety poll not built.** `docs/06-integrations.md` wants incremental sync via webhooks plus a poll during open hours. Only the OAuth backfill (inline, 90 days) exists. A cron/queue-driven poll (and a webhook receiver route + signature verification) is real additional infrastructure — deferred until there's a real Square account to test webhook delivery against. Note in the same callback route: the 90-day backfill runs inline inside the OAuth callback request, which risks a serverless route handler's execution time limit against a busy real café's order volume — move it to a background job before pointing this at a real merchant.
 - **Onboarding step 4 ("top drinks") doesn't build a recipe confirmation UI.** `docs/03-screens.md` S2 step 4 asks the owner to confirm ingredients-per-drink from a template for their top 10 sellers. Given M3/M4 already deferred the Menu screen's full recipe editor (no per-item recipe-quantity UI exists anywhere yet), step 4 is a single explanatory screen instead — consistent with those earlier decisions, not a new gap. Build the real step once the recipe editor exists.
@@ -67,6 +83,35 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M7 Alerts + milestones (done)
+Wires M2's pure alert-rule predicates (`lib/calc/alerts.ts`) to real data and screens:
+- `lib/alerts/generate.ts` — `generateAlerts(supabase, businessId)` generates `missing_bill`
+  (checked against every running-cost category's recurring/actual history), `voids` (this
+  month's `daily_rollups.voids_cents` vs. the previous-3-months average), and `meal_break`
+  (every timecard from the last 7 days run through `mealBreakStatus`). Idempotent — a `dedupeKey`
+  in each alert's `payload` (category+month / month / timecard id) is checked before insert, so
+  re-running never spams duplicate open alerts for the same underlying thing. No cron exists yet,
+  so generation is triggered opportunistically on read: both `getSnapshot()` (Home's teaser) and
+  the Alerts screen call it before querying, so the two never disagree.
+- `covered_milestone`, `overstaffed_slot`, and `early_clockin` are **not generated** — see
+  decisions below for why each is a real scope item, not an oversight.
+- `/more/alerts` (S9 list: two summary tiles — leaking this month / how many open — then a card
+  per alert, icon+title+subtitle+$ impact, calm non-accusatory copy throughout) and
+  `/more/alerts/[id]` (S9 detail: impact amount, an explicit "this can be an honest mistake, not
+  an accusation" note per docs/02-design-system.md's tone rule, an action link, "Mark as
+  reviewed"/"Dismiss"). Deliberately simpler than `alert-detail.html`'s per-employee void
+  breakdown and transaction log — see decisions, the underlying per-line data isn't stored yet.
+
+Verified in-browser: Home's Fixture-A numbers unchanged (M7 touched only the real-DB path, so the
+fixture fallback is provably unaffected — a full page-text diff against M3/M6's verified output
+matched exactly), `/more/alerts` renders its correct empty state ("Nothing needs your attention")
+since Supabase isn't connected, RTL and 200% zoom checked. `npm run build`/`lint`/`test` clean
+(50 tests — no new ones this milestone; alert generation needs a live Postgres to test meaningfully
+and none exists in this environment).
+
+Next: M8 (pilot hardening — error states, loading skeletons, reconnect flow, delete account,
+privacy page, screen-view analytics, Sentry), then deploy.
 
 ### 2026-09-26 — M6 CSV import for Toast/other POS (done)
 Built the generic column mapper docs/06-integrations.md asks for — works for Toast, Clover, or any
