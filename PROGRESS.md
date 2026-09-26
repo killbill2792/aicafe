@@ -8,7 +8,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M0. Skeleton** — Next.js + TS + Tailwind + Supabase + next-intl (en/es/ar, RTL) + PWA manifest, design tokens, fonts, bottom tab bar (5 tabs, empty screens), CLAUDE.md commands work.
 - [x] **M1. Database + demo seed** — Supabase migrations for `04-data-model.md`, RLS on, demo café seed (realistic 90-day dataset), magic-link login. **Not yet verified against a live Supabase project — see "Needs connecting".**
 - [x] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.
-- [ ] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
+- [x] **M3. Core screens on demo data** — Home, Money (cost recovery + profit & costs), Menu, Break-even, built from mockups.
 - [ ] **M4. Cost capture** — Monthly bills, manual/voice entry, bank statement upload (CSV/PDF), receipt photos, vendor rule learning, dedupe.
 - [ ] **M5. Square connection** — OAuth (sandbox first), backfill, webhooks + poll, rollups, onboarding wizard.
 - [ ] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
@@ -36,7 +36,7 @@ v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly 
 
 _(built behind a mock/sandbox-ready adapter; wire up the real thing when credentials exist — see the credentials list from the start of this session)_
 
-- **Supabase project** — nothing works end-to-end (auth, `db:reset`, every screen) until `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` are in `.env.local`. Until then the app degrades gracefully (`requireUser()` is a no-op, pages render their placeholder content) instead of crashing — verified in-browser. **`supabase/migrations/*.sql` and `scripts/db-reset.mjs` have not been run against a real Postgres instance** (no CLI/Docker available in this environment) — re-run `npm run db:reset` and fix anything that surfaces the first time real credentials are added.
+- **Supabase project** — nothing works end-to-end (auth, `db:reset`, every screen) until `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` are in `.env.local`. Until then the app degrades gracefully (`requireUser()` is a no-op, screens render from the Fixture-A-derived snapshot instead of crashing) — verified in-browser, every M3 screen checked against Fixture A's numbers. **`supabase/migrations/*.sql`, `scripts/db-reset.mjs`, and `lib/data/snapshot.server.ts` (the real Supabase query path) have not been run against a real Postgres instance** (no CLI/Docker available in this environment) — re-run `npm run db:reset`, then load Home/Money/Menu/Break-even as the demo user and fix anything that surfaces the first time real credentials are added. Most likely trouble spots: the `order_lines` → `orders` foreign-table filter syntax in `getMenuItemSnapshots`, and RLS on the `recovery_order` write in the reorder server action.
 - **AI provider key** (M4) — `AI_PROVIDER` + one of `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`MOONSHOT_API_KEY`.
 - **Square sandbox app** (M5) — `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_REDIRECT_URI`.
 - **Vercel** — for the actual deploy at the end of M8.
@@ -52,10 +52,57 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Demo ingredient prices are tuned, not wholesale-realistic.** Raw wholesale prices produced an ~16% ingredient ratio (below the 25-35% healthy band in `docs/05-calculations.md`); prices were scaled up (and order volume increased ~2.8x) so the seeded 90-day dataset's blended ratios land in/near the healthy bands (ingredients ~30%, staff ~24%, combined ~54%) instead of looking like an unrealistic business. Fixture C (the illustrative latte example) was not hit to the exact cent — it's explicitly labeled "illustrative" in the doc and isn't a Vitest fixture like A/B.
 - **Phone OTP deferred.** `CLAUDE.md`'s stack line mentions "email magic link + phone OTP." Only email magic link is built (M1 acceptance criteria only requires magic-link login). Phone OTP needs an SMS provider Supabase can dispatch through (Twilio, etc.) — not yet configured. Flagged here rather than under "Needs connecting" above since it's a v1 feature gap, not a blocked-by-credentials item; revisit before pilot if owners need it.
 - **Auth gates all 5 tabs, not just profit screens.** `docs/04-data-model.md` only mandates hiding profit numbers from managers with `can_see_profit = false`. Given every screen shows business data, `requireUser()` gates all 5 tab routes (redirects to `/login`), with the `can_see_profit` server check to come when the profit endpoints are built (M3).
+- **`getSnapshot()` is the only door to screen data.** Every M3 screen calls one function (`lib/data/getSnapshot.ts`) that returns a `BusinessSnapshot` — from the real Supabase-backed query when configured, else from a Fixture-A-derived fallback (`lib/data/fixtureSnapshot.ts`, "today" = Sep 9 to match `cost-recovery.html`'s own reference point). This is what let every M3 screen be verified in-browser against the doc's exact expected numbers *without* a live database — the real query path (`snapshot.server.ts`) is still unverified (see "Needs connecting"). `lib/viewmodels/*` sit between the snapshot and the screens and are the only callers of `lib/calc/*` for these screens, per CLAUDE.md rule 3 (UI never does math).
+- **Menu screen's 5-segment bar overrides `menu.html`.** The mockup shows 3 segments (ingredients, staff, yours); `docs/03-screens.md` S6 explicitly says "update it: add the rent & bills layer" and calls for 5 segments (+ card fee). Built as specified, not as pictured.
+- **Break-even what-ifs use two documented placeholder assumptions.** "One less person 2–5 PM" needs a specific employee's hourly wage and "milk up $1/gal" needs ingredient-quantity-per-average-drink — both finer-grained than the current snapshot (`BusinessSnapshot` carries 28-day aggregates and per-item *totals*, not per-shift wages or per-drink recipe quantities at the aggregate level). `lib/viewmodels/breakEvenViewModel.ts` uses `ASSUMED_HOURLY_WAGE_CENTS` ($19.50) and `ASSUMED_ML_MILK_PER_DRINK` (150ml) as clearly-commented stand-ins. The price what-if has no such assumption and is exact. Revisit once Staff (v1.5) and per-item recipe data flow into the snapshot.
+- **Recovery-order reordering ships now, via up/down buttons, not literal drag.** `docs/03-screens.md` S4 says "drag handle to reorder." Built as accessible up/down buttons (a `<form action={serverAction}>` per button, no client JS/DnD library) that call a real server action (`lib/actions/recoveryOrder.ts`) updating `recovery_order` and revalidating — functionally equivalent ("owner can reorder the expenses, saves order, recalculates") without a drag gesture. No-ops gracefully in fixture mode (nothing to persist to).
+- **200%-text-zoom bugs are real bugs, found by testing, not by inspection.** Several cards (Home's 3 sales tiles, the Profit & costs teaser's 2-column legend, the cost-recovery hero number, bucket rows, the login language pills) used fixed-width flex/grid layouts with unbreakable money strings (`$8,104.32` has no space to wrap at). At 200% root font-size these overflowed the 375px viewport — a real WCAG 1.4.4 failure, not a hypothetical one. Fixed with `flex-wrap` + `min-w-0`/`break-words` on the money-bearing containers; verified overflow is gone screen-by-screen (`document.body.scrollWidth` check) after each fix, not just visually.
 
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M3 Core screens on demo data (done)
+Built Home (`app/[locale]/page.tsx`), Money (`app/[locale]/money/page.tsx`, cost recovery + profit &
+costs behind a segmented switch), Menu (`app/[locale]/menu/page.tsx`), and Break-even
+(`app/[locale]/more/break-even/page.tsx`), all from `docs/03-screens.md` + the mockups, all numbers
+sourced through `lib/viewmodels/*` → `lib/calc/*`, never computed in a component.
+
+New supporting layers:
+- `lib/data/` — `BusinessSnapshot` type, real Supabase query implementation (`snapshot.server.ts`,
+  unverified — see "Needs connecting"), Fixture-A-derived fallback (`fixtureSnapshot.ts`), the
+  `getSnapshot()` entry point, and `getActiveBusinessId()` (demo vs. the user's own business).
+- `lib/viewmodels/` — `period.ts` (Today/Week/Month day-window + running-cost proration, including a
+  same-month + previous-month fallback for running costs so a week/today comparison that dips into
+  the prior month doesn't silently zero out), `costRecoveryShared.ts` (day contributions, weekday-
+  average projections per the doc's rule), `homeViewModel.ts`, `moneyViewModel.ts`,
+  `menuViewModel.ts`, `breakEvenViewModel.ts`.
+- `components/icons/` — `ExpenseIconDefs.tsx` (one SVG sprite, symbols adapted from
+  `cost-recovery.html` for rent/power/insurance/loan/software/supplies/cup, new ones added for
+  water/internet/repairs/other/ingredients/milk/card/staff/payroll_tax/profit), `FillIcon.tsx` (the
+  bottom-up fill metaphor via a two-stop gradient — no clip-path, direction-safe in RTL), `PlainIcon.tsx`.
+- `lib/actions/recoveryOrder.ts` — server action for reordering cost-recovery buckets (see decisions).
+
+Verified extensively in-browser (not just built-and-assumed): every Fixture A expected value from
+`docs/05-calculations.md`'s table appears correctly on screen — Home's Today/Month owner profit
+($580.48 / $5,224.32), the cost-recovery hero and all 6 bucket cover dates, the Sep 9 "current
+bucket = loan, 58%, $295.68 to go" snapshot, "on track for $17,414.40", "yours so far" on day 26,
+health bands (27%/32%/60%, all Healthy), break-even (315 drinks, the +25¢ what-if → 294), and the
+rent & bills share per drink ($0.6667). Two real bugs were caught this way, not by inspection (see
+decisions below): a viewmodel double-counting `projectedMonthEndProfitCents`, and the hero "all
+covered by" date pointing at the wrong bucket. Also verified: `npm run build`/`lint`/`test` all
+clean; RTL on all 4 screens (icon fill direction, stacked bar mirroring, calendar grid, FAB position
+via logical `end-4`); 200% root-font-size zoom on all 4 screens plus `/login` with zero horizontal
+overflow (`document.body.scrollWidth` checked programmatically after each fix, several real bugs
+found and fixed this way — see decisions).
+
+Not built yet (deferred, not blocking M3's acceptance criteria): the Menu screen's per-item recipe
+editor and price-change simulator (S6 point 5 — M4/M6 territory once cost-capture UI exists); Staff
+and More/Settings stay M0 placeholders (Staff detail is explicitly v1.5 in `docs/01-product.md`;
+Settings/onboarding is M5+).
+
+Next: M4 (monthly bills, manual/voice entry, bank statement upload, receipt photos, vendor rule
+learning, dedupe).
 
 ### 2026-09-26 — M2 Calculations (done)
 `lib/calc/`: `types.ts`, `money.ts` (round-half-up-to-cent, only ever applied at the end of a

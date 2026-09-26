@@ -15,7 +15,7 @@ export default async function LoginPage() {
 
   return (
     <main className="flex min-h-screen flex-col gap-6 px-6 pb-10 pt-12">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {routing.locales.map((loc) => (
           <Link
             key={loc}

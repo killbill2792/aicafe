@@ -1,0 +1,54 @@
+import type { DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
+
+export type BusinessSettings = {
+  id: string;
+  name: string;
+  timezone: string;
+  payrollTaxRate: number;
+};
+
+export type RunningCostLine = {
+  categoryCode: ExpenseCategoryCode;
+  label: string;
+  amountCents: number;
+  isEstimate: boolean;
+  isMissing: boolean;
+};
+
+export type MenuItemSnapshot = {
+  id: string;
+  name: string;
+  priceCents: number;
+  prepSeconds: number;
+  category: "drink" | "food";
+  /** Theoretical ingredient cost at today's ingredient prices. */
+  ingredientsCentsToday: number;
+  quantitySoldLast28Days: number;
+};
+
+/**
+ * Everything the money screens need for one business, assembled once per request. Pure data —
+ * no formulas here (see lib/calc); screens build their numbers via lib/viewmodels/*.
+ */
+export type BusinessSnapshot = {
+  business: BusinessSettings;
+  todayDateStr: string; // YYYY-MM-DD, business timezone
+  monthKey: string; // YYYY-MM, current month
+  daysInMonth: number;
+  /** Actual days so far this month, ascending, day 1 through today. */
+  monthActualDays: DailyFacts[];
+  /** Last 28 actual days ending today (for effective fee rate, avg drinks/day, etc). */
+  last28Days: DailyFacts[];
+  /** Last 7 actual days ending today. */
+  last7Days: DailyFacts[];
+  /** The single most recent actual day (today, or the last day with data). */
+  latestDay: DailyFacts;
+  /** Full previous calendar month, for "vs last period" comparisons. */
+  previousMonthDays: DailyFacts[];
+  /** This month's running-cost categories, in recovery_order, including $0/missing ones. */
+  runningCostLines: RunningCostLine[];
+  recoveryOrder: string[];
+  menuItems: MenuItemSnapshot[];
+  /** M7 wires real alert generation; both snapshot sources report zero until then. */
+  alerts: { count: number; leakingCents: number };
+};

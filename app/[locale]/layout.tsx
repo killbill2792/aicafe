@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
+import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
 import "../globals.css";
 
 const fraunces = Fraunces({
@@ -74,6 +75,7 @@ export default async function LocaleLayout({
         className={`flex h-full min-h-screen flex-col ${locale === "ar" ? "font-arabic" : "font-body"}`}
       >
         <NextIntlClientProvider>
+          <ExpenseIconDefs />
           <div className="mx-auto w-full max-w-app flex-1 pb-24">
             {children}
           </div>
