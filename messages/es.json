@@ -194,7 +194,23 @@
   },
   "Staff": {
     "title": "Personal",
-    "placeholder": "Aquí verás el personal y los descansos."
+    "subtitle": "Salarios + impuestos de nómina · en vivo",
+    "rightNowCosts": "Ahora mismo, tu equipo cuesta",
+    "aMinute": "por minuto",
+    "anHour": "por hora",
+    "todaySoFar": "hoy hasta ahora",
+    "onShiftNow": "En turno ahora",
+    "noOneOnShift": "Nadie está fichado en este momento.",
+    "staffRole": "Personal",
+    "sinceShort": "Desde las {time}",
+    "sinceWage": "Desde las {time} · {wage}/hora",
+    "breakDue": "descanso pendiente a las {time}",
+    "breakMissed": "descanso perdido, pendiente desde las {time}",
+    "today": "hoy",
+    "costPerSalesDollar": "Costo de personal por $1 de ventas",
+    "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
+    "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
+    "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana."
   },
   "More": {
     "title": "Más",

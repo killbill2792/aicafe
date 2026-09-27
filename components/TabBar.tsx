@@ -27,7 +27,7 @@ export default function TabBar() {
         {TABS.map(({ href, key, Icon }) => {
           const isActive = pathname === href;
           return (
-            <li key={href} className="flex-1">
+            <li key={href} className="min-w-0 flex-1">
               <Link
                 href={href}
                 aria-current={isActive ? "page" : undefined}

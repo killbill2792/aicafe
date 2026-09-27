@@ -1,6 +1,6 @@
 import type { DailyFacts } from "@/lib/calc";
 import { FIXTURE_A_BUCKETS, FIXTURE_A_DAY, FIXTURE_A_PAYROLL_TAX_RATE, fixtureADays } from "@/lib/calc/__fixtures__/fixtureA";
-import type { BusinessSnapshot, MenuItemSnapshot } from "./types";
+import type { BusinessSnapshot, MenuItemSnapshot, StaffShift } from "./types";
 
 /**
  * Dev fallback used whenever Supabase isn't connected yet (see isSupabaseConfigured()). Built
@@ -50,6 +50,53 @@ const MENU_ITEMS: MenuItemSnapshot[] = [
   { id: "muffin", name: "Muffin", priceCents: 400, prepSeconds: 15, category: "food", ingredientsCentsToday: 208, quantitySoldLast28Days: 1_848 },
 ];
 
+// Staff screen demo data — matches design/mockups/staff.html's own example roster (same names,
+// roles, and wages) so the demo screen looks identical to the approved mockup. Pinned to
+// midday (not the mockup's implied mid-morning) so the meal-break flag has something real to
+// show: Ana took a qualifying break and Marco didn't, computed by lib/calc/alerts.ts's
+// mealBreakStatus, not hardcoded — this is a real state, not a cosmetic flag.
+// Explicit -07:00 (Pacific Daylight Time, matching the fixture business's timezone in September)
+// on every timestamp — the same class of bug M2's postmortem warns about: a naive "local" string
+// parses as the *server's* local time (UTC on Vercel), which would silently show "11pm" instead
+// of "6am" on a server not in Pacific time. An explicit offset makes the instant unambiguous.
+const STAFF_NOW_ISO = "2026-09-09T12:15:00-07:00";
+
+const STAFF_SHIFTS_TODAY: StaffShift[] = [
+  {
+    employeeId: "demo-ana",
+    name: "Ana",
+    role: "Barista",
+    timecard: {
+      clockIn: "2026-09-09T06:00:00-07:00",
+      clockOut: null,
+      hourlyWageCents: 2200,
+      breaks: [{ start: "2026-09-09T10:00:00-07:00", end: "2026-09-09T10:30:00-07:00", paid: false }],
+    },
+  },
+  {
+    employeeId: "demo-marco",
+    name: "Marco",
+    role: "Barista",
+    timecard: {
+      clockIn: "2026-09-09T07:00:00-07:00",
+      clockOut: null,
+      hourlyWageCents: 2100,
+      breaks: [],
+    },
+  },
+  {
+    employeeId: "demo-dee",
+    name: "Dee",
+    role: "Register",
+    timecard: {
+      clockIn: "2026-09-09T08:00:00-07:00",
+      clockOut: null,
+      hourlyWageCents: 1900,
+      breaks: [],
+    },
+  },
+];
+
 export function getFixtureSnapshot(): BusinessSnapshot {
   const todayDateStr = "2026-09-09";
   const monthActualDays = fixtureADays(9);
@@ -84,6 +131,8 @@ export function getFixtureSnapshot(): BusinessSnapshot {
     recoveryOrder: FIXTURE_A_BUCKETS.map((b) => b.code),
     menuItems: MENU_ITEMS,
     alerts: { count: 0, leakingCents: 0 },
+    staffShiftsToday: STAFF_SHIFTS_TODAY,
+    staffNowIso: STAFF_NOW_ISO,
   };
 }
 

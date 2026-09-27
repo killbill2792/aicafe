@@ -194,7 +194,23 @@
   },
   "Staff": {
     "title": "Staff",
-    "placeholder": "Staffing and breaks will show up here."
+    "subtitle": "Wages + payroll taxes · live",
+    "rightNowCosts": "Right now, your team costs",
+    "aMinute": "a minute",
+    "anHour": "an hour",
+    "todaySoFar": "today so far",
+    "onShiftNow": "On shift now",
+    "noOneOnShift": "No one is clocked in right now.",
+    "staffRole": "Staff",
+    "sinceShort": "Since {time}",
+    "sinceWage": "Since {time} · {wage}/hr",
+    "breakDue": "break due {time}",
+    "breakMissed": "missed break, due {time}",
+    "today": "today",
+    "costPerSalesDollar": "Staff cost per $1 of sales",
+    "healthyLine": "Under the line is healthy ({cents}¢)",
+    "worstDayInsight": "{date} cost {cents}¢ per $1 sold — the highest this week.",
+    "allHealthyInsight": "Your staff cost has stayed healthy all week."
   },
   "More": {
     "title": "More",

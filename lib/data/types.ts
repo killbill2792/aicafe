@@ -1,4 +1,4 @@
-import type { DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
+import type { DailyFacts, ExpenseCategoryCode, Timecard } from "@/lib/calc";
 
 export type BusinessSettings = {
   id: string;
@@ -26,6 +26,13 @@ export type MenuItemSnapshot = {
   quantitySoldLast28Days: number;
 };
 
+export type StaffShift = {
+  employeeId: string;
+  name: string;
+  role: string | null;
+  timecard: Timecard;
+};
+
 /**
  * Everything the money screens need for one business, assembled once per request. Pure data —
  * no formulas here (see lib/calc); screens build their numbers via lib/viewmodels/*.
@@ -51,4 +58,9 @@ export type BusinessSnapshot = {
   menuItems: MenuItemSnapshot[];
   /** M7 wires real alert generation; both snapshot sources report zero until then. */
   alerts: { count: number; leakingCents: number };
+  /** All of today's timecard rows (open and already-clocked-out), for the Staff screen. */
+  staffShiftsToday: StaffShift[];
+  /** The instant "on shift now" / "today so far" are computed as of — real current time in the
+   * live snapshot, a pinned mid-morning time in the fixture snapshot (see fixtureSnapshot.ts). */
+  staffNowIso: string;
 };

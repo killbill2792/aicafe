@@ -1,9 +1,9 @@
 import "server-only";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { itemIngredientCostCents, type DailyFacts, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine } from "./types";
+import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 
 const RUNNING_COST_CODES: ExpenseCategoryCode[] = [
   "rent",
@@ -161,6 +161,7 @@ export async function getBusinessSnapshotFromDb(
     });
 
   const menuItems = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
+  const staffShiftsToday = await getStaffShiftsToday(supabase, businessId, timezone, todayDateStr);
 
   // Regenerate alerts opportunistically (no cron yet — see PROGRESS.md) so the Home teaser and
   // the Alerts screen never disagree, then report how many are open and their $ impact.
@@ -186,7 +187,45 @@ export async function getBusinessSnapshotFromDb(
     recoveryOrder: orderedCodes,
     menuItems,
     alerts: { count: alertsCount ?? 0, leakingCents },
+    staffShiftsToday,
+    staffNowIso: new Date().toISOString(),
   };
+}
+
+/** All of today's timecards (business-timezone calendar day), joined to the employee's name/role. */
+async function getStaffShiftsToday(
+  supabase: SupabaseClient,
+  businessId: string,
+  timezone: string,
+  todayDateStr: string,
+): Promise<StaffShift[]> {
+  const dayStartUtc = fromZonedTime(`${todayDateStr}T00:00:00`, timezone).toISOString();
+  const dayEndUtc = fromZonedTime(`${todayDateStr}T23:59:59.999`, timezone).toISOString();
+
+  const { data, error } = await supabase
+    .from("timecards")
+    .select("id, employee_id, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name, role)")
+    .eq("business_id", businessId)
+    .gte("clock_in", dayStartUtc)
+    .lte("clock_in", dayEndUtc)
+    .order("clock_in", { ascending: true });
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const employee = row.employees as unknown as { display_name: string; role: string | null } | { display_name: string; role: string | null }[] | null;
+    const emp = Array.isArray(employee) ? employee[0] : employee;
+    return {
+      employeeId: row.employee_id ?? row.id,
+      name: emp?.display_name ?? "Staff",
+      role: emp?.role ?? null,
+      timecard: {
+        clockIn: row.clock_in,
+        clockOut: row.clock_out,
+        hourlyWageCents: row.hourly_wage_cents,
+        breaks: (row.breaks as { start: string; end: string; paid: boolean }[]) ?? [],
+      },
+    };
+  });
 }
 
 async function getMenuItemSnapshots(

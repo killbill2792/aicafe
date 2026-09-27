@@ -194,7 +194,23 @@
   },
   "Staff": {
     "title": "الموظفون",
-    "placeholder": "سيظهر هنا جدول الموظفين وفترات الراحة."
+    "subtitle": "الأجور + ضرائب الرواتب · مباشر",
+    "rightNowCosts": "الآن، يكلفك فريقك",
+    "aMinute": "في الدقيقة",
+    "anHour": "في الساعة",
+    "todaySoFar": "اليوم حتى الآن",
+    "onShiftNow": "في الدوام الآن",
+    "noOneOnShift": "لا أحد مسجل حضوره الآن.",
+    "staffRole": "موظف",
+    "sinceShort": "منذ الساعة {time}",
+    "sinceWage": "منذ الساعة {time} · {wage}/ساعة",
+    "breakDue": "استراحة مستحقة الساعة {time}",
+    "breakMissed": "استراحة فائتة، كانت مستحقة الساعة {time}",
+    "today": "اليوم",
+    "costPerSalesDollar": "تكلفة الموظفين لكل $1 من المبيعات",
+    "healthyLine": "أسفل الخط سليم ({cents}¢)",
+    "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
+    "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع."
   },
   "More": {
     "title": "المزيد",
