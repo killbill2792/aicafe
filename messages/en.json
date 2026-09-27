@@ -206,7 +206,10 @@
     "monthlyBills": "Monthly bills",
     "uploads": "Uploads",
     "breakEven": "Break-even plan",
-    "connectRegister": "Connect your register"
+    "alerts": "Alerts",
+    "connectRegister": "Connect your register",
+    "privacy": "Privacy",
+    "deleteAccount": "Delete account"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -310,6 +313,44 @@
     "neverAccusatoryNote": "This can be an honest mistake or a training gap. It's worth a calm look, not an accusation.",
     "markReviewed": "Mark as reviewed",
     "dismiss": "Dismiss"
+  },
+  "DeleteAccount": {
+    "title": "Delete account",
+    "warning": "This permanently deletes your café's data — sales history, costs, recipes, staff records and any connected register token. This can't be undone.",
+    "bullet1": "Your Square connection (if any) is disconnected",
+    "bullet2": "All your uploaded files are removed",
+    "bullet3": "Your business and sign-in are permanently deleted",
+    "confirmPrompt": "Type {word} to confirm",
+    "confirmWord": "delete",
+    "deleteButton": "Delete my account",
+    "deleting": "Deleting…",
+    "error": "Something went wrong. Try again."
+  },
+  "Privacy": {
+    "title": "Privacy",
+    "lastUpdated": "Last updated September 2026",
+    "dataWeReadTitle": "What we read",
+    "dataWeReadBody": "With your permission, we read your register's sales, order, catalog, staff and timecard data (read-only — we can never change anything or move your money). We also store the costs, bills, receipts and bank lines you give us.",
+    "dataWeNeverTouchTitle": "What we never touch",
+    "dataWeNeverTouchBody": "We never ask for your bank or register password. We never see your customers' card numbers. We never move money or place orders on your behalf.",
+    "howWeProtectItTitle": "How we protect it",
+    "howWeProtectItBody": "Register connection tokens are encrypted at rest. Uploaded files are private to your business. We never log tokens, bank lines, or receipt images.",
+    "aiUseTitle": "How we use AI",
+    "aiUseBody": "We use AI to read receipts, categorize bank statement lines, and parse voice entries you record. Only the data needed for that task is sent, never your customers' names or card numbers.",
+    "yourControlTitle": "Your control",
+    "yourControlBody": "You can review, correct, or remove any cost we've recorded. You can disconnect your register at any time from Settings.",
+    "deletingYourAccountTitle": "Deleting your account",
+    "deletingYourAccountBody": "Deleting your account permanently removes your business data and files, and disconnects any connected register. This can't be undone."
+  },
+  "Reconnect": {
+    "banner": "We couldn't get today's sales from your register. Tap to reconnect.",
+    "action": "Reconnect"
+  },
+  "Errors": {
+    "title": "Something went wrong",
+    "body": "That's on us, not something you did. Try again, or head back home.",
+    "tryAgain": "Try again",
+    "goHome": "Go home"
   },
   "Login": {
     "headline": "See how much money your café really keeps.",

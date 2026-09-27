@@ -20,6 +20,8 @@ import {
   StaffTeaserCard,
 } from "@/components/home/SectionCards";
 import { formatCents } from "@/lib/calc";
+import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
+import ReconnectBanner from "@/components/shared/ReconnectBanner";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -37,11 +39,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const vm = buildHomeViewModel(snapshot, period);
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const t = await getTranslations("Home");
+  const posStatus = await getPosConnectionStatus();
 
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
 
   return (
     <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+      {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
           <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>

@@ -206,7 +206,10 @@
     "monthlyBills": "Cuentas mensuales",
     "uploads": "Archivos subidos",
     "breakEven": "Plan de punto de equilibrio",
-    "connectRegister": "Conecta tu caja registradora"
+    "alerts": "Alertas",
+    "connectRegister": "Conecta tu caja registradora",
+    "privacy": "Privacidad",
+    "deleteAccount": "Eliminar cuenta"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -310,6 +313,44 @@
     "neverAccusatoryNote": "Esto puede ser un error honesto o una falta de capacitación. Vale la pena revisarlo con calma, no acusar.",
     "markReviewed": "Marcar como revisado",
     "dismiss": "Descartar"
+  },
+  "DeleteAccount": {
+    "title": "Eliminar cuenta",
+    "warning": "Esto elimina permanentemente los datos de tu café — historial de ventas, gastos, recetas, registros de personal y cualquier token de caja registradora conectado. Esto no se puede deshacer.",
+    "bullet1": "Tu conexión con Square (si existe) se desconecta",
+    "bullet2": "Se eliminan todos tus archivos subidos",
+    "bullet3": "Tu negocio y tu acceso se eliminan permanentemente",
+    "confirmPrompt": "Escribe {word} para confirmar",
+    "confirmWord": "eliminar",
+    "deleteButton": "Eliminar mi cuenta",
+    "deleting": "Eliminando…",
+    "error": "Algo salió mal. Inténtalo de nuevo."
+  },
+  "Privacy": {
+    "title": "Privacidad",
+    "lastUpdated": "Última actualización septiembre de 2026",
+    "dataWeReadTitle": "Lo que leemos",
+    "dataWeReadBody": "Con tu permiso, leemos los datos de ventas, pedidos, catálogo, personal y horarios de tu caja registradora (solo lectura — nunca podemos cambiar nada ni mover tu dinero). También guardamos los gastos, cuentas, recibos y líneas bancarias que nos das.",
+    "dataWeNeverTouchTitle": "Lo que nunca tocamos",
+    "dataWeNeverTouchBody": "Nunca pedimos la contraseña de tu banco o caja registradora. Nunca vemos los números de tarjeta de tus clientes. Nunca movemos dinero ni hacemos pedidos en tu nombre.",
+    "howWeProtectItTitle": "Cómo lo protegemos",
+    "howWeProtectItBody": "Los tokens de conexión de la caja registradora están encriptados. Los archivos subidos son privados para tu negocio. Nunca registramos tokens, líneas bancarias ni imágenes de recibos.",
+    "aiUseTitle": "Cómo usamos la IA",
+    "aiUseBody": "Usamos IA para leer recibos, clasificar líneas de estados de cuenta y procesar las entradas de voz que grabas. Solo se envían los datos necesarios para esa tarea, nunca los nombres o números de tarjeta de tus clientes.",
+    "yourControlTitle": "Tu control",
+    "yourControlBody": "Puedes revisar, corregir o eliminar cualquier gasto que hayamos registrado. Puedes desconectar tu caja registradora en cualquier momento desde Ajustes.",
+    "deletingYourAccountTitle": "Eliminar tu cuenta",
+    "deletingYourAccountBody": "Eliminar tu cuenta borra permanentemente los datos y archivos de tu negocio, y desconecta cualquier caja registradora conectada. Esto no se puede deshacer."
+  },
+  "Reconnect": {
+    "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",
+    "action": "Reconectar"
+  },
+  "Errors": {
+    "title": "Algo salió mal",
+    "body": "Esto es cosa nuestra, no tuya. Inténtalo de nuevo o vuelve al inicio.",
+    "tryAgain": "Intentar de nuevo",
+    "goHome": "Ir al inicio"
   },
   "Login": {
     "headline": "Descubre cuánto dinero realmente te queda de tu café.",

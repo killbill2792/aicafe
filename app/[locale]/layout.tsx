@@ -8,6 +8,7 @@ import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
+import ScreenViewLogger from "@/components/shared/ScreenViewLogger";
 import "../globals.css";
 
 const fraunces = Fraunces({
@@ -76,6 +77,7 @@ export default async function LocaleLayout({
       >
         <NextIntlClientProvider>
           <ExpenseIconDefs />
+          <ScreenViewLogger />
           <div className="mx-auto w-full max-w-app flex-1 pb-24">
             {children}
           </div>

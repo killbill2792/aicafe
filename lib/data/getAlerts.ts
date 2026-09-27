@@ -44,3 +44,19 @@ export async function getOpenAlerts(): Promise<AlertRow[]> {
     createdAt: a.created_at,
   }));
 }
+
+export async function getAlertById(id: string): Promise<AlertRow | null> {
+  if (!isSupabaseConfigured()) return null;
+  const supabase = await createServerSupabaseClient();
+  const { data } = await supabase.from("alerts").select("id, kind, impact_cents, payload, status, created_at").eq("id", id).maybeSingle();
+  if (!data) return null;
+
+  return {
+    id: data.id,
+    kind: data.kind as AlertKind,
+    impactCents: data.impact_cents,
+    payload: (data.payload as Record<string, unknown>) ?? {},
+    status: data.status as AlertRow["status"],
+    createdAt: data.created_at,
+  };
+}

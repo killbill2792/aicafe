@@ -13,7 +13,7 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 - [x] **M5. Square connection** — OAuth (sandbox first), backfill, rollups, onboarding wizard. Webhooks/10-min poll not built — see decisions.
 - [x] **M6. CSV import for Toast/other POS** — Column mapper, saved mappings.
 - [x] **M7. Alerts + milestones** — Missing bill, voids, meal break generated and screened. Early clock-in, overstaffed slot, covered milestone not generated — see decisions.
-- [ ] **M8. Pilot hardening** — Error states, loading skeletons, reconnect flow, delete account, privacy page, screen-view analytics, Sentry.
+- [x] **M8. Pilot hardening** — Error states, loading skeletons, reconnect flow, delete account, privacy page, screen-view analytics, Sentry (DSN-gated, not yet connected).
 
 v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly text, native-speaker translation review.
 
@@ -31,6 +31,7 @@ v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly 
 - `@supabase/ssr` — cookie-based session handling for magic-link auth across Server Components/middleware (M1).
 - `server-only` — guards `lib/supabase/admin.ts` (service-role client) from ever being pulled into a client bundle (M1).
 - `pg` (+ `@types/pg`, devDependency) — `scripts/db-reset.mjs` applies `supabase/migrations/*.sql` and bulk-inserts the demo seed directly over Postgres, since this environment has no Supabase CLI/Docker to run `supabase db reset` (M1). Revisit if the team standardizes on the Supabase CLI instead.
+- `@sentry/nextjs` ^11 — required by M8's "Sentry" acceptance criterion. `Sentry.init({dsn: process.env.SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN})` in `sentry.server.config.ts`/`sentry.edge.config.ts`/`instrumentation-client.ts`, wired via `instrumentation.ts`'s `register()`/`onRequestError` hooks (Next.js's built-in instrumentation API, no `next.config.ts` wrapping needed). An empty/undefined `dsn` makes the SDK a documented no-op, so the app builds and runs unchanged with zero Sentry account — confirmed via a full `npm run build` with no `SENTRY_DSN` set. Deliberately skipped `withSentryConfig`'s source-map upload wrapping (needs `SENTRY_AUTH_TOKEN`, a build-time credential this environment doesn't have and that only affects readability of stack traces on sentry.io, not whether errors are captured) — add it once there's a real Sentry project.
 
 ## Needs connecting
 
@@ -40,7 +41,7 @@ _(built behind a mock/sandbox-ready adapter; wire up the real thing when credent
 - **AI provider key** (M4) — `AI_PROVIDER` + one of `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`MOONSHOT_API_KEY`.
 - **Square sandbox app** (M5) — `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_REDIRECT_URI`.
 - **Vercel** — for the actual deploy at the end of M8.
-- **Sentry** (M8, optional for pilot) — `SENTRY_DSN`.
+- **Sentry** (M8, optional for pilot) — `SENTRY_DSN` (server/edge) and `NEXT_PUBLIC_SENTRY_DSN` (client) from a Sentry project. Code is wired and gracefully no-ops without them (verified: `npm run build` succeeds with neither set).
 
 ## Decisions made
 
@@ -78,11 +79,55 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **PDF bank statements deferred to a fast-follow.** `docs/06-integrations.md` says CSV first, then PDF; M4's acceptance criteria only requires CSV. Building PDF text extraction (`pdf-parse`) plus a vision fallback for scanned PDFs is real additional scope — not started. The statement upload screen accepts `.csv` only for now.
 - **Receipt-line ingredient mapping UI deferred.** `docs/06-integrations.md` describes mapping a receipt line to an ingredient (which writes an `ingredient_prices` row). `saveReceiptExpense` accepts an `ingredientMappings` param and is ready for it, but the review screen doesn't yet offer that mapping step — it saves the receipt and its lines without linking any to `ingredients`. Revisit once the Menu screen's recipe editor exists (same M4 gap noted in M3's decisions) so there's a natural place to do the mapping.
 - **Landlord-name keyword rule not wired.** `docs/06-integrations.md` step 5 says the landlord's name (entered in onboarding) should auto-categorize matching statement lines as rent, but `docs/04-data-model.md`'s `businesses` table has no column to store it. `matchKeywordCategory()` accepts an optional `landlordName` and works correctly without one; nothing currently passes one in. Add a `businesses.landlord_name` column (or reuse the `rent` recurring cost's `label`) once onboarding (M5) collects it.
+- **Alert-detail page crashed instead of degrading when Supabase isn't configured — found by testing M8's new error boundary, not by inspection.** `app/[locale]/more/alerts/[id]/page.tsx` (M7) queried Supabase directly instead of going through `lib/data/getAlerts.ts`'s `isSupabaseConfigured()` guard, so visiting any alert-detail URL without credentials threw and (correctly) got caught by M8's new `error.tsx` — but the underlying page broke the graceful-degradation pattern every other data-reading page follows. Fixed by adding `getAlertById()` to `lib/data/getAlerts.ts` (returns `null` when unconfigured, same shape as `getOpenAlerts()`) and having the page call `notFound()` on `null` instead of querying Supabase itself. Verified in-browser: the URL now renders the normal 404 page, not the error boundary.
+- **Screen-view analytics logs signed-in users only, and only the path.** `docs/07-build-plan.md` M8 says "basic analytics (screen views only)" with no further spec. Built a `screen_views` table (business_id, user_id, path, created_at — no query params, no referrer, no user agent) written by a client `ScreenViewLogger` (mounted once in the locale layout, fires a server action on every `usePathname()` change) via `lib/actions/analytics.ts`, which no-ops when Supabase isn't configured or nobody's signed in. Anonymous pages (`/login`, `/privacy`) are therefore not logged — acceptable since the stated goal is "which screens do signed-in owners actually use," not general traffic analytics.
+- **Sentry wired without `withSentryConfig`'s build-time source-map upload.** See the dependency note above — capturing errors doesn't require it, only pretty stack traces on sentry.io do, and that upload needs a `SENTRY_AUTH_TOKEN` this environment doesn't have. Add the `next.config.ts` wrapping once a real Sentry project + auth token exist.
 - **200%-text-zoom bugs are real bugs, found by testing, not by inspection.** Several cards (Home's 3 sales tiles, the Profit & costs teaser's 2-column legend, the cost-recovery hero number, bucket rows, the login language pills) used fixed-width flex/grid layouts with unbreakable money strings (`$8,104.32` has no space to wrap at). At 200% root font-size these overflowed the 375px viewport — a real WCAG 1.4.4 failure, not a hypothetical one. Fixed with `flex-wrap` + `min-w-0`/`break-words` on the money-bearing containers; verified overflow is gone screen-by-screen (`document.body.scrollWidth` check) after each fix, not just visually.
 
 ## Session log
 
 _(newest first)_
+
+### 2026-09-26 — M8 Pilot hardening (done)
+Built everything `docs/07-build-plan.md` M8 lists:
+- `app/[locale]/error.tsx` (translated, in-locale) and `app/global-error.tsx` (hardcoded English —
+  no locale context is guaranteed at the root) — both report to Sentry via `Sentry.captureException`
+  when a DSN is configured.
+- `components/shared/Skeleton.tsx` + `app/[locale]/loading.tsx`, `money/loading.tsx`,
+  `menu/loading.tsx` — skeleton screens matching each route's real layout, `motion-reduce` aware.
+- `lib/data/getPosConnectionStatus.ts` + `components/shared/ReconnectBanner.tsx`, shown at the top
+  of Home when the active business's register connection isn't `active`.
+- `lib/actions/deleteAccount.ts` (best-effort Square token revoke, best-effort Storage cleanup,
+  cascading business delete, then `admin.auth.admin.deleteUser`) + `components/more/
+  DeleteAccountForm.tsx` (type-the-word-"delete" confirm) + `/more/delete-account`.
+- `/privacy` — publicly accessible (no `requireUser()`), translated `Privacy` namespace covering
+  what's read, what's never touched, how it's protected, AI use, the owner's control, and account
+  deletion.
+- Screen-view analytics and Sentry — see "New dependencies" and "Decisions made" above for what was
+  built and why each degrades gracefully without credentials.
+- `More` hub gained an `Alerts` link (M7 shipped the screen but never linked it from `/more`) and a
+  second card for `Privacy`/`Delete account`.
+- All three locale files (`en.json`/`es.json`/`ar.json`) carry the full set of new strings —
+  `Errors`, `Reconnect`, `DeleteAccount`, `Privacy`, plus `More`'s new `alerts`/`privacy`/
+  `deleteAccount` keys.
+
+Verified in-browser (390px, dev server restarted after adding the new dependency + instrumentation
+files so Turbopack picked them up cleanly): `/privacy` and `/more/delete-account` render correctly
+in English, Spanish, and Arabic (RTL mirrors correctly — back-chevron direction, bottom-nav order);
+the delete-confirm button correctly stays disabled until "delete" is typed, then activates; the More
+hub shows all 7 links including the new Alerts/Privacy/Delete-account entries. **Caught and fixed a
+real bug this way** (see decisions): the alert-detail page crashed instead of degrading when
+Supabase isn't configured, which the new error boundary correctly caught but shouldn't have had to.
+`npx tsc --noEmit`, `npm run lint`, `npm run test` (50 tests), and `npm run build` all clean,
+including a build with zero `SENTRY_DSN` set to confirm the Sentry wiring doesn't require an
+account.
+
+Not built (out of M8's explicit scope): a cron/scheduled job to actually populate `screen_views`
+into a dashboard — the table and logging exist, but no reporting UI was requested or built.
+
+Next: deploy (Vercel — see README "How to demo this to a café owner" and the final Needs-connecting
+list), then v1.5 (Staff screen live, "Why today was different", weekly text, native-speaker
+translation review).
 
 ### 2026-09-26 — M7 Alerts + milestones (done)
 Wires M2's pure alert-rule predicates (`lib/calc/alerts.ts`) to real data and screens:

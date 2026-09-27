@@ -1,14 +1,13 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import BackHeader from "@/components/shared/BackHeader";
 import Money from "@/components/shared/Money";
 import PlainIcon from "@/components/icons/PlainIcon";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { markAlertStatus, setAlertStatus } from "@/lib/actions/alerts";
-import type { AlertRow } from "@/lib/data/getAlerts";
+import { getAlertById } from "@/lib/data/getAlerts";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -18,18 +17,8 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   await requireUser();
   const { id } = await params;
 
-  const supabase = await createServerSupabaseClient();
-  const { data } = await supabase.from("alerts").select("id, kind, impact_cents, payload, status, created_at").eq("id", id).maybeSingle();
-  if (!data) notFound();
-
-  const alert: AlertRow = {
-    id: data.id,
-    kind: data.kind,
-    impactCents: data.impact_cents,
-    payload: (data.payload as Record<string, unknown>) ?? {},
-    status: data.status,
-    createdAt: data.created_at,
-  };
+  const alert = await getAlertById(id);
+  if (!alert) notFound();
 
   const t = await getTranslations("Alerts");
   const tCommon = await getTranslations("Common");

@@ -1,4 +1,4 @@
-import { ChevronRight, CreditCard, FileText, Receipt, TrendingUp } from "lucide-react";
+import { AlertTriangle, ChevronRight, CreditCard, FileText, Receipt, Shield, Trash2, TrendingUp } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -34,7 +34,13 @@ export default async function MorePage() {
     { href: "/more/bills", Icon: Receipt, label: t("monthlyBills") },
     { href: "/more/uploads", Icon: FileText, label: t("uploads") },
     { href: "/more/break-even", Icon: TrendingUp, label: t("breakEven") },
+    { href: "/more/alerts", Icon: AlertTriangle, label: t("alerts") },
     { href: "/onboarding", Icon: CreditCard, label: t("connectRegister") },
+  ];
+
+  const accountLinks = [
+    { href: "/privacy", Icon: Shield, label: t("privacy") },
+    { href: "/more/delete-account", Icon: Trash2, label: t("deleteAccount"), warn: true },
   ];
 
   return (
@@ -56,6 +62,20 @@ export default async function MorePage() {
             <Icon aria-hidden="true" size={20} className="text-ink-muted" />
             <span className="flex-1 text-base font-semibold">{label}</span>
             <ChevronRight aria-hidden="true" size={18} className="text-ink-muted rtl:rotate-180" />
+          </Link>
+        ))}
+      </div>
+
+      <div className="flex flex-col rounded-card-lg bg-card px-2">
+        {accountLinks.map(({ href, Icon, label, warn }) => (
+          <Link
+            key={href}
+            href={href}
+            className={`flex items-center gap-3 border-b border-[#EFE7DB] px-2.5 py-4 no-underline last:border-b-0 ${warn ? "text-warn" : "text-ink"}`}
+          >
+            <Icon aria-hidden="true" size={20} className={warn ? "text-warn" : "text-ink-muted"} />
+            <span className="flex-1 text-base font-semibold">{label}</span>
+            <ChevronRight aria-hidden="true" size={18} className={`rtl:rotate-180 ${warn ? "text-warn" : "text-ink-muted"}`} />
           </Link>
         ))}
       </div>

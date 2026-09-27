@@ -13,6 +13,7 @@
     "db:reset": "node scripts/db-reset.mjs"
   },
   "dependencies": {
+    "@sentry/nextjs": "^11.0.0",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
     "date-fns": "^4.4.0",
