@@ -113,9 +113,9 @@ export default async function CostRecoveryView({ snapshot }: { snapshot: Busines
     <div className="flex flex-col gap-3.5">
       <section className="flex flex-wrap items-center gap-4 rounded-card-lg bg-card p-5">
         {heroIcon && <FillIcon code={heroIcon.code as ExpenseIconCode} pctCovered={overallPctCovered} size={104} covered={vm.allCovered} />}
-        <div className="flex min-w-[180px] flex-1 flex-col gap-1.5">
+        <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
           <span className="text-[15px] font-semibold text-ink-muted">{vm.allCovered ? t("sinceCovered") : t("thisMonthsBills")}</span>
-          <span className="break-words font-headline text-[40px] font-bold leading-none">
+          <span className="whitespace-nowrap font-headline text-[40px] font-bold leading-none">
             <Money cents={totalPaidBackCents} />
           </span>
           <span className="text-[15px] font-semibold">{t("paidBackOf", { amount: formatCents(vm.totalCents) })}</span>
