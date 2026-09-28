@@ -244,19 +244,16 @@ async function getMenuItemSnapshots(
 
   const itemIds = items.map((i) => i.id);
 
-  const [{ data: recipeLines, error: recipeError }, { data: orderLines, error: linesError }] = await Promise.all([
+  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }] = await Promise.all([
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
-    supabase
-      .from("order_lines")
-      .select("menu_item_id, quantity, voided, orders!inner(business_id, business_date)")
-      .in("menu_item_id", itemIds)
-      .eq("voided", false)
-      .eq("orders.business_id", businessId)
-      .gte("orders.business_date", last28DateStrs[0] ?? todayDateStr)
-      .lte("orders.business_date", todayDateStr),
+    supabase.rpc("menu_item_quantities_sold", {
+      p_business_id: businessId,
+      p_from: last28DateStrs[0] ?? todayDateStr,
+      p_to: todayDateStr,
+    }),
   ]);
+  if (quantityError) throw quantityError;
   if (recipeError) throw recipeError;
-  if (linesError) throw linesError;
 
   const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
   const { data: priceRows, error: priceError } =
@@ -276,8 +273,8 @@ async function getMenuItemSnapshots(
   }
 
   const quantityByItem: Record<string, number> = {};
-  for (const line of orderLines ?? []) {
-    quantityByItem[line.menu_item_id ?? ""] = (quantityByItem[line.menu_item_id ?? ""] ?? 0) + Number(line.quantity);
+  for (const row of quantitySoldRows ?? []) {
+    quantityByItem[row.menu_item_id] = Number(row.total_quantity);
   }
 
   return items.map((item) => {

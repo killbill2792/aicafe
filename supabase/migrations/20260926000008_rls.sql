@@ -18,8 +18,13 @@ $$;
 do $$
 declare
   t text;
+  -- 'businesses' is deliberately not here — it has no business_id column (its own `id` *is* the
+  -- business id), so it gets its own predicate right below. Including it in this loop makes the
+  -- generic `is_member(business_id)` policy fail to even create (column doesn't exist) before
+  -- ever reaching that override — caught the first time this migration ran against a real
+  -- Postgres instance, not by inspection.
   direct_tables text[] := array[
-    'businesses', 'locations', 'pos_connections', 'menu_items', 'ingredients',
+    'locations', 'pos_connections', 'menu_items', 'ingredients',
     'modifier_recipes', 'orders', 'employees', 'timecards', 'recurring_costs',
     'expenses', 'vendor_rules', 'uploads', 'recovery_order', 'daily_rollups', 'alerts'
   ];
