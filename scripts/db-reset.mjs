@@ -71,6 +71,11 @@ async function applyMigrations(client) {
     await client.query(sql);
     console.log(`  ✓ ${file}`);
   }
+  // Applying SQL directly over `pg` (no Supabase CLI in this environment) skips the automatic
+  // schema-cache reload the CLI would trigger — without this, a migration that adds a new table,
+  // column, or RPC function 404s from PostgREST for a while even though it already exists in
+  // Postgres. Found the hard way after 20260928000013 added an RPC function.
+  await client.query("NOTIFY pgrst, 'reload schema'");
 }
 
 async function reseedDemoBusiness(client) {

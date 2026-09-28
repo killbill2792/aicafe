@@ -38,9 +38,10 @@ API, QuickBooks, manual expense tracking):
   accurate numbers" check (no bills entered / no staff added / no ingredient costs uploaded /
   register not connected) shown during onboarding and probably on Home, extending the existing
   `missingCostBanner`/alerts pattern to cover these new manual-data-entry paths.
-- [ ] **Real Supabase project connected** — URL + anon key are in; **service role key and DB
-  connection string are still needed** to actually run the schema (including this stretch's new
-  migration) and go live with real auth + data. See "Needs connecting".
+- [x] **Real Supabase project connected** — all 4 credentials in, `npm run db:reset` applied
+  successfully (first time ever against a live Postgres instance), demo café reseeded with real
+  data. Found and fixed 4 real, previously-invisible bugs doing this — see "Decisions made". Every
+  screen re-verified against the live database (not just fixture mode) after fixing them.
 
 ## New dependencies (one-line reason each)
 
@@ -65,7 +66,7 @@ API, QuickBooks, manual expense tracking):
 
 _(built behind a mock/sandbox-ready adapter; wire up the real thing when credentials exist — see the credentials list from the start of this session)_
 
-- **Supabase project — PARTIALLY connected.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are in `.env.local` (the first pilot café's own project). **Still needed: `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL`** (Settings → API → `service_role`; Settings → Database → Connection string → URI) — without them `npm run db:reset` can't apply any migration (including `20260928000012_client_rollout.sql`, not yet run anywhere) and admin-client code paths (`ensureOwnBusiness`, `deleteAccount`) can't work. **Important:** with only the URL + anon key set, `isSupabaseConfigured()` is already true, so the app now requires real sign-in instead of showing the fixture demo — confirmed locally; the public Vercel demo link has **not** been redeployed with these credentials, so it's unaffected and still fixture-only. Once the remaining two values land: run `db:reset`, then load every screen as the real signed-in owner and fix anything that surfaces. Likely trouble spots: the `order_lines` → `orders` foreign-table filter syntax in `getMenuItemSnapshots`, RLS on the `recovery_order` write, and the brand-new `employees`/`csv_import_mappings` column/constraint changes in the latest migration.
+- **Supabase project — fully connected and verified.** All 4 values (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`) are in `.env.local` — the pilot café's own project. `npm run db:reset` has successfully applied every migration and reseeded the demo café. Every screen verified end-to-end against the live database (real sign-in via a service-role-generated session, not fixture mode) — Home, Money (including the recovery-order reorder write), Menu, Break-even, Staff, Manage staff, Try a scenario, and the ingredient importer. Four real bugs were found and fixed doing this — see "Decisions made" for what and why; nothing is theoretical/unverified in this list anymore. **`TOKEN_ENCRYPTION_KEY` was also generated and added** (needed before Square can ever be connected, per M5). **The DB connection string uses the session *pooler* host, not the direct `db.*.supabase.co` host** — the direct host is IPv6-only on this project and didn't resolve from this environment; the pooler (`aws-0-<region>.pooler.supabase.com:5432`) works over IPv4. If `db:reset` is ever run from an IPv6-capable environment instead, either host works. **The public Vercel demo link has not yet been redeployed with real credentials** — it still shows fixture-only demo data; redeploy once ready to switch the public link over (this also means real sign-in, not the frictionless fixture browsing it has today — decide deliberately before doing this).
 - **AI provider key** (M4) — `AI_PROVIDER` + one of `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`MOONSHOT_API_KEY`.
 - **Square sandbox app** (M5) — `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_REDIRECT_URI`.
 - **Vercel** — for the actual deploy at the end of M8.
@@ -117,10 +118,54 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Manual staff roster + manual hours, built for the case where the register doesn't export labor.** The pilot owner's Toast plan is unpaid and it wasn't confirmed whether it exports timecard data at all (her call, given the uncertainty: "build for the safer assumption"). Added `employees.default_hourly_wage_cents` / `.active` and a real add-employee + log-a-shift UI (`/more/manage-staff`) that writes ordinary `timecards` rows — indistinguishable downstream from a POS sync or CSV import, so the Staff screen, Menu's staff-time-per-drink, and Home all just work. If her Toast tier turns out to export labor too, the existing labor-CSV importer (already Excel-capable) covers that path with zero extra work.
 - **Ingredient-cost importer does not convert units.** No real export sample from the pilot owner's inventory site (`franchiseinventorymanagement.com`, no API) was available to build against, so `parseIngredientCostsCsv` assumes "cost per unit" already means cost per the ingredient's existing base unit (g/ml/each) — no lb→g, gal→ml, etc. conversion. A brand-new ingredient's base unit is chosen explicitly in the review step (a simple keyword-based guess — "milk"/"cream" → ml, "cup"/"lid" → each — that the owner can override) rather than assumed silently. Revisit once a real export file is available to confirm the actual unit vocabulary and whether conversion is needed.
 - **"Try a scenario" works at menu-item granularity, not single-ingredient.** The owner asked, as an example, "what if I gave oat milk away free for a few days" — but `MenuItemSnapshot` only carries one blended `ingredientsCentsToday` total per drink, not itemized recipe-line costs per ingredient (recipe lines exist in the schema but aren't exposed to the snapshot/viewmodel layer for arbitrary what-ifs). Built `lib/calc/scenario.ts` + `/more/try-scenario` to test "what if this whole drink's ingredients cost $X for N days" instead — same spirit, coarser precision. Isolating a single ingredient across every drink that uses it is a real, larger data-layer addition (recipe-line costs would need to flow into `BusinessSnapshot`) — flagged as a fast follow, not built.
+- **Four real, previously-invisible bugs, found only once the schema ran against an actual database.** Every one of these passed `npm run build`/`lint`/`test` cleanly and looked fine against fixture data — none were catchable without real Postgres and real volume:
+  1. `20260926000008_rls.sql`'s generic per-table RLS loop included `businesses` itself, trying `is_member(business_id)` — but `businesses` has no such column (its own `id` *is* the business id; a correct override policy already existed a few lines below, but the loop errored before ever reaching it). `db:reset` failed on its very first real run. Fixed in place, not as a follow-up migration — this file had never successfully applied anywhere before this session, so there's no prior deployment's history to preserve by leaving it broken and layering a fix on top.
+  2. The Menu screen's `getMenuItemSnapshots()` summed `order_lines.quantity` per item by fetching every matching row. PostgREST silently caps a plain `select` at 1000 rows with **no error and no truncation signal** — the pilot café's 28-day seed has 12k+ matching rows, so quantity sold was badly undercounted for every item, which inflated the staff-time-per-drink math by roughly 10x (every item showed a large *negative* "kept per cup" instead of a healthy positive one). First fix attempt (paginate with `.range()` in a loop) was logically correct but too slow against the joined query at this volume — timed out after ~50s. Real fix: `menu_item_quantities_sold()`, a small SQL function (`20260928000013`) that sums server-side in one indexed `GROUP BY` instead of transferring thousands of rows. **Any other query in this codebase that can plausibly return more than 1000 rows has this same silent-truncation risk** — `order_lines` was the only one proven to hit it so far, but it wasn't specifically audited elsewhere; worth a deliberate pass before the pilot café's data volume grows further.
+  3. & 4. `order_lines.menu_item_id → menu_items` and five other "soft" foreign keys between business-scoped tables (`modifier_recipes → ingredients` ×2, `orders → locations`, `timecards → employees`, `expenses → recurring_costs`, `expense_lines → ingredients`) had no `ON DELETE` rule in the original `docs/04-data-model.md` schema — defaults to `NO ACTION`. Deleting a business cascades to *both* sides of each pair independently (e.g. both `menu_items` and, via `orders`, `order_lines`), and Postgres doesn't guarantee one finishes before the other, so `db:reset`'s reseed (delete-then-reinsert the demo business) failed on each of these in turn until all six were changed to `ON DELETE CASCADE` (`20260928000014`, `20260928000015`) — safe because none of these are ever hard-deleted outside a whole-business delete (account deletion, or this reseed) in normal app operation.
+  Also needed, operationally rather than in SQL: `scripts/db-reset.mjs` now sends `NOTIFY pgrst, 'reload schema'` after applying migrations — applying raw SQL via `pg` (no Supabase CLI available in this environment) doesn't trigger PostgREST's automatic schema-cache reload, so a brand-new RPC function 404'd from the API for a few minutes even though it existed in Postgres. Would have bitten every future migration that adds a function/table without this.
 
 ## Session log
 
 _(newest first)_
+
+### 2026-09-28 — First real Supabase connection: db:reset succeeded, 4 real bugs found and fixed (done)
+Continuation of the same day's session — the client sent the remaining two Supabase credentials
+(service role key, DB connection string). The direct-connection DB host
+(`db.<ref>.supabase.co`) didn't resolve from this environment (IPv6-only on this project,
+environment is IPv4-only) — used the session pooler host instead
+(`aws-0-us-east-1.pooler.supabase.com:5432`), which works over IPv4. `TOKEN_ENCRYPTION_KEY` was
+also generated (`openssl rand -base64 32`) since it's needed before Square can ever connect (M5).
+
+`npm run db:reset` then ran for the first time ever against a real Postgres instance — and found 4
+real bugs immediately (see "Decisions made" for the full detail on each): a broken RLS migration
+that failed instantly, a Menu-screen query that silently lost 92% of its data to PostgREST's
+1000-row response cap and produced wildly wrong per-drink numbers, and six missing `ON DELETE
+CASCADE` rules that broke the reseed script's business-delete step. Each was found by actually
+running the thing, not by inspection — every one had already passed `build`/`lint`/`test` and
+looked correct against fixture data.
+
+After all four fixes, did a full real-login pass through every screen — Home, Money (including
+actually exercising the recovery-order reorder write, not just reading), Menu, Break-even, Staff,
+Manage staff, Try a scenario, and the ingredient importer — confirming each renders correctly and,
+for the write paths, actually persists against live RLS. Browser click automation was unreliable in
+this environment (window-occlusion timeouts), so write-path verification mostly used direct
+RLS-scoped API calls with a real user session (obtained via the admin `generate_link` API +
+`verify` endpoint, then `setSession()` in the browser to get a real signed-in session without
+needing actual email delivery) rather than clicking through the UI — a real session established
+end-to-end this way, not a shortcut around auth.
+
+`npx tsc --noEmit`, `npm run lint`, `npm run test` (55 tests), and `npm run build` all clean after
+every fix.
+
+**Not done:** redeploying the public Vercel demo link with real credentials (still fixture-only —
+deliberately, since switching it over means visitors need to actually sign in instead of getting
+frictionless fixture browsing; worth deciding deliberately, not as a side effect of another push),
+the data-completeness indicator, and unit conversion in the ingredient importer.
+
+Next: build the data-completeness indicator, decide when/whether to redeploy the public demo with
+real credentials, and — once the pilot owner actually starts entering her own bills/staff/costs —
+watch for any further "only shows up at real volume/real data shape" issues the same way these four
+did.
 
 ### 2026-09-28 — First real pilot café: deploy + Staff + scenario tool + rollout features (done)
 A live client session — deployed the demo publicly, then built out what the first real café owner
