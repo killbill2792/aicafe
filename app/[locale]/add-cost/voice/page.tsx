@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import VoiceRecorder from "@/components/addcost/VoiceRecorder";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
@@ -8,7 +8,7 @@ import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 export const dynamic = "force-dynamic";
 
 export default async function VoiceEntryPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("AddCost");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");

@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import type { Period } from "@/lib/viewmodels/period";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -21,7 +21,7 @@ export default async function MoneyPage({
 }: {
   searchParams: Promise<{ period?: string; view?: string }>;
 }) {
-  await requireUser();
+  await requireOwnBusiness();
   const { period: periodParam, view: viewParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "month";
   const view = viewParam === "profit" ? "profit" : "recovery";

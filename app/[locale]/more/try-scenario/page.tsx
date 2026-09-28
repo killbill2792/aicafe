@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildScenarioViewModel } from "@/lib/viewmodels/scenarioViewModel";
 import BackHeader from "@/components/shared/BackHeader";
@@ -9,7 +9,7 @@ import TryScenario from "@/components/scenario/TryScenario";
 export const dynamic = "force-dynamic";
 
 export default async function TryScenarioPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("Scenario");
   const tCommon = await getTranslations("Common");
 

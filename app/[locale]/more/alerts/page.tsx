@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getOpenAlerts } from "@/lib/data/getAlerts";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import BackHeader from "@/components/shared/BackHeader";
@@ -11,7 +11,7 @@ import { formatCents } from "@/lib/calc";
 export const dynamic = "force-dynamic";
 
 export default async function AlertsPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const alerts = await getOpenAlerts();
   const t = await getTranslations("Alerts");
   const tCommon = await getTranslations("Common");

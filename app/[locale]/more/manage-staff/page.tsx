@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getEmployees } from "@/lib/data/getEmployees";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
@@ -9,7 +9,7 @@ import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
 export const dynamic = "force-dynamic";
 
 export default async function ManageStaffPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("ManageStaff");
   const tCommon = await getTranslations("Common");
 

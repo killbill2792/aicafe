@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import BackHeader from "@/components/shared/BackHeader";
 import Money from "@/components/shared/Money";
@@ -14,7 +14,7 @@ import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 export const dynamic = "force-dynamic";
 
 export default async function AlertDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser();
+  await requireOwnBusiness();
   const { id } = await params;
 
   const alert = await getAlertById(id);

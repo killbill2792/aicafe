@@ -1,6 +1,6 @@
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
@@ -31,7 +31,7 @@ function isPeriod(value: string | undefined): value is Period {
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
-  await requireUser();
+  await requireOwnBusiness();
   const { period: periodParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
@@ -148,7 +148,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <BreakEvenTeaserCard
         step={4}
         title={t("breakEvenSection")}
-        neededLabel={t("needDrinks", { count: vm.drinksNeeded })}
+        neededLabel={t("needDrinks", { count: Number.isFinite(vm.drinksNeeded) ? vm.drinksNeeded : "—" })}
         averageLabel={t("youAverage", { count: vm.avgDrinksPerDay })}
         progressPct={(vm.avgDrinksPerDay / Math.max(1, vm.drinksNeeded)) * 100}
       />

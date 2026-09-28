@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSavedMapping } from "@/lib/actions/csvImport";
 import { getIngredientNames } from "@/lib/data/getIngredientNames";
 import { getSnapshot } from "@/lib/data/getSnapshot";
@@ -11,7 +11,7 @@ import type { IngredientCostColumnMapping } from "@/lib/pos/csv/parseIngredientC
 export const dynamic = "force-dynamic";
 
 export default async function IngredientCostsPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("CsvImport");
   const tCommon = await getTranslations("Common");
 

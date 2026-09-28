@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
 import BackHeader from "@/components/shared/BackHeader";
 import BillsManager from "@/components/bills/BillsManager";
@@ -9,7 +9,7 @@ import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
 export const dynamic = "force-dynamic";
 
 export default async function BillsPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const bills = await getRecurringCosts();
   const t = await getTranslations("Bills");
   const tCommon = await getTranslations("Common");

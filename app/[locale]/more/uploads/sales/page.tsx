@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSavedMapping } from "@/lib/actions/csvImport";
 import BackHeader from "@/components/shared/BackHeader";
 import SalesCsvImporter from "@/components/uploads/SalesCsvImporter";
@@ -9,7 +9,7 @@ import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
 export const dynamic = "force-dynamic";
 
 export default async function SalesCsvPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("CsvImport");
   const tCommon = await getTranslations("Common");
   const initialMapping = (await getSavedMapping("sales")) as SalesColumnMapping | null;

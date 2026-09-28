@@ -1,6 +1,6 @@
 import { Coins, TrendingUp, Users, Milk } from "lucide-react";
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildBreakEvenViewModel } from "@/lib/viewmodels/breakEvenViewModel";
 import BackHeader from "@/components/shared/BackHeader";
@@ -17,7 +17,7 @@ const WHATIF_ICONS: Record<string, { Icon: typeof TrendingUp; bg: string; fg: st
 };
 
 export default async function BreakEvenPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const snapshot = await getSnapshot();
   const vm = buildBreakEvenViewModel(snapshot);
   const t = await getTranslations("BreakEven");
@@ -60,7 +60,8 @@ export default async function BreakEvenPage() {
           </span>
         </div>
         <div className="rounded-[10px] bg-[#FAF6F0] px-3 py-2.5 text-sm text-ink-muted">
-          {formatCents(vm.dailyCostsToCoverCents)} ÷ {formatCents(vm.avgMoneyLeftPerDrinkCents)} = {t("drinksCount", { count: vm.drinksNeededPerDay })}
+          {formatCents(vm.dailyCostsToCoverCents)} ÷ {formatCents(vm.avgMoneyLeftPerDrinkCents)} ={" "}
+          {Number.isFinite(vm.drinksNeededPerDay) ? t("drinksCount", { count: vm.drinksNeededPerDay }) : "—"}
         </div>
       </section>
 

@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSavedMapping } from "@/lib/actions/csvImport";
 import BackHeader from "@/components/shared/BackHeader";
 import LaborCsvImporter from "@/components/uploads/LaborCsvImporter";
@@ -9,7 +9,7 @@ import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
 export const dynamic = "force-dynamic";
 
 export default async function LaborCsvPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("CsvImport");
   const tCommon = await getTranslations("Common");
   const initialMapping = (await getSavedMapping("labor")) as LaborColumnMapping | null;

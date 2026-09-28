@@ -1,6 +1,6 @@
 import { ChevronRight, FileSpreadsheet, Package, Receipt, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import { Link } from "@/i18n/navigation";
 
@@ -8,7 +8,7 @@ import { Link } from "@/i18n/navigation";
 export const dynamic = "force-dynamic";
 
 export default async function UploadsPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("Uploads");
   const tCommon = await getTranslations("Common");
 

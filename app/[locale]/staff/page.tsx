@@ -1,6 +1,6 @@
 import { formatInTimeZone } from "date-fns-tz";
 import { getLocale, getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildStaffViewModel } from "@/lib/viewmodels/staffViewModel";
 import { formatCents } from "@/lib/calc";
@@ -12,7 +12,7 @@ import StaffCostBars, { shortWeekday } from "@/components/staff/StaffCostBars";
 export const dynamic = "force-dynamic";
 
 export default async function StaffPage() {
-  await requireUser();
+  await requireOwnBusiness();
   const t = await getTranslations("Staff");
   const locale = await getLocale();
 

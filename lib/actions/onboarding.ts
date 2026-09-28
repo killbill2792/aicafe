@@ -1,11 +1,9 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
-import { ACTIVE_BUSINESS_COOKIE } from "@/lib/data/getActiveBusinessId";
 import { DEFAULT_RECOVERY_ORDER } from "@/lib/constants";
 
 /**
@@ -13,6 +11,14 @@ import { DEFAULT_RECOVERY_ORDER } from "@/lib/constants";
  * yet. Uses the admin (service-role) client deliberately: RLS's `is_member()` check can't pass
  * for an INSERT into `businesses` before any membership row exists — this is the one place that
  * chicken-and-egg needs bypassing (see docs/04-data-model.md's RLS pattern).
+ *
+ * Deliberately never touches the active-business cookie: this is called directly from
+ * `onboarding/page.tsx`'s render body (not from a submitted form), and Next.js throws if a
+ * Server Component render path tries to set a cookie — only an actual Server Action invocation
+ * or Route Handler may. It doesn't need to: `getActiveBusinessId()` already prefers a user's own
+ * (non-demo) business over the demo one whenever no cookie is set, so a fresh business created
+ * here becomes the active one automatically. The explicit switcher (`setActiveBusinessCookie`)
+ * is a real form-invoked Server Action and is unaffected by this.
  */
 export async function ensureOwnBusiness(): Promise<{ businessId: string } | { error: string }> {
   if (!isSupabaseConfigured()) return { error: "Connect Supabase first (see PROGRESS.md)." };
@@ -30,7 +36,6 @@ export async function ensureOwnBusiness(): Promise<{ businessId: string } | { er
     return isDemo === false;
   });
   if (own) {
-    await setActiveBusiness(own.business_id);
     return { businessId: own.business_id };
   }
 
@@ -49,13 +54,7 @@ export async function ensureOwnBusiness(): Promise<{ businessId: string } | { er
 
   await admin.from("recovery_order").insert(DEFAULT_RECOVERY_ORDER.map((code, i) => ({ business_id: business.id, bucket_code: code, position: i })));
 
-  await setActiveBusiness(business.id);
   return { businessId: business.id };
-}
-
-async function setActiveBusiness(businessId: string) {
-  const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_BUSINESS_COOKIE, businessId, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 60 * 60 * 24 * 365, path: "/" });
 }
 
 export async function setPayrollTaxRate(ratePercent: number): Promise<{ ok: boolean; error?: string }> {

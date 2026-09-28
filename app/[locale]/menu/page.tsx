@@ -1,5 +1,5 @@
 import { getTranslations } from "next-intl/server";
-import { requireUser } from "@/lib/auth/requireUser";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildMenuViewModel } from "@/lib/viewmodels/menuViewModel";
 import Money from "@/components/shared/Money";
@@ -12,7 +12,7 @@ import { formatCents } from "@/lib/calc";
 export const dynamic = "force-dynamic";
 
 export default async function MenuPage({ searchParams }: { searchParams: Promise<{ sort?: string }> }) {
-  await requireUser();
+  await requireOwnBusiness();
   const { sort: sortParam } = await searchParams;
   const sort = sortParam === "total" ? "total" : "perCup";
 
