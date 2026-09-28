@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "@/i18n/navigation";
 import { reviewStatementCsv } from "@/lib/actions/statementReview";
 import { saveCategorizedLines, type ReviewLine } from "@/lib/actions/expenses";
+import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import { formatCents } from "@/lib/calc";
 
@@ -36,15 +37,11 @@ export default function StatementUploader({
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   function handleFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      startTransition(async () => {
-        const result = await reviewStatementCsv(text);
-        setState(result);
-      });
-    };
-    reader.readAsText(file);
+    startTransition(async () => {
+      const text = await readUploadedFileAsCsvText(file);
+      const result = await reviewStatementCsv(text);
+      setState(result);
+    });
   }
 
   function updateCategory(i: number, category: ExpenseCategoryCode | "exclude") {
@@ -73,7 +70,7 @@ export default function StatementUploader({
         <span className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper">{labels.chooseFile}</span>
         <input
           type="file"
-          accept=".csv,text/csv"
+          accept={UPLOAD_FILE_ACCEPT}
           className="sr-only"
           onChange={(e) => {
             const file = e.target.files?.[0];

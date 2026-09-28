@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseLaborCsv, type LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
+import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { saveMapping, importLaborRows } from "@/lib/actions/csvImport";
 
 const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
@@ -37,17 +38,14 @@ export default function LaborCsvImporter({
   const [count, setCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  function handleFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const { headers: h, rows: r } = detectCsvColumns(String(reader.result ?? ""));
-      setHeaders(h);
-      setRows(r);
-      if (initialMapping && Object.values(initialMapping).every((v) => !v || h.includes(v))) {
-        setMapping(initialMapping);
-      }
-    };
-    reader.readAsText(file);
+  async function handleFile(file: File) {
+    const text = await readUploadedFileAsCsvText(file);
+    const { headers: h, rows: r } = detectCsvColumns(text);
+    setHeaders(h);
+    setRows(r);
+    if (initialMapping && Object.values(initialMapping).every((v) => !v || h.includes(v))) {
+      setMapping(initialMapping);
+    }
   }
 
   const complete = FIELDS.filter((f) => f.required).every((f) => mapping[f.key]);
@@ -73,7 +71,15 @@ export default function LaborCsvImporter({
       <label className="flex flex-col items-center gap-3 rounded-card-lg border-2 border-dashed border-line bg-card p-8 text-center">
         <span className="text-base font-semibold text-ink">{labels.uploadPrompt}</span>
         <span className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper">{labels.chooseFile}</span>
-        <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+        <input
+          type="file"
+          accept={UPLOAD_FILE_ACCEPT}
+          className="sr-only"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void handleFile(file);
+          }}
+        />
       </label>
     );
   }

@@ -10,8 +10,10 @@ import type { NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
 import type { NormalizedLaborRow } from "@/lib/pos/csv/parseLaborCsv";
 import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
 import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
+import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
 
-type Kind = "sales" | "labor";
+type Kind = "sales" | "labor" | "ingredients";
+type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping;
 
 async function context() {
   if (!isSupabaseConfigured()) return null;
@@ -24,14 +26,14 @@ async function context() {
   return { supabase, businessId };
 }
 
-export async function getSavedMapping(kind: Kind): Promise<SalesColumnMapping | LaborColumnMapping | null> {
+export async function getSavedMapping(kind: Kind): Promise<AnyMapping | null> {
   const ctx = await context();
   if (!ctx) return null;
   const { data } = await ctx.supabase.from("csv_import_mappings").select("column_mapping").eq("business_id", ctx.businessId).eq("kind", kind).maybeSingle();
-  return (data?.column_mapping as SalesColumnMapping | LaborColumnMapping) ?? null;
+  return (data?.column_mapping as AnyMapping) ?? null;
 }
 
-export async function saveMapping(kind: Kind, mapping: SalesColumnMapping | LaborColumnMapping, sourceLabel?: string): Promise<{ ok: boolean; error?: string }> {
+export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?: string): Promise<{ ok: boolean; error?: string }> {
   const ctx = await context();
   if (!ctx) return { ok: false, error: "Sign in first." };
   const { error } = await ctx.supabase
@@ -141,5 +143,48 @@ export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok:
 
   revalidatePath("/");
   revalidatePath("/money");
+  return { ok: true, imported };
+}
+
+export type IngredientCostImportRow = NormalizedIngredientCostRow & { baseUnitForNew: "g" | "ml" | "each" };
+
+/** Matches each row to an existing ingredient by case-insensitive name; creates a new one (with
+ * the owner-chosen base unit from the review step) when there's no match. Always inserts a new
+ * `ingredient_prices` row rather than updating in place — that's the price-history table
+ * "milk up 70¢" reads from, so today's Menu screen keeps showing yesterday's cost until this
+ * row's `effective_from` date. Source is "invoice", the closest fit for a priced inventory
+ * report among the fixed source values. */
+export async function importIngredientCostRows(rows: IngredientCostImportRow[]): Promise<{ ok: boolean; imported: number; error?: string }> {
+  const ctx = await context();
+  if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
+  const { supabase, businessId } = ctx;
+
+  const { data: existing } = await supabase.from("ingredients").select("id, name").eq("business_id", businessId);
+  const idByLowerName = new Map((existing ?? []).map((i) => [i.name.toLowerCase(), i.id]));
+
+  let imported = 0;
+  for (const row of rows) {
+    let ingredientId = idByLowerName.get(row.name.toLowerCase());
+    if (!ingredientId) {
+      const { data: created, error: createError } = await supabase
+        .from("ingredients")
+        .insert({ business_id: businessId, name: row.name, base_unit: row.baseUnitForNew })
+        .select("id")
+        .single();
+      if (createError || !created) continue;
+      ingredientId = created.id;
+      idByLowerName.set(row.name.toLowerCase(), ingredientId);
+    }
+
+    const { error } = await supabase.from("ingredient_prices").insert({
+      ingredient_id: ingredientId,
+      effective_from: row.effectiveFrom,
+      cost_per_base_unit_micros: row.costPerUnitCents * 10_000, // cents -> micro-cents
+      source: "invoice",
+    });
+    if (!error) imported += 1;
+  }
+
+  revalidatePath("/menu");
   return { ok: true, imported };
 }

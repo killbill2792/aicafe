@@ -36,7 +36,7 @@ export default function TryScenario({ items, avgDailyContributionCents }: { item
         <select
           value={item.id}
           onChange={(e) => setItemId(e.target.value)}
-          className="h-12 rounded-xl border border-line bg-card px-3 text-base"
+          className="h-12 w-full min-w-0 rounded-xl border border-line bg-card px-3 text-base"
         >
           {items.map((i) => (
             <option key={i.id} value={i.id}>
