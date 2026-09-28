@@ -17,6 +17,33 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly text, native-speaker translation review.
 
+## First real pilot café (post-M8)
+
+Not a numbered milestone — built live for the first actual café owner onboarding, ahead of the
+v1.5 backlog above, per her specific workflow (Toast on an unpaid tier, an inventory site with no
+API, QuickBooks, manual expense tracking):
+
+- [x] **Staff screen** (was v1.5 #10, pulled forward) — live cost per minute/hour/today, on-shift
+  roster with real meal-break-due flags, 7-day staff-cost-per-$1-of-sales trend.
+- [x] **Try a scenario** (`/more/try-scenario`) — "what if I gave a drink's ingredients away free
+  for N days" simulator, per-drink granularity (see decisions).
+- [x] **Manage staff** (`/more/manage-staff`) — manual employee roster + manual daily-hours
+  logging, for register plans that don't export labor data.
+- [x] **Custom expense labels** — free-text label under the "Other" category (see decisions).
+- [x] **Excel (.xlsx) upload support** — sales, labor, and bank-statement/QuickBooks importers all
+  now accept Excel alongside CSV.
+- [x] **Ingredient-cost importer** (`/more/uploads/ingredients`) — generic mapper for inventory
+  sites with no API, matches by ingredient name, prompts for a base unit on new ingredients.
+- [ ] **Data-completeness indicator** — not yet built. Needs: a clear "here's what's missing for
+  accurate numbers" check (no bills entered / no staff added / no ingredient costs uploaded /
+  register not connected) shown during onboarding and probably on Home, extending the existing
+  `missingCostBanner`/alerts pattern to cover these new manual-data-entry paths.
+- [ ] **Real Supabase project connected** — URL + anon key are in; **service role key and DB
+  connection string are still needed** to actually run the schema (including this stretch's new
+  migration) and go live with real auth + data. See "Needs connecting".
+
+## New dependencies (one-line reason each)
+
 ## New dependencies (one-line reason each)
 
 - `next` 16.3.6, `react`/`react-dom` 19.2.8 — current stable; note Next 16 renamed the `middleware.ts` convention to `proxy.ts` (used here) and made Turbopack the default for dev/build.
@@ -32,12 +59,13 @@ v1.5 (after pilot starts): Staff screen live, "Why today was different", weekly 
 - `server-only` — guards `lib/supabase/admin.ts` (service-role client) from ever being pulled into a client bundle (M1).
 - `pg` (+ `@types/pg`, devDependency) — `scripts/db-reset.mjs` applies `supabase/migrations/*.sql` and bulk-inserts the demo seed directly over Postgres, since this environment has no Supabase CLI/Docker to run `supabase db reset` (M1). Revisit if the team standardizes on the Supabase CLI instead.
 - `@sentry/nextjs` ^11 — required by M8's "Sentry" acceptance criterion. `Sentry.init({dsn: process.env.SENTRY_DSN / NEXT_PUBLIC_SENTRY_DSN})` in `sentry.server.config.ts`/`sentry.edge.config.ts`/`instrumentation-client.ts`, wired via `instrumentation.ts`'s `register()`/`onRequestError` hooks (Next.js's built-in instrumentation API, no `next.config.ts` wrapping needed). An empty/undefined `dsn` makes the SDK a documented no-op, so the app builds and runs unchanged with zero Sentry account — confirmed via a full `npm run build` with no `SENTRY_DSN` set. Deliberately skipped `withSentryConfig`'s source-map upload wrapping (needs `SENTRY_AUTH_TOKEN`, a build-time credential this environment doesn't have and that only affects readability of stack traces on sentry.io, not whether errors are captured) — add it once there's a real Sentry project.
+- `xlsx` (SheetJS), pinned to `https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz` — **not** installed from the npm registry: that package (`xlsx@0.18.5`, npm's latest) has an unpatched high-severity prototype-pollution + ReDoS advisory (GHSA-4r6h-8v6p-xvw6, GHSA-5pgg-2g8v-p4x9); SheetJS stopped publishing fixed builds to npm and now ships them only from their own CDN, which is their documented install method. Confirmed `npm audit` reports 0 vulnerabilities with this source. Used client-side only (`lib/pos/csv/readUploadedFile.ts`, dynamically imported) to convert an uploaded `.xlsx`/`.xls` file's first sheet to CSV text, so the existing CSV parsing pipeline (Papaparse-based column detection, `parseSalesCsv`/`parseLaborCsv`/`parseStatementCsv`/`parseIngredientCostsCsv`) handles both file types identically.
 
 ## Needs connecting
 
 _(built behind a mock/sandbox-ready adapter; wire up the real thing when credentials exist — see the credentials list from the start of this session)_
 
-- **Supabase project** — nothing works end-to-end (auth, `db:reset`, every screen) until `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL` are in `.env.local`. Until then the app degrades gracefully (`requireUser()` is a no-op, screens render from the Fixture-A-derived snapshot instead of crashing) — verified in-browser, every M3 screen checked against Fixture A's numbers. **`supabase/migrations/*.sql`, `scripts/db-reset.mjs`, and `lib/data/snapshot.server.ts` (the real Supabase query path) have not been run against a real Postgres instance** (no CLI/Docker available in this environment) — re-run `npm run db:reset`, then load Home/Money/Menu/Break-even as the demo user and fix anything that surfaces the first time real credentials are added. Most likely trouble spots: the `order_lines` → `orders` foreign-table filter syntax in `getMenuItemSnapshots`, and RLS on the `recovery_order` write in the reorder server action.
+- **Supabase project — PARTIALLY connected.** `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are in `.env.local` (the first pilot café's own project). **Still needed: `SUPABASE_SERVICE_ROLE_KEY` and `SUPABASE_DB_URL`** (Settings → API → `service_role`; Settings → Database → Connection string → URI) — without them `npm run db:reset` can't apply any migration (including `20260928000012_client_rollout.sql`, not yet run anywhere) and admin-client code paths (`ensureOwnBusiness`, `deleteAccount`) can't work. **Important:** with only the URL + anon key set, `isSupabaseConfigured()` is already true, so the app now requires real sign-in instead of showing the fixture demo — confirmed locally; the public Vercel demo link has **not** been redeployed with these credentials, so it's unaffected and still fixture-only. Once the remaining two values land: run `db:reset`, then load every screen as the real signed-in owner and fix anything that surfaces. Likely trouble spots: the `order_lines` → `orders` foreign-table filter syntax in `getMenuItemSnapshots`, RLS on the `recovery_order` write, and the brand-new `employees`/`csv_import_mappings` column/constraint changes in the latest migration.
 - **AI provider key** (M4) — `AI_PROVIDER` + one of `ANTHROPIC_API_KEY`/`OPENAI_API_KEY`/`MOONSHOT_API_KEY`.
 - **Square sandbox app** (M5) — `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_REDIRECT_URI`.
 - **Vercel** — for the actual deploy at the end of M8.
@@ -83,10 +111,72 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
 - **Screen-view analytics logs signed-in users only, and only the path.** `docs/07-build-plan.md` M8 says "basic analytics (screen views only)" with no further spec. Built a `screen_views` table (business_id, user_id, path, created_at — no query params, no referrer, no user agent) written by a client `ScreenViewLogger` (mounted once in the locale layout, fires a server action on every `usePathname()` change) via `lib/actions/analytics.ts`, which no-ops when Supabase isn't configured or nobody's signed in. Anonymous pages (`/login`, `/privacy`) are therefore not logged — acceptable since the stated goal is "which screens do signed-in owners actually use," not general traffic analytics.
 - **Sentry wired without `withSentryConfig`'s build-time source-map upload.** See the dependency note above — capturing errors doesn't require it, only pretty stack traces on sentry.io do, and that upload needs a `SENTRY_AUTH_TOKEN` this environment doesn't have. Add the `next.config.ts` wrapping once a real Sentry project + auth token exist.
 - **200%-text-zoom bugs are real bugs, found by testing, not by inspection.** Several cards (Home's 3 sales tiles, the Profit & costs teaser's 2-column legend, the cost-recovery hero number, bucket rows, the login language pills) used fixed-width flex/grid layouts with unbreakable money strings (`$8,104.32` has no space to wrap at). At 200% root font-size these overflowed the 375px viewport — a real WCAG 1.4.4 failure, not a hypothetical one. Fixed with `flex-wrap` + `min-w-0`/`break-words` on the money-bearing containers; verified overflow is gone screen-by-screen (`document.body.scrollWidth` check) after each fix, not just visually.
+- **The shared TabBar had the same overflow bug on every single screen, undetected until now.** Its flex tabs (`<li className="flex-1">`) had no `min-w-0`, so at 200% zoom the tab labels refused to shrink and the nav overflowed the viewport — on literally every page, not just one. It went uncaught through the whole M0–M8 build because the verification technique itself had a race condition: `document.body.scrollWidth` was read immediately after setting `documentElement.style.fontSize`, before the browser had reflowed. Fixed (`min-w-0` on the tab `<li>`) and re-verified on Home/Money/Menu/Staff with a corrected check that awaits reflow (~250ms) first. **Any future 200%-zoom check must wait for reflow before reading `scrollWidth`, or it will silently pass on real bugs.**
+- **A `<select>` element's own `scrollWidth` is not a trustworthy overflow signal by itself.** While chasing more zoom bugs, an ingredient-picker `<select>` reported `scrollWidth` far wider than its container even after `width:100%` and `min-width:0` were confirmed correctly applied via computed styles — a screenshot showed the box was in fact correctly sized and clipped; the browser's native option-text measurement leaks into `scrollWidth` for `<select>` regardless of the rendered box size. **Going forward, corroborate a `<select>`'s reported overflow with a screenshot before treating it as a real bug** — unlike every other element type checked this session, where the metric and the visual agreed.
+- **Custom expense labels: fixed categories stay the backbone, free text is additive only.** The first real pilot owner wants to name her own expense categories. Cost recovery, the health-check bands, and the Menu screen's rent-share-per-drink are all keyed off the 11 fixed `expense_categories` codes — letting her replace them with arbitrary text would require reworking all three. Resolution (her call, via an explicit choice): added `expenses.custom_label`, a free-text field shown only under "Other" in the manual-entry form, saved alongside the fixed category code and not used in any calculation — display-only, so her own vocabulary shows through without the money math ever branching on arbitrary strings. **Not yet surfaced anywhere it's saved** (no expense-ledger screen exists yet) — captured for now, display is a fast follow.
+- **Manual staff roster + manual hours, built for the case where the register doesn't export labor.** The pilot owner's Toast plan is unpaid and it wasn't confirmed whether it exports timecard data at all (her call, given the uncertainty: "build for the safer assumption"). Added `employees.default_hourly_wage_cents` / `.active` and a real add-employee + log-a-shift UI (`/more/manage-staff`) that writes ordinary `timecards` rows — indistinguishable downstream from a POS sync or CSV import, so the Staff screen, Menu's staff-time-per-drink, and Home all just work. If her Toast tier turns out to export labor too, the existing labor-CSV importer (already Excel-capable) covers that path with zero extra work.
+- **Ingredient-cost importer does not convert units.** No real export sample from the pilot owner's inventory site (`franchiseinventorymanagement.com`, no API) was available to build against, so `parseIngredientCostsCsv` assumes "cost per unit" already means cost per the ingredient's existing base unit (g/ml/each) — no lb→g, gal→ml, etc. conversion. A brand-new ingredient's base unit is chosen explicitly in the review step (a simple keyword-based guess — "milk"/"cream" → ml, "cup"/"lid" → each — that the owner can override) rather than assumed silently. Revisit once a real export file is available to confirm the actual unit vocabulary and whether conversion is needed.
+- **"Try a scenario" works at menu-item granularity, not single-ingredient.** The owner asked, as an example, "what if I gave oat milk away free for a few days" — but `MenuItemSnapshot` only carries one blended `ingredientsCentsToday` total per drink, not itemized recipe-line costs per ingredient (recipe lines exist in the schema but aren't exposed to the snapshot/viewmodel layer for arbitrary what-ifs). Built `lib/calc/scenario.ts` + `/more/try-scenario` to test "what if this whole drink's ingredients cost $X for N days" instead — same spirit, coarser precision. Isolating a single ingredient across every drink that uses it is a real, larger data-layer addition (recipe-line costs would need to flow into `BusinessSnapshot`) — flagged as a fast follow, not built.
 
 ## Session log
 
 _(newest first)_
+
+### 2026-09-28 — First real pilot café: deploy + Staff + scenario tool + rollout features (done)
+A live client session — deployed the demo publicly, then built out what the first real café owner
+actually needs to go live, based on her stated workflow.
+
+**Public demo deploy:** logged into Vercel via CLI device-code flow (no password entered by the
+agent — the user approved in her own browser), deployed straight from source with
+`vercel --prod`. Live at `https://cafe-profit.vercel.app`, zero credentials required (fixture
+mode). Caught and fixed a real bug on the live deploy: the cost-recovery hero number wrapped
+mid-digit ("$8,104.3" / "2") at 360–390px, the app's actual minimum supported width — widened the
+icon/text row's forced-wrap threshold and swapped `break-words` for `whitespace-nowrap` so a money
+string can never split internally again.
+
+**Staff screen** (pulled forward from v1.5, docs/03-screens.md S8) — see "New dependencies" /
+decisions above for the data-layer additions (`staffShiftsToday`, `staffNowIso` on
+`BusinessSnapshot`) and the fixture demo roster matching `staff.html`'s own example (explicit
+`-07:00` offsets on every fixture timestamp — the same class of bug M2's postmortem warns about,
+fixed before it shipped this time).
+
+**Then the client gave live Supabase credentials** (project URL + anon key) and a detailed rundown
+of her actual workflow — Toast on an unpaid tier (daily Excel download), an inventory site with no
+API (nightly Excel download), QuickBooks exports, and a request to understand "what if" scenarios
+like giving an ingredient away free for a few days. Two real decisions came up mid-build and were
+put to the user rather than guessed at: how to handle her wanting to name her own expense
+categories (resolved: fixed categories stay, add a free-text label), and whether her Toast tier
+exports labor data (resolved: unknown, build for the safer manual-entry case). A third came up
+organically — `xlsx`'s npm package has an unpatched CVE — and was also put to the user rather than
+silently worked around; she chose SheetJS's own patched CDN build. See "Decisions made" above for
+all three and what was built as a result: manual staff roster + hours, custom expense labels,
+Excel upload support, and a generic ingredient-cost importer.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (55 tests, +5 for `scenario.ts`), and
+`npm run build` all clean at each step. Browser-verified in fixture mode (temporarily moved
+`.env.local` aside and back for each check, since real credentials now make `isSupabaseConfigured()`
+true and require actual sign-in — see "Needs connecting"): Staff, Manage staff, Try a scenario, and
+the ingredient importer all checked at 360–390px, in Arabic RTL, and at 200% zoom. Found and fixed
+two more real 200%-zoom bugs this way: the new staff-wage input rows (missing `min-w-0`, same root
+cause as the TabBar fix below) and an ingredient-review row's unconstrained name text pushing a
+unit picker out of view. Also found that the **shared TabBar had this exact overflow bug on every
+single screen** in the app, undetected through the entire M0–M8 build, because the zoom-check
+technique used throughout this project had a timing bug (reading `scrollWidth` before the browser
+had reflowed after the font-size change) — fixed the TabBar and corrected the check; re-verified
+Home/Money/Menu/Staff are clean with the corrected technique. Also discovered mid-session that a
+`<select>` element's own `scrollWidth` isn't a trustworthy signal on its own (see decisions) —
+cross-checked with a screenshot from then on.
+
+Not built: the data-completeness indicator (told the user this is still open), and Excel unit
+conversion for the ingredient importer (no real export sample to build it against).
+
+**Public demo not yet redeployed with this stretch's work** — still points at the M8 build.
+Redeploy once the client's remaining Supabase credentials land and the new migration has been
+applied, so the demo and the real pilot database migrate together.
+
+Next: get `SUPABASE_SERVICE_ROLE_KEY` + `SUPABASE_DB_URL` from the client, run `npm run db:reset`
+(applies `20260928000012_client_rollout.sql` along with everything else), do a full real-login
+pass through every screen, build the data-completeness indicator, then redeploy the public demo.
 
 ### 2026-09-26 — M8 Pilot hardening (done)
 Built everything `docs/07-build-plan.md` M8 lists:
