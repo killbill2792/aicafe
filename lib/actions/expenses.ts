@@ -35,6 +35,10 @@ const ManualExpenseSchema = z.object({
   category: z.enum(EXPENSE_CATEGORY_CODES),
   vendor: z.string().optional(),
   spentOn: z.string(), // YYYY-MM-DD
+  // A free-text label the owner types for their own naming (mainly under "other") — the fixed
+  // category codes still drive cost recovery / health checks / rent-share-per-drink; this is
+  // display-only, so an owner's own vocabulary shows through without touching the money math.
+  customLabel: z.string().max(60).optional(),
 });
 
 /** "Type it" (docs/03-screens.md S10): amount → category → date, saved as an actual expense. */
@@ -58,6 +62,7 @@ export async function addManualExpense(input: z.infer<typeof ManualExpenseSchema
     source: "manual",
     status: "actual",
     dedupe_key: dedupeKey,
+    custom_label: parsed.data.customLabel?.trim() || null,
   });
   if (error && error.code !== "23505") return { ok: false, error: error.message }; // 23505 = already recorded (dedupe)
 

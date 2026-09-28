@@ -31,6 +31,8 @@ export default async function TypeExpensePage() {
           dateLabel: t("dateLabel"),
           save: t("save"),
           saved: t("saved"),
+          customLabelLabel: t("customLabelLabel"),
+          customLabelHint: t("customLabelHint"),
         }}
       />
     </main>

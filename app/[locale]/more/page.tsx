@@ -1,4 +1,4 @@
-import { AlertTriangle, ChevronRight, CreditCard, FileText, Receipt, Shield, Trash2, TrendingUp } from "lucide-react";
+import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Receipt, Shield, Trash2, TrendingUp, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -32,8 +32,10 @@ export default async function MorePage() {
 
   const links = [
     { href: "/more/bills", Icon: Receipt, label: t("monthlyBills") },
+    { href: "/more/manage-staff", Icon: Users, label: t("manageStaff") },
     { href: "/more/uploads", Icon: FileText, label: t("uploads") },
     { href: "/more/break-even", Icon: TrendingUp, label: t("breakEven") },
+    { href: "/more/try-scenario", Icon: FlaskConical, label: t("tryScenario") },
     { href: "/more/alerts", Icon: AlertTriangle, label: t("alerts") },
     { href: "/onboarding", Icon: CreditCard, label: t("connectRegister") },
   ];

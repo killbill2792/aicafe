@@ -32,12 +32,22 @@ export default function TypeExpenseForm({
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
   todayDateStr: string;
-  labels: { amountTitle: string; categoryTitle: string; vendorLabel: string; dateLabel: string; save: string; saved: string };
+  labels: {
+    amountTitle: string;
+    categoryTitle: string;
+    vendorLabel: string;
+    dateLabel: string;
+    save: string;
+    saved: string;
+    customLabelLabel: string;
+    customLabelHint: string;
+  };
 }) {
   const router = useRouter();
   const [digits, setDigits] = useState(""); // raw digits, interpreted as cents
   const [category, setCategory] = useState<ExpenseCategoryCode | null>(null);
   const [vendor, setVendor] = useState("");
+  const [customLabel, setCustomLabel] = useState("");
   const [date, setDate] = useState(todayDateStr);
   const [status, setStatus] = useState<"idle" | "error" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +67,13 @@ export default function TypeExpenseForm({
     if (amountCents === 0 || !category) return;
     setError(null);
     startTransition(async () => {
-      const result = await addManualExpense({ amountCents, category, vendor: vendor || undefined, spentOn: date });
+      const result = await addManualExpense({
+        amountCents,
+        category,
+        vendor: vendor || undefined,
+        spentOn: date,
+        customLabel: category === "other" && customLabel ? customLabel : undefined,
+      });
       if (result.ok) {
         setStatus("saved");
         setTimeout(() => router.push("/money"), 900);
@@ -110,6 +126,21 @@ export default function TypeExpenseForm({
           ))}
         </div>
       </section>
+
+      {category === "other" && (
+        <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
+          <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink-muted">
+            {labels.customLabelLabel}
+            <input
+              type="text"
+              value={customLabel}
+              onChange={(e) => setCustomLabel(e.target.value)}
+              placeholder={labels.customLabelHint}
+              className="h-12 rounded-xl border border-line px-3 text-base text-ink"
+            />
+          </label>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
         <label className="flex flex-col gap-1.5 text-sm font-semibold text-ink-muted">

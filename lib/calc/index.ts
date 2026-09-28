@@ -8,3 +8,4 @@ export * from "./breakEven";
 export * from "./costRecovery";
 export * from "./ingredients";
 export * from "./alerts";
+export * from "./scenario";
