@@ -113,7 +113,13 @@
     "youAverage": "You average {count}",
     "alertsSection": "Alerts",
     "newAlerts": "{count} new",
-    "leakingThisMonth": "leaking this month"
+    "leakingThisMonth": "leaking this month",
+    "gettingStartedTitle": "Let's get your numbers going",
+    "gettingStartedBody": "You haven't added any sales, bills, or staff yet — pick where to start.",
+    "gettingStartedConnectRegister": "Connect your register",
+    "gettingStartedUploadSales": "Upload today's sales",
+    "gettingStartedAddBills": "Add your monthly bills",
+    "gettingStartedAddStaff": "Add your staff"
   },
   "Money": {
     "title": "Money",

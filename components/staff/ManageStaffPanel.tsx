@@ -30,7 +30,20 @@ export default function ManageStaffPanel({ employees, todayDateStr, labels }: { 
   const [wage, setWage] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  // Defaults to every active employee already expanded — logging hours is a daily ritual for
+  // several staff at once (schedules vary day to day, so there's no fixed weekly template to
+  // fall back on), and forcing one-at-a-time accordion clicks before you can even start typing
+  // adds real friction to something the owner does every single day.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(employees.filter((e) => e.active).map((e) => e.id)));
+
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   function handleAdd() {
     const wageCents = Math.round((Number(wage) || 0) * 100);
@@ -107,8 +120,8 @@ export default function ManageStaffPanel({ employees, todayDateStr, labels }: { 
               employee={emp}
               todayDateStr={todayDateStr}
               labels={labels}
-              expanded={expanded === emp.id}
-              onToggle={() => setExpanded(expanded === emp.id ? null : emp.id)}
+              expanded={expanded.has(emp.id)}
+              onToggle={() => toggleExpanded(emp.id)}
             />
           ))
         )}
@@ -207,18 +220,18 @@ function EmployeeRowItem({
             {labels.date}
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-lg border border-line px-2.5 text-sm" />
           </label>
-          <div className="flex gap-2">
-            <label className="flex flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
+          <div className="flex min-w-0 gap-2">
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
               {labels.clockIn}
-              <input type="time" value={clockIn} onChange={(e) => setClockIn(e.target.value)} className="h-11 rounded-lg border border-line px-2.5 text-sm" />
+              <input type="time" value={clockIn} onChange={(e) => setClockIn(e.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm" />
             </label>
-            <label className="flex flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
+            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
               {labels.clockOut}
               <input
                 type="time"
                 value={clockOut}
                 onChange={(e) => setClockOut(e.target.value)}
-                className="h-11 rounded-lg border border-line px-2.5 text-sm"
+                className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm"
               />
             </label>
           </div>

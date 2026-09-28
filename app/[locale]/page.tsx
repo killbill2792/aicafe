@@ -22,6 +22,7 @@ import {
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
+import GettingStartedCard from "@/components/home/GettingStartedCard";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -59,6 +60,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <LanguageSwitch href="/" />
         </div>
       </header>
+
+      {vm.isGettingStarted && (
+        <GettingStartedCard
+          labels={{
+            title: t("gettingStartedTitle"),
+            body: t("gettingStartedBody"),
+            connectRegister: t("gettingStartedConnectRegister"),
+            uploadSales: t("gettingStartedUploadSales"),
+            addBills: t("gettingStartedAddBills"),
+            addStaff: t("gettingStartedAddStaff"),
+          }}
+        />
+      )}
 
       <PeriodSwitch current={period} />
 

@@ -58,6 +58,12 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   const missingCategories = snapshot.runningCostLines.filter((l) => l.isMissing);
 
+  // A business with zero sales in the last 28 days *and* not a single bill entered is almost
+  // certainly a freshly-created café that hasn't gone through (or finished) onboarding yet, not a
+  // real café having a quiet month — surface a way back in rather than a wall of $0.00 with no
+  // explanation (found live: a new signup skipped onboarding and had no obvious way back).
+  const isGettingStarted = last28Net === 0 && missingCategories.length === snapshot.runningCostLines.length;
+
   return {
     period,
     salesCents,
@@ -77,6 +83,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     staffCostPerMinuteNow,
     alerts: snapshot.alerts,
     missingCategories,
+    isGettingStarted,
   };
 }
 

@@ -113,7 +113,13 @@
     "youAverage": "متوسطك {count}",
     "alertsSection": "التنبيهات",
     "newAlerts": "{count} جديدة",
-    "leakingThisMonth": "يتسرب هذا الشهر"
+    "leakingThisMonth": "يتسرب هذا الشهر",
+    "gettingStartedTitle": "لنبدأ بتشغيل أرقامك",
+    "gettingStartedBody": "لم تُضف أي مبيعات أو فواتير أو موظفين بعد — اختر من أين تبدأ.",
+    "gettingStartedConnectRegister": "اربط جهاز البيع الخاص بك",
+    "gettingStartedUploadSales": "ارفع مبيعات اليوم",
+    "gettingStartedAddBills": "أضف فواتيرك الشهرية",
+    "gettingStartedAddStaff": "أضف موظفيك"
   },
   "Money": {
     "title": "المال",

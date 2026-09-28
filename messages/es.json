@@ -113,7 +113,13 @@
     "youAverage": "Tu promedio es {count}",
     "alertsSection": "Alertas",
     "newAlerts": "{count} nuevas",
-    "leakingThisMonth": "se está perdiendo este mes"
+    "leakingThisMonth": "se está perdiendo este mes",
+    "gettingStartedTitle": "Vamos a poner en marcha tus números",
+    "gettingStartedBody": "Aún no has agregado ventas, cuentas ni personal — elige por dónde empezar.",
+    "gettingStartedConnectRegister": "Conecta tu caja registradora",
+    "gettingStartedUploadSales": "Sube las ventas de hoy",
+    "gettingStartedAddBills": "Agrega tus cuentas mensuales",
+    "gettingStartedAddStaff": "Agrega tu personal"
   },
   "Money": {
     "title": "Dinero",
