@@ -24,6 +24,18 @@ describe("staff", () => {
     expect(paidHoursForTimecard(timecard, now)).toBeCloseTo(2, 6);
   });
 
+  it("a future clock-out (a scheduled shift still in progress) only counts hours up to `now`", () => {
+    const timecard = {
+      clockIn: "2026-09-01T13:00:00Z", // scheduled 13:00-21:00, but it's only 15:00 now
+      clockOut: "2026-09-01T21:00:00Z",
+      hourlyWageCents: 2_000,
+      breaks: [],
+    };
+    const now = new Date("2026-09-01T15:00:00Z");
+    expect(paidHoursForTimecard(timecard, now)).toBeCloseTo(2, 6);
+    expect(wagesCentsForTimecard(timecard, now)).toBeCloseTo(4_000, 6);
+  });
+
   it("payroll taxes are wages × the business's payroll tax rate", () => {
     expect(payrollTaxCents(69_600, 0.12)).toBeCloseTo(8_352, 6);
   });

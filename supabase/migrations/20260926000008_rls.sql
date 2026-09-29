@@ -23,6 +23,9 @@ declare
   -- generic `is_member(business_id)` policy fail to even create (column doesn't exist) before
   -- ever reaching that override — caught the first time this migration ran against a real
   -- Postgres instance, not by inspection.
+  -- 'staff_schedules' is deliberately not here — it's created by a later-numbered migration
+  -- (20260929000016), which runs after this file and would fail this loop with "relation does
+  -- not exist" if listed here; that migration enables its own RLS at the end instead.
   direct_tables text[] := array[
     'locations', 'pos_connections', 'menu_items', 'ingredients',
     'modifier_recipes', 'orders', 'employees', 'timecards', 'recurring_costs',

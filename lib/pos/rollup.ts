@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { itemIngredientCostCents } from "@/lib/calc";
+import { fromZonedTime } from "date-fns-tz";
+import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
 
 /**
  * Recomputes daily_rollups for one business_date from the raw orders/order_lines/timecards
@@ -8,8 +9,9 @@ import { itemIngredientCostCents } from "@/lib/calc";
  * affected business dates, then alerts"). Ingredients are theoretical, priced as of `businessDate`.
  */
 export async function recomputeDailyRollup(supabase: SupabaseClient, businessId: string, businessDate: string): Promise<void> {
-  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate").eq("id", businessId).single();
+  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, timezone").eq("id", businessId).single();
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
+  const timezone = business?.timezone ?? "America/Los_Angeles";
 
   const { data: orders } = await supabase
     .from("orders")
@@ -64,22 +66,31 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
     }
   }
 
+  // Business-local calendar day, converted to UTC bounds — NOT a raw `${businessDate}T00:00:00Z`
+  // string, which silently misses any shift whose clock-in is in the evening in a timezone behind
+  // UTC (its UTC instant already rolls into the next UTC calendar date). Same bug class this
+  // codebase has hit before (see runningCosts.ts's decision note) — found here live, the first
+  // time an evening shift actually existed to expose it.
+  const dayStartUtc = fromZonedTime(`${businessDate}T00:00:00`, timezone).toISOString();
+  const dayEndUtc = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
   const { data: timecards } = await supabase
     .from("timecards")
     .select("clock_in, clock_out, hourly_wage_cents, breaks")
     .eq("business_id", businessId)
-    .gte("clock_in", `${businessDate}T00:00:00Z`)
-    .lt("clock_in", `${businessDate}T23:59:59.999Z`);
+    .gte("clock_in", dayStartUtc)
+    .lte("clock_in", dayEndUtc);
 
-  const wagesCents = (timecards ?? []).reduce((sum, tc) => {
-    const clockOut = tc.clock_out ? new Date(tc.clock_out).getTime() : Date.now();
-    const totalMs = Math.max(0, clockOut - new Date(tc.clock_in).getTime());
-    const unpaidBreakMs = (tc.breaks ?? [])
-      .filter((b: { paid: boolean }) => !b.paid)
-      .reduce((s: number, b: { start: string; end: string }) => s + Math.max(0, new Date(b.end).getTime() - new Date(b.start).getTime()), 0);
-    const paidHours = Math.max(0, totalMs - unpaidBreakMs) / 3_600_000;
-    return sum + paidHours * tc.hourly_wage_cents;
-  }, 0);
+  const wagesCents = (timecards ?? []).reduce(
+    (sum, tc) =>
+      sum +
+      wagesCentsForTimecard({
+        clockIn: tc.clock_in,
+        clockOut: tc.clock_out,
+        hourlyWageCents: tc.hourly_wage_cents,
+        breaks: tc.breaks ?? [],
+      }),
+    0,
+  );
   const staffTaxCents = Math.round(wagesCents * payrollTaxRate);
 
   await supabase.from("daily_rollups").upsert(

@@ -22,6 +22,20 @@ function previousMonthKey(monthKey: string): string {
   return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// Local (not UTC) Date construction, matching every other calendar-math helper in this codebase
+// (see runningCosts.ts's decision note) — a date-only string parsed with Date.UTC or a bare `new
+// Date(str)` can silently land on the wrong calendar day once the system's UTC offset is involved.
+function addDaysLocal(dateStr: string, delta: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d + delta);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+function daysInMonth(monthKey: string): number {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month, 0).getDate();
+}
+
 /**
  * This month's running-cost lines, for both the current and previous calendar month — a "week"
  * or "today" comparison can dip a few days into the prior month. We don't have the prior month's
@@ -40,11 +54,48 @@ function categoryMonthlyAmounts(snapshot: BusinessSnapshot): CategoryMonthlyAmou
   return [...forMonth(snapshot.monthKey), ...forMonth(previousMonthKey(snapshot.monthKey))];
 }
 
-/** Running costs prorated across the same date range as `days` (see docs/05-calculations.md). */
-export function runningCostsForDays(snapshot: BusinessSnapshot, days: DailyFacts[]): number {
-  if (days.length === 0) return 0;
-  const sorted = [...days].sort((a, b) => (a.date < b.date ? -1 : 1));
-  return runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot), sorted[0].date, sorted[sorted.length - 1].date);
+/**
+ * The calendar date range a period covers — deliberately independent of which days actually have
+ * a `daily_rollups` row. Rent and bills accrue every calendar day whether or not that day's sales
+ * were ever uploaded, so "Week" and "Month" must prorate over 7 / days-elapsed-this-month calendar
+ * days even when only today has recorded data — not collapse to whatever handful of days happen to
+ * have rows, which is what silently made every period read identical for an owner who hasn't
+ * uploaded a daily sales file for each day yet (found live: Today/Week/Month all showed the exact
+ * same number because only one `daily_rollups` row existed at all).
+ */
+export function periodCalendarRange(snapshot: BusinessSnapshot, period: Period): { start: string; end: string } {
+  const end = snapshot.todayDateStr;
+  if (period === "today") return { start: end, end };
+  if (period === "week") return { start: addDaysLocal(end, -6), end };
+  return { start: `${snapshot.monthKey}-01`, end };
+}
+
+/** The same-length calendar window one period back, for "vs last period" running-cost comparisons —
+ * same calendar-range principle as `periodCalendarRange`, not dependent on rollup-row coverage. */
+export function previousPeriodCalendarRange(snapshot: BusinessSnapshot, period: Period): { start: string; end: string } {
+  if (period === "today") {
+    const yesterday = addDaysLocal(snapshot.todayDateStr, -1);
+    return { start: yesterday, end: yesterday };
+  }
+  if (period === "week") {
+    return { start: addDaysLocal(snapshot.todayDateStr, -13), end: addDaysLocal(snapshot.todayDateStr, -7) };
+  }
+  const prevMonthKey = previousMonthKey(snapshot.monthKey);
+  const dayOfMonth = Number(snapshot.todayDateStr.split("-")[2]);
+  const end = Math.min(dayOfMonth, daysInMonth(prevMonthKey));
+  return { start: `${prevMonthKey}-01`, end: `${prevMonthKey}-${String(end).padStart(2, "0")}` };
+}
+
+/** Running costs prorated across a period's full calendar range (see `periodCalendarRange`). */
+export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period): number {
+  const { start, end } = periodCalendarRange(snapshot, period);
+  return runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot), start, end);
+}
+
+/** Running costs for the comparison period one back (see `previousPeriodCalendarRange`). */
+export function previousRunningCostsForPeriod(snapshot: BusinessSnapshot, period: Period): number {
+  const { start, end } = previousPeriodCalendarRange(snapshot, period);
+  return runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot), start, end);
 }
 
 export function periodLabel(period: Period): "Today" | "Week" | "Month" {

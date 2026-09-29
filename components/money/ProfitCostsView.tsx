@@ -53,8 +53,11 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
   const t = await getTranslations("Money");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
-  const total = Math.max(1, vm.salesCents);
-  const pct = (n: number) => (n / total) * 100;
+  // "% of sales" is meaningless with $0 sales — the old `Math.max(1, ...)` cents-floor made a
+  // real (period-prorated) running-cost total divide against a fake 1¢ of sales, producing
+  // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
+  // sales to show a ratio" rather than a fabricated number.
+  const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
 
   const changeLabels: Record<string, string> = {

@@ -17,6 +17,11 @@ export default function PeriodSwitch({ current }: { current: Period }) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", period);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    // A searchParams-only navigation can otherwise serve a cached render of the previous period
+    // from the client router cache instead of re-fetching this force-dynamic page — found live,
+    // verified against a real production build: tapping Today/Week/Month changed the URL and the
+    // active pill but never the numbers underneath it. router.refresh() forces the fresh fetch.
+    router.refresh();
   }
 
   return (

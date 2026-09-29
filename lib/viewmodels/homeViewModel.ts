@@ -12,19 +12,19 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, dayContributionCents, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForDays, type Period } from "./period";
+import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
-  const runningCosts = runningCostsForDays(snapshot, days);
+  const runningCosts = runningCostsForPeriod(snapshot, period);
   const salesCents = sumCents(days, (d) => d.netSalesCents);
   const totalCostsCents = salesCents - ownerProfitCentsForPeriod(days, runningCosts);
   const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
 
   const prevDays = previousPeriodDays(snapshot, period);
-  const prevRunningCosts = runningCostsForDays(snapshot, prevDays);
-  const prevOwnerProfitCents = prevDays.length > 0 ? ownerProfitCentsForPeriod(prevDays, prevRunningCosts) : 0;
+  const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
+  const prevOwnerProfitCents = ownerProfitCentsForPeriod(prevDays, prevRunningCosts);
   const changeVsLastPeriodPct =
     prevOwnerProfitCents !== 0 ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100 : null;
 

@@ -1,9 +1,12 @@
 import type { Timecard } from "./types";
 
-/** Paid hours worked = clocked time minus unpaid breaks; open shifts count up to `now`. */
+/** Paid hours worked = clocked time minus unpaid breaks; open shifts count up to `now`, and a
+ * `clockOut` that hasn't happened yet (a schedule-predicted shift still in progress) is capped at
+ * `now` too — a shift can never be paid for hours that haven't occurred, even when its end time
+ * is already known in advance. */
 export function paidHoursForTimecard(timecard: Timecard, now: Date = new Date()): number {
   const clockIn = new Date(timecard.clockIn).getTime();
-  const clockOut = timecard.clockOut ? new Date(timecard.clockOut).getTime() : now.getTime();
+  const clockOut = timecard.clockOut ? Math.min(new Date(timecard.clockOut).getTime(), now.getTime()) : now.getTime();
   const totalMs = Math.max(0, clockOut - clockIn);
 
   const unpaidBreakMs = timecard.breaks

@@ -10,7 +10,7 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForDays, type Period } from "./period";
+import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -63,7 +63,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
 export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
-  const runningCosts = runningCostsForDays(snapshot, days);
+  const runningCosts = runningCostsForPeriod(snapshot, period);
   const salesCents = sumCents(days, (d) => d.netSalesCents);
   const ingredientsCents = sumCents(days, (d) => d.ingredientsCents);
   const wagesCents = sumCents(days, (d) => d.wagesCents);
@@ -77,7 +77,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const combinedRatio = ratio(ingredientsCents + wagesCents + staffTaxCents, salesCents);
 
   const prevDays = previousPeriodDays(snapshot, period);
-  const prevRunningCosts = runningCostsForDays(snapshot, prevDays);
+  const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
   const changes = [
     { key: "sales", label: "Sales", deltaCents: salesCents - sumCents(prevDays, (d) => d.netSalesCents) },
     { key: "ingredients", label: "Ingredients", deltaCents: ingredientsCents - sumCents(prevDays, (d) => d.ingredientsCents), lowerIsBetter: true },

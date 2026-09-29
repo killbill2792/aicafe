@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getEmployees } from "@/lib/data/getEmployees";
+import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
@@ -13,13 +14,14 @@ export default async function ManageStaffPage() {
   const t = await getTranslations("ManageStaff");
   const tCommon = await getTranslations("Common");
 
-  const [employees, snapshot] = await Promise.all([getEmployees(), getSnapshot()]);
+  const [employees, schedules, snapshot] = await Promise.all([getEmployees(), getStaffSchedules(), getSnapshot()]);
 
   return (
     <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <ManageStaffPanel
         employees={employees}
+        schedules={schedules}
         todayDateStr={snapshot.todayDateStr}
         labels={{
           addStaff: t("addStaff"),
@@ -32,14 +34,32 @@ export default async function ManageStaffPage() {
           saveDetails: t("saveDetails"),
           detailsSaved: t("detailsSaved"),
           cancel: t("cancel"),
-          logHours: t("logHours"),
-          logHoursHint: t("logHoursHint"),
+          weeklySchedule: t("weeklySchedule"),
+          weeklyScheduleHint: t("weeklyScheduleHint"),
+          dayMon: t("dayMon"),
+          dayTue: t("dayTue"),
+          dayWed: t("dayWed"),
+          dayThu: t("dayThu"),
+          dayFri: t("dayFri"),
+          daySat: t("daySat"),
+          daySun: t("daySun"),
+          breakLabel: t("breakLabel"),
+          repeatsWeekly: t("repeatsWeekly"),
+          justForMonth: t("justForMonth"),
+          monthLabel: t("monthLabel"),
+          saveSchedule: t("saveSchedule"),
+          scheduleSaved: t("scheduleSaved"),
+          noScheduleSet: t("noScheduleSet"),
+          editDay: t("editDay"),
+          editDayHint: t("editDayHint"),
           date: t("date"),
           clockIn: t("clockIn"),
           clockOut: t("clockOut"),
           unpaidBreakMinutes: t("unpaidBreakMinutes"),
           save: t("save"),
           saved: t("saved"),
+          didntWork: t("didntWork"),
+          predictedTag: t("predictedTag"),
           deactivate: t("deactivate"),
           reactivate: t("reactivate"),
           inactiveTag: t("inactiveTag"),

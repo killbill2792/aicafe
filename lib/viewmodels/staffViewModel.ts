@@ -36,7 +36,16 @@ export function buildStaffViewModel(snapshot: BusinessSnapshot): StaffViewModel 
   const now = new Date(snapshot.staffNowIso);
   const payrollTaxRate = snapshot.business.payrollTaxRate;
 
-  const onShiftShifts = snapshot.staffShiftsToday.filter((s) => s.timecard.clockOut === null);
+  // "On shift now" = clocked in and either still open (clockOut null) or the current moment falls
+  // within a known clock-in/clock-out window — the latter is what makes a schedule-predicted shift
+  // (both times known in advance) show up as "on shift" while it's actually happening, not just a
+  // shift someone is mid-way through without a known end time yet.
+  const onShiftShifts = snapshot.staffShiftsToday.filter((s) => {
+    const clockIn = new Date(s.timecard.clockIn).getTime();
+    if (clockIn > now.getTime()) return false;
+    if (s.timecard.clockOut === null) return true;
+    return now.getTime() <= new Date(s.timecard.clockOut).getTime();
+  });
 
   const currentHourlyWageCents = onShiftShifts.reduce((sum, s) => sum + s.timecard.hourlyWageCents, 0);
   const currentHourlyLoadedCents = staffCostLoadedCents(currentHourlyWageCents, payrollTaxCents(currentHourlyWageCents, payrollTaxRate));

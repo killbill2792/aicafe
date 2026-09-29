@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { ChevronDown, ChevronUp, Clock, Pencil, UserPlus } from "lucide-react";
-import { addEmployee, logShift, setEmployeeActive, updateEmployee } from "@/lib/actions/staff";
+import { useEffect, useState, useTransition } from "react";
+import { CalendarDays, ChevronDown, ChevronUp, Pencil, UserPlus } from "lucide-react";
+import { addEmployee, getShiftForDay, markDayAbsent, saveShiftForDay, setEmployeeActive, setWeeklySchedule, updateEmployee } from "@/lib/actions/staff";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
+import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
 
 type Labels = {
   addStaff: string;
@@ -16,29 +17,67 @@ type Labels = {
   saveDetails: string;
   detailsSaved: string;
   cancel: string;
-  logHours: string;
-  logHoursHint: string;
+  weeklySchedule: string;
+  weeklyScheduleHint: string;
+  dayMon: string;
+  dayTue: string;
+  dayWed: string;
+  dayThu: string;
+  dayFri: string;
+  daySat: string;
+  daySun: string;
+  breakLabel: string;
+  repeatsWeekly: string;
+  justForMonth: string;
+  monthLabel: string;
+  saveSchedule: string;
+  scheduleSaved: string;
+  noScheduleSet: string;
+  editDay: string;
+  editDayHint: string;
   date: string;
   clockIn: string;
   clockOut: string;
   unpaidBreakMinutes: string;
   save: string;
   saved: string;
+  didntWork: string;
+  predictedTag: string;
   deactivate: string;
   reactivate: string;
   inactiveTag: string;
 };
 
-export default function ManageStaffPanel({ employees, todayDateStr, labels }: { employees: EmployeeRow[]; todayDateStr: string; labels: Labels }) {
+const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Mon..Sun, day_of_week 0=Sun..6=Sat (matches JS Date#getDay())
+
+function dayLabel(dayOfWeek: number, labels: Labels): string {
+  return [labels.daySun, labels.dayMon, labels.dayTue, labels.dayWed, labels.dayThu, labels.dayFri, labels.daySat][dayOfWeek];
+}
+
+function currentMonthStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export default function ManageStaffPanel({
+  employees,
+  schedules,
+  todayDateStr,
+  labels,
+}: {
+  employees: EmployeeRow[];
+  schedules: StaffScheduleRow[];
+  todayDateStr: string;
+  labels: Labels;
+}) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [wage, setWage] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  // Defaults to every active employee already expanded — logging hours is a daily ritual for
-  // several staff at once (schedules vary day to day, so there's no fixed weekly template to
-  // fall back on), and forcing one-at-a-time accordion clicks before you can even start typing
-  // adds real friction to something the owner does every single day.
+  // Defaults to every active employee already expanded — this is a screen the owner opens to make
+  // several staff changes at once, and forcing one-at-a-time accordion clicks before you can even
+  // start adds real friction.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(employees.filter((e) => e.active).map((e) => e.id)));
 
   function toggleExpanded(id: string) {
@@ -123,6 +162,7 @@ export default function ManageStaffPanel({ employees, todayDateStr, labels }: { 
             <EmployeeRowItem
               key={emp.id}
               employee={emp}
+              schedules={schedules.filter((s) => s.employeeId === emp.id)}
               todayDateStr={todayDateStr}
               labels={labels}
               expanded={expanded.has(emp.id)}
@@ -138,6 +178,7 @@ export default function ManageStaffPanel({ employees, todayDateStr, labels }: { 
             <EmployeeRowItem
               key={emp.id}
               employee={emp}
+              schedules={schedules.filter((s) => s.employeeId === emp.id)}
               todayDateStr={todayDateStr}
               labels={labels}
               expanded={false}
@@ -152,25 +193,20 @@ export default function ManageStaffPanel({ employees, todayDateStr, labels }: { 
 
 function EmployeeRowItem({
   employee,
+  schedules,
   todayDateStr,
   labels,
   expanded,
   onToggle,
 }: {
   employee: EmployeeRow;
+  schedules: StaffScheduleRow[];
   todayDateStr: string;
   labels: Labels;
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const [date, setDate] = useState(todayDateStr);
-  const [clockIn, setClockIn] = useState("08:00");
-  const [clockOut, setClockOut] = useState("16:00");
-  const [breakMinutes, setBreakMinutes] = useState("30");
-  const [wage, setWage] = useState(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(employee.name);
@@ -197,28 +233,6 @@ function EmployeeRowItem({
       } else {
         setEditStatus("error");
         setEditError(result.error);
-      }
-    });
-  }
-
-  function handleLogShift() {
-    const wageCents = Math.round((Number(wage) || 0) * 100);
-    if (wageCents <= 0) return;
-    setStatus("idle");
-    setError(null);
-    startTransition(async () => {
-      const result = await logShift({
-        employeeId: employee.id,
-        date,
-        clockIn,
-        clockOut,
-        unpaidBreakMinutes: Number(breakMinutes) || 0,
-        hourlyWageCents: wageCents,
-      });
-      if (result.ok) setStatus("saved");
-      else {
-        setStatus("error");
-        setError(result.error);
       }
     });
   }
@@ -317,73 +331,293 @@ function EmployeeRowItem({
             </div>
           )}
 
-          <span className="flex items-center gap-1.5 text-sm font-bold">
-            <Clock aria-hidden="true" size={16} />
-            {labels.logHours}
-          </span>
-          <p className="-mt-1.5 text-xs text-ink-muted">{labels.logHoursHint}</p>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-            {labels.date}
-            <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-lg border border-line px-2.5 text-sm" />
-          </label>
-          <div className="flex min-w-0 gap-2">
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
-              {labels.clockIn}
-              <input type="time" value={clockIn} onChange={(e) => setClockIn(e.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm" />
-            </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
-              {labels.clockOut}
-              <input
-                type="time"
-                value={clockOut}
-                onChange={(e) => setClockOut(e.target.value)}
-                className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm"
-              />
-            </label>
-          </div>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-            {labels.unpaidBreakMinutes}
-            <input
-              type="number"
-              min="0"
-              max="240"
-              value={breakMinutes}
-              onChange={(e) => setBreakMinutes(e.target.value)}
-              className="h-11 rounded-lg border border-line px-2.5 text-sm"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-            {labels.wageLabel}
-            <div className="flex min-w-0 items-center gap-1.5">
-              <span className="shrink-0 font-bold text-ink-muted">$</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="0.01"
-                value={wage}
-                onChange={(e) => setWage(e.target.value)}
-                className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
-              />
-              <span className="shrink-0 text-ink-muted">/hr</span>
-            </div>
-          </label>
-          {error && <p className="text-sm text-warn">{error}</p>}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={handleLogShift}
-              disabled={isPending || !wage}
-              className="h-11 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
-            >
-              {status === "saved" ? labels.saved : labels.save}
-            </button>
-            <button type="button" onClick={handleToggleActive} disabled={isPending} className="h-11 rounded-full border border-line px-3.5 text-sm font-semibold text-ink-muted">
-              {employee.active ? labels.deactivate : labels.reactivate}
-            </button>
-          </div>
+          <WeeklyScheduleEditor employee={employee} schedules={schedules} labels={labels} />
+
+          <DayEditor employee={employee} todayDateStr={todayDateStr} labels={labels} />
+
+          <button type="button" onClick={handleToggleActive} disabled={isPending} className="h-10 rounded-full border border-line text-sm font-semibold text-ink-muted">
+            {employee.active ? labels.deactivate : labels.reactivate}
+          </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function WeeklyScheduleEditor({ employee, schedules, labels }: { employee: EmployeeRow; schedules: StaffScheduleRow[]; labels: Labels }) {
+  const ongoing = schedules.filter((s) => s.effectiveTo === null);
+  const existingBreak = ongoing[0]?.unpaidBreakMinutes ?? 0;
+
+  const [days, setDays] = useState<Record<number, { on: boolean; start: string; end: string }>>(() => {
+    const base: Record<number, { on: boolean; start: string; end: string }> = {};
+    for (let i = 0; i < 7; i++) {
+      const match = ongoing.find((s) => s.dayOfWeek === i);
+      base[i] = match ? { on: true, start: match.startTime, end: match.endTime } : { on: false, start: "08:00", end: "16:00" };
+    }
+    return base;
+  });
+  const [breakMinutes, setBreakMinutes] = useState(String(existingBreak));
+  const [scopeType, setScopeType] = useState<"ongoing" | "month">("ongoing");
+  const [month, setMonth] = useState(currentMonthStr());
+  const [isPending, startTransition] = useTransition();
+  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  const anyDayOn = Object.values(days).some((d) => d.on);
+
+  function toggleDay(i: number) {
+    setDays((prev) => ({ ...prev, [i]: { ...prev[i], on: !prev[i].on } }));
+  }
+
+  function handleSave() {
+    const selectedDays = Object.entries(days)
+      .filter(([, v]) => v.on)
+      .map(([k, v]) => ({ dayOfWeek: Number(k), startTime: v.start, endTime: v.end, unpaidBreakMinutes: Number(breakMinutes) || 0 }));
+    const wageCents = employee.defaultHourlyWageCents ?? 0;
+    if (wageCents <= 0) return;
+    setStatus("idle");
+    setError(null);
+    startTransition(async () => {
+      const result = await setWeeklySchedule({
+        employeeId: employee.id,
+        days: selectedDays,
+        hourlyWageCents: wageCents,
+        scope: scopeType === "ongoing" ? { type: "ongoing" } : { type: "month", month },
+      });
+      if (result.ok) setStatus("saved");
+      else {
+        setStatus("error");
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl bg-white p-3">
+      <span className="flex items-center gap-1.5 text-sm font-bold">
+        <CalendarDays aria-hidden="true" size={16} />
+        {labels.weeklySchedule}
+      </span>
+      <p className="text-xs text-ink-muted">{labels.weeklyScheduleHint}</p>
+      {!anyDayOn && ongoing.length === 0 && <p className="text-xs font-semibold text-ink-muted">{labels.noScheduleSet}</p>}
+
+      <div className="flex flex-col gap-1.5">
+        {DAY_ORDER.map((dow) => {
+          const d = days[dow];
+          return (
+            <div key={dow} className="flex min-w-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleDay(dow)}
+                className={`h-9 w-12 shrink-0 rounded-lg text-xs font-bold ${d.on ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
+              >
+                {dayLabel(dow, labels)}
+              </button>
+              {d.on && (
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <input
+                    type="time"
+                    value={d.start}
+                    onChange={(e) => setDays((prev) => ({ ...prev, [dow]: { ...prev[dow], start: e.target.value } }))}
+                    className="h-9 w-full min-w-0 flex-1 rounded-lg border border-line px-1.5 text-xs"
+                  />
+                  <span className="shrink-0 text-ink-muted">–</span>
+                  <input
+                    type="time"
+                    value={d.end}
+                    onChange={(e) => setDays((prev) => ({ ...prev, [dow]: { ...prev[dow], end: e.target.value } }))}
+                    className="h-9 w-full min-w-0 flex-1 rounded-lg border border-line px-1.5 text-xs"
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {anyDayOn && (
+        <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+          {labels.breakLabel}
+          <input
+            type="number"
+            min="0"
+            max="240"
+            value={breakMinutes}
+            onChange={(e) => setBreakMinutes(e.target.value)}
+            className="h-9 w-24 rounded-lg border border-line px-2 text-sm"
+          />
+        </label>
+      )}
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => setScopeType("ongoing")}
+          className={`h-9 flex-1 rounded-lg text-xs font-semibold ${scopeType === "ongoing" ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
+        >
+          {labels.repeatsWeekly}
+        </button>
+        <button
+          type="button"
+          onClick={() => setScopeType("month")}
+          className={`h-9 flex-1 rounded-lg text-xs font-semibold ${scopeType === "month" ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
+        >
+          {labels.justForMonth}
+        </button>
+      </div>
+      {scopeType === "month" && (
+        <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+          {labels.monthLabel}
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 w-40 rounded-lg border border-line px-2 text-sm" />
+        </label>
+      )}
+
+      {error && <p className="text-sm text-warn">{error}</p>}
+      <button
+        type="button"
+        onClick={handleSave}
+        disabled={isPending || !(employee.defaultHourlyWageCents && employee.defaultHourlyWageCents > 0)}
+        className="h-10 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+      >
+        {status === "saved" ? labels.scheduleSaved : labels.saveSchedule}
+      </button>
+    </div>
+  );
+}
+
+function DayEditor({ employee, todayDateStr, labels }: { employee: EmployeeRow; todayDateStr: string; labels: Labels }) {
+  const [date, setDate] = useState(todayDateStr);
+  const [clockIn, setClockIn] = useState("08:00");
+  const [clockOut, setClockOut] = useState("16:00");
+  const [breakMinutes, setBreakMinutes] = useState("30");
+  const [wage, setWage] = useState(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+  const [source, setSource] = useState<"confirmed" | "predicted" | "none">("none");
+  const [isPending, startTransition] = useTransition();
+  const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getShiftForDay(employee.id, date).then((shift) => {
+      if (cancelled || !shift) return;
+      setClockIn(shift.clockIn);
+      setClockOut(shift.clockOut);
+      setBreakMinutes(String(shift.unpaidBreakMinutes));
+      if (shift.hourlyWageCents > 0) setWage((shift.hourlyWageCents / 100).toFixed(2));
+      setSource(shift.source);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [date, employee.id]);
+
+  function handleSave() {
+    const wageCents = Math.round((Number(wage) || 0) * 100);
+    if (wageCents <= 0) return;
+    setStatus("idle");
+    setError(null);
+    startTransition(async () => {
+      const result = await saveShiftForDay({
+        employeeId: employee.id,
+        date,
+        clockIn,
+        clockOut,
+        unpaidBreakMinutes: Number(breakMinutes) || 0,
+        hourlyWageCents: wageCents,
+      });
+      if (result.ok) {
+        setStatus("saved");
+        setSource("confirmed");
+      } else {
+        setStatus("error");
+        setError(result.error);
+      }
+    });
+  }
+
+  function handleMarkAbsent() {
+    setStatus("idle");
+    setError(null);
+    startTransition(async () => {
+      const result = await markDayAbsent({ employeeId: employee.id, date });
+      if (result.ok) {
+        setClockIn("00:00");
+        setClockOut("00:00");
+        setBreakMinutes("0");
+        setSource("confirmed");
+        setStatus("saved");
+      } else {
+        setStatus("error");
+        setError(result.error);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-xl bg-white p-3">
+      <span className="text-sm font-bold">{labels.editDay}</span>
+      <p className="text-xs text-ink-muted">{labels.editDayHint}</p>
+      <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+        {labels.date}
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-lg border border-line px-2.5 text-sm" />
+      </label>
+      {source === "predicted" && <span className="text-xs font-semibold text-warn">{labels.predictedTag}</span>}
+      <div className="flex min-w-0 gap-2">
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
+          {labels.clockIn}
+          <input type="time" value={clockIn} onChange={(e) => setClockIn(e.target.value)} className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm" />
+        </label>
+        <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
+          {labels.clockOut}
+          <input
+            type="time"
+            value={clockOut}
+            onChange={(e) => setClockOut(e.target.value)}
+            className="h-11 w-full min-w-0 rounded-lg border border-line px-2.5 text-sm"
+          />
+        </label>
+      </div>
+      <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+        {labels.unpaidBreakMinutes}
+        <input
+          type="number"
+          min="0"
+          max="240"
+          value={breakMinutes}
+          onChange={(e) => setBreakMinutes(e.target.value)}
+          className="h-11 rounded-lg border border-line px-2.5 text-sm"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+        {labels.wageLabel}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span className="shrink-0 font-bold text-ink-muted">$</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={wage}
+            onChange={(e) => setWage(e.target.value)}
+            className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
+          />
+          <span className="shrink-0 text-ink-muted">/hr</span>
+        </div>
+      </label>
+      {error && <p className="text-sm text-warn">{error}</p>}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={isPending || !wage}
+          className="h-11 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+        >
+          {status === "saved" ? labels.saved : labels.save}
+        </button>
+        <button type="button" onClick={handleMarkAbsent} disabled={isPending} className="h-11 rounded-full border border-line px-3.5 text-sm font-semibold text-ink-muted">
+          {labels.didntWork}
+        </button>
+      </div>
     </div>
   );
 }
