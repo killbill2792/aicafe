@@ -8,6 +8,7 @@ import { DEMO_BUSINESS_ID } from "@/lib/constants";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import BusinessSwitch from "@/components/more/BusinessSwitch";
+import EditBusinessName from "@/components/more/EditBusinessName";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -18,16 +19,19 @@ export default async function MorePage() {
 
   let activeBusinessId = DEMO_BUSINESS_ID;
   let ownBusinessId: string | null = null;
+  let ownBusinessName: string | null = null;
   if (isSupabaseConfigured() && user) {
     const supabase = await createServerSupabaseClient();
     activeBusinessId = await getActiveBusinessId(user.id);
-    const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo)").eq("user_id", user.id);
+    const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo, name)").eq("user_id", user.id);
     const own = (memberships ?? []).find((m) => {
-      const b = m.businesses as unknown as { is_demo: boolean } | { is_demo: boolean }[] | null;
+      const b = m.businesses as unknown as { is_demo: boolean; name: string } | { is_demo: boolean; name: string }[] | null;
       const isDemo = Array.isArray(b) ? b[0]?.is_demo : b?.is_demo;
       return isDemo === false;
     });
     ownBusinessId = own?.business_id ?? null;
+    const ownBiz = own?.businesses as unknown as { is_demo: boolean; name: string } | { is_demo: boolean; name: string }[] | null;
+    ownBusinessName = (Array.isArray(ownBiz) ? ownBiz[0]?.name : ownBiz?.name) ?? null;
   }
 
   const links = [
@@ -51,6 +55,14 @@ export default async function MorePage() {
         <h1 className="font-headline text-3xl font-semibold text-ink">{t("title")}</h1>
         <LanguageSwitch href="/more" />
       </header>
+
+      {ownBusinessId && ownBusinessName && (
+        <EditBusinessName
+          businessId={ownBusinessId}
+          name={ownBusinessName}
+          labels={{ cafeNameLabel: t("cafeNameLabel"), save: t("save"), cancel: t("cancel") }}
+        />
+      )}
 
       <BusinessSwitch
         activeBusinessId={activeBusinessId}

@@ -260,6 +260,9 @@
   "More": {
     "title": "Más",
     "placeholder": "Aquí verás ajustes, idioma y cuenta.",
+    "cafeNameLabel": "Nombre del café",
+    "save": "Guardar",
+    "cancel": "Cancelar",
     "businessSwitchTitle": "Café",
     "demoCafe": "Café de muestra",
     "myCafe": "Mi café",
@@ -465,7 +468,8 @@
   },
   "Scenario": {
     "title": "Probar un escenario",
-    "subtitle": "Prueba un cambio de precio o costo antes de decidirlo",
+    "subtitle": "Mira el impacto en dinero de un cambio en el costo de un ingrediente antes de que pase",
+    "explainer": "Elige una bebida y prueba un nuevo costo de ingredientes para ella — por ejemplo, si un proveedor sube los precios. Esto nunca cambia el precio de tu menú, y nada se guarda hasta que tú mismo actualices el costo real.",
     "noItems": "Agrega algunos productos al menú primero para probar un escenario.",
     "pickDrink": "¿Qué bebida?",
     "currentIngredients": "los ingredientes cuestan {amount} hoy",
@@ -476,10 +480,11 @@
     "moreCost": "más",
     "saved": "ahorrado",
     "noChangeNote": "Sin cambio respecto al costo de hoy — prueba otro precio para ver el impacto.",
+    "noSalesDataForItem": "{name} no ha vendido ninguna taza en los últimos 28 días, así que todavía no hay nada por lo cual multiplicar un cambio de costo — esto empezará a funcionar en cuanto subas algunas ventas.",
     "delaysRecovery": "A este ritmo, eso atrasa cubrir todas tus cuentas unos {days} días.",
     "speedsUpRecovery": "A este ritmo, eso adelanta cubrir todas tus cuentas unos {days} días.",
     "delayUnknown": "Aún no hay suficientes datos de ventas para estimar el efecto en la recuperación de costos.",
-    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas cambiar un precio de verdad."
+    "footer": "Solo estimaciones, basadas en tus últimos 28 días de ventas — no es una garantía. Nada aquí se guarda hasta que decidas actualizar el costo de verdad."
   },
   "Reconnect": {
     "banner": "No pudimos obtener las ventas de hoy de tu caja registradora. Toca para reconectar.",

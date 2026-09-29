@@ -260,6 +260,9 @@
   "More": {
     "title": "More",
     "placeholder": "Settings, language, and account will show up here.",
+    "cafeNameLabel": "Café name",
+    "save": "Save",
+    "cancel": "Cancel",
     "businessSwitchTitle": "Café",
     "demoCafe": "Demo café",
     "myCafe": "My café",
@@ -465,7 +468,8 @@
   },
   "Scenario": {
     "title": "Try a scenario",
-    "subtitle": "Test a pricing or cost change before you commit to it",
+    "subtitle": "See the money impact of an ingredient cost change before it happens",
+    "explainer": "Pick a drink and try a new ingredient cost for it — for example, if a supplier raises prices. This never changes your menu price, and nothing is saved until you go update the real cost yourself.",
     "noItems": "Add some menu items first to try a scenario.",
     "pickDrink": "Which drink?",
     "currentIngredients": "ingredients cost {amount} today",
@@ -476,10 +480,11 @@
     "moreCost": "more",
     "saved": "saved",
     "noChangeNote": "No change from today's cost — try a different price to see the impact.",
+    "noSalesDataForItem": "{name} hasn't sold any cups in the last 28 days, so there's nothing to multiply a cost change by yet — this will start working once you've uploaded some sales.",
     "delaysRecovery": "At this pace, that pushes covering all your bills back by about {days} days.",
     "speedsUpRecovery": "At this pace, that gets you to covering all your bills about {days} days sooner.",
     "delayUnknown": "Not enough sales data yet to estimate the effect on cost recovery.",
-    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually change a price."
+    "footer": "Estimates only, based on your last 28 days of sales — not a guarantee. Nothing here is saved until you decide to actually update the cost."
   },
   "Reconnect": {
     "banner": "We couldn't get today's sales from your register. Tap to reconnect.",
