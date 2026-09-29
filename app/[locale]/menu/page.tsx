@@ -1,3 +1,4 @@
+import { Settings2 } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
@@ -6,6 +7,7 @@ import Money from "@/components/shared/Money";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import MenuItemBar from "@/components/menu/MenuItemBar";
 import MenuSortSwitch from "@/components/menu/MenuSortSwitch";
+import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -34,8 +36,27 @@ export default async function MenuPage({ searchParams }: { searchParams: Promise
           <div className="text-xl font-bold text-ink">{t("headline")}</div>
           <div className="text-sm font-medium text-ink-muted">{t("subhead")}</div>
         </div>
-        <LanguageSwitch href="/menu" />
+        <div className="flex items-center gap-2">
+          <Link
+            href="/menu/manage"
+            aria-label={t("manageMenu")}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-card text-ink no-underline"
+          >
+            <Settings2 aria-hidden="true" size={20} />
+          </Link>
+          <LanguageSwitch href="/menu" />
+        </div>
       </header>
+
+      {vm.items.length === 0 && (
+        <Link
+          href="/menu/manage"
+          className="flex flex-col gap-1 rounded-card-lg bg-card p-[18px] text-ink no-underline"
+        >
+          <span className="text-base font-bold">{t("noItemsTitle")}</span>
+          <span className="text-[15px] text-ink-muted">{t("noItemsBody")}</span>
+        </Link>
+      )}
 
       {vm.featured && (
         <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
@@ -100,6 +121,12 @@ export default async function MenuPage({ searchParams }: { searchParams: Promise
             })}
           </div>
         </section>
+      )}
+
+      {vm.items.length > 0 && (
+        <Link href="/menu/manage" className="mx-1 text-[15px] font-semibold text-ink no-underline underline">
+          {t("manageMenu")}
+        </Link>
       )}
 
       <p className="mx-1 text-[13px] leading-snug text-ink-muted">{t("staffTimeExplainer")}</p>

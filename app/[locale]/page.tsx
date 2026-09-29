@@ -1,5 +1,6 @@
 import { TrendingDown, TrendingUp } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
@@ -111,9 +112,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </div>
 
       {vm.missingCategories.length > 0 && (
-        <div className="rounded-2xl bg-warn-tint p-3.5 text-[15px] font-medium text-warn">
-          {t("missingCostBanner", { category: vm.missingCategories[0].label })}
-        </div>
+        <Link
+          href="/more/bills"
+          className="flex items-center justify-between gap-2 rounded-2xl bg-warn-tint p-3.5 text-[15px] font-medium text-warn no-underline"
+        >
+          <span>{t("missingCostBannerText", { category: vm.missingCategories[0].label })}</span>
+          <span className="shrink-0 font-bold underline">{t("missingCostBannerAction")}</span>
+        </Link>
       )}
 
       <CostRecoveryStrip
