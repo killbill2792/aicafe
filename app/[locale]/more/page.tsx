@@ -1,13 +1,10 @@
 import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Receipt, Shield, Trash2, TrendingUp, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
-import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { DEMO_BUSINESS_ID } from "@/lib/constants";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
-import BusinessSwitch from "@/components/more/BusinessSwitch";
 import EditBusinessName from "@/components/more/EditBusinessName";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -17,12 +14,10 @@ export default async function MorePage() {
   const user = await requireUser();
   const t = await getTranslations("More");
 
-  let activeBusinessId = DEMO_BUSINESS_ID;
   let ownBusinessId: string | null = null;
   let ownBusinessName: string | null = null;
   if (isSupabaseConfigured() && user) {
     const supabase = await createServerSupabaseClient();
-    activeBusinessId = await getActiveBusinessId(user.id);
     const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo, name)").eq("user_id", user.id);
     const own = (memberships ?? []).find((m) => {
       const b = m.businesses as unknown as { is_demo: boolean; name: string } | { is_demo: boolean; name: string }[] | null;
@@ -63,12 +58,6 @@ export default async function MorePage() {
           labels={{ cafeNameLabel: t("cafeNameLabel"), save: t("save"), cancel: t("cancel") }}
         />
       )}
-
-      <BusinessSwitch
-        activeBusinessId={activeBusinessId}
-        ownBusinessId={ownBusinessId}
-        labels={{ title: t("businessSwitchTitle"), demo: t("demoCafe"), mine: t("myCafe"), noOwnBusiness: t("noOwnBusinessYet") }}
-      />
 
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {links.map(({ href, Icon, label }) => (
