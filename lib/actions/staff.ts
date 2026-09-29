@@ -52,6 +52,40 @@ export async function addEmployee(input: z.infer<typeof EmployeeSchema>): Promis
   return { ok: true };
 }
 
+const UpdateEmployeeSchema = z.object({
+  employeeId: z.string().uuid(),
+  name: z.string().trim().min(1).max(80),
+  role: z.string().trim().max(60).optional(),
+  defaultHourlyWageCents: z.number().int().positive(),
+});
+
+/** Edit an existing employee's name, role, and default wage — separate from logging a shift.
+ * Past timecards keep whatever wage was on them at the time (see logShift), so this never
+ * rewrites pay history; it only changes the roster entry and what pre-fills future shifts. */
+export async function updateEmployee(input: z.infer<typeof UpdateEmployeeSchema>): Promise<ActionResult> {
+  const parsed = UpdateEmployeeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a name and hourly wage." };
+
+  const business = await currentBusiness();
+  if (!business) return { ok: false, error: "Sign in first." };
+
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase
+    .from("employees")
+    .update({
+      display_name: parsed.data.name,
+      role: parsed.data.role || null,
+      default_hourly_wage_cents: parsed.data.defaultHourlyWageCents,
+    })
+    .eq("id", parsed.data.employeeId)
+    .eq("business_id", business.businessId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/more/manage-staff");
+  revalidatePath("/staff");
+  return { ok: true };
+}
+
 export async function setEmployeeActive(employeeId: string, active: boolean): Promise<ActionResult> {
   const business = await currentBusiness();
   if (!business) return { ok: false, error: "Sign in first." };

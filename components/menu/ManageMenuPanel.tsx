@@ -11,15 +11,21 @@ type Labels = {
   nameLabel: string;
   priceLabel: string;
   prepSecondsLabel: string;
+  prepSecondsHelp: string;
   categoryDrink: string;
   categoryFood: string;
   add: string;
   noItems: string;
   recipe: string;
+  recipeHint: string;
+  ingredientAdded: string;
   noIngredientsYet: string;
   ingredientLabel: string;
   quantityLabel: string;
   newIngredient: string;
+  ingredientCostLabel: string;
+  ingredientCostForLabel: string;
+  ingredientCostHint: string;
   unitG: string;
   unitMl: string;
   unitEach: string;
@@ -85,29 +91,34 @@ export default function ManageMenuPanel({
           {labels.addDrink}
         </h2>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={labels.nameLabel} className="h-12 rounded-xl border border-line px-3 text-base" />
-        <div className="flex min-w-0 gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="shrink-0 text-lg font-bold text-ink-muted">$</span>
+        <div className="flex min-w-0 items-start gap-2">
+          <label className="flex min-w-0 flex-1 flex-col gap-1">
+            <span className="text-xs font-semibold text-ink-muted">{labels.priceLabel}</span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="shrink-0 text-lg font-bold text-ink-muted">$</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                className="h-12 w-full min-w-0 rounded-xl border border-line px-3 text-base"
+              />
+            </div>
+          </label>
+          <label className="flex w-28 shrink-0 flex-col gap-1">
+            <span className="text-xs font-semibold text-ink-muted">{labels.prepSecondsLabel}</span>
             <input
               type="number"
-              inputMode="decimal"
-              min="0"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder={labels.priceLabel}
-              className="h-12 w-full min-w-0 rounded-xl border border-line px-3 text-base"
+              min="1"
+              value={prepSeconds}
+              onChange={(e) => setPrepSeconds(e.target.value)}
+              className="h-12 w-full min-w-0 rounded-xl border border-line px-2 text-base"
             />
-          </div>
-          <input
-            type="number"
-            min="1"
-            value={prepSeconds}
-            onChange={(e) => setPrepSeconds(e.target.value)}
-            placeholder={labels.prepSecondsLabel}
-            className="h-12 w-24 min-w-0 shrink-0 rounded-xl border border-line px-2 text-base"
-          />
+          </label>
         </div>
+        <p className="-mt-1.5 text-xs text-ink-muted">{labels.prepSecondsHelp}</p>
         <div className="flex gap-2">
           <button
             type="button"
@@ -179,27 +190,38 @@ function MenuItemRow({
   const [ingredientId, setIngredientId] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [newUnit, setNewUnit] = useState<"g" | "ml" | "each">("g");
+  const [newCost, setNewCost] = useState("");
+  const [newCostQuantity, setNewCostQuantity] = useState("");
   const [quantity, setQuantity] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [justAdded, setJustAdded] = useState(false);
 
   function handleAddLine() {
     const qty = Number(quantity);
     if (!qty || qty <= 0) return;
     if (!ingredientId && !newName.trim()) return;
+    const costCents = Math.round((Number(newCost) || 0) * 100);
+    const costQuantity = Number(newCostQuantity) || 0;
     setError(null);
+    setJustAdded(false);
     startTransition(async () => {
       const result = await addRecipeLine({
         menuItemId: item.id,
         ingredientId: ingredientId || undefined,
         newIngredientName: ingredientId ? undefined : newName.trim(),
         newIngredientUnit: ingredientId ? undefined : newUnit,
+        newIngredientCostCents: !ingredientId && costCents > 0 && costQuantity > 0 ? costCents : undefined,
+        newIngredientCostQuantity: !ingredientId && costCents > 0 && costQuantity > 0 ? costQuantity : undefined,
         quantity: qty,
       });
       if (result.ok) {
         setQuantity("");
         setNewName("");
+        setNewCost("");
+        setNewCostQuantity("");
         setIngredientId("");
+        setJustAdded(true);
       } else {
         setError(result.error);
       }
@@ -232,7 +254,10 @@ function MenuItemRow({
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-3 rounded-2xl bg-[#FAF6F0] p-3.5">
-          <span className="text-sm font-bold">{labels.recipe}</span>
+          <div className="flex flex-col gap-0.5">
+            <span className="text-sm font-bold">{labels.recipe}</span>
+            <span className="text-xs text-ink-muted">{labels.recipeHint}</span>
+          </div>
           {item.recipe.length === 0 ? (
             <p className="text-sm text-ink-muted">{labels.noIngredientsYet}</p>
           ) : (
@@ -280,6 +305,35 @@ function MenuItemRow({
                 </select>
               </div>
             )}
+            {!ingredientId && (
+              <div className="flex flex-col gap-1">
+                <span className="text-xs font-semibold text-ink-muted">{labels.ingredientCostLabel}</span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="shrink-0 font-bold text-ink-muted">$</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={newCost}
+                    onChange={(e) => setNewCost(e.target.value)}
+                    className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
+                  />
+                  <span className="shrink-0 text-xs text-ink-muted">{labels.ingredientCostForLabel}</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={newCostQuantity}
+                    onChange={(e) => setNewCostQuantity(e.target.value)}
+                    className="h-11 w-20 min-w-0 shrink-0 rounded-lg border border-line px-2 text-sm"
+                  />
+                  <span className="shrink-0 text-xs text-ink-muted">{newUnit === "each" ? labels.unitEach : newUnit}</span>
+                </div>
+                <span className="text-xs text-ink-muted">{labels.ingredientCostHint}</span>
+              </div>
+            )}
             <div className="flex min-w-0 items-center gap-2">
               <input
                 type="number"
@@ -301,6 +355,7 @@ function MenuItemRow({
               </button>
             </div>
             {error && <p className="text-sm text-warn">{error}</p>}
+            {justAdded && !error && <p className="text-sm font-semibold text-good">{labels.ingredientAdded}</p>}
           </div>
 
           <button type="button" onClick={handleToggleActive} disabled={isPending} className="h-10 rounded-full border border-line text-sm font-semibold text-ink-muted">

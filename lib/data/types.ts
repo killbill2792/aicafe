@@ -23,6 +23,10 @@ export type MenuItemSnapshot = {
   category: "drink" | "food";
   /** Theoretical ingredient cost at today's ingredient prices. */
   ingredientsCentsToday: number;
+  /** False when there's no recipe yet, or the recipe exists but nothing on it has a priced cost —
+   * ingredientsCentsToday is 0 in both cases, not because the drink is actually free to make, so
+   * callers must not treat that 0 as a real cost. */
+  hasRecipe: boolean;
   quantitySoldLast28Days: number;
 };
 

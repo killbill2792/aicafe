@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -17,6 +18,15 @@ async function currentBusinessId(): Promise<string | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
   return getActiveBusinessId(user.id);
+}
+
+/** A new ingredient price must be dated by the business's own "today", not the server's UTC
+ * date — snapshot queries filter prices with effective_from <= business-local today, so a price
+ * stamped with a later UTC date (e.g. entered in the evening in a timezone behind UTC) would be
+ * silently excluded from every cost calculation until the server's date catches up. */
+async function currentBusinessTodayDateStr(businessId: string, supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>): Promise<string> {
+  const { data } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
+  return formatInTimeZone(new Date(), data?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
 }
 
 const MenuItemSchema = z.object({
@@ -75,6 +85,11 @@ const RecipeLineSchema = z.object({
   ingredientId: z.string().uuid().optional(),
   newIngredientName: z.string().trim().max(60).optional(),
   newIngredientUnit: z.enum(["g", "ml", "each"]).optional(),
+  /** What a whole package of the new ingredient costs, and how much of the base unit that
+   * package holds — e.g. "$50 for 2000 g of beans". Both optional: an owner can add the
+   * recipe now and price it later once they know the cost. */
+  newIngredientCostCents: z.number().int().positive().optional(),
+  newIngredientCostQuantity: z.number().positive().optional(),
   quantity: z.number().positive(),
 });
 
@@ -94,13 +109,38 @@ export async function addRecipeLine(input: z.infer<typeof RecipeLineSchema>): Pr
 
   let ingredientId = parsed.data.ingredientId;
   if (!ingredientId) {
-    const { data: created, error: createError } = await supabase
+    // Match by name (case-insensitive) before creating — typing a name that already exists
+    // should reuse it, not silently fork a second "Milk" with no way to tell them apart.
+    const { data: existing } = await supabase
       .from("ingredients")
-      .insert({ business_id: businessId, name: parsed.data.newIngredientName, base_unit: parsed.data.newIngredientUnit ?? "g" })
-      .select("id")
-      .single();
-    if (createError || !created) return { ok: false, error: createError?.message ?? "Could not add the ingredient." };
-    ingredientId = created.id;
+      .select("id, name")
+      .eq("business_id", businessId)
+      .ilike("name", parsed.data.newIngredientName!);
+    ingredientId = existing?.find((i) => i.name.toLowerCase() === parsed.data.newIngredientName!.toLowerCase())?.id;
+
+    if (!ingredientId) {
+      const { data: created, error: createError } = await supabase
+        .from("ingredients")
+        .insert({ business_id: businessId, name: parsed.data.newIngredientName, base_unit: parsed.data.newIngredientUnit ?? "g" })
+        .select("id")
+        .single();
+      if (createError || !created) return { ok: false, error: createError?.message ?? "Could not add the ingredient." };
+      ingredientId = created.id;
+    }
+
+    // A cost may be entered whether this reused a name match or just created the ingredient —
+    // either way it's a new price point, so it's always worth recording.
+    if (parsed.data.newIngredientCostCents && parsed.data.newIngredientCostQuantity) {
+      // Same ×1,000,000 cents-to-micros convention as csvImport.ts — see the note there.
+      const costPerBaseUnitMicros = Math.round((parsed.data.newIngredientCostCents / parsed.data.newIngredientCostQuantity) * 1_000_000);
+      const { error: priceError } = await supabase.from("ingredient_prices").insert({
+        ingredient_id: ingredientId,
+        effective_from: await currentBusinessTodayDateStr(businessId, supabase),
+        cost_per_base_unit_micros: costPerBaseUnitMicros,
+        source: "manual",
+      });
+      if (priceError) return { ok: false, error: priceError.message };
+    }
   }
 
   const { error } = await supabase
@@ -110,6 +150,7 @@ export async function addRecipeLine(input: z.infer<typeof RecipeLineSchema>): Pr
 
   revalidatePath("/menu");
   revalidatePath("/menu/manage");
+  revalidatePath("/");
   return { ok: true };
 }
 

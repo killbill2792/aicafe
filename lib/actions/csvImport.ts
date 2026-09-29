@@ -179,7 +179,11 @@ export async function importIngredientCostRows(rows: IngredientCostImportRow[]):
     const { error } = await supabase.from("ingredient_prices").insert({
       ingredient_id: ingredientId,
       effective_from: row.effectiveFrom,
-      cost_per_base_unit_micros: row.costPerUnitCents * 10_000, // cents -> micro-cents
+      // cents -> micros: itemIngredientCostCents (lib/calc/ingredients.ts) divides quantity ×
+      // micros by 1,000,000 to get cents back, so this must be the inverse of that, not ×10,000
+      // (see lib/calc/ingredients.test.ts and scripts/seed/demoData.mjs's ingredientPriceMicros
+      // for the same ×1,000,000 convention — this line was off by 100x until now).
+      cost_per_base_unit_micros: row.costPerUnitCents * 1_000_000,
       source: "invoice",
     });
     if (!error) imported += 1;

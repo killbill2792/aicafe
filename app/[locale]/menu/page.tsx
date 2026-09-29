@@ -71,6 +71,7 @@ export default async function MenuPage({ searchParams }: { searchParams: Promise
             <Legend color="bg-fees" label={t("legendCardFee")} />
             <Legend color="bg-running" label={t("legendRent")} />
           </div>
+          {!vm.featured.item.hasRecipe && <NoRecipeWarning t={t} />}
           <div className="flex flex-col gap-2 border-t border-line pt-3">
             <div className="flex items-center justify-between">
               <span className="text-[15px] text-ink-muted">{t("youKeepPer", { name: vm.featured.item.name })}</span>
@@ -106,6 +107,7 @@ export default async function MenuPage({ searchParams }: { searchParams: Promise
                 </span>
               </div>
               <MenuItemBar breakdown={breakdown} yoursLabel={t("yours")} />
+              {!breakdown.item.hasRecipe && <NoRecipeWarning t={t} compact />}
             </div>
           ))}
         </div>
@@ -140,5 +142,19 @@ function Legend({ color, label }: { color: string; label: string }) {
       <span className={`h-2.5 w-2.5 rounded-[3px] ${color}`} />
       {label}
     </span>
+  );
+}
+
+function NoRecipeWarning({ t, compact }: { t: Awaited<ReturnType<typeof getTranslations<"Menu">>>; compact?: boolean }) {
+  return (
+    <Link
+      href="/menu/manage"
+      className={`flex items-center justify-between gap-2 rounded-xl bg-warn-tint font-medium text-warn no-underline ${
+        compact ? "px-2.5 py-1.5 text-[13px]" : "p-3 text-sm"
+      }`}
+    >
+      <span>{t("noRecipeWarning")}</span>
+      <span className="shrink-0 font-bold underline">{t("noRecipeWarningAction")}</span>
+    </Link>
   );
 }

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ChevronDown, ChevronUp, Clock, UserPlus } from "lucide-react";
-import { addEmployee, logShift, setEmployeeActive } from "@/lib/actions/staff";
+import { ChevronDown, ChevronUp, Clock, Pencil, UserPlus } from "lucide-react";
+import { addEmployee, logShift, setEmployeeActive, updateEmployee } from "@/lib/actions/staff";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
 
 type Labels = {
@@ -12,7 +12,12 @@ type Labels = {
   wageLabel: string;
   add: string;
   noStaff: string;
+  editDetails: string;
+  saveDetails: string;
+  detailsSaved: string;
+  cancel: string;
   logHours: string;
+  logHoursHint: string;
   date: string;
   clockIn: string;
   clockOut: string;
@@ -167,6 +172,35 @@ function EmployeeRowItem({
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(employee.name);
+  const [editRole, setEditRole] = useState(employee.role ?? "");
+  const [editWage, setEditWage] = useState(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+  const [editStatus, setEditStatus] = useState<"idle" | "saved" | "error">("idle");
+  const [editError, setEditError] = useState<string | null>(null);
+
+  function handleSaveDetails() {
+    const wageCents = Math.round((Number(editWage) || 0) * 100);
+    if (!editName.trim() || wageCents <= 0) return;
+    setEditStatus("idle");
+    setEditError(null);
+    startTransition(async () => {
+      const result = await updateEmployee({
+        employeeId: employee.id,
+        name: editName.trim(),
+        role: editRole.trim() || undefined,
+        defaultHourlyWageCents: wageCents,
+      });
+      if (result.ok) {
+        setEditStatus("saved");
+        setIsEditing(false);
+      } else {
+        setEditStatus("error");
+        setEditError(result.error);
+      }
+    });
+  }
+
   function handleLogShift() {
     const wageCents = Math.round((Number(wage) || 0) * 100);
     if (wageCents <= 0) return;
@@ -212,10 +246,82 @@ function EmployeeRowItem({
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-[#FAF6F0] p-3.5">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-bold">{employee.name}</span>
+            <button
+              type="button"
+              onClick={() => {
+                setIsEditing((v) => !v);
+                setEditStatus("idle");
+              }}
+              className="flex items-center gap-1 text-xs font-semibold text-ink-muted"
+            >
+              <Pencil aria-hidden="true" size={13} />
+              {labels.editDetails}
+            </button>
+          </div>
+
+          {isEditing && (
+            <div className="flex flex-col gap-2 rounded-xl bg-white p-3">
+              <input
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder={labels.nameLabel}
+                className="h-11 rounded-lg border border-line px-2.5 text-sm"
+              />
+              <input
+                type="text"
+                value={editRole}
+                onChange={(e) => setEditRole(e.target.value)}
+                placeholder={labels.roleLabel}
+                className="h-11 rounded-lg border border-line px-2.5 text-sm"
+              />
+              <div className="flex min-w-0 items-center gap-1.5">
+                <span className="shrink-0 font-bold text-ink-muted">$</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="0.01"
+                  value={editWage}
+                  onChange={(e) => setEditWage(e.target.value)}
+                  placeholder={labels.wageLabel}
+                  className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
+                />
+                <span className="shrink-0 text-ink-muted">/hr</span>
+              </div>
+              {editError && <p className="text-sm text-warn">{editError}</p>}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveDetails}
+                  disabled={isPending || !editName.trim() || !editWage}
+                  className="h-10 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+                >
+                  {editStatus === "saved" ? labels.detailsSaved : labels.saveDetails}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setEditName(employee.name);
+                    setEditRole(employee.role ?? "");
+                    setEditWage(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+                  }}
+                  className="h-10 rounded-full border border-line px-3.5 text-sm font-semibold text-ink-muted"
+                >
+                  {labels.cancel}
+                </button>
+              </div>
+            </div>
+          )}
+
           <span className="flex items-center gap-1.5 text-sm font-bold">
             <Clock aria-hidden="true" size={16} />
             {labels.logHours}
           </span>
+          <p className="-mt-1.5 text-xs text-ink-muted">{labels.logHoursHint}</p>
           <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
             {labels.date}
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-11 rounded-lg border border-line px-2.5 text-sm" />

@@ -281,13 +281,17 @@ async function getMenuItemSnapshots(
     const lines = (recipeLines ?? [])
       .filter((r) => r.menu_item_id === item.id)
       .map((r) => ({ ingredientId: r.ingredient_id, quantity: Number(r.quantity) }));
+    const ingredientsCentsToday = itemIngredientCostCents(lines, latestPriceMicros);
     return {
       id: item.id,
       name: item.name,
       priceCents: item.price_cents ?? 0,
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
-      ingredientsCentsToday: itemIngredientCostCents(lines, latestPriceMicros),
+      ingredientsCentsToday,
+      // Lines with no priced ingredient cost 0 by default, not because the drink is actually
+      // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
+      hasRecipe: lines.length > 0 && ingredientsCentsToday > 0,
       quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
     };
   });
