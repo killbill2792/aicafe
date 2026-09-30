@@ -13,6 +13,8 @@ export type RecipeLineForEdit = {
 export type MenuItemForEdit = {
   id: string;
   name: string;
+  baseName: string;
+  sizeLabel: string | null;
   priceCents: number;
   prepSeconds: number;
   category: "drink" | "food";
@@ -34,7 +36,11 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const businessId = await getActiveBusinessId(user.id);
 
   const [{ data: items }, { data: ingredients }] = await Promise.all([
-    supabase.from("menu_items").select("id, name, price_cents, prep_seconds, category, is_active").eq("business_id", businessId).order("name"),
+    supabase
+      .from("menu_items")
+      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active")
+      .eq("business_id", businessId)
+      .order("name"),
     supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
   ]);
 
@@ -63,6 +69,8 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => ({
     id: item.id,
     name: item.name,
+    baseName: item.base_name ?? item.name,
+    sizeLabel: item.size_label ?? null,
     priceCents: item.price_cents ?? 0,
     prepSeconds: item.prep_seconds,
     category: (item.category === "food" ? "food" : "drink") as "drink" | "food",

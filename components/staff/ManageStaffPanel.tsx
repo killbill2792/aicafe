@@ -3,14 +3,45 @@
 import { useEffect, useState, useTransition } from "react";
 import { CalendarDays, ChevronDown, ChevronUp, Pencil, UserPlus } from "lucide-react";
 import { addEmployee, getShiftForDay, markDayAbsent, saveShiftForDay, setEmployeeActive, setWeeklySchedule, updateEmployee } from "@/lib/actions/staff";
+import { weeklyScheduledHours } from "@/lib/calc";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
 import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
+
+type WagePeriod = "hour" | "month" | "year";
+
+function wagePeriodLabel(period: WagePeriod, labels: Labels): string {
+  return period === "hour" ? labels.wagePeriodHour : period === "month" ? labels.wagePeriodMonth : labels.wagePeriodYear;
+}
+
+function WagePeriodPicker({ value, onChange, labels }: { value: WagePeriod; onChange: (p: WagePeriod) => void; labels: Labels }) {
+  const options: WagePeriod[] = ["hour", "month", "year"];
+  return (
+    <div className="flex gap-2">
+      {options.map((p) => (
+        <button
+          key={p}
+          type="button"
+          onClick={() => onChange(p)}
+          className={`h-10 flex-1 rounded-lg text-xs font-semibold ${value === p ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
+        >
+          {wagePeriodLabel(p, labels)}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 type Labels = {
   addStaff: string;
   nameLabel: string;
   roleLabel: string;
   wageLabel: string;
+  wagePeriodHour: string;
+  wagePeriodMonth: string;
+  wagePeriodYear: string;
+  hoursPerWeekLabel: string;
+  hoursPerWeekHint: string;
+  basedOnScheduleLabel: string;
   add: string;
   noStaff: string;
   editDetails: string;
@@ -73,6 +104,8 @@ export default function ManageStaffPanel({
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [wage, setWage] = useState("");
+  const [wagePeriod, setWagePeriod] = useState<WagePeriod>("hour");
+  const [fallbackHoursPerWeek, setFallbackHoursPerWeek] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Defaults to every active employee already expanded — this is a screen the owner opens to make
@@ -89,16 +122,28 @@ export default function ManageStaffPanel({
     });
   }
 
+  const addNeedsFallbackHours = wagePeriod !== "hour";
+  const addCanSubmit = name.trim() && wage && (!addNeedsFallbackHours || Number(fallbackHoursPerWeek) > 0);
+
   function handleAdd() {
-    const wageCents = Math.round((Number(wage) || 0) * 100);
-    if (!name.trim() || wageCents <= 0) return;
+    const wageAmountCents = Math.round((Number(wage) || 0) * 100);
+    if (!name.trim() || wageAmountCents <= 0) return;
+    if (addNeedsFallbackHours && !(Number(fallbackHoursPerWeek) > 0)) return;
     setError(null);
     startTransition(async () => {
-      const result = await addEmployee({ name: name.trim(), role: role.trim() || undefined, defaultHourlyWageCents: wageCents });
+      const result = await addEmployee({
+        name: name.trim(),
+        role: role.trim() || undefined,
+        wagePeriod,
+        wageAmountCents,
+        fallbackHoursPerWeek: addNeedsFallbackHours ? Number(fallbackHoursPerWeek) : undefined,
+      });
       if (result.ok) {
         setName("");
         setRole("");
         setWage("");
+        setWagePeriod("hour");
+        setFallbackHoursPerWeek("");
       } else {
         setError(result.error);
       }
@@ -129,6 +174,7 @@ export default function ManageStaffPanel({
           placeholder={labels.roleLabel}
           className="h-12 rounded-xl border border-line px-3 text-base"
         />
+        <WagePeriodPicker value={wagePeriod} onChange={setWagePeriod} labels={labels} />
         <div className="flex min-w-0 items-center gap-2">
           <span className="shrink-0 text-lg font-bold text-ink-muted">$</span>
           <input
@@ -141,13 +187,26 @@ export default function ManageStaffPanel({
             placeholder={labels.wageLabel}
             className="h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
           />
-          <span className="text-sm text-ink-muted">/hr</span>
         </div>
+        {addNeedsFallbackHours && (
+          <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+            {labels.hoursPerWeekLabel}
+            <input
+              type="number"
+              min="1"
+              max="120"
+              value={fallbackHoursPerWeek}
+              onChange={(e) => setFallbackHoursPerWeek(e.target.value)}
+              className="h-11 w-28 rounded-lg border border-line px-2 text-sm"
+            />
+            <span className="font-normal normal-case text-ink-muted">{labels.hoursPerWeekHint}</span>
+          </label>
+        )}
         {error && <p className="text-sm text-warn">{error}</p>}
         <button
           type="button"
           onClick={handleAdd}
-          disabled={isPending || !name.trim() || !wage}
+          disabled={isPending || !addCanSubmit}
           className="h-12 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40"
         >
           {labels.add}
@@ -208,16 +267,28 @@ function EmployeeRowItem({
 }) {
   const [isPending, startTransition] = useTransition();
 
+  const ongoingScheduleHours = weeklyScheduledHours(
+    schedules.filter((s) => s.effectiveTo === null).map((s) => ({ startTime: s.startTime, endTime: s.endTime, unpaidBreakMinutes: s.unpaidBreakMinutes })),
+  );
+  const hasSchedule = ongoingScheduleHours > 0;
+
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(employee.name);
   const [editRole, setEditRole] = useState(employee.role ?? "");
-  const [editWage, setEditWage] = useState(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+  const [editWagePeriod, setEditWagePeriod] = useState<WagePeriod>(employee.wagePeriod);
+  const [editWage, setEditWage] = useState(
+    employee.wageAmountCents ? (employee.wageAmountCents / 100).toFixed(2) : employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "",
+  );
+  const [editFallbackHours, setEditFallbackHours] = useState("");
   const [editStatus, setEditStatus] = useState<"idle" | "saved" | "error">("idle");
   const [editError, setEditError] = useState<string | null>(null);
 
+  const editNeedsFallbackHours = editWagePeriod !== "hour" && !hasSchedule;
+
   function handleSaveDetails() {
-    const wageCents = Math.round((Number(editWage) || 0) * 100);
-    if (!editName.trim() || wageCents <= 0) return;
+    const wageAmountCents = Math.round((Number(editWage) || 0) * 100);
+    if (!editName.trim() || wageAmountCents <= 0) return;
+    if (editNeedsFallbackHours && !(Number(editFallbackHours) > 0)) return;
     setEditStatus("idle");
     setEditError(null);
     startTransition(async () => {
@@ -225,7 +296,9 @@ function EmployeeRowItem({
         employeeId: employee.id,
         name: editName.trim(),
         role: editRole.trim() || undefined,
-        defaultHourlyWageCents: wageCents,
+        wagePeriod: editWagePeriod,
+        wageAmountCents,
+        fallbackHoursPerWeek: editNeedsFallbackHours ? Number(editFallbackHours) : undefined,
       });
       if (result.ok) {
         setEditStatus("saved");
@@ -291,6 +364,7 @@ function EmployeeRowItem({
                 placeholder={labels.roleLabel}
                 className="h-11 rounded-lg border border-line px-2.5 text-sm"
               />
+              <WagePeriodPicker value={editWagePeriod} onChange={setEditWagePeriod} labels={labels} />
               <div className="flex min-w-0 items-center gap-1.5">
                 <span className="shrink-0 font-bold text-ink-muted">$</span>
                 <input
@@ -303,14 +377,30 @@ function EmployeeRowItem({
                   placeholder={labels.wageLabel}
                   className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
                 />
-                <span className="shrink-0 text-ink-muted">/hr</span>
               </div>
+              {editWagePeriod !== "hour" &&
+                (hasSchedule ? (
+                  <p className="text-xs font-semibold text-ink-muted">{labels.basedOnScheduleLabel.replace("{hours}", ongoingScheduleHours.toFixed(1))}</p>
+                ) : (
+                  <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+                    {labels.hoursPerWeekLabel}
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={editFallbackHours}
+                      onChange={(e) => setEditFallbackHours(e.target.value)}
+                      className="h-11 w-28 rounded-lg border border-line px-2 text-sm"
+                    />
+                    <span className="font-normal normal-case text-ink-muted">{labels.hoursPerWeekHint}</span>
+                  </label>
+                ))}
               {editError && <p className="text-sm text-warn">{editError}</p>}
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={handleSaveDetails}
-                  disabled={isPending || !editName.trim() || !editWage}
+                  disabled={isPending || !editName.trim() || !editWage || (editNeedsFallbackHours && !(Number(editFallbackHours) > 0))}
                   className="h-10 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
                 >
                   {editStatus === "saved" ? labels.detailsSaved : labels.saveDetails}
@@ -321,7 +411,9 @@ function EmployeeRowItem({
                     setIsEditing(false);
                     setEditName(employee.name);
                     setEditRole(employee.role ?? "");
-                    setEditWage(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+                    setEditWagePeriod(employee.wagePeriod);
+                    setEditWage(employee.wageAmountCents ? (employee.wageAmountCents / 100).toFixed(2) : employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
+                    setEditFallbackHours("");
                   }}
                   className="h-10 rounded-full border border-line px-3.5 text-sm font-semibold text-ink-muted"
                 >
@@ -373,15 +465,12 @@ function WeeklyScheduleEditor({ employee, schedules, labels }: { employee: Emplo
     const selectedDays = Object.entries(days)
       .filter(([, v]) => v.on)
       .map(([k, v]) => ({ dayOfWeek: Number(k), startTime: v.start, endTime: v.end, unpaidBreakMinutes: Number(breakMinutes) || 0 }));
-    const wageCents = employee.defaultHourlyWageCents ?? 0;
-    if (wageCents <= 0) return;
     setStatus("idle");
     setError(null);
     startTransition(async () => {
       const result = await setWeeklySchedule({
         employeeId: employee.id,
         days: selectedDays,
-        hourlyWageCents: wageCents,
         scope: scopeType === "ongoing" ? { type: "ongoing" } : { type: "month", month },
       });
       if (result.ok) setStatus("saved");

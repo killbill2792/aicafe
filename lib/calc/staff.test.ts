@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { paidHoursForTimecard, payrollTaxCents, wagesCentsForTimecard } from "./staff";
+import { hourlyWageCentsFromSalary, paidHoursForTimecard, payrollTaxCents, wagesCentsForTimecard, weeklyScheduledHours } from "./staff";
 
 describe("staff", () => {
   it("counts paid hours across an unpaid break, and pays for a paid break", () => {
@@ -38,5 +38,31 @@ describe("staff", () => {
 
   it("payroll taxes are wages × the business's payroll tax rate", () => {
     expect(payrollTaxCents(69_600, 0.12)).toBeCloseTo(8_352, 6);
+  });
+
+  it("weeklyScheduledHours sums each day's hours minus its unpaid break", () => {
+    const days = [
+      { startTime: "08:00", endTime: "16:00", unpaidBreakMinutes: 30 }, // 7.5h
+      { startTime: "09:00", endTime: "13:00", unpaidBreakMinutes: 0 }, // 4h
+    ];
+    expect(weeklyScheduledHours(days)).toBeCloseTo(11.5, 6);
+  });
+
+  it("hourlyWageCentsFromSalary passes an hourly wage through unchanged", () => {
+    expect(hourlyWageCentsFromSalary(2_500, "hour", 40)).toBe(2_500);
+  });
+
+  it("hourlyWageCentsFromSalary converts a yearly salary using hours/week × 52", () => {
+    // $52,000/year at 40 hrs/week = $25.00/hr
+    expect(hourlyWageCentsFromSalary(5_200_000, "year", 40)).toBe(2_500);
+  });
+
+  it("hourlyWageCentsFromSalary converts a monthly salary the same way, ×12", () => {
+    // $4,000/month at 40 hrs/week = $48,000/year ÷ 2,080 hrs = $23.08/hr (rounded)
+    expect(hourlyWageCentsFromSalary(400_000, "month", 40)).toBe(2_308);
+  });
+
+  it("hourlyWageCentsFromSalary returns 0 for a salaried period with no hours to divide by", () => {
+    expect(hourlyWageCentsFromSalary(5_200_000, "year", 0)).toBe(0);
   });
 });

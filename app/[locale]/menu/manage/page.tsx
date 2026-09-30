@@ -23,6 +23,9 @@ export default async function ManageMenuPage() {
         labels={{
           addDrink: t("addDrink"),
           nameLabel: t("nameLabel"),
+          sizeLabel: t("sizeLabel"),
+          sizeHint: t("sizeHint"),
+          addAnotherSize: t("addAnotherSize"),
           priceLabel: t("priceLabel"),
           prepSecondsLabel: t("prepSecondsLabel"),
           prepSecondsHelp: t("prepSecondsHelp"),
@@ -34,6 +37,8 @@ export default async function ManageMenuPage() {
           recipeHint: t("recipeHint"),
           ingredientAdded: t("ingredientAdded"),
           noIngredientsYet: t("noIngredientsYet"),
+          ingredientColumnLabel: t("ingredientColumnLabel"),
+          amountColumnLabel: t("amountColumnLabel"),
           ingredientLabel: t("ingredientLabel"),
           quantityLabel: t("quantityLabel"),
           newIngredient: t("newIngredient"),

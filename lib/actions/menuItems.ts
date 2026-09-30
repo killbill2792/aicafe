@@ -31,6 +31,7 @@ async function currentBusinessTodayDateStr(businessId: string, supabase: Awaited
 
 const MenuItemSchema = z.object({
   name: z.string().trim().min(1).max(80),
+  sizeLabel: z.string().trim().max(20).optional(),
   priceCents: z.number().int().positive(),
   prepSeconds: z.number().int().positive().max(3600),
   category: z.enum(["drink", "food"]),
@@ -38,7 +39,10 @@ const MenuItemSchema = z.object({
 
 /** Adds a new menu item with no recipe yet — for register plans (CSV/Excel only, no live catalog
  * sync) where nothing ever creates `menu_items` rows automatically. Without this, the Menu screen
- * and every per-drink cost number stay permanently empty for those owners. */
+ * and every per-drink cost number stay permanently empty for those owners. `name` is treated as
+ * the drink's base name ("Latte"); when a size is given, the stored `name` becomes "Latte 12 oz"
+ * (the single string everything else in the app reads), while `base_name`/`size_label` are kept
+ * alongside it so the editor can group sizes of the same drink together. */
 export async function addMenuItem(input: z.infer<typeof MenuItemSchema>): Promise<ActionResultWithId> {
   const parsed = MenuItemSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter a name, price, and prep time." };
@@ -46,12 +50,17 @@ export async function addMenuItem(input: z.infer<typeof MenuItemSchema>): Promis
   const businessId = await currentBusinessId();
   if (!businessId) return { ok: false, error: "Sign in first." };
 
+  const sizeLabel = parsed.data.sizeLabel?.trim() || null;
+  const fullName = sizeLabel ? `${parsed.data.name} ${sizeLabel}` : parsed.data.name;
+
   const supabase = await createServerSupabaseClient();
   const { data, error } = await supabase
     .from("menu_items")
     .insert({
       business_id: businessId,
-      name: parsed.data.name,
+      name: fullName,
+      base_name: parsed.data.name,
+      size_label: sizeLabel,
       price_cents: parsed.data.priceCents,
       prep_seconds: parsed.data.prepSeconds,
       category: parsed.data.category,

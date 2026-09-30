@@ -9,6 +9,9 @@ import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsF
 type Labels = {
   addDrink: string;
   nameLabel: string;
+  sizeLabel: string;
+  sizeHint: string;
+  addAnotherSize: string;
   priceLabel: string;
   prepSecondsLabel: string;
   prepSecondsHelp: string;
@@ -20,6 +23,8 @@ type Labels = {
   recipeHint: string;
   ingredientAdded: string;
   noIngredientsYet: string;
+  ingredientColumnLabel: string;
+  amountColumnLabel: string;
   ingredientLabel: string;
   quantityLabel: string;
   newIngredient: string;
@@ -36,6 +41,21 @@ type Labels = {
   inactiveTag: string;
 };
 
+/** Groups a list of sizes/items sharing one base name (e.g. "Latte" → 12/16/18 oz), preserving
+ * the order each base name first appears in — items with no size are their own group of one. */
+function groupByBaseName(items: MenuItemForEdit[]): { baseName: string; items: MenuItemForEdit[] }[] {
+  const order: string[] = [];
+  const groups = new Map<string, MenuItemForEdit[]>();
+  for (const item of items) {
+    if (!groups.has(item.baseName)) {
+      order.push(item.baseName);
+      groups.set(item.baseName, []);
+    }
+    groups.get(item.baseName)!.push(item);
+  }
+  return order.map((baseName) => ({ baseName, items: groups.get(baseName)! }));
+}
+
 export default function ManageMenuPanel({
   items,
   ingredients,
@@ -46,8 +66,9 @@ export default function ManageMenuPanel({
   labels: Labels;
 }) {
   const [name, setName] = useState("");
+  const [sizeLabel, setSizeLabel] = useState("");
   const [price, setPrice] = useState("");
-  const [prepSeconds, setPrepSeconds] = useState("60");
+  const [prepMinutes, setPrepMinutes] = useState("1");
   const [category, setCategory] = useState<"drink" | "food">("drink");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -55,20 +76,35 @@ export default function ManageMenuPanel({
 
   function handleAdd() {
     const priceCents = Math.round((Number(price) || 0) * 100);
-    const seconds = Number(prepSeconds) || 0;
+    const seconds = Math.round((Number(prepMinutes) || 0) * 60);
     if (!name.trim() || priceCents <= 0 || seconds <= 0) return;
     setError(null);
     startTransition(async () => {
-      const result = await addMenuItem({ name: name.trim(), priceCents, prepSeconds: seconds, category });
+      const result = await addMenuItem({
+        name: name.trim(),
+        sizeLabel: sizeLabel.trim() || undefined,
+        priceCents,
+        prepSeconds: seconds,
+        category,
+      });
       if (result.ok) {
         setName("");
+        setSizeLabel("");
         setPrice("");
-        setPrepSeconds("60");
+        setPrepMinutes("1");
         setExpanded((prev) => new Set(prev).add(result.id));
       } else {
         setError(result.error);
       }
     });
+  }
+
+  function handleAddAnotherSize(baseName: string) {
+    setName(baseName);
+    setSizeLabel("");
+    setPrice("");
+    setPrepMinutes("1");
+    setError(null);
   }
 
   function toggleExpanded(id: string) {
@@ -82,6 +118,8 @@ export default function ManageMenuPanel({
 
   const active = items.filter((i) => i.active);
   const inactive = items.filter((i) => !i.active);
+  const activeGroups = groupByBaseName(active);
+  const inactiveGroups = groupByBaseName(inactive);
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -91,6 +129,16 @@ export default function ManageMenuPanel({
           {labels.addDrink}
         </h2>
         <input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder={labels.nameLabel} className="h-12 rounded-xl border border-line px-3 text-base" />
+        <div className="flex flex-col gap-1">
+          <input
+            type="text"
+            value={sizeLabel}
+            onChange={(e) => setSizeLabel(e.target.value)}
+            placeholder={labels.sizeLabel}
+            className="h-12 rounded-xl border border-line px-3 text-base"
+          />
+          <span className="text-xs text-ink-muted">{labels.sizeHint}</span>
+        </div>
         <div className="flex min-w-0 items-start gap-2">
           <label className="flex min-w-0 flex-1 flex-col gap-1">
             <span className="text-xs font-semibold text-ink-muted">{labels.priceLabel}</span>
@@ -111,9 +159,10 @@ export default function ManageMenuPanel({
             <span className="text-xs font-semibold text-ink-muted">{labels.prepSecondsLabel}</span>
             <input
               type="number"
-              min="1"
-              value={prepSeconds}
-              onChange={(e) => setPrepSeconds(e.target.value)}
+              min="0.5"
+              step="0.5"
+              value={prepMinutes}
+              onChange={(e) => setPrepMinutes(e.target.value)}
               className="h-12 w-full min-w-0 rounded-xl border border-line px-2 text-base"
             />
           </label>
@@ -147,29 +196,56 @@ export default function ManageMenuPanel({
       </section>
 
       <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-2">
-        {active.length === 0 ? (
+        {activeGroups.length === 0 ? (
           <p className="py-4 text-[15px] text-ink-muted">{labels.noItems}</p>
         ) : (
-          active.map((item) => (
-            <MenuItemRow
-              key={item.id}
-              item={item}
-              ingredients={ingredients}
-              labels={labels}
-              expanded={expanded.has(item.id)}
-              onToggle={() => toggleExpanded(item.id)}
-            />
+          activeGroups.map((group) => (
+            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} expanded={expanded} onToggle={toggleExpanded} onAddAnotherSize={handleAddAnotherSize} />
           ))
         )}
       </section>
 
-      {inactive.length > 0 && (
+      {inactiveGroups.length > 0 && (
         <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-2 opacity-70">
-          {inactive.map((item) => (
-            <MenuItemRow key={item.id} item={item} ingredients={ingredients} labels={labels} expanded={false} onToggle={() => {}} />
+          {inactiveGroups.map((group) => (
+            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} expanded={expanded} onToggle={() => {}} onAddAnotherSize={() => {}} />
           ))}
         </section>
       )}
+    </div>
+  );
+}
+
+function MenuItemGroup({
+  group,
+  ingredients,
+  labels,
+  expanded,
+  onToggle,
+  onAddAnotherSize,
+}: {
+  group: { baseName: string; items: MenuItemForEdit[] };
+  ingredients: IngredientOption[];
+  labels: Labels;
+  expanded: Set<string>;
+  onToggle: (id: string) => void;
+  onAddAnotherSize: (baseName: string) => void;
+}) {
+  const isSized = group.items.length > 1 || Boolean(group.items[0]?.sizeLabel);
+
+  return (
+    <div className="border-b border-line py-2 last:border-b-0">
+      {isSized && (
+        <div className="flex items-center justify-between gap-2 px-0 pb-1 pt-1">
+          <span className="text-sm font-bold text-ink-muted">{group.baseName}</span>
+          <button type="button" onClick={() => onAddAnotherSize(group.baseName)} className="text-xs font-semibold text-good">
+            {labels.addAnotherSize.replace("{name}", group.baseName)}
+          </button>
+        </div>
+      )}
+      {group.items.map((item) => (
+        <MenuItemRow key={item.id} item={item} ingredients={ingredients} labels={labels} expanded={expanded.has(item.id)} onToggle={() => onToggle(item.id)} indent={isSized} />
+      ))}
     </div>
   );
 }
@@ -180,12 +256,14 @@ function MenuItemRow({
   labels,
   expanded,
   onToggle,
+  indent,
 }: {
   item: MenuItemForEdit;
   ingredients: IngredientOption[];
   labels: Labels;
   expanded: boolean;
   onToggle: () => void;
+  indent: boolean;
 }) {
   const [ingredientId, setIngredientId] = useState<string>("");
   const [newName, setNewName] = useState("");
@@ -241,11 +319,11 @@ function MenuItemRow({
   }
 
   return (
-    <div className="border-b border-line py-3 last:border-b-0">
+    <div className={`py-2 ${indent ? "pl-3" : ""}`}>
       <button type="button" onClick={onToggle} className="flex w-full items-center gap-3 text-left">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="truncate text-base font-bold">
-            {item.name} · {formatCents(item.priceCents)}
+            {item.sizeLabel ?? item.name} · {formatCents(item.priceCents)}
           </span>
           {!item.active && <span className="text-xs font-semibold text-warn">{labels.inactiveTag}</span>}
         </div>
@@ -261,18 +339,37 @@ function MenuItemRow({
           {item.recipe.length === 0 ? (
             <p className="text-sm text-ink-muted">{labels.noIngredientsYet}</p>
           ) : (
-            <div className="flex flex-col gap-1.5">
-              {item.recipe.map((line) => (
-                <div key={line.ingredientId} className="flex items-center justify-between gap-2 text-sm">
-                  <span className="min-w-0 flex-1 truncate">{line.ingredientName}</span>
-                  <span className="shrink-0 text-ink-muted">
-                    {line.quantity} {line.baseUnit}
-                  </span>
-                  <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={labels.remove} className="shrink-0 text-warn">
-                    <Trash2 aria-hidden="true" size={16} />
-                  </button>
-                </div>
-              ))}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-0 border-collapse text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-ink-muted">
+                    <th scope="col" className="min-w-0 pb-1 pr-2 font-semibold">
+                      {labels.ingredientColumnLabel}
+                    </th>
+                    <th scope="col" className="pb-1 pr-2 text-right font-semibold">
+                      {labels.amountColumnLabel}
+                    </th>
+                    <th scope="col" className="w-8 pb-1">
+                      <span className="sr-only">{labels.remove}</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {item.recipe.map((line) => (
+                    <tr key={line.ingredientId} className="border-t border-[#EFE7DB]">
+                      <td className="min-w-0 max-w-0 truncate py-1.5 pr-2">{line.ingredientName}</td>
+                      <td className="whitespace-nowrap py-1.5 pr-2 text-right text-ink-muted">
+                        {line.quantity} {line.baseUnit}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={labels.remove} className="text-warn">
+                          <Trash2 aria-hidden="true" size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 

@@ -8,6 +8,8 @@ export type EmployeeRow = {
   name: string;
   role: string | null;
   defaultHourlyWageCents: number | null;
+  wagePeriod: "hour" | "month" | "year";
+  wageAmountCents: number | null;
   active: boolean;
 };
 
@@ -24,7 +26,7 @@ export async function getEmployees(): Promise<EmployeeRow[]> {
 
   const { data } = await supabase
     .from("employees")
-    .select("id, display_name, role, default_hourly_wage_cents, active")
+    .select("id, display_name, role, default_hourly_wage_cents, wage_period, wage_amount_cents, active")
     .eq("business_id", businessId)
     .order("display_name", { ascending: true });
 
@@ -33,6 +35,8 @@ export async function getEmployees(): Promise<EmployeeRow[]> {
     name: r.display_name,
     role: r.role,
     defaultHourlyWageCents: r.default_hourly_wage_cents,
+    wagePeriod: (r.wage_period ?? "hour") as "hour" | "month" | "year",
+    wageAmountCents: r.wage_amount_cents,
     active: r.active,
   }));
 }
