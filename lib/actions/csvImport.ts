@@ -7,6 +7,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { hasOpenAlert } from "@/lib/alerts/generate";
+import { NEW_EMPLOYEE } from "@/lib/constants";
 import type { NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
 import type { NormalizedLaborRow } from "@/lib/pos/csv/parseLaborCsv";
 import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
@@ -15,6 +16,7 @@ import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@
 
 type Kind = "sales" | "labor" | "ingredients";
 type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping;
+type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
 export type SalesImportSummary = {
   rowsInFile: number;
@@ -30,6 +32,10 @@ function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string |
   if (dates.length === 0) return { dateFrom: null, dateTo: null };
   const sorted = [...dates].sort();
   return { dateFrom: sorted[0], dateTo: sorted[sorted.length - 1] };
+}
+
+function csvSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, "-");
 }
 
 async function context() {
@@ -154,7 +160,63 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
   return { ok: true, imported, summary };
 }
 
-export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok: boolean; imported: number; error?: string; summary?: LaborImportSummary }> {
+/** Resolves each distinct CSV employee name to a real `employees.id`, in three tiers — never
+ * guessing when a name is genuinely ambiguous:
+ *  1. Remembered: an employee already has `pos_team_member_id = csv-<slug>` from a prior
+ *     resolution (this upload or an earlier one) — use them, no owner input needed.
+ *  2. Confident: exactly one employee's `display_name` matches case-insensitively — use them, and
+ *     backfill `pos_team_member_id` so tier 1 catches it immediately next time.
+ *  3. Ambiguous (zero or 2+ name matches, e.g. "Jose" vs. "Jose Sanchez," or two people both named
+ *     "Jose"): use `employeeChoices[name]` (an existing id, or `NEW_EMPLOYEE`) from the owner's
+ *     review step — same backfill either way, so this name is remembered going forward too.
+ * Returns the resolved id per original (non-lowercased) name. */
+async function resolveEmployeeIds(
+  supabase: SupabaseServerClient,
+  businessId: string,
+  names: string[],
+  employeeChoices: Record<string, string>,
+): Promise<Map<string, string>> {
+  const { data: employeeRows } = await supabase.from("employees").select("id, display_name, pos_team_member_id").eq("business_id", businessId);
+  const employees = employeeRows ?? [];
+
+  const resolved = new Map<string, string>();
+  for (const name of names) {
+    const slug = csvSlug(name);
+    const posId = `csv-${slug}`.slice(0, 120);
+
+    const remembered = employees.find((e) => e.pos_team_member_id === posId);
+    if (remembered) {
+      resolved.set(name, remembered.id);
+      continue;
+    }
+
+    const nameMatches = employees.filter((e) => e.display_name.trim().toLowerCase() === name.trim().toLowerCase());
+    let employeeId: string | undefined;
+    if (nameMatches.length === 1) {
+      employeeId = nameMatches[0].id;
+    } else {
+      const choice = employeeChoices[name.trim().toLowerCase()];
+      if (choice && choice !== NEW_EMPLOYEE) employeeId = choice;
+    }
+
+    if (!employeeId) {
+      const { data: created } = await supabase.from("employees").insert({ business_id: businessId, display_name: name, pos_team_member_id: posId, active: true }).select("id").single();
+      if (!created) continue;
+      employeeId = created.id;
+      employees.push({ id: created.id, display_name: name, pos_team_member_id: posId });
+    } else {
+      await supabase.from("employees").update({ pos_team_member_id: posId }).eq("id", employeeId);
+    }
+    if (!employeeId) continue;
+    resolved.set(name, employeeId);
+  }
+  return resolved;
+}
+
+export async function importLaborRows(
+  rows: NormalizedLaborRow[],
+  employeeChoices: Record<string, string> = {},
+): Promise<{ ok: boolean; imported: number; error?: string; summary?: LaborImportSummary }> {
   const ctx = await context();
   if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
   const { supabase, businessId } = ctx;
@@ -163,12 +225,7 @@ export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok:
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
   const employeeNames = [...new Set(rows.map((r) => r.employee))];
-  await supabase.from("employees").upsert(
-    employeeNames.map((name) => ({ business_id: businessId, pos_team_member_id: `csv-${name.toLowerCase().replace(/\s+/g, "-")}`, display_name: name })),
-    { onConflict: "business_id,pos_team_member_id" },
-  );
-  const { data: employeeRows } = await supabase.from("employees").select("id, pos_team_member_id").eq("business_id", businessId);
-  const employeeIdByPos = new Map((employeeRows ?? []).map((e) => [e.pos_team_member_id, e.id]));
+  const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
 
   let imported = 0;
   const affectedDates = new Set<string>();
@@ -177,7 +234,7 @@ export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok:
   // identifies it uniquely, so a rolling-window re-upload upserts the same shift in place
   // instead of minting a duplicate every time it shifts position in the file.
   for (const row of rows) {
-    const employeeId = employeeIdByPos.get(`csv-${row.employee.toLowerCase().replace(/\s+/g, "-")}`);
+    const employeeId = employeeIdByName.get(row.employee);
     if (!employeeId) continue;
     const posTimecardId = `csv-${row.employee}-${row.clockIn}`.slice(0, 120);
     const { error } = await supabase.from("timecards").upsert(

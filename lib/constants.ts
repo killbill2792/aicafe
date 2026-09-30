@@ -3,6 +3,12 @@
  * scripts/db-reset.mjs reseeds its data. Never used for a real café. */
 export const DEMO_BUSINESS_ID = "11111111-1111-1111-1111-111111111111";
 
+/** Sentinel `employeeChoices` value meaning "this is a genuinely new person, not anyone already
+ * on the roster" — used by `lib/actions/csvImport.ts`'s `resolveEmployeeIds` and
+ * `components/uploads/LaborCsvImporter.tsx`'s review step. Lives here (not in the "use server"
+ * csvImport.ts) because a "use server" file may only export async functions. */
+export const NEW_EMPLOYEE = "__new__";
+
 export const EXPENSE_CATEGORY_CODES = [
   "rent",
   "utilities_power",

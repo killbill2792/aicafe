@@ -396,7 +396,10 @@
     "unmatchedWarningTitle": "Algunos artículos no coinciden con tu menú",
     "unmatchedWarningHint": "Estas ventas siguen contando en tu total, pero no en los números de esa bebida hasta que se agregue a tu menú.",
     "unmatchedRowsCount": "{rows} filas",
-    "viewHistory": "Ver subidas anteriores"
+    "viewHistory": "Ver subidas anteriores",
+    "matchStaffTitle": "Relaciona estos nombres con tu equipo",
+    "matchStaffHint": "Estos no coincidieron claramente con una persona de tu equipo — elige quién es, o déjalo como una nueva contratación.",
+    "addAsNewEmployee": "+ Agregar como nuevo empleado"
   },
   "Alerts": {
     "title": "Alertas",

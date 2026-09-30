@@ -1,6 +1,7 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSavedMapping } from "@/lib/actions/csvImport";
+import { getEmployees } from "@/lib/data/getEmployees";
 import BackHeader from "@/components/shared/BackHeader";
 import LaborCsvImporter from "@/components/uploads/LaborCsvImporter";
 import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
@@ -12,13 +13,15 @@ export default async function LaborCsvPage() {
   await requireOwnBusiness();
   const t = await getTranslations("CsvImport");
   const tCommon = await getTranslations("Common");
-  const initialMapping = (await getSavedMapping("labor")) as LaborColumnMapping | null;
+  const [initialMapping, employees] = await Promise.all([getSavedMapping("labor") as Promise<LaborColumnMapping | null>, getEmployees()]);
+  const existingEmployees = employees.map((e) => ({ id: e.id, name: e.name }));
 
   return (
     <main className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("laborTitle")} subtitle={t("laborSubtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
       <LaborCsvImporter
         initialMapping={initialMapping}
+        existingEmployees={existingEmployees}
         labels={{
           uploadPrompt: t("uploadPrompt"),
           chooseFile: t("chooseFile"),
@@ -30,6 +33,9 @@ export default async function LaborCsvPage() {
           imported: t("imported"),
           resultSummary: t("resultSummary"),
           resultSummaryNoDates: t("resultSummaryNoDates"),
+          matchStaffTitle: t("matchStaffTitle"),
+          matchStaffHint: t("matchStaffHint"),
+          addAsNewEmployee: t("addAsNewEmployee"),
         }}
       />
     </main>

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseLaborCsv, type LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
 import { saveMapping, importLaborRows, type LaborImportSummary } from "@/lib/actions/csvImport";
+import { NEW_EMPLOYEE } from "@/lib/constants";
 
 const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
   { key: "employee", required: true },
@@ -16,9 +17,11 @@ const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
 
 export default function LaborCsvImporter({
   initialMapping,
+  existingEmployees,
   labels,
 }: {
   initialMapping: LaborColumnMapping | null;
+  existingEmployees: { id: string; name: string }[];
   labels: {
     uploadPrompt: string;
     chooseFile: string;
@@ -30,11 +33,15 @@ export default function LaborCsvImporter({
     imported: string;
     resultSummary: string;
     resultSummaryNoDates: string;
+    matchStaffTitle: string;
+    matchStaffHint: string;
+    addAsNewEmployee: string;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Partial<LaborColumnMapping>>(initialMapping ?? {});
+  const [employeeChoices, setEmployeeChoices] = useState<Record<string, string>>({});
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "imported">("idle");
   const [count, setCount] = useState(0);
@@ -52,14 +59,37 @@ export default function LaborCsvImporter({
   }
 
   const complete = FIELDS.filter((f) => f.required).every((f) => mapping[f.key]);
-  const parsedRows = complete ? parseLaborCsv(rows, mapping as LaborColumnMapping) : [];
+  const parsedRows = useMemo(() => (complete ? parseLaborCsv(rows, mapping as LaborColumnMapping) : []), [complete, rows, mapping]);
+
+  // A name is ambiguous (needs the owner's eyes) unless exactly one existing employee's name
+  // matches it case-insensitively — zero matches could be a new hire or a nickname/typo for
+  // someone who already exists; two-or-more matches means real people share that exact name.
+  // Either way we don't guess: `lib/actions/csvImport.ts`'s `resolveEmployeeIds` applies the same
+  // exact-match rule server-side and falls back to whatever's picked here.
+  const ambiguousNames = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { name: string; candidates: { id: string; name: string }[] }[] = [];
+    for (const r of parsedRows) {
+      const key = r.employee.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const candidates = existingEmployees.filter((e) => e.name.trim().toLowerCase() === key);
+      if (candidates.length !== 1) list.push({ name: r.employee, candidates });
+    }
+    return list;
+  }, [parsedRows, existingEmployees]);
+
+  function choiceFor(name: string): string {
+    return employeeChoices[name.trim().toLowerCase()] ?? NEW_EMPLOYEE;
+  }
 
   function handleImport() {
     if (!complete) return;
     setError(null);
     startTransition(async () => {
       await saveMapping("labor", mapping as LaborColumnMapping, "Labor time entries export");
-      const result = await importLaborRows(parsedRows);
+      const choices = Object.fromEntries(ambiguousNames.map((a) => [a.name.trim().toLowerCase(), choiceFor(a.name)]));
+      const result = await importLaborRows(parsedRows, choices);
       if (result.ok) {
         setStatus("imported");
         setCount(result.imported);
@@ -112,6 +142,30 @@ export default function LaborCsvImporter({
       </section>
 
       {complete && status === "idle" && <p className="px-2 text-sm text-ink-muted">{labels.preview.replace("{count}", String(parsedRows.length))}</p>}
+
+      {complete && status === "idle" && ambiguousNames.length > 0 && (
+        <section className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+          <h2 className="text-base font-bold">{labels.matchStaffTitle}</h2>
+          <p className="text-sm text-ink-muted">{labels.matchStaffHint}</p>
+          {ambiguousNames.map(({ name, candidates }) => (
+            <label key={name} className="flex items-center justify-between gap-2 text-sm font-semibold">
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <select
+                value={choiceFor(name)}
+                onChange={(e) => setEmployeeChoices((c) => ({ ...c, [name.trim().toLowerCase()]: e.target.value }))}
+                className="h-11 w-[180px] shrink-0 rounded-xl border border-line px-2 text-sm"
+              >
+                <option value={NEW_EMPLOYEE}>{labels.addAsNewEmployee}</option>
+                {(candidates.length > 1 ? candidates : existingEmployees).map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </section>
+      )}
 
       {summary && (
         <p className="rounded-card-lg bg-card p-4 text-sm font-semibold text-good">

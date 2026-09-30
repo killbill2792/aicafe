@@ -396,7 +396,10 @@
     "unmatchedWarningTitle": "Some items didn't match your menu",
     "unmatchedWarningHint": "These sales still count toward your total, but not toward that specific drink's numbers until it's added to your menu.",
     "unmatchedRowsCount": "{rows} rows",
-    "viewHistory": "See past uploads"
+    "viewHistory": "See past uploads",
+    "matchStaffTitle": "Match these names to your team",
+    "matchStaffHint": "These didn't clearly match one person on your staff — pick who they are, or leave them as a new hire.",
+    "addAsNewEmployee": "+ Add as new employee"
   },
   "Alerts": {
     "title": "Alerts",
