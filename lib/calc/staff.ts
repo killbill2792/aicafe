@@ -36,12 +36,17 @@ export function staffCostLoadedCents(wagesCents: number, staffTaxCents: number):
 }
 
 /** Total hours a weekly schedule commits to, across every day it's on — used to convert a
- * monthly/yearly salary into an hourly-equivalent rate. */
+ * monthly/yearly salary into an hourly-equivalent rate. A day whose end time is on/before its
+ * start time (e.g. a closing shift "18:00"–"01:00") is treated as crossing midnight rather than
+ * as a zero/negative-length shift. */
 export function weeklyScheduledHours(days: { startTime: string; endTime: string; unpaidBreakMinutes: number }[]): number {
   return days.reduce((sum, d) => {
     const [startH, startM] = d.startTime.split(":").map(Number);
     const [endH, endM] = d.endTime.split(":").map(Number);
-    const minutes = Math.max(0, endH * 60 + endM - (startH * 60 + startM)) - d.unpaidBreakMinutes;
+    const startMinutes = startH * 60 + startM;
+    let endMinutes = endH * 60 + endM;
+    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+    const minutes = endMinutes - startMinutes - d.unpaidBreakMinutes;
     return sum + Math.max(0, minutes) / 60;
   }, 0);
 }

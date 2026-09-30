@@ -34,6 +34,7 @@ async function currentOngoingScheduleDays(
 }
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
+export type ActionResultWithId = { ok: true; id: string } | { ok: false; error: string };
 
 async function currentBusiness(): Promise<{ businessId: string; timezone: string } | null> {
   if (!isSupabaseConfigured()) return null;
@@ -50,20 +51,17 @@ async function currentBusiness(): Promise<{ businessId: string; timezone: string
 const WageInputSchema = z.object({
   wagePeriod: z.enum(["hour", "month", "year"]),
   wageAmountCents: z.number().int().positive(),
-  // Only used (and only required by the UI) when wagePeriod isn't "hour" and this employee has
-  // no weekly schedule yet to derive hours from.
-  fallbackHoursPerWeek: z.number().positive().optional(),
 });
 
-/** A salaried wage's hourly-equivalent, derived from real scheduled hours when they exist. Returns
- * an error string instead of a rate when there's a salary but genuinely no hours to divide it by
- * (no schedule yet, and no fallback given) — better than silently writing a $0.00/hr rate. */
-function resolveHourlyWageCents(wage: z.infer<typeof WageInputSchema>, scheduledHoursPerWeek: number): { hourlyCents: number } | { error: string } {
-  if (wage.wagePeriod === "hour") return { hourlyCents: wage.wageAmountCents };
-  const hoursPerWeek = scheduledHoursPerWeek > 0 ? scheduledHoursPerWeek : (wage.fallbackHoursPerWeek ?? 0);
-  const hourlyCents = hourlyWageCentsFromSalary(wage.wageAmountCents, wage.wagePeriod, hoursPerWeek);
-  if (hourlyCents <= 0) return { error: "Set their weekly schedule first, or enter hours per week, so we can work out an hourly cost." };
-  return { hourlyCents };
+/** A salaried wage's hourly-equivalent, derived only from real scheduled hours — never a typed-in
+ * guess (a salaried person needs a real weekly schedule for their cost to ever show up anywhere
+ * downstream: it's what materializes their daily timecards in the first place, same as an hourly
+ * employee's). Returns 0 ("pending") rather than a fabricated rate when there's a salary but no
+ * schedule yet — the roster entry still saves, but that person won't cost anything or appear
+ * "on shift" until their schedule is set. */
+function deriveHourlyWageCents(wage: z.infer<typeof WageInputSchema>, scheduledHoursPerWeek: number): number {
+  if (wage.wagePeriod === "hour") return wage.wageAmountCents;
+  return hourlyWageCentsFromSalary(wage.wageAmountCents, wage.wagePeriod, scheduledHoursPerWeek);
 }
 
 const EmployeeSchema = z.object({
@@ -74,33 +72,35 @@ const EmployeeSchema = z.object({
 /** Add one employee to the manual staff roster — for owners whose register plan doesn't export
  * a staff list (e.g. an unpaid Toast tier). The wage here is just a default that pre-fills the
  * "log hours" form; the wage of record for pay is still whatever's on each timecard, so a raise
- * doesn't rewrite history. Wage can be entered hourly, or as a monthly/yearly salary — a salary is
- * converted to an hourly-equivalent using this employee's real weekly hours (a brand-new employee
- * has no schedule yet, so salaried mode requires `fallbackHoursPerWeek` here). */
-export async function addEmployee(input: z.infer<typeof EmployeeSchema>): Promise<ActionResult> {
+ * doesn't rewrite history. Wage can be entered hourly, or as a monthly/yearly salary — a salary
+ * stays "pending" (no hourly rate yet) until a weekly schedule is set for this brand-new employee,
+ * which is what the UI prompts for right after adding them. Returns the new id so the caller can
+ * jump straight to that schedule editor. */
+export async function addEmployee(input: z.infer<typeof EmployeeSchema>): Promise<ActionResultWithId> {
   const parsed = EmployeeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter a name and wage." };
 
   const business = await currentBusiness();
   if (!business) return { ok: false, error: "Sign in to add staff." };
 
-  const resolved = resolveHourlyWageCents(parsed.data, 0);
-  if ("error" in resolved) return { ok: false, error: resolved.error };
-
   const supabase = await createServerSupabaseClient();
-  const { error } = await supabase.from("employees").insert({
-    business_id: business.businessId,
-    display_name: parsed.data.name,
-    role: parsed.data.role || null,
-    default_hourly_wage_cents: resolved.hourlyCents,
-    wage_period: parsed.data.wagePeriod,
-    wage_amount_cents: parsed.data.wageAmountCents,
-    active: true,
-  });
-  if (error) return { ok: false, error: error.message };
+  const { data, error } = await supabase
+    .from("employees")
+    .insert({
+      business_id: business.businessId,
+      display_name: parsed.data.name,
+      role: parsed.data.role || null,
+      default_hourly_wage_cents: deriveHourlyWageCents(parsed.data, 0),
+      wage_period: parsed.data.wagePeriod,
+      wage_amount_cents: parsed.data.wageAmountCents,
+      active: true,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, error: error?.message ?? "Could not add the staff member." };
 
   revalidatePath("/more/manage-staff");
-  return { ok: true };
+  return { ok: true, id: data.id };
 }
 
 const UpdateEmployeeSchema = z.object({
@@ -111,7 +111,9 @@ const UpdateEmployeeSchema = z.object({
 
 /** Edit an existing employee's name, role, and default wage — separate from logging a shift.
  * Past timecards keep whatever wage was on them at the time (see logShift), so this never
- * rewrites pay history; it only changes the roster entry and what pre-fills future shifts. */
+ * rewrites pay history; it only changes the roster entry and what pre-fills future shifts.
+ * Switching to a salary here doesn't require a schedule to already exist — it saves as "pending"
+ * (see `deriveHourlyWageCents`) until one is set, same as a brand-new employee. */
 export async function updateEmployee(input: z.infer<typeof UpdateEmployeeSchema>): Promise<ActionResult> {
   const parsed = UpdateEmployeeSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter a name and wage." };
@@ -121,15 +123,14 @@ export async function updateEmployee(input: z.infer<typeof UpdateEmployeeSchema>
 
   const supabase = await createServerSupabaseClient();
   const scheduleDays = await currentOngoingScheduleDays(supabase, business.businessId, parsed.data.employeeId);
-  const resolved = resolveHourlyWageCents(parsed.data, weeklyScheduledHours(scheduleDays));
-  if ("error" in resolved) return { ok: false, error: resolved.error };
+  const hourlyCents = deriveHourlyWageCents(parsed.data, weeklyScheduledHours(scheduleDays));
 
   const { error } = await supabase
     .from("employees")
     .update({
       display_name: parsed.data.name,
       role: parsed.data.role || null,
-      default_hourly_wage_cents: resolved.hourlyCents,
+      default_hourly_wage_cents: hourlyCents,
       wage_period: parsed.data.wagePeriod,
       wage_amount_cents: parsed.data.wageAmountCents,
     })
@@ -376,7 +377,9 @@ export async function setWeeklySchedule(input: z.infer<typeof SetWeeklyScheduleS
       await supabase.from("employees").update({ default_hourly_wage_cents: derived }).eq("id", parsed.data.employeeId).eq("business_id", business.businessId);
     }
   }
-  if (hourlyWageCents <= 0) return { ok: false, error: "Set a wage for this person first." };
+  // Only a schedule with real days on it needs a resolvable wage to write onto its rows — saving
+  // an empty schedule (clearing it) is just a delete and shouldn't be wage-gated.
+  if (parsed.data.days.length > 0 && hourlyWageCents <= 0) return { ok: false, error: "Enter a wage for this person first." };
 
   let effectiveFrom: string;
   let effectiveTo: string | null;

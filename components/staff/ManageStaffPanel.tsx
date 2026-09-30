@@ -39,8 +39,7 @@ type Labels = {
   wagePeriodHour: string;
   wagePeriodMonth: string;
   wagePeriodYear: string;
-  hoursPerWeekLabel: string;
-  hoursPerWeekHint: string;
+  salaryScheduleHint: string;
   basedOnScheduleLabel: string;
   add: string;
   noStaff: string;
@@ -105,7 +104,6 @@ export default function ManageStaffPanel({
   const [role, setRole] = useState("");
   const [wage, setWage] = useState("");
   const [wagePeriod, setWagePeriod] = useState<WagePeriod>("hour");
-  const [fallbackHoursPerWeek, setFallbackHoursPerWeek] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Defaults to every active employee already expanded — this is a screen the owner opens to make
@@ -122,13 +120,11 @@ export default function ManageStaffPanel({
     });
   }
 
-  const addNeedsFallbackHours = wagePeriod !== "hour";
-  const addCanSubmit = name.trim() && wage && (!addNeedsFallbackHours || Number(fallbackHoursPerWeek) > 0);
+  const addCanSubmit = name.trim() && wage;
 
   function handleAdd() {
     const wageAmountCents = Math.round((Number(wage) || 0) * 100);
     if (!name.trim() || wageAmountCents <= 0) return;
-    if (addNeedsFallbackHours && !(Number(fallbackHoursPerWeek) > 0)) return;
     setError(null);
     startTransition(async () => {
       const result = await addEmployee({
@@ -136,14 +132,13 @@ export default function ManageStaffPanel({
         role: role.trim() || undefined,
         wagePeriod,
         wageAmountCents,
-        fallbackHoursPerWeek: addNeedsFallbackHours ? Number(fallbackHoursPerWeek) : undefined,
       });
       if (result.ok) {
         setName("");
         setRole("");
         setWage("");
         setWagePeriod("hour");
-        setFallbackHoursPerWeek("");
+        setExpanded((prev) => new Set(prev).add(result.id));
       } else {
         setError(result.error);
       }
@@ -188,20 +183,7 @@ export default function ManageStaffPanel({
             className="h-12 min-w-0 flex-1 rounded-xl border border-line px-3 text-base"
           />
         </div>
-        {addNeedsFallbackHours && (
-          <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-            {labels.hoursPerWeekLabel}
-            <input
-              type="number"
-              min="1"
-              max="120"
-              value={fallbackHoursPerWeek}
-              onChange={(e) => setFallbackHoursPerWeek(e.target.value)}
-              className="h-11 w-28 rounded-lg border border-line px-2 text-sm"
-            />
-            <span className="font-normal normal-case text-ink-muted">{labels.hoursPerWeekHint}</span>
-          </label>
-        )}
+        {wagePeriod !== "hour" && <p className="text-xs text-ink-muted">{labels.salaryScheduleHint}</p>}
         {error && <p className="text-sm text-warn">{error}</p>}
         <button
           type="button"
@@ -279,16 +261,12 @@ function EmployeeRowItem({
   const [editWage, setEditWage] = useState(
     employee.wageAmountCents ? (employee.wageAmountCents / 100).toFixed(2) : employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "",
   );
-  const [editFallbackHours, setEditFallbackHours] = useState("");
   const [editStatus, setEditStatus] = useState<"idle" | "saved" | "error">("idle");
   const [editError, setEditError] = useState<string | null>(null);
-
-  const editNeedsFallbackHours = editWagePeriod !== "hour" && !hasSchedule;
 
   function handleSaveDetails() {
     const wageAmountCents = Math.round((Number(editWage) || 0) * 100);
     if (!editName.trim() || wageAmountCents <= 0) return;
-    if (editNeedsFallbackHours && !(Number(editFallbackHours) > 0)) return;
     setEditStatus("idle");
     setEditError(null);
     startTransition(async () => {
@@ -298,7 +276,6 @@ function EmployeeRowItem({
         role: editRole.trim() || undefined,
         wagePeriod: editWagePeriod,
         wageAmountCents,
-        fallbackHoursPerWeek: editNeedsFallbackHours ? Number(editFallbackHours) : undefined,
       });
       if (result.ok) {
         setEditStatus("saved");
@@ -382,25 +359,14 @@ function EmployeeRowItem({
                 (hasSchedule ? (
                   <p className="text-xs font-semibold text-ink-muted">{labels.basedOnScheduleLabel.replace("{hours}", ongoingScheduleHours.toFixed(1))}</p>
                 ) : (
-                  <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-                    {labels.hoursPerWeekLabel}
-                    <input
-                      type="number"
-                      min="1"
-                      max="120"
-                      value={editFallbackHours}
-                      onChange={(e) => setEditFallbackHours(e.target.value)}
-                      className="h-11 w-28 rounded-lg border border-line px-2 text-sm"
-                    />
-                    <span className="font-normal normal-case text-ink-muted">{labels.hoursPerWeekHint}</span>
-                  </label>
+                  <p className="text-xs text-ink-muted">{labels.salaryScheduleHint}</p>
                 ))}
               {editError && <p className="text-sm text-warn">{editError}</p>}
               <div className="flex gap-2">
                 <button
                   type="button"
                   onClick={handleSaveDetails}
-                  disabled={isPending || !editName.trim() || !editWage || (editNeedsFallbackHours && !(Number(editFallbackHours) > 0))}
+                  disabled={isPending || !editName.trim() || !editWage}
                   className="h-10 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
                 >
                   {editStatus === "saved" ? labels.detailsSaved : labels.saveDetails}
@@ -413,7 +379,6 @@ function EmployeeRowItem({
                     setEditRole(employee.role ?? "");
                     setEditWagePeriod(employee.wagePeriod);
                     setEditWage(employee.wageAmountCents ? (employee.wageAmountCents / 100).toFixed(2) : employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
-                    setEditFallbackHours("");
                   }}
                   className="h-10 rounded-full border border-line px-3.5 text-sm font-semibold text-ink-muted"
                 >
@@ -565,7 +530,7 @@ function WeeklyScheduleEditor({ employee, schedules, labels }: { employee: Emplo
       <button
         type="button"
         onClick={handleSave}
-        disabled={isPending || !(employee.defaultHourlyWageCents && employee.defaultHourlyWageCents > 0)}
+        disabled={isPending || !(employee.wageAmountCents && employee.wageAmountCents > 0)}
         className="h-10 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
       >
         {status === "saved" ? labels.scheduleSaved : labels.saveSchedule}

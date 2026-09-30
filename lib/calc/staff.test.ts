@@ -65,4 +65,9 @@ describe("staff", () => {
   it("hourlyWageCentsFromSalary returns 0 for a salaried period with no hours to divide by", () => {
     expect(hourlyWageCentsFromSalary(5_200_000, "year", 0)).toBe(0);
   });
+
+  it("weeklyScheduledHours treats an end time on/before the start time as crossing midnight", () => {
+    const days = [{ startTime: "18:00", endTime: "01:00", unpaidBreakMinutes: 0 }]; // closing shift, 7h
+    expect(weeklyScheduledHours(days)).toBeCloseTo(7, 6);
+  });
 });
