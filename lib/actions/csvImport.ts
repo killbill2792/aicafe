@@ -44,7 +44,12 @@ export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?:
 
 /** One synthetic order per item per day (docs/06-integrations.md) — `pos_order_id` is prefixed
  * "csv-" so it's distinguishable from a real register's own order ids; `orders` has no separate
- * provider column (see PROGRESS.md decisions). Idempotent: re-uploading the same file is a no-op. */
+ * provider column (see PROGRESS.md decisions). Idempotent by *content* (date + item), not by the
+ * row's position in the file — an owner re-exporting a rolling window (e.g. "last 30 days," every
+ * day) will have the same calendar day land at a different row index in each day's file, so a
+ * position-based key would silently double-count every day the two uploads overlap on. Keying on
+ * date+item alone means the same day's row always upserts in place no matter where in the file it
+ * lands or how many overlapping uploads it's been through. */
 export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok: boolean; imported: number; error?: string }> {
   const ctx = await context();
   if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
@@ -56,8 +61,8 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
 
   let imported = 0;
   const affectedDates = new Set<string>();
-  for (const [i, row] of rows.entries()) {
-    const posOrderId = `csv-${row.date}-${row.item}-${i}`.slice(0, 120);
+  for (const row of rows) {
+    const posOrderId = `csv-${row.date}-${row.item}`.slice(0, 120);
     const { data: order, error } = await supabase
       .from("orders")
       .upsert(
@@ -117,10 +122,14 @@ export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok:
 
   let imported = 0;
   const affectedDates = new Set<string>();
-  for (const [i, row] of rows.entries()) {
+  // Keyed on employee + clock-in timestamp alone (both content, not file position) — same
+  // idempotency reasoning as importSalesRows above: a shift's actual start time already
+  // identifies it uniquely, so a rolling-window re-upload upserts the same shift in place
+  // instead of minting a duplicate every time it shifts position in the file.
+  for (const row of rows) {
     const employeeId = employeeIdByPos.get(`csv-${row.employee.toLowerCase().replace(/\s+/g, "-")}`);
     if (!employeeId) continue;
-    const posTimecardId = `csv-${row.employee}-${row.clockIn}-${i}`.slice(0, 120);
+    const posTimecardId = `csv-${row.employee}-${row.clockIn}`.slice(0, 120);
     const { error } = await supabase.from("timecards").upsert(
       {
         business_id: businessId,
