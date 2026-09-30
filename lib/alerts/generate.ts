@@ -22,7 +22,10 @@ export async function generateAlerts(supabase: SupabaseClient, businessId: strin
   return { created };
 }
 
-async function hasOpenAlert(supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string): Promise<boolean> {
+/** Exported for `lib/actions/csvImport.ts`'s `unmatched_sales_items` alert, which is created right
+ * at the moment an import finds the problem rather than in the batch pass below (it's tied to one
+ * specific upload event, not something recomputable from steady-state data). */
+export async function hasOpenAlert(supabase: SupabaseClient, businessId: string, kind: string, dedupeKey: string): Promise<boolean> {
   const { data } = await supabase
     .from("alerts")
     .select("id, payload")

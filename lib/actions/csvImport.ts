@@ -6,6 +6,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
+import { hasOpenAlert } from "@/lib/alerts/generate";
 import type { NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
 import type { NormalizedLaborRow } from "@/lib/pos/csv/parseLaborCsv";
 import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
@@ -14,6 +15,22 @@ import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@
 
 type Kind = "sales" | "labor" | "ingredients";
 type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping;
+
+export type SalesImportSummary = {
+  rowsInFile: number;
+  imported: number;
+  dateFrom: string | null;
+  dateTo: string | null;
+  unmatchedItems: { name: string; rows: number }[];
+};
+export type LaborImportSummary = { rowsInFile: number; imported: number; dateFrom: string | null; dateTo: string | null };
+export type IngredientImportSummary = { rowsInFile: number; imported: number; newIngredients: string[] };
+
+function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string | null } {
+  if (dates.length === 0) return { dateFrom: null, dateTo: null };
+  const sorted = [...dates].sort();
+  return { dateFrom: sorted[0], dateTo: sorted[sorted.length - 1] };
+}
 
 async function context() {
   if (!isSupabaseConfigured()) return null;
@@ -50,7 +67,7 @@ export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?:
  * position-based key would silently double-count every day the two uploads overlap on. Keying on
  * date+item alone means the same day's row always upserts in place no matter where in the file it
  * lands or how many overlapping uploads it's been through. */
-export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok: boolean; imported: number; error?: string }> {
+export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok: boolean; imported: number; error?: string; summary?: SalesImportSummary }> {
   const ctx = await context();
   if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
   const { supabase, businessId } = ctx;
@@ -61,6 +78,7 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
 
   let imported = 0;
   const affectedDates = new Set<string>();
+  const unmatchedCounts = new Map<string, number>();
   for (const row of rows) {
     const posOrderId = `csv-${row.date}-${row.item}`.slice(0, 120);
     const { data: order, error } = await supabase
@@ -82,10 +100,13 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
       .single();
     if (error || !order) continue;
 
+    const menuItemId = menuItemIdByName.get(row.item.toLowerCase()) ?? null;
+    if (!menuItemId) unmatchedCounts.set(row.item, (unmatchedCounts.get(row.item) ?? 0) + 1);
+
     await supabase.from("order_lines").delete().eq("order_id", order.id);
     await supabase.from("order_lines").insert({
       order_id: order.id,
-      menu_item_id: menuItemIdByName.get(row.item.toLowerCase()) ?? null,
+      menu_item_id: menuItemId,
       name: row.item,
       quantity: row.quantity,
       net_sales_cents: row.netSalesCents,
@@ -98,13 +119,42 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
 
   for (const date of affectedDates) await recomputeDailyRollup(supabase, businessId, date);
 
+  const unmatchedItems = [...unmatchedCounts.entries()].map(([name, count]) => ({ name, rows: count }));
+  const summary: SalesImportSummary = { rowsInFile: rows.length, imported, ...dateRange([...affectedDates]), unmatchedItems };
+
+  await supabase.from("uploads").insert({
+    business_id: businessId,
+    kind: "sales_csv",
+    status: unmatchedItems.length > 0 ? "needs_review" : "done",
+    summary,
+  });
+
+  // Sales still count toward the day's total either way (daily_rollups sums order_lines
+  // regardless of menu_item_id) — but an unmatched item's quantity/cost is invisible to Menu's
+  // per-drink numbers until she adds or renames the item, so this needs her attention even though
+  // nothing technically failed. Deduped by the exact set of unmatched names so a re-upload of the
+  // same (or an overlapping) file doesn't spam a new alert for a problem she hasn't fixed yet.
+  if (unmatchedItems.length > 0) {
+    const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");
+    if (!(await hasOpenAlert(supabase, businessId, "unmatched_sales_items", dedupeKey))) {
+      await supabase.from("alerts").insert({
+        business_id: businessId,
+        kind: "unmatched_sales_items",
+        impact_cents: null,
+        payload: { dedupeKey, itemNames: [...unmatchedCounts.keys()], rowCount: unmatchedItems.reduce((s, u) => s + u.rows, 0) },
+      });
+    }
+  }
+
   revalidatePath("/");
   revalidatePath("/money");
   revalidatePath("/menu");
-  return { ok: true, imported };
+  revalidatePath("/more/alerts");
+  revalidatePath("/more/uploads/history");
+  return { ok: true, imported, summary };
 }
 
-export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok: boolean; imported: number; error?: string }> {
+export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok: boolean; imported: number; error?: string; summary?: LaborImportSummary }> {
   const ctx = await context();
   if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
   const { supabase, businessId } = ctx;
@@ -150,9 +200,13 @@ export async function importLaborRows(rows: NormalizedLaborRow[]): Promise<{ ok:
 
   for (const date of affectedDates) await recomputeDailyRollup(supabase, businessId, date);
 
+  const summary: LaborImportSummary = { rowsInFile: rows.length, imported, ...dateRange([...affectedDates]) };
+  await supabase.from("uploads").insert({ business_id: businessId, kind: "labor_csv", status: "done", summary });
+
   revalidatePath("/");
   revalidatePath("/money");
-  return { ok: true, imported };
+  revalidatePath("/more/uploads/history");
+  return { ok: true, imported, summary };
 }
 
 export type IngredientCostImportRow = NormalizedIngredientCostRow & { baseUnitForNew: "g" | "ml" | "each" };
@@ -163,7 +217,7 @@ export type IngredientCostImportRow = NormalizedIngredientCostRow & { baseUnitFo
  * "milk up 70¢" reads from, so today's Menu screen keeps showing yesterday's cost until this
  * row's `effective_from` date. Source is "invoice", the closest fit for a priced inventory
  * report among the fixed source values. */
-export async function importIngredientCostRows(rows: IngredientCostImportRow[]): Promise<{ ok: boolean; imported: number; error?: string }> {
+export async function importIngredientCostRows(rows: IngredientCostImportRow[]): Promise<{ ok: boolean; imported: number; error?: string; summary?: IngredientImportSummary }> {
   const ctx = await context();
   if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
   const { supabase, businessId } = ctx;
@@ -172,6 +226,7 @@ export async function importIngredientCostRows(rows: IngredientCostImportRow[]):
   const idByLowerName = new Map((existing ?? []).map((i) => [i.name.toLowerCase(), i.id]));
 
   let imported = 0;
+  const newIngredients: string[] = [];
   for (const row of rows) {
     let ingredientId = idByLowerName.get(row.name.toLowerCase());
     if (!ingredientId) {
@@ -183,6 +238,7 @@ export async function importIngredientCostRows(rows: IngredientCostImportRow[]):
       if (createError || !created) continue;
       ingredientId = created.id;
       idByLowerName.set(row.name.toLowerCase(), ingredientId);
+      newIngredients.push(row.name);
     }
 
     const { error } = await supabase.from("ingredient_prices").insert({
@@ -198,6 +254,10 @@ export async function importIngredientCostRows(rows: IngredientCostImportRow[]):
     if (!error) imported += 1;
   }
 
+  const summary: IngredientImportSummary = { rowsInFile: rows.length, imported, newIngredients };
+  await supabase.from("uploads").insert({ business_id: businessId, kind: "ingredients_csv", status: "done", summary });
+
   revalidatePath("/menu");
-  return { ok: true, imported };
+  revalidatePath("/more/uploads/history");
+  return { ok: true, imported, summary };
 }

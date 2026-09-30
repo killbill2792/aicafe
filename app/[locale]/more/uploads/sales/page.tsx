@@ -28,6 +28,11 @@ export default async function SalesCsvPage() {
           preview: t("salesPreview"),
           import: t("import"),
           imported: t("imported"),
+          resultSummary: t("resultSummary"),
+          resultSummaryNoDates: t("resultSummaryNoDates"),
+          unmatchedWarningTitle: t("unmatchedWarningTitle"),
+          unmatchedWarningHint: t("unmatchedWarningHint"),
+          unmatchedRowsCount: t("unmatchedRowsCount"),
         }}
       />
     </main>

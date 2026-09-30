@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseIngredientCostsCsv, type IngredientCostColumnMapping } from "@/lib/pos/csv/parseIngredientCostsCsv";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
-import { saveMapping, importIngredientCostRows, type IngredientCostImportRow } from "@/lib/actions/csvImport";
+import { saveMapping, importIngredientCostRows, type IngredientCostImportRow, type IngredientImportSummary } from "@/lib/actions/csvImport";
 import { formatCents } from "@/lib/calc";
 
 const FIELDS: { key: keyof IngredientCostColumnMapping; required: boolean }[] = [
@@ -46,6 +46,7 @@ export default function IngredientCostImporter({
     unitG: string;
     unitMl: string;
     unitEach: string;
+    resultSummaryNoDates: string;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
@@ -55,6 +56,7 @@ export default function IngredientCostImporter({
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "imported">("idle");
   const [count, setCount] = useState(0);
+  const [summary, setSummary] = useState<IngredientImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
@@ -97,6 +99,7 @@ export default function IngredientCostImporter({
       if (result.ok) {
         setStatus("imported");
         setCount(result.imported);
+        setSummary(result.summary ?? null);
       } else {
         setError(result.error ?? null);
       }
@@ -176,6 +179,12 @@ export default function IngredientCostImporter({
             </div>
           ))}
         </section>
+      )}
+
+      {summary && (
+        <p className="rounded-card-lg bg-card p-4 text-sm font-semibold text-good">
+          {labels.resultSummaryNoDates.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile))}
+        </p>
       )}
 
       {error && <p className="px-2 text-sm text-warn">{error}</p>}

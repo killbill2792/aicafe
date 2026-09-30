@@ -28,6 +28,8 @@ export default async function LaborCsvPage() {
           preview: t("laborPreview"),
           import: t("import"),
           imported: t("imported"),
+          resultSummary: t("resultSummary"),
+          resultSummaryNoDates: t("resultSummaryNoDates"),
         }}
       />
     </main>

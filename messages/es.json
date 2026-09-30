@@ -339,7 +339,22 @@
     "ingredientsLink": "Costos de ingredientes",
     "ingredientsLinkHint": "Desde tu sistema de inventario",
     "bankLink": "Estado de cuenta bancario",
-    "bankLinkHint": "CSV o Excel de tu banco"
+    "bankLinkHint": "CSV o Excel de tu banco",
+    "historyLink": "Historial de subidas",
+    "historyLinkHint": "Ve qué hizo cada subida anterior"
+  },
+  "UploadHistory": {
+    "title": "Historial de subidas",
+    "subtitle": "Cada archivo que subiste, y qué pasó",
+    "emptyState": "Aún no hay subidas. Los archivos que importes desde Subidas aparecerán aquí.",
+    "kindSales": "Reporte de ventas",
+    "kindLabor": "Horas / turnos",
+    "kindIngredients": "Costos de ingredientes",
+    "rowsLine": "{imported} de {rowsInFile} filas",
+    "dateRangeLine": "{dateFrom} – {dateTo}",
+    "statusDone": "Listo",
+    "statusNeedsReview": "Necesita revisión",
+    "unmatchedInline": "No coincidió con tu menú: {names}"
   },
   "CsvImport": {
     "salesTitle": "Importar reporte de ventas",
@@ -375,7 +390,13 @@
     "unitMl": "Por volumen (ml)",
     "unitEach": "Por unidad",
     "import": "Importar",
-    "imported": "Importado"
+    "imported": "Importado",
+    "resultSummary": "Se importaron {imported} de {rowsInFile} filas, del {dateFrom} al {dateTo}",
+    "resultSummaryNoDates": "Se importaron {imported} de {rowsInFile} filas",
+    "unmatchedWarningTitle": "Algunos artículos no coinciden con tu menú",
+    "unmatchedWarningHint": "Estas ventas siguen contando en tu total, pero no en los números de esa bebida hasta que se agregue a tu menú.",
+    "unmatchedRowsCount": "{rows} filas",
+    "viewHistory": "Ver subidas anteriores"
   },
   "Alerts": {
     "title": "Alertas",
@@ -396,6 +417,9 @@
     "mealBreakTitle": "Descanso para comer perdido — {name}",
     "mealBreakSubtitle": "Esto es información general, no asesoría legal.",
     "mealBreakAction": "Ver personal",
+    "unmatchedItemsTitle": "Algunos artículos de ventas no coinciden con tu menú",
+    "unmatchedItemsSubtitle": "{names} — las ventas siguen contando en tu total, pero no en los números de esa bebida hasta que esté en tu menú.",
+    "unmatchedItemsAction": "Corregir en Gestionar menú",
     "neverAccusatoryNote": "Esto puede ser un error honesto o una falta de capacitación. Vale la pena revisarlo con calma, no acusar.",
     "markReviewed": "Marcar como revisado",
     "dismiss": "Descartar"

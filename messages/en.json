@@ -339,7 +339,22 @@
     "ingredientsLink": "Ingredient costs",
     "ingredientsLinkHint": "From your inventory system",
     "bankLink": "Bank statement",
-    "bankLinkHint": "CSV or Excel from your bank"
+    "bankLinkHint": "CSV or Excel from your bank",
+    "historyLink": "Upload history",
+    "historyLinkHint": "See what every past upload actually did"
+  },
+  "UploadHistory": {
+    "title": "Upload history",
+    "subtitle": "Every file you've uploaded, and what happened",
+    "emptyState": "No uploads yet. Files you import from Uploads will show up here.",
+    "kindSales": "Sales report",
+    "kindLabor": "Labor / time entries",
+    "kindIngredients": "Ingredient costs",
+    "rowsLine": "{imported} of {rowsInFile} rows",
+    "dateRangeLine": "{dateFrom} – {dateTo}",
+    "statusDone": "Done",
+    "statusNeedsReview": "Needs review",
+    "unmatchedInline": "Didn't match your menu: {names}"
   },
   "CsvImport": {
     "salesTitle": "Import sales report",
@@ -375,7 +390,13 @@
     "unitMl": "By volume (ml)",
     "unitEach": "Each (count)",
     "import": "Import",
-    "imported": "Imported"
+    "imported": "Imported",
+    "resultSummary": "Imported {imported} of {rowsInFile} rows, covering {dateFrom} – {dateTo}",
+    "resultSummaryNoDates": "Imported {imported} of {rowsInFile} rows",
+    "unmatchedWarningTitle": "Some items didn't match your menu",
+    "unmatchedWarningHint": "These sales still count toward your total, but not toward that specific drink's numbers until it's added to your menu.",
+    "unmatchedRowsCount": "{rows} rows",
+    "viewHistory": "See past uploads"
   },
   "Alerts": {
     "title": "Alerts",
@@ -396,6 +417,9 @@
     "mealBreakTitle": "Missed meal break — {name}",
     "mealBreakSubtitle": "This is general information, not legal advice.",
     "mealBreakAction": "See staff",
+    "unmatchedItemsTitle": "Some sales items didn't match your menu",
+    "unmatchedItemsSubtitle": "{names} — the sales still count toward your total, but not toward that drink's own numbers until it's on your menu.",
+    "unmatchedItemsAction": "Fix in Manage menu",
     "neverAccusatoryNote": "This can be an honest mistake or a training gap. It's worth a calm look, not an accusation.",
     "markReviewed": "Mark as reviewed",
     "dismiss": "Dismiss"

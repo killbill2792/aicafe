@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseSalesCsv, type SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
-import { saveMapping, importSalesRows } from "@/lib/actions/csvImport";
+import { saveMapping, importSalesRows, type SalesImportSummary } from "@/lib/actions/csvImport";
 
 const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "date", required: true },
@@ -28,6 +28,11 @@ export default function SalesCsvImporter({
     preview: string;
     import: string;
     imported: string;
+    resultSummary: string;
+    resultSummaryNoDates: string;
+    unmatchedWarningTitle: string;
+    unmatchedWarningHint: string;
+    unmatchedRowsCount: string;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
@@ -36,6 +41,7 @@ export default function SalesCsvImporter({
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "imported">("idle");
   const [count, setCount] = useState(0);
+  const [summary, setSummary] = useState<SalesImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleFile(file: File) {
@@ -61,6 +67,7 @@ export default function SalesCsvImporter({
       if (result.ok) {
         setStatus("imported");
         setCount(result.imported);
+        setSummary(result.summary ?? null);
       } else {
         setError(result.error ?? null);
       }
@@ -108,9 +115,32 @@ export default function SalesCsvImporter({
         ))}
       </section>
 
-      {complete && (
+      {complete && status === "idle" && (
         <p className="px-2 text-sm text-ink-muted">{labels.preview.replace("{count}", String(parsedRows.length))}</p>
       )}
+
+      {summary && (
+        <section className="flex flex-col gap-2 rounded-card-lg bg-card p-4">
+          <p className="text-sm font-semibold text-good">
+            {summary.dateFrom && summary.dateTo
+              ? labels.resultSummary.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile)).replace("{dateFrom}", summary.dateFrom).replace("{dateTo}", summary.dateTo)
+              : labels.resultSummaryNoDates.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile))}
+          </p>
+          {summary.unmatchedItems.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
+              <span className="text-sm font-bold text-warn">{labels.unmatchedWarningTitle}</span>
+              <p className="text-xs text-[#6E2A07]">{labels.unmatchedWarningHint}</p>
+              {summary.unmatchedItems.map((u) => (
+                <div key={u.name} className="flex items-center justify-between gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                  <span className="shrink-0 text-xs text-ink-muted">{labels.unmatchedRowsCount.replace("{rows}", String(u.rows))}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {error && <p className="px-2 text-sm text-warn">{error}</p>}
 
       <button

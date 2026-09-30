@@ -339,7 +339,22 @@
     "ingredientsLink": "تكاليف المكونات",
     "ingredientsLinkHint": "من نظام إدارة المخزون لديك",
     "bankLink": "كشف الحساب البنكي",
-    "bankLinkHint": "CSV أو Excel من بنكك"
+    "bankLinkHint": "CSV أو Excel من بنكك",
+    "historyLink": "سجل التحميلات",
+    "historyLinkHint": "اطّلع على ما فعله كل تحميل سابق"
+  },
+  "UploadHistory": {
+    "title": "سجل التحميلات",
+    "subtitle": "كل ملف قمت بتحميله، وما حدث له",
+    "emptyState": "لا توجد تحميلات بعد. الملفات التي تستوردها من صفحة التحميلات ستظهر هنا.",
+    "kindSales": "تقرير المبيعات",
+    "kindLabor": "ساعات العمل / الورديات",
+    "kindIngredients": "تكاليف المكونات",
+    "rowsLine": "{imported} من {rowsInFile} صفًا",
+    "dateRangeLine": "{dateFrom} – {dateTo}",
+    "statusDone": "تم",
+    "statusNeedsReview": "يحتاج مراجعة",
+    "unmatchedInline": "لم يطابق قائمتك: {names}"
   },
   "CsvImport": {
     "salesTitle": "استيراد تقرير المبيعات",
@@ -375,7 +390,13 @@
     "unitMl": "بالحجم (مل)",
     "unitEach": "بالعدد",
     "import": "استيراد",
-    "imported": "تم الاستيراد"
+    "imported": "تم الاستيراد",
+    "resultSummary": "تم استيراد {imported} من {rowsInFile} صفًا، من {dateFrom} إلى {dateTo}",
+    "resultSummaryNoDates": "تم استيراد {imported} من {rowsInFile} صفًا",
+    "unmatchedWarningTitle": "بعض الأصناف لم تطابق قائمتك",
+    "unmatchedWarningHint": "لا تزال هذه المبيعات محتسبة ضمن إجمالك، لكن ليس ضمن أرقام هذا المشروب حتى يُضاف إلى قائمتك.",
+    "unmatchedRowsCount": "{rows} صفوف",
+    "viewHistory": "عرض التحميلات السابقة"
   },
   "Alerts": {
     "title": "التنبيهات",
@@ -396,6 +417,9 @@
     "mealBreakTitle": "فترة راحة فائتة — {name}",
     "mealBreakSubtitle": "هذه معلومات عامة، وليست استشارة قانونية.",
     "mealBreakAction": "عرض الموظفين",
+    "unmatchedItemsTitle": "بعض أصناف المبيعات لم تطابق قائمتك",
+    "unmatchedItemsSubtitle": "{names} — لا تزال هذه المبيعات محتسبة ضمن إجماليك، لكن ليس ضمن أرقام هذا المشروب تحديدًا حتى يُضاف إلى قائمتك.",
+    "unmatchedItemsAction": "إصلاح في إدارة القائمة",
     "neverAccusatoryNote": "قد يكون هذا خطأ بسيطًا أو نقصًا في التدريب. يستحق نظرة هادئة، لا اتهامًا.",
     "markReviewed": "وضع علامة تمت المراجعة",
     "dismiss": "تجاهل"

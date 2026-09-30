@@ -42,6 +42,7 @@ export default async function IngredientCostsPage() {
           unitG: t("unitG"),
           unitMl: t("unitMl"),
           unitEach: t("unitEach"),
+          resultSummaryNoDates: t("resultSummaryNoDates"),
         }}
       />
     </main>

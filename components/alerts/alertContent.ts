@@ -39,6 +39,17 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         actionLabel: t("mealBreakAction"),
       };
     }
+    case "unmatched_sales_items": {
+      const names = Array.isArray(alert.payload.itemNames) ? (alert.payload.itemNames as string[]) : [];
+      return {
+        icon: "other",
+        title: t("unmatchedItemsTitle"),
+        subtitle: t("unmatchedItemsSubtitle", { names: names.join(", ") }),
+        tone: "warn" as const,
+        actionHref: "/menu/manage",
+        actionLabel: t("unmatchedItemsAction"),
+      };
+    }
     default:
       return {
         icon: "other",
