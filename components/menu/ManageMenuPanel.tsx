@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { addMenuItem, addRecipeLine, deleteRecipeLine, setMenuItemActive } from "@/lib/actions/menuItems";
-import { formatCents } from "@/lib/calc";
+import { formatCents, recommendedPriceCents } from "@/lib/calc";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 
 type Labels = {
@@ -39,6 +39,8 @@ type Labels = {
   deactivate: string;
   reactivate: string;
   inactiveTag: string;
+  suggestedPriceLabel: string;
+  suggestedPriceHint: string;
 };
 
 /** Groups a list of sizes/items sharing one base name (e.g. "Latte" → 12/16/18 oz), preserving
@@ -370,6 +372,16 @@ function MenuItemRow({
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {item.ingredientsCostCents > 0 && (
+            <div className="flex flex-col gap-0.5 rounded-xl bg-good-tint px-3 py-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold text-good">{labels.suggestedPriceLabel}</span>
+                <span className="text-base font-bold text-good">{formatCents(recommendedPriceCents(item.ingredientsCostCents))}</span>
+              </div>
+              <span className="text-xs text-good">{labels.suggestedPriceHint}</span>
             </div>
           )}
 

@@ -53,6 +53,8 @@ export default async function ManageMenuPage() {
           deactivate: t("deactivate"),
           reactivate: t("reactivate"),
           inactiveTag: t("inactiveTag"),
+          suggestedPriceLabel: t("suggestedPriceLabel"),
+          suggestedPriceHint: t("suggestedPriceHint"),
         }}
       />
     </main>

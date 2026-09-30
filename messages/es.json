@@ -73,10 +73,13 @@
     "subtitle": "Se registran una vez, se usan cada mes",
     "amountLabel": "Monto mensual",
     "dueDayLabel": "Día de vencimiento del mes",
+    "labelLabel": "¿Qué es esta cuenta?",
+    "labelPlaceholder": "ej. Servicio de uniformes, Bodega",
     "save": "Guardar",
     "delete": "Quitar",
     "addHint": "Agregar",
-    "edit": "Editar"
+    "edit": "Editar",
+    "addAnother": "Agregar otra cuenta de Otros"
   },
   "Home": {
     "title": "Inicio",
@@ -240,7 +243,9 @@
     "remove": "Quitar",
     "deactivate": "Ya no está en el menú",
     "reactivate": "Volver a activar",
-    "inactiveTag": "Ya no está en el menú"
+    "inactiveTag": "Ya no está en el menú",
+    "suggestedPriceLabel": "Precio sugerido",
+    "suggestedPriceHint": "Mantiene los ingredientes cerca del 30% del precio — el rango saludable es 25–35%."
   },
   "Staff": {
     "title": "Personal",

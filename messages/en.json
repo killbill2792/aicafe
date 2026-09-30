@@ -73,10 +73,13 @@
     "subtitle": "Entered once, used every month",
     "amountLabel": "Monthly amount",
     "dueDayLabel": "Due day of month",
+    "labelLabel": "What is this bill?",
+    "labelPlaceholder": "e.g. Uniform service, Storage unit",
     "save": "Save",
     "delete": "Remove",
     "addHint": "Add",
-    "edit": "Edit"
+    "edit": "Edit",
+    "addAnother": "Add another Other bill"
   },
   "Home": {
     "title": "Home",
@@ -240,7 +243,9 @@
     "remove": "Remove",
     "deactivate": "No longer on the menu",
     "reactivate": "Bring back",
-    "inactiveTag": "No longer on the menu"
+    "inactiveTag": "No longer on the menu",
+    "suggestedPriceLabel": "Suggested price",
+    "suggestedPriceHint": "Keeps ingredients around 30% of the price — the healthy range is 25–35%."
   },
   "Staff": {
     "title": "Staff",

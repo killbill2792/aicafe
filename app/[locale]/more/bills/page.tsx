@@ -29,10 +29,13 @@ export default async function BillsPage() {
         labels={{
           amountLabel: t("amountLabel"),
           dueDayLabel: t("dueDayLabel"),
+          labelLabel: t("labelLabel"),
+          labelPlaceholder: t("labelPlaceholder"),
           save: t("save"),
           delete: t("delete"),
           addHint: t("addHint"),
           edit: t("edit"),
+          addAnother: t("addAnother"),
         }}
       />
     </main>

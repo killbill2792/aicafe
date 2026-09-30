@@ -141,7 +141,10 @@ export async function getBusinessSnapshotFromDb(
   const runningCostLines: RunningCostLine[] = orderedCodes
     .filter((code): code is ExpenseCategoryCode => RUNNING_COST_CODES.includes(code as ExpenseCategoryCode))
     .map((code) => {
-      const recurring = (recurringResult.data ?? []).find(
+      // A category (most often "other") can have more than one active recurring-cost row — e.g.
+      // several distinct labeled bills that don't fit a fixed category — so every active row
+      // must be summed, not just the first one found.
+      const activeRecurring = (recurringResult.data ?? []).filter(
         (r) => r.category_code === code && r.active_from <= todayDateStr && (!r.active_to || r.active_to >= todayDateStr),
       );
       const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
@@ -155,12 +158,12 @@ export async function getBusinessSnapshotFromDb(
           isMissing: false,
         };
       }
-      if (recurring) {
+      if (activeRecurring.length > 0) {
         return {
           categoryCode: code,
           label: RUNNING_COST_LABELS[code] ?? code,
-          amountCents: recurring.amount_cents,
-          isEstimate: recurring.is_estimate,
+          amountCents: activeRecurring.reduce((sum, r) => sum + r.amount_cents, 0),
+          isEstimate: activeRecurring.some((r) => r.is_estimate),
           isMissing: false,
         };
       }

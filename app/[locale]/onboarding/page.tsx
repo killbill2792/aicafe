@@ -59,7 +59,17 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
           <BillsManager
             bills={await getRecurringCosts()}
             categoryLabels={categoryLabels}
-            labels={{ amountLabel: tBills("amountLabel"), dueDayLabel: tBills("dueDayLabel"), save: tBills("save"), delete: tBills("delete"), addHint: tBills("addHint"), edit: tBills("edit") }}
+            labels={{
+              amountLabel: tBills("amountLabel"),
+              dueDayLabel: tBills("dueDayLabel"),
+              labelLabel: tBills("labelLabel"),
+              labelPlaceholder: tBills("labelPlaceholder"),
+              save: tBills("save"),
+              delete: tBills("delete"),
+              addHint: tBills("addHint"),
+              edit: tBills("edit"),
+              addAnother: tBills("addAnother"),
+            }}
           />
           <Link href="/onboarding?step=3" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
             {t("continue")}

@@ -1,7 +1,9 @@
 import "server-only";
+import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
+import { itemIngredientCostCents } from "@/lib/calc";
 
 export type RecipeLineForEdit = {
   ingredientId: string;
@@ -20,6 +22,9 @@ export type MenuItemForEdit = {
   category: "drink" | "food";
   active: boolean;
   recipe: RecipeLineForEdit[];
+  /** Today's priced ingredient cost for this item's current recipe — 0 when the recipe has no
+   * ingredients yet, or none of them have a priced cost. Powers the "suggested price" hint. */
+  ingredientsCostCents: number;
 };
 
 export type IngredientOption = { id: string; name: string; baseUnit: "g" | "ml" | "each" };
@@ -35,14 +40,16 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   if (!user) return { items: [], ingredients: [] };
   const businessId = await getActiveBusinessId(user.id);
 
-  const [{ data: items }, { data: ingredients }] = await Promise.all([
+  const [{ data: items }, { data: ingredients }, { data: business }] = await Promise.all([
     supabase
       .from("menu_items")
       .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active")
       .eq("business_id", businessId)
       .order("name"),
     supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
+    supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
+  const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
 
   const itemIds = (items ?? []).map((i) => i.id);
   const { data: recipeLines } =
@@ -66,17 +73,42 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     recipeByItem.set(row.menu_item_id, list);
   }
 
-  const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => ({
-    id: item.id,
-    name: item.name,
-    baseName: item.base_name ?? item.name,
-    sizeLabel: item.size_label ?? null,
-    priceCents: item.price_cents ?? 0,
-    prepSeconds: item.prep_seconds,
-    category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
-    active: item.is_active,
-    recipe: (recipeByItem.get(item.id) ?? []).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName)),
-  }));
+  // Latest priced-as-of-today cost per ingredient — same "ascending order, last write wins"
+  // pattern getMenuItemSnapshots (lib/data/snapshot.server.ts) already uses for the read-only
+  // Menu screen, reused here so the editor's "suggested price" is grounded in the same number.
+  const recipeIngredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
+  const { data: priceRows } =
+    recipeIngredientIds.length > 0
+      ? await supabase
+          .from("ingredient_prices")
+          .select("ingredient_id, effective_from, cost_per_base_unit_micros")
+          .in("ingredient_id", recipeIngredientIds)
+          .lte("effective_from", todayDateStr)
+          .order("effective_from", { ascending: true })
+      : { data: [] };
+  const latestPriceMicros: Record<string, number> = {};
+  for (const row of priceRows ?? []) {
+    latestPriceMicros[row.ingredient_id] = row.cost_per_base_unit_micros;
+  }
+
+  const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => {
+    const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+    return {
+      id: item.id,
+      name: item.name,
+      baseName: item.base_name ?? item.name,
+      sizeLabel: item.size_label ?? null,
+      priceCents: item.price_cents ?? 0,
+      prepSeconds: item.prep_seconds,
+      category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
+      active: item.is_active,
+      recipe,
+      ingredientsCostCents: itemIngredientCostCents(
+        recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
+        latestPriceMicros,
+      ),
+    };
+  });
 
   return { items: menuItems, ingredients: ingredientOptions };
 }
