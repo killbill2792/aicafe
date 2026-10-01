@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Plus } from "lucide-react";
 import PlainIcon from "@/components/icons/PlainIcon";
 import Money from "@/components/shared/Money";
 import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
@@ -160,55 +159,56 @@ export default function BillsManager({
         );
       })}
 
-      {/* "Other" is repeatable — real cafés end up with a handful of bills that don't fit any
-          fixed category, each needing its own name, not one generic "Other" bucket. */}
-      <div className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
-        <div className="flex items-center gap-3">
-          <PlainIcon code={OTHER_CATEGORY} size={32} color="#2A1D14" />
-          <span className="flex-1 text-start text-base font-bold">{categoryLabels[OTHER_CATEGORY]}</span>
-        </div>
-        {otherBills.map((bill) => {
-          const isOpen = openKey === bill.id;
-          return (
-            <div key={bill.id} className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-2.5">
-              <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
-                <span className="min-w-0 flex-1 truncate text-start text-sm font-semibold">{bill.label}</span>
-                <span className="text-sm font-bold">
-                  <Money cents={bill.amountCents} />
-                </span>
-              </button>
-              {isOpen && (
-                <BillForm
-                  existing={bill}
-                  category={OTHER_CATEGORY}
-                  defaultLabel={categoryLabels[OTHER_CATEGORY]}
-                  showLabelField
-                  onDone={() => setOpenKey(null)}
-                  labels={labels}
-                />
-              )}
-            </div>
-          );
-        })}
-
-        {openKey === NEW_OTHER_KEY ? (
-          <div className="border-t border-[#EFE7DB] pt-2.5">
-            <BillForm
-              existing={null}
-              category={OTHER_CATEGORY}
-              defaultLabel={categoryLabels[OTHER_CATEGORY]}
-              showLabelField
-              onDone={() => setOpenKey(null)}
-              labels={labels}
-            />
+      {/* Custom "Other" bills are repeatable — real cafés end up with a handful of bills that
+          don't fit any fixed category, each needing its own owner-typed name. Each one gets its
+          own full card, same visual tier as Rent/Electricity/etc., not nested under one bucket —
+          her spreadsheet lists these as individual line items, not sub-items of "Other". */}
+      {otherBills.map((bill) => {
+        const isOpen = openKey === bill.id;
+        return (
+          <div key={bill.id} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+            <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
+              <PlainIcon code={OTHER_CATEGORY} size={32} color="#2A1D14" />
+              <span className="min-w-0 flex-1 truncate text-start text-base font-bold">{bill.label}</span>
+              <span className="text-base font-bold">
+                <Money cents={bill.amountCents} />
+              </span>
+            </button>
+            {isOpen && (
+              <BillForm
+                existing={bill}
+                category={OTHER_CATEGORY}
+                defaultLabel={bill.label}
+                showLabelField
+                onDone={() => setOpenKey(null)}
+                labels={labels}
+              />
+            )}
           </div>
-        ) : (
-          <button type="button" onClick={() => toggle(NEW_OTHER_KEY)} className="flex items-center gap-2 border-t border-[#EFE7DB] pt-2.5 text-sm font-semibold text-good">
-            <Plus aria-hidden="true" size={16} />
-            {labels.addAnother}
-          </button>
-        )}
-      </div>
+        );
+      })}
+
+      {openKey === NEW_OTHER_KEY ? (
+        <div className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
+          <BillForm
+            existing={null}
+            category={OTHER_CATEGORY}
+            defaultLabel=""
+            showLabelField
+            onDone={() => setOpenKey(null)}
+            labels={labels}
+          />
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => toggle(NEW_OTHER_KEY)}
+          className="flex items-center gap-3 rounded-card-lg bg-card p-4 text-start text-base font-bold text-good"
+        >
+          <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
+          {labels.addAnother}
+        </button>
+      )}
     </div>
   );
 }

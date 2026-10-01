@@ -2,11 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { computeDedupeKey, normalizeVendor } from "@/lib/expenses/dedupeKey";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+/**
+ * "Today" in the business's own timezone, not server UTC — a bill saved or removed in the
+ * evening (business-local time) in a US timezone is already "tomorrow" in UTC, which pushed
+ * active_from/active_to a day late and made a just-added bill miss today's totals (found while
+ * verifying the repeatable "Other" bills feature against live data).
+ */
+async function todayDateStrForBusiness(supabase: SupabaseClient, businessId: string): Promise<string> {
+  const { data } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
+  return formatInTimeZone(new Date(), data?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
+}
 
 export type ReviewLine = {
   i: number;
@@ -102,7 +115,7 @@ export async function saveRecurringCost(input: z.infer<typeof RecurringCostSchem
 
   const { error } = parsed.data.id
     ? await supabase.from("recurring_costs").update(row).eq("id", parsed.data.id).eq("business_id", businessId)
-    : await supabase.from("recurring_costs").insert({ ...row, active_from: new Date().toISOString().slice(0, 10) });
+    : await supabase.from("recurring_costs").insert({ ...row, active_from: await todayDateStrForBusiness(supabase, businessId) });
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/more/bills");
@@ -118,7 +131,7 @@ export async function deleteRecurringCost(id: string): Promise<ActionResult> {
   const supabase = await createServerSupabaseClient();
   const { error } = await supabase
     .from("recurring_costs")
-    .update({ active_to: new Date().toISOString().slice(0, 10) })
+    .update({ active_to: await todayDateStrForBusiness(supabase, businessId) })
     .eq("id", id)
     .eq("business_id", businessId);
   if (error) return { ok: false, error: error.message };

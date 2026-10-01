@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { isAiConfigured } from "@/lib/ai/types";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -47,7 +48,11 @@ export async function saveReceiptExpense(params: {
   if (!user) return { ok: false, error: "Sign in first." };
   const businessId = await getActiveBusinessId(user.id);
 
-  const spentOn = params.receipt.date ?? new Date().toISOString().slice(0, 10);
+  let spentOn = params.receipt.date;
+  if (!spentOn) {
+    const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
+    spentOn = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
+  }
   const dedupeKey = computeDedupeKey({ businessId, spentOn, amountCents: params.receipt.total_cents, vendor: params.receipt.vendor });
 
   const { data: expense, error } = await supabase
