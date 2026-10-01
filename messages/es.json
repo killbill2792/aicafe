@@ -245,7 +245,8 @@
     "possibleMatch": "Posible coincidencia: {name}",
     "noPossibleMatch": "No encontramos una coincidencia segura.",
     "confirmMatch": "Vincular a este producto",
-    "createSeparate": "Crear como producto separado"
+    "createSeparate": "Crear como producto separado",
+    "priceUnavailable": "Precio no disponible"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -302,7 +303,8 @@
     "pricingWarningCategoryOutlier": "Este precio es bastante diferente de artículos similares; conviene revisarlo.",
     "pricingWarningCostOutlier": "El costo de la receta difiere bastante de artículos similares.",
     "pricingWarningIncompleteRecipe": "Completa los precios de la receta para mejorar esta sugerencia.",
-    "pricingWarningLowSample": "Este artículo tiene pocas ventas recientes, por eso la confianza es menor."
+    "pricingWarningLowSample": "Este artículo tiene pocas ventas recientes, por eso la confianza es menor.",
+    "pricingStatusUnavailable": "Precio sugerido no disponible"
   },
   "Staff": {
     "title": "Personal",

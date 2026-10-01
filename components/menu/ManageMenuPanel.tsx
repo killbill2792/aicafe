@@ -373,7 +373,13 @@ function MenuItemRow({
             </div>
           )}
 
-          {pricingResult && pricingResult.productCostCents > 0 && (
+          {pricingResult && pricingResult.status === "PRICE_UNAVAILABLE" && (
+            <div className="flex flex-col gap-0.5 rounded-xl bg-warn-tint px-3 py-2.5">
+              <span className="text-sm font-semibold text-warn">{labels.pricingStatus.PRICE_UNAVAILABLE}</span>
+            </div>
+          )}
+
+          {pricingResult && pricingResult.status !== "PRICE_UNAVAILABLE" && pricingResult.recommendedPriceCents !== null && (
             <div className="flex flex-col gap-0.5 rounded-xl bg-good-tint px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-semibold text-good">{labels.pricingStatus[pricingResult.status]}</span>

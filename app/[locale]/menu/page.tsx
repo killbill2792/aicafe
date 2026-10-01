@@ -25,7 +25,7 @@ export default async function MenuPage() {
       <Link href="/menu/import-review" className="mx-1 text-sm font-bold text-good underline">{t("reviewMatches")}</Link>
       <MenuCatalog items={items} labels={{
         search: t("search"), all: t("all"), coffee: t("coffee"), tea: t("tea"), food: t("food"), needsAttention: t("needsAttention"),
-        cost: t("cost"), afterIngredients: t("afterIngredients"), suggested: t("suggested"), keepPrice: t("keepPrice"), noRecipe: t("noRecipe"),
+        cost: t("cost"), afterIngredients: t("afterIngredients"), suggested: t("suggested"), keepPrice: t("keepPrice"), priceUnavailable: t("priceUnavailable"), noRecipe: t("noRecipe"),
         missingCost: t("missingCost"), syncedFrom: t("syncedFrom"), inactive: t("inactive"), empty: t("empty"), addItem: t("addItem"),
       }} />
     </main>

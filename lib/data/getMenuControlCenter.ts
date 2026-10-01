@@ -41,7 +41,10 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     const input = inputById.get(item.id);
     return {
       ...item,
-      pricing: item.costStatus === "READY" ? pricingById.get(item.id) ?? null : null,
+      // No separate READY gate here — suggestPrice() itself now returns a PRICE_UNAVAILABLE result
+      // (not null) for any item whose recipe isn't ready, so this always agrees with costStatus
+      // instead of risking two independent "is this item priced" checks drifting apart.
+      pricing: pricingById.get(item.id) ?? null,
       unitsSold: input && input.unitsSoldInWindow > 0 ? input.unitsSoldInWindow : null,
       revenueCents: revenueById.has(item.id) ? revenueById.get(item.id)! : null,
       provenance: ((item.catalogSource ?? (item.posItemId ? "OTHER_POS" : "MANUAL")).toUpperCase()) as MenuControlItem["provenance"],

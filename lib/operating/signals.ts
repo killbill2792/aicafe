@@ -2,7 +2,10 @@ import type { DataQuality, PricingResult } from "@/lib/calc";
 import type { CafeSignal } from "./types";
 
 export function signalsFromPricing(itemId: string, result: PricingResult): CafeSignal[] {
-  if (result.status !== "REVIEW_PRICE") return [];
+  // REVIEW_PRICE always carries a real, non-null recommendedPriceCents (see suggestPrice in
+  // pricingEngine.ts — PRICE_UNAVAILABLE is the only status with a null price, and it's excluded
+  // above); this check just makes that invariant explicit for the type system too.
+  if (result.status !== "REVIEW_PRICE" || result.recommendedPriceCents === null) return [];
   return [{
     id: `pricing:${itemId}:${result.currentPriceCents}:${result.recommendedPriceCents}`,
     type: "PRICE_REVIEW_REQUIRED", entityType: "product", entityId: itemId,
