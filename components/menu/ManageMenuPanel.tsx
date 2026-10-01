@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
-import { addMenuItem, addRecipeLine, deleteRecipeLine, setMenuItemActive } from "@/lib/actions/menuItems";
+import { addManualIngredientPrice, addMenuItem, addRecipeLine, deleteRecipeLine, setMenuItemActive, updateMenuItem } from "@/lib/actions/menuItems";
 import { formatCents, type PricingResult } from "@/lib/calc";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import { MENU_ITEM_CATEGORY_CODES, type MenuItemCategoryCode } from "@/lib/constants";
@@ -67,11 +67,15 @@ export default function ManageMenuPanel({
   ingredients,
   labels,
   pricing,
+  showCreate,
+  initialItemId,
 }: {
   items: MenuItemForEdit[];
   ingredients: IngredientOption[];
   labels: Labels;
   pricing: Record<string, PricingResult>;
+  showCreate: boolean;
+  initialItemId?: string;
 }) {
   const [name, setName] = useState("");
   const [sizeLabel, setSizeLabel] = useState("");
@@ -80,7 +84,7 @@ export default function ManageMenuPanel({
   const [category, setCategory] = useState<MenuItemCategoryCode>("ESPRESSO_DRINK");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(initialItemId ? [initialItemId] : []));
 
   function handleAdd() {
     const priceCents = Math.round((Number(price) || 0) * 100);
@@ -131,7 +135,7 @@ export default function ManageMenuPanel({
 
   return (
     <div className="flex flex-col gap-3.5">
-      <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+      {showCreate && <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="flex items-center gap-2 text-[17px] font-bold">
           <Plus aria-hidden="true" size={20} />
           {labels.addDrink}
@@ -191,7 +195,7 @@ export default function ManageMenuPanel({
         >
           {labels.add}
         </button>
-      </section>
+      </section>}
 
       <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-2">
         {activeGroups.length === 0 ? (
@@ -270,8 +274,6 @@ function MenuItemRow({
   const [ingredientId, setIngredientId] = useState<string>("");
   const [newName, setNewName] = useState("");
   const [newUnit, setNewUnit] = useState<"g" | "ml" | "each">("g");
-  const [newCost, setNewCost] = useState("");
-  const [newCostQuantity, setNewCostQuantity] = useState("");
   const [quantity, setQuantity] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -281,8 +283,6 @@ function MenuItemRow({
     const qty = Number(quantity);
     if (!qty || qty <= 0) return;
     if (!ingredientId && !newName.trim()) return;
-    const costCents = Math.round((Number(newCost) || 0) * 100);
-    const costQuantity = Number(newCostQuantity) || 0;
     setError(null);
     setJustAdded(false);
     startTransition(async () => {
@@ -291,15 +291,11 @@ function MenuItemRow({
         ingredientId: ingredientId || undefined,
         newIngredientName: ingredientId ? undefined : newName.trim(),
         newIngredientUnit: ingredientId ? undefined : newUnit,
-        newIngredientCostCents: !ingredientId && costCents > 0 && costQuantity > 0 ? costCents : undefined,
-        newIngredientCostQuantity: !ingredientId && costCents > 0 && costQuantity > 0 ? costQuantity : undefined,
         quantity: qty,
       });
       if (result.ok) {
         setQuantity("");
         setNewName("");
-        setNewCost("");
-        setNewCostQuantity("");
         setIngredientId("");
         setJustAdded(true);
       } else {
@@ -334,6 +330,7 @@ function MenuItemRow({
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-3 rounded-2xl bg-[#FAF6F0] p-3.5">
+          <EditProductForm item={item} labels={labels} />
           <div className="flex flex-col gap-0.5">
             <span className="text-sm font-bold">{labels.recipe}</span>
             <span className="text-xs text-ink-muted">{labels.recipeHint}</span>
@@ -358,7 +355,7 @@ function MenuItemRow({
                 </thead>
                 <tbody>
                   {item.recipe.map((line) => (
-                    <tr key={line.ingredientId} className="border-t border-[#EFE7DB]">
+                    <tr key={line.ingredientId} className="border-t border-[#EFE7DB] align-top">
                       <td className="min-w-0 max-w-0 truncate py-1.5 pr-2">{line.ingredientName}</td>
                       <td className="whitespace-nowrap py-1.5 pr-2 text-right text-ink-muted">
                         {line.quantity} {line.baseUnit}
@@ -368,6 +365,7 @@ function MenuItemRow({
                           <Trash2 aria-hidden="true" size={16} />
                         </button>
                       </td>
+                      {line.costCents === null && <td className="py-1.5" colSpan={3}><MissingPriceForm line={line} labels={labels} /></td>}
                     </tr>
                   ))}
                 </tbody>
@@ -415,35 +413,6 @@ function MenuItemRow({
                 </select>
               </div>
             )}
-            {!ingredientId && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-ink-muted">{labels.ingredientCostLabel}</span>
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="shrink-0 font-bold text-ink-muted">$</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    value={newCost}
-                    onChange={(e) => setNewCost(e.target.value)}
-                    className="h-11 min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm"
-                  />
-                  <span className="shrink-0 text-xs text-ink-muted">{labels.ingredientCostForLabel}</span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="0.01"
-                    value={newCostQuantity}
-                    onChange={(e) => setNewCostQuantity(e.target.value)}
-                    className="h-11 w-20 min-w-0 shrink-0 rounded-lg border border-line px-2 text-sm"
-                  />
-                  <span className="shrink-0 text-xs text-ink-muted">{newUnit === "each" ? labels.unitEach : newUnit}</span>
-                </div>
-                <span className="text-xs text-ink-muted">{labels.ingredientCostHint}</span>
-              </div>
-            )}
             <div className="flex min-w-0 items-center gap-2">
               <input
                 type="number"
@@ -475,4 +444,32 @@ function MenuItemRow({
       )}
     </div>
   );
+}
+
+function EditProductForm({ item, labels }: { item: MenuItemForEdit; labels: Labels }) {
+  const [name, setName] = useState(item.baseName);
+  const [size, setSize] = useState(item.sizeLabel ?? "");
+  const [price, setPrice] = useState((item.priceCents / 100).toFixed(2));
+  const [minutes, setMinutes] = useState(String(item.prepSeconds / 60));
+  const [category, setCategory] = useState(item.category);
+  const [pending, startTransition] = useTransition();
+  return <div className="grid gap-2 border-b border-[#EFE7DB] pb-3">
+    <span className="text-sm font-bold">{labels.nameLabel}</span>
+    <input value={name} onChange={(event) => setName(event.target.value)} className="h-11 rounded-lg border border-line px-3 text-base" />
+    <div className="grid grid-cols-2 gap-2"><input value={size} onChange={(event) => setSize(event.target.value)} placeholder={labels.sizeLabel} className="h-11 min-w-0 rounded-lg border border-line px-3 text-base" /><input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" aria-label={labels.priceLabel} className="h-11 min-w-0 rounded-lg border border-line px-3 text-base" /></div>
+    <div className="grid grid-cols-2 gap-2"><input value={minutes} onChange={(event) => setMinutes(event.target.value)} type="number" min="0.5" step="0.5" aria-label={labels.prepSecondsLabel} className="h-11 min-w-0 rounded-lg border border-line px-3 text-base" /><select value={category} onChange={(event) => setCategory(event.target.value as MenuItemCategoryCode)} aria-label={labels.categoryLabel} className="h-11 min-w-0 rounded-lg border border-line bg-card px-2 text-sm">{MENU_ITEM_CATEGORY_CODES.map((code) => <option key={code} value={code}>{labels.categories[code]}</option>)}</select></div>
+    <button type="button" disabled={pending} onClick={() => startTransition(async () => { await updateMenuItem({ id: item.id, name, sizeLabel: size || undefined, priceCents: Math.round(Number(price) * 100), prepSeconds: Math.round(Number(minutes) * 60), category }); })} className="min-h-11 rounded-full bg-ink px-4 font-bold text-paper">{labels.add}</button>
+  </div>;
+}
+
+function MissingPriceForm({ line, labels }: { line: MenuItemForEdit["recipe"][number]; labels: Labels }) {
+  const [cost, setCost] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [pending, startTransition] = useTransition();
+  return <div className="mt-1 flex flex-wrap items-center gap-1.5 rounded-lg bg-warn-tint p-2 text-xs text-warn">
+    <span className="w-full font-bold">{labels.ingredientCostLabel}: {line.ingredientName}</span>
+    <span>$</span><input value={cost} onChange={(event) => setCost(event.target.value)} inputMode="decimal" className="h-10 w-20 rounded-lg border border-line px-2 text-ink" />
+    <span>{labels.ingredientCostForLabel}</span><input value={quantity} onChange={(event) => setQuantity(event.target.value)} inputMode="decimal" className="h-10 w-20 rounded-lg border border-line px-2 text-ink" /><span>{line.baseUnit}</span>
+    <button type="button" disabled={pending || !cost || !quantity} onClick={() => startTransition(async () => { await addManualIngredientPrice({ ingredientId: line.ingredientId, packageCostCents: Math.round(Number(cost) * 100), packageQuantity: Number(quantity) }); })} className="min-h-10 rounded-full bg-ink px-3 font-bold text-paper disabled:opacity-40">{labels.add}</button>
+  </div>;
 }

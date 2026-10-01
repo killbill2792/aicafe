@@ -84,10 +84,30 @@ export async function saveReceiptExpense(params: {
     ingredient_id: params.ingredientMappings[i] ?? null,
   }));
   if (lineRows.length > 0) {
-    await supabase.from("expense_lines").insert(lineRows);
+    const { data: savedLines } = await supabase.from("expense_lines").insert(lineRows).select("id, quantity, unit, amount_cents, ingredient_id");
+    const ingredientIds = [...new Set((savedLines ?? []).flatMap((line) => line.ingredient_id ? [line.ingredient_id] : []))];
+    const { data: ingredients } = ingredientIds.length
+      ? await supabase.from("ingredients").select("id, base_unit").in("id", ingredientIds).eq("business_id", businessId)
+      : { data: [] };
+    const unitByIngredient = new Map((ingredients ?? []).map((ingredient) => [ingredient.id, ingredient.base_unit]));
+    const priceRows = (savedLines ?? []).flatMap((line) => {
+      if (!line.ingredient_id || !line.quantity || Number(line.quantity) <= 0) return [];
+      const normalizedUnit = String(line.unit ?? "").toLowerCase().replace(/s$/, "");
+      const baseUnit = unitByIngredient.get(line.ingredient_id);
+      if (!baseUnit || ![baseUnit, baseUnit === "each" ? "item" : baseUnit].includes(normalizedUnit)) return [];
+      return [{
+        ingredient_id: line.ingredient_id,
+        effective_from: spentOn,
+        cost_per_base_unit_micros: Math.round((line.amount_cents / Number(line.quantity)) * 1_000_000),
+        source: "receipt",
+        source_expense_line_id: line.id,
+      }];
+    });
+    if (priceRows.length) await supabase.from("ingredient_prices").insert(priceRows);
   }
 
   revalidatePath("/money");
   revalidatePath("/");
+  revalidatePath("/menu");
   return { ok: true };
 }

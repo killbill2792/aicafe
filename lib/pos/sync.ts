@@ -3,6 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { recomputeDailyRollup } from "./rollup";
+import { syncCanonicalCatalog } from "./syncCatalog";
 
 /**
  * Backfill or incremental sync (docs/06-integrations.md "Sync"): pulls orders/catalog/
@@ -16,11 +17,15 @@ export async function syncPosData(
   const { businessId, locationId, timezone, adapter, since, until } = params;
   const affectedDates = new Set<string>();
 
+  await syncCanonicalCatalog(supabase, businessId, adapter);
+
   const [orders, employees, timecards] = await Promise.all([
     adapter.fetchOrders({ since, until }),
     adapter.fetchEmployees(),
     adapter.fetchTimecards({ since, until }),
   ]);
+  const { data: menuRows } = await supabase.from("menu_items").select("id, pos_item_id").eq("business_id", businessId);
+  const menuItemIdByPos = new Map((menuRows ?? []).filter((item) => item.pos_item_id).map((item) => [item.pos_item_id, item.id]));
 
   // Employees first (timecards reference them by pos_team_member_id).
   if (employees.length > 0) {
@@ -66,6 +71,7 @@ export async function syncPosData(
         order.lines.map((line) => ({
           order_id: existing.id,
           pos_item_id: line.posItemId,
+          menu_item_id: line.posItemId ? menuItemIdByPos.get(line.posItemId) ?? null : null,
           name: line.name,
           quantity: line.quantity,
           net_sales_cents: line.netSalesCents,

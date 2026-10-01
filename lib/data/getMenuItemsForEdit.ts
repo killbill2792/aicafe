@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import { itemIngredientCostCents } from "@/lib/calc";
+import { evaluateRecipeCost, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 
 export type RecipeLineForEdit = {
@@ -11,7 +11,10 @@ export type RecipeLineForEdit = {
   ingredientName: string;
   baseUnit: "g" | "ml" | "each";
   quantity: number;
+  costCents: number | null;
+  priceSource: "manual" | "receipt" | "statement" | "invoice" | null;
 };
+type RawRecipeLine = Omit<RecipeLineForEdit, "costCents" | "priceSource">;
 
 export type MenuItemForEdit = {
   id: string;
@@ -22,10 +25,15 @@ export type MenuItemForEdit = {
   prepSeconds: number;
   category: MenuItemCategoryCode;
   active: boolean;
+  posItemId: string | null;
+  catalogSource: string;
+  catalogLastSyncedAt: string | null;
   recipe: RecipeLineForEdit[];
   /** Today's priced ingredient cost for this item's current recipe — 0 when the recipe has no
    * ingredients yet, or none of them have a priced cost. Powers the "suggested price" hint. */
-  ingredientsCostCents: number;
+  ingredientsCostCents: number | null;
+  costStatus: RecipeCostStatus;
+  missingCostIngredientNames: string[];
 };
 
 export type IngredientOption = { id: string; name: string; baseUnit: "g" | "ml" | "each" };
@@ -44,7 +52,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const [{ data: items }, { data: ingredients }, { data: business }] = await Promise.all([
     supabase
       .from("menu_items")
-      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active")
+      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
       .eq("business_id", businessId)
       .order("name"),
     supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
@@ -64,7 +72,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     baseUnit: i.base_unit as "g" | "ml" | "each",
   }));
 
-  const recipeByItem = new Map<string, RecipeLineForEdit[]>();
+  const recipeByItem = new Map<string, RawRecipeLine[]>();
   for (const row of recipeLines ?? []) {
     const ing = row.ingredients as unknown as { name: string; base_unit: string } | { name: string; base_unit: string }[] | null;
     const ingRow = Array.isArray(ing) ? ing[0] : ing;
@@ -82,18 +90,31 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     recipeIngredientIds.length > 0
       ? await supabase
           .from("ingredient_prices")
-          .select("ingredient_id, effective_from, cost_per_base_unit_micros")
+          .select("ingredient_id, effective_from, cost_per_base_unit_micros, source")
           .in("ingredient_id", recipeIngredientIds)
           .lte("effective_from", todayDateStr)
           .order("effective_from", { ascending: true })
       : { data: [] };
   const latestPriceMicros: Record<string, number> = {};
+  const latestPriceSource: Record<string, RecipeLineForEdit["priceSource"]> = {};
   for (const row of priceRows ?? []) {
     latestPriceMicros[row.ingredient_id] = row.cost_per_base_unit_micros;
+    latestPriceSource[row.ingredient_id] = row.source as RecipeLineForEdit["priceSource"];
   }
 
   const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => {
     const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
+    const cost = evaluateRecipeCost(
+      recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
+      latestPriceMicros,
+    );
+    const recipeWithCosts = recipe.map((line) => ({
+      ...line,
+      costCents: latestPriceMicros[line.ingredientId] === undefined
+        ? null
+        : (line.quantity * latestPriceMicros[line.ingredientId]) / 1_000_000,
+      priceSource: latestPriceSource[line.ingredientId] ?? null,
+    }));
     return {
       id: item.id,
       name: item.name,
@@ -103,11 +124,13 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
       active: item.is_active,
-      recipe,
-      ingredientsCostCents: itemIngredientCostCents(
-        recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
-        latestPriceMicros,
-      ),
+      posItemId: item.pos_item_id ?? null,
+      catalogSource: item.catalog_source ?? "manual",
+      catalogLastSyncedAt: item.catalog_last_synced_at ?? null,
+      recipe: recipeWithCosts,
+      ingredientsCostCents: cost.costCents,
+      costStatus: cost.status,
+      missingCostIngredientNames: recipe.filter((line) => cost.missingIngredientIds.includes(line.ingredientId)).map((line) => line.ingredientName),
     };
   });
 
