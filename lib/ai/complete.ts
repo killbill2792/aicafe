@@ -3,10 +3,10 @@ import type { z } from "zod";
 import { completeWithAnthropic } from "./providers/anthropic";
 import { completeWithOpenai } from "./providers/openai";
 import { completeWithMoonshot } from "./providers/moonshot";
-import type { AiChatCompleter, AiProvider } from "./types";
+import type { AiChatCompleter, AiProviderName } from "./types";
 
 function getCompleter(): AiChatCompleter {
-  const provider = (process.env.AI_PROVIDER as AiProvider) || "anthropic";
+  const provider = (process.env.AI_PROVIDER as AiProviderName) || "anthropic";
   if (provider === "openai") return completeWithOpenai;
   if (provider === "moonshot") return completeWithMoonshot;
   return completeWithAnthropic;

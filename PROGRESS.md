@@ -206,9 +206,42 @@ _(per the instruction: only stop and ask when docs contradict each other or a de
   - Also answered directly (not a code change): how Raj can visit a client's account himself to test/verify without asking her to — the same admin-API magic-link technique used for every live verification this session, handed to him as a one-line command using values already in `.env.local`.
   4. **Follow-up the same day: flattened "Other" bills from a nested sub-list to full top-level cards, and fixed a real same-day-counting bug found while re-verifying.** Raj's read of her message — "modify the text for 'other'" — was that she wants each bill treated as its own line item, same as Rent/Electricity, not grouped under one "Other" header; her spreadsheet lists them that way (Cintas, iPostal, Storage... each its own row, not sub-items of anything). `BillsManager.tsx` changed from one "Other" card containing indented sub-rows to each `other`-category bill rendering as its own full card, same markup/tier as the 7 fixed categories, plus a standalone "+ Add another bill" card at the end. No schema/action change — `label` was already fully wired (`saveRecurringCost` reads/writes it for both insert and update; confirmed by reading the action directly before touching anything, since the whole point raised was "what's the point if the schema's built and the UI doesn't show it"). **Found while re-verifying live, not reported: `saveRecurringCost`'s insert and `deleteRecurringCost` both stamped `active_from`/`active_to` from `new Date().toISOString().slice(0, 10)` — server UTC, not the business's own timezone.** For any US business timezone, UTC is ahead of local time, so a bill added in the evening (business-local) got an `active_from` of the *next* calendar day — it would silently sit out of every total (Home, Money, cost recovery) until the day after it was entered, with no error or indication anything was wrong. Fixed with a small `todayDateStrForBusiness` helper (`lib/actions/expenses.ts`) mirroring the `formatInTimeZone` pattern `snapshot.server.ts` already uses; applied to both the save and delete paths. Found and fixed the same latent bug in `receiptReview.ts`'s date fallback (used only when the AI couldn't read a date off a receipt) while in there — `voiceReview.ts` already had it right and was the reference for the fix. Verified end-to-end on mail2raj27's test account (confirmed by email, business name, and account-specific dollar amounts before touching anything, after accidentally landing on Seiyun's live session the first attempt — root cause was using plain `supabase-js`'s `createClient` instead of the app's own cookie-based `createBrowserClient` from `@supabase/ssr`, so the server kept reading an old session cookie already in that browser tab; no data was changed, caught before any save): renamed an existing "Other" bill and confirmed it saved; added two new "Other" bills through the real UI and confirmed in the database that `active_from` landed on today's business-local date, not tomorrow; confirmed Money's cost recovery total moved from $15,020.00 to $15,565.00 immediately (same day, not the next), with "Other $545.00" appearing as its own bucket; removed all test rows afterward. `npx tsc --noEmit`, `npm run lint`, `npm run test` (66 tests) all clean.
 
+## Active plan — AI-native operating-system foundation and Suggested Pricing Engine
+
+1. Map the existing deterministic calculations, screen projections, data history, POS adapters,
+   alerts, and optional extraction-AI paths; record architectural decisions in
+   `docs/09-ai-native-operating-system.md`.
+2. Implement the approved pricing engine as pure `lib/calc` composition with explicit quality,
+   evidence, assumptions, and signals; wire it through a dedicated data service and the existing
+   menu-management UI.
+3. Add the minimum reusable primitives: composable current/historical café state, structured
+   signals/events/forecasts, decisions and outcomes, deterministic policies, provider-independent
+   optional AI, structured tools, persistence schema, and RLS.
+4. Test no-AI operation, provider failure isolation, missing-data honesty, integer-cent outputs,
+   non-duplication of costs, pricing behavior, signals, and deterministic recommendations; then run
+   typecheck, lint, and the full test suite.
+
+No new dependency is planned: these boundaries use TypeScript, existing Supabase clients, and
+Vitest.
+
 ## Session log
 
 _(newest first)_
+
+### 2026-10-01 — AI-native operating-system foundation + Suggested Pricing Engine (done)
+Reviewed the deterministic calculations, database history, screen projections, POS adapters,
+alerts, and existing optional extraction-AI flow before implementation. The architecture review and
+explicit deviations from the pricing plan are in `docs/09-ai-native-operating-system.md`. Implemented
+the pure pricing engine, dedicated 90-day input projection, category profiles, stability/cap gates,
+quality/evidence-rich output, and menu-management presentation. Added composable current/historical
+café-state contracts, structured signals/events/forecast boundary, deterministic price-review
+decisions, persisted decision/outcome schema with RLS, optional AI provider/NoAIProvider, a
+failure-safe operating-brain boundary, and allow-listed structured tools. Inventory and suppliers
+remain explicitly unavailable rather than fabricated; no scheduler, forecast model, queue,
+autonomous execution, or speculative domain was added. No dependency added.
+
+Verified no-AI pricing/profit/signals/decisions, failure isolation, missing-data honesty,
+integer-cent pricing output, single-pass business cost composition, and safety caps in Vitest.
 
 ### 2026-09-30 — "Other" bills: flat layout + a same-day-counting bug (done)
 Raj asked Claude to check whether Seiyun had entered a menu yet (she hadn't) and whether her

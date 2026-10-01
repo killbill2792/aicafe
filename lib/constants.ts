@@ -9,6 +9,19 @@ export const DEMO_BUSINESS_ID = "11111111-1111-1111-1111-111111111111";
  * csvImport.ts) because a "use server" file may only export async functions. */
 export const NEW_EMPLOYEE = "__new__";
 
+export const MENU_ITEM_CATEGORY_CODES = [
+  "ESPRESSO_DRINK",
+  "BREWED_COFFEE",
+  "COLD_BREW",
+  "TEA",
+  "SPECIALTY_DRINK",
+  "PASTRY",
+  "FOOD",
+  "RETAIL",
+] as const;
+
+export type MenuItemCategoryCode = (typeof MENU_ITEM_CATEGORY_CODES)[number];
+
 export const EXPENSE_CATEGORY_CODES = [
   "rent",
   "utilities_power",

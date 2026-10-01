@@ -3,8 +3,9 @@
 import { useState, useTransition } from "react";
 import { ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { addMenuItem, addRecipeLine, deleteRecipeLine, setMenuItemActive } from "@/lib/actions/menuItems";
-import { formatCents, recommendedPriceCents } from "@/lib/calc";
+import { formatCents, type PricingResult } from "@/lib/calc";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
+import { MENU_ITEM_CATEGORY_CODES, type MenuItemCategoryCode } from "@/lib/constants";
 
 type Labels = {
   addDrink: string;
@@ -15,8 +16,8 @@ type Labels = {
   priceLabel: string;
   prepSecondsLabel: string;
   prepSecondsHelp: string;
-  categoryDrink: string;
-  categoryFood: string;
+  categoryLabel: string;
+  categories: Record<MenuItemCategoryCode, string>;
   add: string;
   noItems: string;
   recipe: string;
@@ -41,6 +42,9 @@ type Labels = {
   inactiveTag: string;
   suggestedPriceLabel: string;
   suggestedPriceHint: string;
+  pricingStatus: Record<PricingResult["status"], string>;
+  pricingExplainer: Record<PricingResult["explanationCode"], string>;
+  pricingWarnings: Record<PricingResult["warnings"][number], string>;
 };
 
 /** Groups a list of sizes/items sharing one base name (e.g. "Latte" → 12/16/18 oz), preserving
@@ -62,16 +66,18 @@ export default function ManageMenuPanel({
   items,
   ingredients,
   labels,
+  pricing,
 }: {
   items: MenuItemForEdit[];
   ingredients: IngredientOption[];
   labels: Labels;
+  pricing: Record<string, PricingResult>;
 }) {
   const [name, setName] = useState("");
   const [sizeLabel, setSizeLabel] = useState("");
   const [price, setPrice] = useState("");
   const [prepMinutes, setPrepMinutes] = useState("1");
-  const [category, setCategory] = useState<"drink" | "food">("drink");
+  const [category, setCategory] = useState<MenuItemCategoryCode>("ESPRESSO_DRINK");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -170,22 +176,12 @@ export default function ManageMenuPanel({
           </label>
         </div>
         <p className="-mt-1.5 text-xs text-ink-muted">{labels.prepSecondsHelp}</p>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setCategory("drink")}
-            className={`h-11 flex-1 rounded-xl text-sm font-semibold ${category === "drink" ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
-          >
-            {labels.categoryDrink}
-          </button>
-          <button
-            type="button"
-            onClick={() => setCategory("food")}
-            className={`h-11 flex-1 rounded-xl text-sm font-semibold ${category === "food" ? "bg-good-tint text-good" : "bg-paper text-ink-muted"}`}
-          >
-            {labels.categoryFood}
-          </button>
-        </div>
+        <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+          {labels.categoryLabel}
+          <select value={category} onChange={(event) => setCategory(event.target.value as MenuItemCategoryCode)} className="h-12 rounded-xl border border-line bg-card px-3 text-base text-ink">
+            {MENU_ITEM_CATEGORY_CODES.map((code) => <option key={code} value={code}>{labels.categories[code]}</option>)}
+          </select>
+        </label>
         {error && <p className="text-sm text-warn">{error}</p>}
         <button
           type="button"
@@ -202,7 +198,7 @@ export default function ManageMenuPanel({
           <p className="py-4 text-[15px] text-ink-muted">{labels.noItems}</p>
         ) : (
           activeGroups.map((group) => (
-            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} expanded={expanded} onToggle={toggleExpanded} onAddAnotherSize={handleAddAnotherSize} />
+            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} pricing={pricing} expanded={expanded} onToggle={toggleExpanded} onAddAnotherSize={handleAddAnotherSize} />
           ))
         )}
       </section>
@@ -210,7 +206,7 @@ export default function ManageMenuPanel({
       {inactiveGroups.length > 0 && (
         <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-2 opacity-70">
           {inactiveGroups.map((group) => (
-            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} expanded={expanded} onToggle={() => {}} onAddAnotherSize={() => {}} />
+            <MenuItemGroup key={group.baseName} group={group} ingredients={ingredients} labels={labels} pricing={pricing} expanded={expanded} onToggle={() => {}} onAddAnotherSize={() => {}} />
           ))}
         </section>
       )}
@@ -222,6 +218,7 @@ function MenuItemGroup({
   group,
   ingredients,
   labels,
+  pricing,
   expanded,
   onToggle,
   onAddAnotherSize,
@@ -229,6 +226,7 @@ function MenuItemGroup({
   group: { baseName: string; items: MenuItemForEdit[] };
   ingredients: IngredientOption[];
   labels: Labels;
+  pricing: Record<string, PricingResult>;
   expanded: Set<string>;
   onToggle: (id: string) => void;
   onAddAnotherSize: (baseName: string) => void;
@@ -246,7 +244,7 @@ function MenuItemGroup({
         </div>
       )}
       {group.items.map((item) => (
-        <MenuItemRow key={item.id} item={item} ingredients={ingredients} labels={labels} expanded={expanded.has(item.id)} onToggle={() => onToggle(item.id)} indent={isSized} />
+        <MenuItemRow key={item.id} item={item} ingredients={ingredients} labels={labels} pricingResult={pricing[item.id]} expanded={expanded.has(item.id)} onToggle={() => onToggle(item.id)} indent={isSized} />
       ))}
     </div>
   );
@@ -256,6 +254,7 @@ function MenuItemRow({
   item,
   ingredients,
   labels,
+  pricingResult,
   expanded,
   onToggle,
   indent,
@@ -263,6 +262,7 @@ function MenuItemRow({
   item: MenuItemForEdit;
   ingredients: IngredientOption[];
   labels: Labels;
+  pricingResult?: PricingResult;
   expanded: boolean;
   onToggle: () => void;
   indent: boolean;
@@ -375,13 +375,14 @@ function MenuItemRow({
             </div>
           )}
 
-          {item.ingredientsCostCents > 0 && (
+          {pricingResult && pricingResult.productCostCents > 0 && (
             <div className="flex flex-col gap-0.5 rounded-xl bg-good-tint px-3 py-2.5">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-semibold text-good">{labels.suggestedPriceLabel}</span>
-                <span className="text-base font-bold text-good">{formatCents(recommendedPriceCents(item.ingredientsCostCents))}</span>
+                <span className="text-sm font-semibold text-good">{labels.pricingStatus[pricingResult.status]}</span>
+                <span className="text-base font-bold text-good">{formatCents(pricingResult.recommendedPriceCents)}</span>
               </div>
-              <span className="text-xs text-good">{labels.suggestedPriceHint}</span>
+              <span className="text-xs text-good">{labels.pricingExplainer[pricingResult.explanationCode]}</span>
+              {pricingResult.warnings.map((warning) => <span key={warning} className="text-xs font-semibold text-warn">{labels.pricingWarnings[warning]}</span>)}
             </div>
           )}
 

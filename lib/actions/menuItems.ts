@@ -6,6 +6,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { MENU_ITEM_CATEGORY_CODES } from "@/lib/constants";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 export type ActionResultWithId = { ok: true; id: string } | { ok: false; error: string };
@@ -34,7 +35,7 @@ const MenuItemSchema = z.object({
   sizeLabel: z.string().trim().max(20).optional(),
   priceCents: z.number().int().positive(),
   prepSeconds: z.number().int().positive().max(3600),
-  category: z.enum(["drink", "food"]),
+  category: z.enum(MENU_ITEM_CATEGORY_CODES),
 });
 
 /** Adds a new menu item with no recipe yet — for register plans (CSV/Excel only, no live catalog
