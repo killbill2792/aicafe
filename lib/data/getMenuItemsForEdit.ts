@@ -5,12 +5,18 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { evaluateRecipeCost, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
+import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 
 export type RecipeLineForEdit = {
   ingredientId: string;
   ingredientName: string;
   baseUnit: "g" | "ml" | "each";
   quantity: number;
+  /** What the owner actually typed (e.g. "2 shots") and in what café-friendly unit — purely for
+   * friendly re-display; null for older rows entered before café-friendly units existed, which
+   * just fall back to showing `quantity`/`baseUnit`. Cost math always uses `quantity`/`baseUnit`. */
+  displayUnit: string | null;
+  displayQuantity: number | null;
   costCents: number | null;
   priceSource: "manual" | "receipt" | "statement" | "invoice" | null;
 };
@@ -24,6 +30,9 @@ export type MenuItemForEdit = {
   priceCents: number;
   prepSeconds: number;
   category: MenuItemCategoryCode;
+  /** Owner-facing menu section (e.g. "Coffee", "Breakfast") — separate from `category`, the
+   * internal analytics code. Null until the owner (or a POS import) sets one. */
+  menuGroup: string | null;
   active: boolean;
   posItemId: string | null;
   catalogSource: string;
@@ -49,22 +58,41 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   if (!user) return { items: [], ingredients: [] };
   const businessId = await getActiveBusinessId(user.id);
 
-  const [{ data: items }, { data: ingredients }, { data: business }] = await Promise.all([
+  const [itemsResult, ingredientsResult, businessResult] = await Promise.all([
     supabase
       .from("menu_items")
-      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
+      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, menu_group, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
       .eq("business_id", businessId)
       .order("name"),
     supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
     supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
+  if (itemsResult.error) {
+    logQueryError("getMenuItemsForEdit:menu_items", itemsResult.error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
+  if (ingredientsResult.error) {
+    logQueryError("getMenuItemsForEdit:ingredients", ingredientsResult.error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
+  // The business's timezone has a safe, documented fallback below, so a failure here degrades
+  // gracefully rather than blocking the whole menu — still logged, never silently unnoticed.
+  if (businessResult.error) logQueryError("getMenuItemsForEdit:businesses", businessResult.error);
+  const items = itemsResult.data;
+  const ingredients = ingredientsResult.data;
+  const business = businessResult.data;
   const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
 
   const itemIds = (items ?? []).map((i) => i.id);
-  const { data: recipeLines } =
+  const recipeLinesResult =
     itemIds.length > 0
-      ? await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds)
-      : { data: [] };
+      ? await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds)
+      : { data: [] as never[], error: null };
+  if (recipeLinesResult.error) {
+    logQueryError("getMenuItemsForEdit:recipe_lines", recipeLinesResult.error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
+  const recipeLines = recipeLinesResult.data;
 
   const ingredientOptions: IngredientOption[] = (ingredients ?? []).map((i) => ({
     id: i.id,
@@ -78,7 +106,14 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     const ingRow = Array.isArray(ing) ? ing[0] : ing;
     if (!ingRow) continue;
     const list = recipeByItem.get(row.menu_item_id) ?? [];
-    list.push({ ingredientId: row.ingredient_id, ingredientName: ingRow.name, baseUnit: ingRow.base_unit as "g" | "ml" | "each", quantity: Number(row.quantity) });
+    list.push({
+      ingredientId: row.ingredient_id,
+      ingredientName: ingRow.name,
+      baseUnit: ingRow.base_unit as "g" | "ml" | "each",
+      quantity: Number(row.quantity),
+      displayUnit: row.display_unit ?? null,
+      displayQuantity: row.display_quantity === null ? null : Number(row.display_quantity),
+    });
     recipeByItem.set(row.menu_item_id, list);
   }
 
@@ -86,7 +121,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   // pattern getMenuItemSnapshots (lib/data/snapshot.server.ts) already uses for the read-only
   // Menu screen, reused here so the editor's "suggested price" is grounded in the same number.
   const recipeIngredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
-  const { data: priceRows } =
+  const priceRowsResult =
     recipeIngredientIds.length > 0
       ? await supabase
           .from("ingredient_prices")
@@ -94,7 +129,12 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
           .in("ingredient_id", recipeIngredientIds)
           .lte("effective_from", todayDateStr)
           .order("effective_from", { ascending: true })
-      : { data: [] };
+      : { data: [] as never[], error: null };
+  if (priceRowsResult.error) {
+    logQueryError("getMenuItemsForEdit:ingredient_prices", priceRowsResult.error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
+  const priceRows = priceRowsResult.data;
   const latestPriceMicros: Record<string, number> = {};
   const latestPriceSource: Record<string, RecipeLineForEdit["priceSource"]> = {};
   for (const row of priceRows ?? []) {
@@ -123,6 +163,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       priceCents: item.price_cents ?? 0,
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
+      menuGroup: item.menu_group ?? null,
       active: item.is_active,
       posItemId: item.pos_item_id ?? null,
       catalogSource: item.catalog_source ?? "manual",

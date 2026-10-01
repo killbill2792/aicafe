@@ -6,6 +6,7 @@ import { getMenuItemsForEdit, type MenuItemForEdit } from "./getMenuItemsForEdit
 import { getPricingInputs } from "./getPricingInputs";
 import { buildPricingViewModel } from "@/lib/viewmodels/pricingViewModel";
 import type { PricingResult } from "@/lib/calc";
+import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 
 export type MenuControlItem = MenuItemForEdit & {
   pricing: PricingResult | null;
@@ -27,11 +28,15 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
   const pricingById = new Map(buildPricingViewModel(pricingInputs).map((row) => [row.itemId, row.result]));
   const inputById = new Map(pricingInputs.items.map((item) => [item.id, item]));
   const itemIds = items.map((item) => item.id);
-  const { data: salesRows } = await supabase
+  const { data: salesRows, error: salesError } = await supabase
     .from("order_lines")
     .select("menu_item_id, net_sales_cents")
     .in("menu_item_id", itemIds)
     .eq("voided", false);
+  if (salesError) {
+    logQueryError("getMenuControlCenter:order_lines", salesError);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
   const revenueById = new Map<string, number>();
   for (const row of salesRows ?? []) {
     if (!row.menu_item_id) continue;
