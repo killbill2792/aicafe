@@ -46,7 +46,7 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         title: t("unmatchedItemsTitle"),
         subtitle: t("unmatchedItemsSubtitle", { names: names.join(", ") }),
         tone: "warn" as const,
-        actionHref: "/menu/manage",
+        actionHref: "/menu",
         actionLabel: t("unmatchedItemsAction"),
       };
     }

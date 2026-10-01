@@ -5,6 +5,67 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu UX refactor (2026-10-01 — code complete, migration + live verification pending approval)
+
+Follow-up to "Menu Control Center" below: that work made `/menu` correct, but the editing surface
+(`/menu/manage`) stayed one giant form conflating internal analytics `category` with the owner's
+own menu sections, gated "Add another size" behind a `?add=1` query param that silently did nothing
+from most screens, made archived items unreachable (dead click handlers), and forced recipe entry
+into raw grams/ml with no café-friendly units (shots/fl oz/pumps).
+
+Prerequisite landed first, separately: `fix/pricing-zero-invariant` (PR #3, `948268a`) — merged into
+`main` before this refactor started. `PRICE_UNAVAILABLE`, nullable `PricingResult` fields, and the
+never-round-to-$0.00 floor are real and untouched by this work; this refactor only had to carry that
+exact branching into the rebuilt UI (see decisions below).
+
+Implementation:
+1. Owner-facing `menu_group` (free text, normalized against existing spellings so owners don't mint
+   "Drinks"/"drinks " duplicates) added as its own nullable column, separate from the internal
+   8-code `category` — `category` is never conflated with it again. `catalogMatches.ts`'s old bug
+   (writing raw POS category text straight into `category`, no validation) is fixed to write into
+   `menu_group` instead.
+2. Café-friendly recipe units (`lib/calc/recipeUnits.ts`): `ml`↔`fl oz` is a global physical
+   constant; `shot`/`pump` are explicitly *not* global — they're defined per ingredient (new
+   `ingredient_unit_conversions` table), defined once inline the first time an owner uses one for
+   that ingredient, then reused. `recipe_lines` gained `display_unit`/`display_quantity` purely for
+   friendly re-display; all cost math still reads the canonical `quantity`/`base_unit`, untouched.
+3. `/menu/manage`'s mega-form (`ManageMenuPanel.tsx`) is deleted. `/menu/[itemId]` is now the real
+   central product screen (price, recipe editor, pricing, sales, sizes, archive/restore, inline
+   edit — one page, normal in-page actions, not four buttons to the same form). `/menu/new` is a
+   new, minimal create flow (name, price, menu group, optional size — category is inferred, never
+   asserted as confirmed, always editable later). `/menu/manage` itself is kept as a pure redirect
+   (`?add=1` → `/menu/new`, `?item=<id>` → `/menu/<id>`, else → `/menu`) so old links don't 404.
+4. `/menu`'s tabs are now dynamic (`All`, one per menu group in use, `Needs attention`, `Archived`)
+   instead of a hardcoded coffee/tea/food split that silently hid POS-contaminated items; archived
+   items are simply items under the `Archived` tab now, landing on a detail page where restore
+   always works (no more no-op handlers on inactive rows).
+5. Fixed the known next-intl bug: `missingCost`/`syncedFrom`/`addAnotherSize` were being called with
+   no `values` and patched client-side with manual `.replace("{x}", ...)`. New/rebuilt client
+   components call `useTranslations` directly and interpolate properly.
+
+Migration discipline: one new migration (`20261001000022_menu_group_and_recipe_units.sql`) is
+additive only — `menu_items.menu_group`, `recipe_lines.display_unit`/`display_quantity`, the new
+`ingredient_unit_conversions` table, plus a conservative backfill that leaves every already-valid
+`category` value untouched and only repairs two narrow, demonstrably-identifiable cases (confirmed
+legacy lowercase rows; POS-contaminated non-enum rows). **Not applied anywhere yet** — shown to Raj
+for review (SQL + an affected-row preview query) before running against even a test/demo tenant,
+per standing instruction never to touch production data and to keep migrations reviewed-before-run.
+
+Verified so far: `npx tsc --noEmit`, `npm run lint`, `npm run test` (95/95, 10 new in
+`lib/calc/recipeUnits.test.ts`), `npm run build` all clean on branch `menu-ux-refactor`.
+**Live browser verification is blocked on the migration being approved and applied to a test/demo
+tenant** (the new columns/table don't exist yet) — do that next, using only a test/demo tenant, per
+standing instruction never to create/archive/restore/change recipes against a real client's data.
+
+Exact areas: `app/[locale]/menu/**` (new `new/` route, rebuilt `[itemId]`, redirect-only `manage`),
+`components/menu/**` (`ManageMenuPanel.tsx` deleted; `RecipeEditor`, `ProductEditForm`,
+`ProductDetailScreen`, `AddSizeDialog`, `NewMenuItemForm`, `MissingPriceForm` new/rebuilt;
+`MenuCatalog` rebuilt), `lib/actions/menuItems.ts` + new `lib/actions/ingredientUnitConversions.ts`,
+`lib/menu/menuGroups.ts` + `lib/menu/inferCategory.ts` (new), `lib/calc/recipeUnits.ts` (new),
+`lib/data/getMenuItemsForEdit.ts` (threaded `menuGroup`/display-unit fields), one migration,
+`components/alerts/alertContent.ts` (retargeted off the retired `/menu/manage`), message files.
+`lib/calc/pricingEngine.ts`/`types.ts` and the rest of the pricing engine are untouched.
+
 ## Menu Control Center (2026-10-01 — complete)
 
 Current disconnect: `/menu` is a featured-item analytics dashboard built from the broad business snapshot, while `/menu/manage` is a separate always-open creation/recipe editor; incomplete recipe costs are collapsed to zero in the shared ingredient calculator, POS sync writes order lines without resolving the canonical menu item, and catalog imports have no safe manual-to-POS matching review.

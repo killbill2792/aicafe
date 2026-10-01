@@ -11,6 +11,11 @@ export type RecipeLineForEdit = {
   ingredientName: string;
   baseUnit: "g" | "ml" | "each";
   quantity: number;
+  /** What the owner actually typed (e.g. "2 shots") and in what café-friendly unit — purely for
+   * friendly re-display; null for older rows entered before café-friendly units existed, which
+   * just fall back to showing `quantity`/`baseUnit`. Cost math always uses `quantity`/`baseUnit`. */
+  displayUnit: string | null;
+  displayQuantity: number | null;
   costCents: number | null;
   priceSource: "manual" | "receipt" | "statement" | "invoice" | null;
 };
@@ -24,6 +29,9 @@ export type MenuItemForEdit = {
   priceCents: number;
   prepSeconds: number;
   category: MenuItemCategoryCode;
+  /** Owner-facing menu section (e.g. "Coffee", "Breakfast") — separate from `category`, the
+   * internal analytics code. Null until the owner (or a POS import) sets one. */
+  menuGroup: string | null;
   active: boolean;
   posItemId: string | null;
   catalogSource: string;
@@ -52,7 +60,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const [{ data: items }, { data: ingredients }, { data: business }] = await Promise.all([
     supabase
       .from("menu_items")
-      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
+      .select("id, name, base_name, size_label, price_cents, prep_seconds, category, menu_group, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
       .eq("business_id", businessId)
       .order("name"),
     supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
@@ -63,7 +71,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const itemIds = (items ?? []).map((i) => i.id);
   const { data: recipeLines } =
     itemIds.length > 0
-      ? await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds)
+      ? await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds)
       : { data: [] };
 
   const ingredientOptions: IngredientOption[] = (ingredients ?? []).map((i) => ({
@@ -78,7 +86,14 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     const ingRow = Array.isArray(ing) ? ing[0] : ing;
     if (!ingRow) continue;
     const list = recipeByItem.get(row.menu_item_id) ?? [];
-    list.push({ ingredientId: row.ingredient_id, ingredientName: ingRow.name, baseUnit: ingRow.base_unit as "g" | "ml" | "each", quantity: Number(row.quantity) });
+    list.push({
+      ingredientId: row.ingredient_id,
+      ingredientName: ingRow.name,
+      baseUnit: ingRow.base_unit as "g" | "ml" | "each",
+      quantity: Number(row.quantity),
+      displayUnit: row.display_unit ?? null,
+      displayQuantity: row.display_quantity === null ? null : Number(row.display_quantity),
+    });
     recipeByItem.set(row.menu_item_id, list);
   }
 
@@ -123,6 +138,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       priceCents: item.price_cents ?? 0,
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
+      menuGroup: item.menu_group ?? null,
       active: item.is_active,
       posItemId: item.pos_item_id ?? null,
       catalogSource: item.catalog_source ?? "manual",
