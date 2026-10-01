@@ -4,6 +4,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { itemIngredientCostCents } from "@/lib/calc";
+import type { MenuItemCategoryCode } from "@/lib/constants";
 
 export type RecipeLineForEdit = {
   ingredientId: string;
@@ -19,7 +20,7 @@ export type MenuItemForEdit = {
   sizeLabel: string | null;
   priceCents: number;
   prepSeconds: number;
-  category: "drink" | "food";
+  category: MenuItemCategoryCode;
   active: boolean;
   recipe: RecipeLineForEdit[];
   /** Today's priced ingredient cost for this item's current recipe — 0 when the recipe has no
@@ -100,7 +101,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       sizeLabel: item.size_label ?? null,
       priceCents: item.price_cents ?? 0,
       prepSeconds: item.prep_seconds,
-      category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
+      category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
       active: item.is_active,
       recipe,
       ingredientsCostCents: itemIngredientCostCents(

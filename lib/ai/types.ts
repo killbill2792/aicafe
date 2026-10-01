@@ -1,4 +1,4 @@
-export type AiProvider = "anthropic" | "openai" | "moonshot";
+export type AiProviderName = "anthropic" | "openai" | "moonshot";
 
 export type AiUsage = { inputTokens: number; outputTokens: number };
 
@@ -21,4 +21,17 @@ export function isAiConfigured(): boolean {
   if (provider === "openai") return Boolean(process.env.OPENAI_API_KEY);
   if (provider === "moonshot") return Boolean(process.env.MOONSHOT_API_KEY);
   return Boolean(process.env.ANTHROPIC_API_KEY); // default provider is anthropic
+}
+
+export type AIReasoningRequest = { objective: string; context: Record<string, unknown>; availableTools: string[] };
+export type AIReasoningResult = { summary: string; proposedToolCalls: { tool: string; input: Record<string, unknown> }[]; provider: string; model?: string };
+export type AIExplanationRequest = { subject: string; facts: Record<string, unknown>; assumptions: string[] };
+export type AIExplanationResult = { text: string; provider: string; model?: string };
+
+/** Optional language/reasoning boundary. Financial facts only enter as structured, precomputed context. */
+export interface AIProvider {
+  readonly name: string;
+  isAvailable(): Promise<boolean>;
+  reason(input: AIReasoningRequest): Promise<AIReasoningResult>;
+  explain(input: AIExplanationRequest): Promise<AIExplanationResult>;
 }

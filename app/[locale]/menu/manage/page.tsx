@@ -3,16 +3,24 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getMenuItemsForEdit } from "@/lib/data/getMenuItemsForEdit";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageMenuPanel from "@/components/menu/ManageMenuPanel";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { getPricingInputs } from "@/lib/data/getPricingInputs";
+import { buildPricingViewModel } from "@/lib/viewmodels/pricingViewModel";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function ManageMenuPage() {
-  await requireOwnBusiness();
+  const user = await requireOwnBusiness();
   const t = await getTranslations("ManageMenu");
   const tCommon = await getTranslations("Common");
 
   const { items, ingredients } = await getMenuItemsForEdit();
+  const pricing = user && isSupabaseConfigured()
+    ? Object.fromEntries(buildPricingViewModel(await getPricingInputs(await createServerSupabaseClient(), await getActiveBusinessId(user.id))).map((row) => [row.itemId, row.result]))
+    : {};
 
   return (
     <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
@@ -20,6 +28,7 @@ export default async function ManageMenuPage() {
       <ManageMenuPanel
         items={items}
         ingredients={ingredients}
+        pricing={pricing}
         labels={{
           addDrink: t("addDrink"),
           nameLabel: t("nameLabel"),
@@ -29,8 +38,11 @@ export default async function ManageMenuPage() {
           priceLabel: t("priceLabel"),
           prepSecondsLabel: t("prepSecondsLabel"),
           prepSecondsHelp: t("prepSecondsHelp"),
-          categoryDrink: t("categoryDrink"),
-          categoryFood: t("categoryFood"),
+          categoryLabel: t("categoryLabel"),
+          categories: {
+            ESPRESSO_DRINK: t("categoryEspressoDrink"), BREWED_COFFEE: t("categoryBrewedCoffee"), COLD_BREW: t("categoryColdBrew"), TEA: t("categoryTea"),
+            SPECIALTY_DRINK: t("categorySpecialtyDrink"), PASTRY: t("categoryPastry"), FOOD: t("categoryFood"), RETAIL: t("categoryRetail"),
+          },
           add: t("add"),
           noItems: t("noItems"),
           recipe: t("recipe"),
@@ -55,6 +67,9 @@ export default async function ManageMenuPage() {
           inactiveTag: t("inactiveTag"),
           suggestedPriceLabel: t("suggestedPriceLabel"),
           suggestedPriceHint: t("suggestedPriceHint"),
+          pricingStatus: { NEW_PRICE: t("pricingStatusNew"), KEEP_CURRENT_PRICE: t("pricingStatusKeep"), REVIEW_PRICE: t("pricingStatusReview") },
+          pricingExplainer: { BENCHMARK_EXPLAINER: t("pricingExplainerBenchmark"), BUSINESS_ADJUSTED_EXPLAINER: t("pricingExplainerBusinessAdjusted"), INCOMPLETE_DATA_EXPLAINER: t("pricingExplainerIncomplete") },
+          pricingWarnings: { BUSINESS_ADJUSTMENT_CAPPED: t("pricingWarningCapped"), CATEGORY_PRICE_OUTLIER: t("pricingWarningCategoryOutlier"), CATEGORY_COST_PERCENT_OUTLIER: t("pricingWarningCostOutlier"), INCOMPLETE_RECIPE: t("pricingWarningIncompleteRecipe"), LOW_SAMPLE_SIZE: t("pricingWarningLowSample") },
         }}
       />
     </main>

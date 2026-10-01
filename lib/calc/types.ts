@@ -82,3 +82,74 @@ export type ModifierDelta = {
 };
 
 export type HealthBand = "healthy" | "watch" | "high";
+
+export type Confidence = "low" | "medium" | "high";
+export type DataQuality = {
+  level: Confidence;
+  missingInputs: string[];
+  estimatedInputs: string[];
+  staleInputs: string[];
+};
+
+export type PricingCategory = import("@/lib/constants").MenuItemCategoryCode;
+export type RoundingRule = { incrementCents: number; mode: "nearest" | "up" | "down" };
+export type PricingProfile = {
+  businessType: "COFFEE_SHOP";
+  category: PricingCategory;
+  targetProductCostPercent: number;
+  minimumProductCostPercent: number;
+  maximumProductCostPercent: number;
+  minimumPriceChangePercent: number;
+  minimumPriceChangeAmountCents: number;
+  reviewWindowDays: number;
+  roundingRule: RoundingRule;
+  targetOperatingMargin: number;
+  businessAdjustmentCap: number;
+};
+export type PricingMode = "BENCHMARK" | "BUSINESS_ADJUSTED";
+export type PricingStatus = "NEW_PRICE" | "KEEP_CURRENT_PRICE" | "REVIEW_PRICE";
+export type PricingConfidence = "LOW" | "MEDIUM" | "HIGH";
+export type BusinessEconomicsInput = {
+  monthlyRevenueCents: number;
+  monthlyVariableProductCostCents: number;
+  monthlyStaffCostCents: number;
+  monthlyOperatingCostCents: number;
+};
+export type BusinessEconomicsResult = {
+  totalMonthlyCostCents: number;
+  operatingSurplusCents: number;
+  operatingMargin: number;
+};
+export type BusinessAdjustmentResult = { businessAdjustmentFactor: number; cappedForReview: boolean };
+export type PosHistorySignal = {
+  daysWithSalesInWindow: number;
+  windowDays: number;
+  totalOrdersInWindow: number;
+  itemUnitsSoldInWindow: number;
+  monthlyRevenueCents: number;
+};
+export type CategoryPeerStats = { medianPriceCents: number; medianProductCostPercent: number } | null;
+export type PricingWarningCode =
+  | "BUSINESS_ADJUSTMENT_CAPPED"
+  | "CATEGORY_PRICE_OUTLIER"
+  | "CATEGORY_COST_PERCENT_OUTLIER"
+  | "INCOMPLETE_RECIPE"
+  | "LOW_SAMPLE_SIZE";
+export type PricingResult = {
+  suggestedPriceCents: number;
+  productCostCents: number;
+  baselinePriceCents: number;
+  calculatedSuggestedPriceCents: number;
+  currentPriceCents: number;
+  recommendedPriceCents: number;
+  calculationMode: PricingMode;
+  businessAdjustmentFactor: number;
+  confidence: PricingConfidence;
+  status: PricingStatus;
+  explanationCode: "BENCHMARK_EXPLAINER" | "BUSINESS_ADJUSTED_EXPLAINER" | "INCOMPLETE_DATA_EXPLAINER";
+  assumptions: string[];
+  signals: string[];
+  explanationInputs: Record<string, number | string | boolean>;
+  dataQuality: DataQuality;
+  warnings: PricingWarningCode[];
+};
