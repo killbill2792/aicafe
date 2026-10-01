@@ -90,6 +90,36 @@ export async function setMenuItemActive(menuItemId: string, active: boolean): Pr
   return { ok: true };
 }
 
+const UpdateMenuItemSchema = MenuItemSchema.extend({ id: z.string().uuid() });
+export async function updateMenuItem(input: z.infer<typeof UpdateMenuItemSchema>): Promise<ActionResult> {
+  const parsed = UpdateMenuItemSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a name, price, and prep time." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const sizeLabel = parsed.data.sizeLabel?.trim() || null;
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.from("menu_items").update({ name: sizeLabel ? `${parsed.data.name} ${sizeLabel}` : parsed.data.name, base_name: parsed.data.name, size_label: sizeLabel, price_cents: parsed.data.priceCents, prep_seconds: parsed.data.prepSeconds, category: parsed.data.category }).eq("id", parsed.data.id).eq("business_id", businessId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/menu"); revalidatePath(`/menu/${parsed.data.id}`); revalidatePath("/menu/manage");
+  return { ok: true };
+}
+
+const IngredientPriceSchema = z.object({ ingredientId: z.string().uuid(), packageCostCents: z.number().int().positive(), packageQuantity: z.number().positive() });
+/** Manual fallback still writes the canonical price-history table, never recipe-local cost data. */
+export async function addManualIngredientPrice(input: z.infer<typeof IngredientPriceSchema>): Promise<ActionResult> {
+  const parsed = IngredientPriceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter the package cost and quantity." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { data: ingredient } = await supabase.from("ingredients").select("id").eq("id", parsed.data.ingredientId).eq("business_id", businessId).single();
+  if (!ingredient) return { ok: false, error: "Ingredient not found." };
+  const { error } = await supabase.from("ingredient_prices").insert({ ingredient_id: ingredient.id, effective_from: await currentBusinessTodayDateStr(businessId, supabase), cost_per_base_unit_micros: Math.round(parsed.data.packageCostCents / parsed.data.packageQuantity * 1_000_000), source: "manual" });
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/menu"); revalidatePath("/menu/manage");
+  return { ok: true };
+}
+
 const RecipeLineSchema = z.object({
   menuItemId: z.string().uuid(),
   ingredientId: z.string().uuid().optional(),

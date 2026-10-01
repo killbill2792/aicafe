@@ -6,6 +6,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { recomputeDailyRollup } from "@/lib/pos/rollup";
+import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import type { NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
@@ -79,8 +80,24 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
   const { supabase, businessId } = ctx;
 
   const { data: locationRow } = await supabase.from("locations").select("id").eq("business_id", businessId).limit(1).maybeSingle();
-  const { data: menuItems } = await supabase.from("menu_items").select("id, name").eq("business_id", businessId);
-  const menuItemIdByName = new Map((menuItems ?? []).map((m) => [m.name.toLowerCase(), m.id]));
+  const { data: menuItems } = await supabase.from("menu_items").select("id, name, size_label, price_cents, category, pos_item_id").eq("business_id", businessId);
+  const candidates = (menuItems ?? []).map((item) => ({ id: item.id, name: item.name, sizeLabel: item.size_label, priceCents: item.price_cents, category: item.category, posItemId: item.pos_item_id }));
+  const menuItemIdByName = new Map<string, string>();
+  for (const name of [...new Set(rows.map((row) => row.item))]) {
+    const sample = rows.find((row) => row.item === name)!;
+    const priceCents = sample.quantity > 0 ? Math.round(sample.netSalesCents / sample.quantity) : null;
+    const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
+    const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
+    if (match.status === "matched" && match.candidateId) {
+      menuItemIdByName.set(name.toLowerCase(), match.candidateId);
+      await supabase.from("menu_items").update({ pos_item_id: posItemId, catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).eq("id", match.candidateId).eq("business_id", businessId);
+    } else if (match.status === "new") {
+      const { data: created } = await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: posItemId, name, base_name: name, price_cents: priceCents, category: "ESPRESSO_DRINK", catalog_source: "csv", catalog_last_synced_at: new Date().toISOString() }).select("id").single();
+      if (created) menuItemIdByName.set(name.toLowerCase(), created.id);
+    } else {
+      await supabase.from("pos_catalog_matches").upsert({ business_id: businessId, provider: "csv", pos_item_id: posItemId, imported_name: name, imported_price_cents: priceCents, suggested_menu_item_id: match.candidateId, match_score: match.score, status: "needs_review" }, { onConflict: "business_id,provider,pos_item_id" });
+    }
+  }
 
   let imported = 0;
   const affectedDates = new Set<string>();

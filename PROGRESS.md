@@ -5,6 +5,22 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu Control Center (2026-10-01 — complete)
+
+Current disconnect: `/menu` is a featured-item analytics dashboard built from the broad business snapshot, while `/menu/manage` is a separate always-open creation/recipe editor; incomplete recipe costs are collapsed to zero in the shared ingredient calculator, POS sync writes order lines without resolving the canonical menu item, and catalog imports have no safe manual-to-POS matching review.
+
+Implementation plan:
+1. Add a deterministic menu-economics/completeness layer that distinguishes `READY`, `NO_RECIPE`, and `MISSING_INGREDIENT_COST`, and load canonical menu, recipes, latest ingredient prices, pricing results, sales, and provenance in one server data service.
+2. Replace `/menu` with the searchable/filterable canonical catalog and add item detail plus explicit product/recipe/cost actions; make creation requested (`+ Add item`) rather than permanently expanded, reusing the current actions and canonical tables.
+3. Refactor recipe editing so new ingredients do not require a purchase cost; missing cost gets its own explicit manual fallback that writes `ingredient_prices`, never menu-local cost data.
+4. Add provider-neutral catalog identity matching/review around `menu_items` and `pos_item_id`, preserving canonical IDs and owner recipes. A small migration is required only for catalog provenance/staging because `pos_item_id` alone cannot retain provider, sync time, uncertain candidates, or review status; no duplicate menu domain table will be added.
+5. Add pure-function tests, translations, update this progress entry with the completed architecture, then run lint, unit tests, and production build and verify the changed web UI.
+
+Completed: `/menu` now opens on the canonical searchable/filterable catalog, with explicit completeness states and no fake zero economics; `/menu/[itemId]` combines price, deterministic recipe economics, recommendation, recipe, sales when present, provenance, and direct management actions. `/menu/manage` only opens creation when requested and now supports product edits, recipe edits, archival, and a distinct missing-cost fallback that records canonical `ingredient_prices`. Receipt mappings also create receipt-sourced price history when quantity/unit data is valid. Catalog sync and CSV imports resolve into `menu_items`, conservatively stage uncertain matches for owner review, attach external identity to an existing canonical ID, and preserve recipes/platform-owned intelligence. Migration 21 adds only provenance/sync metadata and a review queue—not another menu catalog.
+
+Exact areas: `app/[locale]/menu/**`, `components/menu/**`, `lib/data` menu queries, `lib/viewmodels`/`lib/calc` menu economics, `lib/actions/menuItems.ts`, provider-neutral `lib/pos` catalog matching/sync, message files, and one focused Supabase migration. Existing expense/receipt mappings and `ingredient_prices` remain the price source of truth.
+
+
 - [x] **M0. Skeleton** — Next.js + TS + Tailwind + Supabase + next-intl (en/es/ar, RTL) + PWA manifest, design tokens, fonts, bottom tab bar (5 tabs, empty screens), CLAUDE.md commands work.
 - [x] **M1. Database + demo seed** — Supabase migrations for `04-data-model.md`, RLS on, demo café seed (realistic 90-day dataset), magic-link login. **Not yet verified against a live Supabase project — see "Needs connecting".**
 - [x] **M2. Calculations** — `lib/calc/` implementing every formula in `05-calculations.md`; Fixture A/B pass as Vitest tests.

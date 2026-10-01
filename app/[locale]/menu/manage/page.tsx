@@ -12,12 +12,13 @@ import { buildPricingViewModel } from "@/lib/viewmodels/pricingViewModel";
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function ManageMenuPage() {
+export default async function ManageMenuPage({ searchParams }: { searchParams: Promise<{ add?: string; item?: string }> }) {
   const user = await requireOwnBusiness();
   const t = await getTranslations("ManageMenu");
   const tCommon = await getTranslations("Common");
 
   const { items, ingredients } = await getMenuItemsForEdit();
+  const query = await searchParams;
   const pricing = user && isSupabaseConfigured()
     ? Object.fromEntries(buildPricingViewModel(await getPricingInputs(await createServerSupabaseClient(), await getActiveBusinessId(user.id))).map((row) => [row.itemId, row.result]))
     : {};
@@ -29,6 +30,8 @@ export default async function ManageMenuPage() {
         items={items}
         ingredients={ingredients}
         pricing={pricing}
+        showCreate={query.add === "1" || items.length === 0}
+        initialItemId={query.item}
         labels={{
           addDrink: t("addDrink"),
           nameLabel: t("nameLabel"),
