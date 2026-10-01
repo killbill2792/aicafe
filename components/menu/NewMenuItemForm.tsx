@@ -32,17 +32,10 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+    <div className="mx-auto flex w-full max-w-md flex-col gap-4 rounded-card-lg bg-card p-5">
       <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
         {t("nameLabel")}
         <input value={name} onChange={(event) => setName(event.target.value)} className="h-12 rounded-xl border border-line px-3 text-base text-ink" />
-      </label>
-      <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
-        {t("priceLabel")}
-        <div className="flex items-center gap-1.5">
-          <span className="text-lg font-bold text-ink-muted">$</span>
-          <input type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} className="h-12 w-full rounded-xl border border-line px-3 text-base text-ink" />
-        </div>
       </label>
       <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
         {t("menuGroupLabel")}
@@ -51,6 +44,13 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
       <datalist id="menu-group-options">
         {menuGroupOptions.map((group) => <option key={group} value={group} />)}
       </datalist>
+      <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
+        {t("priceLabel")}
+        <div className="flex items-center gap-1.5">
+          <span className="text-lg font-bold text-ink-muted">$</span>
+          <input type="number" inputMode="decimal" min="0" step="0.01" value={price} onChange={(event) => setPrice(event.target.value)} className="h-12 w-full rounded-xl border border-line px-3 text-base text-ink" />
+        </div>
+      </label>
       <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
         {t("sizeLabel")}
         <input value={sizeLabel} onChange={(event) => setSizeLabel(event.target.value)} placeholder={t("sizeHint")} className="h-12 rounded-xl border border-line px-3 text-base text-ink" />

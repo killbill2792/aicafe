@@ -237,7 +237,13 @@
     "editAction": "Edit",
     "noSalesHistory": "No sales history yet",
     "sizes": "Sizes",
-    "restoreToMenu": "Restore to menu"
+    "restoreToMenu": "Restore to menu",
+    "subtitle": "Your drinks, food and other items — keep your café profitable",
+    "recipeIncomplete": "Recipe incomplete",
+    "tabOverview": "Overview",
+    "tabRecipe": "Recipe",
+    "tabSizes": "Sizes",
+    "costsAboutToMake": "Costs about {amount} to make"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -303,7 +309,11 @@
     "recipeUnitEach": "each",
     "recipeUnitShot": "shot",
     "recipeUnitPump": "pump",
-    "defineUnitConversion": "How much is 1 {unit} in {baseUnit} for this ingredient?"
+    "defineUnitConversion": "How much is 1 {unit} in {baseUnit} for this ingredient?",
+    "recommended": "recommended",
+    "ingredientSearchLabel": "Search ingredients",
+    "noMatchingIngredients": "No ingredients match that search",
+    "existingTag": "Existing"
   },
   "Staff": {
     "title": "Staff",

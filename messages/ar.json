@@ -237,7 +237,13 @@
     "editAction": "تعديل",
     "noSalesHistory": "لا يوجد سجل مبيعات حتى الآن",
     "sizes": "الأحجام",
-    "restoreToMenu": "إعادته إلى القائمة"
+    "restoreToMenu": "إعادته إلى القائمة",
+    "subtitle": "مشروباتك وأطعمتك ومنتجاتك الأخرى — حافظ على ربحية مقهاك",
+    "recipeIncomplete": "الوصفة غير مكتملة",
+    "tabOverview": "نظرة عامة",
+    "tabRecipe": "الوصفة",
+    "tabSizes": "الأحجام",
+    "costsAboutToMake": "تكلفة إعداده حوالي {amount}"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -303,7 +309,11 @@
     "recipeUnitEach": "كل واحدة",
     "recipeUnitShot": "شوت",
     "recipeUnitPump": "ضغطة",
-    "defineUnitConversion": "كم يساوي 1 {unit} بوحدة {baseUnit} لهذا المكوّن؟"
+    "defineUnitConversion": "كم يساوي 1 {unit} بوحدة {baseUnit} لهذا المكوّن؟",
+    "recommended": "موصى به",
+    "ingredientSearchLabel": "البحث عن المكوّنات",
+    "noMatchingIngredients": "لا توجد مكوّنات مطابقة لهذا البحث",
+    "existingTag": "موجود"
   },
   "Staff": {
     "title": "الموظفون",

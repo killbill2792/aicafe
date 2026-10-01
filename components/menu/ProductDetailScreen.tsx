@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil } from "lucide-react";
+import { Pencil, Check, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
@@ -9,9 +9,12 @@ import { setMenuItemActive } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import { usePricingStatusChip } from "./usePricingStatusChip";
 import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
 import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
+
+type Tab = "overview" | "recipe" | "sizes";
 
 export default function ProductDetailScreen({
   item,
@@ -31,6 +34,8 @@ export default function ProductDetailScreen({
   const t = useTranslations("Menu");
   const tEdit = useTranslations("ManageMenu");
   const router = useRouter();
+  const statusChip = usePricingStatusChip();
+  const [tab, setTab] = useState<Tab>("overview");
   const [editing, setEditing] = useState(false);
   const [addingSize, setAddingSize] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
@@ -48,6 +53,14 @@ export default function ProductDetailScreen({
   }
 
   const sizeSiblingsForDialog: SizeSibling[] = siblingSizes.map((sibling) => ({ id: sibling.id, sizeLabel: sibling.sizeLabel, name: sibling.name, priceCents: sibling.priceCents }));
+  const chip = statusChip(item);
+  const sizeCount = 1 + siblingSizes.length;
+
+  const TABS: { key: Tab; label: string }[] = [
+    { key: "overview", label: t("tabOverview") },
+    { key: "recipe", label: t("tabRecipe") },
+    { key: "sizes", label: `${t("tabSizes")} (${sizeCount})` },
+  ];
 
   return (
     <>
@@ -82,30 +95,61 @@ export default function ProductDetailScreen({
         )}
       </section>
 
-      <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-        <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} pricingResult={item.pricing ?? undefined} />
-      </section>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
+        {TABS.map(({ key, label }) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-      <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-        <h2 className="text-lg font-bold">{t("recentSales")}</h2>
-        {item.unitsSold === null && item.revenueCents === null ? (
-          <p className="text-ink-muted">{t("noSalesHistory")}</p>
-        ) : (
-          <>
-            {item.unitsSold !== null && <Row label={t("unitsSold")} value={String(item.unitsSold)} />}
-            {item.revenueCents !== null && <Row label={t("revenue")} value={formatCents(item.revenueCents)} />}
-          </>
-        )}
-      </section>
+      {tab === "overview" && (
+        <div className="flex flex-col gap-3 md:grid md:grid-cols-2 md:items-start md:gap-3">
+          <section className="flex flex-col justify-center gap-1 rounded-card-lg bg-card p-[18px]">
+            {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
+              <strong className="text-lg">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</strong>
+            ) : (
+              <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
+            )}
+          </section>
+          <section className={`flex flex-col gap-1 rounded-card-lg p-[18px] ${chip.good ? "bg-good-tint" : "bg-warn-tint"}`}>
+            <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
+              {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
+              {chip.label}
+            </span>
+            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && item.pricing.recommendedPriceCents !== null && item.pricing.status !== "KEEP_CURRENT_PRICE" && (
+              <strong className={`text-lg ${chip.good ? "text-good" : "text-warn"}`}>{formatCents(item.pricing.recommendedPriceCents)}</strong>
+            )}
+          </section>
+          <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px] md:col-span-2">
+            <h2 className="text-lg font-bold">{t("recentSales")}</h2>
+            {item.unitsSold === null && item.revenueCents === null ? (
+              <p className="text-ink-muted">{t("noSalesHistory")}</p>
+            ) : (
+              <>
+                {item.unitsSold !== null && <Row label={t("unitsSold")} value={String(item.unitsSold)} />}
+                {item.revenueCents !== null && <Row label={t("revenue")} value={formatCents(item.revenueCents)} />}
+              </>
+            )}
+          </section>
+        </div>
+      )}
 
-      <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-        <h2 className="text-lg font-bold">{t("sizes")}</h2>
-        <Row label={editItem.sizeLabel ?? editItem.baseName} value={formatCents(editItem.priceCents)} strong />
-        {siblingSizes.map((sibling) => <Row key={sibling.id} label={sibling.sizeLabel ?? sibling.name} value={formatCents(sibling.priceCents)} />)}
-        <button type="button" onClick={() => setAddingSize(true)} className="mt-1 text-sm font-semibold text-good">
-          {tEdit("addAnotherSize", { name: editItem.baseName })}
-        </button>
-      </section>
+      {tab === "recipe" && (
+        <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+          <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} pricingResult={item.pricing ?? undefined} />
+        </section>
+      )}
+
+      {tab === "sizes" && (
+        <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
+          <Row label={editItem.sizeLabel ?? editItem.baseName} value={formatCents(editItem.priceCents)} strong />
+          {siblingSizes.map((sibling) => <Row key={sibling.id} label={sibling.sizeLabel ?? sibling.name} value={formatCents(sibling.priceCents)} />)}
+          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 text-sm font-semibold text-good">
+            {tEdit("addAnotherSize", { name: editItem.baseName })}
+          </button>
+        </section>
+      )}
 
       <div className="flex flex-col gap-2">
         <button

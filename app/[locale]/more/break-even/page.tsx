@@ -6,6 +6,7 @@ import { buildBreakEvenViewModel } from "@/lib/viewmodels/breakEvenViewModel";
 import BackHeader from "@/components/shared/BackHeader";
 import Money from "@/components/shared/Money";
 import { formatCents } from "@/lib/calc";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function BreakEvenPage() {
   const tCommon = await getTranslations("Common");
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
 
       <section className="flex flex-col items-center gap-2 rounded-card-lg bg-card p-[22px] text-center">
@@ -83,6 +84,6 @@ export default async function BreakEvenPage() {
         })}
         <span className="text-[13px] text-ink-muted">{t("whatIfFooter")}</span>
       </section>
-    </main>
+    </PageShell>
   );
 }

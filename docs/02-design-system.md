@@ -75,9 +75,20 @@ Dark mode: not in v1. Café screens are used in bright light.
 - Sentence case everywhere. No ALL-CAPS labels in new screens (older mockups have a few; replace them with sentence case).
 
 ## Layout
-- Mobile first, 360–430px wide. Single column. Max content width 480px on tablet/desktop, centered.
+- Mobile first, 360–430px wide. Single column, max content width 480px (`max-w-app`).
+- Tablet/desktop: the app shell uses the available width instead of staying pinned to 480px.
+  Ordinary single-column screens (Home, Money, Staff, More, every form) get a wider but still
+  readable centered column, `max-w-app-content` (840px). The Menu list and product detail screens
+  — the ones with enough content to actually use more space — get `max-w-app-wide` (1280px).
+  Every screen's outer `<main>` gets this policy via the shared `components/shared/PageShell.tsx`
+  wrapper rather than each page styling its own width. Forms stay comfortably narrow (e.g.
+  `max-w-md`) even inside a wide shell — never stretch a form to the full shell width.
+- Navigation: bottom tab bar on mobile (`components/TabBar.tsx`, below the `md` breakpoint), a
+  fixed left sidebar on tablet/desktop (`components/SideNav.tsx`, `md:` and up) — same 5
+  destinations and wording either way, shared via `components/shared/navTabs.ts`: **Home, Money,
+  Menu, Staff, More**. "Add cost" is a large round button fixed above the tab bar on Home and
+  Money (tucks closer to the bottom edge on desktop, since there's no bottom tab bar to clear).
 - Card radius 20–24px, inner padding 16–20px, gap 14px between cards.
-- Bottom tab bar, 5 tabs, icon + label: **Home, Money, Menu, Staff, More**. "Add cost" is a large round button fixed above the tab bar on Home and Money.
 - Touch targets at least 48px tall. Primary buttons 56px.
 - Numbers right-aligned in lists. Currency always shown ($).
 

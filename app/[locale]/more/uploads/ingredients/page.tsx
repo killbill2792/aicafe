@@ -6,6 +6,7 @@ import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import IngredientCostImporter from "@/components/uploads/IngredientCostImporter";
 import type { IngredientCostColumnMapping } from "@/lib/pos/csv/parseIngredientCostsCsv";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ export default async function IngredientCostsPage() {
   ]);
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("ingredientsTitle")} subtitle={t("ingredientsSubtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
       <IngredientCostImporter
         initialMapping={initialMapping}
@@ -45,6 +46,6 @@ export default async function IngredientCostsPage() {
           resultSummaryNoDates: t("resultSummaryNoDates"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

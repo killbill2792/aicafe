@@ -5,7 +5,53 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
-## Menu UX refactor (2026-10-01 — code complete, migration + live verification pending approval)
+## Menu visual refinement + app-wide responsive shell (2026-10-01 — code complete, PR open)
+
+Presentation-only pass over the now-merged Menu UX refactor (PR #4), plus an app-wide fix: every
+screen was rendering at a hard 480px width even on desktop (`max-w-app` in `tailwind.config.ts`,
+applied once in `app/[locale]/layout.tsx`), leaving large empty margins on wider screens.
+
+**Responsive shell (new, shared, used everywhere):** `components/shared/PageShell.tsx` — a thin
+`<main>` wrapper adding a responsive max-width (`app-content`, 840px, for ordinary single-column
+screens; `app-wide`, 1280px, for the Menu list/detail screens) while each page keeps its own exact
+gap/padding by passing its className straight through. Every one of the 28 route pages with a
+`<main>` was swept onto it (mechanical, one line each — no page's own cards/wording/colors
+changed). `components/SideNav.tsx` (new) is a desktop/tablet left-nav counterpart to `TabBar.tsx`,
+sharing the same 5 destinations via new `components/shared/navTabs.ts` so the two can't drift
+apart; `TabBar` becomes mobile-only (`md:hidden`). `AddCostFab`'s bottom offset is responsive too
+(`md:bottom-6`) now that there's no bottom tab bar to clear at desktop. `docs/02-design-system.md`'s
+Layout section (binding per CLAUDE.md) is updated to describe this instead of the old flat 480px
+rule, since Raj explicitly asked for the width change this doc previously ruled out.
+
+**Menu visual pass (functionality unchanged — same actions, same data, same routes):**
+`MenuCatalog.tsx` cards simplified to name + size + price + one plain-language status chip (cost/
+suggested-price numbers moved to the product page as "technical details"); `ProductDetailScreen.tsx`
+reorganized behind an Overview/Recipe/Sizes segmented control with the overview's two summary cards
+side-by-side at `md:`; `RecipeEditor.tsx`'s ingredient table replaced with a plain-sentence row list
+("Milk — 3 ml") and the ingredient picker restyled into a searchable, existing-ingredients-first
+list; `AddSizeDialog.tsx`'s copy-recipe choice restyled as selectable cards; `NewMenuItemForm.tsx`
+reordered (name → menu group → price → size) and kept intentionally narrow even in the wide shell.
+Pricing-status copy (`pricingStatusKeep`/`pricingStatusReview`/`priceUnavailable`) kept verbatim —
+already matched the plain-language examples given. New keys only for things that didn't already
+have copy (`Menu.subtitle`/`recipeIncomplete`/`tabOverview`/`tabRecipe`/`tabSizes`/
+`costsAboutToMake`, `ManageMenu.recommended`/`ingredientSearchLabel`/`noMatchingIngredients`/
+`existingTag`), en/es/ar.
+
+**Deliberately not done, flagged rather than silently decided:** did not split `NewMenuItemForm`
+into the reference screenshot's 2-step wizard, and did not add a photo field (no schema for it) —
+both out of scope for a presentation-only pass per the brief's own "do not add functionality that
+does not already exist."
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (102/102, unchanged — no logic touched),
+`npm run build` all clean. Live-verified against the mail2raj27 test account (`My café`,
+business `719af528-...`) at mobile (375px), desktop (~800–1280px), and in en/es/ar (RTL sidebar
+correctly mirrors to the trailing edge) — Menu list, product detail (all 3 tabs), create item, the
+recipe/ingredient picker, add-size-with-copy dialog, and the Money page (as the non-Menu desktop
+proof) all behave identically to before, just laid out responsively. No database, pricing, or action
+changes — archive/restore, add-size-with-copy, and the `PRICE_UNAVAILABLE` Latte item's $0.25
+suggestion all re-confirmed unchanged.
+
+## Menu UX refactor (2026-10-01 — merged; migration 22 applied to production and verified read-only)
 
 **Update:** independent review of PR #4 found 6 categories of correctness issues, fixed on the same
 branch (same PR), no UX/design changes:

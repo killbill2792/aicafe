@@ -237,7 +237,13 @@
     "editAction": "Editar",
     "noSalesHistory": "Todavía no hay historial de ventas",
     "sizes": "Tamaños",
-    "restoreToMenu": "Volver a poner en el menú"
+    "restoreToMenu": "Volver a poner en el menú",
+    "subtitle": "Tus bebidas, comida y otros productos — mantén tu café rentable",
+    "recipeIncomplete": "Receta incompleta",
+    "tabOverview": "Resumen",
+    "tabRecipe": "Receta",
+    "tabSizes": "Tamaños",
+    "costsAboutToMake": "Cuesta aproximadamente {amount} hacerlo"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -303,7 +309,11 @@
     "recipeUnitEach": "unidad",
     "recipeUnitShot": "shot",
     "recipeUnitPump": "bombeo",
-    "defineUnitConversion": "¿Cuánto es 1 {unit} en {baseUnit} para este ingrediente?"
+    "defineUnitConversion": "¿Cuánto es 1 {unit} en {baseUnit} para este ingrediente?",
+    "recommended": "recomendado",
+    "ingredientSearchLabel": "Buscar ingredientes",
+    "noMatchingIngredients": "Ningún ingrediente coincide con esa búsqueda",
+    "existingTag": "Existente"
   },
   "Staff": {
     "title": "Personal",

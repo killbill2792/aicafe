@@ -5,6 +5,7 @@ import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function ManageStaffPage() {
   const [employees, schedules, snapshot] = await Promise.all([getEmployees(), getStaffSchedules(), getSnapshot()]);
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <ManageStaffPanel
         employees={employees}
@@ -70,6 +71,6 @@ export default async function ManageStaffPage() {
           inactiveTag: t("inactiveTag"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

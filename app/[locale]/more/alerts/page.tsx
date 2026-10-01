@@ -6,6 +6,7 @@ import BackHeader from "@/components/shared/BackHeader";
 import AlertCard from "@/components/alerts/AlertCard";
 import { describeAlert } from "@/components/alerts/alertContent";
 import { formatCents } from "@/lib/calc";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function AlertsPage() {
   const leakingCents = alerts.reduce((s, a) => s + Math.max(0, a.impactCents ?? 0), 0);
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-3.5 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
 
       <div className="grid grid-cols-2 gap-2.5">
@@ -56,6 +57,6 @@ export default async function AlertsPage() {
           })}
         </div>
       )}
-    </main>
+    </PageShell>
   );
 }

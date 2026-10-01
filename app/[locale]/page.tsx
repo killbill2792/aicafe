@@ -24,6 +24,7 @@ import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
 import GettingStartedCard from "@/components/home/GettingStartedCard";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
@@ -181,6 +182,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       />
 
       <AddCostFab />
-    </main>
+    </PageShell>
   );
 }

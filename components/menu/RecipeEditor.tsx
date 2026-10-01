@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { Trash2 } from "lucide-react";
+import { Trash2, Package, Search } from "lucide-react";
 import { addRecipeLine, deleteRecipeLine } from "@/lib/actions/menuItems";
 import { formatCents, type PricingResult } from "@/lib/calc";
 import { needsIngredientConversion, recipeDisplayUnitsFor, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
@@ -28,6 +28,7 @@ export default function RecipeEditor({
   const unitLabel = (unit: RecipeDisplayUnit | "g" | "ml" | "each") => t(UNIT_LABEL_KEYS[unit as RecipeDisplayUnit] ?? "recipeUnitG");
 
   const [ingredientId, setIngredientId] = useState("");
+  const [ingredientFilter, setIngredientFilter] = useState("");
   const [newName, setNewName] = useState("");
   const [newBaseUnit, setNewBaseUnit] = useState<"g" | "ml" | "each">("g");
   const [displayUnit, setDisplayUnit] = useState<RecipeDisplayUnit>("g");
@@ -42,6 +43,10 @@ export default function RecipeEditor({
   const unitOptions = useMemo(() => recipeDisplayUnitsFor(effectiveBaseUnit), [effectiveBaseUnit]);
   const hasExistingConversion = selectedIngredient ? (ingredientConversions[selectedIngredient.id] ?? []).some((c) => c.unit === displayUnit) : false;
   const needsConversionInput = needsIngredientConversion(displayUnit) && !hasExistingConversion;
+  const filteredIngredients = useMemo(
+    () => ingredients.filter((i) => i.name.toLocaleLowerCase().includes(ingredientFilter.trim().toLocaleLowerCase())),
+    [ingredients, ingredientFilter],
+  );
 
   // Switching ingredients (or the new-ingredient's base unit) can make the currently-selected
   // café-friendly unit invalid for the new base unit (e.g. "fl oz" was selected, then the owner
@@ -103,33 +108,25 @@ export default function RecipeEditor({
       {item.recipe.length === 0 ? (
         <p className="text-sm text-ink-muted">{t("noIngredientsYet")}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-0 border-collapse text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-muted">
-                <th scope="col" className="min-w-0 pb-1 pr-2 font-semibold">{t("ingredientColumnLabel")}</th>
-                <th scope="col" className="pb-1 pr-2 text-right font-semibold">{t("amountColumnLabel")}</th>
-                <th scope="col" className="w-8 pb-1"><span className="sr-only">{t("remove")}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {item.recipe.map((line) => (
-                <tr key={line.ingredientId} className="border-t border-[#EFE7DB] align-top">
-                  <td className="min-w-0 max-w-0 truncate py-1.5 pr-2">{line.ingredientName}</td>
-                  <td className="whitespace-nowrap py-1.5 pr-2 text-right text-ink-muted">
-                    {line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="text-warn">
-                      <Trash2 aria-hidden="true" size={16} />
-                    </button>
-                  </td>
-                  {line.costCents === null && <td className="py-1.5" colSpan={3}><MissingPriceForm line={line} labels={{ ingredientCostLabel: t("ingredientCostLabel"), ingredientCostForLabel: t("ingredientCostForLabel"), add: t("add") }} /></td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="flex flex-col gap-2">
+          {item.recipe.map((line) => (
+            <li key={line.ingredientId} className="flex flex-wrap items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FAF6F0] text-ink-muted">
+                <Package aria-hidden="true" size={16} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{line.ingredientName}</span>
+              <span className="shrink-0 text-[15px] text-ink-muted">
+                {line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}
+              </span>
+              <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="shrink-0 text-warn">
+                <Trash2 aria-hidden="true" size={16} />
+              </button>
+              {line.costCents === null && (
+                <div className="w-full basis-full"><MissingPriceForm line={line} labels={{ ingredientCostLabel: t("ingredientCostLabel"), ingredientCostForLabel: t("ingredientCostForLabel"), add: t("add") }} /></div>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       {pricingResult && pricingResult.status === "PRICE_UNAVAILABLE" && (
@@ -163,19 +160,34 @@ export default function RecipeEditor({
       )}
 
       <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
-        <select
-          value={ingredientId}
-          onChange={(e) => {
-            const newIngredientId = e.target.value;
-            setIngredientId(newIngredientId);
-            const nextBaseUnit = ingredients.find((i) => i.id === newIngredientId)?.baseUnit ?? newBaseUnit;
-            resetDisplayUnitFor(nextBaseUnit);
-          }}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-card px-2.5 text-sm text-ink"
-        >
-          <option value="">{t("newIngredient")}</option>
-          {ingredients.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.baseUnit})</option>)}
-        </select>
+        <span className="text-sm font-bold">{t("addIngredient")}</span>
+        <label className="flex min-h-11 items-center gap-2 rounded-lg border border-line bg-card px-2.5 text-ink-muted">
+          <Search aria-hidden="true" size={16} />
+          <span className="sr-only">{t("ingredientSearchLabel")}</span>
+          <input
+            value={ingredientFilter}
+            onChange={(e) => { setIngredientFilter(e.target.value); setIngredientId(""); }}
+            placeholder={t("ingredientSearchLabel")}
+            className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none"
+          />
+        </label>
+        <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-1.5">
+          {filteredIngredients.length === 0 && <p className="px-2 py-2 text-sm text-ink-muted">{t("noMatchingIngredients")}</p>}
+          {filteredIngredients.map((i) => (
+            <button
+              key={i.id}
+              type="button"
+              onClick={() => { setIngredientId(i.id); resetDisplayUnitFor(i.baseUnit); }}
+              className={`flex min-h-10 items-center justify-between rounded-lg px-2.5 text-left text-sm ${ingredientId === i.id ? "bg-good-tint text-good" : "text-ink"}`}
+            >
+              <span className="truncate">{i.name}</span>
+              <span className="shrink-0 text-xs text-ink-muted">{t("existingTag")}</span>
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={() => setIngredientId("")} className={`w-fit text-sm font-semibold ${!ingredientId ? "text-good" : "text-ink-muted"}`}>
+          {t("newIngredient")}
+        </button>
         {!ingredientId && (
           <div className="flex min-w-0 gap-2">
             <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("ingredientLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />

@@ -7,6 +7,7 @@ import { getMenuGroupOptions } from "@/lib/actions/menuItems";
 import { getIngredientUnitConversions } from "@/lib/actions/ingredientUnitConversions";
 import BackHeader from "@/components/shared/BackHeader";
 import ProductDetailScreen from "@/components/menu/ProductDetailScreen";
+import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function MenuItemPage({ params }: { params: Promise<{ itemI
   const siblingSizes = editItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active);
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <BackHeader title={item.name} subtitle={item.sizeLabel ?? undefined} backHref="/menu" backLabel={common("back")} />
       <ProductDetailScreen
         item={item}
@@ -36,6 +37,6 @@ export default async function MenuItemPage({ params }: { params: Promise<{ itemI
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
       />
-    </main>
+    </PageShell>
   );
 }

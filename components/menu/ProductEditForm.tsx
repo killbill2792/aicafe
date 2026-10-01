@@ -57,7 +57,7 @@ export default function ProductEditForm({
   }
 
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-2 md:max-w-md">
       <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
         {labels.nameLabel}
         <input value={name} onChange={(event) => setName(event.target.value)} className="h-11 rounded-lg border border-line px-3 text-base text-ink" />

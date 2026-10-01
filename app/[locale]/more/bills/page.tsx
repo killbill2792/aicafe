@@ -4,6 +4,7 @@ import { getRecurringCosts } from "@/lib/data/getRecurringCosts";
 import BackHeader from "@/components/shared/BackHeader";
 import BillsManager from "@/components/bills/BillsManager";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function BillsPage() {
   >;
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <BillsManager
         bills={bills}
@@ -38,6 +39,6 @@ export default async function BillsPage() {
           addAnother: t("addAnother"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

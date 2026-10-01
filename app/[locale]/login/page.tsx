@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { Link } from "@/i18n/navigation";
 import { routing } from "@/i18n/routing";
 import LoginForm from "@/components/LoginForm";
+import PageShell from "@/components/shared/PageShell";
 
 const LANGUAGE_LABELS: Record<string, string> = {
   en: "English",
@@ -14,7 +15,7 @@ export default async function LoginPage() {
   const t = await getTranslations("Login");
 
   return (
-    <main className="flex min-h-screen flex-col gap-6 px-6 pb-10 pt-12">
+    <PageShell className="flex min-h-screen flex-col gap-6 px-6 pb-10 pt-12">
       <div className="flex flex-wrap gap-2">
         {routing.locales.map((loc) => (
           <Link
@@ -41,6 +42,6 @@ export default async function LoginPage() {
       <div className="mt-auto rounded-3xl bg-card p-5">
         <LoginForm />
       </div>
-    </main>
+    </PageShell>
   );
 }

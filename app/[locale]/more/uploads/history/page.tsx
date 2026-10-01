@@ -4,6 +4,7 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getUploadHistory, type UploadHistoryRow } from "@/lib/data/getUploadHistory";
 import BackHeader from "@/components/shared/BackHeader";
 import type { SalesImportSummary } from "@/lib/actions/csvImport";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function UploadHistoryPage() {
   const kindLabel = (kind: UploadHistoryRow["kind"]) => (kind === "sales_csv" ? t("kindSales") : kind === "labor_csv" ? t("kindLabor") : t("kindIngredients"));
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-3.5 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
 
       {uploads.length === 0 ? (
@@ -58,6 +59,6 @@ export default async function UploadHistoryPage() {
           })}
         </div>
       )}
-    </main>
+    </PageShell>
   );
 }

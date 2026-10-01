@@ -50,7 +50,7 @@ export default function AddSizeDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center" role="dialog" aria-modal="true">
-      <div className="flex w-full max-w-sm flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+      <div className="flex w-full max-w-sm flex-col gap-4 rounded-card-lg bg-card p-5 sm:max-w-md">
         <h2 className="text-lg font-bold">{t("addSizeTitle", { name: baseName })}</h2>
         <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
           {t("sizeLabel")}
@@ -64,16 +64,20 @@ export default function AddSizeDialog({
           </div>
         </label>
         {siblingSizes.length > 0 && (
-          <fieldset className="flex flex-col gap-1.5">
+          <fieldset className="flex flex-col gap-2">
             <legend className="text-xs font-semibold text-ink-muted">{t("recipe")}</legend>
-            {siblingSizes.map((sibling) => (
-              <label key={sibling.id} className="flex items-center gap-2 text-sm text-ink">
-                <input type="radio" name="copyFrom" checked={copyFrom === sibling.id} onChange={() => setCopyFrom(sibling.id)} />
-                {t("copyRecipeFrom", { size: sibling.sizeLabel ?? sibling.name })} · {formatCents(sibling.priceCents)}
+            {siblingSizes.map((sibling, index) => (
+              <label key={sibling.id} className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm ${copyFrom === sibling.id ? "border-good bg-good-tint text-good" : "border-line text-ink"}`}>
+                <input type="radio" name="copyFrom" checked={copyFrom === sibling.id} onChange={() => setCopyFrom(sibling.id)} className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  {t("copyRecipeFrom", { size: sibling.sizeLabel ?? sibling.name })}
+                  {index === 0 && <span className="ms-1.5 text-xs font-semibold opacity-70">({t("recommended")})</span>}
+                </span>
+                <span className="shrink-0 font-semibold">{formatCents(sibling.priceCents)}</span>
               </label>
             ))}
-            <label className="flex items-center gap-2 text-sm text-ink">
-              <input type="radio" name="copyFrom" checked={copyFrom === ""} onChange={() => setCopyFrom("")} />
+            <label className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm ${copyFrom === "" ? "border-good bg-good-tint text-good" : "border-line text-ink"}`}>
+              <input type="radio" name="copyFrom" checked={copyFrom === ""} onChange={() => setCopyFrom("")} className="shrink-0" />
               {t("createSeparately")}
             </label>
           </fieldset>

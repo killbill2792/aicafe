@@ -1,5 +1,6 @@
 import { getTranslations } from "next-intl/server";
 import BackHeader from "@/components/shared/BackHeader";
+import PageShell from "@/components/shared/PageShell";
 
 export default async function PrivacyPage() {
   const t = await getTranslations("Privacy");
@@ -7,7 +8,7 @@ export default async function PrivacyPage() {
   const sections = ["dataWeRead", "dataWeNeverTouch", "howWeProtectIt", "aiUse", "yourControl", "deletingYourAccount"] as const;
 
   return (
-    <main className="flex flex-col gap-4 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-4 px-4 py-6 pb-10">
       <BackHeader title={t("title")} subtitle={t("lastUpdated")} backHref="/more" backLabel={tCommon("back")} />
       {sections.map((key) => (
         <section key={key} className="flex flex-col gap-2 rounded-card-lg bg-card p-4">
@@ -15,6 +16,6 @@ export default async function PrivacyPage() {
           <p className="text-[15px] leading-relaxed text-ink-muted">{t(`${key}Body`)}</p>
         </section>
       ))}
-    </main>
+    </PageShell>
   );
 }

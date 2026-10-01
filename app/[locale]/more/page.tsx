@@ -6,6 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import EditBusinessName from "@/components/more/EditBusinessName";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ export default async function MorePage() {
   ];
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 py-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 py-6">
       <header className="flex items-center justify-between gap-3 px-1">
         <h1 className="font-headline text-3xl font-semibold text-ink">{t("title")}</h1>
         <LanguageSwitch href="/more" />
@@ -82,6 +83,6 @@ export default async function MorePage() {
           </Link>
         ))}
       </div>
-    </main>
+    </PageShell>
   );
 }
