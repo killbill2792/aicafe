@@ -244,7 +244,49 @@ Vitest.
 
 _(newest first)_
 
-### 2026-10-01 — AI-native operating-system foundation + Suggested Pricing Engine (done)
+### 2026-10-01 — Production incident: Menu disappeared after Codex's PR auto-deployed without its migration (fixed)
+Raj handed the Suggested Pricing Engine plan to Codex as a second agent (`AGENTS.md`/this file are
+written for exactly that handoff). Codex's work landed as two PRs merged into `main` on GitHub —
+PR #1 "AI-native operating foundation," PR #2 "Unify Menu into a canonical control center" — and,
+unnoticed until now, merging to `main` had started auto-deploying to production via a GitHub
+integration that got connected on the Vercel project at some point this session (it had none before;
+every earlier deploy this session was a manual `vercel --prod` from this machine). PR #2's merge
+(`dec931d`) shipped code reading `menu_items.catalog_source` and the new `pos_catalog_matches` table
+from `supabase/migrations/20261001000021_menu_catalog_identity.sql` — but Codex's cloud sandbox has
+no network path to the production database (confirmed separately this session: it can't even reach
+GitHub directly, only through its own PR-creation flow), so the migration was never applied. Every
+Menu query started failing against the live schema, and the screen was apparently swallowing that
+error into an empty state rather than surfacing it.
+
+Investigated before touching anything, since the task description handed to me referenced a specific
+branch/commit/script (`fix/menu-schema-safety` @ `d868b96`, `npm run db:check`) that turned out not
+to exist anywhere in the repo — flagged that mismatch rather than acting on an unverified premise,
+then independently confirmed the real situation: `git fetch` showed the actual merged PRs and the
+real migration file; querying the live database directly (REST, not assumption) confirmed
+`menu_items.catalog_source` and `pos_catalog_matches` both genuinely didn't exist yet. Confirmed
+production's `NEXT_PUBLIC_SUPABASE_URL` (pulled via `vercel env pull --environment=production`)
+matches the same Supabase project used for every test-account verification this session — one
+project, not two. Applied all pending migrations with `node scripts/db-migrate.mjs` (idempotent,
+schema-only, never touches `db:reset`/truncate/reseed — confirmed by reading the script before
+running it). Re-verified the two new tables/columns now exist, then `npx tsc --noEmit`, `npm run
+lint`, `npm run test` (78 tests, up from 66), and `npm run build` all clean on the merged codebase.
+
+Live-verified on `/menu` (mail2raj27 test account): existing items (Latte, Croissant, Milk) render
+with real prices again, no empty state. Added a throwaway item through the real UI, hard-reloaded
+(not just client state), and confirmed via direct DB query it persisted with `catalog_source:
+"manual"` and the new category system auto-assigned `ESPRESSO_DRINK` — then deactivated it,
+matching the app's own soft-delete convention. Confirmed Seiyun's real bills and (empty, as before —
+not data loss) menu items were untouched by the migration.
+
+**`npm run db:check` does not exist** in this repo (only `db:reset`) — flagged back to Raj rather
+than inventing one, per "never fabricate missing values."
+
+**Not investigated, flagged for follow-up, not blocking**: the live Menu screen shows "Suggested:
+$0.00" on the Latte test item, which looks like a possible bug in Codex's new pricing-engine
+wiring — out of scope for this recovery task (production recovery, not a redesign), worth a second
+look before relying on the new suggested-price output for real.
+
+
 Reviewed the deterministic calculations, database history, screen projections, POS adapters,
 alerts, and existing optional extraction-AI flow before implementation. The architecture review and
 explicit deviations from the pricing plan are in `docs/09-ai-native-operating-system.md`. Implemented
