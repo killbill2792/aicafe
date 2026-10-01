@@ -107,7 +107,7 @@ export type PricingProfile = {
   businessAdjustmentCap: number;
 };
 export type PricingMode = "BENCHMARK" | "BUSINESS_ADJUSTED";
-export type PricingStatus = "NEW_PRICE" | "KEEP_CURRENT_PRICE" | "REVIEW_PRICE";
+export type PricingStatus = "NEW_PRICE" | "KEEP_CURRENT_PRICE" | "REVIEW_PRICE" | "PRICE_UNAVAILABLE";
 export type PricingConfidence = "LOW" | "MEDIUM" | "HIGH";
 export type BusinessEconomicsInput = {
   monthlyRevenueCents: number;
@@ -135,13 +135,16 @@ export type PricingWarningCode =
   | "CATEGORY_COST_PERCENT_OUTLIER"
   | "INCOMPLETE_RECIPE"
   | "LOW_SAMPLE_SIZE";
+/** `productCostCents`/`baselinePriceCents`/`calculatedSuggestedPriceCents`/`recommendedPriceCents`
+ * are `null` exactly when `status === "PRICE_UNAVAILABLE"` — missing recipe, missing ingredient
+ * cost, or a genuinely zero-cost recipe. Never read a numeric 0 as "no price"; a valid calculation
+ * is guaranteed non-null and strictly positive (see suggestPrice in pricingEngine.ts). */
 export type PricingResult = {
-  suggestedPriceCents: number;
-  productCostCents: number;
-  baselinePriceCents: number;
-  calculatedSuggestedPriceCents: number;
+  productCostCents: number | null;
+  baselinePriceCents: number | null;
+  calculatedSuggestedPriceCents: number | null;
   currentPriceCents: number;
-  recommendedPriceCents: number;
+  recommendedPriceCents: number | null;
   calculationMode: PricingMode;
   businessAdjustmentFactor: number;
   confidence: PricingConfidence;

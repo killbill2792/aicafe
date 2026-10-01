@@ -7,7 +7,7 @@ import { formatCents } from "@/lib/calc";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 
 type Filter = "all" | "coffee" | "tea" | "food" | "attention";
-type Labels = Record<"search" | "all" | "coffee" | "tea" | "food" | "needsAttention" | "cost" | "afterIngredients" | "suggested" | "keepPrice" | "noRecipe" | "missingCost" | "syncedFrom" | "inactive" | "empty" | "addItem", string>;
+type Labels = Record<"search" | "all" | "coffee" | "tea" | "food" | "needsAttention" | "cost" | "afterIngredients" | "suggested" | "keepPrice" | "priceUnavailable" | "noRecipe" | "missingCost" | "syncedFrom" | "inactive" | "empty" | "addItem", string>;
 
 export default function MenuCatalog({ items, labels }: { items: MenuControlItem[]; labels: Labels }) {
   const [query, setQuery] = useState("");
@@ -39,7 +39,11 @@ export default function MenuCatalog({ items, labels }: { items: MenuControlItem[
         {item.costStatus === "READY" && item.ingredientsCostCents !== null ? <>
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-[15px]"><span>{labels.cost} <strong>{formatCents(item.ingredientsCostCents)}</strong></span><span>{labels.afterIngredients} <strong>{formatCents(item.priceCents - item.ingredientsCostCents)}</strong></span></div>
           <div className="flex h-2.5 overflow-hidden rounded-full bg-good-tint" aria-hidden="true"><span className="bg-ingredients" style={{ width: `${Math.min(100, item.priceCents ? item.ingredientsCostCents / item.priceCents * 100 : 0)}%` }} /></div>
-          {item.pricing && <p className="text-sm font-semibold text-good">{labels.suggested}: {item.pricing.status === "KEEP_CURRENT_PRICE" ? labels.keepPrice : formatCents(item.pricing.recommendedPriceCents)}</p>}
+          {item.pricing && <p className="text-sm font-semibold text-good">{labels.suggested}: {
+            item.pricing.status === "KEEP_CURRENT_PRICE" ? labels.keepPrice
+            : item.pricing.status === "PRICE_UNAVAILABLE" || item.pricing.recommendedPriceCents === null ? labels.priceUnavailable
+            : formatCents(item.pricing.recommendedPriceCents)
+          }</p>}
         </> : <div className="rounded-xl bg-warn-tint px-3 py-2 text-sm text-warn"><strong>{labels.needsAttention}</strong><br />{item.costStatus === "NO_RECIPE" ? labels.noRecipe : labels.missingCost.replace("{ingredient}", item.missingCostIngredientNames.join(", "))}</div>}
         <div className="flex flex-wrap gap-2 text-xs text-ink-muted">{item.catalogSource !== "manual" && <span>{labels.syncedFrom.replace("{source}", item.provenance.replace("_", " "))}</span>}{!item.active && <span>{labels.inactive}</span>}</div>
       </Link>)}

@@ -2,10 +2,16 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { itemIngredientCostCents, staffCostCentsForPeriod, type DailyFacts } from "@/lib/calc";
+import { evaluateRecipeCost, staffCostCentsForPeriod, type DailyFacts, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 
-export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; hasCompleteRecipe: boolean; unitsSoldInWindow: number };
+/** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
+ * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
+ * contribute nothing to monthlyVariableProductCostCents, not a fabricated number). `recipeStatus`
+ * is the same RecipeCostStatus getMenuItemsForEdit.ts already derives via evaluateRecipeCost — this
+ * file now calls that same shared function instead of reimplementing its own cost+completeness
+ * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
+export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; recipeStatus: RecipeCostStatus; unitsSoldInWindow: number };
 export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number };
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput }> {
@@ -40,9 +46,9 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const units = new Map<string, number>((quantitiesResult.data ?? []).map((row: { menu_item_id: string; total_quantity: number | string }) => [row.menu_item_id, Number(row.total_quantity)]));
   const items = rawItems.map((item) => {
     const lines = (recipesResult.data ?? []).filter((line) => line.menu_item_id === item.id).map((line) => ({ ingredientId: line.ingredient_id, quantity: Number(line.quantity) }));
-    const productCostCents = Math.round(itemIngredientCostCents(lines, prices));
+    const cost = evaluateRecipeCost(lines, prices);
     const category = item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category as MenuItemCategoryCode;
-    return { id: item.id, name: item.name, category, currentPriceCents: item.price_cents ?? 0, productCostCents, hasCompleteRecipe: lines.length > 0 && lines.every((line) => prices[line.ingredientId] !== undefined) && productCostCents > 0, unitsSoldInWindow: units.get(item.id) ?? 0 };
+    return { id: item.id, name: item.name, category, currentPriceCents: item.price_cents ?? 0, productCostCents: cost.costCents ?? 0, recipeStatus: cost.status, unitsSoldInWindow: units.get(item.id) ?? 0 };
   });
   const days: DailyFacts[] = (rollupsResult.data ?? []).map((row) => ({ date: row.business_date, netSalesCents: row.net_sales_cents, ordersCount: row.orders_count, drinksCount: row.drinks_count, ingredientsCents: row.ingredients_cents, wagesCents: row.staff_wages_cents, staffTaxCents: row.staff_tax_cents, cardFeesCents: row.card_fees_cents, voidsCents: row.voids_cents }));
   const scale = 30 / windowDays;

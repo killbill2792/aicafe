@@ -245,7 +245,8 @@
     "possibleMatch": "مطابقة محتملة: {name}",
     "noPossibleMatch": "لم نجد مطابقة موثوقة.",
     "confirmMatch": "ربطه بهذا الصنف",
-    "createSeparate": "إنشاؤه كصنف منفصل"
+    "createSeparate": "إنشاؤه كصنف منفصل",
+    "priceUnavailable": "السعر غير متوفر"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -302,7 +303,8 @@
     "pricingWarningCategoryOutlier": "يختلف هذا السعر بوضوح عن المنتجات المشابهة، ويستحق نظرة أخرى.",
     "pricingWarningCostOutlier": "تختلف تكلفة وصفة هذا المنتج بوضوح عن المنتجات المشابهة.",
     "pricingWarningIncompleteRecipe": "أكمل أسعار مكونات الوصفة لتحسين هذا الاقتراح.",
-    "pricingWarningLowSample": "مبيعات هذا المنتج الأخيرة محدودة، لذلك درجة الثقة أقل."
+    "pricingWarningLowSample": "مبيعات هذا المنتج الأخيرة محدودة، لذلك درجة الثقة أقل.",
+    "pricingStatusUnavailable": "السعر المقترح غير متوفر"
   },
   "Staff": {
     "title": "الموظفون",

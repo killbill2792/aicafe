@@ -28,7 +28,11 @@ export default async function MenuItemPage({ params }: { params: Promise<{ itemI
       <Row label={t("ingredients")} value={formatCents(item.ingredientsCostCents)} />
       <div className="flex h-3 overflow-hidden rounded-full bg-good-tint"><span className="bg-ingredients" style={{ width: `${Math.min(100, item.ingredientsCostCents / item.priceCents * 100)}%` }} /></div>
       <Row label={t("afterIngredients")} value={formatCents(item.priceCents - item.ingredientsCostCents)} strong />
-      {item.pricing && <Row label={t("suggestedPrice")} value={item.pricing.status === "KEEP_CURRENT_PRICE" ? t("keepPrice") : formatCents(item.pricing.recommendedPriceCents)} strong />}
+      {item.pricing && <Row label={t("suggestedPrice")} value={
+        item.pricing.status === "KEEP_CURRENT_PRICE" ? t("keepPrice")
+        : item.pricing.status === "PRICE_UNAVAILABLE" || item.pricing.recommendedPriceCents === null ? t("priceUnavailable")
+        : formatCents(item.pricing.recommendedPriceCents)
+      } strong />}
     </section> : <section className="rounded-card-lg bg-warn-tint p-[18px] text-warn"><h2 className="text-lg font-bold">{t("needsAttention")}</h2><p className="mt-1 text-[17px]">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</p></section>}
     <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
       <h2 className="text-lg font-bold">{t("recipe")}</h2>

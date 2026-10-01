@@ -70,7 +70,7 @@ export default async function ManageMenuPage({ searchParams }: { searchParams: P
           inactiveTag: t("inactiveTag"),
           suggestedPriceLabel: t("suggestedPriceLabel"),
           suggestedPriceHint: t("suggestedPriceHint"),
-          pricingStatus: { NEW_PRICE: t("pricingStatusNew"), KEEP_CURRENT_PRICE: t("pricingStatusKeep"), REVIEW_PRICE: t("pricingStatusReview") },
+          pricingStatus: { NEW_PRICE: t("pricingStatusNew"), KEEP_CURRENT_PRICE: t("pricingStatusKeep"), REVIEW_PRICE: t("pricingStatusReview"), PRICE_UNAVAILABLE: t("pricingStatusUnavailable") },
           pricingExplainer: { BENCHMARK_EXPLAINER: t("pricingExplainerBenchmark"), BUSINESS_ADJUSTED_EXPLAINER: t("pricingExplainerBusinessAdjusted"), INCOMPLETE_DATA_EXPLAINER: t("pricingExplainerIncomplete") },
           pricingWarnings: { BUSINESS_ADJUSTMENT_CAPPED: t("pricingWarningCapped"), CATEGORY_PRICE_OUTLIER: t("pricingWarningCategoryOutlier"), CATEGORY_COST_PERCENT_OUTLIER: t("pricingWarningCostOutlier"), INCOMPLETE_RECIPE: t("pricingWarningIncompleteRecipe"), LOW_SAMPLE_SIZE: t("pricingWarningLowSample") },
         }}

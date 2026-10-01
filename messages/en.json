@@ -245,7 +245,8 @@
     "possibleMatch": "Possible match: {name}",
     "noPossibleMatch": "We could not find a confident match.",
     "confirmMatch": "Attach to this menu item",
-    "createSeparate": "Create as a separate item"
+    "createSeparate": "Create as a separate item",
+    "priceUnavailable": "Price unavailable"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -302,7 +303,8 @@
     "pricingWarningCategoryOutlier": "This price is noticeably different from similar items — worth a second look.",
     "pricingWarningCostOutlier": "This item’s recipe cost differs noticeably from similar items.",
     "pricingWarningIncompleteRecipe": "Finish pricing the recipe to improve this suggestion.",
-    "pricingWarningLowSample": "This item has limited recent sales, so confidence is lower."
+    "pricingWarningLowSample": "This item has limited recent sales, so confidence is lower.",
+    "pricingStatusUnavailable": "Suggested price unavailable"
   },
   "Staff": {
     "title": "Staff",
