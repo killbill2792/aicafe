@@ -7,6 +7,44 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Menu UX refactor (2026-10-01 — code complete, migration + live verification pending approval)
 
+**Update:** independent review of PR #4 found 6 categories of correctness issues, fixed on the same
+branch (same PR), no UX/design changes:
+1. `toBaseUnitQuantity` now rejects every incompatible physical-unit/base-unit combination (g only
+   on g, ml/fl oz only on ml, each only on each; shot/pump only with an explicit ingredient
+   conversion) instead of trusting the client to have only offered valid options — regression
+   tests added for every invalid combo. `RecipeEditor` resets `displayUnit` right in the
+   ingredient/base-unit change handlers (not a `useEffect`, to satisfy
+   `react-hooks/set-state-in-effect`) so a stale selection can never reach the server.
+2. `getMenuItemsForEdit`, `existingMenuGroups`, `getIngredientUnitConversions`,
+   `getCatalogMatchReview`, and `getMenuControlCenter` now check every query's `error` and throw a
+   logged, generic failure instead of silently falling back to `[]`/`{}` — a broken query can no
+   longer look identical to "nothing here yet." Every action that previously returned a raw
+   `error.message` to the owner now logs it server-side (`lib/data/queryError.ts`) and returns a
+   stable, generic message instead.
+3. `addRecipeLine`/`deleteRecipeLine` now verify the target `menuItemId` belongs to the active
+   business before touching it, and `copyRecipeLines` verifies `copyRecipeFromItemId` the same way
+   — a user may legitimately belong to more than one business, so RLS membership alone isn't
+   enough to guarantee "this is the business currently in use."
+4. "Add size + copy recipe" now checks both the source-recipe query and the copy-insert for errors
+   and, if copying was explicitly requested and fails, rolls back the just-created size and
+   reports a visible failure rather than leaving a recipe-less size behind while claiming success
+   (new `lib/menu/copyRecipeLines.ts`, unit-tested with a fake Supabase client covering every
+   branch). `ProductEditForm`, archive/restore, and recipe delete all now check their action's
+   result and only treat it as done when it actually succeeded. `resolveCatalogMatch` no longer
+   marks a match `confirmed` unless the underlying menu-item update/insert actually succeeded.
+5. Matching a POS item to an existing menu item still preserves that item's id/recipe/history
+   exactly as before; it now also populates `menu_group` from the POS category (normalized) when
+   the item doesn't already have one, without ever touching the internal `category` enum.
+6. The migration's backfill no longer assumes every non-enum `category` is POS contamination —
+   it's now constrained to rows that are demonstrably catalog-sourced (`catalog_source <> 'manual'`,
+   the only path that bug could reach); an unexplained `category` on a manual row is left alone.
+   The file's own comment now says plainly that the DDL itself applies to the whole database and
+   only browser verification is tenant-scoped. Still not applied anywhere.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (102/102, 7 new), `npm run build` all
+clean. Pricing engine (`PRICE_UNAVAILABLE`, nullable fields, shared `evaluateRecipeCost`, the
+zero-suggestion floor) untouched by this pass.
+
 Follow-up to "Menu Control Center" below: that work made `/menu` correct, but the editing surface
 (`/menu/manage`) stayed one giant form conflating internal analytics `category` with the owner's
 own menu sections, gated "Add another size" behind a `?add=1` query param that silently did nothing

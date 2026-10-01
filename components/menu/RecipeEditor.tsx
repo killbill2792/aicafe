@@ -43,6 +43,17 @@ export default function RecipeEditor({
   const hasExistingConversion = selectedIngredient ? (ingredientConversions[selectedIngredient.id] ?? []).some((c) => c.unit === displayUnit) : false;
   const needsConversionInput = needsIngredientConversion(displayUnit) && !hasExistingConversion;
 
+  // Switching ingredients (or the new-ingredient's base unit) can make the currently-selected
+  // café-friendly unit invalid for the new base unit (e.g. "fl oz" was selected, then the owner
+  // picks a gram-based ingredient). Reset it right in the handler that causes the change, rather
+  // than reacting to it afterward in an effect — a stale g/ml/fl oz selection must never reach the
+  // server, which now rejects it (see toBaseUnitQuantity).
+  function resetDisplayUnitFor(baseUnit: "g" | "ml" | "each") {
+    const options = recipeDisplayUnitsFor(baseUnit);
+    setDisplayUnit((current) => (options.includes(current) ? current : options[0]));
+    setConversionValue("");
+  }
+
   function handleAddLine() {
     const qty = Number(quantity);
     if (!qty || qty <= 0) return;
@@ -73,8 +84,12 @@ export default function RecipeEditor({
   }
 
   function handleRemoveLine(ingId: string) {
-    startTransition(() => {
-      void deleteRecipeLine(item.id, ingId);
+    setError(null);
+    startTransition(async () => {
+      // A failed delete must surface, not just vanish — otherwise the owner has no way to know
+      // the ingredient is still really on the recipe.
+      const result = await deleteRecipeLine(item.id, ingId);
+      if (!result.ok) setError(result.error);
     });
   }
 
@@ -148,14 +163,31 @@ export default function RecipeEditor({
       )}
 
       <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
-        <select value={ingredientId} onChange={(e) => { setIngredientId(e.target.value); setConversionValue(""); }} className="h-11 w-full min-w-0 rounded-lg border border-line bg-card px-2.5 text-sm text-ink">
+        <select
+          value={ingredientId}
+          onChange={(e) => {
+            const newIngredientId = e.target.value;
+            setIngredientId(newIngredientId);
+            const nextBaseUnit = ingredients.find((i) => i.id === newIngredientId)?.baseUnit ?? newBaseUnit;
+            resetDisplayUnitFor(nextBaseUnit);
+          }}
+          className="h-11 w-full min-w-0 rounded-lg border border-line bg-card px-2.5 text-sm text-ink"
+        >
           <option value="">{t("newIngredient")}</option>
           {ingredients.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.baseUnit})</option>)}
         </select>
         {!ingredientId && (
           <div className="flex min-w-0 gap-2">
             <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("ingredientLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />
-            <select value={newBaseUnit} onChange={(e) => setNewBaseUnit(e.target.value as "g" | "ml" | "each")} className="h-11 w-28 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink">
+            <select
+              value={newBaseUnit}
+              onChange={(e) => {
+                const unit = e.target.value as "g" | "ml" | "each";
+                setNewBaseUnit(unit);
+                resetDisplayUnitFor(unit);
+              }}
+              className="h-11 w-28 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink"
+            >
               <option value="g">{t("unitG")}</option>
               <option value="ml">{t("unitMl")}</option>
               <option value="each">{t("unitEach")}</option>

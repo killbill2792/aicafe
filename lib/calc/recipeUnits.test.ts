@@ -53,4 +53,19 @@ describe("toBaseUnitQuantity", () => {
     expect(toBaseUnitQuantity("ml", 0, "ml")).toBeNull();
     expect(toBaseUnitQuantity("ml", -5, "ml")).toBeNull();
   });
+
+  it("rejects every physical unit that doesn't match the ingredient's base unit", () => {
+    // g only valid with a gram-based ingredient
+    expect(toBaseUnitQuantity("g", 10, "ml")).toBeNull();
+    expect(toBaseUnitQuantity("g", 10, "each")).toBeNull();
+    // ml only valid with a ml-based ingredient
+    expect(toBaseUnitQuantity("ml", 10, "g")).toBeNull();
+    expect(toBaseUnitQuantity("ml", 10, "each")).toBeNull();
+    // fl oz only valid with a ml-based ingredient (it's a physical ml conversion)
+    expect(toBaseUnitQuantity("fl_oz", 10, "g")).toBeNull();
+    expect(toBaseUnitQuantity("fl_oz", 10, "each")).toBeNull();
+    // each only valid with a count-based ingredient
+    expect(toBaseUnitQuantity("each", 1, "g")).toBeNull();
+    expect(toBaseUnitQuantity("each", 1, "ml")).toBeNull();
+  });
 });

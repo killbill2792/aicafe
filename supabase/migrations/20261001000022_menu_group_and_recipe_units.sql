@@ -1,7 +1,12 @@
 -- Owner-facing menu grouping (separate from the internal 8-code analytics `category`), plus
 -- café-friendly recipe-entry metadata. Additive only — no existing column is altered or dropped.
--- NOT applied automatically. Review this file and the accompanying preview query before running
--- scripts/db-migrate.mjs, and only against a test/demo tenant.
+--
+-- NOT applied automatically. This is DDL: it applies to the entire database, the same schema
+-- shared by every business on this project — there is no way to scope a schema change to one
+-- tenant. ("Restrict to a demo/test tenant" applies only to the separate step of live browser
+-- verification after this migration runs — i.e. which business's data gets clicked through in
+-- the app — never to whether this file itself touches the whole database, which it always does.)
+-- Review this file and the accompanying preview query before running scripts/db-migrate.mjs.
 
 alter table menu_items
   add column if not exists menu_group text;
@@ -44,11 +49,12 @@ create policy "members write" on ingredient_unit_conversions for all
 update menu_items set category = 'FOOD' where category = 'food';
 update menu_items set category = 'ESPRESSO_DRINK' where category = 'drink';
 
--- Case (b): any remaining category value that is not one of the 8 valid analytics codes is the
--- lib/actions/catalogMatches.ts contamination path (raw Square/Toast category text written
--- straight into `category`). Preserve that owner-meaningful text by moving it into `menu_group`,
--- and reset `category` to a safe default. Must run after case (a) so 'food'/'drink' (already
--- repaired above) are not swept into this generic branch.
+-- Case (b): a non-enum category is only treated as the lib/actions/catalogMatches.ts
+-- contamination bug (raw Square/Toast/Clover/CSV category text written straight into `category`)
+-- when the row is demonstrably catalog-sourced (`catalog_source <> 'manual'` — the only path that
+-- bug could have reached). A manually-entered item with some other unexpected category value is
+-- left completely alone: that's unknown/manual data this migration must never guess about or
+-- silently rewrite, not something to assume is POS contamination.
 update menu_items
   set menu_group = category,
       category = 'ESPRESSO_DRINK'
@@ -56,4 +62,5 @@ update menu_items
     and category not in (
       'ESPRESSO_DRINK', 'BREWED_COFFEE', 'COLD_BREW', 'TEA',
       'SPECIALTY_DRINK', 'PASTRY', 'FOOD', 'RETAIL'
-    );
+    )
+    and catalog_source <> 'manual';

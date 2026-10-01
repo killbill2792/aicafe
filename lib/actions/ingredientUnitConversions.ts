@@ -7,6 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import type { ActionResult } from "./menuItems";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 
 async function currentBusinessId(): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
@@ -23,10 +24,14 @@ export async function getIngredientUnitConversions(): Promise<Record<string, Ing
   const businessId = await currentBusinessId();
   if (!businessId) return {};
   const supabase = await createServerSupabaseClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("ingredient_unit_conversions")
     .select("ingredient_id, unit, base_units_per_unit, ingredients!inner(business_id)")
     .eq("ingredients.business_id", businessId);
+  if (error) {
+    logQueryError("getIngredientUnitConversions", error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
   const byIngredient: Record<string, IngredientUnitConversion[]> = {};
   for (const row of data ?? []) {
     const list = byIngredient[row.ingredient_id] ?? [];
@@ -56,7 +61,10 @@ export async function setIngredientUnitConversion(input: z.infer<typeof SetConve
   const { error } = await supabase
     .from("ingredient_unit_conversions")
     .upsert({ ingredient_id: parsed.data.ingredientId, unit: parsed.data.unit, base_units_per_unit: parsed.data.baseUnitsPerUnit }, { onConflict: "ingredient_id,unit" });
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    logQueryError("setIngredientUnitConversion", error);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
   revalidatePath("/menu");
   revalidatePath("/menu/manage");
   return { ok: true };

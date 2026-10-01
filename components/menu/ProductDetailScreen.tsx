@@ -34,12 +34,17 @@ export default function ProductDetailScreen({
   const [editing, setEditing] = useState(false);
   const [addingSize, setAddingSize] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
+  const [toggleError, setToggleError] = useState<string | null>(null);
 
   async function handleToggleActive() {
     setIsTogglingActive(true);
-    await setMenuItemActive(item.id, !item.active);
+    setToggleError(null);
+    const result = await setMenuItemActive(item.id, !item.active);
     setIsTogglingActive(false);
-    router.refresh();
+    // A failed archive/restore must leave the badge and button exactly as they were, with the
+    // failure visible — never silently refresh as though the item's state actually changed.
+    if (result.ok) router.refresh();
+    else setToggleError(result.error);
   }
 
   const sizeSiblingsForDialog: SizeSibling[] = siblingSizes.map((sibling) => ({ id: sibling.id, sizeLabel: sibling.sizeLabel, name: sibling.name, priceCents: sibling.priceCents }));
@@ -102,14 +107,17 @@ export default function ProductDetailScreen({
         </button>
       </section>
 
-      <button
-        type="button"
-        onClick={handleToggleActive}
-        disabled={isTogglingActive}
-        className="flex min-h-12 items-center justify-center rounded-full border border-line bg-card px-4 font-bold text-ink disabled:opacity-40"
-      >
-        {item.active ? t("archiveItem") : t("restoreToMenu")}
-      </button>
+      <div className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={handleToggleActive}
+          disabled={isTogglingActive}
+          className="flex min-h-12 items-center justify-center rounded-full border border-line bg-card px-4 font-bold text-ink disabled:opacity-40"
+        >
+          {item.active ? t("archiveItem") : t("restoreToMenu")}
+        </button>
+        {toggleError && <p className="text-sm text-warn">{toggleError}</p>}
+      </div>
 
       {addingSize && (
         <AddSizeDialog

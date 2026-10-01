@@ -25,10 +25,13 @@ export function needsIngredientConversion(unit: RecipeDisplayUnit): unit is Oper
 }
 
 /** Converts a café-friendly display quantity into the ingredient's canonical base-unit quantity.
- * Returns null when the quantity isn't a positive number, or when the unit is an
- * ingredient-specific operational unit (shot/pump) with no stored conversion yet — callers must
- * prompt the owner to define one before the line can be saved; never guess a default, since a
- * shot/pump dose genuinely varies per ingredient. */
+ * Returns null when the quantity isn't a positive number, when a physical unit (g/ml/fl_oz/each)
+ * doesn't match the ingredient's actual base unit (e.g. "fl oz" on a gram-based ingredient), or
+ * when the unit is an ingredient-specific operational unit (shot/pump) with no stored conversion
+ * yet — callers must prompt the owner to define one before the line can be saved; never guess a
+ * default, since a shot/pump dose genuinely varies per ingredient. This is the server-side source
+ * of truth for unit compatibility — it must never trust a client to have only offered valid
+ * combinations (see recipeDisplayUnitsFor, which is a UI convenience, not a guarantee). */
 export function toBaseUnitQuantity(
   unit: RecipeDisplayUnit,
   quantity: number,
@@ -36,12 +39,13 @@ export function toBaseUnitQuantity(
   conversions: IngredientUnitConversion[] = [],
 ): number | null {
   if (!(quantity > 0)) return null;
-  if (unit === "fl_oz") return quantity * ML_PER_FL_OZ;
   if (needsIngredientConversion(unit)) {
     const conversion = conversions.find((c) => c.unit === unit);
     return conversion ? quantity * conversion.baseUnitsPerUnit : null;
   }
-  // unit is "g" | "ml" | "each" here — already the base unit by construction, since
-  // recipeDisplayUnitsFor never offers a physical unit that mismatches the ingredient's base unit.
-  return quantity;
+  if (unit === "g") return baseUnit === "g" ? quantity : null;
+  if (unit === "ml") return baseUnit === "ml" ? quantity : null;
+  if (unit === "fl_oz") return baseUnit === "ml" ? quantity * ML_PER_FL_OZ : null;
+  if (unit === "each") return baseUnit === "each" ? quantity : null;
+  return null;
 }

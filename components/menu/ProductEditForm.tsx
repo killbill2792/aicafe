@@ -35,10 +35,12 @@ export default function ProductEditForm({
   const [menuGroup, setMenuGroup] = useState(item.menuGroup ?? "");
   const [category, setCategory] = useState(item.category);
   const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   function handleSave() {
+    setError(null);
     startTransition(async () => {
-      await updateMenuItem({
+      const result = await updateMenuItem({
         id: item.id,
         name,
         sizeLabel: size || undefined,
@@ -47,7 +49,10 @@ export default function ProductEditForm({
         category,
         menuGroup: menuGroup.trim() || undefined,
       });
-      onSaved?.();
+      // Only treat this as saved — and close the edit form — when the save actually succeeded.
+      // A failed update must stay open with the error visible, not quietly act as if it worked.
+      if (result.ok) onSaved?.();
+      else setError(result.error);
     });
   }
 
@@ -92,6 +97,7 @@ export default function ProductEditForm({
           </select>
         </label>
       </div>
+      {error && <p className="text-sm text-warn">{error}</p>}
       <button type="button" disabled={pending} onClick={handleSave} className="min-h-11 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-40">
         {labels.saveChanges}
       </button>
