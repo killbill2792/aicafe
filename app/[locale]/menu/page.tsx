@@ -15,7 +15,7 @@ export default async function MenuPage() {
   const [items, pendingMatches, t] = await Promise.all([getMenuControlCenter(), getCatalogMatchReview(), getTranslations("Menu")]);
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
-      <header className="flex items-start justify-between gap-3 px-1">
+      <header className="flex flex-col gap-3 px-1 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="font-headline text-[30px] font-bold text-ink">{t("title")}</h1>
           <p className="text-[15px] text-ink-muted">{t("subtitle")}</p>

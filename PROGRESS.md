@@ -5,6 +5,37 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Pre-merge mobile visual fixes: Menu header wrap, Money FAB overlap (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Two CSS-only fixes from a live mobile-preview pass before merging PR #6. No functionality changed,
+no logic touched — confirmed by the full test suite passing unchanged (165/165, 0 new).
+
+**1. `LanguageSwitch` could wrap onto two lines ("EN / ES" stacking) at narrow widths.** Added
+`whitespace-nowrap shrink-0` to its `<Link>` — it's a shared component, so every screen that uses
+it (Menu, Money, Home, Staff, etc.) benefits, not just Menu. Also restructured the Menu page's own
+`<header>` from a fixed `flex items-start justify-between` (which left too little width for the
+actions column on narrow phones) to `flex flex-col gap-3 ... md:flex-row md:items-start
+md:justify-between` — title/subtitle stack above a clean second row of "+ Add"/language-switch on
+mobile, reverting to the original side-by-side layout at `md:` and up. Touch targets unchanged
+(`+Add` still `min-h-12`, language switch still `h-11`, both pre-existing sizes). Verified live at
+375px and 390px (en, es, ar/RTL) — no wrapping, clean two-row stack — and at 1280px desktop, where
+the layout is pixel-identical to before.
+
+**2. Money's fixed `+ Add cost` FAB overlapped the last card's content on mobile.** The Money page's
+own `PageShell` padding (`pb-4`) wasn't enough to clear the FAB's mobile position (`bottom-[104px]`
++ its own 56px height = up to 160px of reserved space needed) on top of the shared layout's
+`pb-24`. Changed Money's `PageShell` className to `pb-44 md:pb-16` (FAB and `AddCostFab.tsx` itself
+untouched — same component, same position, just given enough room below it). Verified live at
+375px on both Money tabs (Paying back bills, Profit & costs) in en/es/ar — scrolled to the true
+bottom of the page in each case and confirmed the last real card (e.g. "vs last period" / "How this
+works") sits fully above both the FAB and the bottom tab bar with visible clearance, no overlap, in
+every locale including RTL.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (165/165, unchanged), `npm run build`
+all clean.
+
+
+
 ## Cross-screen cleanup: Add Cost AI gating, Money/Staff shortcuts, period consistency, profit color (2026-10-02 — code complete, pushed to menu-visual-refresh)
 
 Four small, independently-scoped fixes from live UI review. No schema changes. Preserves all Menu

@@ -14,7 +14,7 @@ export default async function LanguageSwitch({ href }: { href: string }) {
     <Link
       href={href}
       locale={next}
-      className="flex h-11 items-center rounded-full border border-line bg-card px-3.5 text-[15px] font-semibold text-ink"
+      className="flex h-11 shrink-0 items-center whitespace-nowrap rounded-full border border-line bg-card px-3.5 text-[15px] font-semibold text-ink"
     >
       {SHORT_LABEL[locale]} / {SHORT_LABEL[next]}
     </Link>

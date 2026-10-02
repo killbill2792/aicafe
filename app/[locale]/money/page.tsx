@@ -33,7 +33,7 @@ export default async function MoneyPage({
   const t = await getTranslations("Money");
 
   return (
-    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-44 pt-6 md:pb-16">
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
           <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>
