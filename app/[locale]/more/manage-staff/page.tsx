@@ -69,6 +69,11 @@ export default async function ManageStaffPage() {
           deactivate: t("deactivate"),
           reactivate: t("reactivate"),
           inactiveTag: t("inactiveTag"),
+          wageSummary: t("wageSummary"),
+          daysSummary: t("daysSummary"),
+          variedTimes: t("variedTimes"),
+          variedBreaks: t("variedBreaks"),
+          breakSummary: t("breakSummary"),
         }}
       />
     </PageShell>

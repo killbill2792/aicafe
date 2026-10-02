@@ -1,5 +1,5 @@
 import { formatInTimeZone } from "date-fns-tz";
-import { Plus } from "lucide-react";
+import { Plus, UserRoundCheck, UsersRound } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
@@ -38,7 +38,16 @@ export default async function StaffPage() {
         </div>
       </header>
 
-      <section className="flex flex-col gap-3.5 rounded-card-lg bg-staff p-5 text-white">
+      <section className={`flex flex-col gap-3.5 rounded-card-lg p-5 ${vm.onShift.length > 0 ? "bg-good text-white" : "border border-line bg-[#EDE5D9] text-ink"}`}>
+        <div className="flex items-center gap-3">
+          <span className={`flex h-12 w-12 items-center justify-center rounded-full ${vm.onShift.length > 0 ? "bg-white/15" : "bg-card"}`}>
+            {vm.onShift.length > 0 ? <UserRoundCheck aria-hidden="true" /> : <UsersRound aria-hidden="true" />}
+          </span>
+          <div>
+            <strong className="block text-xl">{vm.onShift.length > 0 ? t("activeShiftHero", { count: vm.onShift.length }) : t("emptyShiftHero")}</strong>
+            <span className={`text-sm ${vm.onShift.length > 0 ? "text-white/85" : "text-ink-muted"}`}>{vm.onShift.length > 0 ? vm.onShift.map((shift) => shift.name).join(", ") : t("noOneOnShift")}</span>
+          </div>
+        </div>
         <span className="text-[15px] font-semibold opacity-90">{t("rightNowCosts")}</span>
         <div className="flex flex-wrap gap-2">
           <StatTile value={formatCents(vm.costPerMinuteCents)} label={t("aMinute")} />
@@ -98,7 +107,7 @@ export default async function StaffPage() {
 
 function StatTile({ value, label }: { value: string; label: string }) {
   return (
-    <div className="flex min-w-[104px] flex-1 flex-col items-center gap-0.5 rounded-2xl bg-white/10 px-1.5 py-3">
+    <div className="flex min-w-[104px] flex-1 flex-col items-center gap-0.5 rounded-2xl bg-black/10 px-1.5 py-3">
       <span className="whitespace-nowrap font-headline text-[28px] font-bold leading-none">{value}</span>
       <span className="text-xs opacity-90">{label}</span>
     </div>

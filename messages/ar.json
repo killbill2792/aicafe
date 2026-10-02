@@ -221,7 +221,10 @@
     "vsLastPeriod": "مقارنة بالفترة السابقة",
     "notEnoughDataToCompare": "لا توجد بيانات مبيعات كافية لمقارنة الفترات بعد.",
     "add": "إضافة",
-    "manageBills": "إدارة الفواتير"
+    "manageBills": "إدارة الفواتير",
+    "calendarMonthProgress": "تقدم الشهر",
+    "calendarDaysRecorded": "أيام مسجلة",
+    "calendarProfitableDays": "أيام مربحة"
   },
   "Menu": {
     "title": "القائمة",
@@ -397,7 +400,9 @@
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
     "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
-    "addStaff": "+ إضافة موظف"
+    "addStaff": "+ إضافة موظف",
+    "emptyShiftHero": "لا أحد يعمل الآن",
+    "activeShiftHero": "{count, plural, one {شخص واحد يعمل الآن} two {شخصان يعملان الآن} few {# أشخاص يعملون الآن} other {# شخصًا يعمل الآن}}"
   },
   "More": {
     "title": "المزيد",
@@ -638,7 +643,12 @@
     "predictedTag": "من جدوله — لم يُؤكَّد بعد",
     "deactivate": "لم يعد يعمل هنا",
     "reactivate": "إعادة تفعيل",
-    "inactiveTag": "لم يعد ضمن الفريق"
+    "inactiveTag": "لم يعد ضمن الفريق",
+    "wageSummary": "{wage} · {period}",
+    "daysSummary": "{days}",
+    "variedTimes": "الأوقات تختلف حسب اليوم",
+    "breakSummary": "استراحة {minutes} دقيقة",
+    "variedBreaks": "الاستراحات تختلف حسب اليوم"
   },
   "Scenario": {
     "title": "جرّب سيناريو",

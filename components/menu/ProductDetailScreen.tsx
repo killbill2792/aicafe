@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pencil, Check, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
+import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { setMenuItemActive } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
@@ -73,6 +74,7 @@ export default function ProductDetailScreen({
   const chip = statusChip(item);
   const pricingStatus = getItemPricingStatus(item);
   const sizeCount = 1 + siblingSizes.length;
+  const allSizes = [editItem, ...siblingSizes];
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "overview", label: t("tabOverview") },
@@ -84,12 +86,26 @@ export default function ProductDetailScreen({
   return (
     <>
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+        {allSizes.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1" aria-label={t("sizes")}>
+            {allSizes.map((size) => (
+              <Link
+                key={size.id}
+                href={`/menu/${size.id}`}
+                aria-current={size.id === item.id ? "page" : undefined}
+                className={`flex min-h-12 shrink-0 items-center rounded-full border px-4 text-sm font-bold no-underline ${size.id === item.id ? "border-ink bg-ink text-paper" : "border-line bg-paper text-ink"}`}
+              >
+                {size.sizeLabel ?? size.name}
+              </Link>
+            ))}
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-end gap-3">
             <span className="text-[17px] text-ink-muted">{t("sellingPrice")}</span>
             <strong className="font-headline text-4xl">{formatCents(item.priceCents)}</strong>
           </div>
-          <button type="button" onClick={() => setEditing((prev) => !prev)} className="flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-bold text-ink">
+          <button type="button" onClick={() => setEditing((prev) => !prev)} className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-bold text-ink">
             <Pencil aria-hidden="true" size={16} /> {t("editAction")}
           </button>
         </div>
@@ -134,7 +150,7 @@ export default function ProductDetailScreen({
               <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
             )}
           </section>
-          <section className={`flex flex-col gap-1 rounded-card-lg p-[18px] ${chip.good ? "bg-good-tint" : "bg-warn-tint"}`}>
+          <section className={`flex flex-col gap-1 rounded-card-lg border p-[18px] ${chip.good ? "border-good/20 bg-good-tint" : "border-warn/25 bg-card"}`}>
             <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
               {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
               {chip.label}
@@ -177,9 +193,13 @@ export default function ProductDetailScreen({
 
       {tab === "sizes" && (
         <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-          <Row label={editItem.sizeLabel ?? editItem.baseName} value={formatCents(editItem.priceCents)} strong />
-          {siblingSizes.map((sibling) => <Row key={sibling.id} label={sibling.sizeLabel ?? sibling.name} value={formatCents(sibling.priceCents)} />)}
-          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 text-sm font-semibold text-good">
+          {allSizes.map((size) => (
+            <Link key={size.id} href={`/menu/${size.id}`} className={`flex min-h-14 items-center justify-between rounded-xl border px-3 text-ink no-underline ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
+              <span className="font-bold">{size.sizeLabel ?? size.name}</span>
+              <span className="font-semibold">{formatCents(size.priceCents)}</span>
+            </Link>
+          ))}
+          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">
             {tEdit("addAnotherSize", { name: editItem.baseName })}
           </button>
         </section>

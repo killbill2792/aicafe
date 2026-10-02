@@ -221,7 +221,10 @@
     "vsLastPeriod": "vs el periodo anterior",
     "notEnoughDataToCompare": "Todavía no hay suficientes datos de ventas para comparar periodos.",
     "add": "Agregar",
-    "manageBills": "Gestionar gastos fijos"
+    "manageBills": "Gestionar gastos fijos",
+    "calendarMonthProgress": "Progreso del mes",
+    "calendarDaysRecorded": "días registrados",
+    "calendarProfitableDays": "días con ganancias"
   },
   "Menu": {
     "title": "Menú",
@@ -397,7 +400,9 @@
     "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
     "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
     "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
-    "addStaff": "+ Agregar personal"
+    "addStaff": "+ Agregar personal",
+    "emptyShiftHero": "Nadie está trabajando ahora",
+    "activeShiftHero": "{count, plural, one {# persona trabajando ahora} other {# personas trabajando ahora}}"
   },
   "More": {
     "title": "Más",
@@ -638,7 +643,12 @@
     "predictedTag": "De su horario — aún no confirmado",
     "deactivate": "Ya no trabaja aquí",
     "reactivate": "Volver a activar",
-    "inactiveTag": "Ya no está en el equipo"
+    "inactiveTag": "Ya no está en el equipo",
+    "wageSummary": "{wage} · {period}",
+    "daysSummary": "{days}",
+    "variedTimes": "El horario varía según el día",
+    "breakSummary": "{minutes} min de descanso",
+    "variedBreaks": "Los descansos varían según el día"
   },
   "Scenario": {
     "title": "Probar un escenario",

@@ -194,6 +194,9 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
           rentAndBills: t("rentAndBills"),
           ownerProfit: t("ownerProfit"),
           estimatePill: t("estimateLower"),
+          monthProgress: t("calendarMonthProgress"),
+          daysRecorded: t("calendarDaysRecorded"),
+          profitableDays: t("calendarProfitableDays"),
         }}
       />
 

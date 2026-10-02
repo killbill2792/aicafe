@@ -221,7 +221,10 @@
     "vsLastPeriod": "vs last period",
     "notEnoughDataToCompare": "Not enough sales data to compare periods yet.",
     "add": "Add",
-    "manageBills": "Manage bills"
+    "manageBills": "Manage bills",
+    "calendarMonthProgress": "Month progress",
+    "calendarDaysRecorded": "days recorded",
+    "calendarProfitableDays": "profitable days"
   },
   "Menu": {
     "title": "Menu",
@@ -397,7 +400,9 @@
     "healthyLine": "Under the line is healthy ({cents}¢)",
     "worstDayInsight": "{date} cost {cents}¢ per $1 sold — the highest this week.",
     "allHealthyInsight": "Your staff cost has stayed healthy all week.",
-    "addStaff": "+ Add staff"
+    "addStaff": "+ Add staff",
+    "emptyShiftHero": "Nobody working now",
+    "activeShiftHero": "{count, plural, one {# person working now} other {# people working now}}"
   },
   "More": {
     "title": "More",
@@ -638,7 +643,12 @@
     "predictedTag": "From their schedule — not confirmed yet",
     "deactivate": "No longer works here",
     "reactivate": "Bring back",
-    "inactiveTag": "No longer on staff"
+    "inactiveTag": "No longer on staff",
+    "wageSummary": "{wage} · {period}",
+    "daysSummary": "{days}",
+    "variedTimes": "Times vary by day",
+    "breakSummary": "{minutes} min break",
+    "variedBreaks": "Breaks vary by day"
   },
   "Scenario": {
     "title": "Try a scenario",

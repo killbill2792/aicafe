@@ -1584,3 +1584,22 @@ Phase 1 final foundation result:
 - [x] Migration 23 persists actor type and enforces employee identity for employee responses and no employee identity for owner responses.
 - [x] Use-price stays Watching until a trusted later observation matches the accepted recommendation; keep-current can complete immediately.
 - [x] Typecheck, lint, and 248 tests pass. Build is blocked only by network failures fetching the three existing Google fonts.
+
+## Phase 2 — UX clarity and visual hierarchy (2026-10-02)
+
+Plan:
+- Add truthful calendar month progress and lighter menu pricing-warning/real-size management experiences.
+- Make Staff current-state and Manage Staff summaries/actions clearer, including reactivation, schedule truthfulness, and selected controls.
+- Elevate the Home AI team with distinct accessible teammate identities and carry those accents into filtered operations work.
+- Verify responsive layouts at 375px, 390px, desktop, and en/es/ar RTL; then run typecheck, lint, full tests, and build.
+
+No dependency added; existing UI, i18n, data, and test facilities are sufficient.
+
+Phase 2 result:
+- [x] Calendar shows recorded/profitable month progress with 48px day targets.
+- [x] Product detail uses real menu-item IDs for size navigation, adds actionable size rows, and softens pricing warnings.
+- [x] Staff distinguishes active/empty shifts; Manage Staff is summary-first with reachable reactivation, truthful current-month/varied schedules, strong selectors, and collapse-after-save behavior.
+- [x] Home AI team is a major warm section; Alex, Olivia, Maya, and Leo have distinct accessible identities carried into selected inbox work.
+- [x] Home section surfaces now vary by domain while preserving good/warn semantics and the warm café palette.
+- [x] English, Spanish, and Arabic copy added; logical RTL classes and mobile/desktop responsive constraints retained.
+- [x] Typecheck, lint, and all 248 tests pass. Build reaches compilation but is blocked by the environment denying downloads for the three existing Google fonts. Browser screenshots could not be captured because no browser runtime is installed in this environment.
