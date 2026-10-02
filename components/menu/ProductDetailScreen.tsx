@@ -15,6 +15,7 @@ import { usePricingStatusChip } from "./usePricingStatusChip";
 import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
 import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
+import { stableSortSizes } from "@/lib/menu/sizeLabel";
 
 const PRICING_EXPLAINER_KEYS = {
   BENCHMARK_EXPLAINER: "pricingExplainerBenchmark",
@@ -39,6 +40,7 @@ export default function ProductDetailScreen({
   siblingSizes,
   justCreated,
   initialTab,
+  initialEditing = false,
 }: {
   item: MenuControlItem;
   editItem: MenuItemForEdit;
@@ -48,6 +50,7 @@ export default function ProductDetailScreen({
   siblingSizes: MenuControlItem[];
   justCreated?: boolean;
   initialTab: MenuDetailTab;
+  initialEditing?: boolean;
 }) {
   const t = useTranslations("Menu");
   const tEdit = useTranslations("ManageMenu");
@@ -55,7 +58,7 @@ export default function ProductDetailScreen({
   const pathname = usePathname();
   const statusChip = usePricingStatusChip();
   const [tab, setTab] = useState<MenuDetailTab>(initialTab);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(initialEditing);
   const [addingSize, setAddingSize] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
@@ -75,7 +78,7 @@ export default function ProductDetailScreen({
   const chip = statusChip(item);
   const pricingStatus = getItemPricingStatus(item);
   const sizeCount = 1 + siblingSizes.length;
-  const allSizes = [item, ...siblingSizes];
+  const allSizes = stableSortSizes([item, ...siblingSizes]);
 
   const TABS: { key: MenuDetailTab; label: string }[] = [
     { key: "overview", label: t("tabOverview") },
@@ -144,14 +147,19 @@ export default function ProductDetailScreen({
 
       {tab === "overview" && (
         <div className="flex flex-col gap-3 md:grid md:grid-cols-2 md:items-start md:gap-3">
+          <section className="flex min-h-36 items-center justify-center rounded-card-lg border border-dashed border-line bg-paper p-[18px] text-center text-ink-muted" aria-label={t("photoPlaceholder")}>
+            <span><span className="block text-3xl" aria-hidden="true">☕</span><span className="mt-1 block text-sm font-semibold">{t("photoPlaceholder")}</span></span>
+          </section>
           <section className="flex flex-col justify-center gap-1 rounded-card-lg bg-card p-[18px]">
+            <Row label={t("selectedSize")} value={item.sizeLabel ?? item.baseName} strong />
+            <Row label={t("sellingPrice")} value={formatCents(item.priceCents)} />
             {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
               <strong className="text-lg">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</strong>
             ) : (
               <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
             )}
           </section>
-          <section className={`flex flex-col gap-1 rounded-card-lg border p-[18px] ${chip.good ? "border-good/20 bg-good-tint" : "border-warn/25 bg-card"}`}>
+          <section className={`flex flex-col gap-1 rounded-card-lg border p-[18px] ${chip.good ? "border-good/20 bg-good-tint" : "border-warn/25 bg-warn-tint"}`}>
             <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
               {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
               {chip.label}
@@ -195,7 +203,7 @@ export default function ProductDetailScreen({
       {tab === "sizes" && (
         <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
           {allSizes.map((size) => (
-            <Link key={size.id} href={menuItemHref(size.id, tab)} className={`flex min-h-24 items-center gap-3 rounded-xl border px-3 py-2 text-ink no-underline ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
+            <div key={size.id} className={`flex min-h-24 items-center gap-3 rounded-xl border px-3 py-2 text-ink ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2"><strong>{size.sizeLabel ?? size.name}</strong><strong>{formatCents(size.priceCents)}</strong></span>
                 <span className="mt-1 block text-sm text-ink-muted">
@@ -203,8 +211,12 @@ export default function ProductDetailScreen({
                 </span>
                 <SizePricingStatus item={size} />
               </span>
-              <span className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</span>
-            </Link>
+              {size.id === item.id ? (
+                <button type="button" onClick={() => { setTab("overview"); setEditing(true); router.replace(`${pathname}?tab=overview&edit=1`, { scroll: false }); }} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</button>
+              ) : (
+                <Link href={`/menu/${encodeURIComponent(size.id)}?tab=overview&edit=1`} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper no-underline">{t("viewEditSize")}</Link>
+              )}
+            </div>
           ))}
           <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">
             {tEdit("addAnotherSize", { name: editItem.baseName })}

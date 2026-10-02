@@ -69,6 +69,8 @@ export type Timecard = {
   clockOut: string | null; // null = on shift now
   hourlyWageCents: number;
   breaks: TimecardBreak[];
+  /** Non-null rows are schedule-generated predictions, not confirmed clock records. */
+  scheduleId?: string | null;
 };
 
 export type RecipeLine = {

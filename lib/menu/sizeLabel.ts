@@ -15,3 +15,21 @@ export function resolveSizeLabel(rawValue: string, choice: SizeLabelUnitChoice):
   const trimmed = rawValue.trim();
   return choice === "keep" ? trimmed : `${trimmed} ${choice}`;
 }
+
+const NAMED_SIZE_ORDER = ["kid", "kids", "short", "small", "tall", "medium", "grande", "large", "venti", "extra large"];
+
+export function compareOwnerSizeLabels(a: string | null, b: string | null): number {
+  const left = (a ?? "").trim().normalize("NFKC").toLocaleLowerCase("en-US");
+  const right = (b ?? "").trim().normalize("NFKC").toLocaleLowerCase("en-US");
+  const leftNamed = NAMED_SIZE_ORDER.indexOf(left);
+  const rightNamed = NAMED_SIZE_ORDER.indexOf(right);
+  if (leftNamed >= 0 && rightNamed >= 0) return leftNamed - rightNamed;
+  const numeric = (value: string) => value.match(/^(\d+(?:\.\d+)?)(?:\s*(fl\s*oz|oz|ml|l|g|kg))?$/i);
+  const lm = numeric(left); const rm = numeric(right);
+  if (lm && rm && (lm[2] ?? "").replace(/\s/g, "") === (rm[2] ?? "").replace(/\s/g, "")) return Number(lm[1]) - Number(rm[1]);
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+export function stableSortSizes<T extends { id: string; sizeLabel: string | null }>(sizes: T[]): T[] {
+  return [...sizes].sort((a, b) => compareOwnerSizeLabels(a.sizeLabel, b.sizeLabel) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}

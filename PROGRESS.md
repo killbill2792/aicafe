@@ -1637,3 +1637,54 @@ Phase 2 final Manage Staff follow-up result:
 - [x] Schedule scope now says “Use every week” / “Only this month” with clear supporting copy in en/es/ar.
 - [x] Selected `aria-pressed` styling and 48px scope controls are preserved.
 - [x] Typecheck, lint, and all 259 tests pass.
+
+## Phase 3 — Scan-fast owner workspace (2026-10-02)
+
+Plan:
+- Promote AI Team into primary desktop/mobile navigation and compress Home into truthful task counts plus a responsive summary grid.
+- Add tenant-safe operating-task persistence that upserts deterministic tasks without erasing lifecycle state, and build one URL-backed agent/status inbox from persisted history.
+- Add portrait-style agent avatars and entity-preserving, domain-correct deep links without inventing unsupported inventory or applying POS prices.
+- Stabilize menu-size ordering, make exact-size editing real and validated, strengthen compact menu status cues, and complete the product overview summary/photo placeholder.
+- Separate predicted schedule timecards from confirmed actual shifts for break alerts and add timezone-safe regression coverage.
+- Verify typecheck, lint, full tests, build, responsive UI, RTL, and 48px targets; then commit, push, and open a PR without merging.
+
+No migration or pricing-formula change; migration 23 is already deployed.
+
+Phase 3 result:
+- [x] AI Team is a primary six-destination nav item; Home uses a truthful compact task summary and a responsive two-column secondary grid.
+- [x] Deterministic tasks are tenant-checked, inserted idempotently, refreshed without erasing persisted lifecycle payload/status, and read back with real handled/watching history and responses.
+- [x] Operations has URL-backed agent/status tabs, scoped counts, portrait-style identities, preserved entity metadata, and domain-correct deep links.
+- [x] Menu size ordering is deterministic and selection-independent; View / Edit is a real 48px exact-size action with validated edit mode.
+- [x] Product Overview now includes size, price, recipe cost/completeness, pricing state, sales, and a future-photo placeholder without schema changes.
+- [x] Predicted schedule rows still estimate wages but cannot create real meal-break warnings/alerts; confirmed shifts retain 4.5h/5h thresholds and qualifying-break suppression.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the existing environment failure to fetch the three Google fonts; no browser runtime is installed for screenshots.
+
+### Phase 3 correctness follow-up (PR #11)
+
+Plan:
+- Make legacy bare-number and custom size ordering deterministic by normalized label and stable item ID.
+- Reconcile managed deterministic tasks by refreshing current facts and expiring obsolete unresolved tasks without touching staff/future external tasks or handled history.
+- Add validated owner Keep current/Later actions using the existing task response lifecycle and migration-23 tables.
+- Preserve the selected inbox status across teammate and All team navigation, then run all required checks and commit one PR #11 follow-up.
+
+Result:
+- [x] Bare numeric, same-unit, named, and custom sizes now sort independently of selected-item input order, with stable ID tie-breaking.
+- [x] Obsolete unresolved managed tasks expire; handled history and external staff tasks remain untouched; refreshed deterministic facts override stale facts while workflow-only payload survives.
+- [x] Alex cards support tenant-validated Keep current and Later decisions through the existing response lifecycle, with compensating cleanup if the guarded task update fails.
+- [x] Teammate and All team links retain the active status tab.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.
+
+### Phase 3 final correctness follow-up (PR #11)
+
+Plan:
+- Make same-item View / Edit update local product state immediately instead of relying on query navigation to remount the component.
+- Reactivate re-derived expired deterministic tasks, persist status/resolution clearing, and restrict synthetic supply expiry to projection-owned monthly watchers.
+- Update the binding six-destination navigation documentation and localize the AI section label in en/es/ar.
+- Run typecheck, lint, full tests, and build, then commit and push one PR #11 follow-up.
+
+Result:
+- [x] Current-size View / Edit immediately selects Overview, opens editing, and updates the query; other sizes still navigate by item ID.
+- [x] Re-derived expired deterministic tasks reactivate and clear their old resolution, while handled/current lifecycle states remain preserved.
+- [x] Only projection-owned monthly `supplies:{monthKey}` watchers expire automatically; real `supply:{itemId}` work survives.
+- [x] Binding navigation docs now specify six destinations and the localized AI brand label is used in en/es/ar.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.

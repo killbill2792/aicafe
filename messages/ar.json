@@ -5,6 +5,8 @@
   "Nav": {
     "ariaLabel": "التنقل الرئيسي",
     "home": "الرئيسية",
+    "team": "فريق الذكاء",
+    "teamShort": "الفريق",
     "money": "المال",
     "menu": "القائمة",
     "staff": "الموظفون",
@@ -303,7 +305,9 @@
     "multipleSizesNeedReview": "{count, plural, one {حجم واحد يحتاج مراجعة} other {# أحجام تحتاج مراجعة}}",
     "priceRange": "{low}–{high}",
     "sizeCostToMake": "تكلفة التحضير {amount}",
-    "viewEditSize": "عرض / تعديل"
+    "viewEditSize": "عرض / تعديل",
+    "photoPlaceholder": "صورة المنتج لاحقاً",
+    "selectedSize": "الحجم المحدد"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -707,6 +711,7 @@
   },
   "Operations": {
     "teamTitle": "فريقك بالذكاء الاصطناعي",
+    "brandLabel": "الذكاء الاصطناعي · أرباح المقهى",
     "aiLabel": "زملاء ذكاء اصطناعي يستخدمون حقائق المقهى الموثوقة نفسها",
     "alexRole": "مستشار التسعير",
     "oliviaRole": "منسقة الموظفين",
@@ -735,5 +740,6 @@
     "estimate": "تقديري",
     "benchmarkPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وافتراضات معيارية للمقاهي.",
     "businessPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وسجل المبيعات والتكاليف المتاح للمقهى."
+    ,"inboxStatusLabel":"حالة المهام","staffTask":"تغطية الموظفين تحتاج إلى قرار","reviewItem":"راجع {item}","openStaff":"إدارة الموظفين","openBills":"فتح الفواتير","openIngredientCosts":"فتح تكاليف المكونات","summaryCounts":"{needs} تحتاج إليك · {handled} تم التعامل معها · {watching} قيد المراقبة","openTeam":"فتح الفريق","allTeam":"كل الفريق","keepCurrent":"الإبقاء على الحالي","later":"لاحقاً","decisionError":"تعذر حفظ الاختيار. حاول مرة أخرى."
   }
 }

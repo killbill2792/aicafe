@@ -5,6 +5,8 @@
   "Nav": {
     "ariaLabel": "Primary navigation",
     "home": "Home",
+    "team": "AI Team",
+    "teamShort": "Team",
     "money": "Money",
     "menu": "Menu",
     "staff": "Staff",
@@ -303,7 +305,9 @@
     "multipleSizesNeedReview": "{count, plural, one {# size needs review} other {# sizes need review}}",
     "priceRange": "{low}–{high}",
     "sizeCostToMake": "Costs {amount} to make",
-    "viewEditSize": "View / Edit"
+    "viewEditSize": "View / Edit",
+    "photoPlaceholder": "Product photo coming later",
+    "selectedSize": "Selected size"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -707,6 +711,7 @@
   },
   "Operations": {
     "teamTitle": "Your AI team",
+    "brandLabel": "AI · CAFÉ PROFIT",
     "aiLabel": "AI teammates using the same trusted café facts",
     "alexRole": "Pricing Coach",
     "oliviaRole": "Staff Coordinator",
@@ -735,5 +740,6 @@
     "estimate": "Estimate",
     "benchmarkPricingEvidence": "Based on this item's recipe cost and café benchmark assumptions.",
     "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history."
+    ,"inboxStatusLabel":"Task status","staffTask":"Staff coverage needs a decision","reviewItem":"Review {item}","openStaff":"Manage staff","openBills":"Open bills","openIngredientCosts":"Open ingredient costs","summaryCounts":"{needs} need you · {handled} handled · {watching} watching","openTeam":"Open team","allTeam":"All team","keepCurrent":"Keep current","later":"Later","decisionError":"We couldn't save that choice. Try again."
   }
 }

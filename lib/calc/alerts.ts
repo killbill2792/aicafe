@@ -30,9 +30,14 @@ export function mealBreakStatus(timecard: Timecard, now: Date = new Date()): Mea
   const clockOutMs = timecard.clockOut ? new Date(timecard.clockOut).getTime() : now.getTime();
   const shiftHours = Math.max(0, clockOutMs - clockInMs) / 3_600_000;
 
+  // A materialized schedule can estimate wages, but it cannot prove that work happened or that a
+  // planned break was taken/missed. Real compliance state only comes from confirmed timecards.
+  if (timecard.scheduleId) return { shiftHours, warn: false, missed: false, penaltyCents: 0 };
+
   const tookQualifyingBreak = timecard.breaks.some((b) => {
     const breakStartHours = (new Date(b.start).getTime() - clockInMs) / 3_600_000;
-    return breakStartHours <= 5;
+    const breakMinutes = (new Date(b.end).getTime() - new Date(b.start).getTime()) / 60_000;
+    return breakStartHours <= 5 && breakMinutes >= 30;
   });
 
   const warn = shiftHours >= 4.5 && !tookQualifyingBreak;

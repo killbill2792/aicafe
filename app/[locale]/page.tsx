@@ -28,9 +28,9 @@ import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
 import GettingStartedCard from "@/components/home/GettingStartedCard";
 import PageShell from "@/components/shared/PageShell";
-import AITeamCard from "@/components/operations/AITeamCard";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
-import { buildOperationsTeamViewModel } from "@/lib/viewmodels/operationsTeam";
+import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
+import { syncAndGetOperatingTasks } from "@/lib/data/operatingTasks";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -52,6 +52,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const tCommon = await getTranslations("Common");
   const tOperations = await getTranslations("Operations");
   const posStatus = await getPosConnectionStatus();
+  const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
+  const persistedTasks = await syncAndGetOperatingTasks([...derivedTeam.needsYou, ...derivedTeam.handled, ...derivedTeam.watching]);
+  const team = projectOperatingTasks(persistedTasks.tasks);
 
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
   const heroTone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
@@ -178,18 +181,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         icon={glanceCopy.icon}
       />
 
-      <AITeamCard
-        team={buildOperationsTeamViewModel(snapshot, menu)}
-        major
-        copy={{
-          title: tOperations("teamTitle"),
-          aiLabel: tOperations("aiLabel"),
-          names: { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" },
-          roles: { alex: tOperations("alexRole"), olivia: tOperations("oliviaRole"), maya: tOperations("mayaRole"), leo: tOperations("leoRole") },
-          status: (member) => member.statusKey === "prices" ? tOperations("prices", { count: member.attentionCount }) : member.statusKey === "attention" ? tOperations("attention", { count: member.attentionCount }) : member.statusKey === "coverage_clear" ? tOperations("coverageClear") : tOperations("supplies"),
-        }}
-      />
+      <Link href="/operations" className="flex min-h-20 items-center justify-between gap-3 rounded-card-lg border border-[#D5C7B5] bg-[#EEE5D8] p-[18px] text-ink no-underline">
+        <span><span className="block text-sm font-bold text-ink-muted">{tOperations("brandLabel")}</span><span className="block text-xl font-bold">{tOperations("teamTitle")}</span><span className="mt-1 block text-[15px] text-ink-muted">{tOperations("summaryCounts", { needs: team.needsYou.length, handled: team.handled.length, watching: team.watching.length })}</span></span>
+        <span className="font-bold text-good">{tOperations("openTeam")}</span>
+      </Link>
 
+      <div className="grid gap-3 md:grid-cols-2">
       <ProfitCostsCard
         step={1}
         title={t("profitAndCosts")}
@@ -226,6 +223,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         leakingCents={vm.alerts.leakingCents}
         leakingLabel={t("leakingThisMonth")}
       />
+      </div>
 
       <AddCostFab />
     </PageShell>
