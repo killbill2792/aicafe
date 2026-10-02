@@ -246,7 +246,8 @@
     "tabSizes": "الأحجام",
     "costsAboutToMake": "تكلفة إعداده حوالي {amount}",
     "tabPricing": "التسعير",
-    "setupRecipeBanner": "أضف الآن ما يدخل في هذا المنتج."
+    "setupRecipeBanner": "أضف الآن ما يدخل في هذا المنتج.",
+    "fromPrice": "من {amount}"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -317,7 +318,9 @@
     "ingredientSearchLabel": "البحث عن المكوّنات",
     "noMatchingIngredients": "لا توجد مكوّنات مطابقة لهذا البحث",
     "existingTag": "موجود",
-    "whyLabel": "لماذا؟"
+    "whyLabel": "لماذا؟",
+    "change": "تغيير",
+    "chooseExisting": "اختيار مكوّن موجود"
   },
   "Staff": {
     "title": "الموظفون",

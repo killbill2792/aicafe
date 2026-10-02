@@ -246,7 +246,8 @@
     "tabSizes": "Tamaños",
     "costsAboutToMake": "Cuesta aproximadamente {amount} hacerlo",
     "tabPricing": "Precios",
-    "setupRecipeBanner": "Ahora agrega lo que lleva este producto."
+    "setupRecipeBanner": "Ahora agrega lo que lleva este producto.",
+    "fromPrice": "desde {amount}"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -317,7 +318,9 @@
     "ingredientSearchLabel": "Buscar ingredientes",
     "noMatchingIngredients": "Ningún ingrediente coincide con esa búsqueda",
     "existingTag": "Existente",
-    "whyLabel": "¿Por qué?"
+    "whyLabel": "¿Por qué?",
+    "change": "Cambiar",
+    "chooseExisting": "Elegir ingrediente existente"
   },
   "Staff": {
     "title": "Personal",

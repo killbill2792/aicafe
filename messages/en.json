@@ -246,7 +246,8 @@
     "tabSizes": "Sizes",
     "costsAboutToMake": "Costs about {amount} to make",
     "tabPricing": "Pricing",
-    "setupRecipeBanner": "Now add what goes into this product."
+    "setupRecipeBanner": "Now add what goes into this product.",
+    "fromPrice": "from {amount}"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -317,7 +318,9 @@
     "ingredientSearchLabel": "Search ingredients",
     "noMatchingIngredients": "No ingredients match that search",
     "existingTag": "Existing",
-    "whyLabel": "Why?"
+    "whyLabel": "Why?",
+    "change": "Change",
+    "chooseExisting": "Choose existing ingredient"
   },
   "Staff": {
     "title": "Staff",

@@ -5,6 +5,42 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu PR #5 review fixes: ingredient-picker states, grouped sizes (2026-10-01 — code complete, pushed to menu-visual-refresh)
+
+Two UI-only mismatches with the approved Menu reference, found in PR #5 final review. Same branch,
+no schema/calculation/action changes.
+
+- **Ingredient picker** (`RecipeEditor.tsx`): previously showed the new-ingredient name/base-unit
+  fields any time no ingredient was selected, including while the owner was still typing a search —
+  defeating the existing-first flow. Now an explicit `addingNew` flag drives three states: search
+  (existing results only) → existing selected (just quantity/unit, with a "Change" control back to
+  search) → `+ New ingredient` (name + base unit + quantity/unit, with a "Choose existing
+  ingredient" control back to search). Typing in search no longer touches this flag. Shot/pump/fl oz
+  conversion prompts and server validation untouched — verified a shot-based new ingredient still
+  prompts for its conversion, and a real add/remove round-trip still persists correctly.
+- **Grouped sizes** (`MenuCatalog.tsx`): the catalog showed one row per `menu_items` row, so a
+  2-size product duplicated as two rows. New pure, tested helper
+  `lib/viewmodels/menuCatalogViewModel.ts` (`groupMenuCatalogItems`, colocated
+  `menuCatalogViewModel.test.ts`, 10 cases) groups an already-filtered item list by `baseName`
+  within the same active/archived bucket — sizes never merge across active/archived — and picks a
+  deterministic representative (cheapest, tied-broken by id) for the "from $X" price and the tap
+  target. A single-size product renders exactly as before (same chip, same price); only a real
+  multi-size product gets "12 oz · 16 oz" / "from $X" and the conservative any-size-needs-attention
+  status. Database and `menu_items` rows unchanged — sizes are still separate rows everywhere else;
+  grouping only reshapes an already-loaded list for display. Also extracted `isPricingHealthy` (the
+  boolean behind the existing chip) into the same viewmodel so the per-item chip and the new
+  grouped-product status can never disagree. Search and the owner-facing menu-group tabs still
+  filter per item before grouping, so they keep working unchanged.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (112/112 — 10 new, rest unchanged),
+`npm run build` all clean. Live-verified against the mail2raj27 test account: confirmed the
+Americano's two sizes now render as one "Americano / 16 · 20 / Worth reviewing / from $15.00" row
+(mobile and desktop grid) and open the cheaper $15 size; clicked through the picker's three states
+end to end (search → select Milk → Change back to search → + New ingredient with a shot-unit
+conversion prompt → Choose existing ingredient back to search, fields cleared); added and then
+removed a real "Milk 60 ml" line on a real recipe to confirm the full add/delete round-trip still
+works, leaving the test account's data exactly as it was before.
+
 ## Menu creation-flow refinement (2026-10-01 — code complete, pushed to menu-visual-refresh, PR not yet opened)
 
 Follow-up to the visual refinement pass below — navigation/presentation only, same branch, no
