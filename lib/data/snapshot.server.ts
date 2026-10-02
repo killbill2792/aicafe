@@ -64,7 +64,7 @@ export async function getBusinessSnapshotFromDb(
       .eq("business_id", businessId)
       .gte("spent_on", monthStart)
       .lte("spent_on", todayDateStr),
-    supabase.from("expenses").select("category_code").eq("business_id", businessId).lt("spent_on", monthStart),
+    supabase.from("expenses").select("category_code").eq("business_id", businessId).gte("spent_on", prevMonthStart).lte("spent_on", prevMonthEnd),
     supabase
       .from("recovery_order")
       .select("bucket_code, position")
@@ -89,9 +89,9 @@ export async function getBusinessSnapshotFromDb(
         (r) => r.category_code === code && r.active_from <= todayDateStr && (!r.active_to || r.active_to >= todayDateStr),
       );
       const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
-      const isExpected = isExpectedCostCategory({
+      const isExpected = isExpectedCostCategory(code, {
         hasActiveRecurring: activeRecurring.length > 0,
-        hasPriorActual: (priorExpenseResult.data ?? []).some((expense) => expense.category_code === code),
+        hadActualPreviousMonth: (priorExpenseResult.data ?? []).some((expense) => expense.category_code === code),
       });
 
       if (expensesThisMonth.length > 0) {

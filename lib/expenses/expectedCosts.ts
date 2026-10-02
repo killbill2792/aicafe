@@ -3,12 +3,15 @@ import type { RunningCostLine } from "@/lib/data/types";
 
 export type CostExpectationEvidence = {
   hasActiveRecurring: boolean;
-  hasPriorActual: boolean;
+  hadActualPreviousMonth: boolean;
   explicitlyExpected?: boolean;
 };
 
-export function isExpectedCostCategory(evidence: CostExpectationEvidence): boolean {
-  return evidence.hasActiveRecurring || evidence.hasPriorActual || evidence.explicitlyExpected === true;
+const REGULAR_MONTHLY_CATEGORIES = new Set<ExpenseCategoryCode>(["rent", "utilities_power", "water", "internet", "insurance", "loan", "software", "supplies"]);
+
+export function isExpectedCostCategory(category: ExpenseCategoryCode, evidence: CostExpectationEvidence): boolean {
+  return evidence.hasActiveRecurring || evidence.explicitlyExpected === true ||
+    (REGULAR_MONTHLY_CATEGORIES.has(category) && evidence.hadActualPreviousMonth);
 }
 
 export function expectedMissingCostLines(lines: RunningCostLine[]): RunningCostLine[] {

@@ -3,9 +3,15 @@ import { expectedMissingCostLines, isExpectedCostCategory, missingCostDestinatio
 
 describe("expected running costs", () => {
   it("requires evidence before treating an unused category as missing", () => {
-    expect(isExpectedCostCategory({ hasActiveRecurring: false, hasPriorActual: false })).toBe(false);
-    expect(isExpectedCostCategory({ hasActiveRecurring: false, hasPriorActual: true })).toBe(true);
+    expect(isExpectedCostCategory("repairs", { hasActiveRecurring: false, hadActualPreviousMonth: false })).toBe(false);
     expect(expectedMissingCostLines([{ categoryCode: "repairs", label: "Repairs", amountCents: 0, isEstimate: false, isMissing: true, isExpected: false }])).toEqual([]);
+  });
+
+  it("does not make sporadic costs permanent, but keeps deterministic monthly expectations", () => {
+    expect(isExpectedCostCategory("repairs", { hasActiveRecurring: false, hadActualPreviousMonth: true })).toBe(false);
+    expect(isExpectedCostCategory("other", { hasActiveRecurring: false, hadActualPreviousMonth: true })).toBe(false);
+    expect(isExpectedCostCategory("rent", { hasActiveRecurring: true, hadActualPreviousMonth: false })).toBe(true);
+    expect(isExpectedCostCategory("water", { hasActiveRecurring: false, hadActualPreviousMonth: true })).toBe(true);
   });
 
   it("routes recurring and variable categories to their real owner workflows", () => {

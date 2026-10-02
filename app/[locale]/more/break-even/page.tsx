@@ -7,6 +7,7 @@ import BackHeader from "@/components/shared/BackHeader";
 import Money from "@/components/shared/Money";
 import { formatCents } from "@/lib/calc";
 import PageShell from "@/components/shared/PageShell";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export default async function BreakEvenPage() {
       {vm.unavailableReason ? <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[22px]">
         <h2 className="text-xl font-bold text-ink">{t("notEnoughData")}</h2>
         <p className="text-[17px] text-ink-muted">{vm.unavailableReason === "missing_costs" ? t("missingCostsReason", { categories: vm.missingCostLabels.join(", ") }) : t("missingSalesReason")}</p>
-        <a href={vm.unavailableReason === "missing_costs" ? "/more/bills" : "/more/uploads/sales"} className="flex min-h-12 items-center justify-center rounded-full bg-ink px-4 font-bold text-paper">{vm.unavailableReason === "missing_costs" ? t("addMissingCosts") : t("addSalesData")}</a>
+        <a href={vm.unavailableReason === "missing_costs" && vm.missingCosts[0] ? missingCostDestination(vm.missingCosts[0].categoryCode) : "/more/uploads/sales"} className="flex min-h-12 items-center justify-center rounded-full bg-ink px-4 font-bold text-paper">{vm.unavailableReason === "missing_costs" ? t("addMissingCosts") : t("addSalesData")}</a>
       </section> : <>
       <section className="flex flex-col items-center gap-2 rounded-card-lg bg-card p-[22px] text-center">
         <span className="text-base font-semibold text-ink-muted">{t("everyDay")}</span>
@@ -72,7 +73,7 @@ export default async function BreakEvenPage() {
       </section>
       </>}
 
-      <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+      {!vm.unavailableReason && <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("whatIf")}</h2>
         {vm.whatIfs.map((w) => {
           const icon = WHATIF_ICONS[w.key];
@@ -89,7 +90,7 @@ export default async function BreakEvenPage() {
           );
         })}
         <span className="text-[13px] text-ink-muted">{t("whatIfFooter")}</span>
-      </section>
+      </section>}
     </PageShell>
   );
 }

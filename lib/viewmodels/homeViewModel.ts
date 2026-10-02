@@ -83,7 +83,8 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   // certainly a freshly-created café that hasn't gone through (or finished) onboarding yet, not a
   // real café having a quiet month — surface a way back in rather than a wall of $0.00 with no
   // explanation (found live: a new signup skipped onboarding and had no obvious way back).
-  const isGettingStarted = last28Net === 0 && missingCategories.length === snapshot.runningCostLines.length;
+  const hasKnownRunningCostSetup = snapshot.runningCostLines.some((line) => line.amountCents > 0 || line.isExpected === true);
+  const isGettingStarted = last28Net === 0 && !hasKnownRunningCostSetup;
 
   return {
     period,

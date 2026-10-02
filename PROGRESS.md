@@ -5,6 +5,21 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #12 Phase 4A final correctness follow-up (2026-10-02 — code complete)
+
+1. Suppress all Break-even what-if output without a valid base and make the missing-cost action use
+   the first named category's real workflow.
+2. Limit history-based cost expectations to the immediately previous month and regular categories,
+   while restoring fresh-café Getting Started detection from actual setup data.
+3. Add focused regressions, run typecheck/lint/full tests/build, and commit one small follow-up. No
+   migrations, pricing/recipe changes, or dependencies.
+
+Completed with a previous-month/regular-category expectation rule shared by the snapshot and alert
+generation, category-aware Break-even recovery, no what-if projection without a valid baseline, and
+fresh-café detection based on the absence of known setup data. `npx tsc --noEmit`, `npm run lint`,
+and all 285 tests pass. `npm run build` remains blocked only by the environment's inability to fetch
+the existing Google Fonts.
+
 ## PR #12 Phase 4A correctness follow-up (2026-10-02 — code complete)
 
 1. Share expected-cost and category-destination rules across Break-even, Home, Leo, alerts, Bills,

@@ -63,7 +63,7 @@ async function generateMissingBillAlerts(supabase: SupabaseClient, businessId: s
   let created = 0;
   const validKeys = new Set<string>();
   for (const code of RUNNING_COST_CODES) {
-    const expected = isExpectedCostCategory({ hasActiveRecurring: hasRecurringSet.has(code), hasPriorActual: lastMonthSet.has(code) });
+    const expected = isExpectedCostCategory(code, { hasActiveRecurring: hasRecurringSet.has(code), hadActualPreviousMonth: lastMonthSet.has(code) });
     const fires = expected && missingBillAlert({
       hasRecurring: hasRecurringSet.has(code),
       hadActualLastMonth: lastMonthSet.has(code),
