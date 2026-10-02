@@ -11,6 +11,7 @@ import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewm
 import { formatCents } from "@/lib/calc";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
+import PriceReviewActions from "@/components/operations/PriceReviewActions";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -31,7 +32,8 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
-    <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} />
+    <Link href={{ pathname: "/operations", query: { status: selectedStatus } }} aria-current={!selectedAgent ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-full border px-4 font-bold no-underline ${!selectedAgent ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}>{t("allTeam")}</Link>
+    <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={selectedStatus} />
     <nav className="grid grid-cols-3 gap-1 rounded-2xl bg-card p-1" aria-label={t("inboxStatusLabel")}>
       {(["needs_you", "handled", "watching"] as const).map((value) => <Link key={value} href={{ pathname: "/operations", query: { ...(selectedAgent ? { agent: selectedAgent } : {}), status: value } }} aria-current={selectedStatus === value ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-sm font-bold no-underline ${selectedStatus === value ? "bg-ink text-paper" : "text-ink-muted"}`}>{t(value === "needs_you" ? "needsYou" : value)} {lists[value].length}</Link>)}
     </nav>
@@ -59,6 +61,7 @@ function TaskList({ tasks, empty, names, t, category }: { tasks: OperatingTask[]
       <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="small"/><p className={`font-bold ${identity.text}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
       <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
+      {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} errorLabel={t("decisionError")} />}
     </article>;
   })}</section>;
 }

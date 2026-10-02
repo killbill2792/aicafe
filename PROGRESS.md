@@ -1658,3 +1658,18 @@ Phase 3 result:
 - [x] Product Overview now includes size, price, recipe cost/completeness, pricing state, sales, and a future-photo placeholder without schema changes.
 - [x] Predicted schedule rows still estimate wages but cannot create real meal-break warnings/alerts; confirmed shifts retain 4.5h/5h thresholds and qualifying-break suppression.
 - [x] Typecheck, lint, and full tests pass. Build is blocked only by the existing environment failure to fetch the three Google fonts; no browser runtime is installed for screenshots.
+
+### Phase 3 correctness follow-up (PR #11)
+
+Plan:
+- Make legacy bare-number and custom size ordering deterministic by normalized label and stable item ID.
+- Reconcile managed deterministic tasks by refreshing current facts and expiring obsolete unresolved tasks without touching staff/future external tasks or handled history.
+- Add validated owner Keep current/Later actions using the existing task response lifecycle and migration-23 tables.
+- Preserve the selected inbox status across teammate and All team navigation, then run all required checks and commit one PR #11 follow-up.
+
+Result:
+- [x] Bare numeric, same-unit, named, and custom sizes now sort independently of selected-item input order, with stable ID tie-breaking.
+- [x] Obsolete unresolved managed tasks expire; handled history and external staff tasks remain untouched; refreshed deterministic facts override stale facts while workflow-only payload survives.
+- [x] Alex cards support tenant-validated Keep current and Later decisions through the existing response lifecycle, with compensating cleanup if the guarded task update fails.
+- [x] Teammate and All team links retain the active status tab.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.

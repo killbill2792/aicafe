@@ -739,6 +739,6 @@
     "estimate": "تقديري",
     "benchmarkPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وافتراضات معيارية للمقاهي.",
     "businessPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وسجل المبيعات والتكاليف المتاح للمقهى."
-    ,"inboxStatusLabel":"حالة المهام","staffTask":"تغطية الموظفين تحتاج إلى قرار","reviewItem":"راجع {item}","openStaff":"إدارة الموظفين","openBills":"فتح الفواتير","openIngredientCosts":"فتح تكاليف المكونات","summaryCounts":"{needs} تحتاج إليك · {handled} تم التعامل معها · {watching} قيد المراقبة","openTeam":"فتح الفريق"
+    ,"inboxStatusLabel":"حالة المهام","staffTask":"تغطية الموظفين تحتاج إلى قرار","reviewItem":"راجع {item}","openStaff":"إدارة الموظفين","openBills":"فتح الفواتير","openIngredientCosts":"فتح تكاليف المكونات","summaryCounts":"{needs} تحتاج إليك · {handled} تم التعامل معها · {watching} قيد المراقبة","openTeam":"فتح الفريق","allTeam":"كل الفريق","keepCurrent":"الإبقاء على الحالي","later":"لاحقاً","decisionError":"تعذر حفظ الاختيار. حاول مرة أخرى."
   }
 }

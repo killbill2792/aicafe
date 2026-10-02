@@ -34,13 +34,17 @@ describe("isAmbiguousNumericSizeLabel", () => {
 
 describe("stableSortSizes", () => {
   it("keeps numeric sizes ascending independently of which item is selected first", () => {
-    const sizes = [{ sizeLabel: "20 oz", id: "20" }, { sizeLabel: "16 oz", id: "16" }];
-    expect(stableSortSizes(sizes).map((size) => size.id)).toEqual(["16", "20"]);
+    const selected20First = [{ sizeLabel: "20", id: "size-20" }, { sizeLabel: "16", id: "size-16" }];
+    const selected16First = [selected20First[1], selected20First[0]];
+    expect(stableSortSizes(selected20First).map((size) => size.sizeLabel)).toEqual(["16", "20"]);
+    expect(stableSortSizes(selected16First).map((size) => size.sizeLabel)).toEqual(["16", "20"]);
+    expect(stableSortSizes([{ sizeLabel: "20 oz", id: "20" }, { sizeLabel: "12 oz", id: "12" }, { sizeLabel: "16 oz", id: "16" }]).map((size) => size.sizeLabel)).toEqual(["12 oz", "16 oz", "20 oz"]);
   });
 
   it("orders common named sizes and keeps unfamiliar labels stable", () => {
     expect(stableSortSizes([{ sizeLabel: "Large", id: "l" }, { sizeLabel: "Small", id: "s" }]).map((size) => size.id)).toEqual(["s", "l"]);
     expect(stableSortSizes([{ sizeLabel: "Carafe", id: "a" }, { sizeLabel: "For two", id: "b" }]).map((size) => size.id)).toEqual(["a", "b"]);
+    expect(stableSortSizes([{ sizeLabel: "Custom", id: "z" }, { sizeLabel: "custom", id: "a" }]).map((size) => size.id)).toEqual(["a", "z"]);
   });
 });
 

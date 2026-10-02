@@ -3,6 +3,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import type { OperatingTask, OperatingTaskResponse } from "@/lib/operating/tasks";
+import { reconcileOperatingTasks } from "@/lib/operating/reconcileTasks";
 
 type TaskRow = {
   id: string; business_id: string; agent_id: OperatingTask["agentId"]; kind: OperatingTask["kind"];
@@ -31,12 +32,11 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
   const businessId = await getActiveBusinessId(user.id);
   if (derived.some((task) => task.businessId !== businessId)) throw new Error("Operating task business mismatch");
 
-  if (derived.length > 0) {
-    const { data: existing, error: existingError } = await supabase.from("operating_tasks").select("id, payload").eq("business_id", businessId).in("id", derived.map((task) => task.id));
+  {
+    const { data: existingRows, error: existingError } = await supabase.from("operating_tasks").select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at").eq("business_id", businessId);
     if (existingError) throw existingError;
-    const existingPayload = new Map((existing ?? []).map((row) => [row.id, row.payload as OperatingTask["payload"]]));
-    const existingIds = new Set(existingPayload.keys());
-    const missing = derived.filter((task) => !existingIds.has(task.id)).map((task) => ({
+    const plan = reconcileOperatingTasks((existingRows as TaskRow[]).map(fromRow), derived, new Date());
+    const missing = plan.insert.map((task) => ({
       id: task.id, business_id: businessId, agent_id: task.agentId, kind: task.kind,
       entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, status: task.status,
       payload: task.payload, confidence: task.confidence, evidence: task.evidence, created_at: task.createdAt,
@@ -45,11 +45,16 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
       const { error } = await supabase.from("operating_tasks").upsert(missing, { onConflict: "business_id,id", ignoreDuplicates: true });
       if (error) throw error;
     }
-    await Promise.all(derived.filter((task) => existingIds.has(task.id)).map(async (task) => {
+    await Promise.all(plan.refresh.map(async (task) => {
       const { error } = await supabase.from("operating_tasks").update({ agent_id: task.agentId, kind: task.kind,
-        entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, payload: { ...task.payload, ...existingPayload.get(task.id) },
+        entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, payload: task.payload,
         confidence: task.confidence, evidence: task.evidence, updated_at: new Date().toISOString() })
         .eq("business_id", businessId).eq("id", task.id);
+      if (error) throw error;
+    }));
+    await Promise.all(plan.expire.map(async (task) => {
+      const { error } = await supabase.from("operating_tasks").update({ status: "expired", resolved_at: task.resolvedAt, updated_at: task.resolvedAt })
+        .eq("business_id", businessId).eq("id", task.id).in("status", ["watching", "needs_response", "needs_owner"]);
       if (error) throw error;
     }));
   }

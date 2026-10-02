@@ -739,6 +739,6 @@
     "estimate": "Estimación",
     "benchmarkPricingEvidence": "Basado en el costo de la receta de este producto y en supuestos de referencia para cafeterías.",
     "businessPricingEvidence": "Basado en el costo de la receta y el historial disponible de ventas y costos del café."
-    ,"inboxStatusLabel":"Estado de tareas","staffTask":"La cobertura de personal necesita una decisión","reviewItem":"Revisar {item}","openStaff":"Gestionar personal","openBills":"Abrir facturas","openIngredientCosts":"Abrir costos de ingredientes","summaryCounts":"{needs} te necesitan · {handled} resueltas · {watching} vigiladas","openTeam":"Abrir equipo"
+    ,"inboxStatusLabel":"Estado de tareas","staffTask":"La cobertura de personal necesita una decisión","reviewItem":"Revisar {item}","openStaff":"Gestionar personal","openBills":"Abrir facturas","openIngredientCosts":"Abrir costos de ingredientes","summaryCounts":"{needs} te necesitan · {handled} resueltas · {watching} vigiladas","openTeam":"Abrir equipo","allTeam":"Todo el equipo","keepCurrent":"Mantener actual","later":"Más tarde","decisionError":"No pudimos guardar esa opción. Inténtalo de nuevo."
   }
 }

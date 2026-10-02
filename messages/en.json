@@ -739,6 +739,6 @@
     "estimate": "Estimate",
     "benchmarkPricingEvidence": "Based on this item's recipe cost and café benchmark assumptions.",
     "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history."
-    ,"inboxStatusLabel":"Task status","staffTask":"Staff coverage needs a decision","reviewItem":"Review {item}","openStaff":"Manage staff","openBills":"Open bills","openIngredientCosts":"Open ingredient costs","summaryCounts":"{needs} need you · {handled} handled · {watching} watching","openTeam":"Open team"
+    ,"inboxStatusLabel":"Task status","staffTask":"Staff coverage needs a decision","reviewItem":"Review {item}","openStaff":"Manage staff","openBills":"Open bills","openIngredientCosts":"Open ingredient costs","summaryCounts":"{needs} need you · {handled} handled · {watching} watching","openTeam":"Open team","allTeam":"All team","keepCurrent":"Keep current","later":"Later","decisionError":"We couldn't save that choice. Try again."
   }
 }
