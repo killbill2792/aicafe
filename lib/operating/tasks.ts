@@ -59,7 +59,14 @@ export function pricingTask(params: { businessId: string; itemId: string; itemNa
     entityType: "menu_item",
     entityId: params.itemId,
     status: "needs_owner",
-    payload: { itemName: params.itemName, currentPriceCents: result.currentPriceCents, suggestedPriceCents: result.recommendedPriceCents, explanationCode: result.explanationCode },
+    payload: {
+      itemName: params.itemName,
+      currentPriceCents: result.currentPriceCents,
+      suggestedPriceCents: result.recommendedPriceCents,
+      explanationCode: result.explanationCode,
+      calculationMode: result.calculationMode,
+      pricingIsEstimate: result.calculationMode === "BENCHMARK" || result.dataQuality.estimatedInputs.length > 0,
+    },
     confidence: result.confidence.toLowerCase() as Confidence,
     evidence: [{ source: "PricingEngine", facts: { productCostCents: result.productCostCents, calculationMode: result.calculationMode, unitsEvidenceAvailable: result.calculationMode !== "BENCHMARK" } }],
     createdAt: (params.now ?? new Date()).toISOString(),
@@ -84,7 +91,8 @@ export function applyTaskResponse(task: OperatingTask, response: OperatingTaskRe
   }
   if (task.kind === "supply_check" && ["plenty", "getting_low", "almost_out"].includes(response.responseCode)) return { ...task, status: "watching", payload: { ...task.payload, qualitativeStatus: response.responseCode, responderId: response.respondentId ?? null, respondedAt: response.respondedAt } };
   if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "later") return { ...task, status: "watching" };
-  if (task.kind === "price_review" && response.actor === "owner" && ["use_price", "keep_price"].includes(response.responseCode)) return { ...task, status: "handled", payload: { ...task.payload, ownerChoice: response.responseCode, priceAppliedToPos: false }, resolvedAt: response.respondedAt };
+  if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "use_price") return { ...task, status: "watching", payload: { ...task.payload, ownerChoice: response.responseCode, acceptedSuggestedPriceCents: task.payload.suggestedPriceCents, awaitingPriceApplication: true, priceAppliedToPos: false } };
+  if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "keep_price") return { ...task, status: "handled", payload: { ...task.payload, ownerChoice: response.responseCode, awaitingPriceApplication: false, priceAppliedToPos: false }, resolvedAt: response.respondedAt };
   return task;
 }
 
@@ -98,6 +106,14 @@ export function approveStaffCoverage(task: OperatingTask, approvedAt: string): O
 export function completeStaffCoverageApplication(task: OperatingTask, result: { actor: "system"; succeeded: boolean; completedAt: string; scheduleActionId?: string }): OperatingTask {
   if (task.kind !== "staff_coverage" || task.status !== "needs_owner" || task.payload.ownerApproved !== true || !result.succeeded) return task;
   return { ...task, status: "handled", payload: { ...task.payload, scheduleApplied: true, scheduleActionId: result.scheduleActionId ?? null }, resolvedAt: result.completedAt };
+}
+
+/** Completes an accepted recommendation only after a trusted read observes the requested price. */
+export function completeVerifiedPriceApplication(task: OperatingTask, observation: { actor: "system"; observedPriceCents: number; verifiedAt: string; source: string }): OperatingTask {
+  const acceptedPrice = task.payload.acceptedSuggestedPriceCents;
+  if (task.kind !== "price_review" || task.status !== "watching" || task.payload.awaitingPriceApplication !== true || typeof acceptedPrice !== "number") return task;
+  if (observation.observedPriceCents !== acceptedPrice) return { ...task, payload: { ...task.payload, lastObservedPriceCents: observation.observedPriceCents, lastPriceObservationAt: observation.verifiedAt, priceAppliedToPos: false } };
+  return { ...task, status: "handled", payload: { ...task.payload, awaitingPriceApplication: false, priceAppliedToPos: true, verifiedPriceSource: observation.source, lastObservedPriceCents: observation.observedPriceCents }, resolvedAt: observation.verifiedAt };
 }
 
 export function expireUnansweredTask(task: OperatingTask, now: Date, expiresAt: Date): OperatingTask {

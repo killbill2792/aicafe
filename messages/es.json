@@ -708,6 +708,9 @@
     "mayaWatching": "Vigilando los costos ingresados de vasos e ingredientes.",
     "inventoryUnavailable": "El inventario no está conectado, así que Maya no adivinará existencias.",
     "transportUnavailable": "La mensajería al personal no está conectada. Olivia puede estructurar solicitudes, pero todavía no enviarlas.",
-    "focusedOn": "Viendo a {name} · {role}"
+    "focusedOn": "Viendo a {name} · {role}",
+    "estimate": "Estimación",
+    "benchmarkPricingEvidence": "Basado en el costo de la receta de este producto y en supuestos de referencia para cafeterías.",
+    "businessPricingEvidence": "Basado en el costo de la receta y el historial disponible de ventas y costos del café."
   }
 }

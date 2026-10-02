@@ -1568,3 +1568,19 @@ Phase 1 review result:
 - [x] Teammate links use validated `?agent=` navigation with safe full-inbox fallback.
 - [x] Staff confirmation, owner approval, and verified schedule-action completion are distinct; only successful completion marks coverage handled/applied.
 - [x] Typecheck, lint, and 245 tests pass. Build remains blocked only by failed network downloads for the existing Google fonts.
+
+## Phase 1 final foundation follow-up (PR #8)
+
+Plan:
+- Label benchmark-derived Alex recommendations as estimates while preserving deterministic pricing mode, confidence, and evidence.
+- Carry Leo's stable missing-cost category code and localize it at render time.
+- Persist response actor provenance and actor/employee consistency in migration 23.
+- Keep accepted price changes incomplete until a later deterministic observation verifies the selling price changed.
+- Add focused regressions and rerun typecheck, lint, tests, and build.
+
+Phase 1 final foundation result:
+- [x] Benchmark pricing tasks carry mode/estimate metadata and render localized Estimate treatment with benchmark-only wording.
+- [x] Leo stores stable category codes and resolves localized labels only in the operations UI.
+- [x] Migration 23 persists actor type and enforces employee identity for employee responses and no employee identity for owner responses.
+- [x] Use-price stays Watching until a trusted later observation matches the accepted recommendation; keep-current can complete immediately.
+- [x] Typecheck, lint, and 248 tests pass. Build is blocked only by network failures fetching the three existing Google fonts.

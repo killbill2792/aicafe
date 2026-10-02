@@ -26,11 +26,13 @@ create table if not exists operating_task_responses (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references businesses on delete cascade,
   task_id text not null,
+  actor_type text not null check (actor_type in ('employee', 'owner')),
   employee_id uuid,
   respondent_name text,
   response_code text not null,
   short_text text,
   responded_at timestamptz not null default now(),
+  check ((actor_type = 'employee' and employee_id is not null) or (actor_type = 'owner' and employee_id is null)),
   foreign key (business_id, task_id) references operating_tasks (business_id, id) on delete cascade,
   foreign key (business_id, employee_id) references employees (business_id, id) on delete restrict
 );

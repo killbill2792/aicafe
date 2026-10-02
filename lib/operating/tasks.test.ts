@@ -8,6 +8,7 @@ import {
   applyTaskResponse,
   approveStaffCoverage,
   completeStaffCoverageApplication,
+  completeVerifiedPriceApplication,
   expireUnansweredTask,
   pricingTask,
   parseAgentId,
@@ -49,7 +50,34 @@ describe("shared operating tasks", () => {
     const result = suggestPrice({ productCostCents: 180, currentPriceCents: 550, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 }, economics: null, categoryPeers: null });
     const task = pricingTask({ businessId: "b", itemId: "latte", itemName: "16 oz Latte", result, now });
     expect(task?.payload.suggestedPriceCents).toBe(result.recommendedPriceCents);
+    expect(task?.payload.calculationMode).toBe(result.calculationMode);
+    expect(task?.payload.pricingIsEstimate).toBe(true);
     expect(task?.evidence[0].source).toBe("PricingEngine");
+  });
+
+  it("keeps use-price pending until the observed selling price matches", () => {
+    const result = suggestPrice({ productCostCents: 180, currentPriceCents: 550, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 }, economics: null, categoryPeers: null });
+    const task = pricingTask({ businessId: "b", itemId: "latte", itemName: "16 oz Latte", result, now })!;
+    const accepted = applyTaskResponse(task, { taskId: task.id, actor: "owner", responseCode: "use_price", respondedAt: now.toISOString() });
+    expect(accepted.status).toBe("watching");
+    expect(accepted.payload.awaitingPriceApplication).toBe(true);
+    expect(accepted.payload.priceAppliedToPos).toBe(false);
+
+    const mismatch = completeVerifiedPriceApplication(accepted, { actor: "system", observedPriceCents: result.currentPriceCents, verifiedAt: now.toISOString(), source: "menu_sync" });
+    expect(mismatch.status).toBe("watching");
+    expect(mismatch.payload.priceAppliedToPos).toBe(false);
+
+    const matching = completeVerifiedPriceApplication(accepted, { actor: "system", observedPriceCents: result.recommendedPriceCents!, verifiedAt: now.toISOString(), source: "menu_sync" });
+    expect(matching.status).toBe("handled");
+    expect(matching.payload.priceAppliedToPos).toBe(true);
+  });
+
+  it("handles keep-current immediately without claiming a POS mutation", () => {
+    const result = suggestPrice({ productCostCents: 180, currentPriceCents: 550, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 }, economics: null, categoryPeers: null });
+    const task = pricingTask({ businessId: "b", itemId: "latte", itemName: "16 oz Latte", result, now })!;
+    const kept = applyTaskResponse(task, { taskId: task.id, actor: "owner", responseCode: "keep_price", respondedAt: now.toISOString() });
+    expect(kept.status).toBe("handled");
+    expect(kept.payload.priceAppliedToPos).toBe(false);
   });
 
   it("keeps employee No awaiting a response", () => {

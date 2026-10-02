@@ -708,6 +708,9 @@
     "mayaWatching": "Watching entered cup and ingredient costs.",
     "inventoryUnavailable": "Inventory quantities are not connected, so Maya will not guess stock levels.",
     "transportUnavailable": "Staff messaging is not connected. Olivia can structure coverage requests, but cannot send them yet.",
-    "focusedOn": "Viewing {name} · {role}"
+    "focusedOn": "Viewing {name} · {role}",
+    "estimate": "Estimate",
+    "benchmarkPricingEvidence": "Based on this item's recipe cost and café benchmark assumptions.",
+    "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history."
   }
 }

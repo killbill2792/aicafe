@@ -36,4 +36,11 @@ describe("operations team presentation", () => {
     expect(team.members.find((member) => member.agentId === "alex")?.attentionCount).toBe(6);
     expect(team.members.find((member) => member.agentId === "leo")?.attentionCount).toBe(7);
   });
+
+  it("stores Leo's stable category code instead of its display label", () => {
+    const team = buildOperationsTeamViewModel(snapshot(1), [], new Date("2026-10-02T12:00:00Z"));
+    const task = team.needsYou.find((item) => item.agentId === "leo")!;
+    expect(task.payload.firstMissingCostCode).toBe("other");
+    expect(task.payload).not.toHaveProperty("firstMissingCost");
+  });
 });
