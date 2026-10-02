@@ -1,16 +1,8 @@
 "use client";
 
-import { Home, Wallet, Coffee, Users, MoreHorizontal } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
-
-const TABS = [
-  { href: "/", key: "home", Icon: Home },
-  { href: "/money", key: "money", Icon: Wallet },
-  { href: "/menu", key: "menu", Icon: Coffee },
-  { href: "/staff", key: "staff", Icon: Users },
-  { href: "/more", key: "more", Icon: MoreHorizontal },
-] as const;
+import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
 
 export default function TabBar() {
   const t = useTranslations("Nav");
@@ -21,11 +13,11 @@ export default function TabBar() {
   return (
     <nav
       aria-label={t("ariaLabel")}
-      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card pb-[env(safe-area-inset-bottom)]"
+      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <ul className="mx-auto flex max-w-app justify-between px-2">
-        {TABS.map(({ href, key, Icon }) => {
-          const isActive = pathname === href;
+        {NAV_TABS.map(({ href, key, Icon }) => {
+          const isActive = isNavTabActive(pathname, href);
           return (
             <li key={href} className="min-w-0 flex-1">
               <Link

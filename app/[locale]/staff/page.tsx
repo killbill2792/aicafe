@@ -7,6 +7,7 @@ import { formatCents } from "@/lib/calc";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import Money from "@/components/shared/Money";
 import StaffCostBars, { shortWeekday } from "@/components/staff/StaffCostBars";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function StaffPage() {
   const clockLabel = (iso: string) => formatInTimeZone(iso, snapshot.business.timezone, "H:mm");
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
           <div className="text-xl font-bold text-ink">{t("title")}</div>
@@ -84,7 +85,7 @@ export default async function StaffPage() {
           {vm.worstDay ? t("worstDayInsight", { date: shortWeekday(vm.worstDay.date, locale), cents: Math.round(vm.worstDay.cents) }) : t("allHealthyInsight")}
         </p>
       </section>
-    </main>
+    </PageShell>
   );
 }
 

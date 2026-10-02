@@ -5,6 +5,7 @@ import { getEmployees } from "@/lib/data/getEmployees";
 import BackHeader from "@/components/shared/BackHeader";
 import LaborCsvImporter from "@/components/uploads/LaborCsvImporter";
 import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function LaborCsvPage() {
   const existingEmployees = employees.map((e) => ({ id: e.id, name: e.name }));
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("laborTitle")} subtitle={t("laborSubtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
       <LaborCsvImporter
         initialMapping={initialMapping}
@@ -38,6 +39,6 @@ export default async function LaborCsvPage() {
           addAsNewEmployee: t("addAsNewEmployee"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

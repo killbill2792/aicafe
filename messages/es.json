@@ -16,7 +16,8 @@
     "week": "Semana",
     "month": "Mes",
     "back": "Atrás",
-    "addCost": "Agregar gasto"
+    "addCost": "Agregar gasto",
+    "next": "Siguiente"
   },
   "AddCost": {
     "title": "Agregar un gasto",
@@ -237,7 +238,16 @@
     "editAction": "Editar",
     "noSalesHistory": "Todavía no hay historial de ventas",
     "sizes": "Tamaños",
-    "restoreToMenu": "Volver a poner en el menú"
+    "restoreToMenu": "Volver a poner en el menú",
+    "subtitle": "Tus bebidas, comida y otros productos — mantén tu café rentable",
+    "recipeIncomplete": "Receta incompleta",
+    "tabOverview": "Resumen",
+    "tabRecipe": "Receta",
+    "tabSizes": "Tamaños",
+    "costsAboutToMake": "Cuesta aproximadamente {amount} hacerlo",
+    "tabPricing": "Precios",
+    "setupRecipeBanner": "Ahora agrega lo que lleva este producto.",
+    "fromPrice": "desde {amount}"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -303,7 +313,14 @@
     "recipeUnitEach": "unidad",
     "recipeUnitShot": "shot",
     "recipeUnitPump": "bombeo",
-    "defineUnitConversion": "¿Cuánto es 1 {unit} en {baseUnit} para este ingrediente?"
+    "defineUnitConversion": "¿Cuánto es 1 {unit} en {baseUnit} para este ingrediente?",
+    "recommended": "recomendado",
+    "ingredientSearchLabel": "Buscar ingredientes",
+    "noMatchingIngredients": "Ningún ingrediente coincide con esa búsqueda",
+    "existingTag": "Existente",
+    "whyLabel": "¿Por qué?",
+    "change": "Cambiar",
+    "chooseExisting": "Elegir ingrediente existente"
   },
   "Staff": {
     "title": "Personal",

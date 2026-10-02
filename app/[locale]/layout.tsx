@@ -6,6 +6,7 @@ import { hasLocale } from "next-intl";
 import { notFound } from "next/navigation";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
+import SideNav from "@/components/SideNav";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
 import ScreenViewLogger from "@/components/shared/ScreenViewLogger";
@@ -78,8 +79,9 @@ export default async function LocaleLayout({
         <NextIntlClientProvider>
           <ExpenseIconDefs />
           <ScreenViewLogger />
-          <div className="mx-auto w-full max-w-app flex-1 pb-24">
-            {children}
+          <div className="flex min-h-screen w-full flex-1">
+            <SideNav />
+            <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
           </div>
           <TabBar />
           <ServiceWorkerRegister />

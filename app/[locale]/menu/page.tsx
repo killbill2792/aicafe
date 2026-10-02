@@ -6,6 +6,7 @@ import { getCatalogMatchReview } from "@/lib/data/getCatalogMatchReview";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import MenuCatalog from "@/components/menu/MenuCatalog";
 import { Link } from "@/i18n/navigation";
+import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
@@ -13,9 +14,12 @@ export default async function MenuPage() {
   await requireOwnBusiness();
   const [items, pendingMatches, t] = await Promise.all([getMenuControlCenter(), getCatalogMatchReview(), getTranslations("Menu")]);
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
-      <header className="flex items-center justify-between gap-3 px-1">
-        <h1 className="font-headline text-[30px] font-bold text-ink">{t("title")}</h1>
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
+      <header className="flex items-start justify-between gap-3 px-1">
+        <div>
+          <h1 className="font-headline text-[30px] font-bold text-ink">{t("title")}</h1>
+          <p className="text-[15px] text-ink-muted">{t("subtitle")}</p>
+        </div>
         <div className="flex items-center gap-2">
           <Link href="/menu/new" className="flex min-h-12 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addItem")}
@@ -25,6 +29,6 @@ export default async function MenuPage() {
       </header>
       {pendingMatches.length > 0 && <Link href="/menu/import-review" className="mx-1 text-sm font-bold text-good underline">{t("reviewMatches")}</Link>}
       <MenuCatalog items={items} />
-    </main>
+    </PageShell>
   );
 }

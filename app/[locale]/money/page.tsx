@@ -8,6 +8,7 @@ import AddCostFab from "@/components/shared/AddCostFab";
 import MoneyViewSwitch from "@/components/money/MoneyViewSwitch";
 import CostRecoveryView from "@/components/money/CostRecoveryView";
 import ProfitCostsView from "@/components/money/ProfitCostsView";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export default async function MoneyPage({
   const t = await getTranslations("Money");
 
   return (
-    <main className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
+    <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex flex-col gap-0.5">
           <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>
@@ -46,6 +47,6 @@ export default async function MoneyPage({
       {view === "recovery" ? <CostRecoveryView snapshot={snapshot} /> : <ProfitCostsView snapshot={snapshot} period={period} />}
 
       <AddCostFab />
-    </main>
+    </PageShell>
   );
 }

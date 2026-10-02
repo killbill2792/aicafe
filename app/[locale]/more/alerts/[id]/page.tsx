@@ -9,6 +9,7 @@ import { describeAlert } from "@/components/alerts/alertContent";
 import { markAlertStatus, setAlertStatus } from "@/lib/actions/alerts";
 import { getAlertById } from "@/lib/data/getAlerts";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   }
 
   return (
-    <main className="flex flex-col gap-4 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-4 px-4 py-6 pb-10">
       <BackHeader title={content.title} backHref="/more/alerts" backLabel={tCommon("back")} />
 
       <section className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-6 text-center">
@@ -62,6 +63,6 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
           {t("dismiss")}
         </button>
       </form>
-    </main>
+    </PageShell>
   );
 }

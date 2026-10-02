@@ -3,6 +3,7 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import VoiceRecorder from "@/components/addcost/VoiceRecorder";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function VoiceEntryPage() {
   >;
 
   return (
-    <main className="flex flex-col gap-6 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-6 px-4 py-6 pb-10">
       <BackHeader title={t("optionVoice")} backHref="/add-cost" backLabel={tCommon("back")} />
       <VoiceRecorder
         categoryLabels={categoryLabels}
@@ -33,6 +34,6 @@ export default async function VoiceEntryPage() {
           transcriptLabel: t("voiceTranscriptLabel"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

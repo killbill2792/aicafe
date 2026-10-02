@@ -2,9 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { Trash2 } from "lucide-react";
+import { Trash2, Package, Search, ChevronLeft } from "lucide-react";
 import { addRecipeLine, deleteRecipeLine } from "@/lib/actions/menuItems";
-import { formatCents, type PricingResult } from "@/lib/calc";
 import { needsIngredientConversion, recipeDisplayUnitsFor, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import MissingPriceForm from "./MissingPriceForm";
@@ -17,17 +16,21 @@ export default function RecipeEditor({
   item,
   ingredients,
   ingredientConversions,
-  pricingResult,
 }: {
   item: MenuItemForEdit;
   ingredients: IngredientOption[];
   ingredientConversions: Record<string, IngredientUnitConversion[]>;
-  pricingResult?: PricingResult;
 }) {
   const t = useTranslations("ManageMenu");
   const unitLabel = (unit: RecipeDisplayUnit | "g" | "ml" | "each") => t(UNIT_LABEL_KEYS[unit as RecipeDisplayUnit] ?? "recipeUnitG");
 
   const [ingredientId, setIngredientId] = useState("");
+  // Explicit, owner-driven: only tapping "+ New ingredient" enters new-ingredient mode, and only
+  // the explicit "back to search" control leaves it. Typing in the search box must never flip
+  // this — it used to be inferred from "no ingredient selected yet", which made the new-ingredient
+  // fields appear the instant the owner started typing a search, defeating the existing-first flow.
+  const [addingNew, setAddingNew] = useState(false);
+  const [ingredientFilter, setIngredientFilter] = useState("");
   const [newName, setNewName] = useState("");
   const [newBaseUnit, setNewBaseUnit] = useState<"g" | "ml" | "each">("g");
   const [displayUnit, setDisplayUnit] = useState<RecipeDisplayUnit>("g");
@@ -37,11 +40,16 @@ export default function RecipeEditor({
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
 
+  const mode: "search" | "existing" | "new" = addingNew ? "new" : ingredientId ? "existing" : "search";
   const selectedIngredient = ingredients.find((i) => i.id === ingredientId);
   const effectiveBaseUnit = selectedIngredient?.baseUnit ?? newBaseUnit;
   const unitOptions = useMemo(() => recipeDisplayUnitsFor(effectiveBaseUnit), [effectiveBaseUnit]);
   const hasExistingConversion = selectedIngredient ? (ingredientConversions[selectedIngredient.id] ?? []).some((c) => c.unit === displayUnit) : false;
   const needsConversionInput = needsIngredientConversion(displayUnit) && !hasExistingConversion;
+  const filteredIngredients = useMemo(
+    () => ingredients.filter((i) => i.name.toLocaleLowerCase().includes(ingredientFilter.trim().toLocaleLowerCase())),
+    [ingredients, ingredientFilter],
+  );
 
   // Switching ingredients (or the new-ingredient's base unit) can make the currently-selected
   // café-friendly unit invalid for the new base unit (e.g. "fl oz" was selected, then the owner
@@ -52,6 +60,28 @@ export default function RecipeEditor({
     const options = recipeDisplayUnitsFor(baseUnit);
     setDisplayUnit((current) => (options.includes(current) ? current : options[0]));
     setConversionValue("");
+  }
+
+  function selectExistingIngredient(ingredient: IngredientOption) {
+    setIngredientId(ingredient.id);
+    setAddingNew(false);
+    resetDisplayUnitFor(ingredient.baseUnit);
+  }
+
+  function startNewIngredient() {
+    setAddingNew(true);
+    setIngredientId("");
+    resetDisplayUnitFor(newBaseUnit);
+  }
+
+  // The explicit way back from either "existing selected" or "new ingredient" to the default
+  // search state — abandons whatever was picked/typed in that state, same as never having opened it.
+  function returnToSearch() {
+    setAddingNew(false);
+    setIngredientId("");
+    setNewName("");
+    setNewBaseUnit("g");
+    resetDisplayUnitFor("g");
   }
 
   function handleAddLine() {
@@ -75,6 +105,7 @@ export default function RecipeEditor({
         setQuantity("");
         setNewName("");
         setIngredientId("");
+        setAddingNew(false);
         setConversionValue("");
         setJustAdded(true);
       } else {
@@ -103,114 +134,112 @@ export default function RecipeEditor({
       {item.recipe.length === 0 ? (
         <p className="text-sm text-ink-muted">{t("noIngredientsYet")}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-0 border-collapse text-sm">
-            <thead>
-              <tr className="text-left text-xs text-ink-muted">
-                <th scope="col" className="min-w-0 pb-1 pr-2 font-semibold">{t("ingredientColumnLabel")}</th>
-                <th scope="col" className="pb-1 pr-2 text-right font-semibold">{t("amountColumnLabel")}</th>
-                <th scope="col" className="w-8 pb-1"><span className="sr-only">{t("remove")}</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {item.recipe.map((line) => (
-                <tr key={line.ingredientId} className="border-t border-[#EFE7DB] align-top">
-                  <td className="min-w-0 max-w-0 truncate py-1.5 pr-2">{line.ingredientName}</td>
-                  <td className="whitespace-nowrap py-1.5 pr-2 text-right text-ink-muted">
-                    {line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="text-warn">
-                      <Trash2 aria-hidden="true" size={16} />
-                    </button>
-                  </td>
-                  {line.costCents === null && <td className="py-1.5" colSpan={3}><MissingPriceForm line={line} labels={{ ingredientCostLabel: t("ingredientCostLabel"), ingredientCostForLabel: t("ingredientCostForLabel"), add: t("add") }} /></td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {pricingResult && pricingResult.status === "PRICE_UNAVAILABLE" && (
-        <div className="rounded-xl bg-warn-tint px-3 py-2.5">
-          <span className="text-sm font-semibold text-warn">{t("pricingStatusUnavailable")}</span>
-        </div>
-      )}
-      {pricingResult && pricingResult.status !== "PRICE_UNAVAILABLE" && pricingResult.recommendedPriceCents !== null && (
-        <div className="flex flex-col gap-0.5 rounded-xl bg-good-tint px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-good">
-              {{ NEW_PRICE: t("pricingStatusNew"), KEEP_CURRENT_PRICE: t("pricingStatusKeep"), REVIEW_PRICE: t("pricingStatusReview") }[pricingResult.status as "NEW_PRICE" | "KEEP_CURRENT_PRICE" | "REVIEW_PRICE"]}
-            </span>
-            <span className="text-base font-bold text-good">{formatCents(pricingResult.recommendedPriceCents)}</span>
-          </div>
-          <span className="text-xs text-good">
-            {{ BENCHMARK_EXPLAINER: t("pricingExplainerBenchmark"), BUSINESS_ADJUSTED_EXPLAINER: t("pricingExplainerBusinessAdjusted"), INCOMPLETE_DATA_EXPLAINER: t("pricingExplainerIncomplete") }[pricingResult.explanationCode]}
-          </span>
-          {pricingResult.warnings.map((warning) => (
-            <span key={warning} className="text-xs font-semibold text-warn">
-              {{
-                BUSINESS_ADJUSTMENT_CAPPED: t("pricingWarningCapped"),
-                CATEGORY_PRICE_OUTLIER: t("pricingWarningCategoryOutlier"),
-                CATEGORY_COST_PERCENT_OUTLIER: t("pricingWarningCostOutlier"),
-                INCOMPLETE_RECIPE: t("pricingWarningIncompleteRecipe"),
-                LOW_SAMPLE_SIZE: t("pricingWarningLowSample"),
-              }[warning]}
-            </span>
+        <ul className="flex flex-col gap-2">
+          {item.recipe.map((line) => (
+            <li key={line.ingredientId} className="flex flex-wrap items-center gap-3">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FAF6F0] text-ink-muted">
+                <Package aria-hidden="true" size={16} />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{line.ingredientName}</span>
+              <span className="shrink-0 text-[15px] text-ink-muted">
+                {line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}
+              </span>
+              <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="shrink-0 text-warn">
+                <Trash2 aria-hidden="true" size={16} />
+              </button>
+              {line.costCents === null && (
+                <div className="w-full basis-full"><MissingPriceForm line={line} labels={{ ingredientCostLabel: t("ingredientCostLabel"), ingredientCostForLabel: t("ingredientCostForLabel"), add: t("add") }} /></div>
+              )}
+            </li>
           ))}
-        </div>
+        </ul>
       )}
 
       <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
-        <select
-          value={ingredientId}
-          onChange={(e) => {
-            const newIngredientId = e.target.value;
-            setIngredientId(newIngredientId);
-            const nextBaseUnit = ingredients.find((i) => i.id === newIngredientId)?.baseUnit ?? newBaseUnit;
-            resetDisplayUnitFor(nextBaseUnit);
-          }}
-          className="h-11 w-full min-w-0 rounded-lg border border-line bg-card px-2.5 text-sm text-ink"
-        >
-          <option value="">{t("newIngredient")}</option>
-          {ingredients.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.baseUnit})</option>)}
-        </select>
-        {!ingredientId && (
-          <div className="flex min-w-0 gap-2">
-            <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("ingredientLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />
-            <select
-              value={newBaseUnit}
-              onChange={(e) => {
-                const unit = e.target.value as "g" | "ml" | "each";
-                setNewBaseUnit(unit);
-                resetDisplayUnitFor(unit);
-              }}
-              className="h-11 w-28 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink"
-            >
-              <option value="g">{t("unitG")}</option>
-              <option value="ml">{t("unitMl")}</option>
-              <option value="each">{t("unitEach")}</option>
-            </select>
+        <span className="text-sm font-bold">{t("addIngredient")}</span>
+
+        {mode === "search" && (
+          <>
+            <label className="flex min-h-11 items-center gap-2 rounded-lg border border-line bg-card px-2.5 text-ink-muted">
+              <Search aria-hidden="true" size={16} />
+              <span className="sr-only">{t("ingredientSearchLabel")}</span>
+              <input
+                value={ingredientFilter}
+                onChange={(e) => setIngredientFilter(e.target.value)}
+                placeholder={t("ingredientSearchLabel")}
+                className="min-w-0 flex-1 bg-transparent text-sm text-ink outline-none"
+              />
+            </label>
+            <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-1.5">
+              {filteredIngredients.length === 0 && <p className="px-2 py-2 text-sm text-ink-muted">{t("noMatchingIngredients")}</p>}
+              {filteredIngredients.map((i) => (
+                <button key={i.id} type="button" onClick={() => selectExistingIngredient(i)} className="flex min-h-12 items-center justify-between rounded-lg px-2.5 text-left text-sm text-ink">
+                  <span className="truncate">{i.name}</span>
+                  <span className="shrink-0 text-xs text-ink-muted">{t("existingTag")}</span>
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={startNewIngredient} className="w-fit text-sm font-semibold text-ink-muted">
+              {t("newIngredient")}
+            </button>
+          </>
+        )}
+
+        {mode === "existing" && selectedIngredient && (
+          <div className="flex min-h-10 items-center justify-between rounded-lg bg-good-tint px-2.5 text-sm font-semibold text-good">
+            <span className="truncate">{selectedIngredient.name}</span>
+            <button type="button" onClick={returnToSearch} className="shrink-0 text-xs font-semibold text-good underline">
+              {t("change")}
+            </button>
           </div>
         )}
-        <div className="flex min-w-0 items-center gap-2">
-          <input type="number" inputMode="decimal" min="0" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder={t("quantityLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />
-          <select value={displayUnit} onChange={(e) => { setDisplayUnit(e.target.value as RecipeDisplayUnit); setConversionValue(""); }} className="h-11 w-24 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink">
-            {unitOptions.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
-          </select>
-        </div>
-        {needsConversionInput && (
-          <div className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FAF6F0] p-2 text-sm">
-            <span className="min-w-0 flex-1">{t("defineUnitConversion", { unit: unitLabel(displayUnit), baseUnit: effectiveBaseUnit })}</span>
-            <input type="number" inputMode="decimal" min="0" step="0.01" value={conversionValue} onChange={(e) => setConversionValue(e.target.value)} className="h-10 w-20 shrink-0 rounded-lg border border-line px-2 text-ink" />
-          </div>
+
+        {mode === "new" && (
+          <>
+            <button type="button" onClick={returnToSearch} className="flex w-fit items-center gap-1 text-sm font-semibold text-ink-muted">
+              <ChevronLeft aria-hidden="true" size={16} /> {t("chooseExisting")}
+            </button>
+            <div className="flex min-w-0 gap-2">
+              <input type="text" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder={t("ingredientLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />
+              <select
+                value={newBaseUnit}
+                onChange={(e) => {
+                  const unit = e.target.value as "g" | "ml" | "each";
+                  setNewBaseUnit(unit);
+                  resetDisplayUnitFor(unit);
+                }}
+                className="h-11 w-28 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink"
+              >
+                <option value="g">{t("unitG")}</option>
+                <option value="ml">{t("unitMl")}</option>
+                <option value="each">{t("unitEach")}</option>
+              </select>
+            </div>
+          </>
         )}
-        <div className="flex min-w-0 items-center gap-2">
-          <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
-            {t("addIngredient")}
-          </button>
-        </div>
+
+        {mode !== "search" && (
+          <>
+            <div className="flex min-w-0 items-center gap-2">
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder={t("quantityLabel")} className="h-11 w-full min-w-0 flex-1 rounded-lg border border-line px-2.5 text-sm text-ink" />
+              <select value={displayUnit} onChange={(e) => { setDisplayUnit(e.target.value as RecipeDisplayUnit); setConversionValue(""); }} className="h-11 w-24 min-w-0 shrink-0 rounded-lg border border-line px-1 text-sm text-ink">
+                {unitOptions.map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}
+              </select>
+            </div>
+            {needsConversionInput && (
+              <div className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FAF6F0] p-2 text-sm">
+                <span className="min-w-0 flex-1">{t("defineUnitConversion", { unit: unitLabel(displayUnit), baseUnit: effectiveBaseUnit })}</span>
+                <input type="number" inputMode="decimal" min="0" step="0.01" value={conversionValue} onChange={(e) => setConversionValue(e.target.value)} className="h-10 w-20 shrink-0 rounded-lg border border-line px-2 text-ink" />
+              </div>
+            )}
+            <div className="flex min-w-0 items-center gap-2">
+              <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
+                {t("addIngredient")}
+              </button>
+            </div>
+          </>
+        )}
+
         {error && <p className="text-sm text-warn">{error}</p>}
         {justAdded && !error && <p className="text-sm font-semibold text-good">{t("ingredientAdded")}</p>}
       </div>

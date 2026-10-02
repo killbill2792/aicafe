@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import { Link } from "@/i18n/navigation";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -21,7 +22,7 @@ export default async function UploadsPage() {
   ];
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6">
+    <PageShell className="flex flex-col gap-5 px-4 py-6">
       <BackHeader title={t("title")} backHref="/more" backLabel={tCommon("back")} />
       <p className="text-[15px] text-ink-muted">{t("intro")}</p>
       <div className="flex flex-col rounded-card-lg bg-card px-2">
@@ -36,6 +37,6 @@ export default async function UploadsPage() {
           </Link>
         ))}
       </div>
-    </main>
+    </PageShell>
   );
 }

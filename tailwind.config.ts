@@ -40,6 +40,15 @@ const config: Config = {
       },
       maxWidth: {
         app: "480px",
+        // Desktop/tablet reading column for ordinary single-column screens (Home, Money, Staff,
+        // More, every form) — wider than mobile, but not stretched edge-to-edge.
+        "app-content": "840px",
+        // Desktop/tablet width for screens asked to actually use the horizontal space (the Menu
+        // list and product detail screens).
+        "app-wide": "1280px",
+      },
+      width: {
+        sidenav: "240px",
       },
     },
   },

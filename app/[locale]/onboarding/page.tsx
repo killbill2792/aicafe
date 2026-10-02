@@ -12,6 +12,7 @@ import RegisterChoice from "@/components/onboarding/RegisterChoice";
 import BillsManager from "@/components/bills/BillsManager";
 import PayrollTaxForm from "@/components/onboarding/PayrollTaxForm";
 import RecoveryOrderStep from "@/components/onboarding/RecoveryOrderStep";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -31,7 +32,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<ExpenseCategoryCode, string>;
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <OnboardingProgress step={step} />
       <h1 className="text-2xl font-bold text-ink">{t(`step${step}Title`)}</h1>
       <p className="text-[15px] text-ink-muted">{t(`step${step}Subtitle`)}</p>
@@ -91,7 +92,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       {step === 5 && (
         <RecoveryOrderStep order={await getRecoveryOrder()} categoryLabels={categoryLabels} labels={{ finish: t("finish") }} />
       )}
-    </main>
+    </PageShell>
   );
 }
 

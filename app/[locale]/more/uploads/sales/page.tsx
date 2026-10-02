@@ -4,6 +4,7 @@ import { getSavedMapping } from "@/lib/actions/csvImport";
 import BackHeader from "@/components/shared/BackHeader";
 import SalesCsvImporter from "@/components/uploads/SalesCsvImporter";
 import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -15,7 +16,7 @@ export default async function SalesCsvPage() {
   const initialMapping = (await getSavedMapping("sales")) as SalesColumnMapping | null;
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("salesTitle")} subtitle={t("salesSubtitle")} backHref="/more/uploads" backLabel={tCommon("back")} />
       <SalesCsvImporter
         initialMapping={initialMapping}
@@ -35,6 +36,6 @@ export default async function SalesCsvPage() {
           unmatchedRowsCount: t("unmatchedRowsCount"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }

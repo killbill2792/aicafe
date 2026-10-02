@@ -3,6 +3,7 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import StatementUploader from "@/components/addcost/StatementUploader";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function StatementUploadPage() {
   >;
 
   return (
-    <main className="flex flex-col gap-5 px-4 py-6 pb-10">
+    <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
       <BackHeader title={t("optionStatement")} backHref="/add-cost" backLabel={tCommon("back")} />
       <StatementUploader
         categoryLabels={categoryLabels}
@@ -35,6 +36,6 @@ export default async function StatementUploadPage() {
           exclude: t("statementExclude"),
         }}
       />
-    </main>
+    </PageShell>
   );
 }
