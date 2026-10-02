@@ -707,6 +707,7 @@
     "missingCosts": "{count, plural, one {Falta # costo este mes.} other {Faltan # costos este mes.}}",
     "mayaWatching": "Vigilando los costos ingresados de vasos e ingredientes.",
     "inventoryUnavailable": "El inventario no está conectado, así que Maya no adivinará existencias.",
-    "transportUnavailable": "La mensajería al personal no está conectada. Olivia puede estructurar solicitudes, pero todavía no enviarlas."
+    "transportUnavailable": "La mensajería al personal no está conectada. Olivia puede estructurar solicitudes, pero todavía no enviarlas.",
+    "focusedOn": "Viendo a {name} · {role}"
   }
 }

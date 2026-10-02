@@ -185,12 +185,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           aiLabel: tOperations("aiLabel"),
           names: { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" },
           roles: { alex: tOperations("alexRole"), olivia: tOperations("oliviaRole"), maya: tOperations("mayaRole"), leo: tOperations("leoRole") },
-          statuses: {
-            prices: tOperations("prices", { count: 0 }),
-            ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((count) => [`prices:${count}`, tOperations("prices", { count })])),
-            coverage_clear: tOperations("coverageClear"), supplies: tOperations("supplies"), attention: tOperations("attention", { count: 0 }),
-            ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((count) => [`attention:${count}`, tOperations("attention", { count })])),
-          },
+          status: (member) => member.statusKey === "prices" ? tOperations("prices", { count: member.attentionCount }) : member.statusKey === "attention" ? tOperations("attention", { count: member.attentionCount }) : member.statusKey === "coverage_clear" ? tOperations("coverageClear") : tOperations("supplies"),
         }}
       />
 

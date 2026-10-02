@@ -3,6 +3,9 @@ import type { CafeSignal } from "./types";
 
 export const AGENT_IDS = ["alex", "olivia", "maya", "leo"] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
+export function parseAgentId(value: string | undefined): AgentId | null {
+  return AGENT_IDS.find((agent) => agent === value) ?? null;
+}
 export type OperatingTaskStatus = "watching" | "needs_response" | "needs_owner" | "handled" | "expired";
 export type OperatingTaskKind = "price_review" | "staff_coverage" | "supply_check" | "money_update" | "data_quality";
 export type TaskEvidence = { source: string; facts: Record<string, string | number | boolean | null> };
@@ -20,8 +23,16 @@ export type OperatingTask = {
   createdAt: string;
   resolvedAt?: string;
 };
-export type TaskResponseCode = "yes" | "no" | "plenty" | "getting_low" | "almost_out" | "use_price" | "keep_price" | "later" | "apply_coverage";
-export type OperatingTaskResponse = { taskId: string; responseCode: TaskResponseCode; respondentId?: string; respondentName?: string; shortText?: string; respondedAt: string };
+export type TaskResponseCode = "yes" | "no" | "plenty" | "getting_low" | "almost_out" | "use_price" | "keep_price" | "later";
+export type OperatingTaskResponse = {
+  taskId: string;
+  actor: "employee" | "owner";
+  responseCode: TaskResponseCode;
+  respondentId?: string;
+  respondentName?: string;
+  shortText?: string;
+  respondedAt: string;
+};
 
 export function agentForTask(kind: OperatingTaskKind): AgentId {
   if (kind === "price_review") return "alex";
@@ -67,14 +78,26 @@ export function applyTaskResponse(task: OperatingTask, response: OperatingTaskRe
   if (task.status === "handled" || task.status === "expired") return task;
   if (response.taskId !== task.id) return task;
   if (task.kind === "staff_coverage") {
+    if (response.actor !== "employee") return task;
     if (response.responseCode === "yes") return { ...task, status: "needs_owner", payload: { ...task.payload, coveringEmployeeId: response.respondentId ?? null, coveringEmployeeName: response.respondentName ?? null, coverageConfirmed: true, scheduleApplied: false } };
-    if (response.responseCode === "apply_coverage" && task.payload.coverageConfirmed === true) return { ...task, status: "handled", payload: { ...task.payload, scheduleApplied: true }, resolvedAt: response.respondedAt };
     return task;
   }
   if (task.kind === "supply_check" && ["plenty", "getting_low", "almost_out"].includes(response.responseCode)) return { ...task, status: "watching", payload: { ...task.payload, qualitativeStatus: response.responseCode, responderId: response.respondentId ?? null, respondedAt: response.respondedAt } };
-  if (task.kind === "price_review" && response.responseCode === "later") return { ...task, status: "watching" };
-  if (task.kind === "price_review" && ["use_price", "keep_price"].includes(response.responseCode)) return { ...task, status: "handled", payload: { ...task.payload, ownerChoice: response.responseCode, priceAppliedToPos: false }, resolvedAt: response.respondedAt };
+  if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "later") return { ...task, status: "watching" };
+  if (task.kind === "price_review" && response.actor === "owner" && ["use_price", "keep_price"].includes(response.responseCode)) return { ...task, status: "handled", payload: { ...task.payload, ownerChoice: response.responseCode, priceAppliedToPos: false }, resolvedAt: response.respondedAt };
   return task;
+}
+
+/** Records owner intent only. It cannot claim the schedule domain action succeeded. */
+export function approveStaffCoverage(task: OperatingTask, approvedAt: string): OperatingTask {
+  if (task.kind !== "staff_coverage" || task.status !== "needs_owner" || task.payload.coverageConfirmed !== true) return task;
+  return { ...task, payload: { ...task.payload, ownerApproved: true, ownerApprovedAt: approvedAt, scheduleApplied: false } };
+}
+
+/** Called by orchestration only after the real staff/schedule action reports success. */
+export function completeStaffCoverageApplication(task: OperatingTask, result: { actor: "system"; succeeded: boolean; completedAt: string; scheduleActionId?: string }): OperatingTask {
+  if (task.kind !== "staff_coverage" || task.status !== "needs_owner" || task.payload.ownerApproved !== true || !result.succeeded) return task;
+  return { ...task, status: "handled", payload: { ...task.payload, scheduleApplied: true, scheduleActionId: result.scheduleActionId ?? null }, resolvedAt: result.completedAt };
 }
 
 export function expireUnansweredTask(task: OperatingTask, now: Date, expiresAt: Date): OperatingTask {

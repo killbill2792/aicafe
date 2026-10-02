@@ -1551,3 +1551,20 @@ Phase 1 result:
 - [x] Localized compact Home team surface and `/operations` Needs you / Handled / Watching inbox.
 - [x] Pricing review tasks consume unchanged PricingEngine output; no POS price mutation exists.
 - [x] Typecheck, lint, and 238 tests pass. Production build is blocked only by this environment failing to download the three existing Google fonts.
+
+## Phase 1 review follow-up (PR #8)
+
+Plan:
+- Scope operating-task keys and response relationships by business, including employee tenant consistency in migration 23.
+- Restore task-kind/agent routing invariants and remove capped Home status rendering.
+- Add validated teammate query navigation and focused operations context.
+- Separate employee coverage responses, owner approval, and successful schedule completion so only real completion can be handled.
+- Add regression tests, run all required checks, and commit as one PR #8 follow-up.
+
+Phase 1 review result:
+- [x] Migration 23 now uses business-scoped task identity and tenant-consistent composite task/employee response references.
+- [x] Every generated task's agent matches `agentForTask`, including Maya's supply watch.
+- [x] Team statuses render actual counts without a 0–5 cap; regression coverage includes Alex and Leo counts above five.
+- [x] Teammate links use validated `?agent=` navigation with safe full-inbox fallback.
+- [x] Staff confirmation, owner approval, and verified schedule-action completion are distinct; only successful completion marks coverage handled/applied.
+- [x] Typecheck, lint, and 245 tests pass. Build remains blocked only by failed network downloads for the existing Google fonts.
