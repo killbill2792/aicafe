@@ -5,6 +5,138 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu PR #5 Phase 1: owner-comprehension clarity pass (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Note: PR #5 (`menu-visual-refresh` → `main`) was already merged (merge commit `ad601ae`) by the
+time this request arrived — this work continued on the same branch name as instructed, but since
+the branch's prior history is already in `main`, a fresh PR will be needed to land these new
+commits (not a reopen of the old #5). Flagged to Raj; did not merge anything myself.
+
+Five owner-comprehension fixes, all presentation/copy — no schema, no migration, no pricing or
+ingredient-cost calculation change, no POS behavior change. Read CLAUDE.md/AGENTS.md and the
+current branch state first per the request, rather than assuming the prior PROGRESS.md entries
+still matched the code exactly.
+
+**1–3. Pricing wording is now directional, everywhere it appears.** New
+`lib/viewmodels/menuCatalogViewModel.ts` function `getItemPricingStatus()` is the one place that
+turns `costStatus` + `pricing.status` + `recommendedPriceCents` vs `currentPriceCents` (all
+already computed, nothing new) into a plain-language status: `incomplete_recipe`,
+`price_unavailable`, `keep`, or `low`/`high` (which way the suggestion points). `isPricingHealthy()`
+is now just `getItemPricingStatus(item).kind === "keep"`, so every caller agrees by construction.
+- `usePricingStatusChip` (catalog single-size chip, product detail Overview/Pricing chip) now says
+  "Price may be low" / "Price may be high" instead of a generic "Worth reviewing".
+- Product detail **Overview** no longer shows a bare chip + unlabeled number: when the status is
+  low/high it now shows "You charge $X" / "Suggested $Y" as labeled rows (new `Menu.youCharge`
+  key; reuses the existing `Menu.suggested` key). The **Pricing** tab's suggested-price number got
+  the same "Suggested" label added in front of it; its cost/why/warnings content is untouched.
+- Dead keys removed (no longer reachable after this change): `ManageMenu.pricingStatusNew`,
+  `pricingStatusReview`.
+
+**2. Menu catalog now explains *what* needs review, not just *that* something does.**
+`groupMenuCatalogItems()` (same file) now computes two things per group instead of one:
+  - `priceRange` (`{ minCents, maxCents, allSame }`) — the catalog shows a single price when all
+    sizes match, otherwise "$X.XX–$Y.YY" (new `Menu.priceRange` key); replaces the old "from $X"
+    (`Menu.fromPrice` removed, nothing else referenced it).
+  - `pricingStatus`, a `GroupedPricingStatus` with explicit precedence: missing data (no recipe, or
+    a recipe with no priced ingredient cost) always wins over a pricing-review message — a size
+    with no cost can't meaningfully be "worth reviewing" for price. Within that: exactly one size
+    with *no recipe at all* is named directly ("16 oz recipe incomplete", new
+    `Menu.sizeRecipeIncomplete`); any other incomplete-data case (missing ingredient cost, or more
+    than one incomplete size) reports a count instead of guessing which size matters most ("1 size
+    is missing cost information", `Menu.sizesMissingCostInfo`, ICU-pluralized). Once every size has
+    usable pricing data: all healthy → "Prices look right" (`Menu.pricesLookRight`); exactly one
+    size needs review → names it and the direction + a "Suggested $Y" line ("16 oz price may be
+    low", `Menu.sizePriceMayBeLow`/`sizePriceMayBeHigh`); more than one → a count, deliberately
+    *not* one fabricated price for the whole product ("2 sizes need review",
+    `Menu.multipleSizesNeedReview`, ICU-pluralized). `MenuCatalog.tsx`'s rendering is a small
+    `switch` over this structured status, not nested conditionals in JSX. A single-size group keeps
+    using the plain per-item chip unchanged (point 1 above already covers it).
+  - The **Needs attention** tab filter already used `isPricingHealthy()` (fixed in the previous PR
+    #5 pass) so it automatically picks up the new low/high distinction with no further change.
+  - New tests: `lib/viewmodels/menuCatalogViewModel.test.ts`, 20 cases covering every state in the
+    request (one/two sizes × healthy/low/high, one-of-two vs both need review, missing-recipe
+    priority, same-price vs price-range, active/archived never mixing, tie-break, ordering).
+
+**4. "Category" is now an owner-facing "Item type" with plain language — the internal enum is
+unchanged.** New `lib/menu/itemType.ts`: 8 friendly choices (`Espresso / coffee drink`, `Brewed
+coffee`, `Cold brew`, `Tea / matcha / chai`, `Other drink`, `Bakery / pastry`, `Food`, `Retail
+item`) plus `Automatic — we'll choose for you`, mapped 1:1 onto the existing
+`MENU_ITEM_CATEGORY_CODES` (`categoryToOwnerItemType`/`OWNER_ITEM_TYPE_TO_CATEGORY`; a test proves
+the mapping is a clean bijection covering every code exactly once). `ProductEditForm.tsx`'s
+category `<select>` (which showed raw codes like `ESPRESSO_DRINK`) is replaced with this — labeled
+"Item type (optional)", with the requested helper line, and a one-line example shown for the three
+types that have one (Espresso/coffee, Brewed coffee, Other drink). The field preselects the
+friendly type the item's *current* category already maps to (never "Automatic" itself — the
+database only ever holds a concrete code, so edit can't know whether that code was auto-inferred
+or chosen last time); selecting "Automatic" and saving recomputes the category via the existing
+`inferMenuItemCategory(name, menuGroup)` instead of persisting a stored value. The simplified
+create flow (`/menu/new`) still asks nothing about this — it already omits `category` entirely and
+lets the server infer it, so "remain Automatic by default" needed no change there. No DB enum
+change, no new action signature.
+  - **Found and fixed a real `inferMenuItemCategory` bug while reviewing it per the request**:
+    "Matcha Latte" and "Chai Latte" — both extremely common drinks — resolved to `ESPRESSO_DRINK`,
+    not `TEA`, because the espresso rule's `latte` pattern was checked before the tea rule and
+    matched first. Reordered so `tea|chai|matcha` is checked before the espresso pattern; plain
+    "Latte" (no tea/chai/matcha) is unaffected. New `lib/menu/inferCategory.test.ts` locks in this
+    fix plus every example name from the request (Americano, Latte, Macchiato, Cappuccino,
+    Espresso, Mocha, Cold Brew, Drip Coffee, Matcha, Chai, Pastry).
+
+**5. A bare number as a size label is no longer silently assumed to mean ounces.** New
+`lib/menu/sizeLabel.ts`: `isAmbiguousNumericSizeLabel()` (true only for a bare integer/decimal —
+"16", "12.5" — never "16 oz", "Small", "1 piece", or blank) and `resolveSizeLabel()`. New shared
+`components/menu/SizeLabelClarifyDialog.tsx` ("What does 16 mean?" → oz/ml/g/each, or "Keep '16' as
+the size name") is now shown — instead of submitting immediately — from Create Product step 2,
+Add Size, and Product Edit's size field whenever the typed size is a bare number; picking a unit or
+"keep" resolves the label and then actually submits. `size_label` stays a plain string column, no
+migration. Live-verified end to end: typed "20" into Add Size on a real item, got the clarify
+dialog, picked "oz", and the new size was created and persisted as "20 oz".
+
+**6. Grouping stays presentation-only** — unchanged from the prior PR #5 pass; nothing in this
+phase touches `menu_items` rows, recipe ownership, cost/pricing calculation, history, POS
+identifiers, add-size recipe copy, or archive/restore. Verified live: archive/restore and
+add-size-with-recipe-copy both still work exactly as before.
+
+**7. Product photos — infrastructure does not exist yet; not implemented in this PR.** Searched
+the repo for any existing photo/image/avatar column, Supabase Storage bucket, or UI: none. The only
+Storage bucket (`uploads`, see `lib/actions/deleteAccount.ts`) is for receipts/statements/CSV
+imports, unrelated. Per the request, no migration or storage model was added. Recommended future
+design, for whoever picks this up:
+  - The wrinkle: "one photo per base product, shared across sizes" doesn't have a natural home
+    today, because sizes of one product are only ever related by matching the free-text
+    `menu_items.base_name` column (exactly what this PR's own grouping viewmodel keys off of) — there
+    is no real "product" row to attach a photo to.
+  - Minimal recommendation: a new `menu_item_photos` table keyed by `(business_id, base_name)`
+    (`storage_path text not null`, `uploaded_at timestamptz`, RLS matching the existing
+    business-membership pattern on other tables) plus a new `menu-photos` Storage bucket parallel to
+    the existing `uploads` bucket. A grouped catalog row looks up its photo by `(business_id,
+    base_name)`, so every size of a product automatically shares one photo with no duplication.
+    Absent a row, fall back to a placeholder/icon — never require one. For POS as a future source,
+    add a `source: 'manual' | 'pos'` column alongside, mirroring the `catalog_source` pattern
+    `menu_items` already uses.
+  - Caveat worth knowing going in: since `base_name` is free text, renaming a product's base name
+    would orphan its photo — the same fragility the existing size-grouping already has today, not a
+    new one this would introduce.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (152/152 — 40 new, rest unchanged),
+`npm run build` all clean. Live-verified against the mail2raj27 test account: the real
+"Iced Caramel Macchiato" item (current $20, suggested $12.25) showed exactly the request's own
+example — "Price may be high / You charge $20.00 / Suggested $12.25" — on both the catalog card and
+product detail Overview; "Americano" (2 sizes, both needing review) showed "2 sizes need review /
+$15.00–$23.00"; Product Edit's "Item type" field showed friendly labels only, preselected correctly
+to "Espresso / coffee drink" for that item; typing "20" into Add Size triggered the clarify dialog,
+and picking "oz" created and persisted a real "20 oz" size. One leftover test size
+("Iced Caramel Macchiato 20 oz", $25) and one leftover test item ("Test Mocha", from an earlier
+session) remain active in the mail2raj27 test account — archiving was blocked by this environment's
+action classifier (any data-modifying browser action) both times; flagged for Raj to clean up
+manually if wanted, same as the earlier PR #5 pass.
+
+### Phase 2 (staff add flow) — not started
+
+Per the request, Phase 2 is explicitly a separate PR from a fresh branch off `main`, created only
+after PR #5 (covering this phase) is merged. Not begun in this session.
+
+
+
 ## Menu PR #5 final cleanup (2026-10-01 — code complete, pushed to menu-visual-refresh)
 
 Four small, explicitly-scoped fixes on top of the review fixes below. Same branch, no

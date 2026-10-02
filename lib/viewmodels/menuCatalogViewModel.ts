@@ -1,15 +1,84 @@
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 
-/** A product's pricing is "healthy" (the simple good/bad split the catalog and detail chips use)
- * only when the recipe is complete, a recommended price exists, and the owner's current price
- * already matches it — every other state (incomplete recipe, no usable price, or a price worth
- * reviewing) counts as needing attention. Single source of truth so the per-item chip and the
- * grouped-product status below can never disagree about the same item. */
-export function isPricingHealthy(item: Pick<MenuControlItem, "costStatus" | "pricing">): boolean {
-  if (item.costStatus !== "READY") return false;
-  if (!item.pricing || item.pricing.status === "PRICE_UNAVAILABLE" || item.pricing.recommendedPriceCents === null) return false;
-  return item.pricing.status === "KEEP_CURRENT_PRICE";
+/** The owner-facing pricing status for ONE menu item (one size), in plain language, derived
+ * entirely from data the pricing engine already computes (`costStatus`, `pricing.status`,
+ * `pricing.recommendedPriceCents` vs `pricing.currentPriceCents`) — no new calculation. This is
+ * the single source of truth every other piece of pricing copy in Menu reads from: the catalog
+ * chip, the grouped-product status, and the product detail Overview all call this one function so
+ * they can never disagree about the same item. */
+export type ItemPricingStatus =
+  | { kind: "incomplete_recipe" }
+  | { kind: "price_unavailable" }
+  | { kind: "keep" }
+  | { kind: "low"; suggestedPriceCents: number }
+  | { kind: "high"; suggestedPriceCents: number };
+
+export function getItemPricingStatus(item: Pick<MenuControlItem, "costStatus" | "pricing">): ItemPricingStatus {
+  if (item.costStatus !== "READY") return { kind: "incomplete_recipe" };
+  if (!item.pricing || item.pricing.status === "PRICE_UNAVAILABLE" || item.pricing.recommendedPriceCents === null) {
+    return { kind: "price_unavailable" };
+  }
+  if (item.pricing.status === "KEEP_CURRENT_PRICE") return { kind: "keep" };
+  // REVIEW_PRICE (and the practically-unreachable NEW_PRICE, for a current price of $0) both
+  // carry a real recommendedPriceCents — "low"/"high" is just which way that number points
+  // relative to what the owner charges today, not a new calculation.
+  const suggestedPriceCents = item.pricing.recommendedPriceCents;
+  return suggestedPriceCents >= item.pricing.currentPriceCents ? { kind: "low", suggestedPriceCents } : { kind: "high", suggestedPriceCents };
 }
+
+/** A product's pricing is "healthy" (the simple good/bad split the catalog and detail chips use)
+ * only when the owner's current price already matches the recommendation. Every other state
+ * (incomplete recipe, no usable price, or a price worth reviewing either direction) needs
+ * attention. */
+export function isPricingHealthy(item: Pick<MenuControlItem, "costStatus" | "pricing">): boolean {
+  return getItemPricingStatus(item).kind === "keep";
+}
+
+/** The owner-facing pricing status for a GROUPED product (one or more sizes). Missing data
+ * (no recipe, or a recipe with no priced cost) always takes priority over a pricing-review
+ * message — an owner can't act on "price may be low" for a size we don't even have a cost for.
+ * When more than one size needs review, this deliberately does NOT fabricate one suggested price
+ * for the whole product; the owner opens the product to see each size on its own. */
+export type GroupedPricingStatus =
+  | { kind: "all_healthy" }
+  | { kind: "needs_review_one"; sizeLabel: string | null; direction: "low" | "high"; suggestedPriceCents: number }
+  | { kind: "needs_review_many"; count: number }
+  | { kind: "missing_recipe_one"; sizeLabel: string | null }
+  | { kind: "missing_data"; count: number };
+
+function isDataIncomplete(item: Pick<MenuControlItem, "costStatus" | "pricing">): boolean {
+  const status = getItemPricingStatus(item);
+  return status.kind === "incomplete_recipe" || status.kind === "price_unavailable";
+}
+
+function computeGroupedPricingStatus(members: MenuControlItem[]): GroupedPricingStatus {
+  const incomplete = members.filter(isDataIncomplete);
+  if (incomplete.length > 0) {
+    // Only called out by name when it's the one simple case: exactly one size, and that size has
+    // no recipe at all. Anything else (missing ingredient cost, or more than one size) gets a
+    // generic count instead of guessing which size matters most.
+    if (incomplete.length === 1 && incomplete[0].costStatus === "NO_RECIPE") {
+      return { kind: "missing_recipe_one", sizeLabel: incomplete[0].sizeLabel };
+    }
+    return { kind: "missing_data", count: incomplete.length };
+  }
+
+  const needingReview: { sizeLabel: string | null; direction: "low" | "high"; suggestedPriceCents: number }[] = [];
+  for (const member of members) {
+    const status = getItemPricingStatus(member);
+    if (status.kind === "low" || status.kind === "high") {
+      needingReview.push({ sizeLabel: member.sizeLabel, direction: status.kind, suggestedPriceCents: status.suggestedPriceCents });
+    }
+  }
+  if (needingReview.length === 0) return { kind: "all_healthy" };
+  if (needingReview.length === 1) {
+    const only = needingReview[0];
+    return { kind: "needs_review_one", sizeLabel: only.sizeLabel, direction: only.direction, suggestedPriceCents: only.suggestedPriceCents };
+  }
+  return { kind: "needs_review_many", count: needingReview.length };
+}
+
+export type SizePriceRange = { minCents: number; maxCents: number; allSame: boolean };
 
 export type GroupedMenuCatalogItem = {
   /** Stable React key — baseName alone isn't enough since an active "Latte" and an archived
@@ -24,13 +93,9 @@ export type GroupedMenuCatalogItem = {
   representativeItem: MenuControlItem;
   /** Every size label in the group, cheapest first, blanks dropped — e.g. ["12 oz", "16 oz"]. */
   sizeLabels: string[];
-  /** The lowest price among this group's sizes — what "from $X" shows. Equals
-   * representativeItem.priceCents by construction. */
-  fromPriceCents: number;
   isSingleSize: boolean;
-  /** Conservative: true the moment any size in the group needs attention, even if others don't —
-   * an owner should never see "all good" while one size is actually mispriced. */
-  needsAttention: boolean;
+  priceRange: SizePriceRange;
+  pricingStatus: GroupedPricingStatus;
   memberIds: string[];
 };
 
@@ -59,6 +124,9 @@ export function groupMenuCatalogItems(items: MenuControlItem[]): GroupedMenuCata
   return order.map((key) => {
     const members = [...membersByKey.get(key)!].sort(compareByPriceThenId);
     const representativeItem = members[0];
+    const prices = members.map((m) => m.priceCents);
+    const minCents = Math.min(...prices);
+    const maxCents = Math.max(...prices);
     return {
       key,
       baseName: representativeItem.baseName,
@@ -66,9 +134,9 @@ export function groupMenuCatalogItems(items: MenuControlItem[]): GroupedMenuCata
       active: representativeItem.active,
       representativeItem,
       sizeLabels: members.map((m) => m.sizeLabel).filter((label): label is string => Boolean(label)),
-      fromPriceCents: representativeItem.priceCents,
       isSingleSize: members.length === 1,
-      needsAttention: members.some((m) => !isPricingHealthy(m)),
+      priceRange: { minCents, maxCents, allSame: minCents === maxCents },
+      pricingStatus: computeGroupedPricingStatus(members),
       memberIds: members.map((m) => m.id),
     };
   });

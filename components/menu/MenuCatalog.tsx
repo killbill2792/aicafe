@@ -6,12 +6,20 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
-import { groupMenuCatalogItems, isPricingHealthy } from "@/lib/viewmodels/menuCatalogViewModel";
+import { groupMenuCatalogItems, isPricingHealthy, type GroupedMenuCatalogItem } from "@/lib/viewmodels/menuCatalogViewModel";
 import { usePricingStatusChip } from "./usePricingStatusChip";
+
+function StatusPill({ good, label }: { good: boolean; label: string }) {
+  return (
+    <span className={`mt-1 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${good ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
+      {good ? <Check aria-hidden="true" size={13} /> : <TriangleAlert aria-hidden="true" size={13} />}
+      {label}
+    </span>
+  );
+}
 
 export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
   const t = useTranslations("Menu");
-  const tEdit = useTranslations("ManageMenu");
   const statusChip = usePricingStatusChip();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
@@ -51,6 +59,41 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
   // working exactly as before.
   const groups = useMemo(() => groupMenuCatalogItems(visible), [visible]);
 
+  function renderPrice(group: GroupedMenuCatalogItem) {
+    if (group.priceRange.allSame) return formatCents(group.priceRange.minCents);
+    return t("priceRange", { low: formatCents(group.priceRange.minCents), high: formatCents(group.priceRange.maxCents) });
+  }
+
+  function renderStatus(group: GroupedMenuCatalogItem) {
+    if (group.isSingleSize) {
+      const chip = statusChip(group.representativeItem);
+      return <StatusPill good={chip.good} label={chip.label} />;
+    }
+    const status = group.pricingStatus;
+    switch (status.kind) {
+      case "all_healthy":
+        return <StatusPill good label={t("pricesLookRight")} />;
+      case "missing_recipe_one":
+        return <StatusPill good={false} label={t("sizeRecipeIncomplete", { size: status.sizeLabel ?? group.baseName })} />;
+      case "missing_data":
+        return <StatusPill good={false} label={t("sizesMissingCostInfo", { count: status.count })} />;
+      case "needs_review_many":
+        return <StatusPill good={false} label={t("multipleSizesNeedReview", { count: status.count })} />;
+      case "needs_review_one":
+        return (
+          <div className="mt-1 flex flex-col gap-0.5">
+            <StatusPill
+              good={false}
+              label={t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })}
+            />
+            <span className="text-xs text-ink-muted">
+              {t("suggested")} <strong className="font-semibold text-warn">{formatCents(status.suggestedPriceCents)}</strong>
+            </span>
+          </div>
+        );
+    }
+  }
+
   return (
     <>
       <label className="flex min-h-12 items-center gap-2 rounded-2xl bg-card px-3 text-ink-muted">
@@ -66,29 +109,16 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
         ))}
       </div>
       <div className="flex flex-col gap-2.5 md:grid md:grid-cols-2 md:gap-3 lg:grid-cols-3">
-        {groups.map((group) => {
-          // A single-size product renders exactly as before — same chip, same price, same
-          // size line — computed from its one real item. Only a genuinely multi-size product
-          // gets the simplified "from $X" / healthy-vs-needs-attention group treatment.
-          const chip = group.isSingleSize
-            ? statusChip(group.representativeItem)
-            : { good: !group.needsAttention, label: group.needsAttention ? tEdit("pricingStatusReview") : tEdit("pricingStatusKeep") };
-          return (
-            <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="flex items-center justify-between gap-3 rounded-card-lg bg-card p-[18px] text-ink no-underline">
-              <div className="min-w-0">
-                <h2 className="truncate text-lg font-bold">{group.baseName}</h2>
-                {group.sizeLabels.length > 0 && <p className="truncate text-sm text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
-                <span className={`mt-1 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${chip.good ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
-                  {chip.good ? <Check aria-hidden="true" size={13} /> : <TriangleAlert aria-hidden="true" size={13} />}
-                  {chip.label}
-                </span>
-              </div>
-              <span className="shrink-0 font-headline text-[25px] font-bold">
-                {group.isSingleSize ? formatCents(group.fromPriceCents) : t("fromPrice", { amount: formatCents(group.fromPriceCents) })}
-              </span>
-            </Link>
-          );
-        })}
+        {groups.map((group) => (
+          <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="flex items-center justify-between gap-3 rounded-card-lg bg-card p-[18px] text-ink no-underline">
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-bold">{group.baseName}</h2>
+              {group.sizeLabels.length > 0 && <p className="truncate text-sm text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
+              {renderStatus(group)}
+            </div>
+            <span className="shrink-0 font-headline text-[25px] font-bold">{renderPrice(group)}</span>
+          </Link>
+        ))}
         {groups.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted md:col-span-full">{t("empty")}</p>}
       </div>
     </>

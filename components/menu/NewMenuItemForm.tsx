@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { addMenuItem } from "@/lib/actions/menuItems";
+import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
+import SizeLabelClarifyDialog from "./SizeLabelClarifyDialog";
 
 type Step = 1 | 2;
 
@@ -18,16 +20,25 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
   const [sizeLabel, setSizeLabel] = useState("");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [clarifySize, setClarifySize] = useState(false);
 
   const priceCents = Math.round((Number(price) || 0) * 100);
 
-  function handleCreate() {
+  function handleCreateClick() {
     if (!name.trim() || priceCents <= 0) return;
+    if (isAmbiguousNumericSizeLabel(sizeLabel)) {
+      setClarifySize(true);
+      return;
+    }
+    submit(sizeLabel);
+  }
+
+  function submit(resolvedSizeLabel: string) {
     setError(null);
     startTransition(async () => {
       const result = await addMenuItem({
         name: name.trim(),
-        sizeLabel: sizeLabel.trim() || undefined,
+        sizeLabel: resolvedSizeLabel.trim() || undefined,
         priceCents,
         menuGroup: menuGroup.trim() || undefined,
       });
@@ -78,11 +89,19 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
             <button type="button" onClick={() => setStep(1)} className="h-12 flex-1 rounded-full border border-line text-base font-semibold text-ink-muted">
               {common("back")}
             </button>
-            <button type="button" onClick={handleCreate} disabled={isPending || !price || priceCents <= 0} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">
+            <button type="button" onClick={handleCreateClick} disabled={isPending || !price || priceCents <= 0} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">
               {t("createItem")}
             </button>
           </div>
         </>
+      )}
+
+      {clarifySize && (
+        <SizeLabelClarifyDialog
+          value={sizeLabel}
+          onResolve={(resolved) => { setSizeLabel(resolved); setClarifySize(false); submit(resolved); }}
+          onCancel={() => setClarifySize(false)}
+        />
       )}
     </div>
   );
