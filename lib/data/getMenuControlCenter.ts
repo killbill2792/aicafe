@@ -9,7 +9,7 @@ import type { PricingResult } from "@/lib/calc";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { itemSalesPeriodTotals, type DatedItemQuantity, type ItemSalesPeriodTotals } from "@/lib/menu/itemSalesPeriods";
+import { itemSalesPeriodTotals, type DatedItemQuantity, type ItemSalesPeriodTotals, type SalesCoverage } from "@/lib/calc/itemSalesPeriods";
 
 export type MenuControlItem = MenuItemForEdit & {
   pricing: PricingResult | null;
@@ -57,9 +57,25 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     const quantity = Number(row.quantity);
     datedQuantities.push({ menuItemId: row.menu_item_id, businessDate: order.business_date, quantity });
   }
-  const { data: coverageRows, error: coverageError } = await supabase.from("daily_rollups").select("business_date").eq("business_id", businessId).gte("business_date", start30).lte("business_date", today);
-  if (coverageError) { logQueryError("getMenuControlCenter:daily_rollups", coverageError); throw new Error(MENU_LOAD_FAILURE_MESSAGE); }
-  const coverageDates = (coverageRows ?? []).map((row) => row.business_date);
+  const { data: connectionRows, error: coverageError } = await supabase
+    .from("pos_connections")
+    .select("provider, status, last_synced_at, backfill_completed_at")
+    .eq("business_id", businessId)
+    .eq("status", "active")
+    .eq("provider", "square")
+    .not("last_synced_at", "is", null)
+    .not("backfill_completed_at", "is", null);
+  if (coverageError) { logQueryError("getMenuControlCenter:pos_connections", coverageError); throw new Error(MENU_LOAD_FAILURE_MESSAGE); }
+  // A completed Square backfill is the repository's only persisted promise of a continuous
+  // sales window (90 days). Rollups and orders intentionally have no row on a closed day, while
+  // CSV uploads do not persist the range the owner exported, so neither can prove coverage.
+  const coverage = (connectionRows ?? []).reduce<SalesCoverage | null>((best, connection) => {
+    const syncedThrough = formatInTimeZone(new Date(connection.last_synced_at), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
+    const backfillDay = formatInTimeZone(new Date(connection.backfill_completed_at), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
+    const coveredFrom = formatInTimeZone(subDays(new Date(`${backfillDay}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
+    if (!best) return { start: coveredFrom, end: syncedThrough };
+    return { start: coveredFrom < best.start ? coveredFrom : best.start, end: syncedThrough > best.end ? syncedThrough : best.end };
+  }, null);
   return items.map((item) => {
     const input = inputById.get(item.id);
     return {
@@ -69,7 +85,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       // instead of risking two independent "is this item priced" checks drifting apart.
       pricing: pricingById.get(item.id) ?? null,
       unitsSold: input && input.unitsSoldInWindow > 0 ? input.unitsSoldInWindow : null,
-      unitsSoldByPeriod: itemSalesPeriodTotals(datedQuantities, coverageDates, item.id, today),
+      unitsSoldByPeriod: itemSalesPeriodTotals(datedQuantities, coverage, item.id, today),
       revenueCents: revenueById.has(item.id) ? revenueById.get(item.id)! : null,
       provenance: ((item.catalogSource ?? (item.posItemId ? "OTHER_POS" : "MANUAL")).toUpperCase()) as MenuControlItem["provenance"],
       lastSyncedAt: item.catalogLastSyncedAt,

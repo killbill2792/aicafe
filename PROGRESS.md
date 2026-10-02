@@ -1788,3 +1788,15 @@ Result:
 - [x] Only projection-owned monthly `supplies:{monthKey}` watchers expire automatically; real `supply:{itemId}` work survives.
 - [x] Binding navigation docs now specify six destinations and the localized AI brand label is used in en/es/ar.
 - [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.
+
+### Phase 4B review follow-up (PR #15)
+
+Plan:
+- Base item-sales periods on trustworthy POS backfill/sync coverage rather than requiring a rollup on every calendar day, and move the pure calculation/tests into `lib/calc/`.
+- Reconcile RecipeMatrix drafts when refreshed recipe props arrive after a successful save, and raise the newly added recipe status labels to the 17px body-text minimum.
+- Run typecheck, lint, tests, build, and diff checks; then commit and push one focused PR #15 follow-up without applying migration 24.
+
+Result:
+- [x] Item-sales periods now use completed Square backfill/sync bounds; closed days need no synthetic rollup, unsupported coverage remains unavailable, and the pure calculation/tests live in `lib/calc/`.
+- [x] Recipe refreshes remount the matrix from the saved recipe signature while staged additions remain visible until refreshed props arrive, so a successful addition never flashes back to Add.
+- [x] Recipe state labels use the 17px body minimum. Typecheck, lint (one pre-existing image warning), all 294 tests, and diff checks pass; build is blocked only by Google Font fetch failures.
