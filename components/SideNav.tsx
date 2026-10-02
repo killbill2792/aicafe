@@ -15,7 +15,7 @@ export default function SideNav() {
   if (pathname === "/login") return null;
 
   return (
-    <nav aria-label={t("ariaLabel")} className="sticky top-0 hidden h-screen w-sidenav shrink-0 flex-col gap-1 border-e border-line bg-card px-3 py-6 md:flex">
+    <nav aria-label={t("ariaLabel")} className="sticky top-0 hidden h-screen w-sidenav shrink-0 flex-col gap-1 border-e border-[#CDBCA7] bg-[#E9DDCE] px-3 py-6 md:flex">
       <div className="px-2 pb-6 font-headline text-xl font-bold text-ink">{tLayout("title")}</div>
       <ul className="flex flex-col gap-1">
         {NAV_TABS.map(({ href, key, Icon }) => {
@@ -25,7 +25,7 @@ export default function SideNav() {
               <Link
                 href={href}
                 aria-current={isActive ? "page" : undefined}
-                className={`flex min-h-12 items-center gap-3 rounded-full px-3 text-[15px] font-semibold ${isActive ? "bg-good-tint text-good" : "text-ink-muted"}`}
+                className={`flex min-h-12 items-center gap-3 rounded-full px-3 text-[15px] font-semibold ${isActive ? "bg-[#4A3022] text-[#FFF8EF]" : "text-[#5F493B] hover:bg-[#DDCCB8]"}`}
               >
                 <Icon aria-hidden="true" size={20} />
                 {t(key)}

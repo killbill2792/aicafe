@@ -5,6 +5,32 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Phase 4B — grouped product workspace (2026-10-02 — code complete)
+
+1. Rebuild product detail from current main as one grouped product workspace with compact all-size
+   overview cards, period sales, focused exact-size price editing, and URL-backed recipe focus.
+2. Add an all-size recipe matrix with size-specific add/remove/edit, ingredient type/search/create,
+   and failure-safe batch saves using the existing conversion rules.
+3. Add tenant-owned shared product photos with a private Storage bucket and additive RLS migration,
+   plus tenant-safe grouped rename and regression coverage.
+4. Refine deterministic AI task sentences/deep links and the warm desktop navigation without
+   changing Phase 4A calculations or mobile navigation architecture.
+5. Run typecheck, lint, full tests, build, and diff checks; commit, push the fresh branch, and open
+   a clean PR. No dependency added; existing Next.js, Supabase Storage, and UI facilities suffice.
+
+Result:
+- [x] Product detail is one stable, size-sorted workspace with all-size overview cards, canonical
+  Today/7-day/30-day quantities, exact-size price editing, and URL-backed recipe size focus.
+- [x] The recipe matrix supports direct per-size quantities/units, per-size add/remove, type-filtered
+  existing ingredient search, inline creation, and explicit partial-save failure reporting.
+- [x] Grouped renaming is an atomic tenant-checked database action; private product photos are shared
+  by the size family and support upload/change/remove through additive migration 24 (not applied).
+- [x] AI work is sentence-first with deterministic supporting facts and entity-preserving links;
+  desktop navigation uses the warm chocolate/tan treatment without changing mobile architecture.
+- [x] Typecheck, lint, 287 tests, and `git diff --check` pass. Production build is blocked only by
+  the environment failing to fetch the existing Figtree, Fraunces, and IBM Plex Sans Arabic fonts.
+  No browser runtime is installed, so a screenshot could not be captured.
+
 ## PR #12 Phase 4A final correctness follow-up (2026-10-02 — code complete)
 
 1. Suppress all Break-even what-if output without a valid base and make the missing-cost action use

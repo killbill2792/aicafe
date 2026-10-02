@@ -10,6 +10,7 @@ import ProductDetailScreen from "@/components/menu/ProductDetailScreen";
 import PageShell from "@/components/shared/PageShell";
 import { parseMenuDetailTab } from "@/lib/viewmodels/menuDetail";
 import { stableSortSizes } from "@/lib/menu/sizeLabel";
+import { getProductPhoto } from "@/lib/data/getProductPhoto";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,10 @@ export default async function MenuItemPage({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>;
-  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string; copiedFrom?: string }>;
+  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string; copiedFrom?: string; size?: string }>;
 }) {
   await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe, tab, edit, copiedFrom }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe, tab, edit, copiedFrom, size }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common, photoResult] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -29,11 +30,13 @@ export default async function MenuItemPage({
     getMenuGroupOptions(),
     getIngredientUnitConversions(),
     getTranslations("Common"),
+    getProductPhoto((await params).itemId),
   ]);
   const item = controlItems.find((candidate) => candidate.id === itemId);
   const editItem = editItems.find((candidate) => candidate.id === itemId);
   if (!item || !editItem) notFound();
   const siblingSizes = stableSortSizes(controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active));
+  const productEditItems = stableSortSizes(editItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.active));
   const initialTab = setupRecipe === "1" ? "recipe" : parseMenuDetailTab(tab);
 
   return (
@@ -46,6 +49,10 @@ export default async function MenuItemPage({
         menuGroupOptions={menuGroupOptions}
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
+        productEditItems={productEditItems}
+        photo={photoResult.photo}
+        businessId={photoResult.businessId}
+        focusedSizeId={size}
         justCreated={setupRecipe === "1"}
         initialTab={initialTab}
         initialEditing={edit === "1" && initialTab === "overview"}

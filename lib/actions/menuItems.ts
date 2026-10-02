@@ -10,11 +10,14 @@ import { MENU_ITEM_CATEGORY_CODES } from "@/lib/constants";
 import { existingMenuGroups, normalizeMenuGroup } from "@/lib/menu/menuGroups";
 import { inferMenuItemCategory } from "@/lib/menu/inferCategory";
 import { copyRecipeLines } from "@/lib/menu/copyRecipeLines";
+import { productSizeName } from "@/lib/menu/productNaming";
+import { executeGroupedProductRename } from "@/lib/menu/renameProduct";
 import { logQueryError, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { needsIngredientConversion, toBaseUnitQuantity, type BaseUnit, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 export type ActionResultWithId = { ok: true; id: string } | { ok: false; error: string };
+export type ProductPhotoResult = { ok: true; uploadPath: string } | { ok: false; error: string };
 
 async function currentBusinessId(): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
@@ -85,7 +88,7 @@ export async function addMenuItem(input: z.infer<typeof MenuItemSchema>): Promis
   const supabase = await createServerSupabaseClient();
 
   const sizeLabel = parsed.data.sizeLabel?.trim() || null;
-  const fullName = sizeLabel ? `${parsed.data.name} ${sizeLabel}` : parsed.data.name;
+  const fullName = productSizeName(parsed.data.name, sizeLabel);
   const menuGroupResult = await safeNormalizedMenuGroup(supabase, businessId, parsed.data.menuGroup);
   if (!menuGroupResult.ok) return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
   const menuGroup = menuGroupResult.menuGroup;
@@ -167,7 +170,7 @@ export async function updateMenuItem(input: z.infer<typeof UpdateMenuItemSchema>
   const { data: updated, error } = await supabase
     .from("menu_items")
     .update({
-      name: sizeLabel ? `${parsed.data.name} ${sizeLabel}` : parsed.data.name,
+      name: productSizeName(parsed.data.name, sizeLabel),
       base_name: parsed.data.name,
       size_label: sizeLabel,
       price_cents: parsed.data.priceCents,
@@ -185,6 +188,72 @@ export async function updateMenuItem(input: z.infer<typeof UpdateMenuItemSchema>
   if (!updated || updated.length === 0) return { ok: false, error: "Item not found." };
   revalidatePath("/menu"); revalidatePath(`/menu/${parsed.data.id}`); revalidatePath("/menu/manage");
   return { ok: true };
+}
+
+const RenameProductSchema = z.object({ menuItemId: z.string().uuid(), name: z.string().trim().min(1).max(80) });
+/** Renames the product represented by `menuItemId`, including every sibling size. The database
+ * function re-reads the trusted base name and applies business membership in one transaction, so
+ * a client cannot rename another tenant's product or leave only part of a size family renamed. */
+export async function renameProduct(input: z.infer<typeof RenameProductSchema>): Promise<ActionResult> {
+  const parsed = RenameProductSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a product name." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await executeGroupedProductRename(supabase, businessId, parsed.data.menuItemId, parsed.data.name);
+  if (error) { logQueryError("renameProduct", error); return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE }; }
+  if (!data) return { ok: false, error: "Product not found." };
+  revalidatePath("/menu"); revalidatePath("/menu/manage"); revalidatePath(`/menu/${parsed.data.menuItemId}`); revalidatePath("/");
+  return { ok: true };
+}
+
+const PriceSchema = z.object({ menuItemId: z.string().uuid(), priceCents: z.number().int().positive() });
+export async function updateMenuItemPrice(input: z.infer<typeof PriceSchema>): Promise<ActionResult> {
+  const parsed = PriceSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a valid price." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase.from("menu_items").update({ price_cents: parsed.data.priceCents }).eq("id", parsed.data.menuItemId).eq("business_id", businessId).select("id");
+  if (error) { logQueryError("updateMenuItemPrice", error); return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE }; }
+  if (!data?.length) return { ok: false, error: "Item not found." };
+  revalidatePath("/menu"); revalidatePath(`/menu/${parsed.data.menuItemId}`); revalidatePath("/");
+  return { ok: true };
+}
+
+const PhotoSchema = z.object({ menuItemId: z.string().uuid(), storagePath: z.string().min(1).max(300) });
+/** Registers an already-uploaded private Storage object as the one photo for this base product. */
+export async function saveProductPhoto(input: z.infer<typeof PhotoSchema>): Promise<ActionResult> {
+  const parsed = PhotoSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Choose a valid photo." };
+  const businessId = await currentBusinessId();
+  if (!businessId || !parsed.data.storagePath.startsWith(`${businessId}/`)) return { ok: false, error: "Photo not allowed." };
+  const supabase = await createServerSupabaseClient();
+  const { data: item } = await supabase.from("menu_items").select("id, base_name, name").eq("id", parsed.data.menuItemId).eq("business_id", businessId).single();
+  if (!item) return { ok: false, error: "Product not found." };
+  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name).order("id").limit(1);
+  const anchorId = siblings?.[0]?.id ?? item.id;
+  const { data: old } = await supabase.from("product_photos").select("storage_path").eq("anchor_menu_item_id", anchorId).maybeSingle();
+  const { error } = await supabase.from("product_photos").upsert({ business_id: businessId, anchor_menu_item_id: anchorId, storage_path: parsed.data.storagePath }, { onConflict: "anchor_menu_item_id" });
+  if (error) { logQueryError("saveProductPhoto", error); return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE }; }
+  if (old?.storage_path && old.storage_path !== parsed.data.storagePath) await supabase.storage.from("product-photos").remove([old.storage_path]);
+  revalidatePath(`/menu/${item.id}`); return { ok: true };
+}
+
+export async function removeProductPhoto(menuItemId: string): Promise<ActionResult> {
+  const parsed = z.string().uuid().safeParse(menuItemId);
+  if (!parsed.success) return { ok: false, error: "Product not found." };
+  const businessId = await currentBusinessId(); if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { data: item } = await supabase.from("menu_items").select("id, base_name, name").eq("id", parsed.data).eq("business_id", businessId).single();
+  if (!item) return { ok: false, error: "Product not found." };
+  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name).order("id").limit(1);
+  const anchorId = siblings?.[0]?.id ?? item.id;
+  const { data: photo } = await supabase.from("product_photos").select("storage_path").eq("anchor_menu_item_id", anchorId).maybeSingle();
+  const { error } = await supabase.from("product_photos").delete().eq("anchor_menu_item_id", anchorId).eq("business_id", businessId);
+  if (error) return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  if (photo?.storage_path) await supabase.storage.from("product-photos").remove([photo.storage_path]);
+  revalidatePath(`/menu/${item.id}`); return { ok: true };
 }
 
 /** Distinct menu-group names already used by this business, for the create/edit form's
