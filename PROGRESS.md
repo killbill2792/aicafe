@@ -1532,3 +1532,55 @@ Scaffolded with `create-next-app` (Next 16.3.6, Turbopack, TS strict) into a tem
 Verified: `npm run build` (all 15 pages — 3 locales × 5 routes — prerender), `npm run test` (2 passing smoke tests on `lib/utils/cn.ts`), `npm run lint` (clean), `npm run dev` + manual browser check at mobile width (375px) for en and ar, and a real **Lighthouse accessibility audit against the Home screen scored 100/100** (target was ≥95).
 
 Next: M1 (Supabase migrations from `docs/04-data-model.md`, RLS, Fixture A seed, magic-link login).
+
+## Phase 1 — AI operations team MVP (2026-10-02)
+
+Plan:
+- Add one shared deterministic operating-task model, agent routing, lifecycle transitions, and transport-neutral staff communication boundary.
+- Add additive RLS-protected task/response persistence schema without applying it to production.
+- Build deterministic team/inbox projections and compact localized Home + operations surfaces that remain useful without AI.
+- Cover pricing provenance, staff responses/expiry, truthful handled states, qualitative supply checks, routing, and no-AI behavior with tests.
+- Run typecheck, lint, tests, and production build; then commit as a standalone Phase 1 change.
+
+No dependency added: existing Next.js, next-intl, Supabase, and Vitest facilities are sufficient.
+
+Phase 1 result:
+- [x] Shared deterministic agent routing, operational task contracts, evidence, lifecycle transitions, qualitative supply responses, and truthful staff coverage states.
+- [x] Explicit unavailable staff communication provider; no delivery is claimed without transport.
+- [x] Additive `operating_tasks` / `operating_task_responses` migration with tenant RLS (not applied).
+- [x] Localized compact Home team surface and `/operations` Needs you / Handled / Watching inbox.
+- [x] Pricing review tasks consume unchanged PricingEngine output; no POS price mutation exists.
+- [x] Typecheck, lint, and 238 tests pass. Production build is blocked only by this environment failing to download the three existing Google fonts.
+
+## Phase 1 review follow-up (PR #8)
+
+Plan:
+- Scope operating-task keys and response relationships by business, including employee tenant consistency in migration 23.
+- Restore task-kind/agent routing invariants and remove capped Home status rendering.
+- Add validated teammate query navigation and focused operations context.
+- Separate employee coverage responses, owner approval, and successful schedule completion so only real completion can be handled.
+- Add regression tests, run all required checks, and commit as one PR #8 follow-up.
+
+Phase 1 review result:
+- [x] Migration 23 now uses business-scoped task identity and tenant-consistent composite task/employee response references.
+- [x] Every generated task's agent matches `agentForTask`, including Maya's supply watch.
+- [x] Team statuses render actual counts without a 0–5 cap; regression coverage includes Alex and Leo counts above five.
+- [x] Teammate links use validated `?agent=` navigation with safe full-inbox fallback.
+- [x] Staff confirmation, owner approval, and verified schedule-action completion are distinct; only successful completion marks coverage handled/applied.
+- [x] Typecheck, lint, and 245 tests pass. Build remains blocked only by failed network downloads for the existing Google fonts.
+
+## Phase 1 final foundation follow-up (PR #8)
+
+Plan:
+- Label benchmark-derived Alex recommendations as estimates while preserving deterministic pricing mode, confidence, and evidence.
+- Carry Leo's stable missing-cost category code and localize it at render time.
+- Persist response actor provenance and actor/employee consistency in migration 23.
+- Keep accepted price changes incomplete until a later deterministic observation verifies the selling price changed.
+- Add focused regressions and rerun typecheck, lint, tests, and build.
+
+Phase 1 final foundation result:
+- [x] Benchmark pricing tasks carry mode/estimate metadata and render localized Estimate treatment with benchmark-only wording.
+- [x] Leo stores stable category codes and resolves localized labels only in the operations UI.
+- [x] Migration 23 persists actor type and enforces employee identity for employee responses and no employee identity for owner responses.
+- [x] Use-price stays Watching until a trusted later observation matches the accepted recommendation; keep-current can complete immediately.
+- [x] Typecheck, lint, and 248 tests pass. Build is blocked only by network failures fetching the three existing Google fonts.
