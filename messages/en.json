@@ -635,8 +635,8 @@
     "daySat": "Sat",
     "daySun": "Sun",
     "breakLabel": "Unpaid break each day (minutes)",
-    "repeatsWeekly": "Repeats every week",
-    "justForMonth": "Just for one month",
+    "repeatsWeekly": "Use every week",
+    "justForMonth": "Only this month",
     "monthLabel": "Month",
     "saveSchedule": "Save schedule",
     "scheduleSaved": "Saved",
@@ -659,7 +659,9 @@
     "variedTimes": "Times vary by day",
     "breakSummary": "{minutes} min break",
     "variedBreaks": "Breaks vary by day",
-    "editSchedule": "Edit schedule"
+    "editSchedule": "Edit schedule",
+    "repeatsWeeklyHelp": "Repeats each week until you change it.",
+    "justForMonthHelp": "Use this schedule only for the selected month."
   },
   "Scenario": {
     "title": "Try a scenario",

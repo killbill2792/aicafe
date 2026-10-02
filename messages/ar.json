@@ -635,8 +635,8 @@
     "daySat": "سب",
     "daySun": "أح",
     "breakLabel": "استراحة غير مدفوعة كل يوم (دقائق)",
-    "repeatsWeekly": "يتكرر كل أسبوع",
-    "justForMonth": "لشهر واحد فقط",
+    "repeatsWeekly": "استخدمه كل أسبوع",
+    "justForMonth": "هذا الشهر فقط",
     "monthLabel": "الشهر",
     "saveSchedule": "حفظ الجدول",
     "scheduleSaved": "تم الحفظ",
@@ -659,7 +659,9 @@
     "variedTimes": "الأوقات تختلف حسب اليوم",
     "breakSummary": "استراحة {minutes} دقيقة",
     "variedBreaks": "الاستراحات تختلف حسب اليوم",
-    "editSchedule": "تعديل الجدول"
+    "editSchedule": "تعديل الجدول",
+    "repeatsWeeklyHelp": "يتكرر كل أسبوع حتى تغيّره.",
+    "justForMonthHelp": "استخدم هذا الجدول للشهر المحدد فقط."
   },
   "Scenario": {
     "title": "جرّب سيناريو",

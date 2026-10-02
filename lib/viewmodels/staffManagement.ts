@@ -8,6 +8,11 @@ export type StaffScheduleSummary = {
   breaksVary: boolean;
 };
 
+/** New-employee schedule guidance is consumed only by that employee's first successful save. */
+export function clearNewEmployeeGuidance(currentNewEmployeeId: string | null, savedEmployeeId: string): string | null {
+  return currentNewEmployeeId === savedEmployeeId ? null : currentNewEmployeeId;
+}
+
 export function schedulesForMonth(schedules: StaffScheduleRow[], month: string): StaffScheduleRow[] {
   const bounded = schedules.filter((schedule) => schedule.effectiveTo !== null && schedule.effectiveFrom.slice(0, 7) <= month && schedule.effectiveTo.slice(0, 7) >= month);
   return bounded.length > 0 ? bounded : schedules.filter((schedule) => schedule.effectiveTo === null);

@@ -7,7 +7,7 @@ import { formatCents, weeklyScheduledHours } from "@/lib/calc";
 import { useRouter } from "@/i18n/navigation";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
 import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
-import { schedulesForMonth, summarizeStaffSchedule } from "@/lib/viewmodels/staffManagement";
+import { clearNewEmployeeGuidance, schedulesForMonth, summarizeStaffSchedule } from "@/lib/viewmodels/staffManagement";
 
 type WagePeriod = "hour" | "month" | "year";
 
@@ -62,7 +62,9 @@ type Labels = {
   daySun: string;
   breakLabel: string;
   repeatsWeekly: string;
+  repeatsWeeklyHelp: string;
   justForMonth: string;
+  justForMonthHelp: string;
   monthLabel: string;
   saveSchedule: string;
   scheduleSaved: string;
@@ -220,6 +222,7 @@ export default function ManageStaffPanel({
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={newEmployeeId === emp.id}
+              onScheduleSaved={() => setNewEmployeeId((current) => clearNewEmployeeGuidance(current, emp.id))}
               onToggle={() => toggleExpanded(emp.id)}
             />
           ))
@@ -237,6 +240,7 @@ export default function ManageStaffPanel({
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={false}
+              onScheduleSaved={() => setNewEmployeeId((current) => clearNewEmployeeGuidance(current, emp.id))}
               onToggle={() => toggleExpanded(emp.id)}
             />
           ))}
@@ -253,6 +257,7 @@ function EmployeeRowItem({
   labels,
   expanded,
   openScheduleInitially,
+  onScheduleSaved,
   onToggle,
 }: {
   employee: EmployeeRow;
@@ -261,6 +266,7 @@ function EmployeeRowItem({
   labels: Labels;
   expanded: boolean;
   openScheduleInitially: boolean;
+  onScheduleSaved: () => void;
   onToggle: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
@@ -425,7 +431,7 @@ function EmployeeRowItem({
             </div>
           )}
 
-          {activeEditor === "schedule" && <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { router.refresh(); onToggle(); }} />}
+          {activeEditor === "schedule" && <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { setActiveEditor(null); onScheduleSaved(); router.refresh(); onToggle(); }} />}
 
           {activeEditor === "day" && <DayEditor employee={employee} todayDateStr={todayDateStr} labels={labels} />}
 
@@ -543,23 +549,29 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
         </label>
       )}
 
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => setScopeType("ongoing")}
-          aria-pressed={scopeType === "ongoing"}
-          className={`min-h-12 flex-1 rounded-xl border-2 text-sm font-bold ${scopeType === "ongoing" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
-        >
-          {labels.repeatsWeekly}
-        </button>
-        <button
-          type="button"
-          onClick={() => setScopeType("month")}
-          aria-pressed={scopeType === "month"}
-          className={`min-h-12 flex-1 rounded-xl border-2 text-sm font-bold ${scopeType === "month" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
-        >
-          {labels.justForMonth}
-        </button>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setScopeType("ongoing")}
+            aria-pressed={scopeType === "ongoing"}
+            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "ongoing" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
+          >
+            {labels.repeatsWeekly}
+          </button>
+          <p className="text-xs leading-snug text-ink-muted">{labels.repeatsWeeklyHelp}</p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <button
+            type="button"
+            onClick={() => setScopeType("month")}
+            aria-pressed={scopeType === "month"}
+            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "month" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
+          >
+            {labels.justForMonth}
+          </button>
+          <p className="text-xs leading-snug text-ink-muted">{labels.justForMonthHelp}</p>
+        </div>
       </div>
       {scopeType === "month" && (
         <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">

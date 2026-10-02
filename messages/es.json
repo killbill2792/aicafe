@@ -635,8 +635,8 @@
     "daySat": "Sáb",
     "daySun": "Dom",
     "breakLabel": "Descanso sin pago cada día (minutos)",
-    "repeatsWeekly": "Se repite cada semana",
-    "justForMonth": "Solo por un mes",
+    "repeatsWeekly": "Usar cada semana",
+    "justForMonth": "Solo este mes",
     "monthLabel": "Mes",
     "saveSchedule": "Guardar horario",
     "scheduleSaved": "Guardado",
@@ -659,7 +659,9 @@
     "variedTimes": "El horario varía según el día",
     "breakSummary": "{minutes} min de descanso",
     "variedBreaks": "Los descansos varían según el día",
-    "editSchedule": "Editar horario"
+    "editSchedule": "Editar horario",
+    "repeatsWeeklyHelp": "Se repite cada semana hasta que lo cambies.",
+    "justForMonthHelp": "Usa este horario solo durante el mes seleccionado."
   },
   "Scenario": {
     "title": "Probar un escenario",

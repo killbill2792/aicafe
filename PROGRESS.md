@@ -1624,3 +1624,16 @@ Phase 2 review follow-up result:
 - [x] Focused tab, staff-summary, and calendar-signal regressions added; typecheck, lint, and all 258 tests pass.
 - [x] Responsive class logic reviewed for 375px/390px/desktop and logical RTL behavior in en/es/ar; touched controls remain at least 48px.
 - [ ] Production build remains blocked only by the existing environment failure to fetch Figtree, Fraunces, and IBM Plex Sans Arabic from Google Fonts.
+
+## Phase 2 final Manage Staff follow-up (PR #10)
+
+Plan:
+- Consume new-employee schedule guidance after the first successful schedule save so later expansions stay summary-first.
+- Restore clearer weekly/month-only scope labels and supporting copy in en/es/ar while preserving selected states and 48px targets.
+- Run focused/full tests, typecheck, and lint, then commit as one small PR #10 follow-up.
+
+Phase 2 final Manage Staff follow-up result:
+- [x] The first successful schedule save consumes new-employee guidance, refreshes, collapses, and leaves future expansions with no editor selected.
+- [x] Schedule scope now says “Use every week” / “Only this month” with clear supporting copy in en/es/ar.
+- [x] Selected `aria-pressed` styling and 48px scope controls are preserved.
+- [x] Typecheck, lint, and all 259 tests pass.
