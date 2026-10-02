@@ -10,7 +10,7 @@ import EstimatePill from "@/components/shared/EstimatePill";
 import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { profitTone, profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
-import type { DayCell, DayDetail } from "@/lib/viewmodels/monthCalendar";
+import type { DayCell, DayDetail, MonthCalendarViewModel } from "@/lib/viewmodels/monthCalendar";
 
 export type MonthCalendarLabels = {
   prevMonth: string;
@@ -32,6 +32,10 @@ export type MonthCalendarLabels = {
   monthProgress: string;
   daysRecorded: string;
   profitableDays: string;
+  billsCovered: string;
+  billsProjected: string;
+  billsNotCovered: string;
+  billsInsufficient: string;
 };
 
 export default function MonthCalendar({
@@ -44,6 +48,7 @@ export default function MonthCalendar({
   detailsByDate,
   bucketLabels,
   labels,
+  coverageSignal,
 }: {
   monthLabel: string;
   calMonthKey: string;
@@ -54,6 +59,7 @@ export default function MonthCalendar({
   detailsByDate: Record<string, DayDetail>;
   bucketLabels: Record<string, string>;
   labels: MonthCalendarLabels;
+  coverageSignal: MonthCalendarViewModel["coverageSignal"];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -118,6 +124,15 @@ export default function MonthCalendar({
           <strong className="block font-headline text-2xl text-good">{profitableDays}</strong>
           <span className="text-sm text-ink-muted">{labels.profitableDays}</span>
         </div>
+        <p className={`col-span-2 m-0 border-t border-line pt-2 text-sm font-bold ${coverageSignal.kind === "covered" ? "text-good" : "text-ink-muted"}`}>
+          {coverageSignal.kind === "covered"
+            ? labels.billsCovered.replace("{date}", new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(`${coverageSignal.date}T00:00:00`)))
+            : coverageSignal.kind === "projected"
+              ? labels.billsProjected.replace("{date}", new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(`${coverageSignal.date}T00:00:00`)))
+              : coverageSignal.kind === "not_covered"
+                ? labels.billsNotCovered
+                : labels.billsInsufficient}
+        </p>
       </div>
 
       <div className="grid w-full max-w-[420px] self-center grid-cols-7 gap-px text-center text-xs font-bold text-ink-muted">

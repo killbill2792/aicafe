@@ -224,7 +224,11 @@
     "manageBills": "إدارة الفواتير",
     "calendarMonthProgress": "تقدم الشهر",
     "calendarDaysRecorded": "أيام مسجلة",
-    "calendarProfitableDays": "أيام مربحة"
+    "calendarProfitableDays": "أيام مربحة",
+    "calendarBillsCovered": "تمت تغطية الفواتير في {date}",
+    "calendarBillsProjected": "التاريخ المتوقع لتغطية الفواتير: {date}",
+    "calendarBillsNotCovered": "لم تتم تغطية الفواتير بالكامل هذا الشهر",
+    "calendarBillsInsufficient": "لا توجد بيانات كافية لتحديد تغطية الفواتير"
   },
   "Menu": {
     "title": "القائمة",
@@ -297,7 +301,9 @@
     "sizePriceMayBeLow": "{size}: قد يكون السعر منخفضًا",
     "sizePriceMayBeHigh": "{size}: قد يكون السعر مرتفعًا",
     "multipleSizesNeedReview": "{count, plural, one {حجم واحد يحتاج مراجعة} other {# أحجام تحتاج مراجعة}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "sizeCostToMake": "تكلفة التحضير {amount}",
+    "viewEditSize": "عرض / تعديل"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -402,7 +408,11 @@
     "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
     "addStaff": "+ إضافة موظف",
     "emptyShiftHero": "لا أحد يعمل الآن",
-    "activeShiftHero": "{count, plural, one {شخص واحد يعمل الآن} two {شخصان يعملان الآن} few {# أشخاص يعملون الآن} other {# شخصًا يعمل الآن}}"
+    "activeShiftHero": "{count, plural, one {شخص واحد في الوردية} two {شخصان في الوردية} few {# أشخاص في الوردية} other {# شخصًا في الوردية}}",
+    "noOneOnShiftHero": "لا أحد في وردية الآن",
+    "perHourRightNow": "/ساعة الآن",
+    "perMinuteSecondary": "{amount}/دقيقة",
+    "staffCostToday": "تكلفة الموظفين اليوم حتى الآن"
   },
   "More": {
     "title": "المزيد",
@@ -648,7 +658,8 @@
     "daysSummary": "{days}",
     "variedTimes": "الأوقات تختلف حسب اليوم",
     "breakSummary": "استراحة {minutes} دقيقة",
-    "variedBreaks": "الاستراحات تختلف حسب اليوم"
+    "variedBreaks": "الاستراحات تختلف حسب اليوم",
+    "editSchedule": "تعديل الجدول"
   },
   "Scenario": {
     "title": "جرّب سيناريو",

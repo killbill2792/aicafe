@@ -224,7 +224,11 @@
     "manageBills": "Manage bills",
     "calendarMonthProgress": "Month progress",
     "calendarDaysRecorded": "days recorded",
-    "calendarProfitableDays": "profitable days"
+    "calendarProfitableDays": "profitable days",
+    "calendarBillsCovered": "Bills covered on {date}",
+    "calendarBillsProjected": "Projected bill coverage: {date}",
+    "calendarBillsNotCovered": "Bills were not fully covered this month",
+    "calendarBillsInsufficient": "Not enough data to determine bill coverage"
   },
   "Menu": {
     "title": "Menu",
@@ -297,7 +301,9 @@
     "sizePriceMayBeLow": "{size} price may be low",
     "sizePriceMayBeHigh": "{size} price may be high",
     "multipleSizesNeedReview": "{count, plural, one {# size needs review} other {# sizes need review}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "sizeCostToMake": "Costs {amount} to make",
+    "viewEditSize": "View / Edit"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -402,7 +408,11 @@
     "allHealthyInsight": "Your staff cost has stayed healthy all week.",
     "addStaff": "+ Add staff",
     "emptyShiftHero": "Nobody working now",
-    "activeShiftHero": "{count, plural, one {# person working now} other {# people working now}}"
+    "activeShiftHero": "{count, plural, one {# person on shift} other {# people on shift}}",
+    "noOneOnShiftHero": "No one is on shift right now",
+    "perHourRightNow": "/hour right now",
+    "perMinuteSecondary": "{amount}/minute",
+    "staffCostToday": "Staff cost today so far"
   },
   "More": {
     "title": "More",
@@ -648,7 +658,8 @@
     "daysSummary": "{days}",
     "variedTimes": "Times vary by day",
     "breakSummary": "{minutes} min break",
-    "variedBreaks": "Breaks vary by day"
+    "variedBreaks": "Breaks vary by day",
+    "editSchedule": "Edit schedule"
   },
   "Scenario": {
     "title": "Try a scenario",

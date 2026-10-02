@@ -7,6 +7,7 @@ import { formatCents, weeklyScheduledHours } from "@/lib/calc";
 import { useRouter } from "@/i18n/navigation";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
 import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
+import { schedulesForMonth, summarizeStaffSchedule } from "@/lib/viewmodels/staffManagement";
 
 type WagePeriod = "hour" | "month" | "year";
 
@@ -50,6 +51,7 @@ type Labels = {
   detailsSaved: string;
   cancel: string;
   weeklySchedule: string;
+  editSchedule: string;
   weeklyScheduleHint: string;
   dayMon: string;
   dayTue: string;
@@ -92,12 +94,11 @@ function dayLabel(dayOfWeek: number, labels: Labels): string {
 }
 
 function scheduleSummary(schedules: StaffScheduleRow[], labels: Labels): string {
-  if (schedules.length === 0) return labels.noScheduleSet;
-  const days = DAY_ORDER.filter((day) => schedules.some((schedule) => schedule.dayOfWeek === day)).map((day) => dayLabel(day, labels)).join(", ");
-  const timeRanges = new Set(schedules.map((schedule) => `${schedule.startTime}–${schedule.endTime}`));
-  const time = timeRanges.size === 1 ? [...timeRanges][0] : labels.variedTimes;
-  const breaks = new Set(schedules.map((schedule) => schedule.unpaidBreakMinutes));
-  const breakText = breaks.size === 1 ? labels.breakSummary.replace("{minutes}", String([...breaks][0])) : labels.variedBreaks;
+  const summary = summarizeStaffSchedule(schedules);
+  if (!summary) return labels.noScheduleSet;
+  const days = summary.dayNumbers.map((day) => dayLabel(day, labels)).join(", ");
+  const time = summary.timesVary ? labels.variedTimes : summary.timeRange!;
+  const breakText = summary.breaksVary ? labels.variedBreaks : labels.breakSummary.replace("{minutes}", String(summary.breakMinutes));
   return `${labels.daysSummary.replace("{days}", days)} · ${time} · ${breakText}`;
 }
 
@@ -119,6 +120,7 @@ export default function ManageStaffPanel({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [newEmployeeId, setNewEmployeeId] = useState<string | null>(null);
 
   function toggleExpanded(id: string) {
     setExpanded((prev) => {
@@ -147,6 +149,7 @@ export default function ManageStaffPanel({
         setRole("");
         setWage("");
         setWagePeriod("hour");
+        setNewEmployeeId(result.id);
         setExpanded((prev) => new Set(prev).add(result.id));
       } else {
         setError(result.error);
@@ -216,6 +219,7 @@ export default function ManageStaffPanel({
               todayDateStr={todayDateStr}
               labels={labels}
               expanded={expanded.has(emp.id)}
+              openScheduleInitially={newEmployeeId === emp.id}
               onToggle={() => toggleExpanded(emp.id)}
             />
           ))
@@ -232,6 +236,7 @@ export default function ManageStaffPanel({
               todayDateStr={todayDateStr}
               labels={labels}
               expanded={expanded.has(emp.id)}
+              openScheduleInitially={false}
               onToggle={() => toggleExpanded(emp.id)}
             />
           ))}
@@ -247,6 +252,7 @@ function EmployeeRowItem({
   todayDateStr,
   labels,
   expanded,
+  openScheduleInitially,
   onToggle,
 }: {
   employee: EmployeeRow;
@@ -254,20 +260,20 @@ function EmployeeRowItem({
   todayDateStr: string;
   labels: Labels;
   expanded: boolean;
+  openScheduleInitially: boolean;
   onToggle: () => void;
 }) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
   const month = todayDateStr.slice(0, 7);
-  const monthSchedules = schedules.filter((s) => s.effectiveTo !== null && s.effectiveFrom.slice(0, 7) <= month && s.effectiveTo.slice(0, 7) >= month);
-  const applicableSchedules = monthSchedules.length > 0 ? monthSchedules : schedules.filter((s) => s.effectiveTo === null);
+  const applicableSchedules = schedulesForMonth(schedules, month);
   const ongoingScheduleHours = weeklyScheduledHours(
     applicableSchedules.map((s) => ({ startTime: s.startTime, endTime: s.endTime, unpaidBreakMinutes: s.unpaidBreakMinutes })),
   );
   const hasSchedule = ongoingScheduleHours > 0;
 
-  const [isEditing, setIsEditing] = useState(false);
+  const [activeEditor, setActiveEditor] = useState<"details" | "schedule" | "day" | null>(openScheduleInitially ? "schedule" : null);
   const [editName, setEditName] = useState(employee.name);
   const [editRole, setEditRole] = useState(employee.role ?? "");
   const [editWagePeriod, setEditWagePeriod] = useState<WagePeriod>(employee.wagePeriod);
@@ -292,7 +298,7 @@ function EmployeeRowItem({
       });
       if (result.ok) {
         setEditStatus("saved");
-        setIsEditing(false);
+        setActiveEditor(null);
         router.refresh();
         onToggle();
       } else {
@@ -335,22 +341,28 @@ function EmployeeRowItem({
 
       {expanded && (
         <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-[#FAF6F0] p-3.5">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-bold">{employee.name}</span>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => {
-                setIsEditing((v) => !v);
+                setActiveEditor((current) => current === "details" ? null : "details");
                 setEditStatus("idle");
               }}
-              className="flex min-h-12 items-center gap-1 px-2 text-sm font-semibold text-ink-muted"
+              aria-pressed={activeEditor === "details"}
+              className={`flex min-h-12 items-center justify-center gap-1 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "details" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}
             >
               <Pencil aria-hidden="true" size={13} />
               {labels.editDetails}
             </button>
+            <button type="button" onClick={() => setActiveEditor((current) => current === "schedule" ? null : "schedule")} aria-pressed={activeEditor === "schedule"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "schedule" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}>
+              {labels.editSchedule}
+            </button>
+            <button type="button" onClick={() => setActiveEditor((current) => current === "day" ? null : "day")} aria-pressed={activeEditor === "day"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "day" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}>
+              {labels.editDay}
+            </button>
           </div>
 
-          {isEditing && (
+          {activeEditor === "details" && (
             <div className="flex flex-col gap-2 rounded-xl bg-white p-3">
               <input
                 type="text"
@@ -399,7 +411,7 @@ function EmployeeRowItem({
                 <button
                   type="button"
                   onClick={() => {
-                    setIsEditing(false);
+                    setActiveEditor(null);
                     setEditName(employee.name);
                     setEditRole(employee.role ?? "");
                     setEditWagePeriod(employee.wagePeriod);
@@ -413,9 +425,9 @@ function EmployeeRowItem({
             </div>
           )}
 
-          <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { router.refresh(); onToggle(); }} />
+          {activeEditor === "schedule" && <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { router.refresh(); onToggle(); }} />}
 
-          <DayEditor employee={employee} todayDateStr={todayDateStr} labels={labels} />
+          {activeEditor === "day" && <DayEditor employee={employee} todayDateStr={todayDateStr} labels={labels} />}
 
           <button type="button" onClick={handleToggleActive} disabled={isPending} className="min-h-12 rounded-full border border-line text-sm font-semibold text-ink-muted">
             {employee.active ? labels.deactivate : labels.reactivate}
@@ -429,7 +441,7 @@ function EmployeeRowItem({
 function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSaved }: { employee: EmployeeRow; schedules: StaffScheduleRow[]; todayDateStr: string; labels: Labels; onSaved: () => void }) {
   const currentMonth = todayDateStr.slice(0, 7);
   const currentMonthRows = schedules.filter((s) => s.effectiveTo !== null && s.effectiveFrom.slice(0, 7) <= currentMonth && s.effectiveTo.slice(0, 7) >= currentMonth);
-  const ongoing = currentMonthRows.length > 0 ? currentMonthRows : schedules.filter((s) => s.effectiveTo === null);
+  const ongoing = schedulesForMonth(schedules, currentMonth);
   const existingBreak = ongoing[0]?.unpaidBreakMinutes ?? 0;
 
   const [days, setDays] = useState<Record<number, { on: boolean; start: string; end: string }>>(() => {

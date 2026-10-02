@@ -117,6 +117,30 @@ describe("buildMonthCalendarViewModel", () => {
     expect((cell1.state as { tone: string }).tone).toBe("good");
     expect((cell2.state as { tone: string }).tone).toBe("good");
   });
+
+  it("reports the actual date when all bills were covered", () => {
+    const day = { ...zeroDailyFacts("2026-10-02"), netSalesCents: 1_200 };
+    const vm = buildMonthCalendarViewModel({
+      monthData: { ...monthData([day]), categoryAmounts: [{ ...CATEGORY_AMOUNTS[0], amountCents: 1_000 }] },
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-31",
+      isCurrentMonth: false,
+    });
+    expect(vm.coverageSignal).toEqual({ kind: "covered", date: "2026-10-02" });
+  });
+
+  it("reports a deterministic current-month projected coverage date without changing day states", () => {
+    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 400 };
+    const vm = buildMonthCalendarViewModel({
+      monthData: { ...monthData([day]), categoryAmounts: [{ ...CATEGORY_AMOUNTS[0], amountCents: 1_000 }] },
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-01",
+      isCurrentMonth: true,
+      projectedDays: [{ date: "2026-10-02", cents: 700, projected: true }],
+    });
+    expect(vm.coverageSignal).toEqual({ kind: "projected", date: "2026-10-02" });
+    expect(vm.cells.find((cell) => cell.date === "2026-10-02")?.state).toEqual({ kind: "projected" });
+  });
 });
 
 describe("month key navigation", () => {

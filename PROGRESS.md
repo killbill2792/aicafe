@@ -1603,3 +1603,24 @@ Phase 2 result:
 - [x] Home section surfaces now vary by domain while preserving good/warn semantics and the warm café palette.
 - [x] English, Spanish, and Arabic copy added; logical RTL classes and mobile/desktop responsive constraints retained.
 - [x] Typecheck, lint, and all 248 tests pass. Build reaches compilation but is blocked by the environment denying downloads for the three existing Google fonts. Browser screenshots could not be captured because no browser runtime is installed in this environment.
+
+## Phase 2 review follow-up (PR #10)
+
+Plan:
+- Correct empty/active Staff hero hierarchy without changing staff calculations.
+- Preserve validated product-detail tabs across real size IDs, complete per-size management context, and lighten catalog warning copy.
+- Add editor-by-editor Manage Staff disclosure while keeping summaries, reactivation, and collapse-after-save behavior.
+- Move Leo to a non-semantic ochre identity and restore calendar bill-coverage operating signals.
+- Add focused regressions, verify responsive/RTL/touch logic, and rerun typecheck, lint, full tests, and build.
+
+Phase 2 review follow-up result:
+- [x] Empty Staff hero now shows only the truthful today-so-far cost; active shifts emphasize combined hourly cost with minute/today context.
+- [x] Product headings use base names; validated URL-backed tabs survive real size-ID navigation.
+- [x] Size rows show each size's own selling price, recipe cost/completeness, deterministic pricing status, and View / Edit action.
+- [x] Menu catalog warnings are secondary text lines rather than dominant pills.
+- [x] Manage Staff opens one selected editor at a time, preserves summary-first rows and 48px reactivation, and collapses after details/schedule saves.
+- [x] Leo now uses non-semantic ochre; success green remains reserved for healthy states.
+- [x] Calendar month progress again states actual or projected bill-coverage dates, or an honest not-covered/insufficient-data state.
+- [x] Focused tab, staff-summary, and calendar-signal regressions added; typecheck, lint, and all 258 tests pass.
+- [x] Responsive class logic reviewed for 375px/390px/desktop and logical RTL behavior in en/es/ar; touched controls remain at least 48px.
+- [ ] Production build remains blocked only by the existing environment failure to fetch Figtree, Fraunces, and IBM Plex Sans Arabic from Google Fonts.

@@ -224,7 +224,11 @@
     "manageBills": "Gestionar gastos fijos",
     "calendarMonthProgress": "Progreso del mes",
     "calendarDaysRecorded": "días registrados",
-    "calendarProfitableDays": "días con ganancias"
+    "calendarProfitableDays": "días con ganancias",
+    "calendarBillsCovered": "Facturas cubiertas el {date}",
+    "calendarBillsProjected": "Cobertura prevista de facturas: {date}",
+    "calendarBillsNotCovered": "Las facturas no se cubrieron por completo este mes",
+    "calendarBillsInsufficient": "No hay suficientes datos para determinar la cobertura"
   },
   "Menu": {
     "title": "Menú",
@@ -297,7 +301,9 @@
     "sizePriceMayBeLow": "{size}: el precio puede ser bajo",
     "sizePriceMayBeHigh": "{size}: el precio puede ser alto",
     "multipleSizesNeedReview": "{count, plural, one {# tamaño necesita revisión} other {# tamaños necesitan revisión}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "sizeCostToMake": "Cuesta {amount} prepararlo",
+    "viewEditSize": "Ver / Editar"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -402,7 +408,11 @@
     "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
     "addStaff": "+ Agregar personal",
     "emptyShiftHero": "Nadie está trabajando ahora",
-    "activeShiftHero": "{count, plural, one {# persona trabajando ahora} other {# personas trabajando ahora}}"
+    "activeShiftHero": "{count, plural, one {# persona en turno} other {# personas en turno}}",
+    "noOneOnShiftHero": "No hay nadie en turno ahora",
+    "perHourRightNow": "/hora ahora",
+    "perMinuteSecondary": "{amount}/minuto",
+    "staffCostToday": "Costo del personal hoy hasta ahora"
   },
   "More": {
     "title": "Más",
@@ -648,7 +658,8 @@
     "daysSummary": "{days}",
     "variedTimes": "El horario varía según el día",
     "breakSummary": "{minutes} min de descanso",
-    "variedBreaks": "Los descansos varían según el día"
+    "variedBreaks": "Los descansos varían según el día",
+    "editSchedule": "Editar horario"
   },
   "Scenario": {
     "title": "Probar un escenario",

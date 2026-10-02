@@ -41,6 +41,7 @@ export default async function ManageStaffPage() {
           detailsSaved: t("detailsSaved"),
           cancel: t("cancel"),
           weeklySchedule: t("weeklySchedule"),
+          editSchedule: t("editSchedule"),
           weeklyScheduleHint: t("weeklyScheduleHint"),
           dayMon: t("dayMon"),
           dayTue: t("dayTue"),

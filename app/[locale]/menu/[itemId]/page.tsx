@@ -8,6 +8,7 @@ import { getIngredientUnitConversions } from "@/lib/actions/ingredientUnitConver
 import BackHeader from "@/components/shared/BackHeader";
 import ProductDetailScreen from "@/components/menu/ProductDetailScreen";
 import PageShell from "@/components/shared/PageShell";
+import { parseMenuDetailTab } from "@/lib/viewmodels/menuDetail";
 
 export const dynamic = "force-dynamic";
 
@@ -16,10 +17,10 @@ export default async function MenuItemPage({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>;
-  searchParams: Promise<{ setupRecipe?: string }>;
+  searchParams: Promise<{ setupRecipe?: string; tab?: string }>;
 }) {
   await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe, tab }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -31,11 +32,12 @@ export default async function MenuItemPage({
   const item = controlItems.find((candidate) => candidate.id === itemId);
   const editItem = editItems.find((candidate) => candidate.id === itemId);
   if (!item || !editItem) notFound();
-  const siblingSizes = editItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active);
+  const siblingSizes = controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active);
+  const initialTab = setupRecipe === "1" ? "recipe" : parseMenuDetailTab(tab);
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
-      <BackHeader title={item.name} subtitle={item.sizeLabel ?? undefined} backHref="/menu" backLabel={common("back")} />
+      <BackHeader title={editItem.baseName} backHref="/menu" backLabel={common("back")} />
       <ProductDetailScreen
         item={item}
         editItem={editItem}
@@ -44,6 +46,7 @@ export default async function MenuItemPage({
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
         justCreated={setupRecipe === "1"}
+        initialTab={initialTab}
       />
     </PageShell>
   );

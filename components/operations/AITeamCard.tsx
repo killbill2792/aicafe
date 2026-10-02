@@ -7,7 +7,7 @@ export const agentIdentity: Record<AgentId, { border: string; surface: string; t
   alex: { border: "border-[#5879A6]", surface: "bg-[#E8EEF6]", text: "text-[#294E7A]", ring: "ring-[#5879A6]" },
   olivia: { border: "border-[#8A668B]", surface: "bg-[#F1E8F1]", text: "text-[#674568]", ring: "ring-[#8A668B]" },
   maya: { border: "border-[#A66845]", surface: "bg-[#F5E9E1]", text: "text-[#78462C]", ring: "ring-[#A66845]" },
-  leo: { border: "border-good", surface: "bg-good-tint", text: "text-good", ring: "ring-good" },
+  leo: { border: "border-[#A67C2D]", surface: "bg-[#F4ECD8]", text: "text-[#76561C]", ring: "ring-[#A67C2D]" },
 };
 
 const agentIcons = { alex: BadgeDollarSign, olivia: UsersRound, maya: PackageSearch, leo: ClipboardCheck } satisfies Record<AgentId, typeof BadgeDollarSign>;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search, Check, TriangleAlert } from "lucide-react";
+import { Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
@@ -9,11 +9,10 @@ import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import { groupMenuCatalogItems, isPricingHealthy, type GroupedMenuCatalogItem } from "@/lib/viewmodels/menuCatalogViewModel";
 import { usePricingStatusChip } from "./usePricingStatusChip";
 
-function StatusPill({ good, label }: { good: boolean; label: string }) {
+function StatusLine({ good, label }: { good: boolean; label: string }) {
   return (
-    <span className={`mt-1 inline-flex w-fit items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold ${good ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>
-      {good ? <Check aria-hidden="true" size={13} /> : <TriangleAlert aria-hidden="true" size={13} />}
-      {label}
+    <span className={`mt-1 block text-sm font-semibold ${good ? "text-good" : "text-ink-muted"}`}>
+      {good ? "✓ " : ""}{label}
     </span>
   );
 }
@@ -67,29 +66,26 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
   function renderStatus(group: GroupedMenuCatalogItem) {
     if (group.isSingleSize) {
       const chip = statusChip(group.representativeItem);
-      return <StatusPill good={chip.good} label={chip.label} />;
+      const status = group.pricingStatus;
+      const suggested = status.kind === "needs_review_one" ? ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}` : "";
+      return <StatusLine good={chip.good} label={`${chip.label}${suggested}`} />;
     }
     const status = group.pricingStatus;
     switch (status.kind) {
       case "all_healthy":
-        return <StatusPill good label={t("pricesLookRight")} />;
+        return <StatusLine good label={t("pricesLookRight")} />;
       case "missing_recipe_one":
-        return <StatusPill good={false} label={t("sizeRecipeIncomplete", { size: status.sizeLabel ?? group.baseName })} />;
+        return <StatusLine good={false} label={t("sizeRecipeIncomplete", { size: status.sizeLabel ?? group.baseName })} />;
       case "missing_data":
-        return <StatusPill good={false} label={t("sizesMissingCostInfo", { count: status.count })} />;
+        return <StatusLine good={false} label={t("sizesMissingCostInfo", { count: status.count })} />;
       case "needs_review_many":
-        return <StatusPill good={false} label={t("multipleSizesNeedReview", { count: status.count })} />;
+        return <StatusLine good={false} label={t("multipleSizesNeedReview", { count: status.count })} />;
       case "needs_review_one":
         return (
-          <div className="mt-1 flex flex-col gap-0.5">
-            <StatusPill
-              good={false}
-              label={t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })}
-            />
-            <span className="text-xs text-ink-muted">
-              {t("suggested")} <strong className="font-semibold text-warn">{formatCents(status.suggestedPriceCents)}</strong>
-            </span>
-          </div>
+          <StatusLine
+            good={false}
+            label={`${t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })} · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}`}
+          />
         );
     }
   }
