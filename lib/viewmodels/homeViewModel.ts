@@ -22,6 +22,7 @@ import {
 } from "./period";
 import { ownerProfitDisplayState } from "./ownerProfitDisplay";
 import { periodComparisonState } from "./periodComparison";
+import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -50,8 +51,11 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   const today = snapshot.todayDay;
 
-  const bestItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
-  const worstItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
+  // A missing recipe/price is unknown, not a free ingredient. Never let that unknown zero win a
+  // ranking and masquerade as unusually strong contribution.
+  const rankableItems = snapshot.menuItems.filter((item) => item.costStatus === "READY");
+  const bestItem = [...rankableItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
+  const worstItem = [...rankableItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
 
   const avgDrinksPerDay = snapshot.last28Days.length
     ? sumCents(snapshot.last28Days, (d) => d.drinksCount) / snapshot.last28Days.length
@@ -59,7 +63,8 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const last28Net = sumCents(snapshot.last28Days, (d) => d.netSalesCents);
   const last28Ingredients = sumCents(snapshot.last28Days, (d) => d.ingredientsCents);
   const last28Fees = sumCents(snapshot.last28Days, (d) => d.cardFeesCents);
-  const avgMoneyLeft = avgMoneyLeftPerDrinkCents(last28Net, last28Ingredients, last28Fees, sumCents(snapshot.last28Days, (d) => d.drinksCount));
+  const last28Drinks = sumCents(snapshot.last28Days, (d) => d.drinksCount);
+  const avgMoneyLeft = avgMoneyLeftPerDrinkCents(last28Net, last28Ingredients, last28Fees, last28Drinks);
   const avgDailyStaffCost = snapshot.last28Days.length ? staffCostCentsForPeriod(snapshot.last28Days) / snapshot.last28Days.length : 0;
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
   const drinksNeeded = drinksNeededPerDay(dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost), avgMoneyLeft);
@@ -67,13 +72,19 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const staffCostToday = today.wagesCents + today.staffTaxCents;
   const staffCostPerMinuteNow = staffCostToday / (11.5 * 60); // avg operating hours/day; refined once live timecards land
 
-  const missingCategories = snapshot.runningCostLines.filter((l) => l.isMissing);
+  const missingCategories = expectedMissingCostLines(snapshot.runningCostLines);
+  const breakEvenUnavailableReason = missingCategories.length > 0
+    ? "missing_costs" as const
+    : last28Drinks <= 0 || avgMoneyLeft <= 0 || snapshot.last28Days.length === 0
+      ? "missing_sales" as const
+      : null;
 
   // A business with zero sales in the last 28 days *and* not a single bill entered is almost
   // certainly a freshly-created café that hasn't gone through (or finished) onboarding yet, not a
   // real café having a quiet month — surface a way back in rather than a wall of $0.00 with no
   // explanation (found live: a new signup skipped onboarding and had no obvious way back).
-  const isGettingStarted = last28Net === 0 && missingCategories.length === snapshot.runningCostLines.length;
+  const hasKnownRunningCostSetup = snapshot.runningCostLines.some((line) => line.amountCents > 0 || line.isExpected === true);
+  const isGettingStarted = last28Net === 0 && !hasKnownRunningCostSetup;
 
   return {
     period,
@@ -93,6 +104,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     worstItem,
     avgDrinksPerDay: roundHalfUpToCent(avgDrinksPerDay),
     drinksNeeded,
+    breakEvenUnavailableReason,
     staffCostPerMinuteNow,
     alerts: snapshot.alerts,
     missingCategories,

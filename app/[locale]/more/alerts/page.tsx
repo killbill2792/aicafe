@@ -27,9 +27,9 @@ export default async function AlertsPage() {
 
       <div className="grid grid-cols-2 gap-2.5">
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
-          <span className="text-sm font-bold text-warn">{t("leaking")}</span>
+          <span className="text-sm font-bold text-warn">{t("potentialImpact")}</span>
           <span className="font-headline text-[36px] font-bold leading-none text-warn">{formatCents(leakingCents)}</span>
-          <span className="text-[13px] text-ink-muted">{t("leakingHint")}</span>
+          <span className="text-[13px] text-ink-muted">{t("impactHint")}</span>
         </div>
         <div className="flex flex-col gap-1.5 rounded-[22px] bg-card p-4">
           <span className="text-sm font-bold text-good">{t("allClear")}</span>

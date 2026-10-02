@@ -83,7 +83,7 @@ describe("shared operating tasks", () => {
   it("moves an owner Later decision to Watching without changing the POS", () => {
     const result = suggestPrice({ productCostCents: 180, currentPriceCents: 550, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 }, economics: null, categoryPeers: null });
     const task = pricingTask({ businessId: "b", itemId: "latte", itemName: "16 oz Latte", result, now })!;
-    const later = applyTaskResponse(task, { taskId: task.id, actor: "owner", responseCode: "later", respondedAt: now.toISOString() });
+    const later = applyTaskResponse(task, { taskId: task.id, actor: "owner", responseCode: "later_7", respondedAt: now.toISOString() });
     expect(later.status).toBe("watching");
     expect(later.payload.priceAppliedToPos).not.toBe(true);
   });

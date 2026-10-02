@@ -132,20 +132,23 @@
     "staffSection": "Staff",
     "perMinuteNow": "per minute now",
     "menuSection": "Menu",
-    "bestEarner": "Best earner",
-    "keepsLeast": "Keeps least",
+    "bestEarner": "Keeps most per drink",
+    "keepsLeast": "Keeps least per drink",
     "breakEvenSection": "Break-even",
     "needDrinks": "Need {count} drinks a day",
     "youAverage": "You average {count}",
     "alertsSection": "Alerts",
     "newAlerts": "{count} new",
-    "leakingThisMonth": "leaking this month",
+    "leakingThisMonth": "Potential impact this month",
     "gettingStartedTitle": "Let's get your numbers going",
     "gettingStartedBody": "You haven't added any sales, bills, or staff yet — pick where to start.",
     "gettingStartedConnectRegister": "Connect your register",
     "gettingStartedUploadSales": "Upload today's sales",
     "gettingStartedAddBills": "Add your monthly bills",
-    "gettingStartedAddStaff": "Add your staff"
+    "gettingStartedAddStaff": "Add your staff",
+    "keepsAfterIngredients": "Keeps about {amount} after ingredients",
+    "breakEvenMissingSales": "Not enough sales data to calculate yet. Add recent sales and drink counts.",
+    "breakEvenMissingCosts": "Incomplete — add these monthly costs: {categories}."
   },
   "Money": {
     "title": "Money",
@@ -307,7 +310,18 @@
     "sizeCostToMake": "Costs {amount} to make",
     "viewEditSize": "View / Edit",
     "photoPlaceholder": "Product photo coming later",
-    "selectedSize": "Selected size"
+    "selectedSize": "Selected size",
+    "manageSizes": "Manage sizes",
+    "editProduct": "Edit product",
+    "costToMake": "Cost to make",
+    "keptAfterIngredients": "Money kept after ingredients",
+    "sizeRecipe": "{size} recipe",
+    "recipeCopiedReview": "Recipe copied from {from} — review quantities for {to}.",
+    "identicalRecipeReview": "This matches the {other} recipe exactly. Review quantities for {size}; it was not automatically scaled.",
+    "pricingConfidence": "Confidence: {confidence} · Data: {quality}",
+    "estimatedData": "some estimated or missing inputs",
+    "completeData": "complete recipe inputs",
+    "sameSuggestedReason": "This matches the suggestion for {size} because the input costs and business adjustment land in the same 25¢ rounding band."
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -389,7 +403,9 @@
     "sizeUnitOz": "oz",
     "sizeUnitMl": "ml",
     "sizeUnitG": "g",
-    "sizeUnitEach": "each"
+    "sizeUnitEach": "each",
+    "editRecipe": "Edit recipe",
+    "done": "Save recipe"
   },
   "Staff": {
     "title": "Staff",
@@ -454,7 +470,12 @@
     "whatIf_price": "Raise all prices 25¢",
     "whatIf_staffing": "One less person 2–5 PM",
     "whatIf_milk": "Milk goes up $1 a gallon",
-    "whatIfFooter": "Drinks needed per day in each case"
+    "whatIfFooter": "Drinks needed per day in each case",
+    "notEnoughData": "Not enough sales data to calculate yet",
+    "missingCostsReason": "This result is incomplete because these monthly costs are missing: {categories}. Add them before relying on a target.",
+    "missingSalesReason": "Add recent sales with drink counts so we can calculate what each drink contributes. We will not guess a target.",
+    "addMissingCosts": "Add missing costs",
+    "addSalesData": "Add sales data"
   },
   "Onboarding": {
     "step1Title": "Connect your register",
@@ -560,8 +581,8 @@
   "Alerts": {
     "title": "Alerts",
     "subtitle": "This month so far",
-    "leaking": "Leaking",
-    "leakingHint": "You can stop this",
+    "leaking": "Potential impact",
+    "leakingHint": "Estimated from open alerts",
     "allClear": "Open",
     "nothingOpen": "Nothing needs your attention",
     "openCount": "To look at",
@@ -573,15 +594,28 @@
     "voidsSubtitle": "Worth a calm look, could be training",
     "voidsAction": "See staff costs",
     "someone": "Someone",
-    "mealBreakTitle": "Missed meal break — {name}",
-    "mealBreakSubtitle": "This is general information, not legal advice.",
-    "mealBreakAction": "See staff",
+    "mealBreakTitle": "Meal-break review — {name}",
+    "mealBreakSubtitle": "A deterministic timecard check found a shift worth reviewing. This is an estimate, not confirmed money lost or legal advice.",
+    "mealBreakAction": "Review {name}'s shift",
     "unmatchedItemsTitle": "Some sales items didn't match your menu",
     "unmatchedItemsSubtitle": "{names} — the sales still count toward your total, but not toward that drink's own numbers until it's on your menu.",
     "unmatchedItemsAction": "Fix in Manage menu",
     "neverAccusatoryNote": "This can be an honest mistake or a training gap. It's worth a calm look, not an accusation.",
     "markReviewed": "Mark as reviewed",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "potentialImpact": "Potential impact",
+    "impactHint": "Sum of open alert estimates",
+    "shiftDetails": "Shift details",
+    "employee": "Employee",
+    "shiftDate": "Shift date",
+    "clockIn": "Clock-in",
+    "clockOut": "Clock-out",
+    "currentElapsed": "Current elapsed time",
+    "hoursElapsed": "{hours} hours",
+    "recordedBreak": "Recorded qualifying break",
+    "noQualifyingBreak": "No 30-minute break recorded by hour 5",
+    "mealBreakExactReason": "Flagged because the confirmed shift lasted more than 5 hours and no recorded 30-minute break began by the end of hour 5.",
+    "mealBreakImpactBasis": "Estimated potential impact equals one hour at the recorded regular wage. It is not confirmed money lost."
   },
   "DeleteAccount": {
     "title": "Delete account",
@@ -739,7 +773,24 @@
     "focusedOn": "Viewing {name} · {role}",
     "estimate": "Estimate",
     "benchmarkPricingEvidence": "Based on this item's recipe cost and café benchmark assumptions.",
-    "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history."
-    ,"inboxStatusLabel":"Task status","staffTask":"Staff coverage needs a decision","reviewItem":"Review {item}","openStaff":"Manage staff","openBills":"Open bills","openIngredientCosts":"Open ingredient costs","summaryCounts":"{needs} need you · {handled} handled · {watching} watching","openTeam":"Open team","allTeam":"All team","keepCurrent":"Keep current","later":"Later","decisionError":"We couldn't save that choice. Try again."
+    "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history.",
+    "inboxStatusLabel": "Task status",
+    "staffTask": "Staff coverage needs a decision",
+    "reviewItem": "Review {item}",
+    "openStaff": "Manage staff",
+    "openBills": "Open bills",
+    "openIngredientCosts": "Open ingredient costs",
+    "summaryCounts": "{needs} need you · {handled} handled · {watching} watching",
+    "openTeam": "Open team",
+    "allTeam": "All team",
+    "keepCurrent": "Keep current",
+    "later": "Later",
+    "decisionError": "We couldn't save that choice. Try again.",
+    "missingCategory": "{category} not added this month",
+    "addCategoryPrompt": "Add {category} so Leo can complete this month’s costs.",
+    "remind7": "Remind me in 7 days",
+    "remind30": "Remind me in 30 days",
+    "remindChange": "When the numbers change",
+    "cancel": "Cancel"
   }
 }

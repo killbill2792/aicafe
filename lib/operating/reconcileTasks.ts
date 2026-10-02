@@ -25,9 +25,11 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
       continue;
     }
     // Workflow fields not emitted by the projection survive, while every freshly-derived fact wins.
-    const status = persisted.status === "expired" ? current.status : persisted.status;
+    const snoozeDue = persisted.kind === "price_review" && persisted.status === "watching" &&
+      typeof persisted.payload.snoozeUntil === "string" && new Date(persisted.payload.snoozeUntil) <= now;
+    const status = persisted.status === "expired" || snoozeDue ? current.status : persisted.status;
     refresh.push({ ...current, status, createdAt: persisted.createdAt,
-      payload: { ...persisted.payload, ...current.payload },
+      payload: { ...persisted.payload, ...current.payload, ...(snoozeDue ? { snoozeMode: null, snoozeUntil: null } : {}) },
       ...(status !== "expired" && status !== "handled" ? {} : persisted.resolvedAt ? { resolvedAt: persisted.resolvedAt } : {}) });
   }
 

@@ -10,12 +10,14 @@ import PageShell from "@/components/shared/PageShell";
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
-export default async function ManageStaffPage() {
+export default async function ManageStaffPage({ searchParams }: { searchParams: Promise<{ employee?: string; date?: string }> }) {
   await requireOwnBusiness();
   const t = await getTranslations("ManageStaff");
   const tCommon = await getTranslations("Common");
 
-  const [employees, schedules, snapshot] = await Promise.all([getEmployees(), getStaffSchedules(), getSnapshot()]);
+  const [{ employee, date }, employees, schedules, snapshot] = await Promise.all([searchParams, getEmployees(), getStaffSchedules(), getSnapshot()]);
+  const focusEmployeeId = employees.some((candidate) => candidate.id === employee) ? employee ?? null : null;
+  const focusDate = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ? date! : null;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
@@ -24,6 +26,8 @@ export default async function ManageStaffPage() {
         employees={employees}
         schedules={schedules}
         todayDateStr={snapshot.todayDateStr}
+        focusEmployeeId={focusEmployeeId}
+        focusDate={focusDate}
         labels={{
           addStaff: t("addStaff"),
           nameLabel: t("nameLabel"),

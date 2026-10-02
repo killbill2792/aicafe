@@ -6,7 +6,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { applyTaskResponse, type OperatingTask, type OperatingTaskResponse } from "@/lib/operating/tasks";
 
-const ownerDecisionSchema = z.object({ taskId: z.string().min(1).max(500), decision: z.enum(["keep_price", "later"]) });
+const ownerDecisionSchema = z.object({ taskId: z.string().min(1).max(500), decision: z.enum(["keep_price", "later_7", "later_30", "later_change"]) });
 export type OwnerTaskDecisionResult = { ok: true } | { ok: false; error: string };
 
 export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDecisionResult> {

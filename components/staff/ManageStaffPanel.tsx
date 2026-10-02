@@ -109,11 +109,15 @@ export default function ManageStaffPanel({
   schedules,
   todayDateStr,
   labels,
+  focusEmployeeId,
+  focusDate,
 }: {
   employees: EmployeeRow[];
   schedules: StaffScheduleRow[];
   todayDateStr: string;
   labels: Labels;
+  focusEmployeeId: string | null;
+  focusDate: string | null;
 }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
@@ -121,7 +125,7 @@ export default function ManageStaffPanel({
   const [wagePeriod, setWagePeriod] = useState<WagePeriod>("hour");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(focusEmployeeId ? [focusEmployeeId] : []));
   const [newEmployeeId, setNewEmployeeId] = useState<string | null>(null);
 
   function toggleExpanded(id: string) {
@@ -222,6 +226,7 @@ export default function ManageStaffPanel({
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={newEmployeeId === emp.id}
+              focusDate={focusEmployeeId === emp.id ? focusDate : null}
               onScheduleSaved={() => setNewEmployeeId((current) => clearNewEmployeeGuidance(current, emp.id))}
               onToggle={() => toggleExpanded(emp.id)}
             />
@@ -240,6 +245,7 @@ export default function ManageStaffPanel({
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={false}
+              focusDate={focusEmployeeId === emp.id ? focusDate : null}
               onScheduleSaved={() => setNewEmployeeId((current) => clearNewEmployeeGuidance(current, emp.id))}
               onToggle={() => toggleExpanded(emp.id)}
             />
@@ -259,6 +265,7 @@ function EmployeeRowItem({
   openScheduleInitially,
   onScheduleSaved,
   onToggle,
+  focusDate,
 }: {
   employee: EmployeeRow;
   schedules: StaffScheduleRow[];
@@ -268,6 +275,7 @@ function EmployeeRowItem({
   openScheduleInitially: boolean;
   onScheduleSaved: () => void;
   onToggle: () => void;
+  focusDate: string | null;
 }) {
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -279,7 +287,7 @@ function EmployeeRowItem({
   );
   const hasSchedule = ongoingScheduleHours > 0;
 
-  const [activeEditor, setActiveEditor] = useState<"details" | "schedule" | "day" | null>(openScheduleInitially ? "schedule" : null);
+  const [activeEditor, setActiveEditor] = useState<"details" | "schedule" | "day" | null>(focusDate ? "day" : openScheduleInitially ? "schedule" : null);
   const [editName, setEditName] = useState(employee.name);
   const [editRole, setEditRole] = useState(employee.role ?? "");
   const [editWagePeriod, setEditWagePeriod] = useState<WagePeriod>(employee.wagePeriod);
@@ -325,7 +333,7 @@ function EmployeeRowItem({
   }
 
   return (
-    <div className="border-b border-line py-3 last:border-b-0">
+    <div id={`employee-${employee.id}`} className={`scroll-mt-4 border-b border-line py-3 last:border-b-0 ${focusDate ? "rounded-xl ring-2 ring-warn ring-offset-2" : ""}`}>
       <button type="button" onClick={onToggle} className="flex min-h-14 w-full items-center gap-3 text-start">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-good-tint text-[17px] font-extrabold text-staff">
           {employee.name.charAt(0)}
@@ -433,7 +441,7 @@ function EmployeeRowItem({
 
           {activeEditor === "schedule" && <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { setActiveEditor(null); onScheduleSaved(); router.refresh(); onToggle(); }} />}
 
-          {activeEditor === "day" && <DayEditor employee={employee} todayDateStr={todayDateStr} labels={labels} />}
+          {activeEditor === "day" && <DayEditor employee={employee} todayDateStr={focusDate ?? todayDateStr} labels={labels} />}
 
           <button type="button" onClick={handleToggleActive} disabled={isPending} className="min-h-12 rounded-full border border-line text-sm font-semibold text-ink-muted">
             {employee.active ? labels.deactivate : labels.reactivate}
