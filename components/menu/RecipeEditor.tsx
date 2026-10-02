@@ -3,7 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { Trash2, Package, Search, ChevronLeft } from "lucide-react";
-import { addRecipeLine, deleteRecipeLine } from "@/lib/actions/menuItems";
+import { addRecipeLine, deleteRecipeLine, updateRecipeLine } from "@/lib/actions/menuItems";
+import { useRouter } from "@/i18n/navigation";
 import { needsIngredientConversion, recipeDisplayUnitsFor, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import MissingPriceForm from "./MissingPriceForm";
@@ -22,6 +23,7 @@ export default function RecipeEditor({
   ingredientConversions: Record<string, IngredientUnitConversion[]>;
 }) {
   const t = useTranslations("ManageMenu");
+  const router = useRouter();
   const unitLabel = (unit: RecipeDisplayUnit | "g" | "ml" | "each") => t(UNIT_LABEL_KEYS[unit as RecipeDisplayUnit] ?? "recipeUnitG");
 
   const [ingredientId, setIngredientId] = useState("");
@@ -40,6 +42,9 @@ export default function RecipeEditor({
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const initialDrafts = () => Object.fromEntries(item.recipe.map((line) => [line.ingredientId, { quantity: String(line.displayQuantity ?? line.quantity), unit: (line.displayUnit ?? line.baseUnit) as RecipeDisplayUnit }]));
+  const [drafts, setDrafts] = useState<Record<string, { quantity: string; unit: RecipeDisplayUnit }>>(initialDrafts);
+  const [removed, setRemoved] = useState<Set<string>>(() => new Set());
 
   const mode: "search" | "existing" | "new" = addingNew ? "new" : ingredientId ? "existing" : "search";
   const selectedIngredient = ingredients.find((i) => i.id === ingredientId);
@@ -116,12 +121,27 @@ export default function RecipeEditor({
   }
 
   function handleRemoveLine(ingId: string) {
+    setRemoved((current) => new Set(current).add(ingId));
+  }
+
+  function cancelEditing() {
+    setDrafts(initialDrafts()); setRemoved(new Set()); setEditing(false); setError(null);
+  }
+
+  function saveRecipe() {
     setError(null);
     startTransition(async () => {
-      // A failed delete must surface, not just vanish — otherwise the owner has no way to know
-      // the ingredient is still really on the recipe.
-      const result = await deleteRecipeLine(item.id, ingId);
-      if (!result.ok) setError(result.error);
+      for (const line of item.recipe) {
+        if (removed.has(line.ingredientId)) {
+          const result = await deleteRecipeLine(item.id, line.ingredientId);
+          if (!result.ok) { setError(result.error); return; }
+          continue;
+        }
+        const draft = drafts[line.ingredientId];
+        const result = await updateRecipeLine({ menuItemId: item.id, ingredientId: line.ingredientId, displayUnit: draft.unit, displayQuantity: Number(draft.quantity) });
+        if (!result.ok) { setError(result.error); return; }
+      }
+      setEditing(false); setRemoved(new Set()); router.refresh();
     });
   }
 
@@ -136,18 +156,16 @@ export default function RecipeEditor({
         <p className="text-sm text-ink-muted">{t("noIngredientsYet")}</p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {item.recipe.map((line) => (
+          {item.recipe.filter((line) => !removed.has(line.ingredientId)).map((line) => (
             <li key={line.ingredientId} className="flex flex-wrap items-center gap-3">
               <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FAF6F0] text-ink-muted">
                 <Package aria-hidden="true" size={16} />
               </span>
               <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{line.ingredientName}</span>
-              <span className="shrink-0 text-[15px] text-ink-muted">
-                {line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}
-              </span>
-              <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="shrink-0 text-warn">
+              {editing ? <><input aria-label={`${line.ingredientName} ${t("quantityLabel")}`} type="number" min="0.01" step="0.01" value={drafts[line.ingredientId].quantity} onChange={(event) => setDrafts((current) => ({ ...current, [line.ingredientId]: { ...current[line.ingredientId], quantity: event.target.value } }))} className="h-12 w-20 rounded-lg border border-line px-2" /><select aria-label={`${line.ingredientName} unit`} value={drafts[line.ingredientId].unit} onChange={(event) => setDrafts((current) => ({ ...current, [line.ingredientId]: { ...current[line.ingredientId], unit: event.target.value as RecipeDisplayUnit } }))} className="h-12 rounded-lg border border-line px-2">{recipeDisplayUnitsFor(line.baseUnit).map((unit) => <option key={unit} value={unit}>{unitLabel(unit)}</option>)}</select></> : <span className="shrink-0 text-[15px] text-ink-muted">{line.displayQuantity ?? line.quantity} {line.displayUnit ? unitLabel(line.displayUnit as RecipeDisplayUnit) : line.baseUnit}</span>}
+              {editing && <button type="button" onClick={() => handleRemoveLine(line.ingredientId)} disabled={isPending} aria-label={t("remove")} className="flex min-h-12 min-w-12 shrink-0 items-center justify-center text-warn">
                 <Trash2 aria-hidden="true" size={16} />
-              </button>
+              </button>}
               {line.costCents === null && (
                 <div className="w-full basis-full"><MissingPriceForm line={line} labels={{ ingredientCostLabel: t("ingredientCostLabel"), ingredientCostForLabel: t("ingredientCostForLabel"), add: t("add") }} /></div>
               )}
@@ -156,7 +174,7 @@ export default function RecipeEditor({
         </ul>
       )}
 
-      {!editing && <button type="button" onClick={() => setEditing(true)} className="min-h-12 w-fit rounded-full border border-line px-4 font-bold text-ink">{t("addIngredient")}</button>}
+      {!editing && <button type="button" onClick={() => setEditing(true)} className="min-h-12 w-fit rounded-full border border-line px-4 font-bold text-ink">{t("editRecipe")}</button>}
       {editing && <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
         <span className="text-sm font-bold">{t("addIngredient")}</span>
 
@@ -238,13 +256,13 @@ export default function RecipeEditor({
               <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
                 {t("addIngredient")}
               </button>
-              <button type="button" onClick={() => { setEditing(false); returnToSearch(); }} className="min-h-12 px-4 font-semibold text-ink-muted">{t("cancel")}</button>
             </div>
           </>
         )}
 
         {error && <p className="text-sm text-warn">{error}</p>}
         {justAdded && !error && <p className="text-sm font-semibold text-good">{t("ingredientAdded")}</p>}
+        <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={cancelEditing} className="min-h-12 rounded-full border border-line font-semibold text-ink-muted">{t("cancel")}</button><button type="button" onClick={saveRecipe} disabled={isPending} className="min-h-12 rounded-full bg-ink font-bold text-paper disabled:opacity-40">{t("done")}</button></div>
       </div>}
     </div>
   );

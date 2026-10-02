@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import BackHeader from "@/components/shared/BackHeader";
@@ -10,6 +10,8 @@ import { markAlertStatus, setAlertStatus } from "@/lib/actions/alerts";
 import { getAlertById } from "@/lib/data/getAlerts";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import PageShell from "@/components/shared/PageShell";
+import { getSnapshot } from "@/lib/data/getSnapshot";
+import { formatShiftTime } from "@/lib/alerts/shiftTime";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -18,7 +20,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
   await requireOwnBusiness();
   const { id } = await params;
 
-  const alert = await getAlertById(id);
+  const [alert, snapshot, locale] = await Promise.all([getAlertById(id), getSnapshot(), getLocale()]);
   if (!alert) notFound();
 
   const t = await getTranslations("Alerts");
@@ -49,9 +51,9 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <h2 className="text-lg font-bold">{t("shiftDetails")}</h2>
         <Detail label={t("employee")} value={String(alert.payload.employeeName ?? t("someone"))} />
         <Detail label={t("shiftDate")} value={String(alert.payload.date ?? "—")} />
-        <Detail label={t("clockIn")} value={formatAlertTime(alert.payload.clockIn)} />
-        <Detail label={alert.payload.clockOut ? t("clockOut") : t("currentElapsed")} value={alert.payload.clockOut ? formatAlertTime(alert.payload.clockOut) : t("hoursElapsed", { hours: Number(alert.payload.shiftHours ?? 0).toFixed(1) })} />
-        <Detail label={t("recordedBreak")} value={qualifyingBreakText(alert.payload.breaks, t("noQualifyingBreak"))} />
+        <Detail label={t("clockIn")} value={formatShiftTime(alert.payload.clockIn, snapshot.business.timezone, locale)} />
+        <Detail label={alert.payload.clockOut ? t("clockOut") : t("currentElapsed")} value={alert.payload.clockOut ? formatShiftTime(alert.payload.clockOut, snapshot.business.timezone, locale) : t("hoursElapsed", { hours: Number(alert.payload.shiftHours ?? 0).toFixed(1) })} />
+        <Detail label={t("recordedBreak")} value={qualifyingBreakText(alert.payload.breaks, t("noQualifyingBreak"), snapshot.business.timezone, locale)} />
         <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-[#6E2A07]">{t("mealBreakExactReason")}</p>
         <p className="text-sm text-ink-muted">{t("mealBreakImpactBasis")}</p>
       </section>}
@@ -77,5 +79,4 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
 }
 
 function Detail({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 text-[17px]"><span className="text-ink-muted">{label}</span><strong className="text-end">{value}</strong></div>; }
-function formatAlertTime(value: unknown) { if (typeof value !== "string") return "—"; const date = new Date(value); return Number.isNaN(date.getTime()) ? "—" : date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
-function qualifyingBreakText(value: unknown, fallback: string) { if (!Array.isArray(value)) return fallback; const found = value.find((entry) => entry && typeof entry === "object" && "start" in entry && "end" in entry && (new Date(String(entry.end)).getTime() - new Date(String(entry.start)).getTime()) >= 30 * 60_000); return found ? `${formatAlertTime(found.start)}–${formatAlertTime(found.end)}` : fallback; }
+function qualifyingBreakText(value: unknown, fallback: string, timezone: string, locale: string) { if (!Array.isArray(value)) return fallback; const found = value.find((entry) => entry && typeof entry === "object" && "start" in entry && "end" in entry && (new Date(String(entry.end)).getTime() - new Date(String(entry.start)).getTime()) >= 30 * 60_000); return found ? `${formatShiftTime(found.start, timezone, locale)}–${formatShiftTime(found.end, timezone, locale)}` : fallback; }

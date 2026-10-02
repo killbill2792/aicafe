@@ -13,6 +13,9 @@ export type RunningCostLine = {
   amountCents: number;
   isEstimate: boolean;
   isMissing: boolean;
+  /** False when this category has no recurring row, prior actual, or other deterministic evidence
+   * that this café uses it. An unused category is not a missing cost. */
+  isExpected?: boolean;
 };
 
 export type MenuItemSnapshot = {
@@ -27,6 +30,7 @@ export type MenuItemSnapshot = {
    * ingredientsCentsToday is 0 in both cases, not because the drink is actually free to make, so
    * callers must not treat that 0 as a real cost. */
   hasRecipe: boolean;
+  costStatus: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
   quantitySoldLast28Days: number;
 };
 

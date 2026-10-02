@@ -5,6 +5,7 @@ import BackHeader from "@/components/shared/BackHeader";
 import BillsManager from "@/components/bills/BillsManager";
 import { EXPENSE_CATEGORY_CODES, type ExpenseCategoryCode } from "@/lib/constants";
 import PageShell from "@/components/shared/PageShell";
+import { isBillCategory } from "@/lib/expenses/expectedCosts";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       <BillsManager
         bills={bills}
-        initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
+        initialCategory={EXPENSE_CATEGORY_CODES.includes(category as ExpenseCategoryCode) && isBillCategory(category as ExpenseCategoryCode) ? category as ExpenseCategoryCode : null}
         categoryLabels={categoryLabels}
         labels={{
           amountLabel: t("amountLabel"),

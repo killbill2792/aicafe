@@ -29,9 +29,11 @@ export default function TypeExpenseForm({
   categoryLabels,
   todayDateStr,
   labels,
+  initialCategory,
 }: {
   categoryLabels: Record<ExpenseCategoryCode, string>;
   todayDateStr: string;
+  initialCategory: ExpenseCategoryCode | null;
   labels: {
     amountTitle: string;
     categoryTitle: string;
@@ -45,7 +47,7 @@ export default function TypeExpenseForm({
 }) {
   const router = useRouter();
   const [digits, setDigits] = useState(""); // raw digits, interpreted as cents
-  const [category, setCategory] = useState<ExpenseCategoryCode | null>(null);
+  const [category, setCategory] = useState<ExpenseCategoryCode | null>(initialCategory);
   const [vendor, setVendor] = useState("");
   const [customLabel, setCustomLabel] = useState("");
   const [date, setDate] = useState(todayDateStr);

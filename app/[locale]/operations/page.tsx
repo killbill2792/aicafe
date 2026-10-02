@@ -12,6 +12,7 @@ import { formatCents } from "@/lib/calc";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -45,7 +46,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 function taskHref(task: OperatingTask): string {
   if (task.kind === "price_review" && task.entityId) return `/menu/${encodeURIComponent(task.entityId)}?tab=pricing`;
   if (task.kind === "staff_coverage") return "/more/manage-staff";
-  if (task.kind === "data_quality") return `/more/bills?category=${encodeURIComponent(String(task.payload.categoryCode))}`;
+  if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
   return "/more/uploads/ingredients";
 }

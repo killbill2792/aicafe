@@ -22,6 +22,7 @@ import {
 } from "./period";
 import { ownerProfitDisplayState } from "./ownerProfitDisplay";
 import { periodComparisonState } from "./periodComparison";
+import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -52,7 +53,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   // A missing recipe/price is unknown, not a free ingredient. Never let that unknown zero win a
   // ranking and masquerade as unusually strong contribution.
-  const rankableItems = snapshot.menuItems.filter((item) => item.hasRecipe);
+  const rankableItems = snapshot.menuItems.filter((item) => item.costStatus === "READY");
   const bestItem = [...rankableItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
   const worstItem = [...rankableItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
 
@@ -71,7 +72,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const staffCostToday = today.wagesCents + today.staffTaxCents;
   const staffCostPerMinuteNow = staffCostToday / (11.5 * 60); // avg operating hours/day; refined once live timecards land
 
-  const missingCategories = snapshot.runningCostLines.filter((l) => l.isMissing);
+  const missingCategories = expectedMissingCostLines(snapshot.runningCostLines);
   const breakEvenUnavailableReason = missingCategories.length > 0
     ? "missing_costs" as const
     : last28Drinks <= 0 || avgMoneyLeft <= 0 || snapshot.last28Days.length === 0

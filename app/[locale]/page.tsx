@@ -4,6 +4,7 @@ import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
 import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
@@ -154,7 +155,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {vm.missingCategories.length > 0 && (
         <Link
-          href="/more/bills"
+          href={missingCostDestination(vm.missingCategories[0].categoryCode)}
           className="flex items-center justify-between gap-2 rounded-2xl bg-warn-tint p-3.5 text-[15px] font-medium text-warn no-underline"
         >
           <span>{t("missingCostBannerText", { category: vm.missingCategories[0].label })}</span>

@@ -35,7 +35,7 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         title: t("mealBreakTitle", { name }),
         subtitle: t("mealBreakSubtitle"),
         tone: "warn" as const,
-        actionHref: `/staff?date=${encodeURIComponent(String(alert.payload.date ?? ""))}&employee=${encodeURIComponent(String(alert.payload.employeeId ?? ""))}`,
+        actionHref: `/more/manage-staff?date=${encodeURIComponent(String(alert.payload.date ?? ""))}&employee=${encodeURIComponent(String(alert.payload.employeeId ?? ""))}#employee-${encodeURIComponent(String(alert.payload.employeeId ?? ""))}`,
         actionLabel: t("mealBreakAction", { name }),
       };
     }

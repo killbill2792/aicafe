@@ -1,11 +1,12 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { buildDayWindows, itemIngredientCostCents, type ExpenseCategoryCode } from "@/lib/calc";
+import { buildDayWindows, evaluateRecipeCost, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
 import { ensureTodayScheduledShifts } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
+import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -52,7 +53,7 @@ export async function getBusinessSnapshotFromDb(
   const { monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
   const previousMonthDays = allDays.filter((d) => d.date >= prevMonthStart && d.date <= prevMonthEnd);
 
-  const [recurringResult, expensesResult, recoveryOrderResult] = await Promise.all([
+  const [recurringResult, expensesResult, priorExpenseResult, recoveryOrderResult] = await Promise.all([
     supabase
       .from("recurring_costs")
       .select("category_code, amount_cents, is_estimate, active_from, active_to")
@@ -63,6 +64,7 @@ export async function getBusinessSnapshotFromDb(
       .eq("business_id", businessId)
       .gte("spent_on", monthStart)
       .lte("spent_on", todayDateStr),
+    supabase.from("expenses").select("category_code").eq("business_id", businessId).lt("spent_on", monthStart),
     supabase
       .from("recovery_order")
       .select("bucket_code, position")
@@ -71,6 +73,7 @@ export async function getBusinessSnapshotFromDb(
   ]);
   if (recurringResult.error) throw recurringResult.error;
   if (expensesResult.error) throw expensesResult.error;
+  if (priorExpenseResult.error) throw priorExpenseResult.error;
   if (recoveryOrderResult.error) throw recoveryOrderResult.error;
 
   const recoveryOrder = (recoveryOrderResult.data ?? []).map((r) => r.bucket_code);
@@ -86,6 +89,10 @@ export async function getBusinessSnapshotFromDb(
         (r) => r.category_code === code && r.active_from <= todayDateStr && (!r.active_to || r.active_to >= todayDateStr),
       );
       const expensesThisMonth = (expensesResult.data ?? []).filter((e) => e.category_code === code);
+      const isExpected = isExpectedCostCategory({
+        hasActiveRecurring: activeRecurring.length > 0,
+        hasPriorActual: (priorExpenseResult.data ?? []).some((expense) => expense.category_code === code),
+      });
 
       if (expensesThisMonth.length > 0) {
         return {
@@ -94,6 +101,7 @@ export async function getBusinessSnapshotFromDb(
           amountCents: expensesThisMonth.reduce((sum, e) => sum + e.amount_cents, 0),
           isEstimate: expensesThisMonth.some((e) => e.status === "estimated"),
           isMissing: false,
+          isExpected: true,
         };
       }
       if (activeRecurring.length > 0) {
@@ -103,9 +111,10 @@ export async function getBusinessSnapshotFromDb(
           amountCents: activeRecurring.reduce((sum, r) => sum + r.amount_cents, 0),
           isEstimate: activeRecurring.some((r) => r.is_estimate),
           isMissing: false,
+          isExpected: true,
         };
       }
-      return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: true };
+      return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
     });
 
   const menuItems = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
@@ -231,7 +240,8 @@ async function getMenuItemSnapshots(
     const lines = (recipeLines ?? [])
       .filter((r) => r.menu_item_id === item.id)
       .map((r) => ({ ingredientId: r.ingredient_id, quantity: Number(r.quantity) }));
-    const ingredientsCentsToday = itemIngredientCostCents(lines, latestPriceMicros);
+    const recipeCost = evaluateRecipeCost(lines, latestPriceMicros);
+    const ingredientsCentsToday = recipeCost.costCents ?? 0;
     return {
       id: item.id,
       name: item.name,
@@ -241,7 +251,8 @@ async function getMenuItemSnapshots(
       ingredientsCentsToday,
       // Lines with no priced ingredient cost 0 by default, not because the drink is actually
       // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
-      hasRecipe: lines.length > 0 && ingredientsCentsToday > 0,
+      hasRecipe: lines.length > 0,
+      costStatus: recipeCost.status,
       quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
     };
   });

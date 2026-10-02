@@ -403,7 +403,9 @@
     "sizeUnitOz": "oz",
     "sizeUnitMl": "ml",
     "sizeUnitG": "g",
-    "sizeUnitEach": "each"
+    "sizeUnitEach": "each",
+    "editRecipe": "Edit recipe",
+    "done": "Save recipe"
   },
   "Staff": {
     "title": "Staff",

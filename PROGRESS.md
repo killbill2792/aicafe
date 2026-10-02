@@ -5,6 +5,23 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #12 Phase 4A correctness follow-up (2026-10-02 — code complete)
+
+1. Share expected-cost and category-destination rules across Break-even, Home, Leo, alerts, Bills,
+   and typed expense entry.
+2. Make meal-break review links open the exact employee/day and format timestamps in the café
+   timezone and active locale, including business-day-safe alert generation.
+3. Exclude partially priced recipes from contribution ranking and add an explicit recipe edit mode
+   for quantity/unit changes with Save and Cancel.
+4. Add regressions, run typecheck/lint/full tests/build, and commit one follow-up to PR #12. No
+   migration and no new dependency.
+
+Implemented the shared expected-cost rule and category-aware destination, exact employee/day shift
+review, business-timezone alert dates/times, READY-only menu ranking, and size-specific recipe-line
+quantity/unit editing. Added regressions for unused Repairs, partially priced recipes, category
+routing, and Pacific-time rendering. `npx tsc --noEmit`, `npm run lint`, and all 281 tests pass.
+`npm run build` remains blocked only by this environment failing to fetch the three Google Fonts.
+
 ## Phase 4A — owner truth + product detail redesign (2026-10-02 — code complete)
 
 1. Make Home and Break-even missing-data states honest, rank only complete menu recipes, and label

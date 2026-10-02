@@ -9,6 +9,7 @@ import {
   whatIfPriceChange,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
+import { expectedMissingCostLines } from "@/lib/expenses/expectedCosts";
 
 // Break-even what-ifs need per-shift wage and per-drink milk data finer than the daily/28-day
 // aggregates this snapshot carries. Until Staff (v1.5) and per-item recipe quantities are wired
@@ -30,7 +31,7 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const avgDailyStaffCost = days.length ? staffCostCentsForPeriod(days) / days.length : 0;
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
   const needed = drinksNeededPerDay(dailyCosts, avgMoneyLeft);
-  const missingCostLabels = snapshot.runningCostLines.filter((line) => line.isMissing).map((line) => line.label);
+  const missingCostLabels = expectedMissingCostLines(snapshot.runningCostLines).map((line) => line.label);
   const unavailableReason = missingCostLabels.length > 0
     ? "missing_costs" as const
     : days.length === 0 || drinks <= 0 || avgMoneyLeft <= 0

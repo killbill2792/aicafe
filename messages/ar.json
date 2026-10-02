@@ -403,7 +403,9 @@
     "sizeUnitOz": "أونصة",
     "sizeUnitMl": "مل",
     "sizeUnitG": "غ",
-    "sizeUnitEach": "قطعة"
+    "sizeUnitEach": "قطعة",
+    "editRecipe": "تعديل الوصفة",
+    "done": "حفظ الوصفة"
   },
   "Staff": {
     "title": "الموظفون",
