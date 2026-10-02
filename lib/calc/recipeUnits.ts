@@ -10,14 +10,12 @@ const ML_PER_FL_OZ = 29.5735;
 
 export type IngredientUnitConversion = { unit: OperationalUnit; baseUnitsPerUnit: number };
 
-/** The café-friendly units worth offering for a recipe line on an ingredient with this base unit.
- * Operational units (shot/pump) are always offered regardless of base unit — an owner may define
- * "1 shot" for a gram-based ingredient (e.g. a pre-ground coffee dose) just as validly as a
- * ml-based one — but using one requires defining its conversion first; see needsIngredientConversion. */
-export function recipeDisplayUnitsFor(baseUnit: BaseUnit): RecipeDisplayUnit[] {
+/** Units safe to offer for this exact ingredient. Operational units appear only when that
+ * ingredient already has the corresponding stored conversion; a recipe editor never invents one. */
+export function recipeDisplayUnitsFor(baseUnit: BaseUnit, conversions: readonly IngredientUnitConversion[] = []): RecipeDisplayUnit[] {
   if (baseUnit === "each") return ["each"];
   const physical: RecipeDisplayUnit[] = baseUnit === "ml" ? ["ml", "fl_oz"] : ["g"];
-  return [...physical, "shot", "pump"];
+  return [...physical, ...conversions.map((conversion) => conversion.unit)];
 }
 
 export function needsIngredientConversion(unit: RecipeDisplayUnit): unit is OperationalUnit {

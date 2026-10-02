@@ -350,7 +350,10 @@
     "needsReview": "تحتاج مراجعة",
     "editPrice": "تعديل السعر",
     "editRecipe": "تعديل الوصفة",
-    "noLongerServing": "لم نعد نقدمه"
+    "noLongerServing": "لم نعد نقدمه",
+    "saveRecipe": "حفظ الوصفة",
+    "noSalesData": "لا توجد بيانات مبيعات",
+    "serveAgain": "إعادة التقديم"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -821,12 +824,13 @@
     "remind30": "ذكّرني بعد 30 يوماً",
     "remindChange": "عندما تتغير الأرقام",
     "cancel": "إلغاء",
-    "priceTaskSentence": "قد يكون سعر {item} منخفضًا جدًا.",
     "priceTaskReason": "بناءً على تكلفة الوصفة وافتراضات تسعير المقهى، راجع السعر الحالي.",
     "priceNumbers": "الحالي {current} · المقترح {suggested}",
     "staffTaskNamed": "تحتاج تغطية الموظفين إلى الانتباه: {issue}.",
     "staffCoverageIssue": "وردية شاغرة",
     "staffTaskReason": "راجع مشكلة الموظف أو التغطية المحددة قبل الوردية.",
-    "supplySignal": "تراقب مايا تكاليف المكونات والأكواب التي أدخلتها، ولا تخمّن كميات المخزون."
+    "supplySignal": "تراقب مايا تكاليف المكونات والأكواب التي أدخلتها، ولا تخمّن كميات المخزون.",
+    "priceTaskSentenceLow": "قد يكون سعر {item} منخفضًا جدًا.",
+    "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا."
   }
 }

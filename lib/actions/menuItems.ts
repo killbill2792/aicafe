@@ -12,6 +12,7 @@ import { inferMenuItemCategory } from "@/lib/menu/inferCategory";
 import { copyRecipeLines } from "@/lib/menu/copyRecipeLines";
 import { productSizeName } from "@/lib/menu/productNaming";
 import { executeGroupedProductRename } from "@/lib/menu/renameProduct";
+import { existingProductPhotoAnchor } from "@/lib/menu/productPhotoAnchor";
 import { logQueryError, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { needsIngredientConversion, toBaseUnitQuantity, type BaseUnit, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 
@@ -231,9 +232,11 @@ export async function saveProductPhoto(input: z.infer<typeof PhotoSchema>): Prom
   const supabase = await createServerSupabaseClient();
   const { data: item } = await supabase.from("menu_items").select("id, base_name, name").eq("id", parsed.data.menuItemId).eq("business_id", businessId).single();
   if (!item) return { ok: false, error: "Product not found." };
-  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name).order("id").limit(1);
-  const anchorId = siblings?.[0]?.id ?? item.id;
-  const { data: old } = await supabase.from("product_photos").select("storage_path").eq("anchor_menu_item_id", anchorId).maybeSingle();
+  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name);
+  const siblingIds = (siblings ?? []).map((sibling) => sibling.id);
+  const { data: existing } = siblingIds.length ? await supabase.from("product_photos").select("anchor_menu_item_id, storage_path").eq("business_id", businessId).in("anchor_menu_item_id", siblingIds) : { data: [] };
+  const anchorId = existingProductPhotoAnchor(siblingIds, (existing ?? []).map((photo) => photo.anchor_menu_item_id)) ?? item.id;
+  const old = existing?.find((photo) => photo.anchor_menu_item_id === anchorId);
   const { error } = await supabase.from("product_photos").upsert({ business_id: businessId, anchor_menu_item_id: anchorId, storage_path: parsed.data.storagePath }, { onConflict: "anchor_menu_item_id" });
   if (error) { logQueryError("saveProductPhoto", error); return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE }; }
   if (old?.storage_path && old.storage_path !== parsed.data.storagePath) await supabase.storage.from("product-photos").remove([old.storage_path]);
@@ -247,9 +250,12 @@ export async function removeProductPhoto(menuItemId: string): Promise<ActionResu
   const supabase = await createServerSupabaseClient();
   const { data: item } = await supabase.from("menu_items").select("id, base_name, name").eq("id", parsed.data).eq("business_id", businessId).single();
   if (!item) return { ok: false, error: "Product not found." };
-  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name).order("id").limit(1);
-  const anchorId = siblings?.[0]?.id ?? item.id;
-  const { data: photo } = await supabase.from("product_photos").select("storage_path").eq("anchor_menu_item_id", anchorId).maybeSingle();
+  const { data: siblings } = await supabase.from("menu_items").select("id").eq("business_id", businessId).eq("base_name", item.base_name ?? item.name);
+  const siblingIds = (siblings ?? []).map((sibling) => sibling.id);
+  const { data: existing } = siblingIds.length ? await supabase.from("product_photos").select("anchor_menu_item_id, storage_path").eq("business_id", businessId).in("anchor_menu_item_id", siblingIds) : { data: [] };
+  const anchorId = existingProductPhotoAnchor(siblingIds, (existing ?? []).map((photo) => photo.anchor_menu_item_id));
+  if (!anchorId) return { ok: true };
+  const photo = existing?.find((row) => row.anchor_menu_item_id === anchorId);
   const { error } = await supabase.from("product_photos").delete().eq("anchor_menu_item_id", anchorId).eq("business_id", businessId);
   if (error) return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
   if (photo?.storage_path) await supabase.storage.from("product-photos").remove([photo.storage_path]);

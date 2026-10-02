@@ -1,12 +1,17 @@
 -- Phase 4B additive migration. Apply before deploying the product-photo UI.
--- One private photo is anchored to the stable first menu-item id in a base-product size family.
+-- One private photo remains anchored to the menu item used when that family first gets a photo.
+-- Readers resolve that stored anchor across all current sibling ids; UUID ordering is irrelevant.
+alter table menu_items
+  add constraint menu_items_business_id_id_key unique (business_id, id);
 create table if not exists product_photos (
   id uuid primary key default gen_random_uuid(),
   business_id uuid not null references businesses on delete cascade,
-  anchor_menu_item_id uuid not null unique references menu_items on delete cascade,
-  storage_path text not null unique,
+  anchor_menu_item_id uuid not null unique,
+  storage_path text not null unique check (storage_path like business_id::text || '/%'),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  foreign key (business_id, anchor_menu_item_id)
+    references menu_items (business_id, id) on delete cascade
 );
 create index if not exists product_photos_business_id_idx on product_photos (business_id);
 alter table product_photos enable row level security;

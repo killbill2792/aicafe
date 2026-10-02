@@ -350,7 +350,10 @@
     "needsReview": "Needs review",
     "editPrice": "Edit price",
     "editRecipe": "Edit recipe",
-    "noLongerServing": "No longer serving"
+    "noLongerServing": "No longer serving",
+    "saveRecipe": "Save recipe",
+    "noSalesData": "No sales data",
+    "serveAgain": "Serve again"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -821,12 +824,13 @@
     "remind30": "Remind me in 30 days",
     "remindChange": "When the numbers change",
     "cancel": "Cancel",
-    "priceTaskSentence": "Price may be too low for {item}.",
     "priceTaskReason": "Based on its recipe cost and your café pricing assumptions, review the current price.",
     "priceNumbers": "Current {current} · Suggested {suggested}",
     "staffTaskNamed": "Staff coverage needs attention: {issue}.",
     "staffCoverageIssue": "an open shift",
     "staffTaskReason": "Review the named staff or coverage issue before the shift.",
-    "supplySignal": "Maya is watching the ingredient and cup costs you have entered; stock quantities are not guessed."
+    "supplySignal": "Maya is watching the ingredient and cup costs you have entered; stock quantities are not guessed.",
+    "priceTaskSentenceLow": "Price may be too low for {item}.",
+    "priceTaskSentenceHigh": "Price may be too high for {item}."
   }
 }

@@ -5,6 +5,28 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #14 Phase 4B final correction pass (2026-10-02 — code complete)
+
+1. Preserve the first product-photo anchor by resolving photos across every same-family item id,
+   and strengthen migration 24 with a tenant-scoped menu-item foreign key.
+2. Finalize the two-tab grouped workspace, exact-size price deep links, truthful grouped active
+   state, manageable inactive sizes, and coverage-aware sales totals.
+3. Make recipe units conversion-aware and stage the entire recipe editing session behind one Save
+   recipe / Cancel pair without changing recipe or pricing math.
+4. Correct Alex's deterministic high/low copy and exact-size Overview link, add focused regressions,
+   then run typecheck, lint, tests, build, and diff checks. No dependency or new migration.
+
+Result:
+- [x] Product photos resolve an existing immutable sibling anchor, with tenant-scoped database
+  integrity in migration 24 and a regression for adding a lexicographically earlier sibling UUID.
+- [x] The product workspace has only Overview / Recipe, exact-size price deep links, honest grouped
+  state, manageable inactive sizes, and coverage-aware Today / 7-day / 30-day sales totals.
+- [x] Recipe additions, edits, removals, and new-ingredient lines share one staged Save recipe /
+  Cancel session; physical and stored ingredient-specific operational units are the only choices.
+- [x] Alex uses deterministic low/high copy and the exact Overview editor link in en/es/ar.
+  Typecheck, lint (one pre-existing product-photo `<img>` warning), 293 tests, and diff checks pass.
+  Build is blocked only by failed Google Fonts fetches; no browser runtime exists for a screenshot.
+
 ## Phase 4B — grouped product workspace (2026-10-02 — code complete)
 
 1. Rebuild product detail from current main as one grouped product workspace with compact all-size

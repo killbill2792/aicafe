@@ -13,6 +13,7 @@ import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
+import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -44,7 +45,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 }
 
 function taskHref(task: OperatingTask): string {
-  if (task.kind === "price_review" && task.entityId) return `/menu/${encodeURIComponent(task.entityId)}?tab=pricing`;
+  if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
     const query = new URLSearchParams();
     if (task.entityId) query.set("employee", task.entityId);
@@ -62,7 +63,8 @@ function TaskList({ tasks, empty, names, t, category }: { tasks: OperatingTask[]
     const identity = agentIdentity[task.agentId];
     const price = task.kind === "price_review";
     const itemName = String(task.payload.itemName).replace(" · ", " ");
-    const title = price ? t("priceTaskSentence", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
+    const title = price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
     const detail = price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
     const action = price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     return <article key={task.id} data-entity-type={task.entityType} data-entity-id={task.entityId} className={`rounded-card-lg border-s-4 p-[18px] ${identity.border} ${identity.surface}`}>
