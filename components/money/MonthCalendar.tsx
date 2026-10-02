@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { usePathname, useRouter } from "@/i18n/navigation";
 import Money from "@/components/shared/Money";
+import EstimatePill from "@/components/shared/EstimatePill";
 import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { profitTone, profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
@@ -27,6 +28,7 @@ export type MonthCalendarLabels = {
   cardFees: string;
   rentAndBills: string;
   ownerProfit: string;
+  estimatePill: string;
 };
 
 export default function MonthCalendar({
@@ -85,7 +87,7 @@ export default function MonthCalendar({
           type="button"
           aria-label={labels.prevMonth}
           onClick={() => goToMonth(previousMonthKey(calMonthKey))}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-ink"
+          className="flex h-12 w-12 items-center justify-center rounded-full text-ink"
         >
           <ChevronLeft size={20} aria-hidden="true" className="rtl:rotate-180" />
         </button>
@@ -95,7 +97,7 @@ export default function MonthCalendar({
           aria-label={labels.nextMonth}
           onClick={() => canGoNext && goToMonth(nextMonthKey(calMonthKey))}
           disabled={!canGoNext}
-          className="flex h-10 w-10 items-center justify-center rounded-full text-ink disabled:opacity-30"
+          className="flex h-12 w-12 items-center justify-center rounded-full text-ink disabled:opacity-30"
         >
           <ChevronRight size={20} aria-hidden="true" className="rtl:rotate-180" />
         </button>
@@ -176,7 +178,10 @@ export default function MonthCalendar({
               <DetailRow label={labels.cardFees} cents={-selectedDetail.cardFeesCents} />
               <DetailRow label={labels.rentAndBills} cents={-selectedDetail.runningCostShareCents} />
               <div className="mt-1 flex items-center justify-between border-t border-line pt-2">
-                <span className="text-base font-bold text-ink">{labels.ownerProfit}</span>
+                <span className="flex items-center gap-1.5 text-base font-bold text-ink">
+                  {labels.ownerProfit}
+                  {selectedDetail.runningCostShareIsEstimate && <EstimatePill label={labels.estimatePill} />}
+                </span>
                 <span className={`text-lg font-bold ${profitToneTextClass(profitTone(selectedDetail.ownerProfitCents))}`}>
                   <Money cents={selectedDetail.ownerProfitCents} />
                 </span>

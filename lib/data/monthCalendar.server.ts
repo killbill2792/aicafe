@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CategoryMonthlyAmount, DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
-import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
+import { RUNNING_COST_CODES, rowToDailyFacts } from "./runningCostCatalog";
 
 export type MonthCalendarData = {
   monthKey: string;
@@ -96,8 +96,4 @@ export async function getMonthCalendarFromDb(
   });
 
   return { monthKey, daysInMonth, days, categoryAmounts };
-}
-
-export function runningCostLabelFor(code: string): string {
-  return RUNNING_COST_LABELS[code] ?? code;
 }

@@ -1,4 +1,4 @@
-import { computeCostRecovery, computeTodayContribution } from "@/lib/calc";
+import { averageOrderValueCents, computeCostRecovery, computeTodayContribution } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, dayContributionCents, recoveryBuckets } from "./costRecoveryShared";
 
@@ -37,7 +37,7 @@ export function buildTodayGlanceViewModel(snapshot: BusinessSnapshot): TodayGlan
   const base = {
     salesCents: today.netSalesCents,
     ordersCount: today.ordersCount,
-    avgOrderValueCents: today.ordersCount > 0 ? today.netSalesCents / today.ordersCount : 0,
+    avgOrderValueCents: averageOrderValueCents(today.netSalesCents, today.ordersCount),
     moneyLeftCents: contributionCentsToday,
     drinksCount: today.drinksCount,
   };

@@ -5,6 +5,53 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #7 follow-up #2: negative-day "all yours" bug, estimate labeling on the calendar, integer-cent avg order value, 48px nav targets, localized milestone names, like-for-like comparisons (2026-10-02 — code complete, pushed to owner-comprehension-pass)
+
+Six more review findings before PR #7 merges:
+
+1. **`computeTodayContribution()` could say "all yours" on a loss day.** It checked
+   `cumulativeBeforeToday >= totalCents` before checking `contributionCentsToday <= 0` — so a café
+   whose bills were covered as of yesterday but lost money today still got `allYours: true`.
+   Reordered: the zero/negative check now runs first, unconditionally. Tests cover all three cases
+   from the review (negative today after everything covered, zero today after everything covered,
+   genuinely positive today after everything covered still says "all yours") at both the pure-calc
+   level (`lib/calc/costRecovery.test.ts`) and the `todayGlance` viewmodel level.
+2. **Calendar daily profit didn't say when it used an estimated bill.** `buildMonthCalendarViewModel()`
+   now carries `isEstimate` on both `DayCellState["actual"]` and `DayDetail` — true when any
+   category feeding that day's running-cost share is an estimate (the current month's own flag, or
+   the forced estimate a historical month's recurring fallback always carries). Since
+   `categoryAmounts` doesn't vary day-to-day within one month, this is one flag computed once, not
+   per day. The selected-day detail now shows the existing `EstimatePill` next to "Owner profit"
+   when set — the number and formula are unchanged.
+3. **Average order value broke the integer-cents rule.** `today.netSalesCents / today.ordersCount`
+   produced fractional cents. New `averageOrderValueCents()` (`lib/calc/profit.ts`, tested) rounds
+   half-up to the cent; `todayGlance.ts` uses it instead of the raw division.
+4. **Calendar prev/next month buttons were 40px, not 48px.** `h-10 w-10` → `h-12 w-12` in
+   `MonthCalendar.tsx`; same visual design, just the touch target.
+5. **Calendar milestone bill names were English-only.** `bucketLabels` built from the hardcoded
+   `RUNNING_COST_LABELS` catalog, so an es/ar milestone sentence could read "Rent se cubrió por
+   completo." Now built from the existing `Categories` i18n namespace (already used the same way
+   elsewhere, e.g. `more/bills`), which already covers every `RUNNING_COST_CODES` entry in all three
+   locales — no new keys needed. Removed the now-unused `runningCostLabelFor()`. Checked live in
+   Arabic/RTL.
+6. **Trend/vs-last-period comparisons didn't check whether the comparison was fair.** A partial
+   current week could still be compared against a sparse previous week, or a complete Today against
+   a missing yesterday (an internal `$0 sales − bills` placeholder, never real data). New
+   `periodComparisonState()` (`lib/viewmodels/periodComparison.ts`, tested against all 4 scenarios
+   from the review) requires *both* the current and comparison period to be fully covered (reusing
+   `periodCoverage` and the new `previousPeriodCoverage()` in `period.ts`) before any delta is
+   trustworthy. Home's trend arrow is omitted when unavailable (same existing conditional, now fed a
+   stricter flag); Money's whole "vs last period" section — not just the Owner Profit row — shows
+   "Not enough sales data to compare periods yet." instead of rows when unavailable, since every
+   compared metric suffers the same mismatch, not just profit. No dates are fabricated as zero-sales
+   days anywhere in this.
+
+No schema changes, no pricing/POS changes. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run
+test` (232/232 — 19 new), `npm run build` all clean. Live-checked on the real account: Week (4 of 7
+days covered) now shows "Not enough sales data to compare periods yet." with zero comparison rows;
+Today (both today and yesterday fully covered) still shows real comparison rows; the calendar's
+month-nav buttons measure 48×48 in the DOM in both LTR and RTL, correctly mirrored.
+
 ## PR #7 follow-up: previous-period windows, truthful missing-sales presentation, real 28-day window, calMonth hardening (2026-10-02 — code complete, pushed to owner-comprehension-pass)
 
 Four issues from independent review of the owner-comprehension pass, before merge:

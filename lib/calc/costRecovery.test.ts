@@ -65,4 +65,23 @@ describe("computeTodayContribution", () => {
     const result = computeTodayContribution({ contributionCentsToday: 300, cumulativeBeforeToday: 0, buckets: BUCKETS });
     expect(result.slices).toEqual([{ bucketCode: "rent", cents: 300 }]);
   });
+
+  it("is never 'all yours' when today's contribution is negative, even with everything covered before today", () => {
+    // Buckets total 1,500; cumulativeBeforeToday (2,000) already clears them, but today lost money.
+    const result = computeTodayContribution({ contributionCentsToday: -600, cumulativeBeforeToday: 2_000, buckets: BUCKETS });
+    expect(result.allYours).toBe(false);
+    expect(result.slices).toEqual([]);
+  });
+
+  it("is never 'all yours' when today's contribution is exactly zero, even with everything covered before today", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 0, cumulativeBeforeToday: 2_000, buckets: BUCKETS });
+    expect(result.allYours).toBe(false);
+    expect(result.slices).toEqual([]);
+  });
+
+  it("is still 'all yours' when everything is covered before today AND today's contribution is genuinely positive", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 600, cumulativeBeforeToday: 2_000, buckets: BUCKETS });
+    expect(result.allYours).toBe(true);
+    expect(result.slices).toEqual([{ bucketCode: "yours", cents: 600 }]);
+  });
 });

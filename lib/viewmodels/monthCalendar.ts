@@ -5,7 +5,12 @@ import { previousMonthKey } from "./period";
 import { profitTone, type ProfitTone } from "./profitTone";
 
 export type DayCellState =
-  | { kind: "actual"; ownerProfitCents: number; tone: ProfitTone }
+  /** `isEstimate` is true when any running-cost category that fed this day's profit (current
+   * month's own estimate flag, or — for a past month — the forced estimate a recurring-cost
+   * fallback always carries, see `monthCalendar.server.ts`) is an estimate rather than an actual
+   * recorded bill. The owner must be able to tell a confirmed daily profit from one calculated
+   * against a guessed bill amount. */
+  | { kind: "actual"; ownerProfitCents: number; tone: ProfitTone; isEstimate: boolean }
   /** A real calendar day with no `daily_rollups` row at all — never colored or counted as $0. */
   | { kind: "missing" }
   /** A future day of the current month — shown dashed, no profit figure to report yet. */
@@ -29,6 +34,8 @@ export type DayDetail = {
   staffCents: number;
   cardFeesCents: number;
   runningCostShareCents: number;
+  /** See `DayCellState["actual"].isEstimate` — only meaningful when `hasData` is true. */
+  runningCostShareIsEstimate: boolean;
   ownerProfitCents: number;
   milestoneBucketCodes: string[];
 };
@@ -50,6 +57,10 @@ export function buildMonthCalendarViewModel(params: {
   const { monthKey, daysInMonth, days, categoryAmounts } = monthData;
 
   const buckets: RecoveryBucket[] = recoveryBucketsFromAmounts(categoryAmounts, recoveryOrder);
+  // One flag for the whole month: `categoryAmounts` doesn't vary day to day within a single
+  // month, so whether any category feeding the daily running-cost share is an estimate is the
+  // same for every actual day in this view.
+  const hasEstimatedCosts = categoryAmounts.some((c) => c.isEstimate && c.amountCents > 0);
   const recovery = computeCostRecovery(
     buckets,
     days.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })),
@@ -83,6 +94,7 @@ export function buildMonthCalendarViewModel(params: {
         staffCents: 0,
         cardFeesCents: 0,
         runningCostShareCents: 0,
+        runningCostShareIsEstimate: false,
         ownerProfitCents: 0,
         milestoneBucketCodes,
       };
@@ -94,7 +106,7 @@ export function buildMonthCalendarViewModel(params: {
     const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
     const tone = profitTone(ownerProfitCents);
 
-    cells.push({ date, day, state: { kind: "actual", ownerProfitCents, tone }, milestoneBucketCodes });
+    cells.push({ date, day, state: { kind: "actual", ownerProfitCents, tone, isEstimate: hasEstimatedCosts }, milestoneBucketCodes });
     detailsByDate[date] = {
       date,
       hasData: true,
@@ -103,6 +115,7 @@ export function buildMonthCalendarViewModel(params: {
       staffCents,
       cardFeesCents: dayFacts.cardFeesCents,
       runningCostShareCents,
+      runningCostShareIsEstimate: hasEstimatedCosts,
       ownerProfitCents,
       milestoneBucketCodes,
     };

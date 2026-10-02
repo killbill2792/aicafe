@@ -11,8 +11,17 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, periodCoverage, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import {
+  daysForPeriod,
+  periodCoverage,
+  previousPeriodCoverage,
+  previousPeriodDays,
+  runningCostsForPeriod,
+  previousRunningCostsForPeriod,
+  type Period,
+} from "./period";
 import { ownerProfitDisplayState } from "./ownerProfitDisplay";
+import { periodComparisonState } from "./periodComparison";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -23,14 +32,16 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
   const coverage = periodCoverage(snapshot, period);
   const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
+  const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
   const prevOwnerProfitCents = ownerProfitCentsForPeriod(prevDays, prevRunningCosts);
-  // No real "vs last period" comparison exists when this period's own result isn't available yet —
-  // showing a trend arrow would imply a confirmed number is moving, when there isn't one.
+  // A "vs last period" comparison only means something when both this period and the comparison
+  // period are fully covered — comparing 4 of 7 days this week against 1 of 7 last week (or a
+  // complete today against a missing yesterday) isn't like-for-like.
   const changeVsLastPeriodPct =
-    ownerProfitDisplay.kind !== "unavailable" && prevOwnerProfitCents !== 0
+    comparisonState.kind === "available" && prevOwnerProfitCents !== 0
       ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100
       : null;
 
@@ -71,6 +82,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     totalCostsCents,
     ownerProfitCents,
     ownerProfitDisplay,
+    comparisonState,
     isEstimate,
     changeVsLastPeriodPct,
     costsRatio: ratio(totalCostsCents, salesCents),

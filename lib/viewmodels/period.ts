@@ -47,6 +47,15 @@ function daysInMonth(monthKey: string): number {
   return new Date(year, month, 0).getDate();
 }
 
+/** Inclusive count of calendar days between two `YYYY-MM-DD` strings — local-safe, same
+ * reasoning as `addDaysLocal` above. */
+function calendarDaySpan(start: string, end: string): number {
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const ms = new Date(ey, em - 1, ed).getTime() - new Date(sy, sm - 1, sd).getTime();
+  return Math.round(ms / 86_400_000) + 1;
+}
+
 /**
  * This month's running-cost lines, for both the current and previous calendar month — a "week"
  * or "today" comparison can dip a few days into the prior month. We don't have the prior month's
@@ -110,6 +119,16 @@ export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): 
   const { start, end } = previousPeriodCalendarRange(snapshot, period);
   const pool = [...snapshot.previousMonthDays, ...snapshot.monthActualDays];
   return pool.filter((d) => d.date >= start && d.date <= end);
+}
+
+/** How much of the *comparison* period's own calendar range actually has a sales rollup — the
+ * same shape as `periodCoverage`, just for `previousPeriodCalendarRange` instead of
+ * `periodCalendarRange`. A "vs last period" comparison needs this alongside `periodCoverage` for
+ * the current period: comparing a partially-covered period against a sparse one isn't trustworthy
+ * even when one side looks complete on its own. */
+export function previousPeriodCoverage(snapshot: BusinessSnapshot, period: Period): { actualDays: number; expectedDays: number } {
+  const { start, end } = previousPeriodCalendarRange(snapshot, period);
+  return { actualDays: previousPeriodDays(snapshot, period).length, expectedDays: calendarDaySpan(start, end) };
 }
 
 /** Running costs prorated across a period's full calendar range (see `periodCalendarRange`). */

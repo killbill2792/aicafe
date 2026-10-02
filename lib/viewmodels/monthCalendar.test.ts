@@ -24,8 +24,44 @@ describe("buildMonthCalendarViewModel", () => {
 
     const cell1 = vm.cells.find((c) => c.date === "2026-10-01")!;
     const cell2 = vm.cells.find((c) => c.date === "2026-10-02")!;
-    expect(cell1.state).toEqual({ kind: "actual", ownerProfitCents: 4_000, tone: "good" });
-    expect(cell2.state).toEqual({ kind: "actual", ownerProfitCents: -500, tone: "warn" });
+    expect(cell1.state).toEqual({ kind: "actual", ownerProfitCents: 4_000, tone: "good", isEstimate: false });
+    expect(cell2.state).toEqual({ kind: "actual", ownerProfitCents: -500, tone: "warn", isEstimate: false });
+  });
+
+  it("flags a day's profit as isEstimate when any category feeding its running-cost share is an estimate", () => {
+    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000 };
+    const vm = buildMonthCalendarViewModel({
+      monthData: {
+        monthKey: "2026-10",
+        daysInMonth: 31,
+        days: [day],
+        categoryAmounts: [
+          { categoryCode: "rent", monthKey: "2026-10", amountCents: 20_000, isEstimate: false, isMissing: false },
+          { categoryCode: "water", monthKey: "2026-10", amountCents: 1_000, isEstimate: true, isMissing: false }, // the one estimate
+        ],
+      },
+      recoveryOrder: ["rent", "water"],
+      todayDateStr: "2026-10-31",
+      isCurrentMonth: false,
+    });
+    const cell = vm.cells.find((c) => c.date === "2026-10-01")!;
+    expect(cell.state).toMatchObject({ kind: "actual", isEstimate: true });
+    expect(vm.detailsByDate["2026-10-01"].runningCostShareIsEstimate).toBe(true);
+    // The number itself is untouched by the estimate flag — same formula as always.
+    expect(vm.detailsByDate["2026-10-01"].ownerProfitCents).toBe(5_000 - Math.round((20_000 + 1_000) / 31));
+  });
+
+  it("does not flag a day as isEstimate when every contributing category is a real, actual amount", () => {
+    const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 5_000 };
+    const vm = buildMonthCalendarViewModel({
+      monthData: monthData([day]), // CATEGORY_AMOUNTS: rent, isEstimate: false
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-31",
+      isCurrentMonth: false,
+    });
+    const cell = vm.cells.find((c) => c.date === "2026-10-01")!;
+    expect(cell.state).toMatchObject({ isEstimate: false });
+    expect(vm.detailsByDate["2026-10-01"].runningCostShareIsEstimate).toBe(false);
   });
 
   it("marks a day with no rollup as 'missing', never as a confirmed $0 day", () => {

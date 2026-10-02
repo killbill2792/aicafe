@@ -108,14 +108,15 @@ export function computeTodayContribution(params: {
   }
   const totalCents = running;
 
-  if (cumulativeBeforeToday >= totalCents) {
-    return {
-      slices: contributionCentsToday > 0 ? [{ bucketCode: "yours", cents: contributionCentsToday }] : [],
-      allYours: true,
-    };
-  }
+  // Must be checked before the "already covered" branch below: a zero/negative contribution
+  // today is never "all yours," even when yesterday's cumulative already cleared every bucket —
+  // a bad day can pull the running total back below the final threshold, and "all yours" implies
+  // a positive result nobody actually got today.
   if (contributionCentsToday <= 0) {
     return { slices: [], allYours: false };
+  }
+  if (cumulativeBeforeToday >= totalCents) {
+    return { slices: [{ bucketCode: "yours", cents: contributionCentsToday }], allYours: true };
   }
 
   const slices: TodayContributionSlice[] = [];

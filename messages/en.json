@@ -219,6 +219,7 @@
     "bandWatch": "Watch",
     "bandHigh": "High",
     "vsLastPeriod": "vs last period",
+    "notEnoughDataToCompare": "Not enough sales data to compare periods yet.",
     "add": "Add",
     "manageBills": "Manage bills"
   },

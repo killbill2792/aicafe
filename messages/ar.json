@@ -219,6 +219,7 @@
     "bandWatch": "راقب",
     "bandHigh": "مرتفع",
     "vsLastPeriod": "مقارنة بالفترة السابقة",
+    "notEnoughDataToCompare": "لا توجد بيانات مبيعات كافية لمقارنة الفترات بعد.",
     "add": "إضافة",
     "manageBills": "إدارة الفواتير"
   },

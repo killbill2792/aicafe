@@ -219,6 +219,7 @@
     "bandWatch": "Vigilar",
     "bandHigh": "Alto",
     "vsLastPeriod": "vs el periodo anterior",
+    "notEnoughDataToCompare": "Todavía no hay suficientes datos de ventas para comparar periodos.",
     "add": "Agregar",
     "manageBills": "Gestionar gastos fijos"
   },

@@ -94,4 +94,15 @@ describe("buildTodayGlanceViewModel", () => {
     const vm = buildTodayGlanceViewModel(snapshot);
     expect(vm.bucketState).toEqual({ kind: "noProgressToday" });
   });
+
+  it("is never 'allYours' when everything was covered before today but today lost money", () => {
+    // Yesterday alone already covers both buckets (1,500 total); today's ingredients exceed sales.
+    // Cost recovery can genuinely slip back below the final threshold on a bad day — "all yours"
+    // must not be shown just because yesterday's cumulative cleared it.
+    const yesterday = { ...zeroDailyFacts("2026-10-02"), netSalesCents: 2_000 };
+    const today = { ...zeroDailyFacts("2026-10-03"), netSalesCents: 500, ingredientsCents: 900 };
+    const snapshot = buildSnapshot({ todayHasData: true, today, monthActualDays: [yesterday, today] });
+    const vm = buildTodayGlanceViewModel(snapshot);
+    expect(vm.bucketState).toEqual({ kind: "noProgressToday" });
+  });
 });

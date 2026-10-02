@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { roundHalfUpToCent, zeroDailyFacts } from "@/lib/calc";
-import { previousPeriodDays, runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
+import { previousPeriodCoverage, previousPeriodDays, runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
 import type { BusinessSnapshot } from "@/lib/data/types";
 
 /** A minimal, otherwise-empty snapshot — these functions only read `runningCostLines`, `monthKey`,
@@ -151,5 +151,48 @@ describe("previousPeriodDays — date-filtered, never a row-position slice", () 
     });
     const result = previousPeriodDays(snapshot, "month");
     expect(result).toEqual([day("2026-09-01", 100), day("2026-09-03", 300)]);
+  });
+});
+
+describe("previousPeriodCoverage", () => {
+  it("today: 0 of 1 day when yesterday has no rollup", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-02",
+      monthKey: "2026-10",
+      monthActualDays: [], // no Oct 1 row — yesterday is missing
+      previousMonthDays: [day("2026-09-28", 100)],
+    });
+    expect(previousPeriodCoverage(snapshot, "today")).toEqual({ actualDays: 0, expectedDays: 1 });
+  });
+
+  it("today: 1 of 1 day when yesterday has a real rollup", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-02",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-01", 300)],
+      previousMonthDays: [],
+    });
+    expect(previousPeriodCoverage(snapshot, "today")).toEqual({ actualDays: 1, expectedDays: 1 });
+  });
+
+  it("week: counts only the actual rows inside the 7-day previous window, out of 7 expected", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-15",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-03", 500), day("2026-10-10", 999)], // Oct 3 is in-window, Oct 10 isn't
+      previousMonthDays: [day("2026-09-30", 400)], // just outside the window
+    });
+    expect(previousPeriodCoverage(snapshot, "week")).toEqual({ actualDays: 1, expectedDays: 7 });
+  });
+
+  it("month: expected days matches the equivalent day-of-month, actual counts only real rows in range", () => {
+    // today is Oct 5 -> previous-month window is Sep 1..Sep 5 (5 expected days).
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-05",
+      monthKey: "2026-10",
+      monthActualDays: [],
+      previousMonthDays: [day("2026-09-01", 100), day("2026-09-03", 300), day("2026-09-20", 999)],
+    });
+    expect(previousPeriodCoverage(snapshot, "month")).toEqual({ actualDays: 2, expectedDays: 5 });
   });
 });

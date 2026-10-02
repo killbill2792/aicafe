@@ -11,7 +11,6 @@ import type { BucketResult } from "@/lib/calc";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { getMonthCalendar } from "@/lib/data/getMonthCalendar";
-import { runningCostLabelFor } from "@/lib/data/monthCalendar.server";
 import { RUNNING_COST_CODES } from "@/lib/data/runningCostCatalog";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildMonthCalendarViewModel } from "@/lib/viewmodels/monthCalendar";
@@ -97,6 +96,7 @@ function BucketRow({
 export default async function CostRecoveryView({ snapshot, calMonthKey }: { snapshot: BusinessSnapshot; calMonthKey: string }) {
   const t = await getTranslations("Money");
   const tCommon = await getTranslations("Common");
+  const tCategories = await getTranslations("Categories");
   const locale = await getLocale();
   const vm = buildCostRecoveryViewModel(snapshot);
   const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
@@ -117,7 +117,10 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
   const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
   // Jan 4 1970 (UTC) is a Sunday — a stable reference week, indexed 0=Sun..6=Sat.
   const weekdayLabels = Array.from({ length: 7 }, (_, i) => weekdayFormatter.format(new Date(Date.UTC(1970, 0, 4 + i))));
-  const bucketLabels = Object.fromEntries(RUNNING_COST_CODES.map((code) => [code, runningCostLabelFor(code)]));
+  // The calendar's milestone sentence ("%BUCKET% became fully covered...") must read in the
+  // viewer's own language — the English-only RUNNING_COST_LABELS catalog would otherwise leak an
+  // English category name into an es/ar sentence.
+  const bucketLabels = Object.fromEntries(RUNNING_COST_CODES.map((code) => [code, tCategories(code)]));
 
   const pace = profitTone(vm.projectedMonthEndProfitCents);
   const paceText =
@@ -190,6 +193,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
           cardFees: t("cardFees"),
           rentAndBills: t("rentAndBills"),
           ownerProfit: t("ownerProfit"),
+          estimatePill: t("estimateLower"),
         }}
       />
 
