@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
-import { groupMenuCatalogItems } from "@/lib/viewmodels/menuCatalogViewModel";
+import { groupMenuCatalogItems, isPricingHealthy } from "@/lib/viewmodels/menuCatalogViewModel";
 import { usePricingStatusChip } from "./usePricingStatusChip";
 
 export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
@@ -39,7 +39,7 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
         if (!item.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return false;
         if (filter === "archived") return !item.active;
         if (!item.active) return false;
-        if (filter === "attention") return item.costStatus !== "READY";
+        if (filter === "attention") return !isPricingHealthy(item);
         if (filter === "all") return true;
         return item.menuGroup === filter;
       }),

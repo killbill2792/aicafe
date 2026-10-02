@@ -173,7 +173,7 @@ export default function RecipeEditor({
             <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-lg border border-line p-1.5">
               {filteredIngredients.length === 0 && <p className="px-2 py-2 text-sm text-ink-muted">{t("noMatchingIngredients")}</p>}
               {filteredIngredients.map((i) => (
-                <button key={i.id} type="button" onClick={() => selectExistingIngredient(i)} className="flex min-h-10 items-center justify-between rounded-lg px-2.5 text-left text-sm text-ink">
+                <button key={i.id} type="button" onClick={() => selectExistingIngredient(i)} className="flex min-h-12 items-center justify-between rounded-lg px-2.5 text-left text-sm text-ink">
                   <span className="truncate">{i.name}</span>
                   <span className="shrink-0 text-xs text-ink-muted">{t("existingTag")}</span>
                 </button>

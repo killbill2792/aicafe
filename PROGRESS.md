@@ -5,6 +5,32 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu PR #5 final cleanup (2026-10-01 — code complete, pushed to menu-visual-refresh)
+
+Four small, explicitly-scoped fixes on top of the review fixes below. Same branch, no
+schema/calculation changes.
+
+1. `RecipeEditor.tsx`: existing-ingredient selection buttons `min-h-10` → `min-h-12` (48px
+   minimum touch target, per `docs/02-design-system.md`'s accessibility checklist).
+2. `ProductDetailScreen.tsx`: the Overview/Recipe/Sizes/Pricing tab buttons `min-h-11` → `min-h-12`.
+3. `app/[locale]/loading.tsx`, `app/[locale]/menu/loading.tsx` (shared by `/menu`, `/menu/[itemId]`,
+   `/menu/new`), `app/[locale]/money/loading.tsx` now render through `PageShell` (menu's `wide`,
+   the other two default-width) instead of a raw `<main>`, so the loading skeleton no longer
+   flashes at the old 480px cap before the resolved page widens to its real desktop width.
+   Skeleton contents (`SkeletonBlock`/`SkeletonCard` props) untouched.
+4. `MenuCatalog.tsx`'s "Needs attention" filter used `item.costStatus !== "READY"` directly, so an
+   item with a complete recipe but a "Worth reviewing" price (e.g. a `REVIEW_PRICE` or `NEW_PRICE`
+   status) never showed up there even though its own chip said it needed attention. Now reuses
+   `isPricingHealthy()` (`!isPricingHealthy(item)`) — the same helper the grouped-card status
+   already uses — so the filter and the displayed status can't disagree.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (112/112, unchanged), `npm run build`
+all clean. Live-verified against the mail2raj27 test account: confirmed all three Product Detail
+tabs and the three existing-ingredient picker buttons measure 48px tall; confirmed "Needs
+attention" now includes Latte and Americano (both "Worth reviewing", previously excluded) alongside
+the recipe-incomplete items; confirmed the resolved Menu page still renders at the wide (1280px)
+shell width.
+
 ## Menu PR #5 review fixes: ingredient-picker states, grouped sizes (2026-10-01 — code complete, pushed to menu-visual-refresh)
 
 Two UI-only mismatches with the approved Menu reference, found in PR #5 final review. Same branch,

@@ -114,7 +114,7 @@ export default function ProductDetailScreen({
 
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
         {TABS.map(({ key, label }) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
             {label}
           </button>
         ))}
