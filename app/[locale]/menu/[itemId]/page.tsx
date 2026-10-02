@@ -18,10 +18,10 @@ export default async function MenuItemPage({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>;
-  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string }>;
+  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string; copiedFrom?: string }>;
 }) {
   await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe, tab, edit }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe, tab, edit, copiedFrom }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -49,6 +49,7 @@ export default async function MenuItemPage({
         justCreated={setupRecipe === "1"}
         initialTab={initialTab}
         initialEditing={edit === "1" && initialTab === "overview"}
+        copiedFrom={copiedFrom}
       />
     </PageShell>
   );

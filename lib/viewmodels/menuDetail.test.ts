@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { menuItemHref, parseMenuDetailTab } from "./menuDetail";
 
 describe("menu detail tab context", () => {
-  it.each(["overview", "recipe", "sizes", "pricing"] as const)("accepts the known %s tab", (tab) => {
+  it.each(["overview", "recipe", "pricing"] as const)("accepts the known %s tab", (tab) => {
     expect(parseMenuDetailTab(tab)).toBe(tab);
   });
 

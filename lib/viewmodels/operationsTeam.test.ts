@@ -17,7 +17,8 @@ const pricing = suggestPrice({
 });
 
 function snapshot(missingCount: number): BusinessSnapshot {
-  const runningCostLines = Array.from({ length: missingCount }, (_, index) => ({ categoryCode: "other", label: `Missing ${index}`, amountCents: 0, isEstimate: false, isMissing: true })) as RunningCostLine[];
+  const codes = ["other", "supplies", "rent", "water", "insurance", "software", "repairs"] as const;
+  const runningCostLines = Array.from({ length: missingCount }, (_, index) => ({ categoryCode: codes[index % codes.length], label: `Missing ${index}`, amountCents: 0, isEstimate: false, isMissing: true })) as RunningCostLine[];
   return { business: { id: "business", name: "Cafe", timezone: "America/Los_Angeles", payrollTaxRate: 0 }, monthKey: "2026-10", runningCostLines } as BusinessSnapshot;
 }
 
@@ -40,7 +41,13 @@ describe("operations team presentation", () => {
   it("stores Leo's stable category code instead of its display label", () => {
     const team = buildOperationsTeamViewModel(snapshot(1), [], new Date("2026-10-02T12:00:00Z"));
     const task = team.needsYou.find((item) => item.agentId === "leo")!;
-    expect(task.payload.firstMissingCostCode).toBe("other");
-    expect(task.payload).not.toHaveProperty("firstMissingCost");
+    expect(task.id).toBe("data:2026-10:cost:other");
+    expect(task.payload.categoryCode).toBe("other");
+  });
+
+  it("creates one Leo card per category so the count equals the Needs you list", () => {
+    const team = buildOperationsTeamViewModel(snapshot(2), [], new Date("2026-10-02T12:00:00Z"));
+    expect(team.needsYou.filter((task) => task.agentId === "leo")).toHaveLength(2);
+    expect(team.members.find((member) => member.agentId === "leo")?.attentionCount).toBe(2);
   });
 });

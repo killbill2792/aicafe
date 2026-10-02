@@ -16,6 +16,7 @@ import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
 import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
 import { stableSortSizes } from "@/lib/menu/sizeLabel";
+import { identicalDifferentSizeRecipe } from "@/lib/menu/identicalSiblingRecipe";
 
 const PRICING_EXPLAINER_KEYS = {
   BENCHMARK_EXPLAINER: "pricingExplainerBenchmark",
@@ -41,6 +42,7 @@ export default function ProductDetailScreen({
   justCreated,
   initialTab,
   initialEditing = false,
+  copiedFrom,
 }: {
   item: MenuControlItem;
   editItem: MenuItemForEdit;
@@ -51,6 +53,7 @@ export default function ProductDetailScreen({
   justCreated?: boolean;
   initialTab: MenuDetailTab;
   initialEditing?: boolean;
+  copiedFrom?: string;
 }) {
   const t = useTranslations("Menu");
   const tEdit = useTranslations("ManageMenu");
@@ -60,6 +63,7 @@ export default function ProductDetailScreen({
   const [tab, setTab] = useState<MenuDetailTab>(initialTab);
   const [editing, setEditing] = useState(initialEditing);
   const [addingSize, setAddingSize] = useState(false);
+  const [managingSizes, setManagingSizes] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
   const [toggleError, setToggleError] = useState<string | null>(null);
 
@@ -77,19 +81,21 @@ export default function ProductDetailScreen({
   const sizeSiblingsForDialog: SizeSibling[] = siblingSizes.map((sibling) => ({ id: sibling.id, sizeLabel: sibling.sizeLabel, name: sibling.name, priceCents: sibling.priceCents }));
   const chip = statusChip(item);
   const pricingStatus = getItemPricingStatus(item);
-  const sizeCount = 1 + siblingSizes.length;
   const allSizes = stableSortSizes([item, ...siblingSizes]);
+  const identicalSibling = identicalDifferentSizeRecipe(editItem, siblingSizes);
+  const sameSuggestionSibling = item.pricing?.recommendedPriceCents == null ? null : siblingSizes.find((sibling) => sibling.pricing?.recommendedPriceCents === item.pricing?.recommendedPriceCents);
 
   const TABS: { key: MenuDetailTab; label: string }[] = [
     { key: "overview", label: t("tabOverview") },
     { key: "recipe", label: t("tabRecipe") },
-    { key: "sizes", label: `${t("tabSizes")} (${sizeCount})` },
     { key: "pricing", label: t("tabPricing") },
   ];
 
   return (
     <>
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+        <div className="flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-line bg-paper text-center text-ink-muted" aria-label={t("photoPlaceholder")}><span><span className="block text-4xl" aria-hidden="true">☕</span><span className="mt-1 block text-sm font-semibold">{t("photoPlaceholder")}</span></span></div>
+        <div><h1 className="font-headline text-3xl font-bold">{item.baseName}</h1><p className="text-sm text-ink-muted">{item.sizeLabel ?? item.name}</p></div>
         {allSizes.length > 1 && (
           <div className="flex gap-2 overflow-x-auto pb-1" aria-label={t("sizes")}>
             {allSizes.map((size) => (
@@ -115,8 +121,12 @@ export default function ProductDetailScreen({
         </div>
         {item.catalogSource !== "manual" && <p className="text-sm text-ink-muted">{t("syncedFrom", { source: item.provenance.replace("_", " ") })}</p>}
         <span className={`w-fit rounded-full px-3 py-1 text-sm font-bold ${item.active ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>{item.active ? t("active") : t("inactive")}</span>
+        <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>{chip.label}</span>
+        <button type="button" onClick={() => setManagingSizes((value) => !value)} className="min-h-12 w-fit rounded-full border border-line px-4 text-sm font-bold">{t("manageSizes")}</button>
+      </section>
         {editing && (
-          <div className="border-t border-line pt-3">
+          <section className="rounded-card-lg border border-line bg-card p-[18px]">
+            <div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-bold">{t("editProduct")}</h2><button type="button" onClick={() => setEditing(false)} className="min-h-12 px-3 font-semibold text-ink-muted">{tEdit("cancel")}</button></div>
             <ProductEditForm
               item={editItem}
               menuGroupOptions={menuGroupOptions}
@@ -133,9 +143,13 @@ export default function ProductDetailScreen({
               }}
               onSaved={() => { setEditing(false); router.refresh(); }}
             />
-          </div>
+          </section>
         )}
-      </section>
+
+      {managingSizes && <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]"><h2 className="text-xl font-bold">{t("manageSizes")}</h2>
+        {allSizes.map((size) => <Link key={size.id} href={menuItemHref(size.id, tab)} className="flex min-h-20 items-center justify-between gap-3 rounded-xl border border-line p-3 text-ink no-underline"><span><strong>{size.sizeLabel ?? size.name}</strong><span className="block text-sm text-ink-muted">{size.costStatus === "READY" && size.ingredientsCostCents !== null ? t("sizeCostToMake", { amount: formatCents(size.ingredientsCostCents) }) : t("recipeIncomplete")} · {size.active ? t("active") : t("inactive")}</span></span><strong>{formatCents(size.priceCents)}</strong></Link>)}
+        <button type="button" onClick={() => setAddingSize(true)} className="min-h-12 rounded-full border border-good px-4 font-semibold text-good">{tEdit("addAnotherSize", { name: editItem.baseName })}</button>
+      </section>}
 
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
         {TABS.map(({ key, label }) => (
@@ -147,14 +161,11 @@ export default function ProductDetailScreen({
 
       {tab === "overview" && (
         <div className="flex flex-col gap-3 md:grid md:grid-cols-2 md:items-start md:gap-3">
-          <section className="flex min-h-36 items-center justify-center rounded-card-lg border border-dashed border-line bg-paper p-[18px] text-center text-ink-muted" aria-label={t("photoPlaceholder")}>
-            <span><span className="block text-3xl" aria-hidden="true">☕</span><span className="mt-1 block text-sm font-semibold">{t("photoPlaceholder")}</span></span>
-          </section>
           <section className="flex flex-col justify-center gap-1 rounded-card-lg bg-card p-[18px]">
             <Row label={t("selectedSize")} value={item.sizeLabel ?? item.baseName} strong />
             <Row label={t("sellingPrice")} value={formatCents(item.priceCents)} />
             {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
-              <strong className="text-lg">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</strong>
+              <><Row label={t("costToMake")} value={formatCents(item.ingredientsCostCents)} /><Row label={t("keptAfterIngredients")} value={formatCents(item.priceCents - item.ingredientsCostCents)} strong /></>
             ) : (
               <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
             )}
@@ -193,34 +204,13 @@ export default function ProductDetailScreen({
 
       {tab === "recipe" && (
         <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+          <h2 className="text-xl font-bold">{t("sizeRecipe", { size: item.sizeLabel ?? item.name })}</h2>
+          {copiedFrom && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{t("recipeCopiedReview", { from: copiedFrom, to: item.sizeLabel ?? item.name })}</p>}
+          {!copiedFrom && identicalSibling && <p className="rounded-xl bg-warn-tint p-3 text-sm text-warn">{t("identicalRecipeReview", { other: identicalSibling, size: item.sizeLabel ?? item.name })}</p>}
           {justCreated && (
             <p className="rounded-xl bg-good-tint px-3 py-2.5 text-sm font-semibold text-good">{t("setupRecipeBanner")}</p>
           )}
           <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} />
-        </section>
-      )}
-
-      {tab === "sizes" && (
-        <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-          {allSizes.map((size) => (
-            <div key={size.id} className={`flex min-h-24 items-center gap-3 rounded-xl border px-3 py-2 text-ink ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-2"><strong>{size.sizeLabel ?? size.name}</strong><strong>{formatCents(size.priceCents)}</strong></span>
-                <span className="mt-1 block text-sm text-ink-muted">
-                  {size.costStatus === "READY" && size.ingredientsCostCents !== null ? t("sizeCostToMake", { amount: formatCents(size.ingredientsCostCents) }) : t("recipeIncomplete")}
-                </span>
-                <SizePricingStatus item={size} />
-              </span>
-              {size.id === item.id ? (
-                <button type="button" onClick={() => { setTab("overview"); setEditing(true); router.replace(`${pathname}?tab=overview&edit=1`, { scroll: false }); }} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</button>
-              ) : (
-                <Link href={`/menu/${encodeURIComponent(size.id)}?tab=overview&edit=1`} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper no-underline">{t("viewEditSize")}</Link>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">
-            {tEdit("addAnotherSize", { name: editItem.baseName })}
-          </button>
         </section>
       )}
 
@@ -251,6 +241,8 @@ export default function ProductDetailScreen({
             {item.pricing?.warnings.map((warning) => (
               <p key={warning} className="text-sm font-semibold text-warn">{tEdit(PRICING_WARNING_KEYS[warning])}</p>
             ))}
+            {item.pricing && <p className="text-sm text-ink-muted">{t("pricingConfidence", { confidence: item.pricing.confidence, quality: item.pricing.dataQuality.estimatedInputs.length > 0 ? t("estimatedData") : t("completeData") })}</p>}
+            {sameSuggestionSibling && <p className="text-sm text-ink-muted">{t("sameSuggestedReason", { size: sameSuggestionSibling.sizeLabel ?? sameSuggestionSibling.name })}</p>}
           </div>
         </section>
       )}
@@ -273,25 +265,11 @@ export default function ProductDetailScreen({
           category={editItem.category}
           menuGroup={editItem.menuGroup}
           siblingSizes={[{ id: editItem.id, sizeLabel: editItem.sizeLabel, name: editItem.name, priceCents: editItem.priceCents }, ...sizeSiblingsForDialog]}
-          onDone={(newItemId) => { setAddingSize(false); router.push(menuItemHref(newItemId, tab)); }}
+          onDone={(newItemId, source) => { setAddingSize(false); router.push(`${menuItemHref(newItemId, "recipe")}${source ? `&copiedFrom=${encodeURIComponent(source)}` : ""}`); }}
           onClose={() => setAddingSize(false)}
         />
       )}
     </>
-  );
-}
-
-function SizePricingStatus({ item }: { item: MenuControlItem }) {
-  const t = useTranslations("Menu");
-  const statusChip = usePricingStatusChip();
-  const status = getItemPricingStatus(item);
-  const chip = statusChip(item);
-  if (status.kind === "incomplete_recipe") return null;
-  return (
-    <span className={`mt-1 block text-sm font-semibold ${chip.good ? "text-good" : "text-warn"}`}>
-      {chip.label}
-      {(status.kind === "low" || status.kind === "high") && ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}`}
-    </span>
   );
 }
 

@@ -85,8 +85,8 @@ export function MenuTeaserCard({
   title: string;
   bestLabel: string;
   worstLabel: string;
-  best: { name: string; keptCents: number } | null;
-  worst: { name: string; keptCents: number } | null;
+  best: { name: string; keptCents: number; description: string } | null;
+  worst: { name: string; keptCents: number; description: string } | null;
 }) {
   return (
     <CardShell href="/menu" step={step} title={title}>
@@ -96,7 +96,7 @@ export function MenuTeaserCard({
           {best && (
             <>
               <span className="text-base font-bold">{best.name}</span>
-              <span className="text-sm text-[#1E4D37]">{formatCents(best.keptCents)}</span>
+              <span className="text-sm text-[#1E4D37]">{best.description}</span>
             </>
           )}
         </div>
@@ -105,7 +105,7 @@ export function MenuTeaserCard({
           {worst && (
             <>
               <span className="text-base font-bold">{worst.name}</span>
-              <span className="text-sm text-[#6E2A07]">{formatCents(worst.keptCents)}</span>
+              <span className="text-sm text-[#6E2A07]">{worst.description}</span>
             </>
           )}
         </div>
@@ -120,23 +120,25 @@ export function BreakEvenTeaserCard({
   neededLabel,
   averageLabel,
   progressPct,
+  unavailableLabel,
 }: {
   step: number;
   title: string;
   neededLabel: string;
   averageLabel: string;
   progressPct: number;
+  unavailableLabel?: string;
 }) {
   return (
     <CardShell href="/more/break-even" step={step} title={title}>
-      <div className="relative h-4 rounded-lg bg-good-tint">
-        <div className="h-4 rounded-lg bg-good" style={{ width: "100%" }} />
-        <div className="absolute -top-[5px] h-[26px] w-[3px] rounded bg-ink" style={{ insetInlineStart: `${Math.min(100, progressPct)}%` }} />
-      </div>
-      <div className="flex justify-between text-sm font-medium text-ink-muted">
-        <span>{neededLabel}</span>
-        <span className="font-bold text-good">{averageLabel}</span>
-      </div>
+      {unavailableLabel ? <p className="text-[17px] font-semibold text-warn">{unavailableLabel}</p> : <>
+        <div className="h-4 overflow-hidden rounded-lg bg-line" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, progressPct))}>
+          <div className="h-full rounded-lg bg-good" style={{ width: `${Math.min(100, Math.max(0, progressPct))}%` }} />
+        </div>
+        <div className="flex justify-between text-sm font-medium text-ink-muted">
+          <span>{averageLabel}</span><span className="font-bold text-ink">{neededLabel}</span>
+        </div>
+      </>}
     </CardShell>
   );
 }

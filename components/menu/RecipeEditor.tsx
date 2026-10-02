@@ -39,6 +39,7 @@ export default function RecipeEditor({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const mode: "search" | "existing" | "new" = addingNew ? "new" : ingredientId ? "existing" : "search";
   const selectedIngredient = ingredients.find((i) => i.id === ingredientId);
@@ -155,7 +156,8 @@ export default function RecipeEditor({
         </ul>
       )}
 
-      <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
+      {!editing && <button type="button" onClick={() => setEditing(true)} className="min-h-12 w-fit rounded-full border border-line px-4 font-bold text-ink">{t("addIngredient")}</button>}
+      {editing && <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
         <span className="text-sm font-bold">{t("addIngredient")}</span>
 
         {mode === "search" && (
@@ -236,13 +238,14 @@ export default function RecipeEditor({
               <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
                 {t("addIngredient")}
               </button>
+              <button type="button" onClick={() => { setEditing(false); returnToSearch(); }} className="min-h-12 px-4 font-semibold text-ink-muted">{t("cancel")}</button>
             </div>
           </>
         )}
 
         {error && <p className="text-sm text-warn">{error}</p>}
         {justAdded && !error && <p className="text-sm font-semibold text-good">{t("ingredientAdded")}</p>}
-      </div>
+      </div>}
     </div>
   );
 }

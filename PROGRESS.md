@@ -5,6 +5,26 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Phase 4A — owner truth + product detail redesign (2026-10-02 — code complete)
+
+1. Make Home and Break-even missing-data states honest, rank only complete menu recipes, and label
+   alert impact as an estimate with the calculation explained.
+2. Reconcile generated alerts against current source truth and split Leo missing-cost work into one
+   stable, category-focused task per missing category.
+3. Add deterministic pricing-task snoozes using the existing JSON payload, including due/current and
+   materially-changed lifecycle coverage.
+4. Replace Product Detail with a single selected-size workflow: hero, Overview/Recipe/Pricing,
+   focused product/recipe editors, and a secondary size-management surface.
+5. Localize en/es/ar, add regression coverage, then run typecheck, lint, full tests, build, and a
+   browser screenshot. No dependencies and no database migration.
+
+Implemented all five areas without schema changes or new dependencies. Generated alert cleanup now
+resolves only still-open derived rows and keeps owner-dismissed/resolved history. Pricing snoozes are
+payload-only and reconciliation reopens a timed task only while its exact deterministic recommendation
+remains current. Verification: `npx tsc --noEmit`, `npm run lint`, and `npm run test` (276/276) pass.
+`npm run build` reached the production compile but the environment could not reach Google Fonts for
+Figtree, Fraunces, or IBM Plex Sans Arabic. No browser/screenshot tool is installed in this environment.
+
 ## PR #7 follow-up #2: negative-day "all yours" bug, estimate labeling on the calendar, integer-cent avg order value, 48px nav targets, localized milestone names, like-for-like comparisons (2026-10-02 — code complete, pushed to owner-comprehension-pass)
 
 Six more review findings before PR #7 merges:

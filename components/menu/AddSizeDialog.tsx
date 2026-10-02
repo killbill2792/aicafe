@@ -22,7 +22,7 @@ export default function AddSizeDialog({
   category: MenuItemCategoryCode;
   menuGroup: string | null;
   siblingSizes: SizeSibling[];
-  onDone: (newItemId: string) => void;
+  onDone: (newItemId: string, copiedFromLabel: string | null) => void;
   onClose: () => void;
 }) {
   const t = useTranslations("ManageMenu");
@@ -55,7 +55,7 @@ export default function AddSizeDialog({
         menuGroup: menuGroup ?? undefined,
         copyRecipeFromItemId: copyFrom || undefined,
       });
-      if (result.ok) onDone(result.id);
+      if (result.ok) onDone(result.id, siblingSizes.find((sibling) => sibling.id === copyFrom)?.sizeLabel ?? null);
       else setError(result.error);
     });
   }

@@ -114,12 +114,14 @@ export default function BillsManager({
   bills,
   categoryLabels,
   labels,
+  initialCategory = null,
 }: {
   bills: RecurringCostRow[];
   categoryLabels: Record<ExpenseCategoryCode, string>;
   labels: BillFormLabels & { addHint: string; edit: string; addAnother: string };
+  initialCategory?: ExpenseCategoryCode | null;
 }) {
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(initialCategory);
   const byCategory = new Map(bills.filter((b) => SINGLE_SLOT_CATEGORIES.includes(b.categoryCode)).map((b) => [b.categoryCode, b]));
   const otherBills = bills.filter((b) => b.categoryCode === OTHER_CATEGORY);
 

@@ -30,6 +30,14 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const avgDailyStaffCost = days.length ? staffCostCentsForPeriod(days) / days.length : 0;
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
   const needed = drinksNeededPerDay(dailyCosts, avgMoneyLeft);
+  const missingCostLabels = snapshot.runningCostLines.filter((line) => line.isMissing).map((line) => line.label);
+  const unavailableReason = missingCostLabels.length > 0
+    ? "missing_costs" as const
+    : days.length === 0 || drinks <= 0 || avgMoneyLeft <= 0
+      ? "missing_sales" as const
+      : dailyCosts <= 0
+        ? "missing_costs" as const
+        : null;
 
   const todayDrinks = snapshot.todayDay.drinksCount;
   const progressPct = needed > 0 && Number.isFinite(needed) ? Math.min(100, (todayDrinks / needed) * 100) : 0;
@@ -62,5 +70,7 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
     avgMoneyLeftPerDrinkCents: avgMoneyLeft,
     dailyCostsToCoverCents: dailyCosts,
     whatIfs,
+    unavailableReason,
+    missingCostLabels,
   };
 }

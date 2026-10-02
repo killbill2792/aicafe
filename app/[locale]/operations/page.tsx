@@ -45,7 +45,8 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 function taskHref(task: OperatingTask): string {
   if (task.kind === "price_review" && task.entityId) return `/menu/${encodeURIComponent(task.entityId)}?tab=pricing`;
   if (task.kind === "staff_coverage") return "/more/manage-staff";
-  if (task.kind === "data_quality" || task.kind === "money_update") return "/more/bills";
+  if (task.kind === "data_quality") return `/more/bills?category=${encodeURIComponent(String(task.payload.categoryCode))}`;
+  if (task.kind === "money_update") return "/more/bills";
   return "/more/uploads/ingredients";
 }
 
@@ -54,14 +55,14 @@ function TaskList({ tasks, empty, names, t, category }: { tasks: OperatingTask[]
   return <section className="flex flex-col gap-3">{tasks.map((task) => {
     const identity = agentIdentity[task.agentId];
     const price = task.kind === "price_review";
-    const title = price ? String(task.payload.itemName) : task.kind === "data_quality" ? t("missingCosts", { count: Number(task.payload.missingCostCount) }) : task.kind === "staff_coverage" ? t("staffTask") : t("mayaWatching");
-    const detail = price ? `${formatCents(Number(task.payload.currentPriceCents))} → ${formatCents(Number(task.payload.suggestedPriceCents))}` : task.kind === "data_quality" ? category(String(task.payload.firstMissingCostCode)) : task.kind === "supply_check" ? t("inventoryUnavailable") : t("transportUnavailable");
+    const title = price ? String(task.payload.itemName) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTask") : t("mayaWatching");
+    const detail = price ? `${formatCents(Number(task.payload.currentPriceCents))} → ${formatCents(Number(task.payload.suggestedPriceCents))}` : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("inventoryUnavailable") : t("transportUnavailable");
     const action = price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     return <article key={task.id} data-entity-type={task.entityType} data-entity-id={task.entityId} className={`rounded-card-lg border-s-4 p-[18px] ${identity.border} ${identity.surface}`}>
       <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="small"/><p className={`font-bold ${identity.text}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
       <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
-      {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} errorLabel={t("decisionError")} />}
+      {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
     </article>;
   })}</section>;
 }
