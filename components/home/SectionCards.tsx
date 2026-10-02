@@ -4,8 +4,15 @@ import Money from "@/components/shared/Money";
 import { formatCents } from "@/lib/calc";
 
 function CardShell({ href, step, title, children }: { href: string; step: number; title: string; children: React.ReactNode }) {
+  const surfaces: Record<number, string> = {
+    1: "border border-[#D7C8B5] bg-[#EFE5D7]",
+    2: "border border-[#B9CBDB] bg-[#E8EFF5]",
+    3: "border border-[#D9C2A9] bg-[#F3E9DD]",
+    4: "border border-line bg-card",
+    5: "border border-[#E6BEA7] bg-warn-tint",
+  };
   return (
-    <Link href={href} className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px] text-ink no-underline">
+    <Link href={href} className={`flex min-h-12 flex-col gap-3.5 rounded-card-lg p-[18px] text-ink no-underline ${surfaces[step] ?? "bg-card"}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-ink text-xs font-extrabold text-paper">{step}</span>

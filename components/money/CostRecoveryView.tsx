@@ -111,6 +111,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
     recoveryOrder: snapshot.recoveryOrder,
     todayDateStr: snapshot.todayDateStr,
     isCurrentMonth,
+    projectedDays: isCurrentMonth ? vm.projectedDays : [],
   });
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(`${calMonthKey}-01T00:00:00`));
   const firstWeekday = new Date(`${calMonthKey}-01T00:00:00`).getDay();
@@ -177,6 +178,7 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
         firstWeekday={firstWeekday}
         cells={calendarVm.cells}
         detailsByDate={calendarVm.detailsByDate}
+        coverageSignal={calendarVm.coverageSignal}
         bucketLabels={bucketLabels}
         labels={{
           prevMonth: t("calendarPrevMonth"),
@@ -194,6 +196,13 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
           rentAndBills: t("rentAndBills"),
           ownerProfit: t("ownerProfit"),
           estimatePill: t("estimateLower"),
+          monthProgress: t("calendarMonthProgress"),
+          daysRecorded: t("calendarDaysRecorded"),
+          profitableDays: t("calendarProfitableDays"),
+          billsCovered: t("calendarBillsCovered"),
+          billsProjected: t("calendarBillsProjected"),
+          billsNotCovered: t("calendarBillsNotCovered"),
+          billsInsufficient: t("calendarBillsInsufficient"),
         }}
       />
 

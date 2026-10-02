@@ -180,6 +180,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <AITeamCard
         team={buildOperationsTeamViewModel(snapshot, menu)}
+        major
         copy={{
           title: tOperations("teamTitle"),
           aiLabel: tOperations("aiLabel"),

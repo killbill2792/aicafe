@@ -1584,3 +1584,56 @@ Phase 1 final foundation result:
 - [x] Migration 23 persists actor type and enforces employee identity for employee responses and no employee identity for owner responses.
 - [x] Use-price stays Watching until a trusted later observation matches the accepted recommendation; keep-current can complete immediately.
 - [x] Typecheck, lint, and 248 tests pass. Build is blocked only by network failures fetching the three existing Google fonts.
+
+## Phase 2 — UX clarity and visual hierarchy (2026-10-02)
+
+Plan:
+- Add truthful calendar month progress and lighter menu pricing-warning/real-size management experiences.
+- Make Staff current-state and Manage Staff summaries/actions clearer, including reactivation, schedule truthfulness, and selected controls.
+- Elevate the Home AI team with distinct accessible teammate identities and carry those accents into filtered operations work.
+- Verify responsive layouts at 375px, 390px, desktop, and en/es/ar RTL; then run typecheck, lint, full tests, and build.
+
+No dependency added; existing UI, i18n, data, and test facilities are sufficient.
+
+Phase 2 result:
+- [x] Calendar shows recorded/profitable month progress with 48px day targets.
+- [x] Product detail uses real menu-item IDs for size navigation, adds actionable size rows, and softens pricing warnings.
+- [x] Staff distinguishes active/empty shifts; Manage Staff is summary-first with reachable reactivation, truthful current-month/varied schedules, strong selectors, and collapse-after-save behavior.
+- [x] Home AI team is a major warm section; Alex, Olivia, Maya, and Leo have distinct accessible identities carried into selected inbox work.
+- [x] Home section surfaces now vary by domain while preserving good/warn semantics and the warm café palette.
+- [x] English, Spanish, and Arabic copy added; logical RTL classes and mobile/desktop responsive constraints retained.
+- [x] Typecheck, lint, and all 248 tests pass. Build reaches compilation but is blocked by the environment denying downloads for the three existing Google fonts. Browser screenshots could not be captured because no browser runtime is installed in this environment.
+
+## Phase 2 review follow-up (PR #10)
+
+Plan:
+- Correct empty/active Staff hero hierarchy without changing staff calculations.
+- Preserve validated product-detail tabs across real size IDs, complete per-size management context, and lighten catalog warning copy.
+- Add editor-by-editor Manage Staff disclosure while keeping summaries, reactivation, and collapse-after-save behavior.
+- Move Leo to a non-semantic ochre identity and restore calendar bill-coverage operating signals.
+- Add focused regressions, verify responsive/RTL/touch logic, and rerun typecheck, lint, full tests, and build.
+
+Phase 2 review follow-up result:
+- [x] Empty Staff hero now shows only the truthful today-so-far cost; active shifts emphasize combined hourly cost with minute/today context.
+- [x] Product headings use base names; validated URL-backed tabs survive real size-ID navigation.
+- [x] Size rows show each size's own selling price, recipe cost/completeness, deterministic pricing status, and View / Edit action.
+- [x] Menu catalog warnings are secondary text lines rather than dominant pills.
+- [x] Manage Staff opens one selected editor at a time, preserves summary-first rows and 48px reactivation, and collapses after details/schedule saves.
+- [x] Leo now uses non-semantic ochre; success green remains reserved for healthy states.
+- [x] Calendar month progress again states actual or projected bill-coverage dates, or an honest not-covered/insufficient-data state.
+- [x] Focused tab, staff-summary, and calendar-signal regressions added; typecheck, lint, and all 258 tests pass.
+- [x] Responsive class logic reviewed for 375px/390px/desktop and logical RTL behavior in en/es/ar; touched controls remain at least 48px.
+- [ ] Production build remains blocked only by the existing environment failure to fetch Figtree, Fraunces, and IBM Plex Sans Arabic from Google Fonts.
+
+## Phase 2 final Manage Staff follow-up (PR #10)
+
+Plan:
+- Consume new-employee schedule guidance after the first successful schedule save so later expansions stay summary-first.
+- Restore clearer weekly/month-only scope labels and supporting copy in en/es/ar while preserving selected states and 48px targets.
+- Run focused/full tests, typecheck, and lint, then commit as one small PR #10 follow-up.
+
+Phase 2 final Manage Staff follow-up result:
+- [x] The first successful schedule save consumes new-employee guidance, refreshes, collapses, and leaves future expansions with no editor selected.
+- [x] Schedule scope now says “Use every week” / “Only this month” with clear supporting copy in en/es/ar.
+- [x] Selected `aria-pressed` styling and 48px scope controls are preserved.
+- [x] Typecheck, lint, and all 259 tests pass.

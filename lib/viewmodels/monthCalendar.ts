@@ -1,4 +1,4 @@
-import { computeCostRecovery, roundHalfUpToCent, runningCostsForPeriodCents, type RecoveryBucket } from "@/lib/calc";
+import { computeCostRecovery, roundHalfUpToCent, runningCostsForPeriodCents, type DayContribution, type RecoveryBucket } from "@/lib/calc";
 import type { MonthCalendarData } from "@/lib/data/monthCalendar.server";
 import { dayContributionCents, recoveryBucketsFromAmounts } from "./costRecoveryShared";
 import { previousMonthKey } from "./period";
@@ -45,6 +45,11 @@ export type MonthCalendarViewModel = {
   daysInMonth: number;
   cells: DayCell[];
   detailsByDate: Record<string, DayDetail>;
+  coverageSignal:
+    | { kind: "covered"; date: string }
+    | { kind: "projected"; date: string }
+    | { kind: "not_covered" }
+    | { kind: "insufficient" };
 };
 
 export function buildMonthCalendarViewModel(params: {
@@ -52,8 +57,9 @@ export function buildMonthCalendarViewModel(params: {
   recoveryOrder: string[];
   todayDateStr: string;
   isCurrentMonth: boolean;
+  projectedDays?: DayContribution[];
 }): MonthCalendarViewModel {
-  const { monthData, recoveryOrder, todayDateStr, isCurrentMonth } = params;
+  const { monthData, recoveryOrder, todayDateStr, isCurrentMonth, projectedDays = [] } = params;
   const { monthKey, daysInMonth, days, categoryAmounts } = monthData;
 
   const buckets: RecoveryBucket[] = recoveryBucketsFromAmounts(categoryAmounts, recoveryOrder);
@@ -63,7 +69,7 @@ export function buildMonthCalendarViewModel(params: {
   const hasEstimatedCosts = categoryAmounts.some((c) => c.isEstimate && c.amountCents > 0);
   const recovery = computeCostRecovery(
     buckets,
-    days.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })),
+    [...days.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })), ...(isCurrentMonth ? projectedDays : [])],
   );
   const milestonesByDate = new Map<string, string[]>();
   for (const bucket of recovery.buckets) {
@@ -121,7 +127,17 @@ export function buildMonthCalendarViewModel(params: {
     };
   }
 
-  return { monthKey, daysInMonth, cells, detailsByDate };
+  const finalBucket = recovery.buckets.at(-1);
+  const coverageSignal =
+    !finalBucket || days.length === 0
+      ? { kind: "insufficient" as const }
+      : finalBucket.coveredOn
+        ? { kind: "covered" as const, date: finalBucket.coveredOn }
+        : isCurrentMonth && finalBucket.projectedCoveredOn
+          ? { kind: "projected" as const, date: finalBucket.projectedCoveredOn }
+          : { kind: "not_covered" as const };
+
+  return { monthKey, daysInMonth, cells, detailsByDate, coverageSignal };
 }
 
 export function nextMonthKey(monthKey: string): string {

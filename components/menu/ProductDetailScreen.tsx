@@ -3,19 +3,18 @@
 import { useState } from "react";
 import { Pencil, Check, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useRouter } from "@/i18n/navigation";
+import { Link, usePathname, useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { setMenuItemActive } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import { getItemPricingStatus } from "@/lib/viewmodels/menuCatalogViewModel";
+import { menuItemHref, type MenuDetailTab } from "@/lib/viewmodels/menuDetail";
 import { usePricingStatusChip } from "./usePricingStatusChip";
 import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
 import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
-
-type Tab = "overview" | "recipe" | "sizes" | "pricing";
 
 const PRICING_EXPLAINER_KEYS = {
   BENCHMARK_EXPLAINER: "pricingExplainerBenchmark",
@@ -39,20 +38,23 @@ export default function ProductDetailScreen({
   ingredientConversions,
   siblingSizes,
   justCreated,
+  initialTab,
 }: {
   item: MenuControlItem;
   editItem: MenuItemForEdit;
   ingredients: IngredientOption[];
   menuGroupOptions: string[];
   ingredientConversions: Record<string, IngredientUnitConversion[]>;
-  siblingSizes: MenuItemForEdit[];
+  siblingSizes: MenuControlItem[];
   justCreated?: boolean;
+  initialTab: MenuDetailTab;
 }) {
   const t = useTranslations("Menu");
   const tEdit = useTranslations("ManageMenu");
   const router = useRouter();
+  const pathname = usePathname();
   const statusChip = usePricingStatusChip();
-  const [tab, setTab] = useState<Tab>(justCreated ? "recipe" : "overview");
+  const [tab, setTab] = useState<MenuDetailTab>(initialTab);
   const [editing, setEditing] = useState(false);
   const [addingSize, setAddingSize] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
@@ -73,8 +75,9 @@ export default function ProductDetailScreen({
   const chip = statusChip(item);
   const pricingStatus = getItemPricingStatus(item);
   const sizeCount = 1 + siblingSizes.length;
+  const allSizes = [item, ...siblingSizes];
 
-  const TABS: { key: Tab; label: string }[] = [
+  const TABS: { key: MenuDetailTab; label: string }[] = [
     { key: "overview", label: t("tabOverview") },
     { key: "recipe", label: t("tabRecipe") },
     { key: "sizes", label: `${t("tabSizes")} (${sizeCount})` },
@@ -84,12 +87,26 @@ export default function ProductDetailScreen({
   return (
     <>
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+        {allSizes.length > 1 && (
+          <div className="flex gap-2 overflow-x-auto pb-1" aria-label={t("sizes")}>
+            {allSizes.map((size) => (
+              <Link
+                key={size.id}
+                href={menuItemHref(size.id, tab)}
+                aria-current={size.id === item.id ? "page" : undefined}
+                className={`flex min-h-12 shrink-0 items-center rounded-full border px-4 text-sm font-bold no-underline ${size.id === item.id ? "border-ink bg-ink text-paper" : "border-line bg-paper text-ink"}`}
+              >
+                {size.sizeLabel ?? size.name}
+              </Link>
+            ))}
+          </div>
+        )}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-end gap-3">
             <span className="text-[17px] text-ink-muted">{t("sellingPrice")}</span>
             <strong className="font-headline text-4xl">{formatCents(item.priceCents)}</strong>
           </div>
-          <button type="button" onClick={() => setEditing((prev) => !prev)} className="flex min-h-10 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-bold text-ink">
+          <button type="button" onClick={() => setEditing((prev) => !prev)} className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-bold text-ink">
             <Pencil aria-hidden="true" size={16} /> {t("editAction")}
           </button>
         </div>
@@ -119,7 +136,7 @@ export default function ProductDetailScreen({
 
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
         {TABS.map(({ key, label }) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); router.replace(`${pathname}?tab=${key}`, { scroll: false }); }} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
             {label}
           </button>
         ))}
@@ -134,7 +151,7 @@ export default function ProductDetailScreen({
               <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
             )}
           </section>
-          <section className={`flex flex-col gap-1 rounded-card-lg p-[18px] ${chip.good ? "bg-good-tint" : "bg-warn-tint"}`}>
+          <section className={`flex flex-col gap-1 rounded-card-lg border p-[18px] ${chip.good ? "border-good/20 bg-good-tint" : "border-warn/25 bg-card"}`}>
             <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
               {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
               {chip.label}
@@ -177,9 +194,19 @@ export default function ProductDetailScreen({
 
       {tab === "sizes" && (
         <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-          <Row label={editItem.sizeLabel ?? editItem.baseName} value={formatCents(editItem.priceCents)} strong />
-          {siblingSizes.map((sibling) => <Row key={sibling.id} label={sibling.sizeLabel ?? sibling.name} value={formatCents(sibling.priceCents)} />)}
-          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 text-sm font-semibold text-good">
+          {allSizes.map((size) => (
+            <Link key={size.id} href={menuItemHref(size.id, tab)} className={`flex min-h-24 items-center gap-3 rounded-xl border px-3 py-2 text-ink no-underline ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center justify-between gap-2"><strong>{size.sizeLabel ?? size.name}</strong><strong>{formatCents(size.priceCents)}</strong></span>
+                <span className="mt-1 block text-sm text-ink-muted">
+                  {size.costStatus === "READY" && size.ingredientsCostCents !== null ? t("sizeCostToMake", { amount: formatCents(size.ingredientsCostCents) }) : t("recipeIncomplete")}
+                </span>
+                <SizePricingStatus item={size} />
+              </span>
+              <span className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</span>
+            </Link>
+          ))}
+          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">
             {tEdit("addAnotherSize", { name: editItem.baseName })}
           </button>
         </section>
@@ -234,11 +261,25 @@ export default function ProductDetailScreen({
           category={editItem.category}
           menuGroup={editItem.menuGroup}
           siblingSizes={[{ id: editItem.id, sizeLabel: editItem.sizeLabel, name: editItem.name, priceCents: editItem.priceCents }, ...sizeSiblingsForDialog]}
-          onDone={(newItemId) => { setAddingSize(false); router.push(`/menu/${newItemId}`); }}
+          onDone={(newItemId) => { setAddingSize(false); router.push(menuItemHref(newItemId, tab)); }}
           onClose={() => setAddingSize(false)}
         />
       )}
     </>
+  );
+}
+
+function SizePricingStatus({ item }: { item: MenuControlItem }) {
+  const t = useTranslations("Menu");
+  const statusChip = usePricingStatusChip();
+  const status = getItemPricingStatus(item);
+  const chip = statusChip(item);
+  if (status.kind === "incomplete_recipe") return null;
+  return (
+    <span className={`mt-1 block text-sm font-semibold ${chip.good ? "text-good" : "text-warn"}`}>
+      {chip.label}
+      {(status.kind === "low" || status.kind === "high") && ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}`}
+    </span>
   );
 }
 

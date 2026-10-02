@@ -1,5 +1,5 @@
 import { formatInTimeZone } from "date-fns-tz";
-import { Plus } from "lucide-react";
+import { Plus, UserRoundCheck, UsersRound } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
@@ -38,13 +38,34 @@ export default async function StaffPage() {
         </div>
       </header>
 
-      <section className="flex flex-col gap-3.5 rounded-card-lg bg-staff p-5 text-white">
-        <span className="text-[15px] font-semibold opacity-90">{t("rightNowCosts")}</span>
-        <div className="flex flex-wrap gap-2">
-          <StatTile value={formatCents(vm.costPerMinuteCents)} label={t("aMinute")} />
-          <StatTile value={formatCents(vm.costPerHourCents)} label={t("anHour")} />
-          <StatTile value={formatCents(vm.costTodayCents)} label={t("todaySoFar")} />
+      <section className={`flex flex-col gap-3.5 rounded-card-lg p-5 ${vm.onShift.length > 0 ? "bg-good text-white" : "border border-line bg-[#EDE5D9] text-ink"}`}>
+        <div className="flex items-center gap-3">
+          <span className={`flex h-12 w-12 items-center justify-center rounded-full ${vm.onShift.length > 0 ? "bg-white/15" : "bg-card"}`}>
+            {vm.onShift.length > 0 ? <UserRoundCheck aria-hidden="true" /> : <UsersRound aria-hidden="true" />}
+          </span>
+          <div>
+            <strong className="block text-xl">{vm.onShift.length > 0 ? t("activeShiftHero", { count: vm.onShift.length }) : t("noOneOnShiftHero")}</strong>
+            {vm.onShift.length > 0 && <span className="text-sm text-white/85">{vm.onShift.map((shift) => shift.name).join(", ")}</span>}
+          </div>
         </div>
+        {vm.onShift.length > 0 ? (
+          <div className="grid grid-cols-2 gap-2">
+            <div className="col-span-2 rounded-2xl bg-black/10 p-3">
+              <strong className="font-headline text-4xl"><Money cents={vm.costPerHourCents} /></strong>
+              <span className="ms-2 text-sm font-semibold">{t("perHourRightNow")}</span>
+              <span className="mt-1 block text-sm text-white/85">{t("perMinuteSecondary", { amount: formatCents(vm.costPerMinuteCents) })}</span>
+            </div>
+            <div className="col-span-2 flex items-center justify-between rounded-2xl bg-black/10 p-3">
+              <span className="text-sm font-semibold">{t("staffCostToday")}</span>
+              <strong className="text-xl"><Money cents={vm.costTodayCents} /></strong>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between rounded-2xl bg-card p-3">
+            <span className="text-sm font-semibold text-ink-muted">{t("staffCostToday")}</span>
+            <strong className="font-headline text-3xl text-ink"><Money cents={vm.costTodayCents} /></strong>
+          </div>
+        )}
       </section>
 
       <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-4">
@@ -93,14 +114,5 @@ export default async function StaffPage() {
         </p>
       </section>
     </PageShell>
-  );
-}
-
-function StatTile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="flex min-w-[104px] flex-1 flex-col items-center gap-0.5 rounded-2xl bg-white/10 px-1.5 py-3">
-      <span className="whitespace-nowrap font-headline text-[28px] font-bold leading-none">{value}</span>
-      <span className="text-xs opacity-90">{label}</span>
-    </div>
   );
 }

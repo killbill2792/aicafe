@@ -10,7 +10,7 @@ import EstimatePill from "@/components/shared/EstimatePill";
 import PlainIcon from "@/components/icons/PlainIcon";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import { profitTone, profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
-import type { DayCell, DayDetail } from "@/lib/viewmodels/monthCalendar";
+import type { DayCell, DayDetail, MonthCalendarViewModel } from "@/lib/viewmodels/monthCalendar";
 
 export type MonthCalendarLabels = {
   prevMonth: string;
@@ -29,6 +29,13 @@ export type MonthCalendarLabels = {
   rentAndBills: string;
   ownerProfit: string;
   estimatePill: string;
+  monthProgress: string;
+  daysRecorded: string;
+  profitableDays: string;
+  billsCovered: string;
+  billsProjected: string;
+  billsNotCovered: string;
+  billsInsufficient: string;
 };
 
 export default function MonthCalendar({
@@ -41,6 +48,7 @@ export default function MonthCalendar({
   detailsByDate,
   bucketLabels,
   labels,
+  coverageSignal,
 }: {
   monthLabel: string;
   calMonthKey: string;
@@ -51,6 +59,7 @@ export default function MonthCalendar({
   detailsByDate: Record<string, DayDetail>;
   bucketLabels: Record<string, string>;
   labels: MonthCalendarLabels;
+  coverageSignal: MonthCalendarViewModel["coverageSignal"];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -79,10 +88,13 @@ export default function MonthCalendar({
 
   const blanks = Array.from({ length: firstWeekday }, (_, i) => i);
   const selectedDetail = selectedDate ? detailsByDate[selectedDate] : null;
+  const recordedDays = cells.filter((cell) => cell.state.kind === "actual").length;
+  const profitableDays = cells.filter((cell) => cell.state.kind === "actual" && cell.state.tone === "good").length;
+  const elapsedDays = cells.filter((cell) => cell.state.kind !== "projected").length;
 
   return (
-    <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
-      <div className="flex items-center justify-between">
+    <section className="flex flex-col gap-3 rounded-card-lg bg-card py-4">
+      <div className="flex items-center justify-between px-4">
         <button
           type="button"
           aria-label={labels.prevMonth}
@@ -103,13 +115,33 @@ export default function MonthCalendar({
         </button>
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-bold text-ink-muted">
+      <div className="mx-4 grid grid-cols-2 gap-2 rounded-2xl bg-paper p-3" aria-label={labels.monthProgress}>
+        <div>
+          <strong className="block font-headline text-2xl text-ink">{recordedDays}/{elapsedDays}</strong>
+          <span className="text-sm text-ink-muted">{labels.daysRecorded}</span>
+        </div>
+        <div className="border-s border-line ps-3">
+          <strong className="block font-headline text-2xl text-good">{profitableDays}</strong>
+          <span className="text-sm text-ink-muted">{labels.profitableDays}</span>
+        </div>
+        <p className={`col-span-2 m-0 border-t border-line pt-2 text-sm font-bold ${coverageSignal.kind === "covered" ? "text-good" : "text-ink-muted"}`}>
+          {coverageSignal.kind === "covered"
+            ? labels.billsCovered.replace("{date}", new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(`${coverageSignal.date}T00:00:00`)))
+            : coverageSignal.kind === "projected"
+              ? labels.billsProjected.replace("{date}", new Intl.DateTimeFormat(locale, { month: "short", day: "numeric" }).format(new Date(`${coverageSignal.date}T00:00:00`)))
+              : coverageSignal.kind === "not_covered"
+                ? labels.billsNotCovered
+                : labels.billsInsufficient}
+        </p>
+      </div>
+
+      <div className="grid w-full max-w-[420px] self-center grid-cols-7 gap-px text-center text-xs font-bold text-ink-muted">
         {weekdayLabels.map((w, i) => (
           <span key={i}>{w}</span>
         ))}
       </div>
 
-      <div className="grid grid-cols-7 gap-1.5">
+      <div className="grid w-full max-w-[420px] self-center grid-cols-7 gap-px">
         {blanks.map((b) => (
           <span key={`blank-${b}`} />
         ))}
@@ -117,7 +149,7 @@ export default function MonthCalendar({
           const milestoneCode = cell.milestoneBucketCodes[0];
           const isSelected = cell.date === selectedDate;
           const clickable = cell.state.kind !== "projected";
-          const base = "relative flex aspect-square flex-col items-center justify-center rounded-[10px] text-[13px] font-bold";
+          const base = "relative flex aspect-square min-h-12 flex-col items-center justify-center rounded-[10px] text-[13px] font-bold";
           const stateClass =
             cell.state.kind === "actual"
               ? `${profitToneBgClass(cell.state.tone)} text-white`
@@ -144,7 +176,7 @@ export default function MonthCalendar({
         })}
       </div>
 
-      <div className="flex flex-wrap gap-3.5 text-[13px] font-semibold text-ink-muted">
+      <div className="flex flex-wrap gap-3.5 px-4 text-[13px] font-semibold text-ink-muted">
         <span className="flex items-center gap-1.5">
           <span className="h-3.5 w-3.5 rounded-[4px] bg-good" />
           {labels.legendGood}
@@ -164,7 +196,7 @@ export default function MonthCalendar({
       </div>
 
       {selectedDetail && (
-        <div className="flex flex-col gap-2 rounded-2xl bg-[#F7F1E8] p-3.5">
+        <div className="mx-4 flex flex-col gap-2 rounded-2xl bg-[#F7F1E8] p-3.5">
           <span className="text-base font-bold text-ink">
             {new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${selectedDetail.date}T00:00:00`))}
           </span>

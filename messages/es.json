@@ -221,7 +221,14 @@
     "vsLastPeriod": "vs el periodo anterior",
     "notEnoughDataToCompare": "Todavía no hay suficientes datos de ventas para comparar periodos.",
     "add": "Agregar",
-    "manageBills": "Gestionar gastos fijos"
+    "manageBills": "Gestionar gastos fijos",
+    "calendarMonthProgress": "Progreso del mes",
+    "calendarDaysRecorded": "días registrados",
+    "calendarProfitableDays": "días con ganancias",
+    "calendarBillsCovered": "Facturas cubiertas el {date}",
+    "calendarBillsProjected": "Cobertura prevista de facturas: {date}",
+    "calendarBillsNotCovered": "Las facturas no se cubrieron por completo este mes",
+    "calendarBillsInsufficient": "No hay suficientes datos para determinar la cobertura"
   },
   "Menu": {
     "title": "Menú",
@@ -294,7 +301,9 @@
     "sizePriceMayBeLow": "{size}: el precio puede ser bajo",
     "sizePriceMayBeHigh": "{size}: el precio puede ser alto",
     "multipleSizesNeedReview": "{count, plural, one {# tamaño necesita revisión} other {# tamaños necesitan revisión}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "sizeCostToMake": "Cuesta {amount} prepararlo",
+    "viewEditSize": "Ver / Editar"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -397,7 +406,13 @@
     "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
     "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
     "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
-    "addStaff": "+ Agregar personal"
+    "addStaff": "+ Agregar personal",
+    "emptyShiftHero": "Nadie está trabajando ahora",
+    "activeShiftHero": "{count, plural, one {# persona en turno} other {# personas en turno}}",
+    "noOneOnShiftHero": "No hay nadie en turno ahora",
+    "perHourRightNow": "/hora ahora",
+    "perMinuteSecondary": "{amount}/minuto",
+    "staffCostToday": "Costo del personal hoy hasta ahora"
   },
   "More": {
     "title": "Más",
@@ -620,8 +635,8 @@
     "daySat": "Sáb",
     "daySun": "Dom",
     "breakLabel": "Descanso sin pago cada día (minutos)",
-    "repeatsWeekly": "Se repite cada semana",
-    "justForMonth": "Solo por un mes",
+    "repeatsWeekly": "Usar cada semana",
+    "justForMonth": "Solo este mes",
     "monthLabel": "Mes",
     "saveSchedule": "Guardar horario",
     "scheduleSaved": "Guardado",
@@ -638,7 +653,15 @@
     "predictedTag": "De su horario — aún no confirmado",
     "deactivate": "Ya no trabaja aquí",
     "reactivate": "Volver a activar",
-    "inactiveTag": "Ya no está en el equipo"
+    "inactiveTag": "Ya no está en el equipo",
+    "wageSummary": "{wage} · {period}",
+    "daysSummary": "{days}",
+    "variedTimes": "El horario varía según el día",
+    "breakSummary": "{minutes} min de descanso",
+    "variedBreaks": "Los descansos varían según el día",
+    "editSchedule": "Editar horario",
+    "repeatsWeeklyHelp": "Se repite cada semana hasta que lo cambies.",
+    "justForMonthHelp": "Usa este horario solo durante el mes seleccionado."
   },
   "Scenario": {
     "title": "Probar un escenario",
