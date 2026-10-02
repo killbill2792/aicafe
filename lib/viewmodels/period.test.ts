@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { roundHalfUpToCent } from "@/lib/calc";
-import { runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
+import { roundHalfUpToCent, zeroDailyFacts } from "@/lib/calc";
+import { previousPeriodCoverage, previousPeriodDays, runningCostLinesForPeriod, runningCostsForPeriod } from "./period";
 import type { BusinessSnapshot } from "@/lib/data/types";
 
 /** A minimal, otherwise-empty snapshot — these functions only read `runningCostLines`, `monthKey`,
@@ -16,7 +16,8 @@ function buildSnapshot(runningCostLines: BusinessSnapshot["runningCostLines"]): 
     monthActualDays: [],
     last28Days: [],
     last7Days: [],
-    latestDay: { date: todayDateStr, netSalesCents: 0, ordersCount: 0, drinksCount: 0, ingredientsCents: 0, wagesCents: 0, staffTaxCents: 0, cardFeesCents: 0, voidsCents: 0 },
+    todayDay: { date: todayDateStr, netSalesCents: 0, ordersCount: 0, drinksCount: 0, ingredientsCents: 0, wagesCents: 0, staffTaxCents: 0, cardFeesCents: 0, voidsCents: 0 },
+    todayHasData: true,
     previousMonthDays: [],
     runningCostLines,
     recoveryOrder: runningCostLines.map((l) => l.categoryCode),
@@ -65,5 +66,133 @@ describe("runningCostLinesForPeriod — reconciles exactly with the aggregate to
       for (const line of lines) expect(Number.isInteger(line.amountCents)).toBe(true);
       expect(lines.find((l) => l.categoryCode === "loan")?.amountCents).toBe(0);
     }
+  });
+});
+
+function day(date: string, netSalesCents: number) {
+  return { ...zeroDailyFacts(date), netSalesCents };
+}
+
+/** A snapshot with real gaps in its rollup history — only `todayDateStr`, `monthKey`,
+ * `monthActualDays`, and `previousMonthDays` vary per test; everything else is structurally valid
+ * but unused by `previousPeriodDays`. */
+function buildSparseSnapshot(opts: {
+  todayDateStr: string;
+  monthKey: string;
+  monthActualDays: BusinessSnapshot["monthActualDays"];
+  previousMonthDays: BusinessSnapshot["previousMonthDays"];
+}): BusinessSnapshot {
+  return {
+    business: { id: "test", name: "Test Café", timezone: "America/Los_Angeles", payrollTaxRate: 0.0765 },
+    todayDateStr: opts.todayDateStr,
+    monthKey: opts.monthKey,
+    daysInMonth: 31,
+    monthActualDays: opts.monthActualDays,
+    last28Days: [],
+    last7Days: [],
+    todayDay: zeroDailyFacts(opts.todayDateStr),
+    todayHasData: opts.monthActualDays.some((d) => d.date === opts.todayDateStr),
+    previousMonthDays: opts.previousMonthDays,
+    runningCostLines: [],
+    recoveryOrder: [],
+    menuItems: [],
+    alerts: { count: 0, leakingCents: 0 },
+    staffShiftsToday: [],
+    staffNowIso: `${opts.todayDateStr}T09:00:00-07:00`,
+  };
+}
+
+describe("previousPeriodDays — date-filtered, never a row-position slice", () => {
+  // The exact sparse scenario from the review: rows exist for Sep 28, Sep 29, and Oct 1; today is
+  // Oct 2 (no row yet). A row-position slice (e.g. `last28Days.slice(-2, -1)`, "second to last row")
+  // would resolve "yesterday" to Sep 29 — this must resolve to Oct 1, the date that's actually
+  // yesterday, since it exists.
+  function sparseSnapshot() {
+    return buildSparseSnapshot({
+      todayDateStr: "2026-10-02",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-01", 300)],
+      previousMonthDays: [day("2026-09-28", 100), day("2026-09-29", 200)],
+    });
+  }
+
+  it("today: previous period resolves to Oct 1 (real yesterday), never Sep 29", () => {
+    const result = previousPeriodDays(sparseSnapshot(), "today");
+    expect(result).toEqual([day("2026-10-01", 300)]);
+  });
+
+  it("week: previous-week window (Sep 19–25) contains none of the sparse rows — stays empty, not fabricated from whatever rows exist", () => {
+    const result = previousPeriodDays(sparseSnapshot(), "week");
+    expect(result).toEqual([]);
+  });
+
+  it("week: selects only the rows whose dates actually fall in the previous-week window, ignoring rows just outside it", () => {
+    // today = Oct 15 -> previous week window = Oct 2..Oct 8. A row on Oct 3 is inside; a row on
+    // Sep 30 (just before the window) and Oct 10 (inside the *current* week) must be excluded.
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-15",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-03", 500), day("2026-10-10", 999)],
+      previousMonthDays: [day("2026-09-30", 400)],
+    });
+    const result = previousPeriodDays(snapshot, "week");
+    expect(result).toEqual([day("2026-10-03", 500)]);
+  });
+
+  it("month: previous month's day 1 through the equivalent day-of-month, filtered by date — not the first N rows of previousMonthDays", () => {
+    // today is Oct 5 (day-of-month 5) -> previous-month window is Sep 1..Sep 5. previousMonthDays
+    // has a gap (no Sep 2 row) and an out-of-window row (Sep 20) that a positional
+    // `slice(0, monthActualDays.length)` could wrongly include depending on array order.
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-05",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-01", 10), day("2026-10-02", 20)], // length 2 — a slice(0,2) trap
+      previousMonthDays: [day("2026-09-01", 100), day("2026-09-03", 300), day("2026-09-20", 999)],
+    });
+    const result = previousPeriodDays(snapshot, "month");
+    expect(result).toEqual([day("2026-09-01", 100), day("2026-09-03", 300)]);
+  });
+});
+
+describe("previousPeriodCoverage", () => {
+  it("today: 0 of 1 day when yesterday has no rollup", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-02",
+      monthKey: "2026-10",
+      monthActualDays: [], // no Oct 1 row — yesterday is missing
+      previousMonthDays: [day("2026-09-28", 100)],
+    });
+    expect(previousPeriodCoverage(snapshot, "today")).toEqual({ actualDays: 0, expectedDays: 1 });
+  });
+
+  it("today: 1 of 1 day when yesterday has a real rollup", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-02",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-01", 300)],
+      previousMonthDays: [],
+    });
+    expect(previousPeriodCoverage(snapshot, "today")).toEqual({ actualDays: 1, expectedDays: 1 });
+  });
+
+  it("week: counts only the actual rows inside the 7-day previous window, out of 7 expected", () => {
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-15",
+      monthKey: "2026-10",
+      monthActualDays: [day("2026-10-03", 500), day("2026-10-10", 999)], // Oct 3 is in-window, Oct 10 isn't
+      previousMonthDays: [day("2026-09-30", 400)], // just outside the window
+    });
+    expect(previousPeriodCoverage(snapshot, "week")).toEqual({ actualDays: 1, expectedDays: 7 });
+  });
+
+  it("month: expected days matches the equivalent day-of-month, actual counts only real rows in range", () => {
+    // today is Oct 5 -> previous-month window is Sep 1..Sep 5 (5 expected days).
+    const snapshot = buildSparseSnapshot({
+      todayDateStr: "2026-10-05",
+      monthKey: "2026-10",
+      monthActualDays: [],
+      previousMonthDays: [day("2026-09-01", 100), day("2026-09-03", 300), day("2026-09-20", 999)],
+    });
+    expect(previousPeriodCoverage(snapshot, "month")).toEqual({ actualDays: 2, expectedDays: 5 });
   });
 });

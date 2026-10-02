@@ -1,4 +1,4 @@
-import type { DailyFacts, DayContribution, RecoveryBucket } from "@/lib/calc";
+import type { CategoryMonthlyAmount, DailyFacts, DayContribution, RecoveryBucket } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 
 /** Per_cup mode day contribution: net sales − ingredients − card fees − loaded staff cost. */
@@ -13,6 +13,16 @@ export function recoveryBuckets(snapshot: BusinessSnapshot): RecoveryBucket[] {
     .map((line) => ({ code: line.categoryCode, amountCents: line.amountCents, isEstimate: line.isEstimate }));
 }
 
+/** Same bucket-building rule as `recoveryBuckets`, but from an arbitrary month's `categoryAmounts`
+ * (see `getMonthCalendar`) instead of the live snapshot — so a past month's calendar sequences its
+ * own bills, not whichever bills happen to be active today. */
+export function recoveryBucketsFromAmounts(categoryAmounts: CategoryMonthlyAmount[], recoveryOrder: string[]): RecoveryBucket[] {
+  return recoveryOrder
+    .map((code) => categoryAmounts.find((c) => c.categoryCode === code))
+    .filter((c): c is CategoryMonthlyAmount => Boolean(c) && c!.amountCents > 0)
+    .map((c) => ({ code: c.categoryCode, amountCents: c.amountCents, isEstimate: c.isEstimate }));
+}
+
 export function actualDayContributions(snapshot: BusinessSnapshot): DayContribution[] {
   return snapshot.monthActualDays.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false }));
 }
@@ -22,8 +32,12 @@ export function actualDayContributions(snapshot: BusinessSnapshot): DayContribut
  * last 4 weeks (fallback: last 14 days average) — docs/05-calculations.md "Cost recovery".
  */
 export function projectedDayContributions(snapshot: BusinessSnapshot): DayContribution[] {
-  const { monthActualDays, daysInMonth, monthKey, last28Days } = snapshot;
-  if (monthActualDays.length >= daysInMonth) return [];
+  const { daysInMonth, monthKey, last28Days, todayDateStr } = snapshot;
+  // Anchored to the real day-of-month of `todayDateStr`, not `monthActualDays.length` — a gap
+  // before today (a day with no rollup yet) would otherwise shift every later date `length` was
+  // standing in for, projecting the wrong calendar days as "the rest of the month."
+  const todayDayOfMonth = Number(todayDateStr.slice(-2));
+  if (todayDayOfMonth >= daysInMonth) return [];
 
   const [year, month] = monthKey.split("-").map(Number);
   const fallbackAvg =
@@ -39,7 +53,7 @@ export function projectedDayContributions(snapshot: BusinessSnapshot): DayContri
   }
 
   const projected: DayContribution[] = [];
-  for (let day = monthActualDays.length + 1; day <= daysInMonth; day++) {
+  for (let day = todayDayOfMonth + 1; day <= daysInMonth; day++) {
     const date = `${monthKey}-${String(day).padStart(2, "0")}`;
     const weekday = new Date(year, month - 1, day).getDay();
     const history = byWeekday.get(weekday);

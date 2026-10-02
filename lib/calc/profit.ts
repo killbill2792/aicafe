@@ -1,4 +1,4 @@
-import { sumCents } from "./money";
+import { roundHalfUpToCent, sumCents } from "./money";
 import type { DailyFacts, HealthBand } from "./types";
 
 export function netSalesCentsForPeriod(days: DailyFacts[]): number {
@@ -53,4 +53,11 @@ export function combinedHealthBand(ratio: number): HealthBand {
 
 export function ratio(numeratorCents: number, denominatorCents: number): number {
   return denominatorCents === 0 ? 0 : numeratorCents / denominatorCents;
+}
+
+/** Average order value = net sales ÷ orders, rounded half-up to the cent — money is integer cents
+ * everywhere (CLAUDE.md rule 1), and this is a final displayed figure, not an intermediate used in
+ * further math, so it rounds here rather than carrying fractional cents to the UI. */
+export function averageOrderValueCents(netSalesCents: number, ordersCount: number): number {
+  return ordersCount === 0 ? 0 : roundHalfUpToCent(netSalesCents / ordersCount);
 }

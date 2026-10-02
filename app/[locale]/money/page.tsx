@@ -11,6 +11,7 @@ import MoneyViewSwitch from "@/components/money/MoneyViewSwitch";
 import CostRecoveryView from "@/components/money/CostRecoveryView";
 import ProfitCostsView from "@/components/money/ProfitCostsView";
 import PageShell from "@/components/shared/PageShell";
+import { isValidMonthKey } from "@/lib/viewmodels/monthCalendar";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -22,15 +23,17 @@ function isPeriod(value: string | undefined): value is Period {
 export default async function MoneyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; view?: string }>;
+  searchParams: Promise<{ period?: string; view?: string; calMonth?: string }>;
 }) {
   await requireOwnBusiness();
-  const { period: periodParam, view: viewParam } = await searchParams;
+  const { period: periodParam, view: viewParam, calMonth: calMonthParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "month";
   const view = viewParam === "profit" ? "profit" : "recovery";
 
   const snapshot = await getSnapshot();
   const t = await getTranslations("Money");
+  // Never past the current calendar month — "previous months" navigation only goes backward.
+  const calMonthKey = isValidMonthKey(calMonthParam) && calMonthParam <= snapshot.monthKey ? calMonthParam : snapshot.monthKey;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-44 pt-6 md:pb-16">
@@ -51,7 +54,11 @@ export default async function MoneyPage({
 
       {view === "profit" && <PeriodSwitch current={period} />}
 
-      {view === "recovery" ? <CostRecoveryView snapshot={snapshot} /> : <ProfitCostsView snapshot={snapshot} period={period} />}
+      {view === "recovery" ? (
+        <CostRecoveryView snapshot={snapshot} calMonthKey={calMonthKey} />
+      ) : (
+        <ProfitCostsView snapshot={snapshot} period={period} />
+      )}
 
       <AddCostFab />
     </PageShell>

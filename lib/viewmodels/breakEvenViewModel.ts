@@ -31,7 +31,7 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
   const needed = drinksNeededPerDay(dailyCosts, avgMoneyLeft);
 
-  const todayDrinks = snapshot.latestDay.drinksCount;
+  const todayDrinks = snapshot.todayDay.drinksCount;
   const progressPct = needed > 0 && Number.isFinite(needed) ? Math.min(100, (todayDrinks / needed) * 100) : 0;
 
   const whatIfs = [

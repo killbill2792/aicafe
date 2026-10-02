@@ -5,6 +5,174 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #7 follow-up #2: negative-day "all yours" bug, estimate labeling on the calendar, integer-cent avg order value, 48px nav targets, localized milestone names, like-for-like comparisons (2026-10-02 — code complete, pushed to owner-comprehension-pass)
+
+Six more review findings before PR #7 merges:
+
+1. **`computeTodayContribution()` could say "all yours" on a loss day.** It checked
+   `cumulativeBeforeToday >= totalCents` before checking `contributionCentsToday <= 0` — so a café
+   whose bills were covered as of yesterday but lost money today still got `allYours: true`.
+   Reordered: the zero/negative check now runs first, unconditionally. Tests cover all three cases
+   from the review (negative today after everything covered, zero today after everything covered,
+   genuinely positive today after everything covered still says "all yours") at both the pure-calc
+   level (`lib/calc/costRecovery.test.ts`) and the `todayGlance` viewmodel level.
+2. **Calendar daily profit didn't say when it used an estimated bill.** `buildMonthCalendarViewModel()`
+   now carries `isEstimate` on both `DayCellState["actual"]` and `DayDetail` — true when any
+   category feeding that day's running-cost share is an estimate (the current month's own flag, or
+   the forced estimate a historical month's recurring fallback always carries). Since
+   `categoryAmounts` doesn't vary day-to-day within one month, this is one flag computed once, not
+   per day. The selected-day detail now shows the existing `EstimatePill` next to "Owner profit"
+   when set — the number and formula are unchanged.
+3. **Average order value broke the integer-cents rule.** `today.netSalesCents / today.ordersCount`
+   produced fractional cents. New `averageOrderValueCents()` (`lib/calc/profit.ts`, tested) rounds
+   half-up to the cent; `todayGlance.ts` uses it instead of the raw division.
+4. **Calendar prev/next month buttons were 40px, not 48px.** `h-10 w-10` → `h-12 w-12` in
+   `MonthCalendar.tsx`; same visual design, just the touch target.
+5. **Calendar milestone bill names were English-only.** `bucketLabels` built from the hardcoded
+   `RUNNING_COST_LABELS` catalog, so an es/ar milestone sentence could read "Rent se cubrió por
+   completo." Now built from the existing `Categories` i18n namespace (already used the same way
+   elsewhere, e.g. `more/bills`), which already covers every `RUNNING_COST_CODES` entry in all three
+   locales — no new keys needed. Removed the now-unused `runningCostLabelFor()`. Checked live in
+   Arabic/RTL.
+6. **Trend/vs-last-period comparisons didn't check whether the comparison was fair.** A partial
+   current week could still be compared against a sparse previous week, or a complete Today against
+   a missing yesterday (an internal `$0 sales − bills` placeholder, never real data). New
+   `periodComparisonState()` (`lib/viewmodels/periodComparison.ts`, tested against all 4 scenarios
+   from the review) requires *both* the current and comparison period to be fully covered (reusing
+   `periodCoverage` and the new `previousPeriodCoverage()` in `period.ts`) before any delta is
+   trustworthy. Home's trend arrow is omitted when unavailable (same existing conditional, now fed a
+   stricter flag); Money's whole "vs last period" section — not just the Owner Profit row — shows
+   "Not enough sales data to compare periods yet." instead of rows when unavailable, since every
+   compared metric suffers the same mismatch, not just profit. No dates are fabricated as zero-sales
+   days anywhere in this.
+
+No schema changes, no pricing/POS changes. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run
+test` (232/232 — 19 new), `npm run build` all clean. Live-checked on the real account: Week (4 of 7
+days covered) now shows "Not enough sales data to compare periods yet." with zero comparison rows;
+Today (both today and yesterday fully covered) still shows real comparison rows; the calendar's
+month-nav buttons measure 48×48 in the DOM in both LTR and RTL, correctly mirrored.
+
+## PR #7 follow-up: previous-period windows, truthful missing-sales presentation, real 28-day window, calMonth hardening (2026-10-02 — code complete, pushed to owner-comprehension-pass)
+
+Four issues from independent review of the owner-comprehension pass, before merge:
+
+1. **`previousPeriodDays()` was still row-position based** (`last28Days.slice(-2,-1)` for
+   "yesterday", `slice(-14,-7)` for the previous week, `previousMonthDays.slice(0, monthActualDays.length)`
+   for previous MTD) — the same class of bug already fixed for the *current* period, just not yet
+   applied to the *comparison* period. Replaced with a single date-filtered implementation:
+   `previousPeriodDays()` now reuses the already-correct `previousPeriodCalendarRange()` and filters
+   `[...previousMonthDays, ...monthActualDays]` by date — never a slice. Regression tests
+   (`lib/viewmodels/period.test.ts`) cover the exact review scenario (rows Sep 28/29/Oct 1, today
+   Oct 2 → "yesterday" must resolve to Oct 1, not Sep 29) plus a previous-week sparse-date case and
+   a previous-month-to-date gap case.
+2. **Missing sales were presented as a confirmed loss.** `todayDay = zeroDailyFacts(...)` is correct
+   internally, but rendering "$0 sales − today's accrued bills" as a precise red Owner Profit implied
+   a result nobody has actually seen. New `ownerProfitDisplayState()` (`lib/viewmodels/ownerProfitDisplay.ts`,
+   tested) classifies a period's owner-profit figure as `unavailable` (zero actual days of data —
+   Home hero now reads "Waiting for today's sales," neutral color, no trend arrow, no "vs last
+   period" row), `partial` (some but not all days covered — the real figure still shows, now with a
+   "Partial" pill next to the label, on both Home's hero/You-keep tile and Money's Owner-profit
+   summary box), or `complete` (normal, unchanged). The underlying bill accrual is untouched — this
+   is presentation only, per the review's own framing.
+3. **`last28Days` was the last 28 rows, not a real 28-calendar-day window** — same failure mode as
+   the earlier `last7Days` fix, just never applied to the 28-day window the "last four weeks"
+   forecast/averages (break-even, cost-recovery projections, Home's avg-drinks-per-day) all read
+   from. `buildDayWindows()` (`lib/calc/dayWindows.ts`) now computes `last28Days` the same
+   date-filtered way as `last7Days` (shared `lastNCalendarDays` helper); `snapshot.server.ts` uses
+   it instead of `allDays.slice(-28)`. Every consumer gets the fix for free since they only ever read
+   `snapshot.last28Days`.
+4. **`calMonth` validation was too loose** — `/^\d{4}-\d{2}$/` accepted "2026-13" or "2026-00" before
+   that string reaches the historical-month query. New `isValidMonthKey()`
+   (`lib/viewmodels/monthCalendar.ts`, tested) requires a real month, 01–12; `money/page.tsx` uses it
+   in place of the old inline regex. Single entry point (`calMonth` URL param → `money/page.tsx` →
+   `CostRecoveryView` → `getMonthCalendar`), so no other validation point was needed.
+
+No schema changes, no other behavior changed. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run
+test` (213/213 — 15 new), `npm run build` all clean. Live-checked on the real test account: Week's
+Owner Profit now shows a "Partial" pill (4 of 7 days covered) on both Home and Money while still
+showing the real -$4,171.14 figure; Today (which now has a real $0 row) correctly shows the plain
+complete state with no pill.
+
+## Owner comprehension pass: period correctness, profit color, calendar truth-telling, Today at a glance (2026-10-02 — code complete, pushed to owner-comprehension-pass, new branch off main after PR #6)
+
+Explain the business, don't just display the data. Six changes, all on Home/Money, no pricing/POS/
+schema changes:
+
+**1. Period correctness (Today / Week / Month to date).** Root cause of "Today == Month to date"
+looking like a bug: `snapshot.latestDay` was `allDays[allDays.length - 1]` (whatever row was most
+recently inserted) and `last7Days` was `allDays.slice(-7)` (the last 7 *rows*) — both silently drift
+from the real calendar day/week the moment a day has no rollup, which is common. Live-inspected the
+real test account's `daily_rollups`: only 3 rows exist (Sep 28, 29, Oct 1), today is Oct 2 with no
+row yet, so `latestDay` was quietly standing in Oct 1 for "today."
+- New pure `buildDayWindows()` (`lib/calc/dayWindows.ts`, tested) replaces both: `todayDay` is
+  today's real row or an explicit zero day for `todayDateStr` (`todayHasData: false` when no row
+  exists — never substituted with yesterday), `last7Days` is actual rows filtered to the 7 calendar
+  dates ending today (not a row-count slice). `monthActualDays` was already date-filtered correctly.
+- `BusinessSnapshot.latestDay` renamed to `todayDay` + new `todayHasData: boolean` (all call sites
+  updated: `homeViewModel`, `breakEvenViewModel`, `CostRecoveryView`, `period.ts`).
+- Fixed two latent bugs this surfaced: `CostRecoveryView`'s "days before today" used
+  `monthActualDays.slice(0, -1)` (wrong when today has no row — it would drop the real last day);
+  `projectedDayContributions()` anchored "rest of month" projections to `monthActualDays.length`
+  instead of today's real day-of-month (same failure mode). Both now filter/anchor by date.
+- New `periodCoverage()` (`lib/viewmodels/period.ts`) → "Sales data available for 3 of 7 days this
+  week." shown on Home and Money's Profit & costs view whenever a period is only partially covered
+  (`Common.noSalesToday` / `salesCoverageWeek` / `salesCoverageMonth`).
+- "Month to date" label was already in place in messages/*.json from an earlier session.
+- Tests: `lib/calc/dayWindows.test.ts` covers all 4 requested regressions (first-day-of-month
+  Today=MTD is valid, later date with gaps sums correctly, missing today never substitutes, week
+  uses the real 7-day range not 7 rows). Live-verified: Week now shows the coverage note; Today/MTD
+  on Oct 1 correctly read identical (both legitimately $0).
+
+**2. Home owner-profit color.** Hero card and "You keep" tile were hardcoded `bg-good`/`text-good`.
+Now use `profitTone()`/`profitToneBgClass()`/`profitToneTextClass()` (reused from the earlier
+Money fix; new `profitToneBgClass` added for the full-bleed hero card, neutral = `bg-ink` not green).
+Live-verified red hero at the real account's current loss.
+
+**3. Money sign-aware pace copy.** "On track for -$20,744 in your pocket this month." replaced with
+`paceLeft` / `paceShort` (absolute amount) / `paceBreakEven`, chosen via `profitTone`, colored to
+match. en/es/ar.
+
+**4 & 5. Money calendar truth-telling + previous months.** Replaced `MonthCalendarStrip` (every
+actual day solid green, current-month-only) with `MonthCalendar.tsx`: each day's own owner
+profit/loss (`netSales − ingredients − staff − cardFees − that day's running-cost share`, same
+formula as docs/05-calculations.md's "Owner profit," reusing `runningCostsForPeriodCents` with
+start=end=that date — not a second formula) decides green/red/neutral; a day with no rollup is a
+distinct dotted "No data" state (never a fake $0); future days of the current month are a dashed
+"Upcoming" state. Bucket-covered milestones (from the existing sequential-fill `computeCostRecovery`)
+are a small separate badge icon, never the color. Tapping a day opens a detail card (sales,
+ingredients, staff, card fees, rent & bills share, owner profit, milestone note) — pure client state,
+no extra fetch. `‹ September 2026 October 2026 ›` navigates via a `calMonth` URL param (clamped to
+never exceed the current month); `getMonthCalendar()` reuses the live snapshot for the current month
+and otherwise calls the new `getMonthCalendarFromDb()` (`lib/data/monthCalendar.server.ts`), which
+queries that month's own `daily_rollups`/`expenses`/`recurring_costs` (`active_from`/`active_to`
+overlap) instead of today's. Important schema limitation found and handled: editing a bill
+(`saveRecurringCost`) updates the `recurring_costs` row **in place** rather than versioning it, so a
+past month's true bill amount can't be recovered once edited — any category that falls back to a
+recurring row for a strictly-past month is therefore always forced `isEstimate: true` (current month
+keeps the row's own flag). New pure viewmodel `lib/viewmodels/monthCalendar.ts` (tested: good/red
+days, missing-vs-$0, future days, milestone independent of color). Live-verified against the real
+account's actual `recurring_costs` rows (cross-checked by direct read-only query): September's
+per-day running-cost share computed as $535.50 — independently confirmed by hand from the raw
+`active_from`/`active_to` rows, including a messy set of overlapping test "other" rows the UI
+correctly summed. "Next month" correctly disabled once back on the current month.
+
+**6. "Today at a glance" replaces the cup-icon grid.** `TodayInCupsCard` (a wall of cup icons,
+café-only) removed from both Home and Money. New `TodayAtAGlanceCard` + `buildTodayGlanceViewModel`
+(`lib/viewmodels/todayGlance.ts`, tested) show sales/orders/average order/money-left-toward-bills as
+a plain stat grid, plus at most one `FillIcon` + a sentence built from the existing cost-recovery
+bucket math (`computeTodayContribution`, a cup-free sibling of `computeTodayInCups`, which is now
+unused and removed along with its tests) — "Today's sales put $X toward Rent — Rent is now Y%
+covered," or the crossed-bucket / all-covered / no-bills-yet / no-progress-today variants. Works
+for any business type, not just cafés; `drinksCount` kept as a small optional secondary line.
+
+Verification: `npx tsc --noEmit`, `npm run lint`, `npm run test` (198/198 — 20 new), `npm run build`
+all clean. Live-checked on the real `mail2raj27@gmail.com` account: Home Today/Week/Month-to-date
+(including the new coverage note), red hero/tiles on the real loss, Money's pace copy, the calendar's
+colors/missing/upcoming states and day-detail reconciling exactly with Home's Today figure
+(-$746.78), previous-month navigation with real historical data, and the glance card — in en, es,
+and ar/RTL (375px/390px mobile), including the calendar's prev/next chevrons correctly mirrored
+(`rtl:rotate-180`, matching the existing `BackHeader`/`ChevronRight` convention). Not merged.
+
 ## PR #6 follow-up: deterministic cent allocation for running-cost rows (2026-10-02 — code complete, pushed to menu-visual-refresh)
 
 One remaining review finding: rounding each running-cost category's prorated amount independently

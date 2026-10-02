@@ -1,7 +1,6 @@
 import {
   avgMoneyLeftPerDrinkCents,
   computeCostRecovery,
-  computeTodayInCups,
   dailyCostsToCoverCents,
   drinksNeededPerDay,
   ownerProfitCentsForPeriod,
@@ -11,8 +10,18 @@ import {
   sumCents,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
-import { actualDayContributions, dayContributionCents, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
+import {
+  daysForPeriod,
+  periodCoverage,
+  previousPeriodCoverage,
+  previousPeriodDays,
+  runningCostsForPeriod,
+  previousRunningCostsForPeriod,
+  type Period,
+} from "./period";
+import { ownerProfitDisplayState } from "./ownerProfitDisplay";
+import { periodComparisonState } from "./periodComparison";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -21,23 +30,25 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const totalCostsCents = salesCents - ownerProfitCentsForPeriod(days, runningCosts);
   const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
+  const coverage = periodCoverage(snapshot, period);
+  const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
+  const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
   const prevOwnerProfitCents = ownerProfitCentsForPeriod(prevDays, prevRunningCosts);
+  // A "vs last period" comparison only means something when both this period and the comparison
+  // period are fully covered — comparing 4 of 7 days this week against 1 of 7 last week (or a
+  // complete today against a missing yesterday) isn't like-for-like.
   const changeVsLastPeriodPct =
-    prevOwnerProfitCents !== 0 ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100 : null;
+    comparisonState.kind === "available" && prevOwnerProfitCents !== 0
+      ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100
+      : null;
 
   const buckets = recoveryBuckets(snapshot);
   const recovery = computeCostRecovery(buckets, actualDayContributions(snapshot));
 
-  const today = snapshot.latestDay;
-  const todayInCups = computeTodayInCups({
-    cupsToday: today.drinksCount,
-    contributionCentsToday: dayContributionCents(today),
-    cumulativeBeforeToday: cumulativeThrough(snapshot, snapshot.monthActualDays.length - 2),
-    buckets,
-  });
+  const today = snapshot.todayDay;
 
   const bestItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
   const worstItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
@@ -66,16 +77,18 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   return {
     period,
+    coverage,
     salesCents,
     totalCostsCents,
     ownerProfitCents,
+    ownerProfitDisplay,
+    comparisonState,
     isEstimate,
     changeVsLastPeriodPct,
     costsRatio: ratio(totalCostsCents, salesCents),
     keepRatio: ratio(ownerProfitCents, salesCents),
     recovery,
     buckets,
-    todayInCups,
     bestItem,
     worstItem,
     avgDrinksPerDay: roundHalfUpToCent(avgDrinksPerDay),
@@ -89,9 +102,4 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
 function keptPerCup(item: BusinessSnapshot["menuItems"][number]) {
   return item.priceCents - item.ingredientsCentsToday;
-}
-
-function cumulativeThrough(snapshot: BusinessSnapshot, throughIndex: number): number {
-  const days = actualDayContributions(snapshot).slice(0, throughIndex + 1);
-  return days.reduce((sum, d) => sum + d.cents, 0);
 }

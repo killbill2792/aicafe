@@ -10,7 +10,18 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, runningCostLinesForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import {
+  daysForPeriod,
+  periodCoverage,
+  previousPeriodCoverage,
+  previousPeriodDays,
+  runningCostsForPeriod,
+  runningCostLinesForPeriod,
+  previousRunningCostsForPeriod,
+  type Period,
+} from "./period";
+import { ownerProfitDisplayState } from "./ownerProfitDisplay";
+import { periodComparisonState } from "./periodComparison";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -20,29 +31,6 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
   const allCovered = recovery.currentBucketCode === null;
-
-  // One row per day of the month, for the calendar strip (docs/03-screens.md S4 point 3).
-  const thresholds: number[] = [];
-  let running = 0;
-  for (const b of buckets) {
-    running += b.amountCents;
-    thresholds.push(running);
-  }
-  let cumulative = 0;
-  const calendarDays = [...actual, ...projected].map((d) => {
-    const before = cumulative;
-    cumulative += d.cents;
-    const coveredBucketCodes = buckets
-      .filter((_, i) => before < thresholds[i] && cumulative >= thresholds[i])
-      .map((b) => b.code);
-    return {
-      date: d.date,
-      day: Number(d.date.slice(-2)),
-      projected: d.projected,
-      isYours: before >= totalCents,
-      coveredBucketCodes,
-    };
-  });
 
   return {
     buckets: recovery.buckets,
@@ -55,9 +43,6 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     totalCents,
     actualDays: actual,
     projectedDays: projected,
-    calendarDays,
-    daysInMonth: snapshot.daysInMonth,
-    monthKey: snapshot.monthKey,
   };
 }
 
@@ -71,6 +56,9 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const cardFeesCents = sumCents(days, (d) => d.cardFeesCents);
   const totalCostsCents = totalCostsCentsForPeriod(days, runningCosts);
   const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
+  const coverage = periodCoverage(snapshot, period);
+  const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
+  const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
   const staffRatio = ratio(wagesCents + staffTaxCents, salesCents);
@@ -78,21 +66,28 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
-  const changes = [
-    { key: "sales", label: "Sales", deltaCents: salesCents - sumCents(prevDays, (d) => d.netSalesCents) },
-    { key: "ingredients", label: "Ingredients", deltaCents: ingredientsCents - sumCents(prevDays, (d) => d.ingredientsCents), lowerIsBetter: true },
-    { key: "staff", label: "Staff", deltaCents: wagesCents + staffTaxCents - sumCents(prevDays, (d) => d.wagesCents + d.staffTaxCents), lowerIsBetter: true },
-    {
-      key: "ownerProfit",
-      label: "Owner profit",
-      deltaCents: ownerProfitCents - ownerProfitCentsForPeriod(prevDays, prevRunningCosts),
-    },
-  ];
+  // Every "vs last period" row compares the same two periods, so if either side isn't fully
+  // covered none of them are trustworthy — not just the owner-profit row.
+  const changes =
+    comparisonState.kind === "available"
+      ? [
+          { key: "sales", label: "Sales", deltaCents: salesCents - sumCents(prevDays, (d) => d.netSalesCents) },
+          { key: "ingredients", label: "Ingredients", deltaCents: ingredientsCents - sumCents(prevDays, (d) => d.ingredientsCents), lowerIsBetter: true },
+          {
+            key: "staff",
+            label: "Staff",
+            deltaCents: wagesCents + staffTaxCents - sumCents(prevDays, (d) => d.wagesCents + d.staffTaxCents),
+            lowerIsBetter: true,
+          },
+          { key: "ownerProfit", label: "Owner profit", deltaCents: ownerProfitCents - ownerProfitCentsForPeriod(prevDays, prevRunningCosts) },
+        ]
+      : [];
 
   const enteredCount = snapshot.runningCostLines.filter((l) => !l.isMissing).length;
 
   return {
     period,
+    coverage,
     salesCents,
     ingredientsCents,
     wagesCents,
@@ -101,6 +96,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     runningCostLines: runningCostLinesForPeriod(snapshot, period),
     totalCostsCents,
     ownerProfitCents,
+    ownerProfitDisplay,
+    comparisonState,
     ingredientsRatio,
     staffRatio,
     combinedRatio,

@@ -50,10 +50,15 @@ export type BusinessSnapshot = {
   monthActualDays: DailyFacts[];
   /** Last 28 actual days ending today (for effective fee rate, avg drinks/day, etc). */
   last28Days: DailyFacts[];
-  /** Last 7 actual days ending today. */
+  /** Actual days whose date falls in the 7 calendar days ending today — not simply "the last 7
+   * rows," which drifts from the real week the moment a day in that window has no rollup. */
   last7Days: DailyFacts[];
-  /** The single most recent actual day (today, or the last day with data). */
-  latestDay: DailyFacts;
+  /** Today's real row, or a zero day for `todayDateStr` if none exists yet — never substituted
+   * with yesterday or whichever row happens to be most recently inserted. Check `todayHasData`
+   * before treating its zeros as a confirmed "no sales today" rather than "not uploaded yet." */
+  todayDay: DailyFacts;
+  /** False when `todayDay` is a fabricated zero day — no rollup for `todayDateStr` exists yet. */
+  todayHasData: boolean;
   /** Full previous calendar month, for "vs last period" comparisons. */
   previousMonthDays: DailyFacts[];
   /** This month's running-cost categories, in recovery_order, including $0/missing ones. */

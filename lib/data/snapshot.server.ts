@@ -1,60 +1,11 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { itemIngredientCostCents, type DailyFacts, type ExpenseCategoryCode } from "@/lib/calc";
+import { buildDayWindows, itemIngredientCostCents, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
 import { ensureTodayScheduledShifts } from "./materializeSchedule";
+import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
-
-const RUNNING_COST_CODES: ExpenseCategoryCode[] = [
-  "rent",
-  "utilities_power",
-  "water",
-  "internet",
-  "insurance",
-  "loan",
-  "software",
-  "supplies",
-  "repairs",
-  "other",
-];
-
-const RUNNING_COST_LABELS: Record<string, string> = {
-  rent: "Rent",
-  utilities_power: "Electricity & gas",
-  water: "Water",
-  internet: "Internet & phone",
-  insurance: "Insurance",
-  loan: "Loan payment",
-  software: "Software",
-  supplies: "Store runs & supplies",
-  repairs: "Repairs",
-  other: "Other",
-};
-
-function rowToDailyFacts(row: {
-  business_date: string;
-  net_sales_cents: number;
-  orders_count: number;
-  drinks_count: number;
-  ingredients_cents: number;
-  staff_wages_cents: number;
-  staff_tax_cents: number;
-  card_fees_cents: number;
-  voids_cents: number;
-}): DailyFacts {
-  return {
-    date: row.business_date,
-    netSalesCents: row.net_sales_cents,
-    ordersCount: row.orders_count,
-    drinksCount: row.drinks_count,
-    ingredientsCents: row.ingredients_cents,
-    wagesCents: row.staff_wages_cents,
-    staffTaxCents: row.staff_tax_cents,
-    cardFeesCents: row.card_fees_cents,
-    voidsCents: row.voids_cents,
-  };
-}
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -98,21 +49,8 @@ export async function getBusinessSnapshotFromDb(
   if (rollupError) throw rollupError;
 
   const allDays = (rollupRows ?? []).map(rowToDailyFacts);
-  const monthActualDays = allDays.filter((d) => d.date >= monthStart && d.date <= todayDateStr);
+  const { monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
   const previousMonthDays = allDays.filter((d) => d.date >= prevMonthStart && d.date <= prevMonthEnd);
-  const last28Days = allDays.slice(-28);
-  const last7Days = allDays.slice(-7);
-  const latestDay = allDays[allDays.length - 1] ?? {
-    date: todayDateStr,
-    netSalesCents: 0,
-    ordersCount: 0,
-    drinksCount: 0,
-    ingredientsCents: 0,
-    wagesCents: 0,
-    staffTaxCents: 0,
-    cardFeesCents: 0,
-    voidsCents: 0,
-  };
 
   const [recurringResult, expensesResult, recoveryOrderResult] = await Promise.all([
     supabase
@@ -191,7 +129,8 @@ export async function getBusinessSnapshotFromDb(
     monthActualDays,
     last28Days,
     last7Days,
-    latestDay,
+    todayDay,
+    todayHasData,
     previousMonthDays,
     runningCostLines,
     recoveryOrder: orderedCodes,

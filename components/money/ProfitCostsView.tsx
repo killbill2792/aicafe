@@ -7,7 +7,7 @@ import type { HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
-import { flowBarWidthPct, profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
+import { flowBarWidthPct, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 const BAND_COLOR: Record<HealthBand, string> = { healthy: "text-good", watch: "text-warn", high: "text-warn" };
 const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-muted" } as const;
@@ -60,15 +60,26 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
 
 export default async function ProfitCostsView({ snapshot, period }: { snapshot: BusinessSnapshot; period: Period }) {
   const t = await getTranslations("Money");
+  const tCommon = await getTranslations("Common");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
+  const coverageNote =
+    vm.coverage.actualDays < vm.coverage.expectedDays
+      ? period === "today"
+        ? tCommon("noSalesToday")
+        : period === "week"
+          ? tCommon("salesCoverageWeek", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+          : tCommon("salesCoverageMonth", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+      : null;
   // "% of sales" is meaningless with $0 sales — the old `Math.max(1, ...)` cents-floor made a
   // real (period-prorated) running-cost total divide against a fake 1¢ of sales, producing
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
-  const tone = profitTone(vm.ownerProfitCents);
+  // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
+  // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
+  const tone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
 
   const changeLabels: Record<string, string> = {
     sales: t("sales"),
@@ -79,6 +90,8 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
 
   return (
     <div className="flex flex-col gap-3.5">
+      {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
+
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-base font-bold">{t("fromSalesToPocket")}</h2>
         <div className="flex flex-col gap-2">
@@ -137,10 +150,17 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
           </span>
         </div>
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-[#F1EAE0]"}`}>
-          <span className={`text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>{t("ownerProfit")}</span>
-          <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
-            <Money cents={vm.ownerProfitCents} />
+          <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>
+            {t("ownerProfit")}
+            {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill label={t("partialPill")} />}
           </span>
+          {vm.ownerProfitDisplay.kind === "unavailable" ? (
+            <span className="text-base font-bold text-ink-muted">{t("ownerProfitWaiting")}</span>
+          ) : (
+            <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
+              <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
+            </span>
+          )}
         </div>
       </section>
 
@@ -158,6 +178,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("vsLastPeriod")}</h2>
+        {vm.changes.length === 0 && <p className="m-0 text-sm text-ink-muted">{t("notEnoughDataToCompare")}</p>}
         {vm.changes.map((change) => {
           const good = change.lowerIsBetter ? change.deltaCents <= 0 : change.deltaCents >= 0;
           return (

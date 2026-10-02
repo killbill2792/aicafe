@@ -11,19 +11,23 @@ import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 export type Period = "today" | "week" | "month";
 
 export function daysForPeriod(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
-  if (period === "today") return [snapshot.latestDay];
+  if (period === "today") return [snapshot.todayDay];
   if (period === "week") return snapshot.last7Days;
   return snapshot.monthActualDays;
 }
 
-/** The same-length window ending at the same point, one period back — for "vs last period" arrows. */
-export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
-  if (period === "month") return snapshot.previousMonthDays.slice(0, snapshot.monthActualDays.length);
-  if (period === "week") return snapshot.last28Days.slice(-14, -7);
-  return snapshot.last28Days.slice(-2, -1); // yesterday
+/** How much of a period's calendar range actually has a sales rollup — "today" is 0/1 when
+ * nothing's been uploaded yet, "week"/"month" count real rows against the calendar days elapsed.
+ * Lets the UI say "Sales data available for 1 of 2 days this month" instead of presenting a
+ * period with sparse data as if it were simply a quiet one. */
+export function periodCoverage(snapshot: BusinessSnapshot, period: Period): { actualDays: number; expectedDays: number } {
+  if (period === "today") return { actualDays: snapshot.todayHasData ? 1 : 0, expectedDays: 1 };
+  if (period === "week") return { actualDays: snapshot.last7Days.length, expectedDays: 7 };
+  const dayOfMonth = Number(snapshot.todayDateStr.slice(-2));
+  return { actualDays: snapshot.monthActualDays.length, expectedDays: dayOfMonth };
 }
 
-function previousMonthKey(monthKey: string): string {
+export function previousMonthKey(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   const prev = new Date(year, month - 2, 1);
   return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;
@@ -41,6 +45,15 @@ function addDaysLocal(dateStr: string, delta: number): string {
 function daysInMonth(monthKey: string): number {
   const [year, month] = monthKey.split("-").map(Number);
   return new Date(year, month, 0).getDate();
+}
+
+/** Inclusive count of calendar days between two `YYYY-MM-DD` strings — local-safe, same
+ * reasoning as `addDaysLocal` above. */
+function calendarDaySpan(start: string, end: string): number {
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const ms = new Date(ey, em - 1, ed).getTime() - new Date(sy, sm - 1, sd).getTime();
+  return Math.round(ms / 86_400_000) + 1;
 }
 
 /**
@@ -91,6 +104,31 @@ export function previousPeriodCalendarRange(snapshot: BusinessSnapshot, period: 
   const dayOfMonth = Number(snapshot.todayDateStr.split("-")[2]);
   const end = Math.min(dayOfMonth, daysInMonth(prevMonthKey));
   return { start: `${prevMonthKey}-01`, end: `${prevMonthKey}-${String(end).padStart(2, "0")}` };
+}
+
+/** The actual rows that fall inside `previousPeriodCalendarRange` — date-filtered, never an array
+ * slice. A previous-period window (today: yesterday only; week: the 7 calendar dates immediately
+ * before the current 7-day window; month: previous month's day 1 through the equivalent
+ * day-of-month) never reaches back further than the immediately preceding calendar month, so
+ * `previousMonthDays` (that whole month's actual rows) plus `monthActualDays` (this month's,
+ * so far) together cover every case — unlike `last28Days.slice(-2, -1)` /
+ * `last28Days.slice(-14, -7)`, which pick "the Nth most recent row" and silently return the wrong
+ * calendar day the moment any day in between has no rollup (found live: with rows Sep 28/29/Oct 1
+ * and today Oct 2, "yesterday" by array position was Sep 29, not Oct 1). */
+export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
+  const { start, end } = previousPeriodCalendarRange(snapshot, period);
+  const pool = [...snapshot.previousMonthDays, ...snapshot.monthActualDays];
+  return pool.filter((d) => d.date >= start && d.date <= end);
+}
+
+/** How much of the *comparison* period's own calendar range actually has a sales rollup — the
+ * same shape as `periodCoverage`, just for `previousPeriodCalendarRange` instead of
+ * `periodCalendarRange`. A "vs last period" comparison needs this alongside `periodCoverage` for
+ * the current period: comparing a partially-covered period against a sparse one isn't trustworthy
+ * even when one side looks complete on its own. */
+export function previousPeriodCoverage(snapshot: BusinessSnapshot, period: Period): { actualDays: number; expectedDays: number } {
+  const { start, end } = previousPeriodCalendarRange(snapshot, period);
+  return { actualDays: previousPeriodDays(snapshot, period).length, expectedDays: calendarDaySpan(start, end) };
 }
 
 /** Running costs prorated across a period's full calendar range (see `periodCalendarRange`). */

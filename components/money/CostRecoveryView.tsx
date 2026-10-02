@@ -1,16 +1,20 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
 import FillIcon from "@/components/icons/FillIcon";
 import Money from "@/components/shared/Money";
-import TodayInCupsCard from "@/components/home/TodayInCupsCard";
-import MonthCalendarStrip from "@/components/money/MonthCalendarStrip";
+import TodayAtAGlanceCard from "@/components/shared/TodayAtAGlanceCard";
+import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
+import MonthCalendar from "@/components/money/MonthCalendar";
 import { moveRecoveryBucket } from "@/lib/actions/recoveryOrder";
-import { computeTodayInCups, formatCents } from "@/lib/calc";
+import { formatCents } from "@/lib/calc";
 import type { BucketResult } from "@/lib/calc";
 import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import type { BusinessSnapshot } from "@/lib/data/types";
-import { dayContributionCents, recoveryBuckets } from "@/lib/viewmodels/costRecoveryShared";
+import { getMonthCalendar } from "@/lib/data/getMonthCalendar";
+import { RUNNING_COST_CODES } from "@/lib/data/runningCostCatalog";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
+import { buildMonthCalendarViewModel } from "@/lib/viewmodels/monthCalendar";
+import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
 import { profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 function shortDate(iso: string) {
@@ -89,21 +93,42 @@ function BucketRow({
   );
 }
 
-export default async function CostRecoveryView({ snapshot }: { snapshot: BusinessSnapshot }) {
+export default async function CostRecoveryView({ snapshot, calMonthKey }: { snapshot: BusinessSnapshot; calMonthKey: string }) {
   const t = await getTranslations("Money");
+  const tCommon = await getTranslations("Common");
+  const tCategories = await getTranslations("Categories");
+  const locale = await getLocale();
   const vm = buildCostRecoveryViewModel(snapshot);
-  const labelFor = (code: string) => snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code;
+  const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
 
-  const buckets = recoveryBuckets(snapshot);
-  const today = snapshot.latestDay;
-  const daysBeforeToday = snapshot.monthActualDays.slice(0, -1);
-  const cumulativeBeforeToday = daysBeforeToday.reduce((sum, d) => sum + dayContributionCents(d), 0);
-  const todayInCups = computeTodayInCups({
-    cupsToday: today.drinksCount,
-    contributionCentsToday: dayContributionCents(today),
-    cumulativeBeforeToday,
-    buckets,
+  const glance = buildTodayGlanceViewModel(snapshot);
+  const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor);
+
+  const isCurrentMonth = calMonthKey === snapshot.monthKey;
+  const monthData = await getMonthCalendar(calMonthKey, snapshot);
+  const calendarVm = buildMonthCalendarViewModel({
+    monthData,
+    recoveryOrder: snapshot.recoveryOrder,
+    todayDateStr: snapshot.todayDateStr,
+    isCurrentMonth,
   });
+  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(`${calMonthKey}-01T00:00:00`));
+  const firstWeekday = new Date(`${calMonthKey}-01T00:00:00`).getDay();
+  const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
+  // Jan 4 1970 (UTC) is a Sunday — a stable reference week, indexed 0=Sun..6=Sat.
+  const weekdayLabels = Array.from({ length: 7 }, (_, i) => weekdayFormatter.format(new Date(Date.UTC(1970, 0, 4 + i))));
+  // The calendar's milestone sentence ("%BUCKET% became fully covered...") must read in the
+  // viewer's own language — the English-only RUNNING_COST_LABELS catalog would otherwise leak an
+  // English category name into an es/ar sentence.
+  const bucketLabels = Object.fromEntries(RUNNING_COST_CODES.map((code) => [code, tCategories(code)]));
+
+  const pace = profitTone(vm.projectedMonthEndProfitCents);
+  const paceText =
+    pace === "good"
+      ? t("paceLeft", { amount: formatCents(vm.projectedMonthEndProfitCents) })
+      : pace === "warn"
+        ? t("paceShort", { amount: formatCents(Math.abs(vm.projectedMonthEndProfitCents)) })
+        : t("paceBreakEven");
 
   const heroIcon = vm.buckets[0];
   const totalCentsToGo = vm.buckets.reduce((s, b) => s + b.centsToGo, 0);
@@ -128,15 +153,13 @@ export default async function CostRecoveryView({ snapshot }: { snapshot: Busines
         </div>
       </section>
 
-      <p className="mx-1.5 text-base leading-snug text-ink">
+      <p className={`mx-1.5 text-base leading-snug ${vm.allCovered ? "text-ink" : profitToneTextClass(pace)}`}>
         {vm.allCovered ? (
           <>
             <b>{t("everythingYours")}</b> {t("yoursSoFar", { amount: formatCents(vm.yoursSoFarCents) })}
           </>
         ) : (
-          <>
-            {t("onTrackFor")} <b className={profitToneTextClass(profitTone(vm.projectedMonthEndProfitCents))}><Money cents={vm.projectedMonthEndProfitCents} /></b> {t("inYourPocket")}
-          </>
+          <b>{paceText}</b>
         )}
       </p>
 
@@ -146,30 +169,45 @@ export default async function CostRecoveryView({ snapshot }: { snapshot: Busines
         ))}
       </section>
 
-      <MonthCalendarStrip
-        days={vm.calendarDays}
-        monthKey={vm.monthKey}
-        title={t("yourMonth")}
-        legend={{ bills: t("paidYourBills"), likelyBills: t("likelyBills"), likelyYours: t("likelyYours") }}
+      <MonthCalendar
+        monthLabel={monthLabel}
+        calMonthKey={calMonthKey}
+        canGoNext={!isCurrentMonth}
+        weekdayLabels={weekdayLabels}
+        firstWeekday={firstWeekday}
+        cells={calendarVm.cells}
+        detailsByDate={calendarVm.detailsByDate}
+        bucketLabels={bucketLabels}
+        labels={{
+          prevMonth: t("calendarPrevMonth"),
+          nextMonth: t("calendarNextMonth"),
+          legendGood: t("calendarLegendGood"),
+          legendLoss: t("calendarLegendLoss"),
+          legendMissing: t("calendarLegendMissing"),
+          legendUpcoming: t("calendarLegendUpcoming"),
+          noData: t("calendarNoData"),
+          milestoneTemplate: t("calendarMilestone"),
+          sales: t("sales"),
+          ingredients: t("ingredientsAndCups"),
+          staff: t("staff"),
+          cardFees: t("cardFees"),
+          rentAndBills: t("rentAndBills"),
+          ownerProfit: t("ownerProfit"),
+          estimatePill: t("estimateLower"),
+        }}
       />
 
-      <TodayInCupsCard
-        title={t("todayInCupsTitle")}
-        perIconLabel={t("perIcon")}
-        slices={todayInCups.slices}
-        legend={todayInCups.slices.map((s, i) => ({
-          code: s.bucketCode,
-          label: s.bucketCode === "yours" ? t("yours") : labelFor(s.bucketCode),
-          color: ["#1E6B4B", "#6FA88C", "#9CC4AE"][i % 3],
-        }))}
-        caption={
-          todayInCups.allYours
-            ? t("everyCupYours")
-            : t("todayInCupsCaption", {
-                cups: today.drinksCount,
-                amount: formatCents(todayInCups.slices.reduce((s, x) => s + x.cents, 0)),
-              })
-        }
+      <TodayAtAGlanceCard
+        title={t("glanceTitle")}
+        stats={[
+          { label: t("glanceSales"), value: formatCents(glance.salesCents) },
+          { label: t("glanceOrders"), value: String(glance.ordersCount) },
+          { label: t("glanceAvgOrder"), value: formatCents(glance.avgOrderValueCents) },
+          { label: t("glanceMoneyLeft"), value: formatCents(glance.moneyLeftCents) },
+        ]}
+        secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
+        caption={glanceCopy.caption}
+        icon={glanceCopy.icon}
       />
 
       <details className="rounded-card-lg bg-card p-[18px]">

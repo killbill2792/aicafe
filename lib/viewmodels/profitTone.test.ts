@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flowBarWidthPct, profitTone, profitToneTextClass } from "./profitTone";
+import { flowBarWidthPct, profitTone, profitToneBgClass, profitToneTextClass } from "./profitTone";
 
 describe("profitTone", () => {
   it("is good for any positive amount", () => {
@@ -22,6 +22,14 @@ describe("profitToneTextClass", () => {
     expect(profitToneTextClass("good")).toBe("text-good");
     expect(profitToneTextClass("warn")).toBe("text-warn");
     expect(profitToneTextClass("neutral")).toBe("text-ink");
+  });
+});
+
+describe("profitToneBgClass", () => {
+  it("maps each tone to a full-bleed background class, zero staying a calm neutral rather than green", () => {
+    expect(profitToneBgClass("good")).toBe("bg-good");
+    expect(profitToneBgClass("warn")).toBe("bg-warn");
+    expect(profitToneBgClass("neutral")).toBe("bg-ink");
   });
 });
 

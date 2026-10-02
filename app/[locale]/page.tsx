@@ -5,6 +5,8 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
+import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
+import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 import type { Period } from "@/lib/viewmodels/period";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
@@ -12,7 +14,8 @@ import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import AddCostFab from "@/components/shared/AddCostFab";
 import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
-import TodayInCupsCard from "@/components/home/TodayInCupsCard";
+import TodayAtAGlanceCard from "@/components/shared/TodayAtAGlanceCard";
+import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
 import {
   AlertsTeaserCard,
   BreakEvenTeaserCard,
@@ -41,10 +44,23 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const snapshot = await getSnapshot();
   const vm = buildHomeViewModel(snapshot, period);
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
+  const glance = buildTodayGlanceViewModel(snapshot);
   const t = await getTranslations("Home");
+  const tCommon = await getTranslations("Common");
   const posStatus = await getPosConnectionStatus();
 
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
+  const heroTone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
+  const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
+  const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor);
+  const coverageNote =
+    vm.coverage.actualDays < vm.coverage.expectedDays
+      ? period === "today"
+        ? tCommon("noSalesToday")
+        : period === "week"
+          ? tCommon("salesCoverageWeek", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+          : tCommon("salesCoverageMonth", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+      : null;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
@@ -78,14 +94,23 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <PeriodSwitch current={period} />
 
-      <section className="flex flex-col gap-2.5 rounded-card-lg bg-good p-[22px] text-white">
+      {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
+
+      <section className={`flex flex-col gap-2.5 rounded-card-lg p-[22px] text-white ${profitToneBgClass(heroTone)}`}>
         <div className="flex items-center justify-between">
           <span className="text-[17px] font-semibold">{t("ownerProfit")}</span>
-          {vm.isEstimate && <EstimatePill tone="dark" label={t("estimatePill")} />}
+          <div className="flex items-center gap-1.5">
+            {vm.isEstimate && <EstimatePill tone="dark" label={t("estimatePill")} />}
+            {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill tone="dark" label={t("partialPill")} />}
+          </div>
         </div>
-        <div className="font-headline text-money-md font-bold">
-          <Money cents={vm.ownerProfitCents} />
-        </div>
+        {vm.ownerProfitDisplay.kind === "unavailable" ? (
+          <div className="text-2xl font-bold">{t("ownerProfitWaiting")}</div>
+        ) : (
+          <div className="font-headline text-money-md font-bold">
+            <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
+          </div>
+        )}
         {vm.changeVsLastPeriodPct !== null && (
           <div className="flex items-center gap-2 text-[15px] font-semibold">
             {changeUp ? <TrendingUp aria-hidden="true" size={18} /> : <TrendingDown aria-hidden="true" size={18} />}
@@ -107,8 +132,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
         <div className="flex min-w-[104px] flex-1 flex-col gap-1 rounded-2xl bg-card p-3.5">
           <span className="text-[13px] font-semibold text-ink-muted">{t("youKeep")}</span>
-          <span className="break-words text-xl font-extrabold text-good">{formatCents(vm.ownerProfitCents)}</span>
-          <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.keepRatio * 100) })}</span>
+          {vm.ownerProfitDisplay.kind === "unavailable" ? (
+            <span className="text-sm font-semibold text-ink-muted">{t("ownerProfitWaitingShort")}</span>
+          ) : (
+            <>
+              <span className={`break-words text-xl font-extrabold ${profitToneTextClass(vm.ownerProfitDisplay.tone)}`}>
+                {formatCents(vm.ownerProfitDisplay.ownerProfitCents)}
+              </span>
+              <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.keepRatio * 100) })}</span>
+            </>
+          )}
         </div>
       </div>
 
@@ -128,20 +161,17 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         coveredLabel={(label, date) => t("coveredOn", { label, date })}
       />
 
-      <TodayInCupsCard
-        title={t("todayInCupsTitle")}
-        perIconLabel={t("perIcon")}
-        legend={vm.todayInCups.slices.map((s, i) => ({
-          code: s.bucketCode,
-          label: s.bucketCode === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === s.bucketCode)?.label ?? s.bucketCode,
-          color: ["#1E6B4B", "#6FA88C", "#9CC4AE"][i % 3],
-        }))}
-        slices={vm.todayInCups.slices}
-        caption={
-          vm.todayInCups.allYours
-            ? t("everyCupYours")
-            : t("todayInCupsCaption", { cups: snapshot.latestDay.drinksCount, amount: formatCents(vm.todayInCups.slices.reduce((s, x) => s + x.cents, 0)) })
-        }
+      <TodayAtAGlanceCard
+        title={t("glanceTitle")}
+        stats={[
+          { label: t("glanceSales"), value: formatCents(glance.salesCents) },
+          { label: t("glanceOrders"), value: String(glance.ordersCount) },
+          { label: t("glanceAvgOrder"), value: formatCents(glance.avgOrderValueCents) },
+          { label: t("glanceMoneyLeft"), value: formatCents(glance.moneyLeftCents) },
+        ]}
+        secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
+        caption={glanceCopy.caption}
+        icon={glanceCopy.icon}
       />
 
       <ProfitCostsCard
