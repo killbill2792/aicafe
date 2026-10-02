@@ -34,6 +34,13 @@ export function isPricingHealthy(item: Pick<MenuControlItem, "costStatus" | "pri
   return getItemPricingStatus(item).kind === "keep";
 }
 
+/** Keeps every size tied to its real menu-item row; selecting a size changes the entire context. */
+export function buildProductSizeContexts(items: MenuControlItem[], selectedId: string) {
+  return [...items]
+    .sort((a, b) => a.priceCents - b.priceCents || a.id.localeCompare(b.id))
+    .map((item) => ({ item, selected: item.id === selectedId, href: `/menu/${item.id}` as const }));
+}
+
 /** The owner-facing pricing status for a GROUPED product (one or more sizes). Missing data
  * (no recipe, or a recipe with no priced cost) always takes priority over a pricing-review
  * message — an owner can't act on "price may be low" for a size we don't even have a cost for.

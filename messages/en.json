@@ -221,7 +221,11 @@
     "vsLastPeriod": "vs last period",
     "notEnoughDataToCompare": "Not enough sales data to compare periods yet.",
     "add": "Add",
-    "manageBills": "Manage bills"
+    "manageBills": "Manage bills",
+    "calendarProgressDays": "{complete} of {total} days complete",
+    "calendarBillsProjected": "Bills projected covered by {date}",
+    "calendarBillsCovered": "Bills were covered on {date}",
+    "calendarBillsNotCovered": "Bills were not fully covered this month"
   },
   "Menu": {
     "title": "Menu",
@@ -294,7 +298,13 @@
     "sizePriceMayBeLow": "{size} price may be low",
     "sizePriceMayBeHigh": "{size} price may be high",
     "multipleSizesNeedReview": "{count, plural, one {# size needs review} other {# sizes need review}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "chooseSize": "Choose a size",
+    "sellingPriceLabel": "Selling price — {amount}",
+    "costToMakeLabel": "Cost to make — {amount}",
+    "viewEdit": "View / Edit",
+    "sizePriceMayBeLowWithSuggestion": "{size} price may be low · Suggested {amount}",
+    "sizePriceMayBeHighWithSuggestion": "{size} price may be high · Suggested {amount}"
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -397,7 +407,12 @@
     "healthyLine": "Under the line is healthy ({cents}¢)",
     "worstDayInsight": "{date} cost {cents}¢ per $1 sold — the highest this week.",
     "allHealthyInsight": "Your staff cost has stayed healthy all week.",
-    "addStaff": "+ Add staff"
+    "addStaff": "+ Add staff",
+    "noOneOnShiftRightNow": "No one is on shift right now",
+    "peopleOnShift": "{count, plural, one {# person on shift} other {# people on shift}}",
+    "perHourRightNow": "{amount}/hour right now",
+    "perMinuteSecondary": "{amount}/min",
+    "staffCostToday": "Staff cost today so far"
   },
   "More": {
     "title": "More",
@@ -599,9 +614,9 @@
     "nameLabel": "Name",
     "roleLabel": "Role (optional)",
     "wageLabel": "Wage",
-    "wagePeriodHour": "Per hour",
-    "wagePeriodMonth": "Per month",
-    "wagePeriodYear": "Per year",
+    "wagePeriodHour": "Hourly",
+    "wagePeriodMonth": "Monthly",
+    "wagePeriodYear": "Yearly",
     "salaryScheduleHint": "Set their weekly schedule below — that's what determines their hourly cost. They won't cost anything or show as on shift until it's set.",
     "basedOnScheduleLabel": "Based on their current schedule: {hours} hrs/week",
     "add": "Add",
@@ -620,8 +635,8 @@
     "daySat": "Sat",
     "daySun": "Sun",
     "breakLabel": "Unpaid break each day (minutes)",
-    "repeatsWeekly": "Repeats every week",
-    "justForMonth": "Just for one month",
+    "repeatsWeekly": "Use every week",
+    "justForMonth": "Only this month",
     "monthLabel": "Month",
     "saveSchedule": "Save schedule",
     "scheduleSaved": "Saved",
@@ -638,7 +653,13 @@
     "predictedTag": "From their schedule — not confirmed yet",
     "deactivate": "No longer works here",
     "reactivate": "Bring back",
-    "inactiveTag": "No longer on staff"
+    "inactiveTag": "No longer on staff",
+    "editSchedule": "Edit schedule",
+    "repeatsWeeklyHint": "Repeats each week until you change it.",
+    "justForMonthHint": "Use this schedule only for the selected month.",
+    "off": "off",
+    "scheduleSummary": "{days} · {start}–{end}",
+    "breakSummary": "{minutes} min unpaid break"
   },
   "Scenario": {
     "title": "Try a scenario",
@@ -681,5 +702,36 @@
     "checkEmail": "Check your email — we sent a link to {email}. Tap it to sign in.",
     "error": "That didn't work. Check the email and try again.",
     "notConfigured": "Sign-in isn't connected yet. Add Supabase keys to .env.local first."
+  },
+  "Operations": {
+    "teamTitle": "Your AI team",
+    "aiLabel": "AI teammates using the same trusted café facts",
+    "alexRole": "Pricing Coach",
+    "oliviaRole": "Staff Coordinator",
+    "mayaRole": "Supplies & Waste",
+    "leoRole": "Money & Operations",
+    "prices": "{count, plural, =0 {Prices look steady} one {# price needs review} other {# prices need review}}",
+    "coverageClear": "No coverage requests",
+    "supplies": "Watching cup and ingredient costs",
+    "attention": "{count, plural, =0 {Nothing needs attention} one {# thing needs your attention} other {# things need your attention}}",
+    "eyebrow": "Café operations",
+    "title": "Team inbox",
+    "intro": "A few clear decisions, with the facts behind them.",
+    "needsYou": "Needs you",
+    "needsYouEmpty": "Nothing needs your decision right now.",
+    "handled": "Handled",
+    "handledEmpty": "Nothing is marked handled without proof it happened.",
+    "watching": "Watching",
+    "watchingEmpty": "Nothing is being watched right now.",
+    "priceQuestion": "Raise {item} from {current} → {suggested}?",
+    "pricingEvidence": "Recommendation from the deterministic pricing engine. No register price was changed.",
+    "missingCosts": "{count, plural, one {# cost is missing this month.} other {# costs are missing this month.}}",
+    "mayaWatching": "Watching entered cup and ingredient costs.",
+    "inventoryUnavailable": "Inventory quantities are not connected, so Maya will not guess stock levels.",
+    "transportUnavailable": "Staff messaging is not connected. Olivia can structure coverage requests, but cannot send them yet.",
+    "focusedOn": "Viewing {name} · {role}",
+    "estimate": "Estimate",
+    "benchmarkPricingEvidence": "Based on this item's recipe cost and café benchmark assumptions.",
+    "businessPricingEvidence": "Based on this item's recipe cost and available café sales and cost history."
   }
 }

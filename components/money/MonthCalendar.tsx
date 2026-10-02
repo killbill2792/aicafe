@@ -29,6 +29,10 @@ export type MonthCalendarLabels = {
   rentAndBills: string;
   ownerProfit: string;
   estimatePill: string;
+  progressDays: string;
+  billsProjected: string;
+  billsCovered: string;
+  billsNotCovered: string;
 };
 
 export default function MonthCalendar({
@@ -41,6 +45,8 @@ export default function MonthCalendar({
   detailsByDate,
   bucketLabels,
   labels,
+  completedDays,
+  billsStatus,
 }: {
   monthLabel: string;
   calMonthKey: string;
@@ -51,6 +57,8 @@ export default function MonthCalendar({
   detailsByDate: Record<string, DayDetail>;
   bucketLabels: Record<string, string>;
   labels: MonthCalendarLabels;
+  completedDays: number;
+  billsStatus: { kind: "projected" | "covered"; date: string } | { kind: "not_covered" };
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -101,6 +109,16 @@ export default function MonthCalendar({
         >
           <ChevronRight size={20} aria-hidden="true" className="rtl:rotate-180" />
         </button>
+      </div>
+
+      <div className="rounded-xl bg-paper px-3 py-2.5">
+        <div className="mb-1.5 flex items-center justify-between gap-3 text-sm font-bold text-ink">
+          <span>{labels.progressDays.replace("{complete}", String(completedDays)).replace("{total}", String(cells.length))}</span>
+          <span className={billsStatus.kind === "not_covered" ? "text-warn" : "text-good"}>
+            {billsStatus.kind === "projected" ? labels.billsProjected.replace("{date}", billsStatus.date) : billsStatus.kind === "covered" ? labels.billsCovered.replace("{date}", billsStatus.date) : labels.billsNotCovered}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-line" aria-hidden="true"><div className="h-full rounded-full bg-good" style={{ width: `${Math.min(100, (completedDays / Math.max(1, cells.length)) * 100)}%` }} /></div>
       </div>
 
       <div className="grid grid-cols-7 gap-1.5 text-center text-xs font-bold text-ink-muted">

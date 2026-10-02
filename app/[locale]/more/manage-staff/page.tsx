@@ -37,6 +37,7 @@ export default async function ManageStaffPage() {
           add: t("add"),
           noStaff: t("noStaff"),
           editDetails: t("editDetails"),
+          editSchedule: t("editSchedule"),
           saveDetails: t("saveDetails"),
           detailsSaved: t("detailsSaved"),
           cancel: t("cancel"),
@@ -51,7 +52,9 @@ export default async function ManageStaffPage() {
           daySun: t("daySun"),
           breakLabel: t("breakLabel"),
           repeatsWeekly: t("repeatsWeekly"),
+          repeatsWeeklyHint: t("repeatsWeeklyHint"),
           justForMonth: t("justForMonth"),
+          justForMonthHint: t("justForMonthHint"),
           monthLabel: t("monthLabel"),
           saveSchedule: t("saveSchedule"),
           scheduleSaved: t("scheduleSaved"),
@@ -69,6 +72,9 @@ export default async function ManageStaffPage() {
           deactivate: t("deactivate"),
           reactivate: t("reactivate"),
           inactiveTag: t("inactiveTag"),
+          off: t("off"),
+          scheduleSummary: t("scheduleSummary"),
+          breakSummary: t("breakSummary"),
         }}
       />
     </PageShell>

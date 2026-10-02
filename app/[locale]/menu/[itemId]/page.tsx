@@ -16,10 +16,10 @@ export default async function MenuItemPage({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>;
-  searchParams: Promise<{ setupRecipe?: string }>;
+  searchParams: Promise<{ setupRecipe?: string; tab?: string }>;
 }) {
   await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe, tab }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -32,10 +32,11 @@ export default async function MenuItemPage({
   const editItem = editItems.find((candidate) => candidate.id === itemId);
   if (!item || !editItem) notFound();
   const siblingSizes = editItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active);
+  const siblingItems = controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== item.id && candidate.active);
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
-      <BackHeader title={item.name} subtitle={item.sizeLabel ?? undefined} backHref="/menu" backLabel={common("back")} />
+      <BackHeader title={item.baseName} backHref="/menu" backLabel={common("back")} />
       <ProductDetailScreen
         item={item}
         editItem={editItem}
@@ -43,6 +44,8 @@ export default async function MenuItemPage({
         menuGroupOptions={menuGroupOptions}
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
+        siblingItems={siblingItems}
+        initialTab={tab === "recipe" || tab === "sizes" || tab === "pricing" ? tab : "overview"}
         justCreated={setupRecipe === "1"}
       />
     </PageShell>

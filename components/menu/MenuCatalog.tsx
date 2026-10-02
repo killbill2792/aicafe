@@ -70,27 +70,22 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
       return <StatusPill good={chip.good} label={chip.label} />;
     }
     const status = group.pricingStatus;
+    const SecondaryStatus = ({ good, children }: { good?: boolean; children: React.ReactNode }) => (
+      <p className={`mt-1 flex items-center gap-1 text-[13px] font-semibold ${good ? "text-good" : "text-warn"}`}>
+        {good ? <Check aria-hidden="true" size={14} /> : <TriangleAlert aria-hidden="true" size={14} />}{children}
+      </p>
+    );
     switch (status.kind) {
       case "all_healthy":
-        return <StatusPill good label={t("pricesLookRight")} />;
+        return <SecondaryStatus good>{t("pricesLookRight")}</SecondaryStatus>;
       case "missing_recipe_one":
-        return <StatusPill good={false} label={t("sizeRecipeIncomplete", { size: status.sizeLabel ?? group.baseName })} />;
+        return <SecondaryStatus>{t("sizeRecipeIncomplete", { size: status.sizeLabel ?? group.baseName })}</SecondaryStatus>;
       case "missing_data":
-        return <StatusPill good={false} label={t("sizesMissingCostInfo", { count: status.count })} />;
+        return <SecondaryStatus>{t("sizesMissingCostInfo", { count: status.count })}</SecondaryStatus>;
       case "needs_review_many":
-        return <StatusPill good={false} label={t("multipleSizesNeedReview", { count: status.count })} />;
+        return <SecondaryStatus>{t("multipleSizesNeedReview", { count: status.count })}</SecondaryStatus>;
       case "needs_review_one":
-        return (
-          <div className="mt-1 flex flex-col gap-0.5">
-            <StatusPill
-              good={false}
-              label={t(status.direction === "low" ? "sizePriceMayBeLow" : "sizePriceMayBeHigh", { size: status.sizeLabel ?? group.baseName })}
-            />
-            <span className="text-xs text-ink-muted">
-              {t("suggested")} <strong className="font-semibold text-warn">{formatCents(status.suggestedPriceCents)}</strong>
-            </span>
-          </div>
-        );
+        return <SecondaryStatus>{t(status.direction === "low" ? "sizePriceMayBeLowWithSuggestion" : "sizePriceMayBeHighWithSuggestion", { size: status.sizeLabel ?? group.baseName, amount: formatCents(status.suggestedPriceCents) })}</SecondaryStatus>;
     }
   }
 
@@ -110,13 +105,13 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
       </div>
       <div className="flex flex-col gap-2.5 md:grid md:grid-cols-2 md:gap-3 lg:grid-cols-3">
         {groups.map((group) => (
-          <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="flex items-center justify-between gap-3 rounded-card-lg bg-card p-[18px] text-ink no-underline">
+          <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="flex flex-col gap-1 rounded-card-lg bg-card p-[18px] text-ink no-underline">
             <div className="min-w-0">
               <h2 className="truncate text-lg font-bold">{group.baseName}</h2>
               {group.sizeLabels.length > 0 && <p className="truncate text-sm text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
-              {renderStatus(group)}
             </div>
-            <span className="shrink-0 font-headline text-[25px] font-bold">{renderPrice(group)}</span>
+            <span className="font-headline text-[25px] font-bold">{renderPrice(group)}</span>
+            {renderStatus(group)}
           </Link>
         ))}
         {groups.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted md:col-span-full">{t("empty")}</p>}

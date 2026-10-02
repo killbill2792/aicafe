@@ -178,6 +178,14 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
         cells={calendarVm.cells}
         detailsByDate={calendarVm.detailsByDate}
         bucketLabels={bucketLabels}
+        completedDays={isCurrentMonth ? Number(snapshot.todayDateStr.slice(-2)) : calendarVm.daysInMonth}
+        billsStatus={
+          calendarVm.billsCoveredOn
+            ? { kind: "covered", date: shortDate(calendarVm.billsCoveredOn) }
+            : isCurrentMonth && vm.buckets[vm.buckets.length - 1]?.projectedCoveredOn
+              ? { kind: "projected", date: shortDate(vm.buckets[vm.buckets.length - 1].projectedCoveredOn!) }
+              : { kind: "not_covered" }
+        }
         labels={{
           prevMonth: t("calendarPrevMonth"),
           nextMonth: t("calendarNextMonth"),
@@ -194,6 +202,10 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
           rentAndBills: t("rentAndBills"),
           ownerProfit: t("ownerProfit"),
           estimatePill: t("estimateLower"),
+          progressDays: t("calendarProgressDays"),
+          billsProjected: t("calendarBillsProjected"),
+          billsCovered: t("calendarBillsCovered"),
+          billsNotCovered: t("calendarBillsNotCovered"),
         }}
       />
 

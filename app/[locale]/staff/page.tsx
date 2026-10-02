@@ -3,7 +3,7 @@ import { Plus } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
-import { buildStaffViewModel } from "@/lib/viewmodels/staffViewModel";
+import { buildStaffViewModel, staffHeroState } from "@/lib/viewmodels/staffViewModel";
 import { formatCents } from "@/lib/calc";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -21,6 +21,7 @@ export default async function StaffPage() {
 
   const snapshot = await getSnapshot();
   const vm = buildStaffViewModel(snapshot);
+  const hero = staffHeroState(vm);
   const clockLabel = (iso: string) => formatInTimeZone(iso, snapshot.business.timezone, "H:mm");
 
   return (
@@ -38,13 +39,9 @@ export default async function StaffPage() {
         </div>
       </header>
 
-      <section className="flex flex-col gap-3.5 rounded-card-lg bg-staff p-5 text-white">
-        <span className="text-[15px] font-semibold opacity-90">{t("rightNowCosts")}</span>
-        <div className="flex flex-wrap gap-2">
-          <StatTile value={formatCents(vm.costPerMinuteCents)} label={t("aMinute")} />
-          <StatTile value={formatCents(vm.costPerHourCents)} label={t("anHour")} />
-          <StatTile value={formatCents(vm.costTodayCents)} label={t("todaySoFar")} />
-        </div>
+      <section className="flex flex-col gap-3 rounded-card-lg bg-staff p-5 text-white">
+        {hero.kind === "nobody_working" ? <h1 className="text-xl font-bold">{t("noOneOnShiftRightNow")}</h1> : <><h1 className="text-xl font-bold">{t("peopleOnShift", { count: hero.peopleCount })}</h1><strong className="font-headline text-4xl">{t("perHourRightNow", { amount: formatCents(hero.costPerHourCents) })}</strong><span className="text-sm font-semibold opacity-90">{t("perMinuteSecondary", { amount: formatCents(hero.costPerMinuteCents) })}</span></>}
+        <div className="border-t border-white/25 pt-3"><span className="text-sm font-semibold opacity-90">{t("staffCostToday")}</span><div className="font-headline text-[32px] font-bold"><Money cents={hero.costTodayCents} /></div></div>
       </section>
 
       <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-4">
@@ -93,14 +90,5 @@ export default async function StaffPage() {
         </p>
       </section>
     </PageShell>
-  );
-}
-
-function StatTile({ value, label }: { value: string; label: string }) {
-  return (
-    <div className="flex min-w-[104px] flex-1 flex-col items-center gap-0.5 rounded-2xl bg-white/10 px-1.5 py-3">
-      <span className="whitespace-nowrap font-headline text-[28px] font-bold leading-none">{value}</span>
-      <span className="text-xs opacity-90">{label}</span>
-    </div>
   );
 }

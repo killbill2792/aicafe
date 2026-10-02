@@ -202,3 +202,18 @@ describe("groupMenuCatalogItems", () => {
     expect(groups.map((g) => g.baseName)).toEqual(["Croissant", "Latte"]);
   });
 });
+
+describe("buildProductSizeContexts", () => {
+  it("switches every selected size to that size's real data and route", async () => {
+    const { buildProductSizeContexts } = await import("./menuCatalogViewModel");
+    const small = makeItem({ id: "small", baseName: "Latte", sizeLabel: "12 oz", priceCents: 500, ingredientsCostCents: 120, pricing: LOW_PRICING });
+    const large = makeItem({ id: "large", baseName: "Latte", sizeLabel: "16 oz", priceCents: 650, ingredientsCostCents: 180, pricing: HEALTHY_PRICING });
+    const selected = buildProductSizeContexts([small, large], "large").find((context) => context.selected)!;
+    expect(selected.href).toBe("/menu/large");
+    expect(selected.item.id).toBe("large");
+    expect(selected.item.priceCents).toBe(650);
+    expect(selected.item.ingredientsCostCents).toBe(180);
+    expect(selected.item.pricing).toBe(HEALTHY_PRICING);
+    expect(selected.item.recipe).toBe(large.recipe);
+  });
+});

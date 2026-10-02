@@ -221,7 +221,11 @@
     "vsLastPeriod": "vs el periodo anterior",
     "notEnoughDataToCompare": "Todavía no hay suficientes datos de ventas para comparar periodos.",
     "add": "Agregar",
-    "manageBills": "Gestionar gastos fijos"
+    "manageBills": "Gestionar gastos fijos",
+    "calendarProgressDays": "{complete} de {total} días completados",
+    "calendarBillsProjected": "Se proyecta cubrir las facturas el {date}",
+    "calendarBillsCovered": "Las facturas se cubrieron el {date}",
+    "calendarBillsNotCovered": "Las facturas no se cubrieron por completo este mes"
   },
   "Menu": {
     "title": "Menú",
@@ -294,7 +298,13 @@
     "sizePriceMayBeLow": "{size}: el precio puede ser bajo",
     "sizePriceMayBeHigh": "{size}: el precio puede ser alto",
     "multipleSizesNeedReview": "{count, plural, one {# tamaño necesita revisión} other {# tamaños necesitan revisión}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "chooseSize": "Elige un tamaño",
+    "sellingPriceLabel": "Precio de venta — {amount}",
+    "costToMakeLabel": "Costo de preparación — {amount}",
+    "viewEdit": "Ver / Editar",
+    "sizePriceMayBeLowWithSuggestion": "El precio de {size} puede ser bajo · Sugerido {amount}",
+    "sizePriceMayBeHighWithSuggestion": "El precio de {size} puede ser alto · Sugerido {amount}"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -397,7 +407,12 @@
     "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
     "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
     "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
-    "addStaff": "+ Agregar personal"
+    "addStaff": "+ Agregar personal",
+    "noOneOnShiftRightNow": "Nadie está trabajando ahora",
+    "peopleOnShift": "{count, plural, one {# persona trabajando} other {# personas trabajando}}",
+    "perHourRightNow": "{amount}/hora ahora",
+    "perMinuteSecondary": "{amount}/min",
+    "staffCostToday": "Costo del personal hoy hasta ahora"
   },
   "More": {
     "title": "Más",
@@ -600,8 +615,8 @@
     "roleLabel": "Puesto (opcional)",
     "wageLabel": "Salario",
     "wagePeriodHour": "Por hora",
-    "wagePeriodMonth": "Por mes",
-    "wagePeriodYear": "Por año",
+    "wagePeriodMonth": "Mensual",
+    "wagePeriodYear": "Anual",
     "salaryScheduleHint": "Define su horario semanal abajo — eso es lo que determina su costo por hora. No generará costo ni aparecerá en turno hasta que esté definido.",
     "basedOnScheduleLabel": "Según su horario actual: {hours} hrs/semana",
     "add": "Agregar",
@@ -620,8 +635,8 @@
     "daySat": "Sáb",
     "daySun": "Dom",
     "breakLabel": "Descanso sin pago cada día (minutos)",
-    "repeatsWeekly": "Se repite cada semana",
-    "justForMonth": "Solo por un mes",
+    "repeatsWeekly": "Usar cada semana",
+    "justForMonth": "Solo este mes",
     "monthLabel": "Mes",
     "saveSchedule": "Guardar horario",
     "scheduleSaved": "Guardado",
@@ -638,7 +653,13 @@
     "predictedTag": "De su horario — aún no confirmado",
     "deactivate": "Ya no trabaja aquí",
     "reactivate": "Volver a activar",
-    "inactiveTag": "Ya no está en el equipo"
+    "inactiveTag": "Ya no está en el equipo",
+    "editSchedule": "Editar horario",
+    "repeatsWeeklyHint": "Se repite cada semana hasta que lo cambies.",
+    "justForMonthHint": "Usa este horario solo para el mes seleccionado.",
+    "off": "libre",
+    "scheduleSummary": "{days} · {start}–{end}",
+    "breakSummary": "{minutes} min de descanso no pagado"
   },
   "Scenario": {
     "title": "Probar un escenario",
@@ -681,5 +702,36 @@
     "checkEmail": "Revisa tu correo — enviamos un enlace a {email}. Tócalo para iniciar sesión.",
     "error": "Eso no funcionó. Verifica el correo e inténtalo de nuevo.",
     "notConfigured": "El inicio de sesión aún no está conectado. Agrega las claves de Supabase en .env.local primero."
+  },
+  "Operations": {
+    "teamTitle": "Tu equipo de IA",
+    "aiLabel": "Compañeros de IA que usan los mismos datos confiables del café",
+    "alexRole": "Asesor de precios",
+    "oliviaRole": "Coordinadora de personal",
+    "mayaRole": "Insumos y desperdicio",
+    "leoRole": "Dinero y operaciones",
+    "prices": "{count, plural, =0 {Los precios se ven estables} one {# precio necesita revisión} other {# precios necesitan revisión}}",
+    "coverageClear": "No hay solicitudes de cobertura",
+    "supplies": "Vigilando costos de vasos e ingredientes",
+    "attention": "{count, plural, =0 {Nada requiere atención} one {# asunto necesita tu atención} other {# asuntos necesitan tu atención}}",
+    "eyebrow": "Operaciones del café",
+    "title": "Bandeja del equipo",
+    "intro": "Pocas decisiones claras, con los datos que las respaldan.",
+    "needsYou": "Te necesita",
+    "needsYouEmpty": "Nada necesita tu decisión ahora.",
+    "handled": "Resuelto",
+    "handledEmpty": "Nada se marca resuelto sin prueba de que ocurrió.",
+    "watching": "Vigilando",
+    "watchingEmpty": "No hay nada bajo vigilancia ahora.",
+    "priceQuestion": "¿Subir {item} de {current} → {suggested}?",
+    "pricingEvidence": "Recomendación del motor determinista de precios. No se cambió el precio en la caja.",
+    "missingCosts": "{count, plural, one {Falta # costo este mes.} other {Faltan # costos este mes.}}",
+    "mayaWatching": "Vigilando los costos ingresados de vasos e ingredientes.",
+    "inventoryUnavailable": "El inventario no está conectado, así que Maya no adivinará existencias.",
+    "transportUnavailable": "La mensajería al personal no está conectada. Olivia puede estructurar solicitudes, pero todavía no enviarlas.",
+    "focusedOn": "Viendo a {name} · {role}",
+    "estimate": "Estimación",
+    "benchmarkPricingEvidence": "Basado en el costo de la receta de este producto y en supuestos de referencia para cafeterías.",
+    "businessPricingEvidence": "Basado en el costo de la receta y el historial disponible de ventas y costos del café."
   }
 }

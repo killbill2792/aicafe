@@ -45,6 +45,7 @@ export type MonthCalendarViewModel = {
   daysInMonth: number;
   cells: DayCell[];
   detailsByDate: Record<string, DayDetail>;
+  billsCoveredOn: string | null;
 };
 
 export function buildMonthCalendarViewModel(params: {
@@ -121,7 +122,9 @@ export function buildMonthCalendarViewModel(params: {
     };
   }
 
-  return { monthKey, daysInMonth, cells, detailsByDate };
+  const coveredDates = recovery.buckets.map((bucket) => bucket.coveredOn).filter((date): date is string => Boolean(date));
+  const billsCoveredOn = recovery.buckets.length > 0 && coveredDates.length === recovery.buckets.length ? coveredDates.sort().at(-1) ?? null : null;
+  return { monthKey, daysInMonth, cells, detailsByDate, billsCoveredOn };
 }
 
 export function nextMonthKey(monthKey: string): string {

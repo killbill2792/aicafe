@@ -221,7 +221,11 @@
     "vsLastPeriod": "مقارنة بالفترة السابقة",
     "notEnoughDataToCompare": "لا توجد بيانات مبيعات كافية لمقارنة الفترات بعد.",
     "add": "إضافة",
-    "manageBills": "إدارة الفواتير"
+    "manageBills": "إدارة الفواتير",
+    "calendarProgressDays": "اكتمل {complete} من {total} يوماً",
+    "calendarBillsProjected": "من المتوقع تغطية الفواتير بحلول {date}",
+    "calendarBillsCovered": "تمت تغطية الفواتير في {date}",
+    "calendarBillsNotCovered": "لم تتم تغطية الفواتير بالكامل هذا الشهر"
   },
   "Menu": {
     "title": "القائمة",
@@ -294,7 +298,13 @@
     "sizePriceMayBeLow": "{size}: قد يكون السعر منخفضًا",
     "sizePriceMayBeHigh": "{size}: قد يكون السعر مرتفعًا",
     "multipleSizesNeedReview": "{count, plural, one {حجم واحد يحتاج مراجعة} other {# أحجام تحتاج مراجعة}}",
-    "priceRange": "{low}–{high}"
+    "priceRange": "{low}–{high}",
+    "chooseSize": "اختر الحجم",
+    "sellingPriceLabel": "سعر البيع — {amount}",
+    "costToMakeLabel": "تكلفة التحضير — {amount}",
+    "viewEdit": "عرض / تعديل",
+    "sizePriceMayBeLowWithSuggestion": "قد يكون سعر {size} منخفضاً · المقترح {amount}",
+    "sizePriceMayBeHighWithSuggestion": "قد يكون سعر {size} مرتفعاً · المقترح {amount}"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -397,7 +407,12 @@
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
     "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
-    "addStaff": "+ إضافة موظف"
+    "addStaff": "+ إضافة موظف",
+    "noOneOnShiftRightNow": "لا أحد في الوردية الآن",
+    "peopleOnShift": "{count, plural, one {شخص واحد في الوردية} two {شخصان في الوردية} other {# أشخاص في الوردية}}",
+    "perHourRightNow": "{amount}/ساعة الآن",
+    "perMinuteSecondary": "{amount}/دقيقة",
+    "staffCostToday": "تكلفة الموظفين اليوم حتى الآن"
   },
   "More": {
     "title": "المزيد",
@@ -600,8 +615,8 @@
     "roleLabel": "الوظيفة (اختياري)",
     "wageLabel": "الأجر",
     "wagePeriodHour": "بالساعة",
-    "wagePeriodMonth": "بالشهر",
-    "wagePeriodYear": "بالسنة",
+    "wagePeriodMonth": "شهري",
+    "wagePeriodYear": "سنوي",
     "salaryScheduleHint": "حدد جدوله الأسبوعي أدناه — فهذا ما يحدد تكلفته بالساعة. لن يُحتسب له أي تكلفة ولن يظهر أنه في وردية حتى يتم تحديد الجدول.",
     "basedOnScheduleLabel": "بناءً على جدوله الحالي: {hours} ساعة/أسبوع",
     "add": "إضافة",
@@ -620,8 +635,8 @@
     "daySat": "سب",
     "daySun": "أح",
     "breakLabel": "استراحة غير مدفوعة كل يوم (دقائق)",
-    "repeatsWeekly": "يتكرر كل أسبوع",
-    "justForMonth": "لشهر واحد فقط",
+    "repeatsWeekly": "استخدم كل أسبوع",
+    "justForMonth": "هذا الشهر فقط",
     "monthLabel": "الشهر",
     "saveSchedule": "حفظ الجدول",
     "scheduleSaved": "تم الحفظ",
@@ -638,7 +653,13 @@
     "predictedTag": "من جدوله — لم يُؤكَّد بعد",
     "deactivate": "لم يعد يعمل هنا",
     "reactivate": "إعادة تفعيل",
-    "inactiveTag": "لم يعد ضمن الفريق"
+    "inactiveTag": "لم يعد ضمن الفريق",
+    "editSchedule": "تعديل الجدول",
+    "repeatsWeeklyHint": "يتكرر كل أسبوع حتى تغيّره.",
+    "justForMonthHint": "استخدم هذا الجدول للشهر المحدد فقط.",
+    "off": "إجازة",
+    "scheduleSummary": "{days} · {start}–{end}",
+    "breakSummary": "استراحة غير مدفوعة {minutes} دقيقة"
   },
   "Scenario": {
     "title": "جرّب سيناريو",
@@ -681,5 +702,36 @@
     "checkEmail": "تحقق من بريدك الإلكتروني — أرسلنا رابطًا إلى {email}. اضغط عليه لتسجيل الدخول.",
     "error": "لم ينجح ذلك. تحقق من البريد الإلكتروني وحاول مرة أخرى.",
     "notConfigured": "تسجيل الدخول غير مفعّل بعد. أضف مفاتيح Supabase إلى .env.local أولًا."
+  },
+  "Operations": {
+    "teamTitle": "فريقك بالذكاء الاصطناعي",
+    "aiLabel": "زملاء ذكاء اصطناعي يستخدمون حقائق المقهى الموثوقة نفسها",
+    "alexRole": "مستشار التسعير",
+    "oliviaRole": "منسقة الموظفين",
+    "mayaRole": "المستلزمات والهدر",
+    "leoRole": "المال والعمليات",
+    "prices": "{count, plural, =0 {الأسعار مستقرة} one {سعر واحد يحتاج إلى مراجعة} two {سعران يحتاجان إلى مراجعة} other {# أسعار تحتاج إلى مراجعة}}",
+    "coverageClear": "لا توجد طلبات تغطية",
+    "supplies": "تراقب تكاليف الأكواب والمكونات",
+    "attention": "{count, plural, =0 {لا شيء يحتاج إلى انتباه} one {أمر واحد يحتاج إلى انتباهك} two {أمران يحتاجان إلى انتباهك} other {# أمور تحتاج إلى انتباهك}}",
+    "eyebrow": "عمليات المقهى",
+    "title": "صندوق وارد الفريق",
+    "intro": "قرارات قليلة وواضحة، مع الحقائق الداعمة.",
+    "needsYou": "يحتاج إليك",
+    "needsYouEmpty": "لا شيء يحتاج إلى قرارك الآن.",
+    "handled": "تم التعامل معه",
+    "handledEmpty": "لا يُعد أي شيء منجزاً من دون دليل.",
+    "watching": "قيد المراقبة",
+    "watchingEmpty": "لا شيء قيد المراقبة الآن.",
+    "priceQuestion": "هل ترفع سعر {item} من {current} ← {suggested}؟",
+    "pricingEvidence": "توصية من محرك التسعير الحتمي. لم يتغير السعر في نظام البيع.",
+    "missingCosts": "{count, plural, one {تكلفة واحدة مفقودة هذا الشهر.} two {تكلفتان مفقودتان هذا الشهر.} other {# تكاليف مفقودة هذا الشهر.}}",
+    "mayaWatching": "تراقب تكاليف الأكواب والمكونات المُدخلة.",
+    "inventoryUnavailable": "كميات المخزون غير متصلة، لذلك لن تخمن مايا مستويات المخزون.",
+    "transportUnavailable": "مراسلة الموظفين غير متصلة. تستطيع أوليفيا تنظيم طلبات التغطية، لكنها لا تستطيع إرسالها بعد.",
+    "focusedOn": "عرض {name} · {role}",
+    "estimate": "تقديري",
+    "benchmarkPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وافتراضات معيارية للمقاهي.",
+    "businessPricingEvidence": "استناداً إلى تكلفة وصفة هذا الصنف وسجل المبيعات والتكاليف المتاح للمقهى."
   }
 }

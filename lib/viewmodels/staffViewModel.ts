@@ -32,6 +32,16 @@ export type StaffViewModel = {
   worstDay: { date: string; cents: number } | null;
 };
 
+export type StaffHeroState =
+  | { kind: "nobody_working"; costTodayCents: number }
+  | { kind: "working"; peopleCount: number; costPerHourCents: number; costPerMinuteCents: number; costTodayCents: number };
+
+export function staffHeroState(vm: Pick<StaffViewModel, "onShift" | "costPerHourCents" | "costPerMinuteCents" | "costTodayCents">): StaffHeroState {
+  return vm.onShift.length === 0
+    ? { kind: "nobody_working", costTodayCents: vm.costTodayCents }
+    : { kind: "working", peopleCount: vm.onShift.length, costPerHourCents: vm.costPerHourCents, costPerMinuteCents: vm.costPerMinuteCents, costTodayCents: vm.costTodayCents };
+}
+
 export function buildStaffViewModel(snapshot: BusinessSnapshot): StaffViewModel {
   const now = new Date(snapshot.staffNowIso);
   const payrollTaxRate = snapshot.business.payrollTaxRate;
