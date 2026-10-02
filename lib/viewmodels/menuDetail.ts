@@ -1,4 +1,4 @@
-export const MENU_DETAIL_TABS = ["overview", "recipe", "pricing"] as const;
+export const MENU_DETAIL_TABS = ["overview", "recipe"] as const;
 export type MenuDetailTab = (typeof MENU_DETAIL_TABS)[number];
 
 export function parseMenuDetailTab(value: string | undefined | null): MenuDetailTab {

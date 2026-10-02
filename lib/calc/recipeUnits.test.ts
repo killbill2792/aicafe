@@ -2,14 +2,18 @@ import { describe, expect, it } from "vitest";
 import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity } from "./recipeUnits";
 
 describe("recipeDisplayUnitsFor", () => {
-  it("offers ml, fl oz, shot, and pump for a ml-based ingredient", () => {
-    expect(recipeDisplayUnitsFor("ml")).toEqual(["ml", "fl_oz", "shot", "pump"]);
+  it("offers the compatible physical units for a volume ingredient", () => {
+    expect(recipeDisplayUnitsFor("ml")).toEqual(["ml", "fl_oz"]);
   });
-  it("offers g, shot, and pump for a gram-based ingredient", () => {
-    expect(recipeDisplayUnitsFor("g")).toEqual(["g", "shot", "pump"]);
+  it("offers only g for a weight ingredient without a stored conversion", () => {
+    expect(recipeDisplayUnitsFor("g")).toEqual(["g"]);
   });
   it("offers only each for a count-based ingredient", () => {
     expect(recipeDisplayUnitsFor("each")).toEqual(["each"]);
+  });
+  it("offers only the operational conversions stored for that exact ingredient", () => {
+    expect(recipeDisplayUnitsFor("ml", [{ unit: "pump", baseUnitsPerUnit: 7.5 }])).toEqual(["ml", "fl_oz", "pump"]);
+    expect(recipeDisplayUnitsFor("g", [{ unit: "shot", baseUnitsPerUnit: 18 }])).toEqual(["g", "shot"]);
   });
 });
 

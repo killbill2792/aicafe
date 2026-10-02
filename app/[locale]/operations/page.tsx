@@ -13,6 +13,7 @@ import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
+import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 
 export const dynamic = "force-dynamic";
 type InboxStatus = "needs_you" | "handled" | "watching";
@@ -44,8 +45,13 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 }
 
 function taskHref(task: OperatingTask): string {
-  if (task.kind === "price_review" && task.entityId) return `/menu/${encodeURIComponent(task.entityId)}?tab=pricing`;
-  if (task.kind === "staff_coverage") return "/more/manage-staff";
+  if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
+  if (task.kind === "staff_coverage") {
+    const query = new URLSearchParams();
+    if (task.entityId) query.set("employee", task.entityId);
+    if (typeof task.payload.businessDate === "string") query.set("date", task.payload.businessDate);
+    return `/more/manage-staff${query.size ? `?${query}` : ""}`;
+  }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
   return "/more/uploads/ingredients";
@@ -56,12 +62,14 @@ function TaskList({ tasks, empty, names, t, category }: { tasks: OperatingTask[]
   return <section className="flex flex-col gap-3">{tasks.map((task) => {
     const identity = agentIdentity[task.agentId];
     const price = task.kind === "price_review";
-    const title = price ? String(task.payload.itemName) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTask") : t("mayaWatching");
-    const detail = price ? `${formatCents(Number(task.payload.currentPriceCents))} → ${formatCents(Number(task.payload.suggestedPriceCents))}` : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("inventoryUnavailable") : t("transportUnavailable");
+    const itemName = String(task.payload.itemName).replace(" · ", " ");
+    const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
+    const title = price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const detail = price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
     const action = price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     return <article key={task.id} data-entity-type={task.entityType} data-entity-id={task.entityId} className={`rounded-card-lg border-s-4 p-[18px] ${identity.border} ${identity.surface}`}>
       <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="small"/><p className={`font-bold ${identity.text}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
-      <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>
+      <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>{price && <p className="mt-1 text-sm text-ink-muted">{t("priceNumbers", { current: formatCents(Number(task.payload.currentPriceCents)), suggested: formatCents(Number(task.payload.suggestedPriceCents)) })}</p>}
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
       {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
     </article>;

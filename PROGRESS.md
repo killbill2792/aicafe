@@ -5,6 +5,54 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #14 Phase 4B final correction pass (2026-10-02 — code complete)
+
+1. Preserve the first product-photo anchor by resolving photos across every same-family item id,
+   and strengthen migration 24 with a tenant-scoped menu-item foreign key.
+2. Finalize the two-tab grouped workspace, exact-size price deep links, truthful grouped active
+   state, manageable inactive sizes, and coverage-aware sales totals.
+3. Make recipe units conversion-aware and stage the entire recipe editing session behind one Save
+   recipe / Cancel pair without changing recipe or pricing math.
+4. Correct Alex's deterministic high/low copy and exact-size Overview link, add focused regressions,
+   then run typecheck, lint, tests, build, and diff checks. No dependency or new migration.
+
+Result:
+- [x] Product photos resolve an existing immutable sibling anchor, with tenant-scoped database
+  integrity in migration 24 and a regression for adding a lexicographically earlier sibling UUID.
+- [x] The product workspace has only Overview / Recipe, exact-size price deep links, honest grouped
+  state, manageable inactive sizes, and coverage-aware Today / 7-day / 30-day sales totals.
+- [x] Recipe additions, edits, removals, and new-ingredient lines share one staged Save recipe /
+  Cancel session; physical and stored ingredient-specific operational units are the only choices.
+- [x] Alex uses deterministic low/high copy and the exact Overview editor link in en/es/ar.
+  Typecheck, lint (one pre-existing product-photo `<img>` warning), 293 tests, and diff checks pass.
+  Build is blocked only by failed Google Fonts fetches; no browser runtime exists for a screenshot.
+
+## Phase 4B — grouped product workspace (2026-10-02 — code complete)
+
+1. Rebuild product detail from current main as one grouped product workspace with compact all-size
+   overview cards, period sales, focused exact-size price editing, and URL-backed recipe focus.
+2. Add an all-size recipe matrix with size-specific add/remove/edit, ingredient type/search/create,
+   and failure-safe batch saves using the existing conversion rules.
+3. Add tenant-owned shared product photos with a private Storage bucket and additive RLS migration,
+   plus tenant-safe grouped rename and regression coverage.
+4. Refine deterministic AI task sentences/deep links and the warm desktop navigation without
+   changing Phase 4A calculations or mobile navigation architecture.
+5. Run typecheck, lint, full tests, build, and diff checks; commit, push the fresh branch, and open
+   a clean PR. No dependency added; existing Next.js, Supabase Storage, and UI facilities suffice.
+
+Result:
+- [x] Product detail is one stable, size-sorted workspace with all-size overview cards, canonical
+  Today/7-day/30-day quantities, exact-size price editing, and URL-backed recipe size focus.
+- [x] The recipe matrix supports direct per-size quantities/units, per-size add/remove, type-filtered
+  existing ingredient search, inline creation, and explicit partial-save failure reporting.
+- [x] Grouped renaming is an atomic tenant-checked database action; private product photos are shared
+  by the size family and support upload/change/remove through additive migration 24 (not applied).
+- [x] AI work is sentence-first with deterministic supporting facts and entity-preserving links;
+  desktop navigation uses the warm chocolate/tan treatment without changing mobile architecture.
+- [x] Typecheck, lint, 287 tests, and `git diff --check` pass. Production build is blocked only by
+  the environment failing to fetch the existing Figtree, Fraunces, and IBM Plex Sans Arabic fonts.
+  No browser runtime is installed, so a screenshot could not be captured.
+
 ## PR #12 Phase 4A final correctness follow-up (2026-10-02 — code complete)
 
 1. Suppress all Break-even what-if output without a valid base and make the missing-cost action use
@@ -1740,3 +1788,15 @@ Result:
 - [x] Only projection-owned monthly `supplies:{monthKey}` watchers expire automatically; real `supply:{itemId}` work survives.
 - [x] Binding navigation docs now specify six destinations and the localized AI brand label is used in en/es/ar.
 - [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.
+
+### Phase 4B review follow-up (PR #15)
+
+Plan:
+- Base item-sales periods on trustworthy POS backfill/sync coverage rather than requiring a rollup on every calendar day, and move the pure calculation/tests into `lib/calc/`.
+- Reconcile RecipeMatrix drafts when refreshed recipe props arrive after a successful save, and raise the newly added recipe status labels to the 17px body-text minimum.
+- Run typecheck, lint, tests, build, and diff checks; then commit and push one focused PR #15 follow-up without applying migration 24.
+
+Result:
+- [x] Item-sales periods now use completed Square backfill/sync bounds; closed days need no synthetic rollup, unsupported coverage remains unavailable, and the pure calculation/tests live in `lib/calc/`.
+- [x] Recipe refreshes remount the matrix from the saved recipe signature while staged additions remain visible until refreshed props arrive, so a successful addition never flashes back to Add.
+- [x] Recipe state labels use the 17px body minimum. Typecheck, lint (one pre-existing image warning), all 294 tests, and diff checks pass; build is blocked only by Google Font fetch failures.
