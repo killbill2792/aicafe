@@ -12,6 +12,7 @@ import {
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
 import { daysForPeriod, periodCoverage, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import { ownerProfitDisplayState } from "./ownerProfitDisplay";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -20,12 +21,18 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const totalCostsCents = salesCents - ownerProfitCentsForPeriod(days, runningCosts);
   const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
+  const coverage = periodCoverage(snapshot, period);
+  const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
 
   const prevDays = previousPeriodDays(snapshot, period);
   const prevRunningCosts = previousRunningCostsForPeriod(snapshot, period);
   const prevOwnerProfitCents = ownerProfitCentsForPeriod(prevDays, prevRunningCosts);
+  // No real "vs last period" comparison exists when this period's own result isn't available yet —
+  // showing a trend arrow would imply a confirmed number is moving, when there isn't one.
   const changeVsLastPeriodPct =
-    prevOwnerProfitCents !== 0 ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100 : null;
+    ownerProfitDisplay.kind !== "unavailable" && prevOwnerProfitCents !== 0
+      ? ((ownerProfitCents - prevOwnerProfitCents) / Math.abs(prevOwnerProfitCents)) * 100
+      : null;
 
   const buckets = recoveryBuckets(snapshot);
   const recovery = computeCostRecovery(buckets, actualDayContributions(snapshot));
@@ -59,10 +66,11 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   return {
     period,
-    coverage: periodCoverage(snapshot, period),
+    coverage,
     salesCents,
     totalCostsCents,
     ownerProfitCents,
+    ownerProfitDisplay,
     isEstimate,
     changeVsLastPeriodPct,
     costsRatio: ratio(totalCostsCents, salesCents),

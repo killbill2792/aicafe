@@ -11,16 +11,13 @@ import MoneyViewSwitch from "@/components/money/MoneyViewSwitch";
 import CostRecoveryView from "@/components/money/CostRecoveryView";
 import ProfitCostsView from "@/components/money/ProfitCostsView";
 import PageShell from "@/components/shared/PageShell";
+import { isValidMonthKey } from "@/lib/viewmodels/monthCalendar";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 function isPeriod(value: string | undefined): value is Period {
   return value === "today" || value === "week" || value === "month";
-}
-
-function isMonthKey(value: string | undefined): value is string {
-  return Boolean(value) && /^\d{4}-\d{2}$/.test(value!);
 }
 
 export default async function MoneyPage({
@@ -36,7 +33,7 @@ export default async function MoneyPage({
   const snapshot = await getSnapshot();
   const t = await getTranslations("Money");
   // Never past the current calendar month — "previous months" navigation only goes backward.
-  const calMonthKey = isMonthKey(calMonthParam) && calMonthParam! <= snapshot.monthKey ? calMonthParam! : snapshot.monthKey;
+  const calMonthKey = isValidMonthKey(calMonthParam) && calMonthParam <= snapshot.monthKey ? calMonthParam : snapshot.monthKey;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-44 pt-6 md:pb-16">

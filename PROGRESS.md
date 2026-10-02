@@ -5,6 +5,47 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #7 follow-up: previous-period windows, truthful missing-sales presentation, real 28-day window, calMonth hardening (2026-10-02 — code complete, pushed to owner-comprehension-pass)
+
+Four issues from independent review of the owner-comprehension pass, before merge:
+
+1. **`previousPeriodDays()` was still row-position based** (`last28Days.slice(-2,-1)` for
+   "yesterday", `slice(-14,-7)` for the previous week, `previousMonthDays.slice(0, monthActualDays.length)`
+   for previous MTD) — the same class of bug already fixed for the *current* period, just not yet
+   applied to the *comparison* period. Replaced with a single date-filtered implementation:
+   `previousPeriodDays()` now reuses the already-correct `previousPeriodCalendarRange()` and filters
+   `[...previousMonthDays, ...monthActualDays]` by date — never a slice. Regression tests
+   (`lib/viewmodels/period.test.ts`) cover the exact review scenario (rows Sep 28/29/Oct 1, today
+   Oct 2 → "yesterday" must resolve to Oct 1, not Sep 29) plus a previous-week sparse-date case and
+   a previous-month-to-date gap case.
+2. **Missing sales were presented as a confirmed loss.** `todayDay = zeroDailyFacts(...)` is correct
+   internally, but rendering "$0 sales − today's accrued bills" as a precise red Owner Profit implied
+   a result nobody has actually seen. New `ownerProfitDisplayState()` (`lib/viewmodels/ownerProfitDisplay.ts`,
+   tested) classifies a period's owner-profit figure as `unavailable` (zero actual days of data —
+   Home hero now reads "Waiting for today's sales," neutral color, no trend arrow, no "vs last
+   period" row), `partial` (some but not all days covered — the real figure still shows, now with a
+   "Partial" pill next to the label, on both Home's hero/You-keep tile and Money's Owner-profit
+   summary box), or `complete` (normal, unchanged). The underlying bill accrual is untouched — this
+   is presentation only, per the review's own framing.
+3. **`last28Days` was the last 28 rows, not a real 28-calendar-day window** — same failure mode as
+   the earlier `last7Days` fix, just never applied to the 28-day window the "last four weeks"
+   forecast/averages (break-even, cost-recovery projections, Home's avg-drinks-per-day) all read
+   from. `buildDayWindows()` (`lib/calc/dayWindows.ts`) now computes `last28Days` the same
+   date-filtered way as `last7Days` (shared `lastNCalendarDays` helper); `snapshot.server.ts` uses
+   it instead of `allDays.slice(-28)`. Every consumer gets the fix for free since they only ever read
+   `snapshot.last28Days`.
+4. **`calMonth` validation was too loose** — `/^\d{4}-\d{2}$/` accepted "2026-13" or "2026-00" before
+   that string reaches the historical-month query. New `isValidMonthKey()`
+   (`lib/viewmodels/monthCalendar.ts`, tested) requires a real month, 01–12; `money/page.tsx` uses it
+   in place of the old inline regex. Single entry point (`calMonth` URL param → `money/page.tsx` →
+   `CostRecoveryView` → `getMonthCalendar`), so no other validation point was needed.
+
+No schema changes, no other behavior changed. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run
+test` (213/213 — 15 new), `npm run build` all clean. Live-checked on the real test account: Week's
+Owner Profit now shows a "Partial" pill (4 of 7 days covered) on both Home and Money while still
+showing the real -$4,171.14 figure; Today (which now has a real $0 row) correctly shows the plain
+complete state with no pill.
+
 ## Owner comprehension pass: period correctness, profit color, calendar truth-telling, Today at a glance (2026-10-02 — code complete, pushed to owner-comprehension-pass, new branch off main after PR #6)
 
 Explain the business, don't just display the data. Six changes, all on Home/Money, no pricing/POS/

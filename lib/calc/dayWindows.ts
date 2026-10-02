@@ -27,6 +27,10 @@ export type DayWindows = {
    * not simply "the last 7 rows," which silently breaks the moment any day in that window has no row
    * while an older row still exists in the table. */
   last7Days: DailyFacts[];
+  /** Actual rows whose date falls in the 28 calendar days ending `todayDateStr` — same calendar-window
+   * rule as `last7Days` (used for the "last four weeks" forecast/averages), not "the last 28 rows,"
+   * which drifts from the real 28-day window the moment any day in it has no rollup. */
+  last28Days: DailyFacts[];
   /** The row for `todayDateStr` itself, or a zero day for that exact date if none exists yet — never
    * a substitute for yesterday or whatever the most recently-inserted row happens to be. */
   todayDay: DailyFacts;
@@ -35,25 +39,33 @@ export type DayWindows = {
   todayHasData: boolean;
 };
 
+/** Actual rows whose date falls within the `n` calendar days ending `todayDateStr` (inclusive). */
+function lastNCalendarDays(allDays: DailyFacts[], todayDateStr: string, n: number): DailyFacts[] {
+  const start = format(subDays(parseISO(todayDateStr), n - 1), "yyyy-MM-dd");
+  return allDays.filter((d) => d.date >= start && d.date <= todayDateStr);
+}
+
 /**
- * Builds the three period windows (today / week / month-to-date) directly from calendar dates,
- * independent of row order or gaps in `allDays` — see docs/03-screens.md and the Home/Money period
- * semantics fix: `allDays[allDays.length - 1]` (most recently inserted row) and `allDays.slice(-7)`
- * ("last 7 rows") both silently drift from the real calendar day/week the moment a day is missing a
- * rollup, which is common for a café that hasn't uploaded every day yet.
+ * Builds the four period windows (today / week / 28-day / month-to-date) directly from calendar
+ * dates, independent of row order or gaps in `allDays` — see docs/03-screens.md and the Home/Money
+ * period semantics fix: `allDays[allDays.length - 1]` (most recently inserted row) and
+ * `allDays.slice(-7)` / `allDays.slice(-28)` ("last N rows") all silently drift from the real
+ * calendar day/week/4-weeks the moment a day is missing a rollup, which is common for a café that
+ * hasn't uploaded every day yet.
  */
 export function buildDayWindows(allDays: DailyFacts[], todayDateStr: string, monthKey: string): DayWindows {
   const monthStart = `${monthKey}-01`;
   const monthActualDays = allDays.filter((d) => d.date >= monthStart && d.date <= todayDateStr);
 
-  const weekStart = format(subDays(parseISO(todayDateStr), 6), "yyyy-MM-dd");
-  const last7Days = allDays.filter((d) => d.date >= weekStart && d.date <= todayDateStr);
+  const last7Days = lastNCalendarDays(allDays, todayDateStr, 7);
+  const last28Days = lastNCalendarDays(allDays, todayDateStr, 28);
 
   const todayRow = allDays.find((d) => d.date === todayDateStr);
 
   return {
     monthActualDays,
     last7Days,
+    last28Days,
     todayDay: todayRow ?? zeroDailyFacts(todayDateStr),
     todayHasData: Boolean(todayRow),
   };

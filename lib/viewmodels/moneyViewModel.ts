@@ -19,6 +19,7 @@ import {
   previousRunningCostsForPeriod,
   type Period,
 } from "./period";
+import { ownerProfitDisplayState } from "./ownerProfitDisplay";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -53,6 +54,8 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
   const cardFeesCents = sumCents(days, (d) => d.cardFeesCents);
   const totalCostsCents = totalCostsCentsForPeriod(days, runningCosts);
   const ownerProfitCents = ownerProfitCentsForPeriod(days, runningCosts);
+  const coverage = periodCoverage(snapshot, period);
+  const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
 
   const ingredientsRatio = ratio(ingredientsCents, salesCents);
   const staffRatio = ratio(wagesCents + staffTaxCents, salesCents);
@@ -64,18 +67,18 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     { key: "sales", label: "Sales", deltaCents: salesCents - sumCents(prevDays, (d) => d.netSalesCents) },
     { key: "ingredients", label: "Ingredients", deltaCents: ingredientsCents - sumCents(prevDays, (d) => d.ingredientsCents), lowerIsBetter: true },
     { key: "staff", label: "Staff", deltaCents: wagesCents + staffTaxCents - sumCents(prevDays, (d) => d.wagesCents + d.staffTaxCents), lowerIsBetter: true },
-    {
-      key: "ownerProfit",
-      label: "Owner profit",
-      deltaCents: ownerProfitCents - ownerProfitCentsForPeriod(prevDays, prevRunningCosts),
-    },
+    // No real current-period owner profit to compare yet — omit the row rather than imply a
+    // confirmed figure is moving vs last period.
+    ...(ownerProfitDisplay.kind === "unavailable"
+      ? []
+      : [{ key: "ownerProfit", label: "Owner profit", deltaCents: ownerProfitCents - ownerProfitCentsForPeriod(prevDays, prevRunningCosts) }]),
   ];
 
   const enteredCount = snapshot.runningCostLines.filter((l) => !l.isMissing).length;
 
   return {
     period,
-    coverage: periodCoverage(snapshot, period),
+    coverage,
     salesCents,
     ingredientsCents,
     wagesCents,
@@ -84,6 +87,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     runningCostLines: runningCostLinesForPeriod(snapshot, period),
     totalCostsCents,
     ownerProfitCents,
+    ownerProfitDisplay,
     ingredientsRatio,
     staffRatio,
     combinedRatio,

@@ -7,7 +7,7 @@ import type { HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
-import { flowBarWidthPct, profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
+import { flowBarWidthPct, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 const BAND_COLOR: Record<HealthBand, string> = { healthy: "text-good", watch: "text-warn", high: "text-warn" };
 const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-muted" } as const;
@@ -77,7 +77,9 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
-  const tone = profitTone(vm.ownerProfitCents);
+  // No confirmed owner-profit figure to color when nothing's been uploaded yet — the flow bar and
+  // summary box fall back to a neutral, non-alarming presentation rather than a precise red loss.
+  const tone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
 
   const changeLabels: Record<string, string> = {
     sales: t("sales"),
@@ -148,10 +150,17 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
           </span>
         </div>
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-[#F1EAE0]"}`}>
-          <span className={`text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>{t("ownerProfit")}</span>
-          <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
-            <Money cents={vm.ownerProfitCents} />
+          <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>
+            {t("ownerProfit")}
+            {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill label={t("partialPill")} />}
           </span>
+          {vm.ownerProfitDisplay.kind === "unavailable" ? (
+            <span className="text-base font-bold text-ink-muted">{t("ownerProfitWaiting")}</span>
+          ) : (
+            <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
+              <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
+            </span>
+          )}
         </div>
       </section>
 

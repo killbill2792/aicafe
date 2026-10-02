@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { zeroDailyFacts } from "@/lib/calc";
 import type { MonthCalendarData } from "@/lib/data/monthCalendar.server";
-import { buildMonthCalendarViewModel, nextMonthKey, previousMonthKey } from "./monthCalendar";
+import { buildMonthCalendarViewModel, isValidMonthKey, nextMonthKey, previousMonthKey } from "./monthCalendar";
 
 const CATEGORY_AMOUNTS: MonthCalendarData["categoryAmounts"] = [
   { categoryCode: "rent", monthKey: "2026-10", amountCents: 31_000, isEstimate: false, isMissing: false }, // 31,000¢/mo -> 1,000¢/day over 31 days
@@ -87,5 +87,32 @@ describe("month key navigation", () => {
   it("steps a month key forward and backward across a year boundary", () => {
     expect(nextMonthKey("2026-12")).toBe("2027-01");
     expect(previousMonthKey("2027-01")).toBe("2026-12");
+  });
+});
+
+describe("isValidMonthKey", () => {
+  it("accepts real YYYY-MM values, month 01-12", () => {
+    expect(isValidMonthKey("2026-01")).toBe(true);
+    expect(isValidMonthKey("2026-12")).toBe(true);
+    expect(isValidMonthKey("2026-09")).toBe(true);
+  });
+
+  it("rejects an out-of-range month", () => {
+    expect(isValidMonthKey("2026-13")).toBe(false);
+    expect(isValidMonthKey("2026-00")).toBe(false);
+  });
+
+  it("rejects malformed shapes — missing zero-padding, extra day segment, wrong separators", () => {
+    expect(isValidMonthKey("2026-1")).toBe(false);
+    expect(isValidMonthKey("2026-10-01")).toBe(false);
+    expect(isValidMonthKey("2026/10")).toBe(false);
+    expect(isValidMonthKey("26-10")).toBe(false);
+  });
+
+  it("rejects non-string, empty, and injection-ish input without throwing", () => {
+    expect(isValidMonthKey(undefined)).toBe(false);
+    expect(isValidMonthKey(null)).toBe(false);
+    expect(isValidMonthKey("")).toBe(false);
+    expect(isValidMonthKey("2026-10' OR '1'='1")).toBe(false);
   });
 });

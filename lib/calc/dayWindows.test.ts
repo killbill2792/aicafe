@@ -65,4 +65,28 @@ describe("buildDayWindows", () => {
     const result = buildDayWindows(allDays, "2026-10-10", "2026-10");
     expect(result.last7Days.map((d) => d.date)).toEqual(["2026-10-04", "2026-10-05", "2026-10-06", "2026-10-07", "2026-10-08", "2026-10-09", "2026-10-10"]);
   });
+
+  it("last28Days uses the real 28-calendar-day window, not the last 28 rows", () => {
+    // The 28-day window ending 2026-10-03 is 2026-09-06..2026-10-03. Two rows sit before that
+    // window; a naive `allDays.slice(-28)` would include them anyway since only 6 rows exist in
+    // total (fewer than 28), so the slice is a no-op and can't filter anything out by date.
+    const allDays = [
+      day("2026-08-24", 999), // well before the window
+      day("2026-09-01", 1), // still before the window starts (2026-09-06)
+      day("2026-09-07", 2), // inside (2026-09-06..2026-10-03)
+      day("2026-09-20", 3),
+      day("2026-10-01", 4),
+      day("2026-10-03", 5), // today
+    ];
+    const result = buildDayWindows(allDays, "2026-10-03", "2026-10");
+    expect(result.last28Days.map((d) => d.date)).toEqual(["2026-09-07", "2026-09-20", "2026-10-01", "2026-10-03"]);
+  });
+
+  it("last28Days spans exactly 28 calendar days ending today when every day has a row", () => {
+    const allDays = Array.from({ length: 30 }, (_, i) => day(`2026-09-${String(i + 1).padStart(2, "0")}`, i));
+    const result = buildDayWindows(allDays, "2026-09-30", "2026-09");
+    expect(result.last28Days).toHaveLength(28);
+    expect(result.last28Days[0].date).toBe("2026-09-03");
+    expect(result.last28Days[result.last28Days.length - 1].date).toBe("2026-09-30");
+  });
 });

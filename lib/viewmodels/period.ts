@@ -27,13 +27,6 @@ export function periodCoverage(snapshot: BusinessSnapshot, period: Period): { ac
   return { actualDays: snapshot.monthActualDays.length, expectedDays: dayOfMonth };
 }
 
-/** The same-length window ending at the same point, one period back — for "vs last period" arrows. */
-export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
-  if (period === "month") return snapshot.previousMonthDays.slice(0, snapshot.monthActualDays.length);
-  if (period === "week") return snapshot.last28Days.slice(-14, -7);
-  return snapshot.last28Days.slice(-2, -1); // yesterday
-}
-
 export function previousMonthKey(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   const prev = new Date(year, month - 2, 1);
@@ -102,6 +95,21 @@ export function previousPeriodCalendarRange(snapshot: BusinessSnapshot, period: 
   const dayOfMonth = Number(snapshot.todayDateStr.split("-")[2]);
   const end = Math.min(dayOfMonth, daysInMonth(prevMonthKey));
   return { start: `${prevMonthKey}-01`, end: `${prevMonthKey}-${String(end).padStart(2, "0")}` };
+}
+
+/** The actual rows that fall inside `previousPeriodCalendarRange` — date-filtered, never an array
+ * slice. A previous-period window (today: yesterday only; week: the 7 calendar dates immediately
+ * before the current 7-day window; month: previous month's day 1 through the equivalent
+ * day-of-month) never reaches back further than the immediately preceding calendar month, so
+ * `previousMonthDays` (that whole month's actual rows) plus `monthActualDays` (this month's,
+ * so far) together cover every case — unlike `last28Days.slice(-2, -1)` /
+ * `last28Days.slice(-14, -7)`, which pick "the Nth most recent row" and silently return the wrong
+ * calendar day the moment any day in between has no rollup (found live: with rows Sep 28/29/Oct 1
+ * and today Oct 2, "yesterday" by array position was Sep 29, not Oct 1). */
+export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
+  const { start, end } = previousPeriodCalendarRange(snapshot, period);
+  const pool = [...snapshot.previousMonthDays, ...snapshot.monthActualDays];
+  return pool.filter((d) => d.date >= start && d.date <= end);
 }
 
 /** Running costs prorated across a period's full calendar range (see `periodCalendarRange`). */

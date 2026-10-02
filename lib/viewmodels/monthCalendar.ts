@@ -118,3 +118,10 @@ export function nextMonthKey(monthKey: string): string {
 }
 
 export { previousMonthKey };
+
+/** A real `YYYY-MM` with month 01–12 — e.g. rejects "2026-13", "2026-00", "2026-1", "2026-10-01".
+ * Validated before `calMonth` (a URL search param, so arbitrary user/bot input) is ever used to
+ * build a date range for a historical query. */
+export function isValidMonthKey(value: string | undefined | null): value is string {
+  return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+}

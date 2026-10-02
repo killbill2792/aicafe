@@ -6,7 +6,7 @@ import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
-import { profitTone, profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
+import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 import type { Period } from "@/lib/viewmodels/period";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
@@ -50,7 +50,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const posStatus = await getPosConnectionStatus();
 
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
-  const heroTone = profitTone(vm.ownerProfitCents);
+  const heroTone = vm.ownerProfitDisplay.kind === "unavailable" ? "neutral" : vm.ownerProfitDisplay.tone;
   const labelFor = (code: string) => (code === "yours" ? t("yours") : snapshot.runningCostLines.find((l) => l.categoryCode === code)?.label ?? code);
   const glanceCopy = todayGlanceCopy(glance, t, tCommon, labelFor);
   const coverageNote =
@@ -99,11 +99,18 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className={`flex flex-col gap-2.5 rounded-card-lg p-[22px] text-white ${profitToneBgClass(heroTone)}`}>
         <div className="flex items-center justify-between">
           <span className="text-[17px] font-semibold">{t("ownerProfit")}</span>
-          {vm.isEstimate && <EstimatePill tone="dark" label={t("estimatePill")} />}
+          <div className="flex items-center gap-1.5">
+            {vm.isEstimate && <EstimatePill tone="dark" label={t("estimatePill")} />}
+            {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill tone="dark" label={t("partialPill")} />}
+          </div>
         </div>
-        <div className="font-headline text-money-md font-bold">
-          <Money cents={vm.ownerProfitCents} />
-        </div>
+        {vm.ownerProfitDisplay.kind === "unavailable" ? (
+          <div className="text-2xl font-bold">{t("ownerProfitWaiting")}</div>
+        ) : (
+          <div className="font-headline text-money-md font-bold">
+            <Money cents={vm.ownerProfitDisplay.ownerProfitCents} />
+          </div>
+        )}
         {vm.changeVsLastPeriodPct !== null && (
           <div className="flex items-center gap-2 text-[15px] font-semibold">
             {changeUp ? <TrendingUp aria-hidden="true" size={18} /> : <TrendingDown aria-hidden="true" size={18} />}
@@ -125,8 +132,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
         <div className="flex min-w-[104px] flex-1 flex-col gap-1 rounded-2xl bg-card p-3.5">
           <span className="text-[13px] font-semibold text-ink-muted">{t("youKeep")}</span>
-          <span className={`break-words text-xl font-extrabold ${profitToneTextClass(heroTone)}`}>{formatCents(vm.ownerProfitCents)}</span>
-          <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.keepRatio * 100) })}</span>
+          {vm.ownerProfitDisplay.kind === "unavailable" ? (
+            <span className="text-sm font-semibold text-ink-muted">{t("ownerProfitWaitingShort")}</span>
+          ) : (
+            <>
+              <span className={`break-words text-xl font-extrabold ${profitToneTextClass(vm.ownerProfitDisplay.tone)}`}>
+                {formatCents(vm.ownerProfitDisplay.ownerProfitCents)}
+              </span>
+              <span className="text-xs text-ink-muted">{t("ofSales", { pct: Math.round(vm.keepRatio * 100) })}</span>
+            </>
+          )}
         </div>
       </div>
 

@@ -49,9 +49,8 @@ export async function getBusinessSnapshotFromDb(
   if (rollupError) throw rollupError;
 
   const allDays = (rollupRows ?? []).map(rowToDailyFacts);
-  const { monthActualDays, last7Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
+  const { monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
   const previousMonthDays = allDays.filter((d) => d.date >= prevMonthStart && d.date <= prevMonthEnd);
-  const last28Days = allDays.slice(-28);
 
   const [recurringResult, expensesResult, recoveryOrderResult] = await Promise.all([
     supabase
