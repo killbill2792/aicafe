@@ -48,7 +48,8 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
     await Promise.all(plan.refresh.map(async (task) => {
       const { error } = await supabase.from("operating_tasks").update({ agent_id: task.agentId, kind: task.kind,
         entity_type: task.entityType ?? null, entity_id: task.entityId ?? null, payload: task.payload,
-        confidence: task.confidence, evidence: task.evidence, updated_at: new Date().toISOString() })
+        confidence: task.confidence, evidence: task.evidence, status: task.status,
+        resolved_at: task.resolvedAt ?? null, updated_at: new Date().toISOString() })
         .eq("business_id", businessId).eq("id", task.id);
       if (error) throw error;
     }));

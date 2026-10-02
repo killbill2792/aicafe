@@ -211,7 +211,11 @@ export default function ProductDetailScreen({
                 </span>
                 <SizePricingStatus item={size} />
               </span>
-              <Link href={`/menu/${encodeURIComponent(size.id)}?tab=overview&edit=1`} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper no-underline">{t("viewEditSize")}</Link>
+              {size.id === item.id ? (
+                <button type="button" onClick={() => { setTab("overview"); setEditing(true); router.replace(`${pathname}?tab=overview&edit=1`, { scroll: false }); }} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</button>
+              ) : (
+                <Link href={`/menu/${encodeURIComponent(size.id)}?tab=overview&edit=1`} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper no-underline">{t("viewEditSize")}</Link>
+              )}
             </div>
           ))}
           <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">

@@ -84,9 +84,9 @@ Dark mode: not in v1. Café screens are used in bright light.
   wrapper rather than each page styling its own width. Forms stay comfortably narrow (e.g.
   `max-w-md`) even inside a wide shell — never stretch a form to the full shell width.
 - Navigation: bottom tab bar on mobile (`components/TabBar.tsx`, below the `md` breakpoint), a
-  fixed left sidebar on tablet/desktop (`components/SideNav.tsx`, `md:` and up) — same 5
-  destinations and wording either way, shared via `components/shared/navTabs.ts`: **Home, Money,
-  Menu, Staff, More**. "Add cost" is a large round button fixed above the tab bar on Home and
+  fixed left sidebar on tablet/desktop (`components/SideNav.tsx`, `md:` and up) — the same 6
+  primary destinations, shared via `components/shared/navTabs.ts`: **Home, AI Team, Money, Menu,
+  Staff, More**. Mobile may use the shorter localized label **Team** for AI Team. "Add cost" is a large round button fixed above the tab bar on Home and
   Money (tucks closer to the bottom edge on desktop, since there's no bottom tab bar to clear).
 - Card radius 20–24px, inner padding 16–20px, gap 14px between cards.
 - Touch targets at least 48px tall. Primary buttons 56px.

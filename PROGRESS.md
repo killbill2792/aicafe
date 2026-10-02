@@ -1673,3 +1673,18 @@ Result:
 - [x] Alex cards support tenant-validated Keep current and Later decisions through the existing response lifecycle, with compensating cleanup if the guarded task update fails.
 - [x] Teammate and All team links retain the active status tab.
 - [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.
+
+### Phase 3 final correctness follow-up (PR #11)
+
+Plan:
+- Make same-item View / Edit update local product state immediately instead of relying on query navigation to remount the component.
+- Reactivate re-derived expired deterministic tasks, persist status/resolution clearing, and restrict synthetic supply expiry to projection-owned monthly watchers.
+- Update the binding six-destination navigation documentation and localize the AI section label in en/es/ar.
+- Run typecheck, lint, full tests, and build, then commit and push one PR #11 follow-up.
+
+Result:
+- [x] Current-size View / Edit immediately selects Overview, opens editing, and updates the query; other sizes still navigate by item ID.
+- [x] Re-derived expired deterministic tasks reactivate and clear their old resolution, while handled/current lifecycle states remain preserved.
+- [x] Only projection-owned monthly `supplies:{monthKey}` watchers expire automatically; real `supply:{itemId}` work survives.
+- [x] Binding navigation docs now specify six destinations and the localized AI brand label is used in en/es/ar.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the known Google Fonts network failure for Figtree, Fraunces, and IBM Plex Sans Arabic.

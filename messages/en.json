@@ -711,6 +711,7 @@
   },
   "Operations": {
     "teamTitle": "Your AI team",
+    "brandLabel": "AI · CAFÉ PROFIT",
     "aiLabel": "AI teammates using the same trusted café facts",
     "alexRole": "Pricing Coach",
     "oliviaRole": "Staff Coordinator",

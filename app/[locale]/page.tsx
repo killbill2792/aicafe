@@ -182,7 +182,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       />
 
       <Link href="/operations" className="flex min-h-20 items-center justify-between gap-3 rounded-card-lg border border-[#D5C7B5] bg-[#EEE5D8] p-[18px] text-ink no-underline">
-        <span><span className="block text-sm font-bold text-ink-muted">AI · CAFÉ PROFIT</span><span className="block text-xl font-bold">{tOperations("teamTitle")}</span><span className="mt-1 block text-[15px] text-ink-muted">{tOperations("summaryCounts", { needs: team.needsYou.length, handled: team.handled.length, watching: team.watching.length })}</span></span>
+        <span><span className="block text-sm font-bold text-ink-muted">{tOperations("brandLabel")}</span><span className="block text-xl font-bold">{tOperations("teamTitle")}</span><span className="mt-1 block text-[15px] text-ink-muted">{tOperations("summaryCounts", { needs: team.needsYou.length, handled: team.handled.length, watching: team.watching.length })}</span></span>
         <span className="font-bold text-good">{tOperations("openTeam")}</span>
       </Link>
 

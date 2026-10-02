@@ -25,10 +25,10 @@ export function AgentAvatar({ agentId, size = "large" }: { agentId: AgentId; siz
   </span>;
 }
 
-type Copy = { title: string; aiLabel: string; names: Record<string, string>; roles: Record<string, string>; status: (member: TeamMemberState) => string };
+type Copy = { title: string; aiLabel: string; brandLabel: string; names: Record<string, string>; roles: Record<string, string>; status: (member: TeamMemberState) => string };
 export default function AITeamCard({ team, copy, selectedAgent, selectedStatus = "needs_you", major = false }: { team: OperationsTeamViewModel; copy: Copy; selectedAgent?: AgentId | null; selectedStatus?: "needs_you" | "handled" | "watching"; major?: boolean }) {
   return <section className={major ? "-mx-4 border-y border-[#D5C7B5] bg-[#EEE5D8] px-4 py-6 md:mx-0 md:rounded-card-lg md:border" : "rounded-card-lg border border-line bg-[#F1E9DE] p-[18px]"} aria-labelledby="ai-team-title">
-    <div className="mb-4"><p className="text-sm font-bold text-ink-muted">AI · CAFÉ PROFIT</p><h2 id="ai-team-title" className={`${major ? "font-headline text-3xl" : "text-xl"} font-bold text-ink`}>{copy.title}</h2><p className="mt-1 text-[17px] text-ink-muted">{copy.aiLabel}</p></div>
+    <div className="mb-4"><p className="text-sm font-bold text-ink-muted">{copy.brandLabel}</p><h2 id="ai-team-title" className={`${major ? "font-headline text-3xl" : "text-xl"} font-bold text-ink`}>{copy.title}</h2><p className="mt-1 text-[17px] text-ink-muted">{copy.aiLabel}</p></div>
     <div className="grid gap-2 sm:grid-cols-2">{team.members.map((member) => {
       const identity = agentIdentity[member.agentId];
       const selected = selectedAgent === member.agentId;

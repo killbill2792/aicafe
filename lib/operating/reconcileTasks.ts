@@ -1,6 +1,9 @@
 import type { OperatingTask } from "./tasks";
 
-const MANAGED_KINDS = new Set<OperatingTask["kind"]>(["price_review", "data_quality", "supply_check"]);
+export function isProjectionManagedTask(task: OperatingTask): boolean {
+  if (task.kind === "price_review" || task.kind === "data_quality") return true;
+  return task.kind === "supply_check" && /^supplies:\d{4}-\d{2}$/.test(task.id);
+}
 
 export type TaskReconciliation = {
   insert: OperatingTask[];
@@ -22,13 +25,14 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
       continue;
     }
     // Workflow fields not emitted by the projection survive, while every freshly-derived fact wins.
-    refresh.push({ ...current, status: persisted.status, createdAt: persisted.createdAt,
+    const status = persisted.status === "expired" ? current.status : persisted.status;
+    refresh.push({ ...current, status, createdAt: persisted.createdAt,
       payload: { ...persisted.payload, ...current.payload },
-      ...(persisted.resolvedAt ? { resolvedAt: persisted.resolvedAt } : {}) });
+      ...(status !== "expired" && status !== "handled" ? {} : persisted.resolvedAt ? { resolvedAt: persisted.resolvedAt } : {}) });
   }
 
   const expire = existing
-    .filter((task) => MANAGED_KINDS.has(task.kind) && !currentIds.has(task.id) && task.status !== "handled" && task.status !== "expired")
+    .filter((task) => isProjectionManagedTask(task) && !currentIds.has(task.id) && task.status !== "handled" && task.status !== "expired")
     .map((task) => ({ ...task, status: "expired" as const, resolvedAt: now.toISOString() }));
 
   return { insert, refresh, expire };
