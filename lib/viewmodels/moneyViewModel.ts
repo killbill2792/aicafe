@@ -10,7 +10,15 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, runningCostLinesForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import {
+  daysForPeriod,
+  periodCoverage,
+  previousPeriodDays,
+  runningCostsForPeriod,
+  runningCostLinesForPeriod,
+  previousRunningCostsForPeriod,
+  type Period,
+} from "./period";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -20,29 +28,6 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
   const allCovered = recovery.currentBucketCode === null;
-
-  // One row per day of the month, for the calendar strip (docs/03-screens.md S4 point 3).
-  const thresholds: number[] = [];
-  let running = 0;
-  for (const b of buckets) {
-    running += b.amountCents;
-    thresholds.push(running);
-  }
-  let cumulative = 0;
-  const calendarDays = [...actual, ...projected].map((d) => {
-    const before = cumulative;
-    cumulative += d.cents;
-    const coveredBucketCodes = buckets
-      .filter((_, i) => before < thresholds[i] && cumulative >= thresholds[i])
-      .map((b) => b.code);
-    return {
-      date: d.date,
-      day: Number(d.date.slice(-2)),
-      projected: d.projected,
-      isYours: before >= totalCents,
-      coveredBucketCodes,
-    };
-  });
 
   return {
     buckets: recovery.buckets,
@@ -55,9 +40,6 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     totalCents,
     actualDays: actual,
     projectedDays: projected,
-    calendarDays,
-    daysInMonth: snapshot.daysInMonth,
-    monthKey: snapshot.monthKey,
   };
 }
 
@@ -93,6 +75,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
 
   return {
     period,
+    coverage: periodCoverage(snapshot, period),
     salesCents,
     ingredientsCents,
     wagesCents,

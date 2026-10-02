@@ -14,6 +14,12 @@ export function profitToneTextClass(tone: ProfitTone): string {
   return tone === "good" ? "text-good" : tone === "warn" ? "text-warn" : "text-ink";
 }
 
+/** For a full-bleed colored card (white text on top) rather than colored text on the page
+ * background — zero stays a calm, non-alarming dark neutral rather than defaulting to green. */
+export function profitToneBgClass(tone: ProfitTone): string {
+  return tone === "good" ? "bg-good" : tone === "warn" ? "bg-warn" : "bg-ink";
+}
+
 /** Width (0–100) for a "from sales to pocket" flow-bar segment — always based on the magnitude
  * of `valueCents`, never its sign. A negative owner profit must still draw a visible bar (in red,
  * via `profitTone` separately) sized to how big the loss is relative to sales; using the signed

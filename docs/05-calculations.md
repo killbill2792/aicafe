@@ -73,7 +73,7 @@ Outputs
 - `projectedMonthEndProfitCents` = cumulative including projected days − Σ all buckets
 - Projected days use the average contribution of the same weekday over the last 4 weeks (fallback: last 14 days average).
 
-**Today in cups**: cups today × (today's contribution ÷ cups today), assigned to whichever bucket(s) today's money landed in (it can span two buckets). After everything is covered: "Every cup today is yours."
+**Today's contribution**: today's leftover money (the same per-day formula as above) assigned to whichever bucket(s) it lands in — it can finish one bucket and start the next in the same day. Once everything is covered, it's simply the owner's. Shown as a sentence ("Today's sales put $640 toward Rent — Rent is now 68% covered"), not per-unit icons: a "cup" isn't a meaningful unit for every business (bakery, restaurant), so nothing here is expressed per-cup.
 
 Note for the UI: month-to-date **Owner profit** prorates running costs by days elapsed, while **Cost recovery** counts the whole month's bills from day 1. So on Sep 26, owner profit so far ($15,092) is higher than "yours so far" ($13,812). Both are right; they will be equal at month end. The cost recovery screen shows "On track for $17,414 this month" to connect them.
 

@@ -60,8 +60,17 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
 
 export default async function ProfitCostsView({ snapshot, period }: { snapshot: BusinessSnapshot; period: Period }) {
   const t = await getTranslations("Money");
+  const tCommon = await getTranslations("Common");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
+  const coverageNote =
+    vm.coverage.actualDays < vm.coverage.expectedDays
+      ? period === "today"
+        ? tCommon("noSalesToday")
+        : period === "week"
+          ? tCommon("salesCoverageWeek", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+          : tCommon("salesCoverageMonth", { actual: vm.coverage.actualDays, expected: vm.coverage.expectedDays })
+      : null;
   // "% of sales" is meaningless with $0 sales — the old `Math.max(1, ...)` cents-floor made a
   // real (period-prorated) running-cost total divide against a fake 1¢ of sales, producing
   // nonsense like "150200000%" the moment a period had no sales yet. 0% reads as "not enough
@@ -79,6 +88,8 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
 
   return (
     <div className="flex flex-col gap-3.5">
+      {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
+
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-base font-bold">{t("fromSalesToPocket")}</h2>
         <div className="flex flex-col gap-2">

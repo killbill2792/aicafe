@@ -86,19 +86,19 @@ export function computeCostRecovery(buckets: RecoveryBucket[], days: DayContribu
   };
 }
 
-export type TodayCupsSlice = { bucketCode: string; cups: number; cents: number };
+export type TodayContributionSlice = { bucketCode: string; cents: number };
 
 /**
- * Splits today's cups across whichever bucket(s) today's money landed in. `cumulativeBeforeToday`
- * is the running total through yesterday; 1 cup ≈ contributionCentsToday / cupsToday.
+ * `computeTodayInCups`'s own sequential-fill slicing, without the "cups" framing — a business
+ * without a meaningful per-cup unit (bakery, restaurant) still has a dollar contribution today
+ * that lands in one or more buckets, same math, just not divided by `cupsToday`.
  */
-export function computeTodayInCups(params: {
-  cupsToday: number;
+export function computeTodayContribution(params: {
   contributionCentsToday: number;
   cumulativeBeforeToday: number;
   buckets: RecoveryBucket[];
-}): { slices: TodayCupsSlice[]; allYours: boolean } {
-  const { cupsToday, contributionCentsToday, cumulativeBeforeToday, buckets } = params;
+}): { slices: TodayContributionSlice[]; allYours: boolean } {
+  const { contributionCentsToday, cumulativeBeforeToday, buckets } = params;
 
   const thresholds: number[] = [];
   let running = 0;
@@ -109,14 +109,16 @@ export function computeTodayInCups(params: {
   const totalCents = running;
 
   if (cumulativeBeforeToday >= totalCents) {
-    return { slices: [{ bucketCode: "yours", cups: cupsToday, cents: contributionCentsToday }], allYours: true };
+    return {
+      slices: contributionCentsToday > 0 ? [{ bucketCode: "yours", cents: contributionCentsToday }] : [],
+      allYours: true,
+    };
   }
-  if (cupsToday === 0 || contributionCentsToday === 0) {
+  if (contributionCentsToday <= 0) {
     return { slices: [], allYours: false };
   }
 
-  const centsPerCup = contributionCentsToday / cupsToday;
-  const slices: TodayCupsSlice[] = [];
+  const slices: TodayContributionSlice[] = [];
   const todayEnd = cumulativeBeforeToday + contributionCentsToday;
 
   buckets.forEach((bucket, i) => {
@@ -125,15 +127,14 @@ export function computeTodayInCups(params: {
     const sliceStart = Math.max(cumulativeBeforeToday, bucketStart);
     const sliceEnd = Math.min(todayEnd, bucketEnd);
     if (sliceEnd > sliceStart) {
-      const sliceCents = sliceEnd - sliceStart;
-      slices.push({ bucketCode: bucket.code, cups: sliceCents / centsPerCup, cents: sliceCents });
+      slices.push({ bucketCode: bucket.code, cents: sliceEnd - sliceStart });
     }
   });
 
   if (todayEnd > totalCents) {
     const yoursCents = todayEnd - Math.max(totalCents, cumulativeBeforeToday);
     if (yoursCents > 0) {
-      slices.push({ bucketCode: "yours", cups: yoursCents / centsPerCup, cents: yoursCents });
+      slices.push({ bucketCode: "yours", cents: yoursCents });
     }
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeCostRecovery, computeTodayInCups } from "./costRecovery";
+import { computeCostRecovery, computeTodayContribution } from "./costRecovery";
 import type { DayContribution, RecoveryBucket } from "./types";
 
 const BUCKETS: RecoveryBucket[] = [
@@ -40,29 +40,29 @@ describe("computeCostRecovery", () => {
   });
 });
 
-describe("computeTodayInCups", () => {
-  it("says every cup is yours once everything is covered", () => {
-    const result = computeTodayInCups({
-      cupsToday: 200,
-      contributionCentsToday: 40_000,
-      cumulativeBeforeToday: 1_500,
-      buckets: BUCKETS, // total 1,500
-    });
+describe("computeTodayContribution", () => {
+  it("says everything today is yours once everything is covered — no cup unit involved", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 4_000, cumulativeBeforeToday: 1_500, buckets: BUCKETS });
     expect(result.allYours).toBe(true);
-    expect(result.slices).toEqual([{ bucketCode: "yours", cups: 200, cents: 40_000 }]);
+    expect(result.slices).toEqual([{ bucketCode: "yours", cents: 4_000 }]);
   });
 
-  it("splits today's cups across the bucket(s) the money actually lands in", () => {
-    const result = computeTodayInCups({
-      cupsToday: 100,
-      contributionCentsToday: 700, // cumulativeBeforeToday 800 -> 1,500: finishes rent (1,000), starts utilities
-      cumulativeBeforeToday: 800,
-      buckets: BUCKETS,
-    });
-    const rentSlice = result.slices.find((s) => s.bucketCode === "rent")!;
-    const utilitiesSlice = result.slices.find((s) => s.bucketCode === "utilities_power")!;
-    expect(rentSlice.cents).toBe(200); // 800 -> 1,000
-    expect(utilitiesSlice.cents).toBe(500); // 1,000 -> 1,500
-    expect(rentSlice.cups + utilitiesSlice.cups).toBeCloseTo(100, 6);
+  it("is a no-op for a business with zero sales today (no drinksCount dependency)", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 0, cumulativeBeforeToday: 200, buckets: BUCKETS });
+    expect(result).toEqual({ slices: [], allYours: false });
+  });
+
+  it("splits today's dollars across the bucket(s) the money lands in, same sequential-fill thresholds as computeCostRecovery", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 700, cumulativeBeforeToday: 800, buckets: BUCKETS });
+    expect(result.slices).toEqual([
+      { bucketCode: "rent", cents: 200 },
+      { bucketCode: "utilities_power", cents: 500 },
+    ]);
+    expect(result.allYours).toBe(false);
+  });
+
+  it("gives a single in-progress slice when today's money stays inside one bucket", () => {
+    const result = computeTodayContribution({ contributionCentsToday: 300, cumulativeBeforeToday: 0, buckets: BUCKETS });
+    expect(result.slices).toEqual([{ bucketCode: "rent", cents: 300 }]);
   });
 });

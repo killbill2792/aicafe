@@ -11,9 +11,20 @@ import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 export type Period = "today" | "week" | "month";
 
 export function daysForPeriod(snapshot: BusinessSnapshot, period: Period): DailyFacts[] {
-  if (period === "today") return [snapshot.latestDay];
+  if (period === "today") return [snapshot.todayDay];
   if (period === "week") return snapshot.last7Days;
   return snapshot.monthActualDays;
+}
+
+/** How much of a period's calendar range actually has a sales rollup — "today" is 0/1 when
+ * nothing's been uploaded yet, "week"/"month" count real rows against the calendar days elapsed.
+ * Lets the UI say "Sales data available for 1 of 2 days this month" instead of presenting a
+ * period with sparse data as if it were simply a quiet one. */
+export function periodCoverage(snapshot: BusinessSnapshot, period: Period): { actualDays: number; expectedDays: number } {
+  if (period === "today") return { actualDays: snapshot.todayHasData ? 1 : 0, expectedDays: 1 };
+  if (period === "week") return { actualDays: snapshot.last7Days.length, expectedDays: 7 };
+  const dayOfMonth = Number(snapshot.todayDateStr.slice(-2));
+  return { actualDays: snapshot.monthActualDays.length, expectedDays: dayOfMonth };
 }
 
 /** The same-length window ending at the same point, one period back — for "vs last period" arrows. */
@@ -23,7 +34,7 @@ export function previousPeriodDays(snapshot: BusinessSnapshot, period: Period): 
   return snapshot.last28Days.slice(-2, -1); // yesterday
 }
 
-function previousMonthKey(monthKey: string): string {
+export function previousMonthKey(monthKey: string): string {
   const [year, month] = monthKey.split("-").map(Number);
   const prev = new Date(year, month - 2, 1);
   return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`;

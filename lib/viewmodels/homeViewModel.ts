@@ -1,7 +1,6 @@
 import {
   avgMoneyLeftPerDrinkCents,
   computeCostRecovery,
-  computeTodayInCups,
   dailyCostsToCoverCents,
   drinksNeededPerDay,
   ownerProfitCentsForPeriod,
@@ -11,8 +10,8 @@ import {
   sumCents,
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
-import { actualDayContributions, dayContributionCents, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import { actualDayContributions, recoveryBuckets } from "./costRecoveryShared";
+import { daysForPeriod, periodCoverage, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
 
 export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const days = daysForPeriod(snapshot, period);
@@ -31,13 +30,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const buckets = recoveryBuckets(snapshot);
   const recovery = computeCostRecovery(buckets, actualDayContributions(snapshot));
 
-  const today = snapshot.latestDay;
-  const todayInCups = computeTodayInCups({
-    cupsToday: today.drinksCount,
-    contributionCentsToday: dayContributionCents(today),
-    cumulativeBeforeToday: cumulativeThrough(snapshot, snapshot.monthActualDays.length - 2),
-    buckets,
-  });
+  const today = snapshot.todayDay;
 
   const bestItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(b) - keptPerCup(a))[0] ?? null;
   const worstItem = [...snapshot.menuItems].sort((a, b) => keptPerCup(a) - keptPerCup(b))[0] ?? null;
@@ -66,6 +59,7 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
   return {
     period,
+    coverage: periodCoverage(snapshot, period),
     salesCents,
     totalCostsCents,
     ownerProfitCents,
@@ -75,7 +69,6 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     keepRatio: ratio(ownerProfitCents, salesCents),
     recovery,
     buckets,
-    todayInCups,
     bestItem,
     worstItem,
     avgDrinksPerDay: roundHalfUpToCent(avgDrinksPerDay),
@@ -89,9 +82,4 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
 
 function keptPerCup(item: BusinessSnapshot["menuItems"][number]) {
   return item.priceCents - item.ingredientsCentsToday;
-}
-
-function cumulativeThrough(snapshot: BusinessSnapshot, throughIndex: number): number {
-  const days = actualDayContributions(snapshot).slice(0, throughIndex + 1);
-  return days.reduce((sum, d) => sum + d.cents, 0);
 }
