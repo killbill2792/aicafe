@@ -5,6 +5,79 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #12 approved product-management + AI Team visual pass (2026-10-02 — code complete)
+
+1. Warm the desktop navigation and keep AI Team as a clear primary destination.
+2. Consolidate product detail into a product hero plus Overview/Recipe, with compact cards for every
+   stable-ordered size and per-size price, recipe, and serving actions.
+3. Add an all-size inline recipe matrix with one editing surface, inline ingredient selection, and
+   consistent Save/Cancel behavior using existing size-specific recipe actions.
+4. Improve AI teammate avatars, selection emphasis, status tabs, owner-friendly task copy, and
+   exact deep links without adding avatar/photo persistence.
+5. Localize en/es/ar, test, typecheck, lint, build, visually verify where tooling permits, and commit.
+   No migration, pricing formula, or new dependency.
+
+Implemented the warm desktop shell, grouped all stable-ordered sizes into compact product Overview
+cards, and replaced per-size recipe navigation with one inline all-size recipe matrix. Added real
+Today/7-day/30-day unit totals from order business dates. AI Team now puts status counts first, uses
+visual avatar presets (preview-only until persistence exists), stronger agent accents, plain-language
+task explanations, and exact workflow links. Photo editing is deliberately disabled with an explicit
+backend-gap message rather than fake persistence. Typecheck/lint and all 284 tests pass; build remains
+blocked only by the environment's Google Fonts fetch failure. No browser runtime is installed for a
+screenshot.
+
+## PR #12 Phase 4A final correctness follow-up (2026-10-02 — code complete)
+
+1. Suppress all Break-even what-if output without a valid base and make the missing-cost action use
+   the first named category's real workflow.
+2. Limit history-based cost expectations to the immediately previous month and regular categories,
+   while restoring fresh-café Getting Started detection from actual setup data.
+3. Add focused regressions, run typecheck/lint/full tests/build, and commit one small follow-up. No
+   migrations, pricing/recipe changes, or dependencies.
+
+Completed with a previous-month/regular-category expectation rule shared by the snapshot and alert
+generation, category-aware Break-even recovery, no what-if projection without a valid baseline, and
+fresh-café detection based on the absence of known setup data. `npx tsc --noEmit`, `npm run lint`,
+and all 285 tests pass. `npm run build` remains blocked only by the environment's inability to fetch
+the existing Google Fonts.
+
+## PR #12 Phase 4A correctness follow-up (2026-10-02 — code complete)
+
+1. Share expected-cost and category-destination rules across Break-even, Home, Leo, alerts, Bills,
+   and typed expense entry.
+2. Make meal-break review links open the exact employee/day and format timestamps in the café
+   timezone and active locale, including business-day-safe alert generation.
+3. Exclude partially priced recipes from contribution ranking and add an explicit recipe edit mode
+   for quantity/unit changes with Save and Cancel.
+4. Add regressions, run typecheck/lint/full tests/build, and commit one follow-up to PR #12. No
+   migration and no new dependency.
+
+Implemented the shared expected-cost rule and category-aware destination, exact employee/day shift
+review, business-timezone alert dates/times, READY-only menu ranking, and size-specific recipe-line
+quantity/unit editing. Added regressions for unused Repairs, partially priced recipes, category
+routing, and Pacific-time rendering. `npx tsc --noEmit`, `npm run lint`, and all 281 tests pass.
+`npm run build` remains blocked only by this environment failing to fetch the three Google Fonts.
+
+## Phase 4A — owner truth + product detail redesign (2026-10-02 — code complete)
+
+1. Make Home and Break-even missing-data states honest, rank only complete menu recipes, and label
+   alert impact as an estimate with the calculation explained.
+2. Reconcile generated alerts against current source truth and split Leo missing-cost work into one
+   stable, category-focused task per missing category.
+3. Add deterministic pricing-task snoozes using the existing JSON payload, including due/current and
+   materially-changed lifecycle coverage.
+4. Replace Product Detail with a single selected-size workflow: hero, Overview/Recipe/Pricing,
+   focused product/recipe editors, and a secondary size-management surface.
+5. Localize en/es/ar, add regression coverage, then run typecheck, lint, full tests, build, and a
+   browser screenshot. No dependencies and no database migration.
+
+Implemented all five areas without schema changes or new dependencies. Generated alert cleanup now
+resolves only still-open derived rows and keeps owner-dismissed/resolved history. Pricing snoozes are
+payload-only and reconciliation reopens a timed task only while its exact deterministic recommendation
+remains current. Verification: `npx tsc --noEmit`, `npm run lint`, and `npm run test` (276/276) pass.
+`npm run build` reached the production compile but the environment could not reach Google Fonts for
+Figtree, Fraunces, or IBM Plex Sans Arabic. No browser/screenshot tool is installed in this environment.
+
 ## PR #7 follow-up #2: negative-day "all yours" bug, estimate labeling on the calendar, integer-cent avg order value, 48px nav targets, localized milestone names, like-for-like comparisons (2026-10-02 — code complete, pushed to owner-comprehension-pass)
 
 Six more review findings before PR #7 merges:

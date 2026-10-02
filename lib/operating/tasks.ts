@@ -23,7 +23,7 @@ export type OperatingTask = {
   createdAt: string;
   resolvedAt?: string;
 };
-export type TaskResponseCode = "yes" | "no" | "plenty" | "getting_low" | "almost_out" | "use_price" | "keep_price" | "later";
+export type TaskResponseCode = "yes" | "no" | "plenty" | "getting_low" | "almost_out" | "use_price" | "keep_price" | "later_7" | "later_30" | "later_change";
 export type OperatingTaskResponse = {
   taskId: string;
   actor: "employee" | "owner";
@@ -90,7 +90,11 @@ export function applyTaskResponse(task: OperatingTask, response: OperatingTaskRe
     return task;
   }
   if (task.kind === "supply_check" && ["plenty", "getting_low", "almost_out"].includes(response.responseCode)) return { ...task, status: "watching", payload: { ...task.payload, qualitativeStatus: response.responseCode, responderId: response.respondentId ?? null, respondedAt: response.respondedAt } };
-  if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "later") return { ...task, status: "watching" };
+  if (task.kind === "price_review" && response.actor === "owner" && ["later_7", "later_30", "later_change"].includes(response.responseCode)) {
+    const days = response.responseCode === "later_7" ? 7 : response.responseCode === "later_30" ? 30 : null;
+    const snoozeUntil = days === null ? null : new Date(new Date(response.respondedAt).getTime() + days * 86_400_000).toISOString();
+    return { ...task, status: "watching", payload: { ...task.payload, snoozeMode: response.responseCode, snoozeUntil } };
+  }
   if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "use_price") return { ...task, status: "watching", payload: { ...task.payload, ownerChoice: response.responseCode, acceptedSuggestedPriceCents: task.payload.suggestedPriceCents, awaitingPriceApplication: true, priceAppliedToPos: false } };
   if (task.kind === "price_review" && response.actor === "owner" && response.responseCode === "keep_price") return { ...task, status: "handled", payload: { ...task.payload, ownerChoice: response.responseCode, awaitingPriceApplication: false, priceAppliedToPos: false }, resolvedAt: response.respondedAt };
   return task;

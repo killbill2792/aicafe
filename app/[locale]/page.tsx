@@ -4,6 +4,7 @@ import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
+import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
 import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
@@ -154,7 +155,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {vm.missingCategories.length > 0 && (
         <Link
-          href="/more/bills"
+          href={missingCostDestination(vm.missingCategories[0].categoryCode)}
           className="flex items-center justify-between gap-2 rounded-2xl bg-warn-tint p-3.5 text-[15px] font-medium text-warn no-underline"
         >
           <span>{t("missingCostBannerText", { category: vm.missingCategories[0].label })}</span>
@@ -204,8 +205,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         title={t("menuSection")}
         bestLabel={t("bestEarner")}
         worstLabel={t("keepsLeast")}
-        best={vm.bestItem ? { name: vm.bestItem.name, keptCents: vm.bestItem.priceCents - vm.bestItem.ingredientsCentsToday } : null}
-        worst={vm.worstItem ? { name: vm.worstItem.name, keptCents: vm.worstItem.priceCents - vm.worstItem.ingredientsCentsToday } : null}
+        best={vm.bestItem ? { name: vm.bestItem.name, keptCents: vm.bestItem.priceCents - vm.bestItem.ingredientsCentsToday, description: t("keepsAfterIngredients", { amount: formatCents(vm.bestItem.priceCents - vm.bestItem.ingredientsCentsToday) }) } : null}
+        worst={vm.worstItem ? { name: vm.worstItem.name, keptCents: vm.worstItem.priceCents - vm.worstItem.ingredientsCentsToday, description: t("keepsAfterIngredients", { amount: formatCents(vm.worstItem.priceCents - vm.worstItem.ingredientsCentsToday) }) } : null}
       />
 
       <BreakEvenTeaserCard
@@ -214,6 +215,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         neededLabel={t("needDrinks", { count: Number.isFinite(vm.drinksNeeded) ? vm.drinksNeeded : "—" })}
         averageLabel={t("youAverage", { count: vm.avgDrinksPerDay })}
         progressPct={(vm.avgDrinksPerDay / Math.max(1, vm.drinksNeeded)) * 100}
+        unavailableLabel={vm.breakEvenUnavailableReason === "missing_costs" ? t("breakEvenMissingCosts", { categories: vm.missingCategories.map((line) => line.label).join(", ") }) : vm.breakEvenUnavailableReason === "missing_sales" ? t("breakEvenMissingSales") : undefined}
       />
 
       <AlertsTeaserCard

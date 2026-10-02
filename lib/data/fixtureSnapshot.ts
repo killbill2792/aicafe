@@ -41,13 +41,13 @@ function scaledDay(date: string, scale: number): DailyFacts {
 }
 
 const MENU_ITEMS: MenuItemSnapshot[] = [
-  { id: "latte", name: "Latte", priceCents: 525, prepSeconds: 90, category: "drink", ingredientsCentsToday: 95, hasRecipe: true, quantitySoldLast28Days: 3_360 },
-  { id: "cappuccino", name: "Cappuccino", priceCents: 450, prepSeconds: 90, category: "drink", ingredientsCentsToday: 74, hasRecipe: true, quantitySoldLast28Days: 2_016 },
-  { id: "cold_brew", name: "Cold brew", priceCents: 575, prepSeconds: 30, category: "drink", ingredientsCentsToday: 88, hasRecipe: true, quantitySoldLast28Days: 1_176 },
-  { id: "mocha", name: "Mocha", priceCents: 625, prepSeconds: 105, category: "drink", ingredientsCentsToday: 137, hasRecipe: true, quantitySoldLast28Days: 1_344 },
-  { id: "matcha_latte", name: "Matcha latte", priceCents: 600, prepSeconds: 120, category: "drink", ingredientsCentsToday: 186, hasRecipe: true, quantitySoldLast28Days: 672 },
-  { id: "drip", name: "Drip coffee", priceCents: 325, prepSeconds: 30, category: "drink", ingredientsCentsToday: 46, hasRecipe: true, quantitySoldLast28Days: 3_024 },
-  { id: "muffin", name: "Muffin", priceCents: 400, prepSeconds: 15, category: "food", ingredientsCentsToday: 208, hasRecipe: true, quantitySoldLast28Days: 1_848 },
+  { id: "latte", name: "Latte", priceCents: 525, prepSeconds: 90, category: "drink", ingredientsCentsToday: 95, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 3_360 },
+  { id: "cappuccino", name: "Cappuccino", priceCents: 450, prepSeconds: 90, category: "drink", ingredientsCentsToday: 74, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 2_016 },
+  { id: "cold_brew", name: "Cold brew", priceCents: 575, prepSeconds: 30, category: "drink", ingredientsCentsToday: 88, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 1_176 },
+  { id: "mocha", name: "Mocha", priceCents: 625, prepSeconds: 105, category: "drink", ingredientsCentsToday: 137, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 1_344 },
+  { id: "matcha_latte", name: "Matcha latte", priceCents: 600, prepSeconds: 120, category: "drink", ingredientsCentsToday: 186, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 672 },
+  { id: "drip", name: "Drip coffee", priceCents: 325, prepSeconds: 30, category: "drink", ingredientsCentsToday: 46, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 3_024 },
+  { id: "muffin", name: "Muffin", priceCents: 400, prepSeconds: 15, category: "food", ingredientsCentsToday: 208, hasRecipe: true, costStatus: "READY", quantitySoldLast28Days: 1_848 },
 ];
 
 // Staff screen demo data — matches design/mockups/staff.html's own example roster (same names,

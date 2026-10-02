@@ -1,305 +1,86 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Check, TriangleAlert } from "lucide-react";
+import { Camera, Check, Pencil, Plus, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { Link, usePathname, useRouter } from "@/i18n/navigation";
+import { usePathname, useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { setMenuItemActive } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
-import { getItemPricingStatus } from "@/lib/viewmodels/menuCatalogViewModel";
-import { menuItemHref, type MenuDetailTab } from "@/lib/viewmodels/menuDetail";
-import { usePricingStatusChip } from "./usePricingStatusChip";
-import ProductEditForm from "./ProductEditForm";
-import RecipeEditor from "./RecipeEditor";
-import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
+import { type MenuDetailTab } from "@/lib/viewmodels/menuDetail";
 import { stableSortSizes } from "@/lib/menu/sizeLabel";
+import ProductEditForm from "./ProductEditForm";
+import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
+import RecipeMatrix from "./RecipeMatrix";
+import { usePricingStatusChip } from "./usePricingStatusChip";
 
-const PRICING_EXPLAINER_KEYS = {
-  BENCHMARK_EXPLAINER: "pricingExplainerBenchmark",
-  BUSINESS_ADJUSTED_EXPLAINER: "pricingExplainerBusinessAdjusted",
-  INCOMPLETE_DATA_EXPLAINER: "pricingExplainerIncomplete",
-} as const;
+type SalesPeriod = "today" | "last7" | "last30";
 
-const PRICING_WARNING_KEYS = {
-  BUSINESS_ADJUSTMENT_CAPPED: "pricingWarningCapped",
-  CATEGORY_PRICE_OUTLIER: "pricingWarningCategoryOutlier",
-  CATEGORY_COST_PERCENT_OUTLIER: "pricingWarningCostOutlier",
-  INCOMPLETE_RECIPE: "pricingWarningIncompleteRecipe",
-  LOW_SAMPLE_SIZE: "pricingWarningLowSample",
-} as const;
-
-export default function ProductDetailScreen({
-  item,
-  editItem,
-  ingredients,
-  menuGroupOptions,
-  ingredientConversions,
-  siblingSizes,
-  justCreated,
-  initialTab,
-  initialEditing = false,
-}: {
-  item: MenuControlItem;
-  editItem: MenuItemForEdit;
-  ingredients: IngredientOption[];
-  menuGroupOptions: string[];
-  ingredientConversions: Record<string, IngredientUnitConversion[]>;
-  siblingSizes: MenuControlItem[];
-  justCreated?: boolean;
-  initialTab: MenuDetailTab;
-  initialEditing?: boolean;
+export default function ProductDetailScreen({ item, editItem, editSizes, ingredients, menuGroupOptions, ingredientConversions, siblingSizes, initialTab, initialEditing = false }: {
+  item: MenuControlItem; editItem: MenuItemForEdit; editSizes: MenuItemForEdit[]; ingredients: IngredientOption[]; menuGroupOptions: string[];
+  ingredientConversions: Record<string, IngredientUnitConversion[]>; siblingSizes: MenuControlItem[]; justCreated?: boolean;
+  initialTab: MenuDetailTab; initialEditing?: boolean; copiedFrom?: string;
 }) {
   const t = useTranslations("Menu");
-  const tEdit = useTranslations("ManageMenu");
+  const te = useTranslations("ManageMenu");
   const router = useRouter();
   const pathname = usePathname();
-  const statusChip = usePricingStatusChip();
+  const pricingChip = usePricingStatusChip();
   const [tab, setTab] = useState<MenuDetailTab>(initialTab);
-  const [editing, setEditing] = useState(initialEditing);
+  const [editingItemId, setEditingItemId] = useState<string | null>(initialEditing ? item.id : null);
   const [addingSize, setAddingSize] = useState(false);
-  const [isTogglingActive, setIsTogglingActive] = useState(false);
-  const [toggleError, setToggleError] = useState<string | null>(null);
-
-  async function handleToggleActive() {
-    setIsTogglingActive(true);
-    setToggleError(null);
-    const result = await setMenuItemActive(item.id, !item.active);
-    setIsTogglingActive(false);
-    // A failed archive/restore must leave the badge and button exactly as they were, with the
-    // failure visible — never silently refresh as though the item's state actually changed.
-    if (result.ok) router.refresh();
-    else setToggleError(result.error);
-  }
-
-  const sizeSiblingsForDialog: SizeSibling[] = siblingSizes.map((sibling) => ({ id: sibling.id, sizeLabel: sibling.sizeLabel, name: sibling.name, priceCents: sibling.priceCents }));
-  const chip = statusChip(item);
-  const pricingStatus = getItemPricingStatus(item);
-  const sizeCount = 1 + siblingSizes.length;
+  const [period, setPeriod] = useState<SalesPeriod>("last30");
+  const [error, setError] = useState<string | null>(null);
   const allSizes = stableSortSizes([item, ...siblingSizes]);
+  const editById = new Map(editSizes.map((size) => [size.id, size]));
+  const activeCount = allSizes.filter((size) => size.active).length;
 
-  const TABS: { key: MenuDetailTab; label: string }[] = [
-    { key: "overview", label: t("tabOverview") },
-    { key: "recipe", label: t("tabRecipe") },
-    { key: "sizes", label: `${t("tabSizes")} (${sizeCount})` },
-    { key: "pricing", label: t("tabPricing") },
-  ];
+  function chooseTab(next: MenuDetailTab) { setTab(next); router.replace(`${pathname}?tab=${next}`, { scroll: false }); }
+  async function toggleSize(size: MenuControlItem) { setError(null); const result = await setMenuItemActive(size.id, !size.active); if (result.ok) router.refresh(); else setError(result.error); }
 
-  return (
-    <>
-      <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-        {allSizes.length > 1 && (
-          <div className="flex gap-2 overflow-x-auto pb-1" aria-label={t("sizes")}>
-            {allSizes.map((size) => (
-              <Link
-                key={size.id}
-                href={menuItemHref(size.id, tab)}
-                aria-current={size.id === item.id ? "page" : undefined}
-                className={`flex min-h-12 shrink-0 items-center rounded-full border px-4 text-sm font-bold no-underline ${size.id === item.id ? "border-ink bg-ink text-paper" : "border-line bg-paper text-ink"}`}
-              >
-                {size.sizeLabel ?? size.name}
-              </Link>
-            ))}
-          </div>
-        )}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-end gap-3">
-            <span className="text-[17px] text-ink-muted">{t("sellingPrice")}</span>
-            <strong className="font-headline text-4xl">{formatCents(item.priceCents)}</strong>
-          </div>
-          <button type="button" onClick={() => setEditing((prev) => !prev)} className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3 text-sm font-bold text-ink">
-            <Pencil aria-hidden="true" size={16} /> {t("editAction")}
-          </button>
-        </div>
-        {item.catalogSource !== "manual" && <p className="text-sm text-ink-muted">{t("syncedFrom", { source: item.provenance.replace("_", " ") })}</p>}
-        <span className={`w-fit rounded-full px-3 py-1 text-sm font-bold ${item.active ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>{item.active ? t("active") : t("inactive")}</span>
-        {editing && (
-          <div className="border-t border-line pt-3">
-            <ProductEditForm
-              item={editItem}
-              menuGroupOptions={menuGroupOptions}
-              labels={{
-                nameLabel: tEdit("nameLabel"), sizeLabel: tEdit("sizeLabel"), priceLabel: tEdit("priceLabel"), prepSecondsLabel: tEdit("prepSecondsLabel"), prepSecondsHelp: tEdit("prepSecondsHelp"),
-                menuGroupLabel: tEdit("menuGroupLabel"), itemTypeLabel: tEdit("itemTypeLabel"), itemTypeHelp: tEdit("itemTypeHelp"), saveChanges: tEdit("saveChanges"),
-                itemTypes: {
-                  AUTOMATIC: tEdit("itemTypeAutomatic"), ESPRESSO_COFFEE: tEdit("itemTypeEspressoCoffee"), BREWED_COFFEE: tEdit("itemTypeBrewedCoffee"), COLD_BREW: tEdit("itemTypeColdBrew"),
-                  TEA: tEdit("itemTypeTea"), OTHER_DRINK: tEdit("itemTypeOtherDrink"), BAKERY: tEdit("itemTypeBakery"), FOOD: tEdit("itemTypeFood"), RETAIL: tEdit("itemTypeRetail"),
-                },
-                itemTypeExamples: {
-                  ESPRESSO_COFFEE: tEdit("itemTypeEspressoCoffeeExample"), BREWED_COFFEE: tEdit("itemTypeBrewedCoffeeExample"), OTHER_DRINK: tEdit("itemTypeOtherDrinkExample"),
-                },
-              }}
-              onSaved={() => { setEditing(false); router.refresh(); }}
-            />
-          </div>
-        )}
-      </section>
-
-      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="tablist">
-        {TABS.map(({ key, label }) => (
-          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => { setTab(key); router.replace(`${pathname}?tab=${key}`, { scroll: false }); }} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${tab === key ? "bg-ink text-paper" : "bg-card text-ink"}`}>
-            {label}
-          </button>
-        ))}
+  return <>
+    <section className="grid gap-4 rounded-card-lg bg-card p-[18px] shadow-sm sm:grid-cols-[220px_1fr]">
+      <div className="relative flex min-h-44 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-[#E8C79F] to-[#8B5A38] text-white">
+        <span className="text-6xl" aria-hidden>☕</span>
+        <button type="button" disabled title={t("photoBackendGap")} className="absolute bottom-3 end-3 flex min-h-12 items-center gap-2 rounded-full bg-white px-4 text-sm font-bold text-ink opacity-90 disabled:cursor-not-allowed"><Camera aria-hidden size={18}/>{t("editPhoto")}</button>
       </div>
-
-      {tab === "overview" && (
-        <div className="flex flex-col gap-3 md:grid md:grid-cols-2 md:items-start md:gap-3">
-          <section className="flex min-h-36 items-center justify-center rounded-card-lg border border-dashed border-line bg-paper p-[18px] text-center text-ink-muted" aria-label={t("photoPlaceholder")}>
-            <span><span className="block text-3xl" aria-hidden="true">☕</span><span className="mt-1 block text-sm font-semibold">{t("photoPlaceholder")}</span></span>
-          </section>
-          <section className="flex flex-col justify-center gap-1 rounded-card-lg bg-card p-[18px]">
-            <Row label={t("selectedSize")} value={item.sizeLabel ?? item.baseName} strong />
-            <Row label={t("sellingPrice")} value={formatCents(item.priceCents)} />
-            {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
-              <strong className="text-lg">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</strong>
-            ) : (
-              <strong className="text-lg text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</strong>
-            )}
-          </section>
-          <section className={`flex flex-col gap-1 rounded-card-lg border p-[18px] ${chip.good ? "border-good/20 bg-good-tint" : "border-warn/25 bg-warn-tint"}`}>
-            <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
-              {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
-              {chip.label}
-            </span>
-            {(pricingStatus.kind === "low" || pricingStatus.kind === "high") && (
-              <div className="mt-0.5 flex flex-col gap-0.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-ink-muted">{t("youCharge")}</span>
-                  <span className="font-semibold">{formatCents(item.priceCents)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-ink-muted">{t("suggested")}</span>
-                  <span className="font-bold text-warn">{formatCents(pricingStatus.suggestedPriceCents)}</span>
-                </div>
-              </div>
-            )}
-          </section>
-          <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px] md:col-span-2">
-            <h2 className="text-lg font-bold">{t("recentSales")}</h2>
-            {item.unitsSold === null && item.revenueCents === null ? (
-              <p className="text-ink-muted">{t("noSalesHistory")}</p>
-            ) : (
-              <>
-                {item.unitsSold !== null && <Row label={t("unitsSold")} value={String(item.unitsSold)} />}
-                {item.revenueCents !== null && <Row label={t("revenue")} value={formatCents(item.revenueCents)} />}
-              </>
-            )}
-          </section>
-        </div>
-      )}
-
-      {tab === "recipe" && (
-        <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-          {justCreated && (
-            <p className="rounded-xl bg-good-tint px-3 py-2.5 text-sm font-semibold text-good">{t("setupRecipeBanner")}</p>
-          )}
-          <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} />
-        </section>
-      )}
-
-      {tab === "sizes" && (
-        <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px]">
-          {allSizes.map((size) => (
-            <div key={size.id} className={`flex min-h-24 items-center gap-3 rounded-xl border px-3 py-2 text-ink ${size.id === item.id ? "border-ink bg-paper" : "border-line"}`}>
-              <span className="min-w-0 flex-1">
-                <span className="flex items-center justify-between gap-2"><strong>{size.sizeLabel ?? size.name}</strong><strong>{formatCents(size.priceCents)}</strong></span>
-                <span className="mt-1 block text-sm text-ink-muted">
-                  {size.costStatus === "READY" && size.ingredientsCostCents !== null ? t("sizeCostToMake", { amount: formatCents(size.ingredientsCostCents) }) : t("recipeIncomplete")}
-                </span>
-                <SizePricingStatus item={size} />
-              </span>
-              {size.id === item.id ? (
-                <button type="button" onClick={() => { setTab("overview"); setEditing(true); router.replace(`${pathname}?tab=overview&edit=1`, { scroll: false }); }} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper">{t("viewEditSize")}</button>
-              ) : (
-                <Link href={`/menu/${encodeURIComponent(size.id)}?tab=overview&edit=1`} className="flex min-h-12 shrink-0 items-center rounded-full bg-ink px-3 text-sm font-bold text-paper no-underline">{t("viewEditSize")}</Link>
-              )}
-            </div>
-          ))}
-          <button type="button" onClick={() => setAddingSize(true)} className="mt-1 min-h-12 rounded-full border border-good px-4 text-sm font-semibold text-good">
-            {tEdit("addAnotherSize", { name: editItem.baseName })}
-          </button>
-        </section>
-      )}
-
-      {tab === "pricing" && (
-        <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-          <Row label={t("sellingPrice")} value={formatCents(item.priceCents)} strong />
-          {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
-            <p className="text-[17px]">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</p>
-          ) : (
-            <p className="text-[17px] text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</p>
-          )}
-          <div className={`flex flex-col gap-1.5 rounded-xl p-3 ${chip.good ? "bg-good-tint" : "bg-warn-tint"}`}>
-            <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
-              {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
-              {chip.label}
-            </span>
-            {(pricingStatus.kind === "low" || pricingStatus.kind === "high") && (
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-ink-muted">{t("suggested")}</span>
-                <strong className="text-lg text-warn">{formatCents(pricingStatus.suggestedPriceCents)}</strong>
-              </div>
-            )}
-            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && (
-              <p className="text-sm text-ink-muted">
-                <span className="font-semibold">{tEdit("whyLabel")}</span> {tEdit(PRICING_EXPLAINER_KEYS[item.pricing.explanationCode])}
-              </p>
-            )}
-            {item.pricing?.warnings.map((warning) => (
-              <p key={warning} className="text-sm font-semibold text-warn">{tEdit(PRICING_WARNING_KEYS[warning])}</p>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={handleToggleActive}
-          disabled={isTogglingActive}
-          className="flex min-h-12 items-center justify-center rounded-full border border-line bg-card px-4 font-bold text-ink disabled:opacity-40"
-        >
-          {item.active ? t("archiveItem") : t("restoreToMenu")}
-        </button>
-        {toggleError && <p className="text-sm text-warn">{toggleError}</p>}
+      <div className="flex min-w-0 flex-col justify-center gap-3">
+        <p className="text-sm font-semibold text-ink-muted">{editItem.menuGroup ?? t("menuItem")}</p>
+        <div className="flex flex-wrap items-center gap-3"><h1 className="font-headline text-4xl font-bold text-ink">{editItem.baseName}</h1><button type="button" onClick={() => setEditingItemId(item.id)} className="flex min-h-12 items-center gap-2 rounded-full border border-line px-3 font-bold"><Pencil aria-hidden size={17}/>{t("editName")}</button></div>
+        <span className={`w-fit rounded-full px-3 py-2 text-sm font-bold ${activeCount > 0 ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}>{activeCount > 0 ? t("activeSizes", { count: activeCount }) : t("inactive")}</span>
+        <p className="text-sm text-ink-muted">{t("photoBackendGap")}</p>
       </div>
+    </section>
 
-      {addingSize && (
-        <AddSizeDialog
-          baseName={editItem.baseName}
-          category={editItem.category}
-          menuGroup={editItem.menuGroup}
-          siblingSizes={[{ id: editItem.id, sizeLabel: editItem.sizeLabel, name: editItem.name, priceCents: editItem.priceCents }, ...sizeSiblingsForDialog]}
-          onDone={(newItemId) => { setAddingSize(false); router.push(menuItemHref(newItemId, tab)); }}
-          onClose={() => setAddingSize(false)}
-        />
-      )}
-    </>
-  );
+    {editingItemId && editById.get(editingItemId) && <section className="rounded-card-lg border border-line bg-card p-[18px]"><div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-bold">{t("editProduct")}</h2><button type="button" onClick={() => setEditingItemId(null)} className="min-h-12 px-3 font-bold text-ink-muted">{te("cancel")}</button></div><ProductEditForm item={editById.get(editingItemId)!} menuGroupOptions={menuGroupOptions} labels={productFormLabels(te)} onSaved={() => { setEditingItemId(null); router.refresh(); }}/></section>}
+
+    <div className="flex border-b border-line" role="tablist">{(["overview", "recipe"] as const).map((key) => <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => chooseTab(key)} className={`min-h-14 border-b-4 px-6 text-[17px] font-bold ${tab === key ? "border-[#6F3F20] text-[#6F3F20]" : "border-transparent text-ink-muted"}`}>{t(key === "overview" ? "tabOverview" : "tabRecipe")}</button>)}</div>
+
+    {tab === "overview" && <section className="flex flex-col gap-4"><div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="font-headline text-3xl font-bold">{t("sizes")}</h2><p className="text-ink-muted">{t("sizesOverviewHint")}</p></div><button type="button" onClick={() => setAddingSize(true)} className="flex min-h-12 items-center gap-2 rounded-xl bg-[#6F3F20] px-4 font-bold text-white"><Plus aria-hidden size={19}/>{t("addSize")}</button></div>
+      <div className="inline-flex w-fit rounded-xl bg-[#EFE5D7] p-1" aria-label={t("salesPeriod")}>{(["today", "last7", "last30"] as const).map((value) => <button key={value} type="button" onClick={() => setPeriod(value)} aria-pressed={period === value} className={`min-h-12 rounded-lg px-3 text-sm font-bold ${period === value ? "bg-card text-ink shadow-sm" : "text-ink-muted"}`}>{t(`period_${value}`)}</button>)}</div>
+      <div className="grid gap-3 lg:grid-cols-3">{allSizes.map((size) => <SizeCard key={size.id} size={size} period={period} t={t} priceLabel={pricingChip(size).label} priceGood={pricingChip(size).good} onEditPrice={() => setEditingItemId(size.id)} onEditRecipe={() => chooseTab("recipe")} onToggle={() => toggleSize(size)}/>)}</div>{error && <p className="rounded-xl bg-warn-tint p-3 font-semibold text-warn">{error}</p>}
+    </section>}
+
+    {tab === "recipe" && <section className="rounded-card-lg bg-card p-[18px]"><RecipeMatrix sizes={stableSortSizes(editSizes)} ingredients={ingredients} ingredientConversions={ingredientConversions}/></section>}
+
+    {addingSize && <AddSizeDialog baseName={editItem.baseName} category={editItem.category} menuGroup={editItem.menuGroup} siblingSizes={allSizes.map((size): SizeSibling => ({ id: size.id, sizeLabel: size.sizeLabel, name: size.name, priceCents: size.priceCents }))} onDone={(id) => { setAddingSize(false); router.push(`/menu/${encodeURIComponent(id)}?tab=overview`); }} onClose={() => setAddingSize(false)}/>}
+  </>;
 }
 
-function SizePricingStatus({ item }: { item: MenuControlItem }) {
-  const t = useTranslations("Menu");
-  const statusChip = usePricingStatusChip();
-  const status = getItemPricingStatus(item);
-  const chip = statusChip(item);
-  if (status.kind === "incomplete_recipe") return null;
-  return (
-    <span className={`mt-1 block text-sm font-semibold ${chip.good ? "text-good" : "text-warn"}`}>
-      {chip.label}
-      {(status.kind === "low" || status.kind === "high") && ` · ${t("suggested")} ${formatCents(status.suggestedPriceCents)}`}
-    </span>
-  );
+function SizeCard({ size, period, t, priceLabel, priceGood, onEditPrice, onEditRecipe, onToggle }: { size: MenuControlItem; period: SalesPeriod; t: ReturnType<typeof useTranslations<"Menu">>; priceLabel: string; priceGood: boolean; onEditPrice: () => void; onEditRecipe: () => void; onToggle: () => void }) {
+  const ready = size.costStatus === "READY" && size.ingredientsCostCents !== null;
+  const sold = period === "today" ? size.unitsSoldToday : period === "last7" ? size.unitsSoldLast7Days : size.unitsSoldLast30Days;
+  return <article className={`flex flex-col gap-3 rounded-card-lg border bg-card p-4 ${size.active ? "border-line" : "border-warn/30 opacity-75"}`}>
+    <div className="flex items-center justify-between"><div><h3 className="text-2xl font-bold">{size.sizeLabel ?? size.name}</h3><p className="text-sm text-ink-muted">{size.active ? t("active") : t("inactive")}</p></div><span className="flex h-12 w-12 items-center justify-center rounded-full bg-[#FBF0DF] text-2xl">🥤</span></div>
+    <div className="grid grid-cols-3 gap-2 border-y border-line py-3"><Metric label={t("sellingPrice")} value={formatCents(size.priceCents)}/><Metric label={t("costToMake")} value={ready ? formatCents(size.ingredientsCostCents!) : "—"}/><Metric label={t("youKeep")} value={ready ? formatCents(size.priceCents - size.ingredientsCostCents!) : "—"} good={ready}/></div>
+    <div className="rounded-xl bg-paper p-3"><span className="text-sm text-ink-muted">{t("totalUnitsSold")}</span><strong className="ms-2 text-2xl">{sold.toLocaleString()}</strong></div>
+    <div className="grid grid-cols-2 gap-2"><Status label={t("priceStatus")} value={priceLabel} good={priceGood}/><Status label={t("recipeStatus")} value={ready ? t("complete") : t("needsReview")} good={ready}/></div>
+    <div className="grid grid-cols-2 gap-2"><button type="button" onClick={onEditPrice} className="min-h-12 rounded-xl border border-line font-bold"><Pencil className="me-2 inline" aria-hidden size={16}/>{t("editPrice")}</button><button type="button" onClick={onEditRecipe} className={`min-h-12 rounded-xl font-bold ${ready ? "bg-good text-white" : "bg-warn text-white"}`}>{t("editRecipe")}</button></div>
+    <button type="button" onClick={onToggle} className="min-h-12 rounded-xl border border-warn/50 font-bold text-warn">{size.active ? t("noLongerServing") : t("serveAgain")}</button>
+  </article>;
 }
-
-function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
-  return (
-    <div className="flex items-center justify-between gap-3 text-[17px]">
-      <span className="text-ink-muted">{label}</span>
-      <span className={strong ? "font-bold text-good" : "font-semibold"}>{value}</span>
-    </div>
-  );
-}
+function Metric({ label, value, good }: { label: string; value: string; good?: boolean }) { return <div className="min-w-0"><span className="block text-xs text-ink-muted">{label}</span><strong className={`block break-words text-lg ${good ? "text-good" : "text-ink"}`}>{value}</strong></div>; }
+function Status({ label, value, good }: { label: string; value: string; good: boolean }) { return <div className={`rounded-xl p-3 ${good ? "bg-good-tint text-good" : "bg-warn-tint text-warn"}`}><span className="block text-xs font-semibold">{label}</span><strong className="mt-1 flex items-center gap-1">{good ? <Check aria-hidden size={16}/> : <TriangleAlert aria-hidden size={16}/>} {value}</strong></div>; }
+function productFormLabels(t: ReturnType<typeof useTranslations<"ManageMenu">>) { return { nameLabel: t("nameLabel"), sizeLabel: t("sizeLabel"), priceLabel: t("priceLabel"), prepSecondsLabel: t("prepSecondsLabel"), prepSecondsHelp: t("prepSecondsHelp"), menuGroupLabel: t("menuGroupLabel"), itemTypeLabel: t("itemTypeLabel"), itemTypeHelp: t("itemTypeHelp"), saveChanges: t("saveChanges"), itemTypes: { AUTOMATIC: t("itemTypeAutomatic"), ESPRESSO_COFFEE: t("itemTypeEspressoCoffee"), BREWED_COFFEE: t("itemTypeBrewedCoffee"), COLD_BREW: t("itemTypeColdBrew"), TEA: t("itemTypeTea"), OTHER_DRINK: t("itemTypeOtherDrink"), BAKERY: t("itemTypeBakery"), FOOD: t("itemTypeFood"), RETAIL: t("itemTypeRetail") }, itemTypeExamples: { ESPRESSO_COFFEE: t("itemTypeEspressoCoffeeExample"), BREWED_COFFEE: t("itemTypeBrewedCoffeeExample"), OTHER_DRINK: t("itemTypeOtherDrinkExample") } }; }

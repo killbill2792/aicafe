@@ -44,4 +44,21 @@ describe("reconcileOperatingTasks", () => {
     const current = task({ payload: { missingCostCount: 2 } });
     expect(reconcileOperatingTasks([existing], [current], new Date()).refresh[0].payload).toEqual({ missingCostCount: 2, ownerNote: "Check Friday" });
   });
+
+  it("returns a still-current timed snooze only when it is due", () => {
+    const current = task({ id: "price:item:500:625", kind: "price_review", agentId: "alex" });
+    const snoozed = task({ ...current, status: "watching", payload: { ...current.payload, snoozeMode: "later_7", snoozeUntil: "2026-10-09T00:00:00.000Z" } });
+    expect(reconcileOperatingTasks([snoozed], [current], new Date("2026-10-08T23:59:00Z")).refresh[0].status).toBe("watching");
+    const due = reconcileOperatingTasks([snoozed], [current], new Date("2026-10-09T00:00:00Z")).refresh[0];
+    expect(due.status).toBe("needs_owner");
+    expect(due.payload.snoozeUntil).toBeNull();
+  });
+
+  it("surfaces a materially changed recommendation immediately and expires the old snooze", () => {
+    const old = task({ id: "price:item:500:600", kind: "price_review", agentId: "alex", entityId: "item", status: "watching", payload: { snoozeMode: "later_change", snoozeUntil: null } });
+    const changed = task({ id: "price:item:500:650", kind: "price_review", agentId: "alex", entityId: "item" });
+    const result = reconcileOperatingTasks([old], [changed], new Date("2026-10-03T00:00:00Z"));
+    expect(result.insert).toEqual([changed]);
+    expect(result.expire.map((entry) => entry.id)).toEqual([old.id]);
+  });
 });

@@ -14,7 +14,7 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         title: t("missingBillTitle", { category: categoryLabel(code) }),
         subtitle: t("missingBillSubtitle"),
         tone: "warn" as const,
-        actionHref: "/more/bills",
+        actionHref: `/more/bills?category=${encodeURIComponent(code)}`,
         actionLabel: t("missingBillAction"),
       };
     }
@@ -35,8 +35,8 @@ export function describeAlert(alert: AlertRow, t: T, categoryLabel: (code: strin
         title: t("mealBreakTitle", { name }),
         subtitle: t("mealBreakSubtitle"),
         tone: "warn" as const,
-        actionHref: "/staff",
-        actionLabel: t("mealBreakAction"),
+        actionHref: `/more/manage-staff?date=${encodeURIComponent(String(alert.payload.date ?? ""))}&employee=${encodeURIComponent(String(alert.payload.employeeId ?? ""))}#employee-${encodeURIComponent(String(alert.payload.employeeId ?? ""))}`,
+        actionLabel: t("mealBreakAction", { name }),
       };
     }
     case "unmatched_sales_items": {

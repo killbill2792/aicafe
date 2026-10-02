@@ -18,10 +18,10 @@ export default async function MenuItemPage({
   searchParams,
 }: {
   params: Promise<{ itemId: string }>;
-  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string }>;
+  searchParams: Promise<{ setupRecipe?: string; tab?: string; edit?: string; editPrice?: string; copiedFrom?: string }>;
 }) {
   await requireOwnBusiness();
-  const [{ itemId }, { setupRecipe, tab, edit }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe, tab, edit, editPrice, copiedFrom }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
     params,
     searchParams,
     getMenuControlCenter(),
@@ -33,7 +33,8 @@ export default async function MenuItemPage({
   const item = controlItems.find((candidate) => candidate.id === itemId);
   const editItem = editItems.find((candidate) => candidate.id === itemId);
   if (!item || !editItem) notFound();
-  const siblingSizes = stableSortSizes(controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id && candidate.active));
+  const siblingSizes = stableSortSizes(controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id));
+  const editSizes = stableSortSizes(editItems.filter((candidate) => candidate.baseName === editItem.baseName));
   const initialTab = setupRecipe === "1" ? "recipe" : parseMenuDetailTab(tab);
 
   return (
@@ -46,9 +47,11 @@ export default async function MenuItemPage({
         menuGroupOptions={menuGroupOptions}
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
+        editSizes={editSizes}
         justCreated={setupRecipe === "1"}
         initialTab={initialTab}
-        initialEditing={edit === "1" && initialTab === "overview"}
+        initialEditing={(edit === "1" || editPrice === itemId) && initialTab === "overview"}
+        copiedFrom={copiedFrom}
       />
     </PageShell>
   );

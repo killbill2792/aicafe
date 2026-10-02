@@ -379,3 +379,37 @@ export async function deleteRecipeLine(menuItemId: string, ingredientId: string)
   revalidatePath("/menu/manage");
   return { ok: true };
 }
+
+const UpdateRecipeLineSchema = z.object({
+  menuItemId: z.string().uuid(),
+  ingredientId: z.string().uuid(),
+  displayUnit: z.enum(["g", "ml", "fl_oz", "each", "shot", "pump"]),
+  displayQuantity: z.number().positive(),
+});
+
+/** Updates one existing size-specific recipe line without changing pricing math. */
+export async function updateRecipeLine(input: z.infer<typeof UpdateRecipeLineSchema>): Promise<ActionResult> {
+  const parsed = UpdateRecipeLineSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a valid quantity and unit." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const [{ data: menuItem }, { data: ingredient }] = await Promise.all([
+    supabase.from("menu_items").select("id").eq("id", parsed.data.menuItemId).eq("business_id", businessId).single(),
+    supabase.from("ingredients").select("id, base_unit").eq("id", parsed.data.ingredientId).eq("business_id", businessId).single(),
+  ]);
+  if (!menuItem || !ingredient) return { ok: false, error: "Recipe item not found." };
+  const displayUnit = parsed.data.displayUnit as RecipeDisplayUnit;
+  let conversions: IngredientUnitConversion[] = [];
+  if (needsIngredientConversion(displayUnit)) {
+    const { data: conversion } = await supabase.from("ingredient_unit_conversions").select("base_units_per_unit").eq("ingredient_id", ingredient.id).eq("unit", displayUnit).maybeSingle();
+    if (!conversion) return { ok: false, error: `Define 1 ${displayUnit} for this ingredient first.` };
+    conversions = [{ unit: displayUnit, baseUnitsPerUnit: Number(conversion.base_units_per_unit) }];
+  }
+  const quantity = toBaseUnitQuantity(displayUnit, parsed.data.displayQuantity, ingredient.base_unit as BaseUnit, conversions);
+  if (quantity === null) return { ok: false, error: "Enter a valid quantity for this unit." };
+  const { error } = await supabase.from("recipe_lines").update({ quantity, display_unit: displayUnit, display_quantity: parsed.data.displayQuantity }).eq("menu_item_id", menuItem.id).eq("ingredient_id", ingredient.id);
+  if (error) return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  revalidatePath("/menu"); revalidatePath(`/menu/${menuItem.id}`); revalidatePath("/");
+  return { ok: true };
+}
