@@ -1,9 +1,11 @@
 import { formatInTimeZone } from "date-fns-tz";
+import { Plus } from "lucide-react";
 import { getLocale, getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { buildStaffViewModel } from "@/lib/viewmodels/staffViewModel";
 import { formatCents } from "@/lib/calc";
+import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import Money from "@/components/shared/Money";
 import StaffCostBars, { shortWeekday } from "@/components/staff/StaffCostBars";
@@ -28,7 +30,12 @@ export default async function StaffPage() {
           <div className="text-xl font-bold text-ink">{t("title")}</div>
           <div className="text-sm font-medium text-ink-muted">{t("subtitle")}</div>
         </div>
-        <LanguageSwitch href="/staff" />
+        <div className="flex items-center gap-2">
+          <Link href="/more/manage-staff" className="flex min-h-12 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
+            <Plus aria-hidden="true" size={19} /> {t("addStaff")}
+          </Link>
+          <LanguageSwitch href="/staff" />
+        </div>
       </header>
 
       <section className="flex flex-col gap-3.5 rounded-card-lg bg-staff p-5 text-white">

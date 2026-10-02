@@ -2,7 +2,9 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import ReceiptUploader from "@/components/addcost/ReceiptUploader";
+import AiUnavailableNotice from "@/components/addcost/AiUnavailableNotice";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import { isAiConfigured } from "@/lib/ai/types";
 import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -13,6 +15,15 @@ export default async function ReceiptUploadPage() {
   const t = await getTranslations("AddCost");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
+
+  if (!isAiConfigured()) {
+    return (
+      <PageShell className="flex flex-col gap-5 px-4 py-6 pb-10">
+        <BackHeader title={t("optionPhoto")} backHref="/add-cost" backLabel={tCommon("back")} />
+        <AiUnavailableNotice title={t("aiUnavailableTitle")} message={t("aiUnavailableReceiptBody")} typeItLabel={t("optionType")} />
+      </PageShell>
+    );
+  }
 
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<
     (typeof EXPENSE_CATEGORY_CODES)[number],

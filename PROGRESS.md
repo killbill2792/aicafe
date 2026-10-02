@@ -5,6 +5,86 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Cross-screen cleanup: Add Cost AI gating, Money/Staff shortcuts, period consistency, profit color (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Four small, independently-scoped fixes from live UI review. No schema changes. Preserves all Menu
+owner-comprehension work from the prior entries below.
+
+**1. Add Cost no longer lets an owner into a broken AI flow.** `/add-cost/receipt` and
+`/add-cost/voice` now check `isAiConfigured()` server-side before rendering `ReceiptUploader`/
+`VoiceRecorder` at all; when it's false they render a new shared `AiUnavailableNotice` ("Currently
+unavailable" + plain-language body + a "Type it" link to `/add-cost/type`) instead — mirroring the
+"not supported in this browser" fallback `VoiceRecorder` already had for missing `SpeechRecognition`.
+The main `/add-cost` grid is untouched (still shows all 4 options; gating happens on
+navigating into one, per the request). Capability-gated, not hardcoded off: as soon as an AI
+provider key is configured, both routes render their normal flow again with zero code change.
+Also replaced the `.env.local`-mentioning fallback error strings in `receiptReview.ts`/
+`voiceReview.ts` (now unreachable in normal use since the page gate runs first, but left as a
+defensive fallback) with owner-friendly wording, for the same reason.
+
+**2. Management shortcuts now exist where owners actually look.**
+- Money: new "Manage bills" button in the header (next to the language switch) linking straight to
+  the existing `/more/bills` flow — `+ Add cost` and the FAB are untouched.
+- Staff: new "+ Add staff" button in the header (same visual pattern as Menu's "+ Add") linking to
+  the existing `/more/manage-staff` flow. No new component — `ManageStaffPanel`'s "Add a staff
+  member" form is already the first thing on that page, and already auto-expands the just-added
+  employee's row (which contains `WeeklyScheduleEditor`) on success, so schedule setup was already
+  one tap away; this only makes the page itself easy to find from Staff. Verified live end-to-end:
+  added a real employee, confirmed the schedule editor appeared immediately with no further
+  navigation, saved a schedule, then deactivated the test employee to clean up.
+- Every existing `/more` entry point remains; these are additional shortcuts, not replacements.
+
+**3. Fixed: Money's running-cost rows didn't match the selected period.**
+`buildProfitAndCostsViewModel()` already prorated running costs correctly for `totalCostsCents`/
+`ownerProfitCents` (via the existing `runningCostsForPeriod`, an aggregate number), but returned
+`snapshot.runningCostLines` — the full month's amounts — for display, so "Today" could show "Rent
+$12,000" while the profit figure above it was computed from a ~1/31st share. New
+`runningCostsForPeriodCentsByCategory()` (`lib/calc/runningCosts.ts`) does the same
+monthly-amount ÷ days-in-month × overlap-days proration as the existing aggregate function, just
+grouped per category instead of summed across all of them; new `runningCostLinesForPeriod()`
+(`lib/viewmodels/period.ts`) uses it to rebuild `snapshot.runningCostLines` with each line's
+`amountCents` scoped to the period, left unrounded (matching `totalCostsCents`'s own "round only
+at display" convention) so the visible rows reconcile to the visible total. `moneyViewModel.ts`'s
+`runningCostLines: snapshot.runningCostLines` → `runningCostLinesForPeriod(snapshot, period)` is
+the entire behavioral change — no formula touched.
+  - Verified Today/Week/Month are all genuinely different periods (not a routing/cache artifact —
+    the existing `PeriodSwitch` already had a documented `router.refresh()` fix for that from an
+    earlier milestone): live on the real test account (today = Oct 1), Today's Rent showed
+    $387.10 (= $12,000⁄31), Week showed $2,787.10 (6 days of September at $400/day + 1 day of
+    October), and Month to date showed $387.10 — identical to Today, correctly, since October 1
+    is both periods' only elapsed day (see the request's own note: not a bug to "fix").
+  - `Common.month` label changed from "Month" to "Month to date" (shared by Home's `PeriodSwitch`
+    too, which already summed month-to-date days under the old label — a copy fix, not a behavior
+    change there).
+  - New `lib/viewmodels/moneyViewModel.test.ts`: a hand-built Oct-1 snapshot (clean $100/$103.33
+    per-day rent numbers to hand-verify) covering Today/Week/Month proration, the
+    Today-equals-Month-to-date-on-day-1 case, row-to-total reconciliation, and
+    sales-must-be-7×-one-day for Week (proving it isn't silently reusing Today); plus a
+    cross-check against the existing `getFixtureSnapshot()` (Sep 9, 9 days into the month) showing
+    Today < Week < Month to date with hand-computed amounts against Fixture A's real $6,000 rent.
+
+**4. Owner profit now reads positive/negative/zero consistently in Money.** New
+`lib/viewmodels/profitTone.ts` (`profitTone(cents)` → `"good" | "warn" | "neutral"`,
+`profitToneTextClass`), unit-tested. Applied to `ProfitCostsView.tsx`'s "You keep" waterfall step
+(bar fill + text, previously hardcoded green always) and its "Owner profit" summary card
+(background tint + text, same hardcoded-green bug), and to `CostRecoveryView.tsx`'s "On track for
+$X in your pocket" projected-profit text (previously always plain ink, not wrong but not
+consistent either). `StepBar` no longer manually prepends "−" before calling `Money` — `Money`
+already renders the sign via `Intl.NumberFormat`'s currency style, so this was always one render
+away from a double negative the moment someone removed the `Math.abs()` it depended on; it now
+just passes the signed cents straight through. Verified live: the real test account currently has
+$0 sales and only cost data, so every period is a loss — confirmed "You keep -$538.17" and "Owner
+profit -$538.17" both render in `text-warn` (red) with exactly one minus sign, and the warn-tint
+background on the summary card. The positive-amount path (`tone === "good"` → green) has no live
+loss-free account to click into in this environment, so it's verified via `profitTone.test.ts`
+(explicit good/warn/neutral cases) plus code symmetry with the confirmed-live warn branch, not a
+screenshot.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (165/165 — 24 new, rest unchanged),
+`npm run build` all clean.
+
+
+
 ## Menu PR #5 Phase 1: owner-comprehension clarity pass (2026-10-02 — code complete, pushed to menu-visual-refresh)
 
 Note: PR #5 (`menu-visual-refresh` → `main`) was already merged (merge commit `ad601ae`) by the

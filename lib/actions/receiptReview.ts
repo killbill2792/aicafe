@@ -22,7 +22,9 @@ function coerceCategory(vendor: string, suggested: string): ExpenseCategoryCode 
 
 /** "Photo of receipt" (docs/03-screens.md S10). `imageDataUrl` is a compressed JPEG data: URL. */
 export async function reviewReceiptPhoto(imageDataUrl: string): Promise<ReceiptReviewResult> {
-  if (!isAiConfigured()) return { ok: false, error: "Receipt reading needs an AI provider key — add one to .env.local (see PROGRESS.md)." };
+  // The /add-cost/receipt page already gates on isAiConfigured() before this ever mounts — this
+  // stays as a defensive fallback, never leaking anything about env vars or API keys to the owner.
+  if (!isAiConfigured()) return { ok: false, error: "Reading receipts isn't available right now. Try again later, or type it in instead." };
 
   try {
     const receipt = await readReceipt(imageDataUrl);

@@ -49,6 +49,12 @@ function daysInMonthKey(monthKey: string): number {
   return getDaysInMonth(new Date(year, month - 1, 1));
 }
 
+function proratedAmountCents(c: CategoryMonthlyAmount, periodStart: string, periodEnd: string): number {
+  const days = overlapDays(periodStart, periodEnd, c.monthKey);
+  if (days === 0) return 0;
+  return (c.amountCents / daysInMonthKey(c.monthKey)) * days;
+}
+
 /**
  * Running costs for a period = Σ over running-cost categories: monthly amount ÷ days in that
  * month × days of the period that fall in that month. `categoryMonthlyAmounts` should have one
@@ -59,11 +65,27 @@ export function runningCostsForPeriodCents(
   periodStart: string,
   periodEnd: string,
 ): number {
-  return sumCents(categoryMonthlyAmounts, (c) => {
-    const days = overlapDays(periodStart, periodEnd, c.monthKey);
-    if (days === 0) return 0;
-    return (c.amountCents / daysInMonthKey(c.monthKey)) * days;
-  });
+  return sumCents(categoryMonthlyAmounts, (c) => proratedAmountCents(c, periodStart, periodEnd));
+}
+
+/**
+ * Same proration as `runningCostsForPeriodCents`, grouped per category instead of summed across
+ * all of them — a category that spans two calendar months (e.g. "Week" dipping into last month)
+ * gets its two entries' prorated amounts added together under one key. Powers the Money screen's
+ * per-line running-cost rows so what's displayed for "Today"/"Week" actually reflects that period
+ * instead of the full month's amount, while still reconciling to the same period total above.
+ */
+export function runningCostsForPeriodCentsByCategory(
+  categoryMonthlyAmounts: CategoryMonthlyAmount[],
+  periodStart: string,
+  periodEnd: string,
+): Map<string, number> {
+  const byCategory = new Map<string, number>();
+  for (const c of categoryMonthlyAmounts) {
+    const prorated = proratedAmountCents(c, periodStart, periodEnd);
+    byCategory.set(c.categoryCode, (byCategory.get(c.categoryCode) ?? 0) + prorated);
+  }
+  return byCategory;
 }
 
 /** Running costs per day for the calendar month `monthKey`, undiluted by period overlap. */

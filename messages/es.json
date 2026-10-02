@@ -14,7 +14,7 @@
     "periodSwitchLabel": "Periodo",
     "today": "Hoy",
     "week": "Semana",
-    "month": "Mes",
+    "month": "Mes a la fecha",
     "back": "Atrás",
     "addCost": "Agregar gasto",
     "next": "Siguiente"
@@ -54,7 +54,10 @@
     "voiceListening": "Escuchando…",
     "voiceNotSupported": "La entrada por voz no es compatible con este navegador.",
     "voiceConfirm": "Confirmar",
-    "voiceTranscriptLabel": "Escuchamos"
+    "voiceTranscriptLabel": "Escuchamos",
+    "aiUnavailableTitle": "No disponible por ahora",
+    "aiUnavailableReceiptBody": "La lectura de fotos de recibos aún no está activada para este café. Aún puedes agregar este gasto escribiéndolo.",
+    "aiUnavailableVoiceBody": "La entrada por voz aún no está activada para este café. Aún puedes agregar este gasto escribiéndolo."
   },
   "Categories": {
     "rent": "Renta",
@@ -183,7 +186,8 @@
     "bandWatch": "Vigilar",
     "bandHigh": "Alto",
     "vsLastPeriod": "vs el periodo anterior",
-    "add": "Agregar"
+    "add": "Agregar",
+    "manageBills": "Gestionar gastos fijos"
   },
   "Menu": {
     "title": "Menú",
@@ -358,7 +362,8 @@
     "costPerSalesDollar": "Costo de personal por $1 de ventas",
     "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
     "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
-    "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana."
+    "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
+    "addStaff": "+ Agregar personal"
   },
   "More": {
     "title": "Más",

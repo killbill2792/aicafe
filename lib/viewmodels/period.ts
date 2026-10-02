@@ -1,5 +1,5 @@
-import { runningCostsForPeriodCents, type CategoryMonthlyAmount, type DailyFacts } from "@/lib/calc";
-import type { BusinessSnapshot } from "@/lib/data/types";
+import { runningCostsForPeriodCents, runningCostsForPeriodCentsByCategory, type CategoryMonthlyAmount, type DailyFacts } from "@/lib/calc";
+import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 
 export type Period = "today" | "week" | "month";
 
@@ -90,6 +90,23 @@ export function previousPeriodCalendarRange(snapshot: BusinessSnapshot, period: 
 export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period): number {
   const { start, end } = periodCalendarRange(snapshot, period);
   return runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot), start, end);
+}
+
+/** The same per-category lines as `snapshot.runningCostLines`, but each `amountCents` prorated to
+ * the selected period instead of the full month — so a "Today" or "Week" view shows Rent at its
+ * actual share of that period, not the full monthly amount, matching the already-prorated total
+ * and owner-profit figures computed from `runningCostsForPeriod` above. `label`/`isEstimate`/
+ * `isMissing` are carried over unchanged; only the amount is period-scoped. */
+export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Period): RunningCostLine[] {
+  const { start, end } = periodCalendarRange(snapshot, period);
+  const byCategory = runningCostsForPeriodCentsByCategory(categoryMonthlyAmounts(snapshot), start, end);
+  // Left unrounded here, matching totalCostsCents/ownerProfitCents (see lib/calc/money.ts's
+  // "round only at the end" convention) — Money/formatCents rounds at display time, so the
+  // visible rows reconcile to the visible total instead of drifting from independent rounding.
+  return snapshot.runningCostLines.map((line) => ({
+    ...line,
+    amountCents: line.isMissing ? 0 : byCategory.get(line.categoryCode) ?? 0,
+  }));
 }
 
 /** Running costs for the comparison period one back (see `previousPeriodCalendarRange`). */

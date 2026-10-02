@@ -1,7 +1,9 @@
+import { Receipt } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import type { Period } from "@/lib/viewmodels/period";
+import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import AddCostFab from "@/components/shared/AddCostFab";
@@ -37,7 +39,12 @@ export default async function MoneyPage({
           <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>
           <div className="text-[22px] font-bold text-ink">{snapshot.business.name}</div>
         </div>
-        <LanguageSwitch href="/money" />
+        <div className="flex items-center gap-2">
+          <Link href="/more/bills" className="flex min-h-12 items-center gap-1.5 rounded-full border border-line px-3.5 text-sm font-bold text-ink no-underline">
+            <Receipt aria-hidden="true" size={17} /> {t("manageBills")}
+          </Link>
+          <LanguageSwitch href="/money" />
+        </div>
       </header>
 
       <MoneyViewSwitch current={view} recoveryLabel={t("recoveryTab")} profitLabel={t("profitTab")} />

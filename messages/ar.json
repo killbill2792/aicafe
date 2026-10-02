@@ -14,7 +14,7 @@
     "periodSwitchLabel": "الفترة الزمنية",
     "today": "اليوم",
     "week": "الأسبوع",
-    "month": "الشهر",
+    "month": "الشهر حتى الآن",
     "back": "رجوع",
     "addCost": "إضافة مصروف",
     "next": "التالي"
@@ -54,7 +54,10 @@
     "voiceListening": "جارٍ الاستماع…",
     "voiceNotSupported": "الإدخال الصوتي غير مدعوم في هذا المتصفح.",
     "voiceConfirm": "تأكيد",
-    "voiceTranscriptLabel": "سمعنا"
+    "voiceTranscriptLabel": "سمعنا",
+    "aiUnavailableTitle": "غير متاح حاليًا",
+    "aiUnavailableReceiptBody": "قراءة صور الإيصالات غير مفعّلة لهذا المقهى بعد. يمكنك إضافة هذا المصروف بكتابته يدويًا.",
+    "aiUnavailableVoiceBody": "الإدخال الصوتي غير مفعّل لهذا المقهى بعد. يمكنك إضافة هذا المصروف بكتابته يدويًا."
   },
   "Categories": {
     "rent": "الإيجار",
@@ -183,7 +186,8 @@
     "bandWatch": "راقب",
     "bandHigh": "مرتفع",
     "vsLastPeriod": "مقارنة بالفترة السابقة",
-    "add": "إضافة"
+    "add": "إضافة",
+    "manageBills": "إدارة الفواتير"
   },
   "Menu": {
     "title": "القائمة",
@@ -358,7 +362,8 @@
     "costPerSalesDollar": "تكلفة الموظفين لكل $1 من المبيعات",
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
-    "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع."
+    "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
+    "addStaff": "+ إضافة موظف"
   },
   "More": {
     "title": "المزيد",

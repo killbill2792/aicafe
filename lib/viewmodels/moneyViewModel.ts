@@ -10,7 +10,7 @@ import {
 } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { actualDayContributions, projectedDayContributions, recoveryBuckets } from "./costRecoveryShared";
-import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
+import { daysForPeriod, previousPeriodDays, runningCostsForPeriod, runningCostLinesForPeriod, previousRunningCostsForPeriod, type Period } from "./period";
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
@@ -98,7 +98,7 @@ export function buildProfitAndCostsViewModel(snapshot: BusinessSnapshot, period:
     wagesCents,
     staffTaxCents,
     cardFeesCents,
-    runningCostLines: snapshot.runningCostLines,
+    runningCostLines: runningCostLinesForPeriod(snapshot, period),
     totalCostsCents,
     ownerProfitCents,
     ingredientsRatio,

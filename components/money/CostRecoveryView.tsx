@@ -11,6 +11,7 @@ import type { ExpenseIconCode } from "@/components/icons/ExpenseIconDefs";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import { dayContributionCents, recoveryBuckets } from "@/lib/viewmodels/costRecoveryShared";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
+import { profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 function shortDate(iso: string) {
   const [, month, day] = iso.split("-");
@@ -134,7 +135,7 @@ export default async function CostRecoveryView({ snapshot }: { snapshot: Busines
           </>
         ) : (
           <>
-            {t("onTrackFor")} <b><Money cents={vm.projectedMonthEndProfitCents} /></b> {t("inYourPocket")}
+            {t("onTrackFor")} <b className={profitToneTextClass(profitTone(vm.projectedMonthEndProfitCents))}><Money cents={vm.projectedMonthEndProfitCents} /></b> {t("inYourPocket")}
           </>
         )}
       </p>

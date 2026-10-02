@@ -14,7 +14,7 @@
     "periodSwitchLabel": "Time period",
     "today": "Today",
     "week": "Week",
-    "month": "Month",
+    "month": "Month to date",
     "back": "Back",
     "addCost": "Add cost",
     "next": "Next"
@@ -54,7 +54,10 @@
     "voiceListening": "Listening…",
     "voiceNotSupported": "Voice entry isn't supported in this browser.",
     "voiceConfirm": "Confirm",
-    "voiceTranscriptLabel": "We heard"
+    "voiceTranscriptLabel": "We heard",
+    "aiUnavailableTitle": "Currently unavailable",
+    "aiUnavailableReceiptBody": "Reading receipt photos isn't turned on for this café yet. You can still add this cost by typing it in.",
+    "aiUnavailableVoiceBody": "Voice entry isn't turned on for this café yet. You can still add this cost by typing it in."
   },
   "Categories": {
     "rent": "Rent",
@@ -183,7 +186,8 @@
     "bandWatch": "Watch",
     "bandHigh": "High",
     "vsLastPeriod": "vs last period",
-    "add": "Add"
+    "add": "Add",
+    "manageBills": "Manage bills"
   },
   "Menu": {
     "title": "Menu",
@@ -358,7 +362,8 @@
     "costPerSalesDollar": "Staff cost per $1 of sales",
     "healthyLine": "Under the line is healthy ({cents}¢)",
     "worstDayInsight": "{date} cost {cents}¢ per $1 sold — the highest this week.",
-    "allHealthyInsight": "Your staff cost has stayed healthy all week."
+    "allHealthyInsight": "Your staff cost has stayed healthy all week.",
+    "addStaff": "+ Add staff"
   },
   "More": {
     "title": "More",
