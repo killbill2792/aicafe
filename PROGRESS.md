@@ -5,6 +5,314 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #6 follow-up: deterministic cent allocation for running-cost rows (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+One remaining review finding: rounding each running-cost category's prorated amount independently
+(the previous fix) guarantees integer cents per row but not that the rows *sum* to the same rounded
+total the rest of the screen shows — e.g. three $100/mo lines in a 31-day month each prorate to
+322.58...¢ for "Today"; independently rounding each gives 323×3 = 969¢, while the real aggregate
+967.74...¢ rounds to 968¢. Fixed with the "largest remainder" method:
+
+- New `allocateIntegerCentsByCategory(rawAmountsByCategory, targetCents)`
+  (`lib/calc/runningCosts.ts`) — every category first gets `Math.floor(raw)`, then the few cents
+  still needed to reach `targetCents` go to the categories with the largest fractional remainder
+  first, ties broken by category code ascending (deterministic regardless of `Map` iteration
+  order).
+- `runningCostLinesForPeriod()` (`lib/viewmodels/period.ts`) now computes `targetCents` from
+  `runningCostsForPeriod()` itself — the exact same aggregate call `totalCostsCents` is built
+  from, per the review's "calculate the rounded aggregate target using the same aggregate
+  running-cost calculation" — and allocates against it, instead of rounding each category alone.
+  Missing categories are excluded from allocation entirely (never just zeroed after the fact) and
+  stay 0.
+- New tests: `lib/calc/runningCosts.test.ts` (pure `allocateIntegerCentsByCategory` — the exact
+  three-$100-lines worked example from the review, a determinism/tie-break case, and an
+  already-evenly-divisible case) and `lib/viewmodels/period.test.ts` (end-to-end through
+  `runningCostLinesForPeriod`/`runningCostsForPeriod`, asserting `sum(amountCents) ===
+  roundHalfUpToCent(runningCostsForPeriod(...))` and every row is an integer, for Today/Week/Month
+  and a 5-line set including a missing category).
+
+No other behavior changed. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test`
+(178/178 — 5 new, rest unchanged), `npm run build` all clean. Live-checked against the real test
+account's Week view: running-cost rows now sum to exactly $3,604.65, matching `totalCosts −
+ingredients − staff − cardFees`; Water shifted from $4.65 (previous independent-rounding result)
+to $4.64 — the one-cent redistribution this fix makes to keep the total exact.
+
+
+
+## PR #6 review fixes: integer cents, tea word-boundary, loss bar, touch target (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Four review findings, each independently scoped and fixed as described — no unrelated changes.
+
+1. **`runningCostLinesForPeriod()` returned fractional cents.** It was deliberately left unrounded
+   to match `totalCostsCents`'s "round only at display" pattern, but its output is consumed as
+   data (summed, compared), not just displayed, so that violated CLAUDE.md's integer-cents rule.
+   Now rounds each line with the existing `roundHalfUpToCent` at construction. New regression test
+   using Fixture A's $500/mo insurance over a 30-day month (50,000 ÷ 30 = 1,666.6̄, a case that
+   would surface a fractional-cents bug immediately) asserting every row is `Number.isInteger`.
+2. **`inferMenuItemCategory`'s tea/chai/matcha rule matched substrings, not words.** `/tea|chai|matcha/i`
+   matched "tea" inside "S**tea**med", so "Steamed Latte" incorrectly inferred `TEA`. Now
+   `/\btea\b|\bchai\b|\bmatcha\b/i` — word-boundaried. New tests: `Matcha Latte`/`Chai Latte`/
+   `Iced Tea` → `TEA`, `Steamed Latte` → `ESPRESSO_DRINK`.
+3. **A loss showed an invisible 0-width "You keep" bar.** Its `widthPct` was computed from the
+   signed `ownerProfitCents`, which clamps to 0 for any negative value — a real loss drew no bar
+   at all, undermining "immediately obvious from both the number and color." New
+   `flowBarWidthPct(valueCents, salesCents)` (`lib/viewmodels/profitTone.ts`) uses the magnitude
+   for width while the signed value and `profitTone` still drive the displayed number and
+   green/red color separately — a loss now draws a full-magnitude red bar. 4 new tests, including
+   "a negative value still produces a visible (non-zero) bar."
+4. **`AiUnavailableNotice`'s "Type it" link was under the 48px touch-target minimum** (`py-2.5`
+   alone, no explicit height). Now `flex min-h-12 items-center justify-center`, matching the
+   `+ Add`-style button pattern used elsewhere — confirmed live at exactly 48px with the label
+   vertically centered. No other layout change.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (173/173 — 8 new, rest unchanged),
+`npm run build` all clean.
+
+
+
+## Pre-merge mobile visual fixes: Menu header wrap, Money FAB overlap (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Two CSS-only fixes from a live mobile-preview pass before merging PR #6. No functionality changed,
+no logic touched — confirmed by the full test suite passing unchanged (165/165, 0 new).
+
+**1. `LanguageSwitch` could wrap onto two lines ("EN / ES" stacking) at narrow widths.** Added
+`whitespace-nowrap shrink-0` to its `<Link>` — it's a shared component, so every screen that uses
+it (Menu, Money, Home, Staff, etc.) benefits, not just Menu. Also restructured the Menu page's own
+`<header>` from a fixed `flex items-start justify-between` (which left too little width for the
+actions column on narrow phones) to `flex flex-col gap-3 ... md:flex-row md:items-start
+md:justify-between` — title/subtitle stack above a clean second row of "+ Add"/language-switch on
+mobile, reverting to the original side-by-side layout at `md:` and up. Touch targets unchanged
+(`+Add` still `min-h-12`, language switch still `h-11`, both pre-existing sizes). Verified live at
+375px and 390px (en, es, ar/RTL) — no wrapping, clean two-row stack — and at 1280px desktop, where
+the layout is pixel-identical to before.
+
+**2. Money's fixed `+ Add cost` FAB overlapped the last card's content on mobile.** The Money page's
+own `PageShell` padding (`pb-4`) wasn't enough to clear the FAB's mobile position (`bottom-[104px]`
++ its own 56px height = up to 160px of reserved space needed) on top of the shared layout's
+`pb-24`. Changed Money's `PageShell` className to `pb-44 md:pb-16` (FAB and `AddCostFab.tsx` itself
+untouched — same component, same position, just given enough room below it). Verified live at
+375px on both Money tabs (Paying back bills, Profit & costs) in en/es/ar — scrolled to the true
+bottom of the page in each case and confirmed the last real card (e.g. "vs last period" / "How this
+works") sits fully above both the FAB and the bottom tab bar with visible clearance, no overlap, in
+every locale including RTL.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (165/165, unchanged), `npm run build`
+all clean.
+
+
+
+## Cross-screen cleanup: Add Cost AI gating, Money/Staff shortcuts, period consistency, profit color (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Four small, independently-scoped fixes from live UI review. No schema changes. Preserves all Menu
+owner-comprehension work from the prior entries below.
+
+**1. Add Cost no longer lets an owner into a broken AI flow.** `/add-cost/receipt` and
+`/add-cost/voice` now check `isAiConfigured()` server-side before rendering `ReceiptUploader`/
+`VoiceRecorder` at all; when it's false they render a new shared `AiUnavailableNotice` ("Currently
+unavailable" + plain-language body + a "Type it" link to `/add-cost/type`) instead — mirroring the
+"not supported in this browser" fallback `VoiceRecorder` already had for missing `SpeechRecognition`.
+The main `/add-cost` grid is untouched (still shows all 4 options; gating happens on
+navigating into one, per the request). Capability-gated, not hardcoded off: as soon as an AI
+provider key is configured, both routes render their normal flow again with zero code change.
+Also replaced the `.env.local`-mentioning fallback error strings in `receiptReview.ts`/
+`voiceReview.ts` (now unreachable in normal use since the page gate runs first, but left as a
+defensive fallback) with owner-friendly wording, for the same reason.
+
+**2. Management shortcuts now exist where owners actually look.**
+- Money: new "Manage bills" button in the header (next to the language switch) linking straight to
+  the existing `/more/bills` flow — `+ Add cost` and the FAB are untouched.
+- Staff: new "+ Add staff" button in the header (same visual pattern as Menu's "+ Add") linking to
+  the existing `/more/manage-staff` flow. No new component — `ManageStaffPanel`'s "Add a staff
+  member" form is already the first thing on that page, and already auto-expands the just-added
+  employee's row (which contains `WeeklyScheduleEditor`) on success, so schedule setup was already
+  one tap away; this only makes the page itself easy to find from Staff. Verified live end-to-end:
+  added a real employee, confirmed the schedule editor appeared immediately with no further
+  navigation, saved a schedule, then deactivated the test employee to clean up.
+- Every existing `/more` entry point remains; these are additional shortcuts, not replacements.
+
+**3. Fixed: Money's running-cost rows didn't match the selected period.**
+`buildProfitAndCostsViewModel()` already prorated running costs correctly for `totalCostsCents`/
+`ownerProfitCents` (via the existing `runningCostsForPeriod`, an aggregate number), but returned
+`snapshot.runningCostLines` — the full month's amounts — for display, so "Today" could show "Rent
+$12,000" while the profit figure above it was computed from a ~1/31st share. New
+`runningCostsForPeriodCentsByCategory()` (`lib/calc/runningCosts.ts`) does the same
+monthly-amount ÷ days-in-month × overlap-days proration as the existing aggregate function, just
+grouped per category instead of summed across all of them; new `runningCostLinesForPeriod()`
+(`lib/viewmodels/period.ts`) uses it to rebuild `snapshot.runningCostLines` with each line's
+`amountCents` scoped to the period, left unrounded (matching `totalCostsCents`'s own "round only
+at display" convention) so the visible rows reconcile to the visible total. `moneyViewModel.ts`'s
+`runningCostLines: snapshot.runningCostLines` → `runningCostLinesForPeriod(snapshot, period)` is
+the entire behavioral change — no formula touched.
+  - Verified Today/Week/Month are all genuinely different periods (not a routing/cache artifact —
+    the existing `PeriodSwitch` already had a documented `router.refresh()` fix for that from an
+    earlier milestone): live on the real test account (today = Oct 1), Today's Rent showed
+    $387.10 (= $12,000⁄31), Week showed $2,787.10 (6 days of September at $400/day + 1 day of
+    October), and Month to date showed $387.10 — identical to Today, correctly, since October 1
+    is both periods' only elapsed day (see the request's own note: not a bug to "fix").
+  - `Common.month` label changed from "Month" to "Month to date" (shared by Home's `PeriodSwitch`
+    too, which already summed month-to-date days under the old label — a copy fix, not a behavior
+    change there).
+  - New `lib/viewmodels/moneyViewModel.test.ts`: a hand-built Oct-1 snapshot (clean $100/$103.33
+    per-day rent numbers to hand-verify) covering Today/Week/Month proration, the
+    Today-equals-Month-to-date-on-day-1 case, row-to-total reconciliation, and
+    sales-must-be-7×-one-day for Week (proving it isn't silently reusing Today); plus a
+    cross-check against the existing `getFixtureSnapshot()` (Sep 9, 9 days into the month) showing
+    Today < Week < Month to date with hand-computed amounts against Fixture A's real $6,000 rent.
+
+**4. Owner profit now reads positive/negative/zero consistently in Money.** New
+`lib/viewmodels/profitTone.ts` (`profitTone(cents)` → `"good" | "warn" | "neutral"`,
+`profitToneTextClass`), unit-tested. Applied to `ProfitCostsView.tsx`'s "You keep" waterfall step
+(bar fill + text, previously hardcoded green always) and its "Owner profit" summary card
+(background tint + text, same hardcoded-green bug), and to `CostRecoveryView.tsx`'s "On track for
+$X in your pocket" projected-profit text (previously always plain ink, not wrong but not
+consistent either). `StepBar` no longer manually prepends "−" before calling `Money` — `Money`
+already renders the sign via `Intl.NumberFormat`'s currency style, so this was always one render
+away from a double negative the moment someone removed the `Math.abs()` it depended on; it now
+just passes the signed cents straight through. Verified live: the real test account currently has
+$0 sales and only cost data, so every period is a loss — confirmed "You keep -$538.17" and "Owner
+profit -$538.17" both render in `text-warn` (red) with exactly one minus sign, and the warn-tint
+background on the summary card. The positive-amount path (`tone === "good"` → green) has no live
+loss-free account to click into in this environment, so it's verified via `profitTone.test.ts`
+(explicit good/warn/neutral cases) plus code symmetry with the confirmed-live warn branch, not a
+screenshot.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (165/165 — 24 new, rest unchanged),
+`npm run build` all clean.
+
+
+
+## Menu PR #5 Phase 1: owner-comprehension clarity pass (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Note: PR #5 (`menu-visual-refresh` → `main`) was already merged (merge commit `ad601ae`) by the
+time this request arrived — this work continued on the same branch name as instructed, but since
+the branch's prior history is already in `main`, a fresh PR will be needed to land these new
+commits (not a reopen of the old #5). Flagged to Raj; did not merge anything myself.
+
+Five owner-comprehension fixes, all presentation/copy — no schema, no migration, no pricing or
+ingredient-cost calculation change, no POS behavior change. Read CLAUDE.md/AGENTS.md and the
+current branch state first per the request, rather than assuming the prior PROGRESS.md entries
+still matched the code exactly.
+
+**1–3. Pricing wording is now directional, everywhere it appears.** New
+`lib/viewmodels/menuCatalogViewModel.ts` function `getItemPricingStatus()` is the one place that
+turns `costStatus` + `pricing.status` + `recommendedPriceCents` vs `currentPriceCents` (all
+already computed, nothing new) into a plain-language status: `incomplete_recipe`,
+`price_unavailable`, `keep`, or `low`/`high` (which way the suggestion points). `isPricingHealthy()`
+is now just `getItemPricingStatus(item).kind === "keep"`, so every caller agrees by construction.
+- `usePricingStatusChip` (catalog single-size chip, product detail Overview/Pricing chip) now says
+  "Price may be low" / "Price may be high" instead of a generic "Worth reviewing".
+- Product detail **Overview** no longer shows a bare chip + unlabeled number: when the status is
+  low/high it now shows "You charge $X" / "Suggested $Y" as labeled rows (new `Menu.youCharge`
+  key; reuses the existing `Menu.suggested` key). The **Pricing** tab's suggested-price number got
+  the same "Suggested" label added in front of it; its cost/why/warnings content is untouched.
+- Dead keys removed (no longer reachable after this change): `ManageMenu.pricingStatusNew`,
+  `pricingStatusReview`.
+
+**2. Menu catalog now explains *what* needs review, not just *that* something does.**
+`groupMenuCatalogItems()` (same file) now computes two things per group instead of one:
+  - `priceRange` (`{ minCents, maxCents, allSame }`) — the catalog shows a single price when all
+    sizes match, otherwise "$X.XX–$Y.YY" (new `Menu.priceRange` key); replaces the old "from $X"
+    (`Menu.fromPrice` removed, nothing else referenced it).
+  - `pricingStatus`, a `GroupedPricingStatus` with explicit precedence: missing data (no recipe, or
+    a recipe with no priced ingredient cost) always wins over a pricing-review message — a size
+    with no cost can't meaningfully be "worth reviewing" for price. Within that: exactly one size
+    with *no recipe at all* is named directly ("16 oz recipe incomplete", new
+    `Menu.sizeRecipeIncomplete`); any other incomplete-data case (missing ingredient cost, or more
+    than one incomplete size) reports a count instead of guessing which size matters most ("1 size
+    is missing cost information", `Menu.sizesMissingCostInfo`, ICU-pluralized). Once every size has
+    usable pricing data: all healthy → "Prices look right" (`Menu.pricesLookRight`); exactly one
+    size needs review → names it and the direction + a "Suggested $Y" line ("16 oz price may be
+    low", `Menu.sizePriceMayBeLow`/`sizePriceMayBeHigh`); more than one → a count, deliberately
+    *not* one fabricated price for the whole product ("2 sizes need review",
+    `Menu.multipleSizesNeedReview`, ICU-pluralized). `MenuCatalog.tsx`'s rendering is a small
+    `switch` over this structured status, not nested conditionals in JSX. A single-size group keeps
+    using the plain per-item chip unchanged (point 1 above already covers it).
+  - The **Needs attention** tab filter already used `isPricingHealthy()` (fixed in the previous PR
+    #5 pass) so it automatically picks up the new low/high distinction with no further change.
+  - New tests: `lib/viewmodels/menuCatalogViewModel.test.ts`, 20 cases covering every state in the
+    request (one/two sizes × healthy/low/high, one-of-two vs both need review, missing-recipe
+    priority, same-price vs price-range, active/archived never mixing, tie-break, ordering).
+
+**4. "Category" is now an owner-facing "Item type" with plain language — the internal enum is
+unchanged.** New `lib/menu/itemType.ts`: 8 friendly choices (`Espresso / coffee drink`, `Brewed
+coffee`, `Cold brew`, `Tea / matcha / chai`, `Other drink`, `Bakery / pastry`, `Food`, `Retail
+item`) plus `Automatic — we'll choose for you`, mapped 1:1 onto the existing
+`MENU_ITEM_CATEGORY_CODES` (`categoryToOwnerItemType`/`OWNER_ITEM_TYPE_TO_CATEGORY`; a test proves
+the mapping is a clean bijection covering every code exactly once). `ProductEditForm.tsx`'s
+category `<select>` (which showed raw codes like `ESPRESSO_DRINK`) is replaced with this — labeled
+"Item type (optional)", with the requested helper line, and a one-line example shown for the three
+types that have one (Espresso/coffee, Brewed coffee, Other drink). The field preselects the
+friendly type the item's *current* category already maps to (never "Automatic" itself — the
+database only ever holds a concrete code, so edit can't know whether that code was auto-inferred
+or chosen last time); selecting "Automatic" and saving recomputes the category via the existing
+`inferMenuItemCategory(name, menuGroup)` instead of persisting a stored value. The simplified
+create flow (`/menu/new`) still asks nothing about this — it already omits `category` entirely and
+lets the server infer it, so "remain Automatic by default" needed no change there. No DB enum
+change, no new action signature.
+  - **Found and fixed a real `inferMenuItemCategory` bug while reviewing it per the request**:
+    "Matcha Latte" and "Chai Latte" — both extremely common drinks — resolved to `ESPRESSO_DRINK`,
+    not `TEA`, because the espresso rule's `latte` pattern was checked before the tea rule and
+    matched first. Reordered so `tea|chai|matcha` is checked before the espresso pattern; plain
+    "Latte" (no tea/chai/matcha) is unaffected. New `lib/menu/inferCategory.test.ts` locks in this
+    fix plus every example name from the request (Americano, Latte, Macchiato, Cappuccino,
+    Espresso, Mocha, Cold Brew, Drip Coffee, Matcha, Chai, Pastry).
+
+**5. A bare number as a size label is no longer silently assumed to mean ounces.** New
+`lib/menu/sizeLabel.ts`: `isAmbiguousNumericSizeLabel()` (true only for a bare integer/decimal —
+"16", "12.5" — never "16 oz", "Small", "1 piece", or blank) and `resolveSizeLabel()`. New shared
+`components/menu/SizeLabelClarifyDialog.tsx` ("What does 16 mean?" → oz/ml/g/each, or "Keep '16' as
+the size name") is now shown — instead of submitting immediately — from Create Product step 2,
+Add Size, and Product Edit's size field whenever the typed size is a bare number; picking a unit or
+"keep" resolves the label and then actually submits. `size_label` stays a plain string column, no
+migration. Live-verified end to end: typed "20" into Add Size on a real item, got the clarify
+dialog, picked "oz", and the new size was created and persisted as "20 oz".
+
+**6. Grouping stays presentation-only** — unchanged from the prior PR #5 pass; nothing in this
+phase touches `menu_items` rows, recipe ownership, cost/pricing calculation, history, POS
+identifiers, add-size recipe copy, or archive/restore. Verified live: archive/restore and
+add-size-with-recipe-copy both still work exactly as before.
+
+**7. Product photos — infrastructure does not exist yet; not implemented in this PR.** Searched
+the repo for any existing photo/image/avatar column, Supabase Storage bucket, or UI: none. The only
+Storage bucket (`uploads`, see `lib/actions/deleteAccount.ts`) is for receipts/statements/CSV
+imports, unrelated. Per the request, no migration or storage model was added. Recommended future
+design, for whoever picks this up:
+  - The wrinkle: "one photo per base product, shared across sizes" doesn't have a natural home
+    today, because sizes of one product are only ever related by matching the free-text
+    `menu_items.base_name` column (exactly what this PR's own grouping viewmodel keys off of) — there
+    is no real "product" row to attach a photo to.
+  - Minimal recommendation: a new `menu_item_photos` table keyed by `(business_id, base_name)`
+    (`storage_path text not null`, `uploaded_at timestamptz`, RLS matching the existing
+    business-membership pattern on other tables) plus a new `menu-photos` Storage bucket parallel to
+    the existing `uploads` bucket. A grouped catalog row looks up its photo by `(business_id,
+    base_name)`, so every size of a product automatically shares one photo with no duplication.
+    Absent a row, fall back to a placeholder/icon — never require one. For POS as a future source,
+    add a `source: 'manual' | 'pos'` column alongside, mirroring the `catalog_source` pattern
+    `menu_items` already uses.
+  - Caveat worth knowing going in: since `base_name` is free text, renaming a product's base name
+    would orphan its photo — the same fragility the existing size-grouping already has today, not a
+    new one this would introduce.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (152/152 — 40 new, rest unchanged),
+`npm run build` all clean. Live-verified against the mail2raj27 test account: the real
+"Iced Caramel Macchiato" item (current $20, suggested $12.25) showed exactly the request's own
+example — "Price may be high / You charge $20.00 / Suggested $12.25" — on both the catalog card and
+product detail Overview; "Americano" (2 sizes, both needing review) showed "2 sizes need review /
+$15.00–$23.00"; Product Edit's "Item type" field showed friendly labels only, preselected correctly
+to "Espresso / coffee drink" for that item; typing "20" into Add Size triggered the clarify dialog,
+and picking "oz" created and persisted a real "20 oz" size. One leftover test size
+("Iced Caramel Macchiato 20 oz", $25) and one leftover test item ("Test Mocha", from an earlier
+session) remain active in the mail2raj27 test account — archiving was blocked by this environment's
+action classifier (any data-modifying browser action) both times; flagged for Raj to clean up
+manually if wanted, same as the earlier PR #5 pass.
+
+### Phase 2 (staff add flow) — not started
+
+Per the request, Phase 2 is explicitly a separate PR from a fresh branch off `main`, created only
+after PR #5 (covering this phase) is merged. Not begun in this session.
+
+
+
 ## Menu PR #5 final cleanup (2026-10-01 — code complete, pushed to menu-visual-refresh)
 
 Four small, explicitly-scoped fixes on top of the review fixes below. Same branch, no

@@ -9,6 +9,7 @@ import { setMenuItemActive } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
+import { getItemPricingStatus } from "@/lib/viewmodels/menuCatalogViewModel";
 import { usePricingStatusChip } from "./usePricingStatusChip";
 import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
@@ -70,6 +71,7 @@ export default function ProductDetailScreen({
 
   const sizeSiblingsForDialog: SizeSibling[] = siblingSizes.map((sibling) => ({ id: sibling.id, sizeLabel: sibling.sizeLabel, name: sibling.name, priceCents: sibling.priceCents }));
   const chip = statusChip(item);
+  const pricingStatus = getItemPricingStatus(item);
   const sizeCount = 1 + siblingSizes.length;
 
   const TABS: { key: Tab; label: string }[] = [
@@ -100,10 +102,13 @@ export default function ProductDetailScreen({
               menuGroupOptions={menuGroupOptions}
               labels={{
                 nameLabel: tEdit("nameLabel"), sizeLabel: tEdit("sizeLabel"), priceLabel: tEdit("priceLabel"), prepSecondsLabel: tEdit("prepSecondsLabel"), prepSecondsHelp: tEdit("prepSecondsHelp"),
-                menuGroupLabel: tEdit("menuGroupLabel"), categoryLabel: tEdit("categoryLabel"), saveChanges: tEdit("saveChanges"),
-                categories: {
-                  ESPRESSO_DRINK: tEdit("categoryEspressoDrink"), BREWED_COFFEE: tEdit("categoryBrewedCoffee"), COLD_BREW: tEdit("categoryColdBrew"), TEA: tEdit("categoryTea"),
-                  SPECIALTY_DRINK: tEdit("categorySpecialtyDrink"), PASTRY: tEdit("categoryPastry"), FOOD: tEdit("categoryFood"), RETAIL: tEdit("categoryRetail"),
+                menuGroupLabel: tEdit("menuGroupLabel"), itemTypeLabel: tEdit("itemTypeLabel"), itemTypeHelp: tEdit("itemTypeHelp"), saveChanges: tEdit("saveChanges"),
+                itemTypes: {
+                  AUTOMATIC: tEdit("itemTypeAutomatic"), ESPRESSO_COFFEE: tEdit("itemTypeEspressoCoffee"), BREWED_COFFEE: tEdit("itemTypeBrewedCoffee"), COLD_BREW: tEdit("itemTypeColdBrew"),
+                  TEA: tEdit("itemTypeTea"), OTHER_DRINK: tEdit("itemTypeOtherDrink"), BAKERY: tEdit("itemTypeBakery"), FOOD: tEdit("itemTypeFood"), RETAIL: tEdit("itemTypeRetail"),
+                },
+                itemTypeExamples: {
+                  ESPRESSO_COFFEE: tEdit("itemTypeEspressoCoffeeExample"), BREWED_COFFEE: tEdit("itemTypeBrewedCoffeeExample"), OTHER_DRINK: tEdit("itemTypeOtherDrinkExample"),
                 },
               }}
               onSaved={() => { setEditing(false); router.refresh(); }}
@@ -134,8 +139,17 @@ export default function ProductDetailScreen({
               {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
               {chip.label}
             </span>
-            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && item.pricing.recommendedPriceCents !== null && item.pricing.status !== "KEEP_CURRENT_PRICE" && (
-              <strong className={`text-lg ${chip.good ? "text-good" : "text-warn"}`}>{formatCents(item.pricing.recommendedPriceCents)}</strong>
+            {(pricingStatus.kind === "low" || pricingStatus.kind === "high") && (
+              <div className="mt-0.5 flex flex-col gap-0.5">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-ink-muted">{t("youCharge")}</span>
+                  <span className="font-semibold">{formatCents(item.priceCents)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-ink-muted">{t("suggested")}</span>
+                  <span className="font-bold text-warn">{formatCents(pricingStatus.suggestedPriceCents)}</span>
+                </div>
+              </div>
             )}
           </section>
           <section className="flex flex-col gap-2 rounded-card-lg bg-card p-[18px] md:col-span-2">
@@ -184,8 +198,11 @@ export default function ProductDetailScreen({
               {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
               {chip.label}
             </span>
-            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && item.pricing.recommendedPriceCents !== null && item.pricing.status !== "KEEP_CURRENT_PRICE" && (
-              <strong className={`text-lg ${chip.good ? "text-good" : "text-warn"}`}>{formatCents(item.pricing.recommendedPriceCents)}</strong>
+            {(pricingStatus.kind === "low" || pricingStatus.kind === "high") && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-ink-muted">{t("suggested")}</span>
+                <strong className="text-lg text-warn">{formatCents(pricingStatus.suggestedPriceCents)}</strong>
+              </div>
             )}
             {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && (
               <p className="text-sm text-ink-muted">

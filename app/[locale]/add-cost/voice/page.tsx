@@ -2,7 +2,9 @@ import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
 import VoiceRecorder from "@/components/addcost/VoiceRecorder";
+import AiUnavailableNotice from "@/components/addcost/AiUnavailableNotice";
 import { EXPENSE_CATEGORY_CODES } from "@/lib/constants";
+import { isAiConfigured } from "@/lib/ai/types";
 import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -13,6 +15,15 @@ export default async function VoiceEntryPage() {
   const t = await getTranslations("AddCost");
   const tCommon = await getTranslations("Common");
   const tCategories = await getTranslations("Categories");
+
+  if (!isAiConfigured()) {
+    return (
+      <PageShell className="flex flex-col gap-6 px-4 py-6 pb-10">
+        <BackHeader title={t("optionVoice")} backHref="/add-cost" backLabel={tCommon("back")} />
+        <AiUnavailableNotice title={t("aiUnavailableTitle")} message={t("aiUnavailableVoiceBody")} typeItLabel={t("optionType")} />
+      </PageShell>
+    );
+  }
 
   const categoryLabels = Object.fromEntries(EXPENSE_CATEGORY_CODES.map((c) => [c, tCategories(c)])) as Record<
     (typeof EXPENSE_CATEGORY_CODES)[number],

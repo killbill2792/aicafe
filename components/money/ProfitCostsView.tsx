@@ -7,19 +7,28 @@ import type { HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
+import { flowBarWidthPct, profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 const BAND_COLOR: Record<HealthBand, string> = { healthy: "text-good", watch: "text-warn", high: "text-warn" };
+const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-muted" } as const;
 
-function StepBar({ label, cents, widthPct, color, bold }: { label: string; cents: number; widthPct: number; color: string; bold?: boolean }) {
+// `tone` is only passed for the one row (owner profit / "you keep") whose color must follow its
+// sign; every other row keeps its own fixed brand color via `color` and is left unstyled (muted
+// label, default text) exactly as before. `Money` already renders the "−" for a negative amount
+// via Intl's currency formatting — this never prepends one itself, so there's only ever one
+// minus sign on screen.
+function StepBar({ label, cents, widthPct, color, tone }: { label: string; cents: number; widthPct: number; color: string; tone?: "good" | "warn" | "neutral" }) {
+  const barColor = tone ? TONE_BAR_COLOR[tone] : color;
+  const textColor = tone ? profitToneTextClass(tone) : "";
+  const labelColor = tone ? textColor : "text-ink-muted";
   return (
     <div className="flex items-center gap-2.5">
-      <span className={`w-[78px] shrink-0 text-[13px] font-semibold ${bold ? "text-good" : "text-ink-muted"}`}>{label}</span>
+      <span className={`w-[78px] shrink-0 text-[13px] font-semibold ${labelColor}`}>{label}</span>
       <div className="h-[26px] flex-1">
-        <div className={`h-[26px] rounded-md ${color}`} style={{ width: `${Math.max(0, Math.min(100, widthPct))}%` }} />
+        <div className={`h-[26px] rounded-md ${barColor}`} style={{ width: `${Math.max(0, Math.min(100, widthPct))}%` }} />
       </div>
-      <span className={`w-16 shrink-0 text-end text-[13px] font-bold ${bold ? "text-good" : ""}`}>
-        {cents < 0 ? "−" : ""}
-        <Money cents={Math.abs(cents)} />
+      <span className={`w-16 shrink-0 text-end text-[13px] font-bold ${textColor}`}>
+        <Money cents={cents} />
       </span>
     </div>
   );
@@ -59,6 +68,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
   // sales to show a ratio" rather than a fabricated number.
   const pct = (n: number) => (vm.salesCents > 0 ? (n / vm.salesCents) * 100 : 0);
   const runningExCardFees = vm.runningCostLines.reduce((s, l) => s + l.amountCents, 0);
+  const tone = profitTone(vm.ownerProfitCents);
 
   const changeLabels: Record<string, string> = {
     sales: t("sales"),
@@ -81,7 +91,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
             widthPct={pct(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
             color="bg-running"
           />
-          <StepBar label={t("youKeep")} cents={vm.ownerProfitCents} widthPct={pct(vm.ownerProfitCents)} color="bg-good" bold />
+          <StepBar label={t("youKeep")} cents={vm.ownerProfitCents} widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)} color="bg-good" tone={tone} />
         </div>
       </section>
 
@@ -126,9 +136,9 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
             <Money cents={vm.totalCostsCents} />
           </span>
         </div>
-        <div className="mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl bg-good-tint px-3.5 py-3">
-          <span className="text-[17px] font-extrabold text-[#1E4D37]">{t("ownerProfit")}</span>
-          <span className="font-headline text-[28px] font-bold text-good">
+        <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-[#F1EAE0]"}`}>
+          <span className={`text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>{t("ownerProfit")}</span>
+          <span className={`font-headline text-[28px] font-bold ${profitToneTextClass(tone)}`}>
             <Money cents={vm.ownerProfitCents} />
           </span>
         </div>

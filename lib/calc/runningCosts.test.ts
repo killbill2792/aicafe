@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { monthlyAmountForCategory, runningCostsForPeriodCents } from "./runningCosts";
+import { allocateIntegerCentsByCategory, monthlyAmountForCategory, runningCostsForPeriodCents } from "./runningCosts";
+import { roundHalfUpToCent } from "./money";
 
 describe("monthlyAmountForCategory", () => {
   it("uses actual expenses when any exist this month", () => {
@@ -48,5 +49,47 @@ describe("runningCostsForPeriodCents", () => {
     );
     // Sep: 300,000/30 × 2 = 20,000. Oct: 310,000/31 × 2 = 20,000.
     expect(cents).toBeCloseTo(40_000, 0);
+  });
+});
+
+describe("allocateIntegerCentsByCategory", () => {
+  it("sums to the rounded aggregate target even when independently rounding each category would not", () => {
+    // Three $100/mo lines prorated for 1 day of a 31-day month: 10,000 / 31 = 322.5806...¢ each.
+    // Math.round on each independently gives 323×3 = 969¢; the true aggregate 967.7419...¢ rounds
+    // to 968¢ — the exact drift PR #6 review flagged.
+    const raw = 10_000 / 31;
+    const rawByCategory = new Map([
+      ["rent", raw],
+      ["water", raw],
+      ["software", raw],
+    ]);
+    const targetCents = roundHalfUpToCent(raw * 3);
+    expect(targetCents).toBe(968);
+
+    const allocated = allocateIntegerCentsByCategory(rawByCategory, targetCents);
+    const sum = [...allocated.values()].reduce((a, b) => a + b, 0);
+    expect(sum).toBe(968);
+    for (const cents of allocated.values()) expect(Number.isInteger(cents)).toBe(true);
+  });
+
+  it("is deterministic: equal remainders break ties on category code, ascending", () => {
+    const raw = 10_000 / 31;
+    const rawByCategory = new Map([
+      ["water", raw],
+      ["rent", raw],
+      ["software", raw],
+    ]);
+    // All three remainders are identical, so the 2 extra cents needed to reach 968 must go to the
+    // two categories that sort first alphabetically: "rent" and "software", before "water".
+    const allocated = allocateIntegerCentsByCategory(rawByCategory, 968);
+    expect(allocated.get("rent")).toBe(323);
+    expect(allocated.get("software")).toBe(323);
+    expect(allocated.get("water")).toBe(322);
+  });
+
+  it("gives each category its exact share when the amounts already divide evenly", () => {
+    const allocated = allocateIntegerCentsByCategory(new Map([["rent", 20_000], ["water", 500]]), 20_500);
+    expect(allocated.get("rent")).toBe(20_000);
+    expect(allocated.get("water")).toBe(500);
   });
 });

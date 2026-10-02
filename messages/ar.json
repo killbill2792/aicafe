@@ -14,7 +14,7 @@
     "periodSwitchLabel": "الفترة الزمنية",
     "today": "اليوم",
     "week": "الأسبوع",
-    "month": "الشهر",
+    "month": "الشهر حتى الآن",
     "back": "رجوع",
     "addCost": "إضافة مصروف",
     "next": "التالي"
@@ -54,7 +54,10 @@
     "voiceListening": "جارٍ الاستماع…",
     "voiceNotSupported": "الإدخال الصوتي غير مدعوم في هذا المتصفح.",
     "voiceConfirm": "تأكيد",
-    "voiceTranscriptLabel": "سمعنا"
+    "voiceTranscriptLabel": "سمعنا",
+    "aiUnavailableTitle": "غير متاح حاليًا",
+    "aiUnavailableReceiptBody": "قراءة صور الإيصالات غير مفعّلة لهذا المقهى بعد. يمكنك إضافة هذا المصروف بكتابته يدويًا.",
+    "aiUnavailableVoiceBody": "الإدخال الصوتي غير مفعّل لهذا المقهى بعد. يمكنك إضافة هذا المصروف بكتابته يدويًا."
   },
   "Categories": {
     "rent": "الإيجار",
@@ -183,7 +186,8 @@
     "bandWatch": "راقب",
     "bandHigh": "مرتفع",
     "vsLastPeriod": "مقارنة بالفترة السابقة",
-    "add": "إضافة"
+    "add": "إضافة",
+    "manageBills": "إدارة الفواتير"
   },
   "Menu": {
     "title": "القائمة",
@@ -247,7 +251,16 @@
     "costsAboutToMake": "تكلفة إعداده حوالي {amount}",
     "tabPricing": "التسعير",
     "setupRecipeBanner": "أضف الآن ما يدخل في هذا المنتج.",
-    "fromPrice": "من {amount}"
+    "priceMayBeLow": "قد يكون السعر منخفضًا",
+    "priceMayBeHigh": "قد يكون السعر مرتفعًا",
+    "youCharge": "سعرك الحالي",
+    "pricesLookRight": "الأسعار تبدو صحيحة",
+    "sizeRecipeIncomplete": "{size}: الوصفة غير مكتملة",
+    "sizesMissingCostInfo": "{count, plural, one {حجم واحد بلا معلومات تكلفة} other {# أحجام بلا معلومات تكلفة}}",
+    "sizePriceMayBeLow": "{size}: قد يكون السعر منخفضًا",
+    "sizePriceMayBeHigh": "{size}: قد يكون السعر مرتفعًا",
+    "multipleSizesNeedReview": "{count, plural, one {حجم واحد يحتاج مراجعة} other {# أحجام تحتاج مراجعة}}",
+    "priceRange": "{low}–{high}"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -261,7 +274,6 @@
     "prepSecondsLabel": "وقت التحضير (بالدقائق)",
     "prepSecondsHelp": "كم من الوقت يستغرق تحضير المشروب كاملًا — يُستخدم لتوزيع تكلفة الموظف بين المشروبات",
     "categoryDrink": "مشروب",
-    "categoryFood": "طعام",
     "add": "إضافة",
     "recipe": "الوصفة",
     "recipeHint": "أضف كل مكوّن يستخدمه هذا المشروب، واحدًا تلو الآخر — لا يوجد حد، تابع حتى تكتمل الوصفة.",
@@ -279,17 +291,7 @@
     "unitEach": "بالعدد",
     "addIngredient": "إضافة",
     "remove": "إزالة",
-    "categoryLabel": "الفئة",
-    "categoryEspressoDrink": "مشروب إسبريسو",
-    "categoryBrewedCoffee": "قهوة مقطرة",
-    "categoryColdBrew": "قهوة باردة",
-    "categoryTea": "شاي",
-    "categorySpecialtyDrink": "مشروب مميز",
-    "categoryPastry": "معجنات",
-    "categoryRetail": "منتج للبيع",
-    "pricingStatusNew": "السعر المقترح",
     "pricingStatusKeep": "سعرك مناسب",
-    "pricingStatusReview": "يستحق المراجعة",
     "pricingExplainerBenchmark": "يعتمد على تكلفة الوصفة وافتراضات تسعير المقاهي. سيتحسن الاقتراح مع توفر سجل تشغيل أطول.",
     "pricingExplainerBusinessAdjusted": "يعتمد على تكلفة الوصفة ومبيعات المقهى الأخيرة وتكاليف تشغيله.",
     "pricingExplainerIncomplete": "بعض البيانات ناقصة، لذا اعتبر هذا تقديراً أولياً.",
@@ -320,7 +322,27 @@
     "existingTag": "موجود",
     "whyLabel": "لماذا؟",
     "change": "تغيير",
-    "chooseExisting": "اختيار مكوّن موجود"
+    "chooseExisting": "اختيار مكوّن موجود",
+    "itemTypeLabel": "نوع الصنف (اختياري)",
+    "itemTypeHelp": "يساعدنا هذا على مقارنة الأصناف المشابهة وتحسين اقتراحات التسعير. إذا لم تكن متأكدًا، اتركه على تلقائي.",
+    "itemTypeAutomatic": "تلقائي — سنختار لك",
+    "itemTypeEspressoCoffee": "إسبريسو / مشروب قهوة",
+    "itemTypeEspressoCoffeeExample": "مثال: لاتيه، أمريكانو، كابتشينو، موكا",
+    "itemTypeBrewedCoffee": "قهوة مقطّرة",
+    "itemTypeBrewedCoffeeExample": "مثال: دريب، بور أوفر، فرنش برس",
+    "itemTypeColdBrew": "كولد برو",
+    "itemTypeTea": "شاي / ماتشا / شاي كرك",
+    "itemTypeOtherDrink": "مشروب آخر",
+    "itemTypeOtherDrinkExample": "مثال: ليموناضة، سموذي، مشروب منعش",
+    "itemTypeBakery": "مخبوزات",
+    "itemTypeFood": "طعام",
+    "itemTypeRetail": "منتج للبيع",
+    "sizeClarifyTitle": "ما المقصود بـ {value}؟",
+    "sizeClarifyKeep": "إبقاء “{value}” كاسم للحجم",
+    "sizeUnitOz": "أونصة",
+    "sizeUnitMl": "مل",
+    "sizeUnitG": "غ",
+    "sizeUnitEach": "قطعة"
   },
   "Staff": {
     "title": "الموظفون",
@@ -340,7 +362,8 @@
     "costPerSalesDollar": "تكلفة الموظفين لكل $1 من المبيعات",
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
-    "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع."
+    "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
+    "addStaff": "+ إضافة موظف"
   },
   "More": {
     "title": "المزيد",

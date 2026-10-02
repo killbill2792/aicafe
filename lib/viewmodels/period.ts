@@ -1,5 +1,12 @@
-import { runningCostsForPeriodCents, type CategoryMonthlyAmount, type DailyFacts } from "@/lib/calc";
-import type { BusinessSnapshot } from "@/lib/data/types";
+import {
+  allocateIntegerCentsByCategory,
+  roundHalfUpToCent,
+  runningCostsForPeriodCents,
+  runningCostsForPeriodCentsByCategory,
+  type CategoryMonthlyAmount,
+  type DailyFacts,
+} from "@/lib/calc";
+import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 
 export type Period = "today" | "week" | "month";
 
@@ -90,6 +97,34 @@ export function previousPeriodCalendarRange(snapshot: BusinessSnapshot, period: 
 export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period): number {
   const { start, end } = periodCalendarRange(snapshot, period);
   return runningCostsForPeriodCents(categoryMonthlyAmounts(snapshot), start, end);
+}
+
+/** The same per-category lines as `snapshot.runningCostLines`, but each `amountCents` prorated to
+ * the selected period instead of the full month — so a "Today" or "Week" view shows Rent at its
+ * actual share of that period, not the full monthly amount, matching the already-prorated total
+ * and owner-profit figures computed from `runningCostsForPeriod` above. `label`/`isEstimate`/
+ * `isMissing` are carried over unchanged; only the amount is period-scoped.
+ *
+ * Money is integer cents everywhere (CLAUDE.md rule 1), and the displayed rows must sum to
+ * exactly the same rounded total the rest of the screen shows — rounding each category
+ * independently can drift from the rounded aggregate by a cent or more (see
+ * `allocateIntegerCentsByCategory`'s own doc comment for a worked example), so the target is the
+ * rounded output of `runningCostsForPeriod` itself — the exact aggregate `totalCostsCents` is
+ * built from — and cents are allocated deterministically to reach it exactly. */
+export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Period): RunningCostLine[] {
+  const { start, end } = periodCalendarRange(snapshot, period);
+  const byCategory = runningCostsForPeriodCentsByCategory(categoryMonthlyAmounts(snapshot), start, end);
+  const targetCents = roundHalfUpToCent(runningCostsForPeriod(snapshot, period));
+  // Missing categories have no raw amount to round and must display as $0 — excluded from
+  // allocation entirely, not just zeroed out afterward, so they never receive a stray cent.
+  const rawByCategory = new Map(
+    snapshot.runningCostLines.filter((line) => !line.isMissing).map((line) => [line.categoryCode, byCategory.get(line.categoryCode) ?? 0]),
+  );
+  const allocatedByCategory = allocateIntegerCentsByCategory(rawByCategory, targetCents);
+  return snapshot.runningCostLines.map((line) => ({
+    ...line,
+    amountCents: line.isMissing ? 0 : allocatedByCategory.get(line.categoryCode) ?? 0,
+  }));
 }
 
 /** Running costs for the comparison period one back (see `previousPeriodCalendarRange`). */

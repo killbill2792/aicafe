@@ -2,9 +2,14 @@ import { type MenuItemCategoryCode } from "@/lib/constants";
 
 const KEYWORD_RULES: { pattern: RegExp; category: MenuItemCategoryCode }[] = [
   { pattern: /cold brew|nitro/i, category: "COLD_BREW" },
+  // Checked before the espresso rule: "Matcha Latte" / "Chai Latte" also match "latte", but the
+  // tea/chai/matcha flavor is the more specific, definitive signal — a tea latte is tea, not
+  // espresso, even though "latte" alone (no tea/chai/matcha) still correctly falls through below.
+  // Word-boundaried (\b) so "tea" only matches the actual word — a plain substring match would
+  // also fire on "sTEAmed" (e.g. "Steamed Latte"), which has nothing to do with tea.
+  { pattern: /\btea\b|\bchai\b|\bmatcha\b/i, category: "TEA" },
   { pattern: /latte|espresso|cappuccino|macchiato|americano|cortado|flat white|mocha/i, category: "ESPRESSO_DRINK" },
   { pattern: /drip|brewed|pour.?over|french press/i, category: "BREWED_COFFEE" },
-  { pattern: /tea|chai|matcha/i, category: "TEA" },
   { pattern: /smoothie|lemonade|refresher|italian soda/i, category: "SPECIALTY_DRINK" },
   { pattern: /croissant|muffin|scone|bagel|pastry|cookie|cake/i, category: "PASTRY" },
   { pattern: /sandwich|wrap|salad|bowl|toast/i, category: "FOOD" },

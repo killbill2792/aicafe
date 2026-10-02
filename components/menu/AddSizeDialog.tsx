@@ -5,6 +5,8 @@ import { useTranslations } from "next-intl";
 import { addMenuItem } from "@/lib/actions/menuItems";
 import { formatCents } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
+import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
+import SizeLabelClarifyDialog from "./SizeLabelClarifyDialog";
 
 export type SizeSibling = { id: string; sizeLabel: string | null; name: string; priceCents: number };
 
@@ -29,15 +31,25 @@ export default function AddSizeDialog({
   const [copyFrom, setCopyFrom] = useState<string>(siblingSizes[0]?.id ?? "");
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [clarifySize, setClarifySize] = useState(false);
 
-  function handleSubmit() {
+  function handleSubmitClick() {
     const priceCents = Math.round((Number(price) || 0) * 100);
     if (!sizeLabel.trim() || priceCents <= 0) return;
+    if (isAmbiguousNumericSizeLabel(sizeLabel)) {
+      setClarifySize(true);
+      return;
+    }
+    submit(sizeLabel);
+  }
+
+  function submit(resolvedSizeLabel: string) {
+    const priceCents = Math.round((Number(price) || 0) * 100);
     setError(null);
     startTransition(async () => {
       const result = await addMenuItem({
         name: baseName,
-        sizeLabel: sizeLabel.trim(),
+        sizeLabel: resolvedSizeLabel.trim(),
         priceCents,
         category,
         menuGroup: menuGroup ?? undefined,
@@ -85,9 +97,17 @@ export default function AddSizeDialog({
         {error && <p className="text-sm text-warn">{error}</p>}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="h-12 flex-1 rounded-full border border-line text-base font-semibold text-ink-muted">{t("cancel")}</button>
-          <button type="button" onClick={handleSubmit} disabled={isPending || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">{t("addSize")}</button>
+          <button type="button" onClick={handleSubmitClick} disabled={isPending || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">{t("addSize")}</button>
         </div>
       </div>
+
+      {clarifySize && (
+        <SizeLabelClarifyDialog
+          value={sizeLabel}
+          onResolve={(resolved) => { setSizeLabel(resolved); setClarifySize(false); submit(resolved); }}
+          onCancel={() => setClarifySize(false)}
+        />
+      )}
     </div>
   );
 }
