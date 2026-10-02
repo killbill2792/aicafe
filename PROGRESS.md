@@ -5,6 +5,40 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #6 follow-up: deterministic cent allocation for running-cost rows (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+One remaining review finding: rounding each running-cost category's prorated amount independently
+(the previous fix) guarantees integer cents per row but not that the rows *sum* to the same rounded
+total the rest of the screen shows — e.g. three $100/mo lines in a 31-day month each prorate to
+322.58...¢ for "Today"; independently rounding each gives 323×3 = 969¢, while the real aggregate
+967.74...¢ rounds to 968¢. Fixed with the "largest remainder" method:
+
+- New `allocateIntegerCentsByCategory(rawAmountsByCategory, targetCents)`
+  (`lib/calc/runningCosts.ts`) — every category first gets `Math.floor(raw)`, then the few cents
+  still needed to reach `targetCents` go to the categories with the largest fractional remainder
+  first, ties broken by category code ascending (deterministic regardless of `Map` iteration
+  order).
+- `runningCostLinesForPeriod()` (`lib/viewmodels/period.ts`) now computes `targetCents` from
+  `runningCostsForPeriod()` itself — the exact same aggregate call `totalCostsCents` is built
+  from, per the review's "calculate the rounded aggregate target using the same aggregate
+  running-cost calculation" — and allocates against it, instead of rounding each category alone.
+  Missing categories are excluded from allocation entirely (never just zeroed after the fact) and
+  stay 0.
+- New tests: `lib/calc/runningCosts.test.ts` (pure `allocateIntegerCentsByCategory` — the exact
+  three-$100-lines worked example from the review, a determinism/tie-break case, and an
+  already-evenly-divisible case) and `lib/viewmodels/period.test.ts` (end-to-end through
+  `runningCostLinesForPeriod`/`runningCostsForPeriod`, asserting `sum(amountCents) ===
+  roundHalfUpToCent(runningCostsForPeriod(...))` and every row is an integer, for Today/Week/Month
+  and a 5-line set including a missing category).
+
+No other behavior changed. Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test`
+(178/178 — 5 new, rest unchanged), `npm run build` all clean. Live-checked against the real test
+account's Week view: running-cost rows now sum to exactly $3,604.65, matching `totalCosts −
+ingredients − staff − cardFees`; Water shifted from $4.65 (previous independent-rounding result)
+to $4.64 — the one-cent redistribution this fix makes to keep the total exact.
+
+
+
 ## PR #6 review fixes: integer cents, tea word-boundary, loss bar, touch target (2026-10-02 — code complete, pushed to menu-visual-refresh)
 
 Four review findings, each independently scoped and fixed as described — no unrelated changes.

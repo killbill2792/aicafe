@@ -88,6 +88,37 @@ export function runningCostsForPeriodCentsByCategory(
   return byCategory;
 }
 
+/**
+ * Rounds each category's raw (fractional) prorated amount to a whole cent via the "largest
+ * remainder" method, so the per-category rows always sum to exactly `targetCents` — the rounded
+ * AGGREGATE total (the same number `totalCostsCents` is built from), not just the sum of
+ * independently-rounded rows. Rounding every category on its own (plain `Math.round` each) can
+ * drift from the rounded aggregate by a cent or more once several categories don't divide evenly
+ * (e.g. three $100/mo lines in a 31-day month: each raw share is 322.58...¢, independently
+ * rounding each to 323¢ sums to 969¢, while the true aggregate 967.74...¢ rounds to 968¢).
+ *
+ * Deterministic: every category first gets `Math.floor(raw)`; the few cents still needed to reach
+ * `targetCents` go to the categories with the largest fractional remainder first, ties broken by
+ * category code ascending — so the same input always allocates the same way, independent of Map
+ * iteration order.
+ */
+export function allocateIntegerCentsByCategory(rawAmountsByCategory: Map<string, number>, targetCents: number): Map<string, number> {
+  const entries = [...rawAmountsByCategory.entries()].map(([categoryCode, raw]) => {
+    const floor = Math.floor(raw);
+    return { categoryCode, floor, remainder: raw - floor };
+  });
+  const base = entries.reduce((sum, e) => sum + e.floor, 0);
+  const remaining = targetCents - base;
+  const byRemainderDesc = [...entries].sort((a, b) => b.remainder - a.remainder || a.categoryCode.localeCompare(b.categoryCode));
+
+  const result = new Map(entries.map((e) => [e.categoryCode, e.floor]));
+  for (let i = 0; i < remaining && i < byRemainderDesc.length; i++) {
+    const code = byRemainderDesc[i].categoryCode;
+    result.set(code, (result.get(code) ?? 0) + 1);
+  }
+  return result;
+}
+
 /** Running costs per day for the calendar month `monthKey`, undiluted by period overlap. */
 export function runningCostsPerDayCents(categoryAmountsCents: number[], monthKey: string): number {
   return sumCents(categoryAmountsCents, (c) => c) / daysInMonthKey(monthKey);
