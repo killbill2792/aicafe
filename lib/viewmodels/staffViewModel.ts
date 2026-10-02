@@ -61,9 +61,8 @@ export function buildStaffViewModel(snapshot: BusinessSnapshot): StaffViewModel 
       const wages = wagesCentsForTimecard(s.timecard, now);
       const todayCostCents = staffCostLoadedCents(wages, payrollTaxCents(wages, payrollTaxRate));
       const mbs = mealBreakStatus(s.timecard, now);
-      const tookBreak = s.timecard.breaks.length > 0;
-      const breakFlag: StaffShiftVM["breakFlag"] = tookBreak ? "ok" : mbs.missed ? "missed" : mbs.warn ? "due_soon" : "ok";
-      const breakDueIso = tookBreak ? null : new Date(new Date(s.timecard.clockIn).getTime() + 5 * 3_600_000).toISOString();
+      const breakFlag: StaffShiftVM["breakFlag"] = mbs.missed ? "missed" : mbs.warn ? "due_soon" : "ok";
+      const breakDueIso = breakFlag === "ok" ? null : new Date(new Date(s.timecard.clockIn).getTime() + 5 * 3_600_000).toISOString();
 
       return {
         employeeId: s.employeeId,

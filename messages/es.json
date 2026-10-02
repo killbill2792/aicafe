@@ -5,6 +5,8 @@
   "Nav": {
     "ariaLabel": "Navegación principal",
     "home": "Inicio",
+    "team": "Equipo IA",
+    "teamShort": "Equipo",
     "money": "Dinero",
     "menu": "Menú",
     "staff": "Personal",
@@ -303,7 +305,9 @@
     "multipleSizesNeedReview": "{count, plural, one {# tamaño necesita revisión} other {# tamaños necesitan revisión}}",
     "priceRange": "{low}–{high}",
     "sizeCostToMake": "Cuesta {amount} prepararlo",
-    "viewEditSize": "Ver / Editar"
+    "viewEditSize": "Ver / Editar",
+    "photoPlaceholder": "Foto del producto próximamente",
+    "selectedSize": "Tamaño seleccionado"
   },
   "ManageMenu": {
     "title": "Gestionar menú",
@@ -735,5 +739,6 @@
     "estimate": "Estimación",
     "benchmarkPricingEvidence": "Basado en el costo de la receta de este producto y en supuestos de referencia para cafeterías.",
     "businessPricingEvidence": "Basado en el costo de la receta y el historial disponible de ventas y costos del café."
+    ,"inboxStatusLabel":"Estado de tareas","staffTask":"La cobertura de personal necesita una decisión","reviewItem":"Revisar {item}","openStaff":"Gestionar personal","openBills":"Abrir facturas","openIngredientCosts":"Abrir costos de ingredientes","summaryCounts":"{needs} te necesitan · {handled} resueltas · {watching} vigiladas","openTeam":"Abrir equipo"
   }
 }

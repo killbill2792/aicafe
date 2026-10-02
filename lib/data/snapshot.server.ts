@@ -153,7 +153,7 @@ async function getStaffShiftsToday(
 
   const { data, error } = await supabase
     .from("timecards")
-    .select("id, employee_id, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name, role)")
+    .select("id, employee_id, schedule_id, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name, role)")
     .eq("business_id", businessId)
     .gte("clock_in", dayStartUtc)
     .lte("clock_in", dayEndUtc)
@@ -172,6 +172,7 @@ async function getStaffShiftsToday(
         clockOut: row.clock_out,
         hourlyWageCents: row.hourly_wage_cents,
         breaks: (row.breaks as { start: string; end: string; paid: boolean }[]) ?? [],
+        scheduleId: row.schedule_id,
       },
     };
   });

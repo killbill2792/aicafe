@@ -1637,3 +1637,24 @@ Phase 2 final Manage Staff follow-up result:
 - [x] Schedule scope now says “Use every week” / “Only this month” with clear supporting copy in en/es/ar.
 - [x] Selected `aria-pressed` styling and 48px scope controls are preserved.
 - [x] Typecheck, lint, and all 259 tests pass.
+
+## Phase 3 — Scan-fast owner workspace (2026-10-02)
+
+Plan:
+- Promote AI Team into primary desktop/mobile navigation and compress Home into truthful task counts plus a responsive summary grid.
+- Add tenant-safe operating-task persistence that upserts deterministic tasks without erasing lifecycle state, and build one URL-backed agent/status inbox from persisted history.
+- Add portrait-style agent avatars and entity-preserving, domain-correct deep links without inventing unsupported inventory or applying POS prices.
+- Stabilize menu-size ordering, make exact-size editing real and validated, strengthen compact menu status cues, and complete the product overview summary/photo placeholder.
+- Separate predicted schedule timecards from confirmed actual shifts for break alerts and add timezone-safe regression coverage.
+- Verify typecheck, lint, full tests, build, responsive UI, RTL, and 48px targets; then commit, push, and open a PR without merging.
+
+No migration or pricing-formula change; migration 23 is already deployed.
+
+Phase 3 result:
+- [x] AI Team is a primary six-destination nav item; Home uses a truthful compact task summary and a responsive two-column secondary grid.
+- [x] Deterministic tasks are tenant-checked, inserted idempotently, refreshed without erasing persisted lifecycle payload/status, and read back with real handled/watching history and responses.
+- [x] Operations has URL-backed agent/status tabs, scoped counts, portrait-style identities, preserved entity metadata, and domain-correct deep links.
+- [x] Menu size ordering is deterministic and selection-independent; View / Edit is a real 48px exact-size action with validated edit mode.
+- [x] Product Overview now includes size, price, recipe cost/completeness, pricing state, sales, and a future-photo placeholder without schema changes.
+- [x] Predicted schedule rows still estimate wages but cannot create real meal-break warnings/alerts; confirmed shifts retain 4.5h/5h thresholds and qualifying-break suppression.
+- [x] Typecheck, lint, and full tests pass. Build is blocked only by the existing environment failure to fetch the three Google fonts; no browser runtime is installed for screenshots.

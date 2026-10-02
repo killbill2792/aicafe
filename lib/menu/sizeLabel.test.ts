@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isAmbiguousNumericSizeLabel, resolveSizeLabel } from "./sizeLabel";
+import { isAmbiguousNumericSizeLabel, resolveSizeLabel, stableSortSizes } from "./sizeLabel";
 
 describe("isAmbiguousNumericSizeLabel", () => {
   it("flags a bare integer", () => {
@@ -29,6 +29,18 @@ describe("isAmbiguousNumericSizeLabel", () => {
   it("does not flag an empty or blank size (optional field)", () => {
     expect(isAmbiguousNumericSizeLabel("")).toBe(false);
     expect(isAmbiguousNumericSizeLabel("   ")).toBe(false);
+  });
+});
+
+describe("stableSortSizes", () => {
+  it("keeps numeric sizes ascending independently of which item is selected first", () => {
+    const sizes = [{ sizeLabel: "20 oz", id: "20" }, { sizeLabel: "16 oz", id: "16" }];
+    expect(stableSortSizes(sizes).map((size) => size.id)).toEqual(["16", "20"]);
+  });
+
+  it("orders common named sizes and keeps unfamiliar labels stable", () => {
+    expect(stableSortSizes([{ sizeLabel: "Large", id: "l" }, { sizeLabel: "Small", id: "s" }]).map((size) => size.id)).toEqual(["s", "l"]);
+    expect(stableSortSizes([{ sizeLabel: "Carafe", id: "a" }, { sizeLabel: "For two", id: "b" }]).map((size) => size.id)).toEqual(["a", "b"]);
   });
 });
 

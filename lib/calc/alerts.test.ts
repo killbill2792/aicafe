@@ -23,6 +23,9 @@ describe("voidsAlert", () => {
 });
 
 describe("mealBreakStatus", () => {
+  it("does not warn two hours into a 6:00 shift", () => {
+    expect(mealBreakStatus({ clockIn: "2026-09-01T13:00:00Z", clockOut: null, hourlyWageCents: 2_000, breaks: [] }, new Date("2026-09-01T15:00:00Z"))).toMatchObject({ warn: false, missed: false });
+  });
   it("warns at 4h30 with no break taken", () => {
     const timecard = { clockIn: "2026-09-01T13:00:00Z", clockOut: null, hourlyWageCents: 2_000, breaks: [] };
     const status = mealBreakStatus(timecard, new Date("2026-09-01T17:30:00Z"));
@@ -35,6 +38,17 @@ describe("mealBreakStatus", () => {
     const status = mealBreakStatus(timecard);
     expect(status.missed).toBe(true);
     expect(status.penaltyCents).toBe(2_000);
+  });
+
+  it("does not call a schedule-generated prediction a real missed break", () => {
+    const status = mealBreakStatus({ clockIn: "2026-09-01T13:00:00Z", clockOut: "2026-09-01T21:00:00Z", hourlyWageCents: 2_000, breaks: [], scheduleId: "schedule-1" });
+    expect(status).toMatchObject({ warn: false, missed: false, penaltyCents: 0 });
+  });
+
+  it("is timezone-safe across an offset change because elapsed time uses instants", () => {
+    const status = mealBreakStatus({ clockIn: "2026-11-01T06:00:00-07:00", clockOut: null, hourlyWageCents: 2_000, breaks: [] }, new Date("2026-11-01T10:30:00-08:00"));
+    expect(status).toMatchObject({ warn: true, missed: true });
+    expect(status.shiftHours).toBe(5.5);
   });
 
   it("does not flag a shift with a break that started before the end of hour 5", () => {
