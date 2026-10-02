@@ -1532,3 +1532,22 @@ Scaffolded with `create-next-app` (Next 16.3.6, Turbopack, TS strict) into a tem
 Verified: `npm run build` (all 15 pages — 3 locales × 5 routes — prerender), `npm run test` (2 passing smoke tests on `lib/utils/cn.ts`), `npm run lint` (clean), `npm run dev` + manual browser check at mobile width (375px) for en and ar, and a real **Lighthouse accessibility audit against the Home screen scored 100/100** (target was ≥95).
 
 Next: M1 (Supabase migrations from `docs/04-data-model.md`, RLS, Fixture A seed, magic-link login).
+
+## Phase 1 — AI operations team MVP (2026-10-02)
+
+Plan:
+- Add one shared deterministic operating-task model, agent routing, lifecycle transitions, and transport-neutral staff communication boundary.
+- Add additive RLS-protected task/response persistence schema without applying it to production.
+- Build deterministic team/inbox projections and compact localized Home + operations surfaces that remain useful without AI.
+- Cover pricing provenance, staff responses/expiry, truthful handled states, qualitative supply checks, routing, and no-AI behavior with tests.
+- Run typecheck, lint, tests, and production build; then commit as a standalone Phase 1 change.
+
+No dependency added: existing Next.js, next-intl, Supabase, and Vitest facilities are sufficient.
+
+Phase 1 result:
+- [x] Shared deterministic agent routing, operational task contracts, evidence, lifecycle transitions, qualitative supply responses, and truthful staff coverage states.
+- [x] Explicit unavailable staff communication provider; no delivery is claimed without transport.
+- [x] Additive `operating_tasks` / `operating_task_responses` migration with tenant RLS (not applied).
+- [x] Localized compact Home team surface and `/operations` Needs you / Handled / Watching inbox.
+- [x] Pricing review tasks consume unchanged PricingEngine output; no POS price mutation exists.
+- [x] Typecheck, lint, and 238 tests pass. Production build is blocked only by this environment failing to download the three existing Google fonts.

@@ -28,6 +28,9 @@ import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
 import GettingStartedCard from "@/components/home/GettingStartedCard";
 import PageShell from "@/components/shared/PageShell";
+import AITeamCard from "@/components/operations/AITeamCard";
+import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
+import { buildOperationsTeamViewModel } from "@/lib/viewmodels/operationsTeam";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -41,12 +44,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { period: periodParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
-  const snapshot = await getSnapshot();
+  const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
   const vm = buildHomeViewModel(snapshot, period);
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const glance = buildTodayGlanceViewModel(snapshot);
   const t = await getTranslations("Home");
   const tCommon = await getTranslations("Common");
+  const tOperations = await getTranslations("Operations");
   const posStatus = await getPosConnectionStatus();
 
   const changeUp = vm.changeVsLastPeriodPct !== null && vm.changeVsLastPeriodPct >= 0;
@@ -172,6 +176,22 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
         caption={glanceCopy.caption}
         icon={glanceCopy.icon}
+      />
+
+      <AITeamCard
+        team={buildOperationsTeamViewModel(snapshot, menu)}
+        copy={{
+          title: tOperations("teamTitle"),
+          aiLabel: tOperations("aiLabel"),
+          names: { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" },
+          roles: { alex: tOperations("alexRole"), olivia: tOperations("oliviaRole"), maya: tOperations("mayaRole"), leo: tOperations("leoRole") },
+          statuses: {
+            prices: tOperations("prices", { count: 0 }),
+            ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((count) => [`prices:${count}`, tOperations("prices", { count })])),
+            coverage_clear: tOperations("coverageClear"), supplies: tOperations("supplies"), attention: tOperations("attention", { count: 0 }),
+            ...Object.fromEntries([0, 1, 2, 3, 4, 5].map((count) => [`attention:${count}`, tOperations("attention", { count })])),
+          },
+        }}
       />
 
       <ProfitCostsCard
