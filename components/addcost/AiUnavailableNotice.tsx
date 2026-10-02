@@ -9,7 +9,7 @@ export default function AiUnavailableNotice({ title, message, typeItLabel }: { t
     <div className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-8 text-center">
       <p className="text-base font-bold text-ink">{title}</p>
       <p className="text-sm text-ink-muted">{message}</p>
-      <Link href="/add-cost/type" className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper no-underline">
+      <Link href="/add-cost/type" className="flex min-h-12 items-center justify-center rounded-full bg-ink px-5 text-sm font-bold text-paper no-underline">
         {typeItLabel}
       </Link>
     </div>

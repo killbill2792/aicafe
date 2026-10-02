@@ -123,4 +123,15 @@ describe("buildProfitAndCostsViewModel — against the richer Fixture A snapshot
     expect(rentLine("today").amountCents).toBeLessThan(rentLine("week").amountCents);
     expect(rentLine("week").amountCents).toBeLessThan(rentLine("month").amountCents);
   });
+
+  it("every running-cost row is a whole number of cents, even when the monthly amount doesn't divide evenly by days-in-month", () => {
+    // Insurance is $500.00/mo over a 30-day September — 50,000 / 30 = 1,666.6666... repeating, a
+    // case that would surface any fractional-cents regression immediately.
+    for (const period of ["today", "week", "month"] as const) {
+      const vm = buildProfitAndCostsViewModel(snapshot, period);
+      for (const line of vm.runningCostLines) {
+        expect(Number.isInteger(line.amountCents)).toBe(true);
+      }
+    }
+  });
 });

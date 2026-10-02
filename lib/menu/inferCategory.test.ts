@@ -15,6 +15,8 @@ describe("inferMenuItemCategory", () => {
     ["Drip Coffee", "BREWED_COFFEE"],
     ["Pour Over", "BREWED_COFFEE"],
     ["Green Tea", "TEA"],
+    ["Iced Tea", "TEA"],
+    ["Steamed Latte", "ESPRESSO_DRINK"],
     ["Blueberry Pastry", "PASTRY"],
     ["Croissant", "PASTRY"],
   ])("infers %s as %s", (name, expected) => {
@@ -25,6 +27,14 @@ describe("inferMenuItemCategory", () => {
     expect(inferMenuItemCategory("Matcha Latte")).toBe("TEA");
     expect(inferMenuItemCategory("Chai Latte")).toBe("TEA");
     expect(inferMenuItemCategory("Iced Chai Latte")).toBe("TEA");
+  });
+
+  it("matches tea/chai/matcha as whole words, not arbitrary substrings", () => {
+    // "Steamed" contains the letters t-e-a but is not the word "tea" — must not match.
+    expect(inferMenuItemCategory("Steamed Latte")).toBe("ESPRESSO_DRINK");
+    expect(inferMenuItemCategory("Iced Tea")).toBe("TEA");
+    expect(inferMenuItemCategory("Matcha Latte")).toBe("TEA");
+    expect(inferMenuItemCategory("Chai Latte")).toBe("TEA");
   });
 
   it("falls back to the menu group's default when the name itself gives no obvious hint", () => {

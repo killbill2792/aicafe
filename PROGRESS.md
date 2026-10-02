@@ -5,6 +5,37 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #6 review fixes: integer cents, tea word-boundary, loss bar, touch target (2026-10-02 — code complete, pushed to menu-visual-refresh)
+
+Four review findings, each independently scoped and fixed as described — no unrelated changes.
+
+1. **`runningCostLinesForPeriod()` returned fractional cents.** It was deliberately left unrounded
+   to match `totalCostsCents`'s "round only at display" pattern, but its output is consumed as
+   data (summed, compared), not just displayed, so that violated CLAUDE.md's integer-cents rule.
+   Now rounds each line with the existing `roundHalfUpToCent` at construction. New regression test
+   using Fixture A's $500/mo insurance over a 30-day month (50,000 ÷ 30 = 1,666.6̄, a case that
+   would surface a fractional-cents bug immediately) asserting every row is `Number.isInteger`.
+2. **`inferMenuItemCategory`'s tea/chai/matcha rule matched substrings, not words.** `/tea|chai|matcha/i`
+   matched "tea" inside "S**tea**med", so "Steamed Latte" incorrectly inferred `TEA`. Now
+   `/\btea\b|\bchai\b|\bmatcha\b/i` — word-boundaried. New tests: `Matcha Latte`/`Chai Latte`/
+   `Iced Tea` → `TEA`, `Steamed Latte` → `ESPRESSO_DRINK`.
+3. **A loss showed an invisible 0-width "You keep" bar.** Its `widthPct` was computed from the
+   signed `ownerProfitCents`, which clamps to 0 for any negative value — a real loss drew no bar
+   at all, undermining "immediately obvious from both the number and color." New
+   `flowBarWidthPct(valueCents, salesCents)` (`lib/viewmodels/profitTone.ts`) uses the magnitude
+   for width while the signed value and `profitTone` still drive the displayed number and
+   green/red color separately — a loss now draws a full-magnitude red bar. 4 new tests, including
+   "a negative value still produces a visible (non-zero) bar."
+4. **`AiUnavailableNotice`'s "Type it" link was under the 48px touch-target minimum** (`py-2.5`
+   alone, no explicit height). Now `flex min-h-12 items-center justify-center`, matching the
+   `+ Add`-style button pattern used elsewhere — confirmed live at exactly 48px with the label
+   vertically centered. No other layout change.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (173/173 — 8 new, rest unchanged),
+`npm run build` all clean.
+
+
+
 ## Pre-merge mobile visual fixes: Menu header wrap, Money FAB overlap (2026-10-02 — code complete, pushed to menu-visual-refresh)
 
 Two CSS-only fixes from a live mobile-preview pass before merging PR #6. No functionality changed,

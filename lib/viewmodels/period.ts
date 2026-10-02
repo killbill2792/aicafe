@@ -1,4 +1,4 @@
-import { runningCostsForPeriodCents, runningCostsForPeriodCentsByCategory, type CategoryMonthlyAmount, type DailyFacts } from "@/lib/calc";
+import { roundHalfUpToCent, runningCostsForPeriodCents, runningCostsForPeriodCentsByCategory, type CategoryMonthlyAmount, type DailyFacts } from "@/lib/calc";
 import type { BusinessSnapshot, RunningCostLine } from "@/lib/data/types";
 
 export type Period = "today" | "week" | "month";
@@ -100,12 +100,12 @@ export function runningCostsForPeriod(snapshot: BusinessSnapshot, period: Period
 export function runningCostLinesForPeriod(snapshot: BusinessSnapshot, period: Period): RunningCostLine[] {
   const { start, end } = periodCalendarRange(snapshot, period);
   const byCategory = runningCostsForPeriodCentsByCategory(categoryMonthlyAmounts(snapshot), start, end);
-  // Left unrounded here, matching totalCostsCents/ownerProfitCents (see lib/calc/money.ts's
-  // "round only at the end" convention) — Money/formatCents rounds at display time, so the
-  // visible rows reconcile to the visible total instead of drifting from independent rounding.
+  // Money is integer cents everywhere (CLAUDE.md rule 1) — round each line here rather than
+  // carrying a fractional amount out of this function, since callers sum and compare these
+  // values as real cent amounts, not just display them.
   return snapshot.runningCostLines.map((line) => ({
     ...line,
-    amountCents: line.isMissing ? 0 : byCategory.get(line.categoryCode) ?? 0,
+    amountCents: line.isMissing ? 0 : roundHalfUpToCent(byCategory.get(line.categoryCode) ?? 0),
   }));
 }
 

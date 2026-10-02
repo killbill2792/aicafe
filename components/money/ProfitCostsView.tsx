@@ -7,7 +7,7 @@ import type { HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
-import { profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
+import { flowBarWidthPct, profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 const BAND_COLOR: Record<HealthBand, string> = { healthy: "text-good", watch: "text-warn", high: "text-warn" };
 const TONE_BAR_COLOR = { good: "bg-good", warn: "bg-warn", neutral: "bg-ink-muted" } as const;
@@ -91,7 +91,7 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
             widthPct={pct(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
             color="bg-running"
           />
-          <StepBar label={t("youKeep")} cents={vm.ownerProfitCents} widthPct={pct(vm.ownerProfitCents)} color="bg-good" tone={tone} />
+          <StepBar label={t("youKeep")} cents={vm.ownerProfitCents} widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)} color="bg-good" tone={tone} />
         </div>
       </section>
 
