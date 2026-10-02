@@ -14,7 +14,21 @@ import ProductEditForm from "./ProductEditForm";
 import RecipeEditor from "./RecipeEditor";
 import AddSizeDialog, { type SizeSibling } from "./AddSizeDialog";
 
-type Tab = "overview" | "recipe" | "sizes";
+type Tab = "overview" | "recipe" | "sizes" | "pricing";
+
+const PRICING_EXPLAINER_KEYS = {
+  BENCHMARK_EXPLAINER: "pricingExplainerBenchmark",
+  BUSINESS_ADJUSTED_EXPLAINER: "pricingExplainerBusinessAdjusted",
+  INCOMPLETE_DATA_EXPLAINER: "pricingExplainerIncomplete",
+} as const;
+
+const PRICING_WARNING_KEYS = {
+  BUSINESS_ADJUSTMENT_CAPPED: "pricingWarningCapped",
+  CATEGORY_PRICE_OUTLIER: "pricingWarningCategoryOutlier",
+  CATEGORY_COST_PERCENT_OUTLIER: "pricingWarningCostOutlier",
+  INCOMPLETE_RECIPE: "pricingWarningIncompleteRecipe",
+  LOW_SAMPLE_SIZE: "pricingWarningLowSample",
+} as const;
 
 export default function ProductDetailScreen({
   item,
@@ -23,6 +37,7 @@ export default function ProductDetailScreen({
   menuGroupOptions,
   ingredientConversions,
   siblingSizes,
+  justCreated,
 }: {
   item: MenuControlItem;
   editItem: MenuItemForEdit;
@@ -30,12 +45,13 @@ export default function ProductDetailScreen({
   menuGroupOptions: string[];
   ingredientConversions: Record<string, IngredientUnitConversion[]>;
   siblingSizes: MenuItemForEdit[];
+  justCreated?: boolean;
 }) {
   const t = useTranslations("Menu");
   const tEdit = useTranslations("ManageMenu");
   const router = useRouter();
   const statusChip = usePricingStatusChip();
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(justCreated ? "recipe" : "overview");
   const [editing, setEditing] = useState(false);
   const [addingSize, setAddingSize] = useState(false);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
@@ -60,6 +76,7 @@ export default function ProductDetailScreen({
     { key: "overview", label: t("tabOverview") },
     { key: "recipe", label: t("tabRecipe") },
     { key: "sizes", label: `${t("tabSizes")} (${sizeCount})` },
+    { key: "pricing", label: t("tabPricing") },
   ];
 
   return (
@@ -137,7 +154,10 @@ export default function ProductDetailScreen({
 
       {tab === "recipe" && (
         <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
-          <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} pricingResult={item.pricing ?? undefined} />
+          {justCreated && (
+            <p className="rounded-xl bg-good-tint px-3 py-2.5 text-sm font-semibold text-good">{t("setupRecipeBanner")}</p>
+          )}
+          <RecipeEditor item={editItem} ingredients={ingredients} ingredientConversions={ingredientConversions} />
         </section>
       )}
 
@@ -148,6 +168,34 @@ export default function ProductDetailScreen({
           <button type="button" onClick={() => setAddingSize(true)} className="mt-1 text-sm font-semibold text-good">
             {tEdit("addAnotherSize", { name: editItem.baseName })}
           </button>
+        </section>
+      )}
+
+      {tab === "pricing" && (
+        <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
+          <Row label={t("sellingPrice")} value={formatCents(item.priceCents)} strong />
+          {item.costStatus === "READY" && item.ingredientsCostCents !== null ? (
+            <p className="text-[17px]">{t("costsAboutToMake", { amount: formatCents(item.ingredientsCostCents) })}</p>
+          ) : (
+            <p className="text-[17px] text-warn">{item.costStatus === "NO_RECIPE" ? t("noRecipe") : t("missingCost", { ingredient: item.missingCostIngredientNames.join(", ") })}</p>
+          )}
+          <div className={`flex flex-col gap-1.5 rounded-xl p-3 ${chip.good ? "bg-good-tint" : "bg-warn-tint"}`}>
+            <span className={`inline-flex w-fit items-center gap-1.5 text-sm font-bold ${chip.good ? "text-good" : "text-warn"}`}>
+              {chip.good ? <Check aria-hidden="true" size={16} /> : <TriangleAlert aria-hidden="true" size={16} />}
+              {chip.label}
+            </span>
+            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && item.pricing.recommendedPriceCents !== null && item.pricing.status !== "KEEP_CURRENT_PRICE" && (
+              <strong className={`text-lg ${chip.good ? "text-good" : "text-warn"}`}>{formatCents(item.pricing.recommendedPriceCents)}</strong>
+            )}
+            {item.pricing && item.pricing.status !== "PRICE_UNAVAILABLE" && (
+              <p className="text-sm text-ink-muted">
+                <span className="font-semibold">{tEdit("whyLabel")}</span> {tEdit(PRICING_EXPLAINER_KEYS[item.pricing.explanationCode])}
+              </p>
+            )}
+            {item.pricing?.warnings.map((warning) => (
+              <p key={warning} className="text-sm font-semibold text-warn">{tEdit(PRICING_WARNING_KEYS[warning])}</p>
+            ))}
+          </div>
         </section>
       )}
 

@@ -16,7 +16,8 @@
     "week": "Week",
     "month": "Month",
     "back": "Back",
-    "addCost": "Add cost"
+    "addCost": "Add cost",
+    "next": "Next"
   },
   "AddCost": {
     "title": "Add a cost",
@@ -243,7 +244,9 @@
     "tabOverview": "Overview",
     "tabRecipe": "Recipe",
     "tabSizes": "Sizes",
-    "costsAboutToMake": "Costs about {amount} to make"
+    "costsAboutToMake": "Costs about {amount} to make",
+    "tabPricing": "Pricing",
+    "setupRecipeBanner": "Now add what goes into this product."
   },
   "ManageMenu": {
     "title": "Manage menu",
@@ -313,7 +316,8 @@
     "recommended": "recommended",
     "ingredientSearchLabel": "Search ingredients",
     "noMatchingIngredients": "No ingredients match that search",
-    "existingTag": "Existing"
+    "existingTag": "Existing",
+    "whyLabel": "Why?"
   },
   "Staff": {
     "title": "Staff",

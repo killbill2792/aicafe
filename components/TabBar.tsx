@@ -2,7 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
-import { NAV_TABS } from "@/components/shared/navTabs";
+import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
 
 export default function TabBar() {
   const t = useTranslations("Nav");
@@ -17,7 +17,7 @@ export default function TabBar() {
     >
       <ul className="mx-auto flex max-w-app justify-between px-2">
         {NAV_TABS.map(({ href, key, Icon }) => {
-          const isActive = pathname === href;
+          const isActive = isNavTabActive(pathname, href);
           return (
             <li key={href} className="min-w-0 flex-1">
               <Link

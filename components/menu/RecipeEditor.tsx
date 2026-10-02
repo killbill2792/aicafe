@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { Trash2, Package, Search } from "lucide-react";
 import { addRecipeLine, deleteRecipeLine } from "@/lib/actions/menuItems";
-import { formatCents, type PricingResult } from "@/lib/calc";
 import { needsIngredientConversion, recipeDisplayUnitsFor, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import MissingPriceForm from "./MissingPriceForm";
@@ -17,12 +16,10 @@ export default function RecipeEditor({
   item,
   ingredients,
   ingredientConversions,
-  pricingResult,
 }: {
   item: MenuItemForEdit;
   ingredients: IngredientOption[];
   ingredientConversions: Record<string, IngredientUnitConversion[]>;
-  pricingResult?: PricingResult;
 }) {
   const t = useTranslations("ManageMenu");
   const unitLabel = (unit: RecipeDisplayUnit | "g" | "ml" | "each") => t(UNIT_LABEL_KEYS[unit as RecipeDisplayUnit] ?? "recipeUnitG");
@@ -127,36 +124,6 @@ export default function RecipeEditor({
             </li>
           ))}
         </ul>
-      )}
-
-      {pricingResult && pricingResult.status === "PRICE_UNAVAILABLE" && (
-        <div className="rounded-xl bg-warn-tint px-3 py-2.5">
-          <span className="text-sm font-semibold text-warn">{t("pricingStatusUnavailable")}</span>
-        </div>
-      )}
-      {pricingResult && pricingResult.status !== "PRICE_UNAVAILABLE" && pricingResult.recommendedPriceCents !== null && (
-        <div className="flex flex-col gap-0.5 rounded-xl bg-good-tint px-3 py-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-good">
-              {{ NEW_PRICE: t("pricingStatusNew"), KEEP_CURRENT_PRICE: t("pricingStatusKeep"), REVIEW_PRICE: t("pricingStatusReview") }[pricingResult.status as "NEW_PRICE" | "KEEP_CURRENT_PRICE" | "REVIEW_PRICE"]}
-            </span>
-            <span className="text-base font-bold text-good">{formatCents(pricingResult.recommendedPriceCents)}</span>
-          </div>
-          <span className="text-xs text-good">
-            {{ BENCHMARK_EXPLAINER: t("pricingExplainerBenchmark"), BUSINESS_ADJUSTED_EXPLAINER: t("pricingExplainerBusinessAdjusted"), INCOMPLETE_DATA_EXPLAINER: t("pricingExplainerIncomplete") }[pricingResult.explanationCode]}
-          </span>
-          {pricingResult.warnings.map((warning) => (
-            <span key={warning} className="text-xs font-semibold text-warn">
-              {{
-                BUSINESS_ADJUSTMENT_CAPPED: t("pricingWarningCapped"),
-                CATEGORY_PRICE_OUTLIER: t("pricingWarningCategoryOutlier"),
-                CATEGORY_COST_PERCENT_OUTLIER: t("pricingWarningCostOutlier"),
-                INCOMPLETE_RECIPE: t("pricingWarningIncompleteRecipe"),
-                LOW_SAMPLE_SIZE: t("pricingWarningLowSample"),
-              }[warning]}
-            </span>
-          ))}
-        </div>
       )}
 
       <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">

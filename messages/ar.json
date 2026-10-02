@@ -16,7 +16,8 @@
     "week": "الأسبوع",
     "month": "الشهر",
     "back": "رجوع",
-    "addCost": "إضافة مصروف"
+    "addCost": "إضافة مصروف",
+    "next": "التالي"
   },
   "AddCost": {
     "title": "إضافة مصروف",
@@ -243,7 +244,9 @@
     "tabOverview": "نظرة عامة",
     "tabRecipe": "الوصفة",
     "tabSizes": "الأحجام",
-    "costsAboutToMake": "تكلفة إعداده حوالي {amount}"
+    "costsAboutToMake": "تكلفة إعداده حوالي {amount}",
+    "tabPricing": "التسعير",
+    "setupRecipeBanner": "أضف الآن ما يدخل في هذا المنتج."
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
@@ -313,7 +316,8 @@
     "recommended": "موصى به",
     "ingredientSearchLabel": "البحث عن المكوّنات",
     "noMatchingIngredients": "لا توجد مكوّنات مطابقة لهذا البحث",
-    "existingTag": "موجود"
+    "existingTag": "موجود",
+    "whyLabel": "لماذا؟"
   },
   "Staff": {
     "title": "الموظفون",

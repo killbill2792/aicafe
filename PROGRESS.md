@@ -5,6 +5,44 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Menu creation-flow refinement (2026-10-01 — code complete, pushed to menu-visual-refresh, PR not yet opened)
+
+Follow-up to the visual refinement pass below — navigation/presentation only, same branch, no
+schema or business-logic changes.
+
+- `NewMenuItemForm.tsx` split into two steps with a progress bar and Back/Next: Step 1 (name, menu
+  group), Step 2 (price, size optional → Create item). No photo field (no schema for it, out of
+  scope). New `Common.next` key.
+- `?setupRecipe=1` (already pushed to by the create flow, previously unused) is now read by
+  `app/[locale]/menu/[itemId]/page.tsx` and passed to `ProductDetailScreen` as `justCreated`: a
+  freshly created item opens straight on the Recipe tab with a one-line guidance banner
+  ("Now add what goes into this product.", new `Menu.setupRecipeBanner` key) above the existing
+  searchable, existing-ingredient-first picker. Nothing is forced — the owner can switch tabs or
+  leave at any point, same as always.
+- Added a fourth **Pricing** tab (`Overview | Recipe | Sizes | Pricing`, new `Menu.tabPricing`
+  key). Moved the detailed pricing card (explainer + warnings, previously duplicated inside
+  `RecipeEditor.tsx`'s Recipe tab) there instead: selling price, "Costs about X to make", the plain
+  chip (`Your price looks right` / `Worth reviewing` / `Price unavailable`), the suggested price
+  when available, and a "Why?" line (new `ManageMenu.whyLabel` key) using the existing
+  `pricingResult.explanationCode`/`.warnings` — same deterministic pricing data as before, no new
+  calculation. `RecipeEditor` no longer takes a `pricingResult` prop.
+- Nav active-state (`TabBar`/`SideNav`) now stays highlighted on nested routes too (new
+  `isNavTabActive` helper in `navTabs.ts`: exact match for `/`, prefix match for everything else)
+  — e.g. `/menu/[itemId]` keeps Menu highlighted, `/more/bills` keeps More highlighted.
+- `AddSizeDialog.tsx` and the responsive shell (`PageShell`, `SideNav`, `tailwind.config.ts`
+  tokens) are unchanged from commit `e2ac752`, as requested.
+
+Verified: `npx tsc --noEmit`, `npm run lint`, `npm run test` (102/102, unchanged), `npm run build`
+all clean. Live-verified end-to-end against the mail2raj27 test account: created a real item
+("Test Mocha", $4.50) through both steps, confirmed it landed on `/menu/{id}?setupRecipe=1` open on
+the Recipe tab with the banner and the existing-ingredient picker visible; confirmed the Latte
+item's Pricing tab shows the full detail (cost, "Worth reviewing", $0.25 suggestion, why-explainer)
+while its Recipe tab no longer repeats that; confirmed nested-route nav highlighting on both
+`TabBar` and `SideNav` via `aria-current`; confirmed the desktop shell (SideNav, wide Menu layout)
+is unchanged. One test item ("Test Mocha") was left active in the mail2raj27 test account —
+archiving it was blocked by the environment's action classifier (a data-modifying browser action);
+flagged for Raj to archive or delete manually if he doesn't want it there.
+
 ## Menu visual refinement + app-wide responsive shell (2026-10-01 — code complete, PR open)
 
 Presentation-only pass over the now-merged Menu UX refactor (PR #4), plus an app-wide fix: every

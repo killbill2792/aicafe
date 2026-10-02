@@ -11,10 +11,17 @@ import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
-export default async function MenuItemPage({ params }: { params: Promise<{ itemId: string }> }) {
+export default async function MenuItemPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ itemId: string }>;
+  searchParams: Promise<{ setupRecipe?: string }>;
+}) {
   await requireOwnBusiness();
-  const [{ itemId }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
+  const [{ itemId }, { setupRecipe }, controlItems, { items: editItems, ingredients }, menuGroupOptions, ingredientConversions, common] = await Promise.all([
     params,
+    searchParams,
     getMenuControlCenter(),
     getMenuItemsForEdit(),
     getMenuGroupOptions(),
@@ -36,6 +43,7 @@ export default async function MenuItemPage({ params }: { params: Promise<{ itemI
         menuGroupOptions={menuGroupOptions}
         ingredientConversions={ingredientConversions}
         siblingSizes={siblingSizes}
+        justCreated={setupRecipe === "1"}
       />
     </PageShell>
   );

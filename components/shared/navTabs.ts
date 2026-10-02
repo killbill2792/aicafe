@@ -12,3 +12,11 @@ export const NAV_TABS: NavTab[] = [
   { href: "/staff", key: "staff", Icon: Users },
   { href: "/more", key: "more", Icon: MoreHorizontal },
 ];
+
+/** A tab stays highlighted on its nested routes too (e.g. `/menu/[itemId]` for Menu,
+ * `/more/bills` for More) — only the Home tab ("/") requires an exact match, since every
+ * other route is otherwise also prefixed by "/". */
+export function isNavTabActive(pathname: string, href: NavTab["href"]): boolean {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
