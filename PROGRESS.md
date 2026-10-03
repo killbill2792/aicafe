@@ -1800,3 +1800,38 @@ Result:
 - [x] Item-sales periods now use completed Square backfill/sync bounds; closed days need no synthetic rollup, unsupported coverage remains unavailable, and the pure calculation/tests live in `lib/calc/`.
 - [x] Recipe refreshes remount the matrix from the saved recipe signature while staged additions remain visible until refreshed props arrive, so a successful addition never flashes back to Add.
 - [x] Recipe state labels use the 17px body minimum. Typecheck, lint (one pre-existing image warning), all 294 tests, and diff checks pass; build is blocked only by Google Font fetch failures.
+
+## Focused Menu UX correction (2026-10-02)
+
+Plan:
+- Replace the external recipe add panel with a compact, searchable inline draft row that supports existing or new ingredients across sizes while preserving conversion and staged Save/Cancel behavior.
+- Restore information-rich size cards with truthful price/recipe state, cost and keep metrics, and per-card Today / 7 days / 30 days sales controls; refine the shared product hero and focused-size treatment.
+- Verify responsive/RTL/accessibility behavior, add focused regressions where useful, run every requested check, capture the runnable UI if available, then commit and open one unmerged PR.
+
+Result:
+- [x] Recipe editing now stays inside the responsive matrix: one searchable draft row supports an existing or newly named ingredient, compact type selection, compatible per-size units, missing-size additions, row/cell removal, and staged Save/Cancel.
+- [x] Product overview cards restore the approved visual hierarchy with price/cost/You keep, a truthful cost-versus-keep bar, separate amber/green price and recipe states, card actions, and inactive-size controls.
+- [x] Units sold periods are scoped to each card and limited to Today / 7 days / 30 days, retaining trustworthy no-coverage messaging; the product hero and selected-size treatment are quieter and clearer.
+- [x] English, Spanish, and Arabic UI copy is complete. Typecheck, all 294 tests, diff checks, and lint pass (one pre-existing ProductPhotoEditor `<img>` warning); production build is blocked only by Google Fonts network fetches. No browser runtime is installed for a screenshot.
+
+### PR #16 final correction (2026-10-03)
+
+Plan:
+- Add an optional compact purchase-cost expression to genuinely new inline recipe ingredients, converting physical display quantities through the existing unit system before using the server action's existing cost fields.
+- Expose canonical per-item daily quantities already loaded from order lines and render a truthful per-card sales mini-chart for Today / 7 days / 30 days, with no chart when trusted coverage is unavailable.
+- Keep all other PR #16 behavior unchanged, run the full requested validation suite, and commit one follow-up to the existing branch without merging.
+
+Result:
+- [x] Genuinely new inline ingredients now accept an optional compact package price / quantity / physical-unit expression; existing catalog matches are selected without asking for cost, and the existing action receives base-unit quantity plus integer cents once.
+- [x] The existing canonical order-line dates now produce coverage-gated daily item series for Today / 7 days / 30 days, including truthful covered zero-sale days, and each size card renders those real values as a compact bar chart.
+- [x] Typecheck, diff check, lint (one pre-existing ProductPhotoEditor `<img>` warning), and all 296 tests pass. Build remains blocked only by failed Google Fonts network fetches.
+
+### PR #16 locale-formatting follow-up (2026-10-03)
+
+Plan:
+- Replace the browser-default Units sold number formatting with the active next-intl formatter only.
+- Run the requested typecheck, lint, test, and diff checks, then commit the isolated review fix without merging.
+
+Result:
+- [x] Units sold now uses `useFormatter().number(...)`, keeping server/client output deterministic and honoring the active en/es/ar locale.
+- [x] Typecheck, all 296 tests, and diff checks pass; lint passes with the one pre-existing ProductPhotoEditor `<img>` warning.
