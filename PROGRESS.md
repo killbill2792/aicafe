@@ -1813,3 +1813,15 @@ Result:
 - [x] Product overview cards restore the approved visual hierarchy with price/cost/You keep, a truthful cost-versus-keep bar, separate amber/green price and recipe states, card actions, and inactive-size controls.
 - [x] Units sold periods are scoped to each card and limited to Today / 7 days / 30 days, retaining trustworthy no-coverage messaging; the product hero and selected-size treatment are quieter and clearer.
 - [x] English, Spanish, and Arabic UI copy is complete. Typecheck, all 294 tests, diff checks, and lint pass (one pre-existing ProductPhotoEditor `<img>` warning); production build is blocked only by Google Fonts network fetches. No browser runtime is installed for a screenshot.
+
+### PR #16 final correction (2026-10-03)
+
+Plan:
+- Add an optional compact purchase-cost expression to genuinely new inline recipe ingredients, converting physical display quantities through the existing unit system before using the server action's existing cost fields.
+- Expose canonical per-item daily quantities already loaded from order lines and render a truthful per-card sales mini-chart for Today / 7 days / 30 days, with no chart when trusted coverage is unavailable.
+- Keep all other PR #16 behavior unchanged, run the full requested validation suite, and commit one follow-up to the existing branch without merging.
+
+Result:
+- [x] Genuinely new inline ingredients now accept an optional compact package price / quantity / physical-unit expression; existing catalog matches are selected without asking for cost, and the existing action receives base-unit quantity plus integer cents once.
+- [x] The existing canonical order-line dates now produce coverage-gated daily item series for Today / 7 days / 30 days, including truthful covered zero-sale days, and each size card renders those real values as a compact bar chart.
+- [x] Typecheck, diff check, lint (one pre-existing ProductPhotoEditor `<img>` warning), and all 296 tests pass. Build remains blocked only by failed Google Fonts network fetches.

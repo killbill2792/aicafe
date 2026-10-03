@@ -5,7 +5,7 @@ import { Check, ChevronDown, Plus, Search, Trash2 } from "lucide-react";
 import { addRecipeLine, deleteRecipeLine, updateRecipeLine } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { BaseUnit, IngredientUnitConversion, RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
-import { recipeDisplayUnitsFor } from "@/lib/calc/recipeUnits";
+import { recipeDisplayUnitsFor, toBaseUnitQuantity } from "@/lib/calc/recipeUnits";
 import { useRouter } from "@/i18n/navigation";
 
 type Draft = { quantity: string; unit: RecipeDisplayUnit; removed?: boolean };
@@ -14,6 +14,9 @@ type NewRow = {
   ingredient: IngredientOption | null;
   name: string;
   baseUnit: BaseUnit;
+  purchaseCost: string;
+  purchaseQuantity: string;
+  purchaseUnit: RecipeDisplayUnit;
   amounts: Record<string, Draft>;
 };
 
@@ -50,21 +53,27 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
   const suggestions = ingredientOpen && query
     ? ingredients.filter((ingredient) => !usedIds.has(ingredient.id) && ingredient.name.toLocaleLowerCase().includes(query)).slice(0, 6)
     : [];
+  const exactIngredient = query ? ingredients.find((ingredient) => ingredient.name.toLocaleLowerCase() === query) ?? null : null;
 
   function beginRow() {
-    setNewRow({ key: `new:${Date.now()}`, ingredient: null, name: "", baseUnit: "g", amounts: {} });
+    setNewRow({ key: `new:${Date.now()}`, ingredient: null, name: "", baseUnit: "g", purchaseCost: "", purchaseQuantity: "", purchaseUnit: "g", amounts: {} });
     setIngredientOpen(true);
     setSaved(false);
   }
   function setBaseUnit(baseUnit: BaseUnit) {
     if (!newRow) return;
-    setNewRow({ ...newRow, ingredient: null, baseUnit, amounts: Object.fromEntries(items.map((item) => [item.id, { quantity: newRow.amounts[item.id]?.quantity ?? "", unit: baseUnit }])) });
+    setNewRow({ ...newRow, ingredient: null, baseUnit, purchaseUnit: baseUnit, amounts: Object.fromEntries(items.map((item) => [item.id, { quantity: newRow.amounts[item.id]?.quantity ?? "", unit: baseUnit }])) });
   }
   function chooseIngredient(ingredient: IngredientOption) {
     if (!newRow) return;
     const firstUnit = recipeDisplayUnitsFor(ingredient.baseUnit, ingredientConversions[ingredient.id] ?? [])[0];
-    setNewRow({ ...newRow, ingredient, name: ingredient.name, baseUnit: ingredient.baseUnit, amounts: Object.fromEntries(items.map((item) => [item.id, { quantity: newRow.amounts[item.id]?.quantity ?? "", unit: firstUnit }])) });
+    setNewRow({ ...newRow, ingredient, name: ingredient.name, baseUnit: ingredient.baseUnit, purchaseCost: "", purchaseQuantity: "", purchaseUnit: firstUnit, amounts: Object.fromEntries(items.map((item) => [item.id, { quantity: newRow.amounts[item.id]?.quantity ?? "", unit: firstUnit }])) });
     setIngredientOpen(false);
+  }
+  function updateIngredientName(name: string) {
+    const exact = ingredients.find((ingredient) => ingredient.name.toLocaleLowerCase() === name.trim().toLocaleLowerCase());
+    if (exact) { chooseIngredient(exact); return; }
+    if (newRow) setNewRow({ ...newRow, ingredient: null, name });
   }
   function reset() {
     setDrafts(draftsFromItems(items));
@@ -80,6 +89,16 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
     }) : [];
     if (newRow && ((!newRow.ingredient && !newRow.name.trim()) || additions.length === 0)) {
       setError(labels.completeDraft);
+      return;
+    }
+    const resolvedIngredient = newRow?.ingredient ?? exactIngredient;
+    const hasPurchaseCost = Boolean(newRow && !resolvedIngredient && (newRow.purchaseCost || newRow.purchaseQuantity));
+    const purchaseBaseQuantity = newRow && !resolvedIngredient
+      ? toBaseUnitQuantity(newRow.purchaseUnit, Number(newRow.purchaseQuantity), newRow.baseUnit)
+      : null;
+    const purchaseCostCents = newRow ? Math.round(Number(newRow.purchaseCost) * 100) : 0;
+    if (hasPurchaseCost && (!(purchaseCostCents > 0) || purchaseBaseQuantity === null)) {
+      setError(labels.completePurchaseCost);
       return;
     }
     const existingRowAdditions = rows.flatMap(([ingredientId]) => items.flatMap((item) => {
@@ -106,12 +125,14 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         if (!result.ok) { setError(completed ? labels.partialSave : result.error); return; }
         completed += 1;
       }
-      for (const { item, amount } of additions) {
+      for (const [index, { item, amount }] of additions.entries()) {
         const result = await addRecipeLine({
           menuItemId: item.id,
-          ingredientId: newRow?.ingredient?.id,
-          newIngredientName: newRow?.ingredient ? undefined : newRow?.name.trim(),
-          newIngredientUnit: newRow?.ingredient ? undefined : newRow?.baseUnit,
+          ingredientId: resolvedIngredient?.id,
+          newIngredientName: resolvedIngredient ? undefined : newRow?.name.trim(),
+          newIngredientUnit: resolvedIngredient ? undefined : newRow?.baseUnit,
+          newIngredientCostCents: index === 0 && hasPurchaseCost ? purchaseCostCents : undefined,
+          newIngredientCostQuantity: index === 0 && hasPurchaseCost ? purchaseBaseQuantity! : undefined,
           displayUnit: amount.unit,
           displayQuantity: Number(amount.quantity),
         });
@@ -173,15 +194,27 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
               <div className="relative">
                 <label className="flex h-12 items-center rounded-xl border border-good bg-card px-3 ring-2 ring-good/10">
                   <Search size={18} aria-hidden="true" className="shrink-0 text-ink-muted" />
-                  <input autoFocus value={newRow.name} onFocus={() => setIngredientOpen(true)} onChange={(event) => setNewRow({ ...newRow, ingredient: null, name: event.target.value })} placeholder={labels.search} className="min-w-0 flex-1 px-2 outline-none" />
+                  <input autoFocus value={newRow.name} onFocus={() => setIngredientOpen(true)} onChange={(event) => updateIngredientName(event.target.value)} placeholder={labels.search} className="min-w-0 flex-1 px-2 outline-none" />
                   <ChevronDown size={18} aria-hidden="true" />
                 </label>
                 {ingredientOpen && query && <div className="absolute start-0 top-[52px] z-30 max-h-60 w-[280px] overflow-y-auto rounded-xl border border-line bg-card p-1 shadow-xl">
                   {suggestions.map((ingredient) => <button type="button" key={ingredient.id} onClick={() => chooseIngredient(ingredient)} className="flex min-h-12 w-full items-center justify-between rounded-lg px-3 text-start hover:bg-paper"><span>{ingredient.name}</span><span className="text-sm text-ink-muted">{labels[ingredient.baseUnit]}</span></button>)}
-                  {suggestions.length === 0 && <button type="button" onClick={() => setIngredientOpen(false)} className="min-h-12 w-full rounded-lg px-3 text-start font-bold text-good"><Plus className="me-2 inline" size={17} />{labels.createNamed.replace("{name}", newRow.name.trim())}</button>}
+                  {suggestions.length === 0 && exactIngredient && <button type="button" onClick={() => chooseIngredient(exactIngredient)} className="min-h-12 w-full rounded-lg px-3 text-start font-bold text-good"><Check className="me-2 inline" size={17} />{exactIngredient.name} · {labels.existing}</button>}
+                  {suggestions.length === 0 && !exactIngredient && <button type="button" onClick={() => setIngredientOpen(false)} className="min-h-12 w-full rounded-lg px-3 text-start font-bold text-good"><Plus className="me-2 inline" size={17} />{labels.createNamed.replace("{name}", newRow.name.trim())}</button>}
                 </div>}
                 {!newRow.ingredient && <div className="mt-2 grid grid-cols-3 gap-1" aria-label={labels.type}>
                   {(["g", "ml", "each"] as const).map((baseUnit) => <button type="button" key={baseUnit} onClick={() => setBaseUnit(baseUnit)} className={`min-h-12 rounded-xl px-1 text-sm font-bold ${newRow.baseUnit === baseUnit ? "bg-ink text-paper" : "border border-line bg-card text-ink-muted"}`}>{labels[baseUnit]}</button>)}
+                </div>}
+                {!newRow.ingredient && !exactIngredient && <div className="mt-2 rounded-xl border border-line bg-card p-2">
+                  <span className="text-sm font-bold text-ink-muted">{labels.purchaseCost}</span>
+                  <div className="mt-1 flex items-center gap-1">
+                    <label className="flex h-12 min-w-0 flex-1 items-center rounded-lg border border-line px-2"><span aria-hidden="true">$</span><input inputMode="decimal" aria-label={labels.purchasePrice} value={newRow.purchaseCost} onChange={(event) => setNewRow({ ...newRow, purchaseCost: event.target.value })} className="min-w-0 flex-1 px-1 outline-none" placeholder="0.00" /></label>
+                    <span aria-hidden="true" className="text-ink-muted">/</span>
+                    <input inputMode="decimal" aria-label={labels.purchaseQuantity} value={newRow.purchaseQuantity} onChange={(event) => setNewRow({ ...newRow, purchaseQuantity: event.target.value })} className="h-12 w-16 rounded-lg border border-line px-2 outline-none" placeholder="0" />
+                    <select aria-label={labels.purchaseUnit} value={newRow.purchaseUnit} onChange={(event) => setNewRow({ ...newRow, purchaseUnit: event.target.value as RecipeDisplayUnit })} className="h-12 w-[74px] rounded-lg border border-line bg-card px-1">
+                      {recipeDisplayUnitsFor(newRow.baseUnit).map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
+                    </select>
+                  </div>
                 </div>}
               </div>
             </th>

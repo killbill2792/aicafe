@@ -368,7 +368,12 @@
     "ingredientType": "Ingredient type",
     "weightShort": "Weight",
     "volumeShort": "Volume",
-    "countShort": "Count"
+    "countShort": "Count",
+    "purchaseCost": "Purchase cost (optional)",
+    "purchasePrice": "Package price",
+    "purchaseQuantity": "Package quantity",
+    "purchaseUnit": "Package unit",
+    "completePurchaseCost": "Enter both a valid purchase price and package quantity, or leave both blank."
   },
   "ManageMenu": {
     "title": "Manage menu",

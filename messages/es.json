@@ -368,7 +368,12 @@
     "ingredientType": "Tipo de ingrediente",
     "weightShort": "Peso",
     "volumeShort": "Volumen",
-    "countShort": "Conteo"
+    "countShort": "Conteo",
+    "purchaseCost": "Costo de compra (opcional)",
+    "purchasePrice": "Precio del paquete",
+    "purchaseQuantity": "Cantidad del paquete",
+    "purchaseUnit": "Unidad del paquete",
+    "completePurchaseCost": "Ingresa un precio y una cantidad de paquete válidos, o deja ambos en blanco."
   },
   "ManageMenu": {
     "title": "Gestionar menú",

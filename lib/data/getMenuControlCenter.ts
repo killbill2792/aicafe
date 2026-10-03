@@ -9,12 +9,13 @@ import type { PricingResult } from "@/lib/calc";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { itemSalesPeriodTotals, type DatedItemQuantity, type ItemSalesPeriodTotals, type SalesCoverage } from "@/lib/calc/itemSalesPeriods";
+import { itemSalesDailyByPeriod, itemSalesPeriodTotals, type DatedItemQuantity, type ItemSalesDailyByPeriod, type ItemSalesPeriodTotals, type SalesCoverage } from "@/lib/calc/itemSalesPeriods";
 
 export type MenuControlItem = MenuItemForEdit & {
   pricing: PricingResult | null;
   unitsSold: number | null;
   unitsSoldByPeriod?: ItemSalesPeriodTotals;
+  unitsSoldDailyByPeriod?: ItemSalesDailyByPeriod;
   revenueCents: number | null;
   provenance: "MANUAL" | "CSV" | "SQUARE" | "TOAST" | "CLOVER" | "OTHER_POS";
   lastSyncedAt: string | null;
@@ -23,7 +24,7 @@ export type MenuControlItem = MenuItemForEdit & {
 /** One canonical read model for both the menu catalog and product detail. */
 export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
   const { items } = await getMenuItemsForEdit();
-  if (!isSupabaseConfigured() || items.length === 0) return items.map((item) => ({ ...item, pricing: null, unitsSold: null, unitsSoldByPeriod: { today: null, days7: null, days30: null }, revenueCents: null, provenance: "MANUAL", lastSyncedAt: null }));
+  if (!isSupabaseConfigured() || items.length === 0) return items.map((item) => ({ ...item, pricing: null, unitsSold: null, unitsSoldByPeriod: { today: null, days7: null, days30: null }, unitsSoldDailyByPeriod: { today: null, days7: null, days30: null }, revenueCents: null, provenance: "MANUAL", lastSyncedAt: null }));
   const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
@@ -86,6 +87,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
       pricing: pricingById.get(item.id) ?? null,
       unitsSold: input && input.unitsSoldInWindow > 0 ? input.unitsSoldInWindow : null,
       unitsSoldByPeriod: itemSalesPeriodTotals(datedQuantities, coverage, item.id, today),
+      unitsSoldDailyByPeriod: itemSalesDailyByPeriod(datedQuantities, coverage, item.id, today),
       revenueCents: revenueById.has(item.id) ? revenueById.get(item.id)! : null,
       provenance: ((item.catalogSource ?? (item.posItemId ? "OTHER_POS" : "MANUAL")).toUpperCase()) as MenuControlItem["provenance"],
       lastSyncedAt: item.catalogLastSyncedAt,

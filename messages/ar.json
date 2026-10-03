@@ -368,7 +368,12 @@
     "ingredientType": "نوع المكوّن",
     "weightShort": "وزن",
     "volumeShort": "حجم",
-    "countShort": "عدد"
+    "countShort": "عدد",
+    "purchaseCost": "تكلفة الشراء (اختياري)",
+    "purchasePrice": "سعر العبوة",
+    "purchaseQuantity": "كمية العبوة",
+    "purchaseUnit": "وحدة العبوة",
+    "completePurchaseCost": "أدخل سعر شراء وكمية عبوة صالحين، أو اترك الحقلين فارغين."
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
