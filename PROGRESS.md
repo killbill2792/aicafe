@@ -1800,3 +1800,16 @@ Result:
 - [x] Item-sales periods now use completed Square backfill/sync bounds; closed days need no synthetic rollup, unsupported coverage remains unavailable, and the pure calculation/tests live in `lib/calc/`.
 - [x] Recipe refreshes remount the matrix from the saved recipe signature while staged additions remain visible until refreshed props arrive, so a successful addition never flashes back to Add.
 - [x] Recipe state labels use the 17px body minimum. Typecheck, lint (one pre-existing image warning), all 294 tests, and diff checks pass; build is blocked only by Google Font fetch failures.
+
+## Focused Menu UX correction (2026-10-02)
+
+Plan:
+- Replace the external recipe add panel with a compact, searchable inline draft row that supports existing or new ingredients across sizes while preserving conversion and staged Save/Cancel behavior.
+- Restore information-rich size cards with truthful price/recipe state, cost and keep metrics, and per-card Today / 7 days / 30 days sales controls; refine the shared product hero and focused-size treatment.
+- Verify responsive/RTL/accessibility behavior, add focused regressions where useful, run every requested check, capture the runnable UI if available, then commit and open one unmerged PR.
+
+Result:
+- [x] Recipe editing now stays inside the responsive matrix: one searchable draft row supports an existing or newly named ingredient, compact type selection, compatible per-size units, missing-size additions, row/cell removal, and staged Save/Cancel.
+- [x] Product overview cards restore the approved visual hierarchy with price/cost/You keep, a truthful cost-versus-keep bar, separate amber/green price and recipe states, card actions, and inactive-size controls.
+- [x] Units sold periods are scoped to each card and limited to Today / 7 days / 30 days, retaining trustworthy no-coverage messaging; the product hero and selected-size treatment are quieter and clearer.
+- [x] English, Spanish, and Arabic UI copy is complete. Typecheck, all 294 tests, diff checks, and lint pass (one pre-existing ProductPhotoEditor `<img>` warning); production build is blocked only by Google Fonts network fetches. No browser runtime is installed for a screenshot.
