@@ -361,6 +361,7 @@
     "costKeepSummary": "تكلفة التحضير {cost}؛ تحتفظ بـ {keep} بعد المكونات",
     "addIngredient": "إضافة مكوّن",
     "completeRecipeRow": "اختر مكوّناً أو اكتب اسمه وأدخل كمية لحجم واحد على الأقل.",
+    "conversionRequired": "أدخل الكمية الدقيقة الخاصة بهذا المكوّن للمضخة أو الجرعة قبل الحفظ.",
     "createIngredientNamed": "إنشاء «{name}»",
     "removeDraftRow": "إزالة المكوّن المسودة",
     "undo": "تراجع",

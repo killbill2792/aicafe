@@ -3,16 +3,17 @@ import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity } 
 
 describe("recipeDisplayUnitsFor", () => {
   it("offers the compatible physical units for a volume ingredient", () => {
-    expect(recipeDisplayUnitsFor("ml")).toEqual(["ml", "fl_oz"]);
+    expect(recipeDisplayUnitsFor("ml")).toEqual(["ml", "fl_oz", "pump"]);
   });
   it("offers only g for a weight ingredient without a stored conversion", () => {
-    expect(recipeDisplayUnitsFor("g")).toEqual(["g"]);
+    expect(recipeDisplayUnitsFor("g")).toEqual(["g", "shot"]);
   });
   it("offers only each for a count-based ingredient", () => {
     expect(recipeDisplayUnitsFor("each")).toEqual(["each"]);
   });
   it("offers only the operational conversions stored for that exact ingredient", () => {
     expect(recipeDisplayUnitsFor("ml", [{ unit: "pump", baseUnitsPerUnit: 7.5 }])).toEqual(["ml", "fl_oz", "pump"]);
+    expect(recipeDisplayUnitsFor("ml", [{ unit: "shot", baseUnitsPerUnit: 30 }])).toEqual(["ml", "fl_oz", "pump", "shot"]);
     expect(recipeDisplayUnitsFor("g", [{ unit: "shot", baseUnitsPerUnit: 18 }])).toEqual(["g", "shot"]);
   });
 });

@@ -361,6 +361,7 @@
     "costKeepSummary": "Cost to make {cost}; you keep {keep} after ingredients",
     "addIngredient": "Add ingredient",
     "completeRecipeRow": "Choose or name an ingredient and enter an amount for at least one size.",
+    "conversionRequired": "Enter the exact ingredient-specific pump or shot amount before saving.",
     "createIngredientNamed": "Create “{name}”",
     "removeDraftRow": "Remove draft ingredient",
     "undo": "Undo",

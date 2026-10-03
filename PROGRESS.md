@@ -5,6 +5,28 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## Final Menu UX pass (2026-10-03 — code complete)
+
+1. Move selling-price editing into each size card, including exact-size deep-link focus and the
+   existing deterministic suggestion/action behavior.
+2. Restore ingredient-specific Pump/Shot choices and require/persist an inline conversion before a
+   recipe using a previously undefined operational unit can be saved.
+3. Redesign grouped Menu catalog cards with batched tenant-scoped product photos and clear tinted
+   pricing/recipe health, without schema or calculation changes.
+4. Run typecheck, lint, tests, build, and diff checks; capture the changed web UI if the environment
+   supports it; then commit and open the follow-up PR. No dependency or migration added.
+
+Result:
+- [x] Every size edits its displayed selling price in place, including deterministic suggestion
+  copy, Save/Cancel, and exact-size deep-link scrolling/focus.
+- [x] Volume ingredients offer Pump and weight ingredients offer Shot; missing ingredient-specific
+  conversions are collected inline and persisted before recipe lines, never guessed globally.
+- [x] Grouped catalog cards use one batched tenant-scoped photo/signing load, a warm placeholder,
+  prominent product/size/pricing details, and green or amber owner-readable health panels.
+- [x] Typecheck, lint (one pre-existing product-photo `<img>` warning), 296 tests, and diff checks
+  pass. Build is blocked only by the environment failing to fetch the three existing Google Fonts.
+  No browser runtime is installed, so a screenshot could not be captured.
+
 ## PR #14 Phase 4B final correction pass (2026-10-02 — code complete)
 
 1. Preserve the first product-photo anchor by resolving photos across every same-family item id,
