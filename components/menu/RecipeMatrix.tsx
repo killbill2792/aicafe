@@ -6,7 +6,10 @@ import { addRecipeLine, deleteRecipeLine, updateRecipeLine } from "@/lib/actions
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
 import type { BaseUnit, IngredientUnitConversion, RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
 import { recipeDisplayUnitsFor, toBaseUnitQuantity } from "@/lib/calc/recipeUnits";
+import { needsIngredientConversion } from "@/lib/calc/recipeUnits";
+import { setIngredientUnitConversion } from "@/lib/actions/ingredientUnitConversions";
 import { useRouter } from "@/i18n/navigation";
+import { prepareNewIngredientAdditions } from "@/lib/menu/newIngredientRecipe";
 
 type Draft = { quantity: string; unit: RecipeDisplayUnit; removed?: boolean };
 type NewRow = {
@@ -42,6 +45,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => draftsFromItems(items));
   const [newRow, setNewRow] = useState<NewRow | null>(null);
   const [ingredientOpen, setIngredientOpen] = useState(false);
+  const [conversionDrafts, setConversionDrafts] = useState<Record<string, string>>({});
 
   const rows = useMemo(() => {
     const map = new Map<string, string>();
@@ -59,6 +63,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
     setNewRow({ key: `new:${Date.now()}`, ingredient: null, name: "", baseUnit: "g", purchaseCost: "", purchaseQuantity: "", purchaseUnit: "g", amounts: {} });
     setIngredientOpen(true);
     setSaved(false);
+    setConversionDrafts({});
   }
   function setBaseUnit(baseUnit: BaseUnit) {
     if (!newRow) return;
@@ -106,11 +111,38 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
       const amount = drafts[`${item.id}:${ingredientId}`];
       return Number(amount?.quantity) > 0 ? [{ ingredientId, item, amount }] : [];
     }));
+    const selectedConversions = new Map<string, { ingredientId: string; unit: "shot" | "pump" }>();
+    for (const [ingredientId] of rows) for (const item of items) {
+      const draft = drafts[`${item.id}:${ingredientId}`];
+      if (draft && !draft.removed && needsIngredientConversion(draft.unit) && !(ingredientConversions[ingredientId] ?? []).some((entry) => entry.unit === draft.unit)) {
+        selectedConversions.set(`${ingredientId}:${draft.unit}`, { ingredientId, unit: draft.unit });
+      }
+    }
+    if (resolvedIngredient) for (const { amount } of additions) {
+      if (needsIngredientConversion(amount.unit) && !(ingredientConversions[resolvedIngredient.id] ?? []).some((entry) => entry.unit === amount.unit)) {
+        selectedConversions.set(`${resolvedIngredient.id}:${amount.unit}`, { ingredientId: resolvedIngredient.id, unit: amount.unit });
+      }
+    }
+    const newIngredientPlan = prepareNewIngredientAdditions(additions);
+    const newIngredientOperationalUnit = !resolvedIngredient ? newIngredientPlan.operationalUnit : null;
+    const newIngredientConversionKey = newIngredientOperationalUnit ? `new:${newIngredientOperationalUnit}` : null;
+    if ([...selectedConversions.keys()].some((key) => !(Number(conversionDrafts[key]) > 0))) {
+      setError(labels.conversionRequired);
+      return;
+    }
+    if (newIngredientConversionKey && !(Number(conversionDrafts[newIngredientConversionKey]) > 0)) {
+      setError(labels.conversionRequired);
+      return;
+    }
     setError(null);
     setSaved(false);
     start(async () => {
       let completed = 0;
       const total = items.reduce((count, item) => count + item.recipe.length, 0) + existingRowAdditions.length + additions.length;
+      for (const [key, conversion] of selectedConversions) {
+        const result = await setIngredientUnitConversion({ ...conversion, baseUnitsPerUnit: Number(conversionDrafts[key]) });
+        if (!result.ok) { setError(result.error); return; }
+      }
       for (const item of items) for (const line of item.recipe) {
         const draft = drafts[`${item.id}:${line.ingredientId}`];
         if (!draft) continue;
@@ -125,7 +157,11 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         if (!result.ok) { setError(completed ? labels.partialSave : result.error); return; }
         completed += 1;
       }
-      for (const [index, { item, amount }] of additions.entries()) {
+      // When a brand-new ingredient uses an operational unit, create that size first. The action
+      // atomically creates the ingredient and its conversion; later sizes then find the same
+      // ingredient by name and reuse the stored conversion instead of creating duplicates.
+      const orderedAdditions = newIngredientOperationalUnit ? newIngredientPlan.ordered : additions;
+      for (const [index, { item, amount }] of orderedAdditions.entries()) {
         const result = await addRecipeLine({
           menuItemId: item.id,
           ingredientId: resolvedIngredient?.id,
@@ -133,6 +169,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
           newIngredientUnit: resolvedIngredient ? undefined : newRow?.baseUnit,
           newIngredientCostCents: index === 0 && hasPurchaseCost ? purchaseCostCents : undefined,
           newIngredientCostQuantity: index === 0 && hasPurchaseCost ? purchaseBaseQuantity! : undefined,
+          newConversionBaseUnitsPerUnit: index === 0 && newIngredientConversionKey ? Number(conversionDrafts[newIngredientConversionKey]) : undefined,
           displayUnit: amount.unit,
           displayQuantity: Number(amount.quantity),
         });
@@ -147,7 +184,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
   function amountCell(row: NewRow, item: MenuItemForEdit) {
     const draft = row.amounts[item.id] ?? { quantity: "", unit: row.baseUnit };
     const units = recipeDisplayUnitsFor(row.baseUnit, row.ingredient ? ingredientConversions[row.ingredient.id] ?? [] : []);
-    return <div className="flex min-w-[172px] items-center gap-1.5">
+    return <div className="min-w-[172px]"><div className="flex items-center gap-1.5">
       <input aria-label={`${row.name || labels.ingredient} ${item.sizeLabel ?? item.name}`} type="number" min="0.01" step="0.01" value={draft.quantity}
         onChange={(event) => setNewRow({ ...row, amounts: { ...row.amounts, [item.id]: { ...draft, quantity: event.target.value } } })}
         className="h-12 w-[88px] rounded-xl border border-line bg-card px-2 focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/15" placeholder="—" />
@@ -156,7 +193,17 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         className="h-12 min-w-[74px] rounded-xl border border-line bg-card px-2 focus:border-ink focus:outline-none">
         {units.map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
       </select>
-    </div>;
+    </div>{conversionField(row.ingredient?.id ?? "new", draft.unit, row.baseUnit, Boolean(row.ingredient))}</div>;
+  }
+
+  function conversionField(ingredientId: string, unit: RecipeDisplayUnit, baseUnit: BaseUnit, existingIngredient = true) {
+    if (!needsIngredientConversion(unit) || (existingIngredient && (ingredientConversions[ingredientId] ?? []).some((entry) => entry.unit === unit))) return null;
+    const key = `${ingredientId}:${unit}`;
+    return <label className="mt-1.5 flex items-center justify-center gap-1 text-sm font-bold text-ink-muted">
+      <span>1 {labels[unit] ?? unit} =</span>
+      <input aria-label={labels.conversionRequired} type="number" min="0.01" step="0.01" required value={conversionDrafts[key] ?? ""} onChange={(event) => setConversionDrafts((current) => ({ ...current, [key]: event.target.value }))} className="h-12 w-20 rounded-lg border border-warn/50 bg-card px-2 text-ink outline-none focus:ring-2 focus:ring-warn/20" />
+      <span>{labels[baseUnit] ?? baseUnit}</span>
+    </label>;
   }
 
   return <section className="rounded-card-lg bg-card p-3 sm:p-[18px]">
@@ -179,13 +226,13 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
               const representative = items.flatMap((candidate) => candidate.recipe).find((candidate) => candidate.ingredientId === ingredientId)!;
               const draft = drafts[key] ?? (line ? draftForLine(line) : { quantity: "", unit: representative.baseUnit });
               return <td key={item.id} className={`border-b border-line p-2.5 ${focusedSizeId === item.id ? "bg-warn-tint/25" : ""} ${item.active ? "" : "bg-paper/60"}`}>
-                {!draft.removed ? <div className="flex min-w-[190px] items-center justify-center gap-1">
+                {!draft.removed ? <div className="min-w-[190px]"><div className="flex items-center justify-center gap-1">
                   <input aria-label={`${name} ${item.sizeLabel ?? item.name}`} className="h-12 w-[82px] rounded-xl border border-line px-2 focus:border-ink focus:outline-none" type="number" min="0.01" step="0.01" value={draft.quantity} onChange={(event) => setDrafts((current) => ({ ...current, [key]: { ...draft, quantity: event.target.value } }))} />
                   <select aria-label={`${labels.unit} ${name}`} className="h-12 min-w-[70px] rounded-xl border border-line bg-card px-1" value={draft.unit} onChange={(event) => setDrafts((current) => ({ ...current, [key]: { ...draft, unit: event.target.value as RecipeDisplayUnit } }))}>
                     {recipeDisplayUnitsFor(representative.baseUnit, ingredientConversions[ingredientId] ?? []).map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
                   </select>
                   {line ? <button type="button" aria-label={`${labels.remove} ${name} ${item.sizeLabel ?? item.name}`} onClick={() => setDrafts((current) => ({ ...current, [key]: { ...draft, removed: true } }))} className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-warn hover:bg-warn-tint"><Trash2 size={18} aria-hidden="true" /></button> : <span className="min-w-12 text-center text-ink-muted" aria-label={labels.notUsed}>—</span>}
-                </div> : <button type="button" onClick={() => setDrafts((current) => ({ ...current, [key]: { ...draft, removed: false } }))} className="min-h-12 w-full font-bold text-good">{labels.undo}</button>}
+                </div>{conversionField(ingredientId,draft.unit,representative.baseUnit)}</div> : <button type="button" onClick={() => setDrafts((current) => ({ ...current, [key]: { ...draft, removed: false } }))} className="min-h-12 w-full font-bold text-good">{labels.undo}</button>}
               </td>;
             })}
           </tr>)}
@@ -212,7 +259,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
                     <span aria-hidden="true" className="text-ink-muted">/</span>
                     <input inputMode="decimal" aria-label={labels.purchaseQuantity} value={newRow.purchaseQuantity} onChange={(event) => setNewRow({ ...newRow, purchaseQuantity: event.target.value })} className="h-12 w-16 rounded-lg border border-line px-2 outline-none" placeholder="0" />
                     <select aria-label={labels.purchaseUnit} value={newRow.purchaseUnit} onChange={(event) => setNewRow({ ...newRow, purchaseUnit: event.target.value as RecipeDisplayUnit })} className="h-12 w-[74px] rounded-lg border border-line bg-card px-1">
-                      {recipeDisplayUnitsFor(newRow.baseUnit).map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
+                      {recipeDisplayUnitsFor(newRow.baseUnit).filter((unit) => !needsIngredientConversion(unit)).map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
                     </select>
                   </div>
                 </div>}

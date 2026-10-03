@@ -5,6 +5,46 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #17 new-ingredient operational units follow-up (2026-10-03 — code complete)
+
+1. Let brand-new Weight and Volume ingredients choose Shot and Pump respectively in the recipe
+   matrix, with the same inline exact-conversion requirement as existing ingredients.
+2. Create the first new-ingredient recipe line with the existing
+   `newConversionBaseUnitsPerUnit` input, then reuse the created ingredient/conversion for every
+   other size without changing schema, pricing, catalog, inline price, or AI Team code.
+3. Add focused unit/conversion regressions and run typecheck, lint, tests, build, and diff checks;
+   then push one follow-up commit to PR #17.
+
+Result:
+- [x] Brand-new Volume and Weight ingredients expose Pump and Shot respectively, render the same
+  inline exact-conversion field, and never infer a conversion.
+- [x] The operational-unit size is saved first with `newConversionBaseUnitsPerUnit`; sequential
+  sizes reuse the name-matched ingredient and its stored conversion rather than creating copies.
+- [x] Typecheck, lint, 299 tests, and diff checks pass. Build remains blocked only by this
+  environment failing to fetch the three existing Google Fonts.
+
+## Final Menu UX pass (2026-10-03 — code complete)
+
+1. Move selling-price editing into each size card, including exact-size deep-link focus and the
+   existing deterministic suggestion/action behavior.
+2. Restore ingredient-specific Pump/Shot choices and require/persist an inline conversion before a
+   recipe using a previously undefined operational unit can be saved.
+3. Redesign grouped Menu catalog cards with batched tenant-scoped product photos and clear tinted
+   pricing/recipe health, without schema or calculation changes.
+4. Run typecheck, lint, tests, build, and diff checks; capture the changed web UI if the environment
+   supports it; then commit and open the follow-up PR. No dependency or migration added.
+
+Result:
+- [x] Every size edits its displayed selling price in place, including deterministic suggestion
+  copy, Save/Cancel, and exact-size deep-link scrolling/focus.
+- [x] Volume ingredients offer Pump and weight ingredients offer Shot; missing ingredient-specific
+  conversions are collected inline and persisted before recipe lines, never guessed globally.
+- [x] Grouped catalog cards use one batched tenant-scoped photo/signing load, a warm placeholder,
+  prominent product/size/pricing details, and green or amber owner-readable health panels.
+- [x] Typecheck, lint (one pre-existing product-photo `<img>` warning), 296 tests, and diff checks
+  pass. Build is blocked only by the environment failing to fetch the three existing Google Fonts.
+  No browser runtime is installed, so a screenshot could not be captured.
+
 ## PR #14 Phase 4B final correction pass (2026-10-02 — code complete)
 
 1. Preserve the first product-photo anchor by resolving photos across every same-family item id,

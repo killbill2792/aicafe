@@ -361,6 +361,7 @@
     "costKeepSummary": "Cuesta {cost}; te quedan {keep} después de ingredientes",
     "addIngredient": "Añadir ingrediente",
     "completeRecipeRow": "Elige o nombra un ingrediente e ingresa una cantidad para al menos un tamaño.",
+    "conversionRequired": "Ingresa la cantidad exacta de bomba o shot para este ingrediente antes de guardar.",
     "createIngredientNamed": "Crear «{name}»",
     "removeDraftRow": "Quitar ingrediente en borrador",
     "undo": "Deshacer",

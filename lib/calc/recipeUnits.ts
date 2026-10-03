@@ -10,12 +10,15 @@ const ML_PER_FL_OZ = 29.5735;
 
 export type IngredientUnitConversion = { unit: OperationalUnit; baseUnitsPerUnit: number };
 
-/** Units safe to offer for this exact ingredient. Operational units appear only when that
- * ingredient already has the corresponding stored conversion; a recipe editor never invents one. */
+/** Units an owner may choose for this ingredient type. Pump is a useful volume measure and Shot
+ * is a useful weight measure, but selecting either still requires an ingredient-specific stored
+ * conversion before save (enforced by toBaseUnitQuantity and the recipe UI). Existing conversions
+ * remain available even for less common canonical types so previously-entered data is editable. */
 export function recipeDisplayUnitsFor(baseUnit: BaseUnit, conversions: readonly IngredientUnitConversion[] = []): RecipeDisplayUnit[] {
   if (baseUnit === "each") return ["each"];
   const physical: RecipeDisplayUnit[] = baseUnit === "ml" ? ["ml", "fl_oz"] : ["g"];
-  return [...physical, ...conversions.map((conversion) => conversion.unit)];
+  const useful: OperationalUnit[] = baseUnit === "ml" ? ["pump"] : ["shot"];
+  return [...physical, ...new Set([...useful, ...conversions.map((conversion) => conversion.unit)])];
 }
 
 export function needsIngredientConversion(unit: RecipeDisplayUnit): unit is OperationalUnit {

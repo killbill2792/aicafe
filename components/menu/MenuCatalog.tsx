@@ -1,23 +1,25 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import Image from "next/image";
+import { Check, Coffee, Search, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import { groupMenuCatalogItems, isPricingHealthy, type GroupedMenuCatalogItem } from "@/lib/viewmodels/menuCatalogViewModel";
 import { usePricingStatusChip } from "./usePricingStatusChip";
+import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 
 function StatusLine({ good, label }: { good: boolean; label: string }) {
   return (
-    <span className={`mt-1 block text-sm font-semibold ${good ? "text-good" : "text-ink-muted"}`}>
-      {good ? "✓ " : ""}{label}
+    <span className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-sm font-bold ${good ? "bg-good-tint text-good" : "bg-amber-50 text-warn"}`}>
+      {good ? <Check className="mt-0.5 shrink-0" size={17} aria-hidden="true" /> : <TriangleAlert className="mt-0.5 shrink-0" size={17} aria-hidden="true" />}{label}
     </span>
   );
 }
 
-export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
+export default function MenuCatalog({ items, photos }: { items: MenuControlItem[]; photos: Record<string, ProductPhoto> }) {
   const t = useTranslations("Menu");
   const statusChip = usePricingStatusChip();
   const [query, setQuery] = useState("");
@@ -104,17 +106,23 @@ export default function MenuCatalog({ items }: { items: MenuControlItem[] }) {
           </button>
         ))}
       </div>
-      <div className="flex flex-col gap-2.5 md:grid md:grid-cols-2 md:gap-3 lg:grid-cols-3">
-        {groups.map((group) => (
-          <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="flex items-center justify-between gap-3 rounded-card-lg bg-card p-[18px] text-ink no-underline">
-            <div className="min-w-0">
-              <h2 className="truncate text-lg font-bold">{group.baseName}</h2>
-              {group.sizeLabels.length > 0 && <p className="truncate text-sm text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
-              {renderStatus(group)}
+      <div className="flex flex-col gap-3 md:grid md:grid-cols-2 lg:grid-cols-3">
+        {groups.map((group) => {
+          const photo = group.memberIds.map((id) => photos[id]).find(Boolean) ?? null;
+          return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-sm transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+            <div className="flex gap-4 p-4">
+              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#fbf1e3] text-[#7a3f13]">
+                {photo ? <Image src={photo.signedUrl} alt="" fill unoptimized sizes="112px" className="object-cover transition-transform group-hover:scale-[1.02] motion-reduce:transform-none" /> : <Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}
+              </div>
+              <div className="min-w-0 flex-1 py-0.5">
+                <h2 className="text-xl font-extrabold leading-tight">{group.baseName}</h2>
+                {group.sizeLabels.length > 0 && <p className="mt-1 line-clamp-2 text-[15px] text-ink-muted">{group.sizeLabels.join(" · ")}</p>}
+                <p className="mt-2 font-headline text-[25px] font-bold leading-none">{renderPrice(group)}</p>
+              </div>
             </div>
-            <span className="shrink-0 font-headline text-[25px] font-bold">{renderPrice(group)}</span>
-          </Link>
-        ))}
+            <div className="px-4 pb-4">{renderStatus(group)}</div>
+          </Link>;
+        })}
         {groups.length === 0 && <p className="rounded-card-lg bg-card p-5 text-[17px] text-ink-muted md:col-span-full">{t("empty")}</p>}
       </div>
     </>
