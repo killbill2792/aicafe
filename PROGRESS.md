@@ -1825,3 +1825,13 @@ Result:
 - [x] Genuinely new inline ingredients now accept an optional compact package price / quantity / physical-unit expression; existing catalog matches are selected without asking for cost, and the existing action receives base-unit quantity plus integer cents once.
 - [x] The existing canonical order-line dates now produce coverage-gated daily item series for Today / 7 days / 30 days, including truthful covered zero-sale days, and each size card renders those real values as a compact bar chart.
 - [x] Typecheck, diff check, lint (one pre-existing ProductPhotoEditor `<img>` warning), and all 296 tests pass. Build remains blocked only by failed Google Fonts network fetches.
+
+### PR #16 locale-formatting follow-up (2026-10-03)
+
+Plan:
+- Replace the browser-default Units sold number formatting with the active next-intl formatter only.
+- Run the requested typecheck, lint, test, and diff checks, then commit the isolated review fix without merging.
+
+Result:
+- [x] Units sold now uses `useFormatter().number(...)`, keeping server/client output deterministic and honoring the active en/es/ar locale.
+- [x] Typecheck, all 296 tests, and diff checks pass; lint passes with the one pre-existing ProductPhotoEditor `<img>` warning.
