@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity } from "./recipeUnits";
 
 describe("recipeDisplayUnitsFor", () => {
-  it("offers the compatible physical units for a volume ingredient", () => {
+  it("lets a brand-new volume ingredient use ml, fl oz, or an exact pump conversion", () => {
     expect(recipeDisplayUnitsFor("ml")).toEqual(["ml", "fl_oz", "pump"]);
   });
-  it("offers only g for a weight ingredient without a stored conversion", () => {
+  it("lets a brand-new weight ingredient use g or an exact shot conversion", () => {
     expect(recipeDisplayUnitsFor("g")).toEqual(["g", "shot"]);
   });
-  it("offers only each for a count-based ingredient", () => {
+  it("keeps a brand-new count ingredient canonical in each", () => {
     expect(recipeDisplayUnitsFor("each")).toEqual(["each"]);
   });
   it("offers only the operational conversions stored for that exact ingredient", () => {
@@ -43,6 +43,13 @@ describe("toBaseUnitQuantity", () => {
   it("returns null for a shot/pump with no stored conversion for that ingredient", () => {
     expect(toBaseUnitQuantity("shot", 2, "g", [])).toBeNull();
     expect(toBaseUnitQuantity("pump", 2, "ml", [])).toBeNull();
+  });
+
+  it("converts a new ingredient only after its exact inline conversion is supplied", () => {
+    expect(toBaseUnitQuantity("pump", 3, "ml")).toBeNull();
+    expect(toBaseUnitQuantity("pump", 3, "ml", [{ unit: "pump", baseUnitsPerUnit: 8.5 }])).toBe(25.5);
+    expect(toBaseUnitQuantity("shot", 2, "g")).toBeNull();
+    expect(toBaseUnitQuantity("shot", 2, "g", [{ unit: "shot", baseUnitsPerUnit: 19 }])).toBe(38);
   });
 
   it("uses the ingredient-specific conversion once one is stored", () => {

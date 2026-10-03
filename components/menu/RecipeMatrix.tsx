@@ -9,6 +9,7 @@ import { recipeDisplayUnitsFor, toBaseUnitQuantity } from "@/lib/calc/recipeUnit
 import { needsIngredientConversion } from "@/lib/calc/recipeUnits";
 import { setIngredientUnitConversion } from "@/lib/actions/ingredientUnitConversions";
 import { useRouter } from "@/i18n/navigation";
+import { prepareNewIngredientAdditions } from "@/lib/menu/newIngredientRecipe";
 
 type Draft = { quantity: string; unit: RecipeDisplayUnit; removed?: boolean };
 type NewRow = {
@@ -122,7 +123,14 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         selectedConversions.set(`${resolvedIngredient.id}:${amount.unit}`, { ingredientId: resolvedIngredient.id, unit: amount.unit });
       }
     }
+    const newIngredientPlan = prepareNewIngredientAdditions(additions);
+    const newIngredientOperationalUnit = !resolvedIngredient ? newIngredientPlan.operationalUnit : null;
+    const newIngredientConversionKey = newIngredientOperationalUnit ? `new:${newIngredientOperationalUnit}` : null;
     if ([...selectedConversions.keys()].some((key) => !(Number(conversionDrafts[key]) > 0))) {
+      setError(labels.conversionRequired);
+      return;
+    }
+    if (newIngredientConversionKey && !(Number(conversionDrafts[newIngredientConversionKey]) > 0)) {
       setError(labels.conversionRequired);
       return;
     }
@@ -149,7 +157,11 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         if (!result.ok) { setError(completed ? labels.partialSave : result.error); return; }
         completed += 1;
       }
-      for (const [index, { item, amount }] of additions.entries()) {
+      // When a brand-new ingredient uses an operational unit, create that size first. The action
+      // atomically creates the ingredient and its conversion; later sizes then find the same
+      // ingredient by name and reuse the stored conversion instead of creating duplicates.
+      const orderedAdditions = newIngredientOperationalUnit ? newIngredientPlan.ordered : additions;
+      for (const [index, { item, amount }] of orderedAdditions.entries()) {
         const result = await addRecipeLine({
           menuItemId: item.id,
           ingredientId: resolvedIngredient?.id,
@@ -157,6 +169,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
           newIngredientUnit: resolvedIngredient ? undefined : newRow?.baseUnit,
           newIngredientCostCents: index === 0 && hasPurchaseCost ? purchaseCostCents : undefined,
           newIngredientCostQuantity: index === 0 && hasPurchaseCost ? purchaseBaseQuantity! : undefined,
+          newConversionBaseUnitsPerUnit: index === 0 && newIngredientConversionKey ? Number(conversionDrafts[newIngredientConversionKey]) : undefined,
           displayUnit: amount.unit,
           displayQuantity: Number(amount.quantity),
         });
@@ -170,7 +183,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
 
   function amountCell(row: NewRow, item: MenuItemForEdit) {
     const draft = row.amounts[item.id] ?? { quantity: "", unit: row.baseUnit };
-    const units = recipeDisplayUnitsFor(row.baseUnit, row.ingredient ? ingredientConversions[row.ingredient.id] ?? [] : []).filter((unit) => row.ingredient || !needsIngredientConversion(unit));
+    const units = recipeDisplayUnitsFor(row.baseUnit, row.ingredient ? ingredientConversions[row.ingredient.id] ?? [] : []);
     return <div className="min-w-[172px]"><div className="flex items-center gap-1.5">
       <input aria-label={`${row.name || labels.ingredient} ${item.sizeLabel ?? item.name}`} type="number" min="0.01" step="0.01" value={draft.quantity}
         onChange={(event) => setNewRow({ ...row, amounts: { ...row.amounts, [item.id]: { ...draft, quantity: event.target.value } } })}
@@ -180,11 +193,11 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
         className="h-12 min-w-[74px] rounded-xl border border-line bg-card px-2 focus:border-ink focus:outline-none">
         {units.map((unit) => <option key={unit} value={unit}>{labels[unit] ?? unit}</option>)}
       </select>
-    </div>{row.ingredient && conversionField(row.ingredient.id, draft.unit, row.baseUnit)}</div>;
+    </div>{conversionField(row.ingredient?.id ?? "new", draft.unit, row.baseUnit, Boolean(row.ingredient))}</div>;
   }
 
-  function conversionField(ingredientId: string, unit: RecipeDisplayUnit, baseUnit: BaseUnit) {
-    if (!needsIngredientConversion(unit) || (ingredientConversions[ingredientId] ?? []).some((entry) => entry.unit === unit)) return null;
+  function conversionField(ingredientId: string, unit: RecipeDisplayUnit, baseUnit: BaseUnit, existingIngredient = true) {
+    if (!needsIngredientConversion(unit) || (existingIngredient && (ingredientConversions[ingredientId] ?? []).some((entry) => entry.unit === unit))) return null;
     const key = `${ingredientId}:${unit}`;
     return <label className="mt-1.5 flex items-center justify-center gap-1 text-sm font-bold text-ink-muted">
       <span>1 {labels[unit] ?? unit} =</span>

@@ -5,6 +5,24 @@ Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` f
 
 ## Milestones
 
+## PR #17 new-ingredient operational units follow-up (2026-10-03 — code complete)
+
+1. Let brand-new Weight and Volume ingredients choose Shot and Pump respectively in the recipe
+   matrix, with the same inline exact-conversion requirement as existing ingredients.
+2. Create the first new-ingredient recipe line with the existing
+   `newConversionBaseUnitsPerUnit` input, then reuse the created ingredient/conversion for every
+   other size without changing schema, pricing, catalog, inline price, or AI Team code.
+3. Add focused unit/conversion regressions and run typecheck, lint, tests, build, and diff checks;
+   then push one follow-up commit to PR #17.
+
+Result:
+- [x] Brand-new Volume and Weight ingredients expose Pump and Shot respectively, render the same
+  inline exact-conversion field, and never infer a conversion.
+- [x] The operational-unit size is saved first with `newConversionBaseUnitsPerUnit`; sequential
+  sizes reuse the name-matched ingredient and its stored conversion rather than creating copies.
+- [x] Typecheck, lint, 299 tests, and diff checks pass. Build remains blocked only by this
+  environment failing to fetch the three existing Google Fonts.
+
 ## Final Menu UX pass (2026-10-03 — code complete)
 
 1. Move selling-price editing into each size card, including exact-size deep-link focus and the
