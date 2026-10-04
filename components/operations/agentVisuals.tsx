@@ -4,7 +4,7 @@ import type { AgentId } from "@/lib/operating/tasks";
 
 export const agentVisuals = {
   alex: {
-    avatar: "/ai-team/alex.svg",
+    avatar: "/ai-team/alex.png",
     accent: "text-[#276A9E]",
     border: "border-[#65A6D5]",
     softSurface: "bg-[#EAF5FC]",
@@ -14,7 +14,7 @@ export const agentVisuals = {
     icon: ChartNoAxesCombined,
   },
   olivia: {
-    avatar: "/ai-team/olivia.svg",
+    avatar: "/ai-team/olivia.png",
     accent: "text-[#74488A]",
     border: "border-[#A982BA]",
     softSurface: "bg-[#F5EDF8]",
@@ -24,7 +24,7 @@ export const agentVisuals = {
     icon: CalendarCheck2,
   },
   maya: {
-    avatar: "/ai-team/maya.svg",
+    avatar: "/ai-team/maya.png",
     accent: "text-[#287852]",
     border: "border-[#75AD8B]",
     softSurface: "bg-[#ECF6EF]",
@@ -34,7 +34,7 @@ export const agentVisuals = {
     icon: Leaf,
   },
   leo: {
-    avatar: "/ai-team/leo.svg",
+    avatar: "/ai-team/leo.png",
     accent: "text-[#8A5C00]",
     border: "border-[#D6A43D]",
     softSurface: "bg-[#FFF6DF]",
