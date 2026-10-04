@@ -835,7 +835,6 @@
     "openIngredientCosts": "Abrir costos de ingredientes",
     "summaryCounts": "{needs} te necesitan · {handled} resueltas · {watching} vigiladas",
     "openTeam": "Abrir equipo",
-    "allTeam": "Todo el equipo",
     "keepCurrent": "Mantener actual",
     "later": "Más tarde",
     "decisionError": "No pudimos guardar esa opción. Inténtalo de nuevo.",

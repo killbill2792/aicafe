@@ -835,7 +835,6 @@
     "openIngredientCosts": "فتح تكاليف المكونات",
     "summaryCounts": "{needs} تحتاج إليك · {handled} تم التعامل معها · {watching} قيد المراقبة",
     "openTeam": "فتح الفريق",
-    "allTeam": "كل الفريق",
     "keepCurrent": "الإبقاء على الحالي",
     "later": "لاحقاً",
     "decisionError": "تعذر حفظ الاختيار. حاول مرة أخرى.",
