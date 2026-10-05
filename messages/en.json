@@ -835,7 +835,6 @@
     "openIngredientCosts": "Open ingredient costs",
     "summaryCounts": "{needs} need you · {handled} handled · {watching} watching",
     "openTeam": "Open team",
-    "allTeam": "All team",
     "keepCurrent": "Keep current",
     "later": "Later",
     "decisionError": "We couldn't save that choice. Try again.",

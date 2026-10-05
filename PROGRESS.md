@@ -1875,3 +1875,37 @@ Plan:
 Result:
 - [x] Units sold now uses `useFormatter().number(...)`, keeping server/client output deterministic and honoring the active en/es/ar locale.
 - [x] Typecheck, all 296 tests, and diff checks pass; lint passes with the one pre-existing ProductPhotoEditor `<img>` warning.
+
+### AI Team visual redesign (PR #18, 2026-10-04)
+
+Plan:
+- Add the four approved transparent character assets and centralize avatar, color, surface, and role-icon metadata in one reusable identity system.
+- Rebuild the AI Team selector with raised characters, organic role backdrops, rich default/hover/selected states, accessible toggle filtering, responsive layout, and RTL-safe navigation; remove the separate All team control.
+- Reuse compact forms of the same avatars in task cards without changing any task derivation, persistence, actions, or lifecycle behavior.
+- Run typecheck, lint, tests, build, and diff checks; capture desktop, mobile, and Arabic RTL screenshots if the runnable environment supports them; then commit and open one unmerged PR.
+
+Result:
+- [x] Approved Alex, Olivia, Maya, and Leo cutouts are optimized as local transparent WebP assets and drive one shared visual definition with role colors and icons.
+- [x] The responsive selector now raises each character above an organic CSS backdrop and information panel, adds reduced-motion-aware hover/focus treatment and a richer selected glow/name pill, and toggles the active agent while preserving task status.
+- [x] The standalone All team control is removed; task cards reuse compact versions of the same character art and tinted identity surfaces without task-logic changes.
+- [x] Typecheck, all 299 tests, diff checks, and lint pass (one pre-existing ProductPhotoEditor `<img>` warning). Build is blocked only by the known Google Fonts network failure. No browser runtime is installed for screenshots.
+
+### PR #18 completion audit (2026-10-04)
+
+Plan:
+- Audit every AI Team acceptance criterion against the implementation, correcting any behavior or interaction-state gaps without changing task logic.
+- Re-run the full requested validation suite and record any environment-only limitations.
+
+Result:
+- [x] Agent toggles now preserve a status parameter only when one is actually present, so clearing an agent from `/operations?agent=alex` returns to `/operations` while explicit status filters remain intact.
+- [x] Keyboard focus now receives the same raised-card, stronger-backdrop treatment as pointer hover while retaining the separate accessible focus outline and reduced-motion behavior.
+
+### PR #18 binary-diff compatibility (2026-10-04)
+
+Plan:
+- Preserve the exact approved transparent avatar pixels while replacing binary Git patch entries that the PR creation interface cannot submit.
+- Re-run the required validation and commit the text-only asset representation so the diff-screen Create PR action can succeed.
+
+Result:
+- [x] Each approved WebP payload is now embedded losslessly in a local SVG wrapper; the rendered character artwork, transparency, dimensions, and reusable per-agent identity remain unchanged.
+- [x] The PR diff contains no binary file entries, avoiding the interface's “Binary Files are not supported” rejection without adding remote assets or dependencies.
