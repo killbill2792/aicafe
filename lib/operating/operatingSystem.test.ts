@@ -11,7 +11,7 @@ import { getFixtureSnapshot } from "@/lib/data/fixtureSnapshot";
 
 describe("AI-native operating system boundaries", () => {
   const fixtureSnapshot = getFixtureSnapshot();
-  const pricing = suggestPrice({ productCostCents: 180, currentPriceCents: 400, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 900, itemUnitsSoldInWindow: 80, monthlyRevenueCents: 100_000 }, economics: { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 30_000, monthlyStaffCostCents: 35_000, monthlyOperatingCostCents: 25_000 }, categoryPeers: null });
+  const pricing = suggestPrice({ productCostCents: 180, currentPriceCents: 400, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"), posSignal: { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 900, itemUnitsSoldInWindow: 80, monthlyRevenueCents: 100_000 }, economics: { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 30_000, monthlyStaffCostCents: 35_000, monthlyOperatingCostCents: 25_000, monthlyProcessingFeesCents: 0 }, categoryPeers: null });
 
   it("produces signals and deterministic decisions with no AI", () => {
     const signals = signalsFromPricing("latte", pricing);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getPricingProfile } from "@/lib/pricing/profiles";
 import { applyRounding } from "./pricingRounding";
-import { businessAdjustmentFactor, businessEconomics } from "./pricingBusiness";
+import { businessAdjustmentFactor, businessEconomics, monthlyProcessingFeesForWindow } from "./pricingBusiness";
 import { suggestPrice, type SuggestPriceInput } from "./pricingEngine";
 
 const base = (overrides: Partial<SuggestPriceInput> = {}): SuggestPriceInput => ({
@@ -11,6 +11,8 @@ const base = (overrides: Partial<SuggestPriceInput> = {}): SuggestPriceInput => 
 });
 
 describe("pricing engine", () => {
+  const establishedSignal = { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 1000, itemUnitsSoldInWindow: 100, monthlyRevenueCents: 100_000 };
+
   it("works with no AI configuration and emits integer-cent structured output", () => {
     const previous = process.env.AI_PROVIDER; delete process.env.AI_PROVIDER;
     const result = suggestPrice(base({ currentPriceCents: 0 }));
@@ -23,17 +25,17 @@ describe("pricing engine", () => {
   });
 
   it("keeps an established healthy cafe at factor 1 and uses one cost composition", () => {
-    const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 25_000, monthlyOperatingCostCents: 20_000 };
-    expect(businessEconomics(economics)).toMatchObject({ totalMonthlyCostCents: 70_000, operatingSurplusCents: 30_000 });
-    const result = suggestPrice(base({ posSignal: { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 1000, itemUnitsSoldInWindow: 100, monthlyRevenueCents: 100_000 }, economics }));
+    const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 25_000, monthlyOperatingCostCents: 20_000, monthlyProcessingFeesCents: 3_000 };
+    expect(businessEconomics(economics)).toMatchObject({ totalMonthlyCostCents: 73_000, operatingSurplusCents: 27_000, operatingMargin: 0.27 });
+    const result = suggestPrice(base({ posSignal: establishedSignal, economics }));
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
     expect(result.businessAdjustmentFactor).toBe(1);
     expect(result.confidence).toBe("HIGH");
   });
 
   it("caps a severe shortfall and asks for review rather than auto-applying", () => {
-    const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 50_000, monthlyStaffCostCents: 45_000, monthlyOperatingCostCents: 30_000 };
-    const result = suggestPrice(base({ posSignal: { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 1000, itemUnitsSoldInWindow: 100, monthlyRevenueCents: 100_000 }, economics }));
+    const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 50_000, monthlyStaffCostCents: 25_000, monthlyOperatingCostCents: 20_000, monthlyProcessingFeesCents: 10_000 };
+    const result = suggestPrice(base({ posSignal: establishedSignal, economics }));
     expect(result.businessAdjustmentFactor).toBe(1.15);
     expect(result.warnings).toContain("BUSINESS_ADJUSTMENT_CAPPED");
     expect(result.status).toBe("REVIEW_PRICE");
@@ -42,6 +44,49 @@ describe("pricing engine", () => {
   it("returns the current price inside the stability threshold", () => expect(suggestPrice(base({ currentPriceCents: 525 })).recommendedPriceCents).toBe(525));
   it("preserves the former round-up behavior as an available profile rule", () => expect(applyRounding(160 / 0.3, { incrementCents: 25, mode: "up" })).toBe(550));
   it("never lets the business adjustment exceed its safety cap", () => expect(businessAdjustmentFactor({ totalMonthlyCostCents: 140_000, operatingSurplusCents: -40_000, operatingMargin: -0.4 }, 100_000, 0.15, 1.15)).toEqual({ businessAdjustmentFactor: 1.15, cappedForReview: true }));
+
+  describe("processing-fee economics", () => {
+    it("scales actual fees from the 90-day pricing window to a 30-day monthly value", () => {
+      expect(monthlyProcessingFeesForWindow([7_000, 7_000, 7_000], 90)).toBe(7_000);
+      expect(monthlyProcessingFeesForWindow([], 90)).toBe(0);
+    });
+
+    it("counts processing fees exactly once in total costs", () => {
+      const withoutFees = businessEconomics({ monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 30_000, monthlyOperatingCostCents: 25_000, monthlyProcessingFeesCents: 0 });
+      const withFees = businessEconomics({ monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 30_000, monthlyOperatingCostCents: 25_000, monthlyProcessingFeesCents: 3_000 });
+      expect(withFees.totalMonthlyCostCents - withoutFees.totalMonthlyCostCents).toBe(3_000);
+      expect(withoutFees.operatingSurplusCents - withFees.operatingSurplusCents).toBe(3_000);
+    });
+
+    it("increases the factor when processing fees create an operating-margin shortfall", () => {
+      const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 30_000, monthlyOperatingCostCents: 28_000, monthlyProcessingFeesCents: 5_000 };
+      const result = suggestPrice(base({ posSignal: establishedSignal, economics }));
+      expect(businessEconomics(economics).operatingMargin).toBe(0.12);
+      expect(result.businessAdjustmentFactor).toBe(1.03);
+      expect(result.calculatedSuggestedPriceCents).toBe(550);
+      expect(result.warnings).not.toContain("BUSINESS_ADJUSTMENT_CAPPED");
+    });
+
+    it("caps a raw factor above 1.15 and emits the review warning", () => {
+      const economics = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 35_000, monthlyStaffCostCents: 35_000, monthlyOperatingCostCents: 25_000, monthlyProcessingFeesCents: 10_000 };
+      const result = suggestPrice(base({ posSignal: establishedSignal, economics }));
+      // Surplus is -5,000, so raw factor is 1 + (15,000 - -5,000) / 100,000 = 1.20.
+      expect(result.businessAdjustmentFactor).toBe(1.15);
+      expect(result.businessAdjustmentFactor).toBeLessThanOrEqual(1.15);
+      expect(result.warnings).toContain("BUSINESS_ADJUSTMENT_CAPPED");
+      expect(result.calculatedSuggestedPriceCents).toBe(625);
+    });
+
+    it("moves a representative suggestion only after actual fees create a shortfall", () => {
+      const common = { monthlyRevenueCents: 100_000, monthlyVariableProductCostCents: 25_000, monthlyStaffCostCents: 30_000, monthlyOperatingCostCents: 28_000 };
+      const before = suggestPrice(base({ currentPriceCents: 0, posSignal: establishedSignal, economics: { ...common, monthlyProcessingFeesCents: 0 } }));
+      const after = suggestPrice(base({ currentPriceCents: 0, posSignal: establishedSignal, economics: { ...common, monthlyProcessingFeesCents: 5_000 } }));
+      expect(before.businessAdjustmentFactor).toBe(1);
+      expect(before.calculatedSuggestedPriceCents).toBe(525);
+      expect(after.businessAdjustmentFactor).toBe(1.03);
+      expect(after.calculatedSuggestedPriceCents).toBe(550);
+    });
+  });
 
   // Regression coverage for the "Suggested: $0.00" production bug (2026-10-01): a legitimately
   // priced recipe with a tiny fractional-cent cost got crushed to exactly $0.00 by nearest-25¢

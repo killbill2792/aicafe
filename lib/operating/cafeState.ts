@@ -29,7 +29,8 @@ export function cafeStateFromSnapshot(snapshot: BusinessSnapshot, period?: CafeS
     : snapshot.monthActualDays;
   const quality = { level: days.length > 0 ? "high" as const : "low" as const, missingInputs: days.length > 0 ? [] : ["salesHistory"], estimatedInputs: snapshot.runningCostLines.filter((line) => line.isEstimate).map((line) => `expense:${line.categoryCode}`), staleInputs: [] };
   const revenue = days.reduce((sum, day) => sum + day.netSalesCents, 0);
-  const variable = days.reduce((sum, day) => sum + day.ingredientsCents + day.cardFeesCents, 0);
+  const variable = days.reduce((sum, day) => sum + day.ingredientsCents, 0);
+  const processing = days.reduce((sum, day) => sum + day.cardFeesCents, 0);
   const staff = days.reduce((sum, day) => sum + day.wagesCents + day.staffTaxCents, 0);
   const operating = snapshot.runningCostLines.reduce((sum, line) => sum + line.amountCents, 0);
   const known = <T>(value: T): KnownSlice<T> => ({ available: true, value, quality });
@@ -37,7 +38,7 @@ export function cafeStateFromSnapshot(snapshot: BusinessSnapshot, period?: CafeS
   return {
     asOf: snapshot.todayDateStr, period: actualPeriod, business: snapshot.business,
     products: known(snapshot.menuItems), sales: known(days), expenses: known(snapshot.runningCostLines),
-    profitability: known(businessEconomics({ monthlyRevenueCents: revenue, monthlyVariableProductCostCents: variable, monthlyStaffCostCents: staff, monthlyOperatingCostCents: operating })),
+    profitability: known(businessEconomics({ monthlyRevenueCents: revenue, monthlyVariableProductCostCents: variable, monthlyStaffCostCents: staff, monthlyOperatingCostCents: operating, monthlyProcessingFeesCents: processing })),
     pricingRecommendations: missing("pricingRecommendations"), inventory: missing("inventory"), suppliers: missing("suppliers"), dataQuality: quality,
   };
 }

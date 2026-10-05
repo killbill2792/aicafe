@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
-import { evaluateRecipeCost, staffCostCentsForPeriod, type DailyFacts, type RecipeCostStatus } from "@/lib/calc";
+import { evaluateRecipeCost, monthlyProcessingFeesForWindow, staffCostCentsForPeriod, type DailyFacts, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
@@ -12,7 +12,7 @@ import type { MenuItemCategoryCode } from "@/lib/constants";
  * file now calls that same shared function instead of reimplementing its own cost+completeness
  * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; recipeStatus: RecipeCostStatus; unitsSoldInWindow: number };
-export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number };
+export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number };
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
@@ -54,7 +54,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const scale = 30 / windowDays;
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
   const monthlyStaffCostCents = Math.round(staffCostCentsForPeriod(days) * scale);
+  const monthlyProcessingFeesCents = monthlyProcessingFeesForWindow(days.map((day) => day.cardFeesCents), windowDays);
   const monthlyOperatingCostCents = (recurringResult.data ?? []).filter((row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr)).reduce((sum, row) => sum + row.amount_cents, 0);
   const monthlyVariableProductCostCents = Math.round(items.reduce((sum, item) => sum + item.unitsSoldInWindow * item.productCostCents, 0) * scale);
-  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.ordersCount > 0).length, totalOrdersInWindow: days.reduce((sum, day) => sum + day.ordersCount, 0), monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents } };
+  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.ordersCount > 0).length, totalOrdersInWindow: days.reduce((sum, day) => sum + day.ordersCount, 0), monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents } };
 }

@@ -116,6 +116,9 @@ export type BusinessEconomicsInput = {
   monthlyVariableProductCostCents: number;
   monthlyStaffCostCents: number;
   monthlyOperatingCostCents: number;
+  /** Provider-neutral payment-processing cost. In Phase 1 this is derived from existing daily
+   * rollups; provider/source precedence and CSV/manual fallback handling are deferred. */
+  monthlyProcessingFeesCents: number;
 };
 export type BusinessEconomicsResult = {
   totalMonthlyCostCents: number;
