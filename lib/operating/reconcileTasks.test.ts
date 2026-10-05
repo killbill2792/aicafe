@@ -150,4 +150,39 @@ describe("reconcileOperatingTasks", () => {
     const changed = priceTask(750, { id: "price:item:600:750" });
     expect(reconcileOperatingTasks([applied], [changed], new Date("2026-11-01T00:00:00Z")).insert).toEqual([changed]);
   });
+
+  it("keeps an exact-ID Keep current recommendation handled during its 30-day cooldown", () => {
+    const kept = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "keep_price" } });
+    const current = priceTask(600, { createdAt: "2026-10-20T00:00:00Z" });
+    const refreshed = reconcileOperatingTasks([kept], [current], new Date("2026-10-20T00:00:00Z")).refresh[0];
+    expect(refreshed).toMatchObject({ status: "handled", resolvedAt: kept.resolvedAt });
+  });
+
+  it("reactivates an exact-ID Keep current recommendation after its 30-day cooldown", () => {
+    const kept = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "keep_price" } });
+    const current = priceTask(600, { createdAt: "2026-11-01T00:00:00Z" });
+    const refreshed = reconcileOperatingTasks([kept], [current], new Date("2026-11-01T00:00:00Z")).refresh[0];
+    expect(refreshed.status).toBe("needs_owner");
+    expect(refreshed.resolvedAt).toBeUndefined();
+    expect(refreshed.createdAt).toBe(current.createdAt);
+    expect(refreshed.payload.ownerChoice).toBeUndefined();
+  });
+
+  it("keeps an exact-ID verified applied recommendation handled during its 30-day cooldown", () => {
+    const applied = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "use_price", priceAppliedToPos: true } });
+    const current = priceTask(600, { createdAt: "2026-10-20T00:00:00Z" });
+    const refreshed = reconcileOperatingTasks([applied], [current], new Date("2026-10-20T00:00:00Z")).refresh[0];
+    expect(refreshed).toMatchObject({ status: "handled", resolvedAt: applied.resolvedAt });
+  });
+
+  it("reactivates an exact-ID verified applied recommendation after its 30-day cooldown", () => {
+    const applied = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "use_price", priceAppliedToPos: true } });
+    const current = priceTask(600, { createdAt: "2026-11-01T00:00:00Z" });
+    const refreshed = reconcileOperatingTasks([applied], [current], new Date("2026-11-01T00:00:00Z")).refresh[0];
+    expect(refreshed.status).toBe("needs_owner");
+    expect(refreshed.resolvedAt).toBeUndefined();
+    expect(refreshed.createdAt).toBe(current.createdAt);
+    expect(refreshed.payload.ownerChoice).toBeUndefined();
+    expect(refreshed.payload.priceAppliedToPos).toBeUndefined();
+  });
 });

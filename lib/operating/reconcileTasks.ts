@@ -114,10 +114,18 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
     // Workflow fields not emitted by the projection survive, while every freshly-derived fact wins.
     const snoozeDue = persisted.kind === "price_review" && persisted.status === "watching" &&
       typeof persisted.payload.snoozeUntil === "string" && new Date(persisted.payload.snoozeUntil) <= now;
-    const status = persisted.status === "expired" || snoozeDue ? current.status : persisted.status;
-    refresh.push({ ...current, status, createdAt: persisted.createdAt,
-      payload: { ...persisted.payload, ...current.payload, ...(snoozeDue ? { snoozeMode: null, snoozeUntil: null } : {}) },
-      ...(status !== "expired" && status !== "handled" ? {} : persisted.resolvedAt ? { resolvedAt: persisted.resolvedAt } : {}) });
+    const handledPriceCooldownElapsed = persisted.kind === "price_review" && persisted.status === "handled" &&
+      (persisted.payload.ownerChoice === "keep_price" ||
+        (persisted.payload.ownerChoice === "use_price" && persisted.payload.priceAppliedToPos === true)) &&
+      !recommendationCooldownActive(persisted, now);
+    const status = persisted.status === "expired" || snoozeDue || handledPriceCooldownElapsed ? current.status : persisted.status;
+    refresh.push({ ...current, status, createdAt: handledPriceCooldownElapsed ? current.createdAt : persisted.createdAt,
+      payload: handledPriceCooldownElapsed
+        ? current.payload
+        : { ...persisted.payload, ...current.payload, ...(snoozeDue ? { snoozeMode: null, snoozeUntil: null } : {}) },
+      ...(!handledPriceCooldownElapsed && (status === "expired" || status === "handled") && persisted.resolvedAt
+        ? { resolvedAt: persisted.resolvedAt }
+        : {}) });
   }
 
   const expire = existing
