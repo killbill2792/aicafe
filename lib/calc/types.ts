@@ -116,6 +116,9 @@ export type BusinessEconomicsInput = {
   monthlyVariableProductCostCents: number;
   monthlyStaffCostCents: number;
   monthlyOperatingCostCents: number;
+  /** Provider-neutral payment-processing cost. Actual fees from POS/imports take precedence
+   * upstream, so this canonical value must already exclude superseded estimates. */
+  monthlyProcessingFeesCents: number;
 };
 export type BusinessEconomicsResult = {
   totalMonthlyCostCents: number;

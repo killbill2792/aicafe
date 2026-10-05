@@ -1909,3 +1909,32 @@ Plan:
 Result:
 - [x] Each approved WebP payload is now embedded losslessly in a local SVG wrapper; the rendered character artwork, transparency, dimensions, and reusable per-agent identity remain unchanged.
 - [x] The PR diff contains no binary file entries, avoiding the interface's “Binary Files are not supported” rejection without adding remote assets or dependencies.
+
+## Processing fees in pricing economics (Phase 1 only — 2026-10-05)
+
+Plan:
+1. Verify the requested pricing, POS, CSV, workbook, category-profile, and Alex-task behavior on
+   `main` after PR #18, while keeping this PR limited to processing fees in pricing economics.
+2. Add normalized monthly processing fees to the pricing read model and pure business economics,
+   sourced from the existing provider-neutral daily rollups and counted exactly once.
+3. Add deterministic scenario coverage for monthly scaling, profitable/shortfall/capped economics,
+   warnings, and representative suggested-price movement; preserve the 1.15 cap and all existing
+   tuning, then run the full validation suite. No dependency or migration planned.
+
+Result:
+- [x] Verified all 11 requested baseline findings on `main` after PR #18: CSV fees remain a hard-
+  coded zero; pricing read/economics omitted rollup fees; Square already supplies actual fees;
+  Excel reads only sheet 1; stability compares only the current price; task identity includes the
+  suggestion; no recommendation cooldown/history exists; profiles share one target set; missing or
+  zero recipe cost is unavailable; and the $19.50 wage is isolated to the break-even what-if.
+- [x] Actual provider-neutral `daily_rollups.card_fees_cents` now becomes a separately named monthly
+  processing input on the same 90-day-to-30-day basis as other variable economics and is included
+  exactly once. Existing snapshot profitability is unchanged because its formerly combined
+  ingredient-plus-fee amount is now split into the two canonical inputs.
+- [x] Scenario tests cover factor 1.00 with fees, a fee-created 1.03 shortfall, a raw 1.20 factor
+  capped at 1.15 with `BUSINESS_ADJUSTMENT_CAPPED`, exact-once composition, monthly scaling, and a
+  representative suggestion moving from $5.25 to $5.50. The cap, target margin, rounding, current-
+  price gate, ingestion, task lifecycle, provenance, and category profiles were not changed.
+- [x] Typecheck, 304 tests, and diff checks pass. Lint passes with the one pre-existing product-photo
+  `<img>` warning. Build remains blocked only by the known inability to fetch the existing Figtree,
+  Fraunces, and IBM Plex Sans Arabic Google Fonts.
