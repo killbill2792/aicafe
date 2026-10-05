@@ -185,4 +185,16 @@ describe("reconcileOperatingTasks", () => {
     expect(refreshed.payload.ownerChoice).toBeUndefined();
     expect(refreshed.payload.priceAppliedToPos).toBeUndefined();
   });
+
+  it("resurfaces the same Keep current suggestion after cooldown even when the current-price portion of the task id changed", () => {
+    const kept = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "keep_price" } });
+    const current = priceTask(600, { id: "price:item:525:600", createdAt: "2026-11-01T00:00:00Z" });
+    expect(reconcileOperatingTasks([kept], [current], new Date("2026-11-01T00:00:00Z")).insert).toEqual([current]);
+  });
+
+  it("resurfaces the same verified-applied suggestion after cooldown even when the current-price portion of the task id changed", () => {
+    const applied = priceTask(600, { status: "handled", resolvedAt: "2026-10-02T00:00:00Z", payload: { suggestedPriceCents: 600, ownerChoice: "use_price", priceAppliedToPos: true } });
+    const current = priceTask(600, { id: "price:item:625:600", createdAt: "2026-11-01T00:00:00Z" });
+    expect(reconcileOperatingTasks([applied], [current], new Date("2026-11-01T00:00:00Z")).insert).toEqual([current]);
+  });
 });

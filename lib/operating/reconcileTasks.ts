@@ -50,15 +50,21 @@ function fixedSnoozeState(task: OperatingTask, now: Date): "active" | "due" | nu
   return new Date(task.payload.snoozeUntil).getTime() > now.getTime() ? "active" : "due";
 }
 
-function recommendationCooldownActive(task: OperatingTask, now: Date): boolean {
+function recommendationCooldownApplies(task: OperatingTask): boolean {
   if (task.status !== "handled" || !task.resolvedAt) return false;
-  const ownerChoice = task.payload.ownerChoice;
-  const startsCooldown = ownerChoice === "keep_price" ||
-    (ownerChoice === "use_price" && task.payload.priceAppliedToPos === true);
-  if (!startsCooldown) return false;
+  return task.payload.ownerChoice === "keep_price" ||
+    (task.payload.ownerChoice === "use_price" && task.payload.priceAppliedToPos === true);
+}
+
+function recommendationCooldownActive(task: OperatingTask, now: Date): boolean {
+  if (!recommendationCooldownApplies(task) || !task.resolvedAt) return false;
   const cooldownEndsAt = new Date(task.resolvedAt).getTime() +
     PRICE_RECOMMENDATION_COOLDOWN_DAYS * MILLISECONDS_PER_DAY;
   return now.getTime() < cooldownEndsAt;
+}
+
+function recommendationCooldownElapsed(task: OperatingTask, now: Date): boolean {
+  return recommendationCooldownApplies(task) && !recommendationCooldownActive(task, now);
 }
 
 function awaitingPriceApplication(task: OperatingTask): boolean {
@@ -92,6 +98,10 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
           }
 
           if (recommendationCooldownActive(previous, now)) continue;
+          if (recommendationCooldownElapsed(previous, now)) {
+            insert.push(current);
+            continue;
+          }
 
           const changedMeaningfully = recommendationChangedMeaningfully(previous, current);
           if (previous.status === "watching" && previous.payload.snoozeMode === "later_change" && !changedMeaningfully) {
@@ -114,10 +124,8 @@ export function reconcileOperatingTasks(existing: OperatingTask[], derived: Oper
     // Workflow fields not emitted by the projection survive, while every freshly-derived fact wins.
     const snoozeDue = persisted.kind === "price_review" && persisted.status === "watching" &&
       typeof persisted.payload.snoozeUntil === "string" && new Date(persisted.payload.snoozeUntil) <= now;
-    const handledPriceCooldownElapsed = persisted.kind === "price_review" && persisted.status === "handled" &&
-      (persisted.payload.ownerChoice === "keep_price" ||
-        (persisted.payload.ownerChoice === "use_price" && persisted.payload.priceAppliedToPos === true)) &&
-      !recommendationCooldownActive(persisted, now);
+    const handledPriceCooldownElapsed = persisted.kind === "price_review" &&
+      recommendationCooldownElapsed(persisted, now);
     const status = persisted.status === "expired" || snoozeDue || handledPriceCooldownElapsed ? current.status : persisted.status;
     refresh.push({ ...current, status, createdAt: handledPriceCooldownElapsed ? current.createdAt : persisted.createdAt,
       payload: handledPriceCooldownElapsed
