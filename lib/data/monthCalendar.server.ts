@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CategoryMonthlyAmount, DailyFacts, ExpenseCategoryCode } from "@/lib/calc";
 import { RUNNING_COST_CODES, rowToDailyFacts } from "./runningCostCatalog";
+import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 
 export type MonthCalendarData = {
   monthKey: string;
@@ -11,6 +12,8 @@ export type MonthCalendarData = {
   days: DailyFacts[];
   /** One entry per running-cost category for this month, for proration via `runningCostsForPeriodCents`. */
   categoryAmounts: CategoryMonthlyAmount[];
+  /** Current regular hours only. Historical months leave this unknown because hours aren't versioned. */
+  openHours?: OpenHours | null;
 };
 
 function daysInMonthKey(monthKey: string): number {
@@ -38,7 +41,7 @@ export async function getMonthCalendarFromDb(
   const monthStart = `${monthKey}-01`;
   const monthEnd = `${monthKey}-${String(daysInMonth).padStart(2, "0")}`;
 
-  const [rollupResult, expensesResult, recurringResult] = await Promise.all([
+  const [rollupResult, expensesResult, recurringResult, locationResult] = await Promise.all([
     supabase
       .from("daily_rollups")
       .select(
@@ -60,10 +63,18 @@ export async function getMonthCalendarFromDb(
       .eq("business_id", businessId)
       .lte("active_from", monthEnd)
       .or(`active_to.is.null,active_to.gte.${monthStart}`),
+    supabase
+      .from("locations")
+      .select("open_hours")
+      .eq("business_id", businessId)
+      .order("name", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
   ]);
   if (rollupResult.error) throw rollupResult.error;
   if (expensesResult.error) throw expensesResult.error;
   if (recurringResult.error) throw recurringResult.error;
+  if (locationResult.error) throw locationResult.error;
 
   const days = (rollupResult.data ?? []).map(rowToDailyFacts);
 
@@ -95,5 +106,5 @@ export async function getMonthCalendarFromDb(
     return { categoryCode: code, monthKey, amountCents: 0, isEstimate: false, isMissing: true };
   });
 
-  return { monthKey, daysInMonth, days, categoryAmounts };
+  return { monthKey, daysInMonth, days, categoryAmounts, openHours: isCurrentMonth ? normalizeOpenHours(locationResult.data?.open_hours) : null };
 }

@@ -1,40 +1,35 @@
 import { computeCostRecovery, roundHalfUpToCent, runningCostsForPeriodCents, type DayContribution, type RecoveryBucket } from "@/lib/calc";
+import { regularHoursStateForDate } from "@/lib/business/openHours";
 import type { MonthCalendarData } from "@/lib/data/monthCalendar.server";
 import { dayContributionCents, recoveryBucketsFromAmounts } from "./costRecoveryShared";
 import { previousMonthKey } from "./period";
 import { profitTone, type ProfitTone } from "./profitTone";
 
 export type DayCellState =
-  /** `isEstimate` is true when any running-cost category that fed this day's profit (current
-   * month's own estimate flag, or — for a past month — the forced estimate a recurring-cost
-   * fallback always carries, see `monthCalendar.server.ts`) is an estimate rather than an actual
-   * recorded bill. The owner must be able to tell a confirmed daily profit from one calculated
-   * against a guessed bill amount. */
   | { kind: "actual"; ownerProfitCents: number; tone: ProfitTone; isEstimate: boolean }
-  /** A real calendar day with no `daily_rollups` row at all — never colored or counted as $0. */
+  /** Explicitly closed according to the café's configured regular hours. */
+  | { kind: "closed" }
+  /** No rollup exists and the café was not explicitly configured closed. */
   | { kind: "missing" }
-  /** A future day of the current month — shown dashed, no profit figure to report yet. */
+  /** A future open/unknown day of the current month. */
   | { kind: "projected" };
 
 export type DayCell = {
   date: string;
   day: number;
   state: DayCellState;
-  /** Running-cost buckets that became fully paid back on exactly this date — a separate marker,
-   * never what decides the cell's color (docs: "a separate marker/icon, not what determines the
-   * entire day's color"). Always empty for "missing"/"projected" days. */
   milestoneBucketCodes: string[];
 };
 
 export type DayDetail = {
   date: string;
   hasData: boolean;
+  isClosed: boolean;
   salesCents: number;
   ingredientsCents: number;
   staffCents: number;
   cardFeesCents: number;
   runningCostShareCents: number;
-  /** See `DayCellState["actual"].isEstimate` — only meaningful when `hasData` is true. */
   runningCostShareIsEstimate: boolean;
   ownerProfitCents: number;
   milestoneBucketCodes: string[];
@@ -60,12 +55,9 @@ export function buildMonthCalendarViewModel(params: {
   projectedDays?: DayContribution[];
 }): MonthCalendarViewModel {
   const { monthData, recoveryOrder, todayDateStr, isCurrentMonth, projectedDays = [] } = params;
-  const { monthKey, daysInMonth, days, categoryAmounts } = monthData;
+  const { monthKey, daysInMonth, days, categoryAmounts, openHours } = monthData;
 
   const buckets: RecoveryBucket[] = recoveryBucketsFromAmounts(categoryAmounts, recoveryOrder);
-  // One flag for the whole month: `categoryAmounts` doesn't vary day to day within a single
-  // month, so whether any category feeding the daily running-cost share is an estimate is the
-  // same for every actual day in this view.
   const hasEstimatedCosts = categoryAmounts.some((c) => c.isEstimate && c.amountCents > 0);
   const recovery = computeCostRecovery(
     buckets,
@@ -83,18 +75,39 @@ export function buildMonthCalendarViewModel(params: {
   for (let day = 1; day <= daysInMonth; day++) {
     const date = `${monthKey}-${String(day).padStart(2, "0")}`;
     const milestoneBucketCodes = milestonesByDate.get(date) ?? [];
+    const dayFacts = days.find((d) => d.date === date);
 
-    if (isCurrentMonth && date > todayDateStr) {
-      cells.push({ date, day, state: { kind: "projected" }, milestoneBucketCodes: [] });
+    // Recorded facts always win over the regular-hours profile. This allows a special opening on
+    // a normally closed day to show the real business activity rather than hiding it as "Closed."
+    if (dayFacts) {
+      const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
+      const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
+      const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
+      const tone = profitTone(ownerProfitCents);
+
+      cells.push({ date, day, state: { kind: "actual", ownerProfitCents, tone, isEstimate: hasEstimatedCosts }, milestoneBucketCodes });
+      detailsByDate[date] = {
+        date,
+        hasData: true,
+        isClosed: false,
+        salesCents: dayFacts.netSalesCents,
+        ingredientsCents: dayFacts.ingredientsCents,
+        staffCents,
+        cardFeesCents: dayFacts.cardFeesCents,
+        runningCostShareCents,
+        runningCostShareIsEstimate: hasEstimatedCosts,
+        ownerProfitCents,
+        milestoneBucketCodes,
+      };
       continue;
     }
 
-    const dayFacts = days.find((d) => d.date === date);
-    if (!dayFacts) {
-      cells.push({ date, day, state: { kind: "missing" }, milestoneBucketCodes: [] });
+    if (regularHoursStateForDate(openHours, date) === "closed") {
+      cells.push({ date, day, state: { kind: "closed" }, milestoneBucketCodes: [] });
       detailsByDate[date] = {
         date,
         hasData: false,
+        isClosed: true,
         salesCents: 0,
         ingredientsCents: 0,
         staffCents: 0,
@@ -102,27 +115,28 @@ export function buildMonthCalendarViewModel(params: {
         runningCostShareCents: 0,
         runningCostShareIsEstimate: false,
         ownerProfitCents: 0,
-        milestoneBucketCodes,
+        milestoneBucketCodes: [],
       };
       continue;
     }
 
-    const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
-    const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
-    const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
-    const tone = profitTone(ownerProfitCents);
+    if (isCurrentMonth && date > todayDateStr) {
+      cells.push({ date, day, state: { kind: "projected" }, milestoneBucketCodes: [] });
+      continue;
+    }
 
-    cells.push({ date, day, state: { kind: "actual", ownerProfitCents, tone, isEstimate: hasEstimatedCosts }, milestoneBucketCodes });
+    cells.push({ date, day, state: { kind: "missing" }, milestoneBucketCodes: [] });
     detailsByDate[date] = {
       date,
-      hasData: true,
-      salesCents: dayFacts.netSalesCents,
-      ingredientsCents: dayFacts.ingredientsCents,
-      staffCents,
-      cardFeesCents: dayFacts.cardFeesCents,
-      runningCostShareCents,
-      runningCostShareIsEstimate: hasEstimatedCosts,
-      ownerProfitCents,
+      hasData: false,
+      isClosed: false,
+      salesCents: 0,
+      ingredientsCents: 0,
+      staffCents: 0,
+      cardFeesCents: 0,
+      runningCostShareCents: 0,
+      runningCostShareIsEstimate: false,
+      ownerProfitCents: 0,
       milestoneBucketCodes,
     };
   }
@@ -148,9 +162,6 @@ export function nextMonthKey(monthKey: string): string {
 
 export { previousMonthKey };
 
-/** A real `YYYY-MM` with month 01–12 — e.g. rejects "2026-13", "2026-00", "2026-1", "2026-10-01".
- * Validated before `calMonth` (a URL search param, so arbitrary user/bot input) is ever used to
- * build a date range for a historical query. */
 export function isValidMonthKey(value: string | undefined | null): value is string {
   return typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
 }

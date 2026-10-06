@@ -1,10 +1,13 @@
 import type { DailyFacts, ExpenseCategoryCode, Timecard } from "@/lib/calc";
+import type { OpenHours } from "@/lib/business/openHours";
 
 export type BusinessSettings = {
   id: string;
   name: string;
   timezone: string;
   payrollTaxRate: number;
+  /** Current regular weekly hours for the primary location; absent means unknown/unconfigured. */
+  openHours?: OpenHours | null;
 };
 
 export type RunningCostLine = {

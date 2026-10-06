@@ -18,6 +18,7 @@ function emptyMonth(monthKey: string): MonthCalendarData {
     daysInMonth: daysInMonthKey(monthKey),
     days: [],
     categoryAmounts: RUNNING_COST_CODES.map((categoryCode) => ({ categoryCode, monthKey, amountCents: 0, isEstimate: false, isMissing: true })),
+    openHours: null,
   };
 }
 
@@ -40,6 +41,7 @@ export async function getMonthCalendar(monthKey: string, snapshot: BusinessSnaps
         isEstimate: l.isEstimate,
         isMissing: l.isMissing,
       })),
+      openHours: snapshot.business.openHours,
     };
   }
 

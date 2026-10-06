@@ -1,5 +1,6 @@
 import type { CategoryMonthlyAmount, DailyFacts, DayContribution, RecoveryBucket } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
+import { regularHoursStateForDate } from "@/lib/business/openHours";
 
 /** Per_cup mode day contribution: net sales − ingredients − card fees − loaded staff cost. */
 export function dayContributionCents(day: DailyFacts): number {
@@ -55,6 +56,7 @@ export function projectedDayContributions(snapshot: BusinessSnapshot): DayContri
   const projected: DayContribution[] = [];
   for (let day = todayDayOfMonth + 1; day <= daysInMonth; day++) {
     const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+    if (regularHoursStateForDate(snapshot.business.openHours, date) === "closed") continue;
     const weekday = new Date(year, month - 1, day).getDay();
     const history = byWeekday.get(weekday);
     const avg = history && history.length > 0 ? history.reduce((s, v) => s + v, 0) / history.length : fallbackAvg;

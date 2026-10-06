@@ -1,36 +1,18 @@
-import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Receipt, Shield, Trash2, TrendingUp, Users } from "lucide-react";
+import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Receipt, Shield, Store, Trash2, TrendingUp, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireUser } from "@/lib/auth/requireUser";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
-import EditBusinessName from "@/components/more/EditBusinessName";
 import PageShell from "@/components/shared/PageShell";
 
-// Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
 export default async function MorePage() {
-  const user = await requireUser();
+  await requireUser();
   const t = await getTranslations("More");
 
-  let ownBusinessId: string | null = null;
-  let ownBusinessName: string | null = null;
-  if (isSupabaseConfigured() && user) {
-    const supabase = await createServerSupabaseClient();
-    const { data: memberships } = await supabase.from("memberships").select("business_id, businesses(is_demo, name)").eq("user_id", user.id);
-    const own = (memberships ?? []).find((m) => {
-      const b = m.businesses as unknown as { is_demo: boolean; name: string } | { is_demo: boolean; name: string }[] | null;
-      const isDemo = Array.isArray(b) ? b[0]?.is_demo : b?.is_demo;
-      return isDemo === false;
-    });
-    ownBusinessId = own?.business_id ?? null;
-    const ownBiz = own?.businesses as unknown as { is_demo: boolean; name: string } | { is_demo: boolean; name: string }[] | null;
-    ownBusinessName = (Array.isArray(ownBiz) ? ownBiz[0]?.name : ownBiz?.name) ?? null;
-  }
-
   const links = [
+    { href: "/more/cafe-profile", Icon: Store, label: t("cafeProfile") },
     { href: "/more/bills", Icon: Receipt, label: t("monthlyBills") },
     { href: "/more/manage-staff", Icon: Users, label: t("manageStaff") },
     { href: "/more/uploads", Icon: FileText, label: t("uploads") },
@@ -51,14 +33,6 @@ export default async function MorePage() {
         <h1 className="font-headline text-3xl font-semibold text-ink">{t("title")}</h1>
         <LanguageSwitch href="/more" />
       </header>
-
-      {ownBusinessId && ownBusinessName && (
-        <EditBusinessName
-          businessId={ownBusinessId}
-          name={ownBusinessName}
-          labels={{ cafeNameLabel: t("cafeNameLabel"), save: t("save"), cancel: t("cancel") }}
-        />
-      )}
 
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {links.map(({ href, Icon, label }) => (
