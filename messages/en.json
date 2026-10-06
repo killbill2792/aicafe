@@ -148,7 +148,16 @@
     "gettingStartedAddStaff": "Add your staff",
     "keepsAfterIngredients": "Keeps about {amount} after ingredients",
     "breakEvenMissingSales": "Not enough sales data to calculate yet. Add recent sales and drink counts.",
-    "breakEvenMissingCosts": "Incomplete — add these monthly costs: {categories}."
+    "breakEvenMissingCosts": "Incomplete — add these monthly costs: {categories}.",
+    "marginGoalTitle": "Your profit goal",
+    "currentOperatingMargin": "Current operating margin",
+    "targetOperatingMargin": "Target operating margin",
+    "marginUnavailable": "Waiting for complete data",
+    "defaultTarget": "15% starting assumption",
+    "editAndTestMargin": "Edit & test target",
+    "marginExplanation": "Operating margin is what remains after ingredients, staff, card fees and running costs. Your target guides suggested prices; it never changes live menu prices automatically.",
+    "marginBasedOnCurrentData": "Based on current data",
+    "marginIncludesEstimates": "Includes estimated costs"
   },
   "Money": {
     "title": "Money",
@@ -509,7 +518,8 @@
     "privacy": "Privacy",
     "deleteAccount": "Delete account",
     "cafeProfile": "Café profile",
-    "processingFees": "Processing fees"
+    "processingFees": "Processing fees",
+    "economics": "Profit goal & payroll"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -936,5 +946,32 @@
     "coverageMissing": "Still missing",
     "coverageSalesDays": "Sales days",
     "incompleteWarning": "Complete the processor, payment shares, and every rate rule before saving."
+  },
+  "Economics": {
+    "title": "Profit goal & payroll",
+    "subtitle": "Set the margin you want the café to work toward and confirm the payroll burden used in your numbers.",
+    "currentMargin": "Current operating margin",
+    "currentMarginMissing": "Waiting for complete cost data",
+    "actual": "Based on actual inputs",
+    "estimated": "Includes estimated inputs",
+    "targetMargin": "Target operating margin",
+    "targetMarginHint": "Your café-wide goal after ingredients, labor, processing fees and running costs. This is not product markup or ingredient-cost percentage.",
+    "defaultAssumption": "15% starting assumption",
+    "ownerConfirmed": "Owner confirmed",
+    "payrollBurden": "Payroll burden on top of wages",
+    "payrollBurdenHint": "Employer payroll taxes and similar wage-related burden. Enter 0% if there is genuinely no additional burden.",
+    "payrollEstimated": "The current rate is an estimate until you confirm it.",
+    "scenarioTitle": "Test the target on menu pricing",
+    "scenarioHint": "Change the target or payroll burden above to preview representative items before saving. Product costs stay the same; café-wide economics change, with the existing 15% safety cap on one pricing adjustment.",
+    "scenarioNoHistory": "There is not enough trusted sales history yet for the target margin to change business-adjusted prices. AI Cafe will keep using benchmark pricing until enough real order history is available.",
+    "item": "Item",
+    "productCost": "Product cost",
+    "currentPrice": "Current price",
+    "suggestedPrice": "Suggested",
+    "change": "Change",
+    "save": "Save profit goal & payroll",
+    "saving": "Saving…",
+    "saved": "Saved. Menu and Alex pricing now use this target, and estimated payroll burden has been refreshed.",
+    "invalid": "Enter a target margin from 0% to 80% and a payroll burden from 0% to 100%."
   }
 }

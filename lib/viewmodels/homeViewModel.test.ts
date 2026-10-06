@@ -34,6 +34,34 @@ describe("owner-truthful Home inputs", () => {
     expect(vm.missingCosts[0]?.categoryCode).toBe("water");
   });
 
+  it("exposes current operating margin and the café target separately", () => {
+    const snapshot = getFixtureSnapshot();
+    snapshot.business.targetOperatingMargin = 0.45;
+    snapshot.business.targetOperatingMarginStatus = "confirmed";
+    const vm = buildHomeViewModel(snapshot, "month");
+
+    expect(vm.operatingMargin).not.toBeNull();
+    expect(vm.operatingMargin).toBe(vm.keepRatio);
+    expect(vm.targetOperatingMargin).toBe(0.45);
+    expect(vm.targetOperatingMarginStatus).toBe("confirmed");
+  });
+
+  it("does not show a current operating margin when a sold item has missing product cost", () => {
+    const snapshot = getFixtureSnapshot();
+    snapshot.menuItems.push({
+      id: "missing-cost",
+      name: "Missing cost item",
+      priceCents: 500,
+      prepSeconds: 30,
+      category: "drink",
+      ingredientsCentsToday: 0,
+      hasRecipe: false,
+      costStatus: "NO_RECIPE",
+      quantitySoldLast28Days: 10,
+    });
+    expect(buildHomeViewModel(snapshot, "month").operatingMargin).toBeNull();
+  });
+
   it("recognizes a fresh café without sales or known running-cost setup", () => {
     const snapshot = getFixtureSnapshot();
     snapshot.last28Days = [];

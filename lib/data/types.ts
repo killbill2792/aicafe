@@ -6,6 +6,9 @@ export type BusinessSettings = {
   name: string;
   timezone: string;
   payrollTaxRate: number;
+  payrollTaxRateStatus?: "estimated" | "confirmed";
+  targetOperatingMargin?: number;
+  targetOperatingMarginStatus?: "default" | "confirmed";
   /** Current regular weekly hours for the primary location; absent means unknown/unconfigured. */
   openHours?: OpenHours | null;
 };

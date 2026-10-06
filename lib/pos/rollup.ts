@@ -119,7 +119,20 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
       }),
     0,
   );
-  const staffTaxCents = Math.round(wagesCents * payrollTaxRate);
+  const { data: existingRollup, error: existingRollupError } = await supabase
+    .from("daily_rollups")
+    .select("staff_tax_cents, staff_tax_status")
+    .eq("business_id", businessId)
+    .eq("business_date", businessDate)
+    .maybeSingle();
+  if (existingRollupError) throw existingRollupError;
+
+  // A connected/imported actual payroll burden outranks the business-level rate estimate.
+  // Recomputing sales/labor must never replace that actual amount with wages × assumption.
+  const staffTaxIsActual = existingRollup?.staff_tax_status === "actual";
+  const staffTaxCents = staffTaxIsActual
+    ? Number(existingRollup.staff_tax_cents)
+    : Math.round(wagesCents * payrollTaxRate);
 
   await supabase.from("daily_rollups").upsert(
     {
@@ -131,6 +144,7 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
       ingredients_cents: Math.round(ingredientsCents),
       staff_wages_cents: Math.round(wagesCents),
       staff_tax_cents: staffTaxCents,
+      staff_tax_status: staffTaxIsActual ? "actual" : "estimated",
       card_fees_cents: selectedProcessingFee.amountCents,
       card_fees_status: selectedProcessingFee.status,
       voids_cents: voidsCents,

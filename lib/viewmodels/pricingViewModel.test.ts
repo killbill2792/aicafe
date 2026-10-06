@@ -22,6 +22,10 @@ const business: PricingBusinessInput = {
   monthlyVariableProductCostCents: 25_000,
   monthlyProcessingFeesCents: 5_000,
   processingFeesStatus: "actual",
+  targetOperatingMargin: 0.15,
+  targetOperatingMarginStatus: "confirmed",
+  payrollTaxRateStatus: "confirmed",
+  payrollCostsStatus: "actual",
 };
 
 describe("pricing processing-fee quality", () => {
@@ -44,6 +48,43 @@ describe("pricing processing-fee quality", () => {
     const result = buildPricingViewModel({ items: [item], business: { ...business, processingFeesStatus: "estimated" } })[0].result;
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
     expect(result.dataQuality.estimatedInputs).toContain("processingFees");
+  });
+
+  it("uses the café-specific target margin instead of a fixed global target", () => {
+    const lowerTarget = buildPricingViewModel({
+      items: [item],
+      business: { ...business, targetOperatingMargin: 0.10 },
+    })[0].result;
+    const higherTarget = buildPricingViewModel({
+      items: [item],
+      business: { ...business, targetOperatingMargin: 0.30 },
+    })[0].result;
+
+    expect(lowerTarget.businessAdjustmentFactor).toBe(1);
+    expect(higherTarget.businessAdjustmentFactor).toBe(1.15);
+    expect(higherTarget.warnings).toContain("BUSINESS_ADJUSTMENT_CAPPED");
+  });
+
+  it("marks default margin and payroll assumptions as estimated pricing inputs", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: {
+        ...business,
+        targetOperatingMarginStatus: "default",
+        payrollTaxRateStatus: "estimated",
+        payrollCostsStatus: "estimated",
+      },
+    })[0].result;
+    expect(result.dataQuality.estimatedInputs).toContain("targetOperatingMargin");
+    expect(result.dataQuality.estimatedInputs).toContain("payrollBurden");
+  });
+
+  it("accepts a confirmed 0% operating-margin target", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, targetOperatingMargin: 0 },
+    })[0].result;
+    expect(result.businessAdjustmentFactor).toBe(1);
   });
 
   it("does not let owner-estimated fees substitute for real transaction history", () => {
