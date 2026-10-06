@@ -6,6 +6,7 @@ import Money from "@/components/shared/Money";
 import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
 import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import type { ExpenseCategoryCode } from "@/lib/constants";
+import { recurringCostAmountCentsFromInput } from "@/lib/expenses/recurringCostAmount";
 
 const SINGLE_SLOT_CATEGORIES: ExpenseCategoryCode[] = ["rent", "utilities_power", "water", "internet", "insurance", "loan", "software"];
 const OTHER_CATEGORY: ExpenseCategoryCode = "other";
@@ -35,11 +36,12 @@ function BillForm({
   const [isPending, startTransition] = useTransition();
 
   const finalLabel = showLabelField ? label.trim() : defaultLabel;
-  const canSave = Boolean(finalLabel) && Number(amount) > 0;
+  const amountCents = recurringCostAmountCentsFromInput(amount);
+  // Blank means "not provided"; zero is a valid owner-confirmed value (for example, no loan).
+  const canSave = Boolean(finalLabel) && amountCents !== null;
 
   function handleSave() {
-    const amountCents = Math.round(Number(amount) * 100);
-    if (!canSave || !amountCents) return;
+    if (!canSave || amountCents === null) return;
     startTransition(async () => {
       await saveRecurringCost({
         id: existing?.id,
@@ -80,6 +82,8 @@ function BillForm({
         <input
           type="number"
           inputMode="decimal"
+          min={0}
+          step="0.01"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
           className="h-11 w-28 rounded-xl border border-line px-2.5 text-end text-base"

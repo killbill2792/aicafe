@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
 import { processingFeeForRollup } from "./processingFees";
+import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
 
 /**
  * Recomputes daily_rollups for one business_date from the raw orders/order_lines/timecards
@@ -16,13 +17,29 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
 
   const { data: orders } = await supabase
     .from("orders")
-    .select("id, net_sales_cents")
+    .select("id, net_sales_cents, pos_order_id, processing_fee_provider")
     .eq("business_id", businessId)
     .eq("business_date", businessDate);
 
   const orderIds = (orders ?? []).map((o) => o.id);
   const netSalesCents = (orders ?? []).reduce((s, o) => s + o.net_sales_cents, 0);
   const ordersCount = orderIds.length;
+
+  // Keep the owner-confirmed fallback current before selecting the canonical fee fact. Synthetic
+  // product/day CSV rows are never treated as transactions; the estimator will use a real
+  // provider-attributed order count only when it fully reconciles to the day's sales, otherwise
+  // it requires the owner's explicit average processed-ticket assumption.
+  await ensureOwnerConfirmedProcessingFeeEstimateForDay(supabase, {
+    businessId,
+    businessDate,
+    netSalesCents,
+    orders: (orders ?? []).map((order) => ({
+      posOrderId: order.pos_order_id,
+      netSalesCents: Number(order.net_sales_cents),
+      processingFeeProvider: order.processing_fee_provider,
+    })),
+  });
+
   const { data: processingFeeFact, error: processingFeeError } = await supabase
     .from("processing_fee_daily_facts")
     .select("amount_cents, status")

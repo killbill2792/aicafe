@@ -508,7 +508,8 @@
     "connectRegister": "Conecta tu caja registradora",
     "privacy": "Privacidad",
     "deleteAccount": "Eliminar cuenta",
-    "cafeProfile": "Perfil del café"
+    "cafeProfile": "Perfil del café",
+    "processingFees": "Comisiones de procesamiento"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -902,5 +903,38 @@
     "save": "Guardar perfil del café",
     "saving": "Guardando…",
     "saved": "Perfil del café guardado."
+  },
+  "ProcessingFees": {
+    "title": "Estimación de comisiones",
+    "subtitle": "Usa tu contrato del procesador cuando no haya comisiones reales disponibles.",
+    "assumptionBanner": "Estimación de respaldo · Confirma estos datos. AI Cafe usa estas suposiciones solo cuando no hay comisiones reales confiables. Las comisiones reales importadas o conectadas tienen prioridad automáticamente.",
+    "processor": "Procesador",
+    "processorPlaceholder": "Toast, Square u otro procesador",
+    "effectiveFrom": "Tarifas vigentes desde",
+    "processedSalesShare": "Ventas pagadas mediante este procesador",
+    "processedSalesShareHint": "Tu mejor porcentaje confirmado de ventas netas sujeto a estas tarifas.",
+    "processedTransactionShare": "Transacciones pagadas mediante este procesador",
+    "processedTransactionShareHint": "Tu mejor porcentaje confirmado de transacciones de clientes que usa este procesador.",
+    "averageTicket": "Transacción procesada promedio",
+    "averageTicketHint": "Opcional si AI Cafe tiene conteos reales confiables. Es necesaria para estimar cargos fijos por transacción usando datos CSV de mezcla de productos.",
+    "rulesTitle": "Reglas de tarifa",
+    "rulesHint": "Agrega cada tarifa del contrato. La mezcla de ventas y la mezcla de transacciones deben sumar 100% por separado. Si solo conoces una tarifa combinada, usa una regla al 100%.",
+    "ruleLabel": "Nombre de la tarifa",
+    "ruleLabelPlaceholder": "p. ej., Visa/MC/Discover presencial",
+    "percentageRate": "Porcentaje",
+    "fixedFee": "Cargo fijo por transacción",
+    "salesMix": "Porción de ventas procesadas",
+    "transactionMix": "Porción de transacciones procesadas",
+    "remove": "Eliminar",
+    "addRule": "Agregar otra tarifa",
+    "save": "Guardar tarifas confirmadas",
+    "saving": "Guardando…",
+    "saved": "Tarifas confirmadas guardadas y cobertura de comisiones actualizada.",
+    "coverageTitle": "Últimos 90 días",
+    "coverageActual": "Días con comisión real",
+    "coverageEstimated": "Días estimados",
+    "coverageMissing": "Aún faltan",
+    "coverageSalesDays": "Días con ventas",
+    "incompleteWarning": "Completa el procesador, los porcentajes de pago y cada regla antes de guardar."
   }
 }

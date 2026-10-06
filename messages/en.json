@@ -508,7 +508,8 @@
     "connectRegister": "Connect your register",
     "privacy": "Privacy",
     "deleteAccount": "Delete account",
-    "cafeProfile": "Café profile"
+    "cafeProfile": "Café profile",
+    "processingFees": "Processing fees"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -902,5 +903,38 @@
     "save": "Save café profile",
     "saving": "Saving…",
     "saved": "Café profile saved."
+  },
+  "ProcessingFees": {
+    "title": "Processing fee estimate",
+    "subtitle": "Use your processor contract when actual fees are not available.",
+    "assumptionBanner": "Estimated fallback · Please confirm. AI Cafe uses these assumptions only when trustworthy actual processing fees are unavailable. Actual imported or connected fees automatically take priority.",
+    "processor": "Processor",
+    "processorPlaceholder": "Toast, Square, or another processor",
+    "effectiveFrom": "Rates effective from",
+    "processedSalesShare": "Sales paid through this processor",
+    "processedSalesShareHint": "Your best confirmed share of net sales that is subject to these processing rates.",
+    "processedTransactionShare": "Transactions paid through this processor",
+    "processedTransactionShareHint": "Your best confirmed share of customer transactions that use this processor.",
+    "averageTicket": "Average processed transaction",
+    "averageTicketHint": "Optional when AI Cafe has trustworthy real order counts. Required to estimate fixed per-transaction fees from product-mix CSV data.",
+    "rulesTitle": "Rate rules",
+    "rulesHint": "Add each contract rate. Sales mix and transaction mix should each total 100% across the rules you use. If you only know one blended rate, use one rule at 100%.",
+    "ruleLabel": "Rate name",
+    "ruleLabelPlaceholder": "e.g. Card present Visa/MC/Discover",
+    "percentageRate": "Percentage fee",
+    "fixedFee": "Fixed fee per transaction",
+    "salesMix": "Share of processed sales",
+    "transactionMix": "Share of processed transactions",
+    "remove": "Remove",
+    "addRule": "Add another rate",
+    "save": "Save confirmed rates",
+    "saving": "Saving…",
+    "saved": "Confirmed rate assumptions saved and processing-fee coverage refreshed.",
+    "coverageTitle": "Last 90 days",
+    "coverageActual": "Actual fee days",
+    "coverageEstimated": "Estimated fee days",
+    "coverageMissing": "Still missing",
+    "coverageSalesDays": "Sales days",
+    "incompleteWarning": "Complete the processor, payment shares, and every rate rule before saving."
   }
 }
