@@ -25,6 +25,7 @@ const business: PricingBusinessInput = {
   targetOperatingMargin: 0.15,
   targetOperatingMarginStatus: "confirmed",
   payrollTaxRateStatus: "confirmed",
+  payrollCostsStatus: "actual",
 };
 
 describe("pricing processing-fee quality", () => {
@@ -71,6 +72,7 @@ describe("pricing processing-fee quality", () => {
         ...business,
         targetOperatingMarginStatus: "default",
         payrollTaxRateStatus: "estimated",
+        payrollCostsStatus: "estimated",
       },
     })[0].result;
     expect(result.dataQuality.estimatedInputs).toContain("targetOperatingMargin");

@@ -17,7 +17,7 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
       businessEconomicsMissingInputs: input.business.processingFeesStatus === "missing" ? ["processingFees"] : [],
       businessEconomicsEstimatedInputs: [
         ...(input.business.processingFeesStatus === "estimated" ? ["processingFees"] : []),
-        ...(input.business.payrollTaxRateStatus !== "confirmed" ? ["payrollBurden"] : []),
+        ...(input.business.payrollCostsStatus !== "actual" || input.business.payrollTaxRateStatus !== "confirmed" ? ["payrollBurden"] : []),
         ...(input.business.operatingCostsStatus === "estimated" ? ["operatingCosts"] : []),
         ...(input.business.targetOperatingMarginStatus !== "confirmed" ? ["targetOperatingMargin"] : []),
       ] }) };

@@ -90,7 +90,7 @@ export async function getOwnerEconomicsSettings(): Promise<OwnerEconomicsSetting
       !economics
         ? "missing"
         : pricing.business.processingFeesStatus === "estimated" ||
-            business?.payroll_tax_rate_status === "estimated" ||
+            pricing.business.payrollCostsStatus === "estimated" ||
             pricing.business.operatingCostsStatus === "estimated"
           ? "estimated"
           : "actual",
