@@ -607,7 +607,7 @@ function DayEditor({ employee, todayDateStr, labels }: { employee: EmployeeRow; 
   const [clockOut, setClockOut] = useState("16:00");
   const [breakMinutes, setBreakMinutes] = useState("30");
   const [wage, setWage] = useState(employee.defaultHourlyWageCents ? (employee.defaultHourlyWageCents / 100).toFixed(2) : "");
-  const [source, setSource] = useState<"confirmed" | "predicted" | "none">("none");
+  const [source, setSource] = useState<"confirmed" | "scheduled" | "none">("none");
   const [isPending, startTransition] = useTransition();
   const [status, setStatus] = useState<"idle" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
@@ -677,7 +677,7 @@ function DayEditor({ employee, todayDateStr, labels }: { employee: EmployeeRow; 
         {labels.date}
         <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="min-h-12 rounded-lg border border-line px-2.5 text-sm" />
       </label>
-      {source === "predicted" && <span className="text-xs font-semibold text-warn">{labels.predictedTag}</span>}
+      {source === "scheduled" && <span className="text-xs font-semibold text-warn">{labels.predictedTag}</span>}
       <div className="flex min-w-0 gap-2">
         <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs font-semibold text-ink-muted">
           {labels.clockIn}
