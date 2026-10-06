@@ -216,6 +216,7 @@ export function generateDemoData({ businessId, endDateStr, days = 90 }) {
   const orderLines = [];
   const timecards = [];
   const dailyRollups = [];
+  const processingFeeDailyFacts = [];
 
   const menuWeights = MENU_ITEMS.map((m) => ({ key: m.key, weight: m.weight }));
 
@@ -384,6 +385,8 @@ export function generateDemoData({ businessId, endDateStr, days = 90 }) {
         tax_cents: taxCents,
         tip_cents: tipCents,
         processing_fee_cents: feeCents,
+        processing_fee_status: "actual",
+        processing_fee_provider: "demo",
         net_sales_cents: orderNet,
         customer_ref: null,
       });
@@ -400,7 +403,18 @@ export function generateDemoData({ businessId, endDateStr, days = 90 }) {
       staff_wages_cents: dayWagesCents,
       staff_tax_cents: staffTaxCents,
       card_fees_cents: dayCardFees,
+      card_fees_status: "actual",
       voids_cents: Math.round(dayVoidsCents),
+    });
+    processingFeeDailyFacts.push({
+      business_id: businessId,
+      business_date: dateStr,
+      amount_cents: dayCardFees,
+      status: "actual",
+      source_type: "connected_pos_actual",
+      provider: "demo",
+      source_reference: `demo:${dateStr}`,
+      metadata: {},
     });
   }
 
@@ -607,6 +621,8 @@ export function generateDemoData({ businessId, endDateStr, days = 90 }) {
     backfill_completed_at: new Date().toISOString(),
   };
 
+  const processingFeeDailyCandidates = processingFeeDailyFacts.map((fact) => ({ ...fact, eligible: true }));
+
   return {
     business,
     location,
@@ -620,6 +636,7 @@ export function generateDemoData({ businessId, endDateStr, days = 90 }) {
     orders,
     orderLines,
     dailyRollups,
+    processingFeeDailyCandidates,\n    processingFeeDailyFacts,
     recurringCosts,
     expenses,
     expenseLines,

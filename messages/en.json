@@ -571,7 +571,9 @@
     "bankLink": "Bank statement",
     "bankLinkHint": "CSV or Excel from your bank",
     "historyLink": "Upload history",
-    "historyLinkHint": "See what every past upload actually did"
+    "historyLinkHint": "See what every past upload actually did",
+    "processingFeesLink": "Processing fees",
+    "processingFeesLinkHint": "From your POS or payment processor"
   },
   "UploadHistory": {
     "title": "Upload history",
@@ -584,7 +586,8 @@
     "dateRangeLine": "{dateFrom} – {dateTo}",
     "statusDone": "Done",
     "statusNeedsReview": "Needs review",
-    "unmatchedInline": "Didn't match your menu: {names}"
+    "unmatchedInline": "Didn't match your menu: {names}",
+    "kindProcessingFees": "Processing fees"
   },
   "CsvImport": {
     "salesTitle": "Import sales report",
@@ -629,7 +632,16 @@
     "viewHistory": "See past uploads",
     "matchStaffTitle": "Match these names to your team",
     "matchStaffHint": "These didn't clearly match one person on your staff — pick who they are, or leave them as a new hire.",
-    "addAsNewEmployee": "+ Add as new employee"
+    "addAsNewEmployee": "+ Add as new employee",
+    "processingFeesTitle": "Import processing fees",
+    "processingFeesSubtitle": "Upload the processing-fee report from your POS or payment processor.",
+    "processingFeesUploadPrompt": "Upload the processing-fee report from your POS or payment processor",
+    "fieldProcessingFee": "Processing fee",
+    "processingFeesPreview": "'{count}' dates ready to import",
+    "processingFeesImported": "Actual processing fees imported",
+    "processingFeesResult": "Actual processing fees imported for {count} dates",
+    "processingFeesInvalid": "'{count}' rows need attention and were not imported",
+    "fieldSalesProcessingFee": "Processing fee for this row (optional)"
   },
   "Alerts": {
     "title": "Alerts",

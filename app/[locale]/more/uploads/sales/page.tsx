@@ -24,7 +24,7 @@ export default async function SalesCsvPage() {
           uploadPrompt: t("uploadPrompt"),
           chooseFile: t("chooseFile"),
           mapTitle: t("mapTitle"),
-          fieldLabels: { date: t("fieldDate"), item: t("fieldItem"), quantity: t("fieldQuantity"), netSales: t("fieldNetSales"), category: t("fieldCategory") },
+          fieldLabels: { date: t("fieldDate"), item: t("fieldItem"), quantity: t("fieldQuantity"), netSales: t("fieldNetSales"), category: t("fieldCategory"), processingFee: t("fieldSalesProcessingFee") },
           none: t("none"),
           preview: t("salesPreview"),
           import: t("import"),

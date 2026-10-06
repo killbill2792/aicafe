@@ -10,7 +10,9 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
     const peers = input.items.filter((peer) => peer.id !== item.id && peer.category === item.category && peer.currentPriceCents > 0 && peer.productCostCents > 0);
     const categoryPeers: CategoryPeerStats = peers.length >= MIN_CATEGORY_PEERS ? { medianPriceCents: median(peers.map((peer) => peer.currentPriceCents)), medianProductCostPercent: median(peers.map((peer) => peer.productCostCents / peer.currentPriceCents)) } : null;
     const posSignal = { daysWithSalesInWindow: input.business.daysWithSalesInWindow, windowDays: input.business.windowDays, totalOrdersInWindow: input.business.totalOrdersInWindow, itemUnitsSoldInWindow: item.unitsSoldInWindow, monthlyRevenueCents: input.business.monthlyRevenueCents };
-    const economics = { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents };
-    return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, recipeStatus: item.recipeStatus, profile: getPricingProfile(item.category), posSignal, economics, categoryPeers }) };
+    const economics = input.business.processingFeesStatus === "missing" ? null : { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents };
+    return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, recipeStatus: item.recipeStatus, profile: getPricingProfile(item.category), posSignal, economics, categoryPeers,
+      businessEconomicsMissingInputs: input.business.processingFeesStatus === "missing" ? ["processingFees"] : [],
+      businessEconomicsEstimatedInputs: input.business.processingFeesStatus === "estimated" ? ["processingFees"] : [] }) };
   });
 }

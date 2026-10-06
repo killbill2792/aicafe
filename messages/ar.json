@@ -571,7 +571,9 @@
     "bankLink": "كشف الحساب البنكي",
     "bankLinkHint": "CSV أو Excel من بنكك",
     "historyLink": "سجل التحميلات",
-    "historyLinkHint": "اطّلع على ما فعله كل تحميل سابق"
+    "historyLinkHint": "اطّلع على ما فعله كل تحميل سابق",
+    "processingFeesLink": "رسوم معالجة الدفع",
+    "processingFeesLinkHint": "من نقطة البيع أو معالج الدفع"
   },
   "UploadHistory": {
     "title": "سجل التحميلات",
@@ -584,7 +586,8 @@
     "dateRangeLine": "{dateFrom} – {dateTo}",
     "statusDone": "تم",
     "statusNeedsReview": "يحتاج مراجعة",
-    "unmatchedInline": "لم يطابق قائمتك: {names}"
+    "unmatchedInline": "لم يطابق قائمتك: {names}",
+    "kindProcessingFees": "رسوم معالجة الدفع"
   },
   "CsvImport": {
     "salesTitle": "استيراد تقرير المبيعات",
@@ -629,7 +632,16 @@
     "viewHistory": "عرض التحميلات السابقة",
     "matchStaffTitle": "طابق هذه الأسماء مع فريقك",
     "matchStaffHint": "هذه الأسماء لم تطابق بوضوح شخصًا واحدًا في فريقك — اختر من يكون، أو اتركه كموظف جديد.",
-    "addAsNewEmployee": "+ إضافة كموظف جديد"
+    "addAsNewEmployee": "+ إضافة كموظف جديد",
+    "processingFeesTitle": "استيراد رسوم معالجة الدفع",
+    "processingFeesSubtitle": "ارفع تقرير رسوم المعالجة من نقطة البيع أو معالج الدفع.",
+    "processingFeesUploadPrompt": "ارفع تقرير رسوم المعالجة من نقطة البيع أو معالج الدفع",
+    "fieldProcessingFee": "رسم المعالجة",
+    "processingFeesPreview": "'{count}' تواريخ جاهزة للاستيراد",
+    "processingFeesImported": "تم استيراد رسوم المعالجة الفعلية",
+    "processingFeesResult": "تم استيراد رسوم المعالجة الفعلية لـ {count} تواريخ",
+    "processingFeesInvalid": "'{count}' صفوف تحتاج إلى مراجعة ولم تُستورد",
+    "fieldSalesProcessingFee": "رسم المعالجة لهذا الصف (اختياري)"
   },
   "Alerts": {
     "title": "التنبيهات",

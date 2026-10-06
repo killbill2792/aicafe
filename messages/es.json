@@ -571,7 +571,9 @@
     "bankLink": "Estado de cuenta bancario",
     "bankLinkHint": "CSV o Excel de tu banco",
     "historyLink": "Historial de subidas",
-    "historyLinkHint": "Ve qué hizo cada subida anterior"
+    "historyLinkHint": "Ve qué hizo cada subida anterior",
+    "processingFeesLink": "Comisiones de procesamiento",
+    "processingFeesLinkHint": "De tu caja o procesador de pagos"
   },
   "UploadHistory": {
     "title": "Historial de subidas",
@@ -584,7 +586,8 @@
     "dateRangeLine": "{dateFrom} – {dateTo}",
     "statusDone": "Listo",
     "statusNeedsReview": "Necesita revisión",
-    "unmatchedInline": "No coincidió con tu menú: {names}"
+    "unmatchedInline": "No coincidió con tu menú: {names}",
+    "kindProcessingFees": "Comisiones de procesamiento"
   },
   "CsvImport": {
     "salesTitle": "Importar reporte de ventas",
@@ -629,7 +632,16 @@
     "viewHistory": "Ver subidas anteriores",
     "matchStaffTitle": "Relaciona estos nombres con tu equipo",
     "matchStaffHint": "Estos no coincidieron claramente con una persona de tu equipo — elige quién es, o déjalo como una nueva contratación.",
-    "addAsNewEmployee": "+ Agregar como nuevo empleado"
+    "addAsNewEmployee": "+ Agregar como nuevo empleado",
+    "processingFeesTitle": "Importar comisiones de procesamiento",
+    "processingFeesSubtitle": "Sube el reporte de comisiones de tu caja o procesador de pagos.",
+    "processingFeesUploadPrompt": "Sube el reporte de comisiones de tu caja o procesador de pagos",
+    "fieldProcessingFee": "Comisión de procesamiento",
+    "processingFeesPreview": "'{count}' fechas listas para importar",
+    "processingFeesImported": "Comisiones reales importadas",
+    "processingFeesResult": "Se importaron comisiones reales para {count} fechas",
+    "processingFeesInvalid": "'{count}' filas necesitan revisión y no se importaron",
+    "fieldSalesProcessingFee": "Comisión de esta fila (opcional)"
   },
   "Alerts": {
     "title": "Alertas",

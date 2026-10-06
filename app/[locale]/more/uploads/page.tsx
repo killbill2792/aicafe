@@ -1,4 +1,4 @@
-import { ChevronRight, Clock, FileSpreadsheet, Package, Receipt, Users } from "lucide-react";
+import { ChevronRight, Clock, CreditCard, FileSpreadsheet, Package, Receipt, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import BackHeader from "@/components/shared/BackHeader";
@@ -15,6 +15,7 @@ export default async function UploadsPage() {
 
   const links = [
     { href: "/more/uploads/sales", Icon: FileSpreadsheet, label: t("salesLink"), hint: t("salesLinkHint") },
+    { href: "/more/uploads/processing-fees", Icon: CreditCard, label: t("processingFeesLink"), hint: t("processingFeesLinkHint") },
     { href: "/more/uploads/labor", Icon: Users, label: t("laborLink"), hint: t("laborLinkHint") },
     { href: "/more/uploads/ingredients", Icon: Package, label: t("ingredientsLink"), hint: t("ingredientsLinkHint") },
     { href: "/add-cost/statement", Icon: Receipt, label: t("bankLink"), hint: t("bankLinkHint") },

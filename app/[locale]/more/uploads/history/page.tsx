@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Package, Users } from "lucide-react";
+import { CreditCard, FileSpreadsheet, Package, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getUploadHistory, type UploadHistoryRow } from "@/lib/data/getUploadHistory";
@@ -9,7 +9,7 @@ import PageShell from "@/components/shared/PageShell";
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
 
-const KIND_ICON = { sales_csv: FileSpreadsheet, labor_csv: Users, ingredients_csv: Package } as const;
+const KIND_ICON = { sales_csv: FileSpreadsheet, labor_csv: Users, ingredients_csv: Package, processing_fees_csv: CreditCard } as const;
 
 export default async function UploadHistoryPage() {
   await requireOwnBusiness();
@@ -17,7 +17,7 @@ export default async function UploadHistoryPage() {
   const t = await getTranslations("UploadHistory");
   const tCommon = await getTranslations("Common");
 
-  const kindLabel = (kind: UploadHistoryRow["kind"]) => (kind === "sales_csv" ? t("kindSales") : kind === "labor_csv" ? t("kindLabor") : t("kindIngredients"));
+  const kindLabel = (kind: UploadHistoryRow["kind"]) => (kind === "sales_csv" ? t("kindSales") : kind === "labor_csv" ? t("kindLabor") : kind === "processing_fees_csv" ? t("kindProcessingFees") : t("kindIngredients"));
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 py-6 pb-10">
@@ -49,7 +49,7 @@ export default async function UploadHistoryPage() {
                 </div>
                 {summary && (
                   <div className="flex flex-col gap-0.5 pl-14 text-sm text-ink-muted">
-                    <span>{t("rowsLine", { imported: summary.imported, rowsInFile: summary.rowsInFile })}</span>
+                    <span>{t("rowsLine", { imported: "imported" in summary ? summary.imported : summary.importedDates, rowsInFile: summary.rowsInFile })}</span>
                     {dateFrom && dateTo && <span>{t("dateRangeLine", { dateFrom, dateTo })}</span>}
                     {unmatchedNames.length > 0 && <span className="font-semibold text-warn">{t("unmatchedInline", { names: unmatchedNames.join(", ") })}</span>}
                   </div>

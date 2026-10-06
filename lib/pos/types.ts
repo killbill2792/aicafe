@@ -6,6 +6,7 @@
  */
 
 export type PosProvider = "square" | "toast" | "clover" | "csv" | "demo";
+export type ProcessingFeeStatus = "actual" | "estimated" | "missing";
 
 export type PosOrderLine = {
   posItemId: string | null;
@@ -27,6 +28,7 @@ export type PosOrder = {
   taxCents: number;
   tipCents: number;
   processingFeeCents: number;
+  processingFeeStatus: ProcessingFeeStatus;
   netSalesCents: number;
   lines: PosOrderLine[];
 };

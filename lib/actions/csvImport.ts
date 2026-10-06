@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -9,14 +10,16 @@ import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
-import type { NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
+import { salesCsvSyntheticOrderId, type NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
 import type { NormalizedLaborRow } from "@/lib/pos/csv/parseLaborCsv";
 import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
 import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
 import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
+import { processingFeeTotalsByDate, type NormalizedProcessingFeeRow, type ProcessingFeeColumnMapping } from "@/lib/pos/csv/parseProcessingFeesCsv";
+import { setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "@/lib/pos/processingFees";
 
-type Kind = "sales" | "labor" | "ingredients";
-type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping;
+type Kind = "sales" | "labor" | "ingredients" | "processing_fees";
+type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping | ProcessingFeeColumnMapping;
 type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
 export type SalesImportSummary = {
@@ -28,6 +31,11 @@ export type SalesImportSummary = {
 };
 export type LaborImportSummary = { rowsInFile: number; imported: number; dateFrom: string | null; dateTo: string | null };
 export type IngredientImportSummary = { rowsInFile: number; imported: number; newIngredients: string[] };
+export type ProcessingFeeImportSummary = { rowsInFile: number; importedDates: number; invalidRows: number; dateFrom: string | null; dateTo: string | null };
+const processingFeeRowsSchema = z.array(z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  actualProcessingFeeCents: z.number().int().nonnegative(),
+})).max(10_000);
 
 function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string | null } {
   if (dates.length === 0) return { dateFrom: null, dateTo: null };
@@ -103,7 +111,7 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
   const affectedDates = new Set<string>();
   const unmatchedCounts = new Map<string, number>();
   for (const row of rows) {
-    const posOrderId = `csv-${row.date}-${row.item}`.slice(0, 120);
+    const posOrderId = salesCsvSyntheticOrderId(row);
     const { data: order, error } = await supabase
       .from("orders")
       .upsert(
@@ -115,7 +123,9 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
           business_date: row.date,
           gross_sales_cents: row.netSalesCents,
           net_sales_cents: row.netSalesCents,
-          processing_fee_cents: 0,
+          processing_fee_cents: row.processingFeeCents,
+          processing_fee_status: row.processingFeeStatus,
+          processing_fee_provider: "csv",
         },
         { onConflict: "business_id,pos_order_id" },
       )
@@ -140,7 +150,37 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
     imported += 1;
   }
 
-  for (const date of affectedDates) await recomputeDailyRollup(supabase, businessId, date);
+  for (const date of affectedDates) {
+    const { data: feeOrders, error: feeOrdersError } = await supabase
+      .from("orders")
+      .select("processing_fee_cents, processing_fee_status")
+      .eq("business_id", businessId)
+      .eq("business_date", date)
+      .eq("processing_fee_provider", "csv");
+    if (feeOrdersError) throw feeOrdersError;
+    if ((feeOrders ?? []).length > 0 && (feeOrders ?? []).every((order) => order.processing_fee_status === "actual")) {
+      await upsertProcessingFeeDailyFact(supabase, {
+        businessId,
+        businessDate: date,
+        amountCents: (feeOrders ?? []).reduce((sum, order) => sum + Number(order.processing_fee_cents), 0),
+        status: "actual",
+        sourceType: "manual_actual",
+        provider: "csv",
+        sourceReference: `sales-csv:${date}`,
+      });
+    } else {
+      // The product-mix CSV candidate is only valid when every attributable fee row for that
+      // date is actual. Invalidate this candidate without disturbing a separate manual fee report.
+      await setProcessingFeeCandidateEligibility(supabase, {
+        businessId,
+        businessDate: date,
+        sourceType: "manual_actual",
+        provider: "csv",
+        eligible: false,
+      });
+    }
+    await recomputeDailyRollup(supabase, businessId, date);
+  }
 
   const unmatchedItems = [...unmatchedCounts.entries()].map(([name, count]) => ({ name, rows: count }));
   const summary: SalesImportSummary = { rowsInFile: rows.length, imported, ...dateRange([...affectedDates]), unmatchedItems };
@@ -284,6 +324,50 @@ export async function importLaborRows(
 }
 
 export type IngredientCostImportRow = NormalizedIngredientCostRow & { baseUnitForNew: "g" | "ml" | "each" };
+
+export async function importProcessingFeeRows(
+  rows: NormalizedProcessingFeeRow[],
+  invalidRows = 0,
+): Promise<{ ok: boolean; imported: number; error?: string; summary?: ProcessingFeeImportSummary }> {
+  const parsedRows = processingFeeRowsSchema.safeParse(rows);
+  if (!parsedRows.success || !Number.isInteger(invalidRows) || invalidRows < 0) return { ok: false, imported: 0, error: "Invalid processing fee rows." };
+  const ctx = await context();
+  if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
+  const { supabase, businessId } = ctx;
+  const amountByDate = processingFeeTotalsByDate(parsedRows.data);
+
+  for (const [date, amountCents] of amountByDate) {
+    await upsertProcessingFeeDailyFact(supabase, {
+      businessId,
+      businessDate: date,
+      amountCents,
+      status: "actual",
+      sourceType: "manual_actual",
+      provider: "manual",
+      sourceReference: `processing-fee-report:${date}`,
+    });
+    await recomputeDailyRollup(supabase, businessId, date);
+  }
+
+  const dates = [...amountByDate.keys()];
+  const summary: ProcessingFeeImportSummary = {
+    rowsInFile: parsedRows.data.length + invalidRows,
+    importedDates: dates.length,
+    invalidRows,
+    ...dateRange(dates),
+  };
+  await supabase.from("uploads").insert({
+    business_id: businessId,
+    kind: "processing_fees_csv",
+    status: invalidRows > 0 ? "needs_review" : "done",
+    summary,
+  });
+  revalidatePath("/");
+  revalidatePath("/money");
+  revalidatePath("/menu");
+  revalidatePath("/more/uploads/history");
+  return { ok: true, imported: dates.length, summary };
+}
 
 /** Matches each row to an existing ingredient by case-insensitive name; creates a new one (with
  * the owner-chosen base unit from the review step) when there's no match. Always inserts a new
