@@ -45,4 +45,13 @@ describe("pricing processing-fee quality", () => {
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
     expect(result.dataQuality.estimatedInputs).toContain("processingFees");
   });
+
+  it("does not let owner-estimated fees substitute for real transaction history", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, totalOrdersInWindow: 0, processingFeesStatus: "estimated" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BENCHMARK");
+    expect(result.dataQuality.estimatedInputs).toContain("processingFees");
+  });
 });

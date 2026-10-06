@@ -58,7 +58,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
   const monthlyStaffCostCents = Math.round(staffCostCentsForPeriod(days) * scale);
   const monthlyProcessingFeesCents = monthlyProcessingFeesForWindow(days.map((day) => day.cardFeesCents), windowDays);
-  const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => row.orders_count > 0).map((row) => row.card_fees_status ?? "missing");
+  const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0).map((row) => row.card_fees_status ?? "missing");
   const processingFeesStatus = salesDayFeeStatuses.length === 0 || salesDayFeeStatuses.includes("missing")
     ? "missing"
     : salesDayFeeStatuses.includes("estimated") ? "estimated" : "actual";
