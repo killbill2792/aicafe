@@ -88,7 +88,8 @@ const RecurringCostSchema = z.object({
   id: z.string().optional(),
   category: z.enum(EXPENSE_CATEGORY_CODES),
   label: z.string().min(1),
-  amountCents: z.number().int().positive(),
+  // Zero is a meaningful confirmed recurring cost ("we have no loan"), distinct from missing.
+  amountCents: z.number().int().nonnegative(),
   frequency: z.enum(["monthly", "weekly", "quarterly", "yearly"]),
   dueDay: z.number().int().min(1).max(31).optional(),
   isEstimate: z.boolean().optional(),
