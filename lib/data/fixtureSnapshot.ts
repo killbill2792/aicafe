@@ -35,6 +35,9 @@ function scaledDay(date: string, scale: number): DailyFacts {
     ingredientsCents: Math.round(FIXTURE_A_DAY.ingredientsCents * scale),
     wagesCents: Math.round(FIXTURE_A_DAY.wagesCents * scale),
     staffTaxCents: Math.round(FIXTURE_A_DAY.staffTaxCents * scale),
+    staffTaxStatus: "actual",
+    staffTaxSource: "fixture",
+    salesDataStatus: "actual",
     cardFeesCents: Math.round(FIXTURE_A_DAY.cardFeesCents * scale),
     voidsCents: 0,
   };
@@ -124,6 +127,7 @@ export function getFixtureSnapshot(): BusinessSnapshot {
       timezone: "America/Los_Angeles",
       payrollTaxRate: FIXTURE_A_PAYROLL_TAX_RATE,
       payrollTaxRateStatus: "confirmed",
+      payrollTaxRateSource: "fixture",
       targetOperatingMargin: 0.15,
       targetOperatingMarginStatus: "default",
       openHours: {
@@ -134,6 +138,7 @@ export function getFixtureSnapshot(): BusinessSnapshot {
     todayDateStr,
     monthKey: "2026-09",
     daysInMonth: 30,
+    monthRecordedDays: monthActualDays,
     monthActualDays,
     last28Days,
     last7Days,

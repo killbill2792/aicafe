@@ -56,6 +56,23 @@ describe("buildMonthCalendarViewModel", () => {
     expect(vm.detailsByDate["2026-10-01"].runningCostShareIsEstimate).toBe(false);
   });
 
+  it("keeps a staff-only rollup as Missing rather than turning it into a loss day", () => {
+    const staffOnly = {
+      ...zeroDailyFacts("2026-10-05"),
+      wagesCents: 15_000,
+      staffTaxCents: 1_500,
+      salesDataStatus: "missing" as const,
+    };
+    const vm = buildMonthCalendarViewModel({
+      monthData: monthData([staffOnly]),
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-31",
+      isCurrentMonth: false,
+    });
+    expect(vm.cells.find((c) => c.date === "2026-10-05")!.state).toEqual({ kind: "missing" });
+    expect(vm.detailsByDate["2026-10-05"]).toMatchObject({ hasData: false, isClosed: false });
+  });
+
   it("keeps a no-rollup day missing when regular hours are unset", () => {
     const vm = buildMonthCalendarViewModel({
       monthData: monthData([]),

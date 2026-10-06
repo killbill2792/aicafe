@@ -15,7 +15,6 @@ import { RUNNING_COST_CODES } from "@/lib/data/runningCostCatalog";
 import { buildCostRecoveryViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildMonthCalendarViewModel } from "@/lib/viewmodels/monthCalendar";
 import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
-import { profitTone, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 function shortDate(iso: string) {
   const [, month, day] = iso.split("-");
@@ -116,32 +115,80 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
   const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(new Date(`${calMonthKey}-01T00:00:00`));
   const firstWeekday = new Date(`${calMonthKey}-01T00:00:00`).getDay();
   const weekdayFormatter = new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" });
-  // Jan 4 1970 (UTC) is a Sunday — a stable reference week, indexed 0=Sun..6=Sat.
   const weekdayLabels = Array.from({ length: 7 }, (_, i) => weekdayFormatter.format(new Date(Date.UTC(1970, 0, 4 + i))));
-  // The calendar's milestone sentence ("%BUCKET% became fully covered...") must read in the
-  // viewer's own language — the English-only RUNNING_COST_LABELS catalog would otherwise leak an
-  // English category name into an es/ar sentence.
   const bucketLabels = Object.fromEntries(RUNNING_COST_CODES.map((code) => [code, tCategories(code)]));
-
-  const pace = profitTone(vm.projectedMonthEndProfitCents);
-  const paceText =
-    pace === "good"
-      ? t("paceLeft", { amount: formatCents(vm.projectedMonthEndProfitCents) })
-      : pace === "warn"
-        ? t("paceShort", { amount: formatCents(Math.abs(vm.projectedMonthEndProfitCents)) })
-        : t("paceBreakEven");
 
   const heroIcon = vm.buckets[0];
   const totalCentsToGo = vm.buckets.reduce((s, b) => s + b.centsToGo, 0);
   const totalPaidBackCents = Math.max(0, vm.totalCents - totalCentsToGo);
   const overallPctCovered = vm.totalCents === 0 ? 100 : (totalPaidBackCents / vm.totalCents) * 100;
 
+  const breakEvenUnavailable =
+    vm.breakEven.kind === "unavailable"
+      ? vm.breakEven.reason === "NOT_ENOUGH_SALES"
+        ? t("breakEvenNeedSales")
+        : vm.breakEven.reason === "MISSING_BILLS"
+          ? t("breakEvenNeedBills")
+          : vm.breakEven.reason === "MISSING_PRODUCT_COSTS"
+            ? t("breakEvenNeedProductCosts")
+            : vm.breakEven.reason === "MISSING_PROCESSING_FEES"
+              ? t("breakEvenNeedProcessingFees")
+              : t("breakEvenUnavailable")
+      : null;
+
   return (
     <div className="flex flex-col gap-3.5">
+      <section className="rounded-card-lg bg-card p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <span className="text-[15px] font-semibold text-ink-muted">{t("monthlyBreakEven")}</span>
+            {vm.breakEven.kind === "ready" ? (
+              <>
+                <div className="mt-1 font-headline text-[40px] font-bold leading-none text-ink">
+                  <Money cents={vm.breakEven.breakEvenSalesCents} />
+                </div>
+                <p className="mt-2 text-sm leading-snug text-ink-muted">{t("breakEvenSalesNeeded")}</p>
+              </>
+            ) : (
+              <>
+                <div className="mt-1 font-headline text-3xl font-bold text-ink">—</div>
+                <p className="mt-2 text-sm leading-snug text-ink-muted">{breakEvenUnavailable}</p>
+              </>
+            )}
+          </div>
+          {vm.breakEvenUsesEstimates && (
+            <span className="rounded-full bg-paper px-2.5 py-1 text-xs font-bold text-ink-muted">{t("estimateLower")}</span>
+          )}
+        </div>
+
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          <div className="rounded-2xl bg-paper p-3">
+            <span className="block text-xs font-semibold text-ink-muted">{t("monthlyBillsTotal")}</span>
+            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyBillsCents} /></strong>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <span className="block text-xs font-semibold text-ink-muted">{t("monthlyStaffEstimate")}</span>
+            <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyStaffCents} /></strong>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <span className="block text-xs font-semibold text-ink-muted">{t("ingredientsAtBreakEven")}</span>
+            <strong className="mt-1 block text-xl text-ink">
+              {vm.breakEven.kind === "ready" ? <Money cents={vm.breakEven.ingredientCostsAtBreakEvenCents} /> : "—"}
+            </strong>
+          </div>
+          <div className="rounded-2xl bg-paper p-3">
+            <span className="block text-xs font-semibold text-ink-muted">{t("processingFeesAtBreakEven")}</span>
+            <strong className="mt-1 block text-xl text-ink">
+              {vm.breakEven.kind === "ready" ? <Money cents={vm.breakEven.processingFeesAtBreakEvenCents} /> : "—"}
+            </strong>
+          </div>
+        </div>
+      </section>
+
       <section className="flex flex-wrap items-center gap-4 rounded-card-lg bg-card p-5">
         {heroIcon && <FillIcon code={heroIcon.code as ExpenseIconCode} pctCovered={overallPctCovered} size={104} covered={vm.allCovered} />}
         <div className="flex min-w-[220px] flex-1 flex-col gap-1.5">
-          <span className="text-[15px] font-semibold text-ink-muted">{vm.allCovered ? t("sinceCovered") : t("thisMonthsBills")}</span>
+          <span className="text-[15px] font-semibold text-ink-muted">{t("billCoverageThisMonth")}</span>
           <span className="whitespace-nowrap font-headline text-[40px] font-bold leading-none">
             <Money cents={totalPaidBackCents} />
           </span>
@@ -151,18 +198,13 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
               {t("allCoveredBy", { date: shortDate(vm.buckets[vm.buckets.length - 1].projectedCoveredOn!) })}
             </span>
           )}
+          {vm.allCovered && (
+            <span className="text-sm font-bold text-good">
+              {t("yoursSoFar", { amount: formatCents(vm.yoursSoFarCents) })}
+            </span>
+          )}
         </div>
       </section>
-
-      <p className={`mx-1.5 text-base leading-snug ${vm.allCovered ? "text-ink" : profitToneTextClass(pace)}`}>
-        {vm.allCovered ? (
-          <>
-            <b>{t("everythingYours")}</b> {t("yoursSoFar", { amount: formatCents(vm.yoursSoFarCents) })}
-          </>
-        ) : (
-          <b>{paceText}</b>
-        )}
-      </p>
 
       <section aria-label={t("billsOrderLabel")} className="rounded-card-lg bg-card px-[18px]">
         {vm.buckets.map((bucket, i) => (

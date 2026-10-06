@@ -10,6 +10,8 @@ import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import Money from "@/components/shared/Money";
 import StaffCostBars, { shortWeekday } from "@/components/staff/StaffCostBars";
 import PageShell from "@/components/shared/PageShell";
+import PayrollCostCard from "@/components/staff/PayrollCostCard";
+import { getPayrollCostSettings } from "@/lib/data/getPayrollCostSettings";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -19,7 +21,7 @@ export default async function StaffPage() {
   const t = await getTranslations("Staff");
   const locale = await getLocale();
 
-  const snapshot = await getSnapshot();
+  const [snapshot, payrollSettings] = await Promise.all([getSnapshot(), getPayrollCostSettings()]);
   const vm = buildStaffViewModel(snapshot);
   const clockLabel = (iso: string) => formatInTimeZone(iso, snapshot.business.timezone, "H:mm");
 
@@ -102,6 +104,28 @@ export default async function StaffPage() {
           ))
         )}
       </section>
+
+      <PayrollCostCard
+        settings={payrollSettings}
+        labels={{
+          title: t("payrollCostsTitle"),
+          body: t("payrollCostsBody"),
+          field: t("payrollCostsField"),
+          hint: t("payrollCostsHint"),
+          source: t("payrollSource"),
+          ownerSource: t("payrollSourceOwner"),
+          estimateSource: t("payrollSourceEstimate"),
+          quickbooksSource: t("payrollSourceQuickBooks"),
+          importedSource: t("payrollSourceImported"),
+          connectedSource: t("payrollSourceConnected"),
+          actualUsing: t("payrollActualUsing"),
+          fallbackNote: t("payrollFallbackNote"),
+          save: t("payrollSave"),
+          saving: t("payrollSaving"),
+          saved: t("payrollSaved"),
+          invalid: t("payrollInvalid"),
+        }}
+      />
 
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <div className="flex flex-col gap-0.5">

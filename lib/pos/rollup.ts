@@ -11,8 +11,9 @@ import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFee
  * affected business dates, then alerts"). Ingredients are theoretical, priced as of `businessDate`.
  */
 export async function recomputeDailyRollup(supabase: SupabaseClient, businessId: string, businessDate: string): Promise<void> {
-  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, timezone").eq("id", businessId).single();
+  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
+  const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
   const { data: orders } = await supabase
@@ -121,7 +122,7 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
   );
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
-    .select("staff_tax_cents, staff_tax_status")
+    .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status")
     .eq("business_id", businessId)
     .eq("business_date", businessDate)
     .maybeSingle();
@@ -133,6 +134,13 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
   const staffTaxCents = staffTaxIsActual
     ? Number(existingRollup.staff_tax_cents)
     : Math.round(wagesCents * payrollTaxRate);
+  const staffTaxSource = staffTaxIsActual
+    ? existingRollup?.staff_tax_source ?? "legacy_actual"
+    : payrollTaxRateSource;
+  const salesDataStatus =
+    ordersCount > 0 || netSalesCents !== 0 || existingRollup?.sales_data_status === "actual"
+      ? "actual"
+      : "missing";
 
   await supabase.from("daily_rollups").upsert(
     {
@@ -145,6 +153,8 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
       staff_wages_cents: Math.round(wagesCents),
       staff_tax_cents: staffTaxCents,
       staff_tax_status: staffTaxIsActual ? "actual" : "estimated",
+      staff_tax_source: staffTaxSource,
+      sales_data_status: salesDataStatus,
       card_fees_cents: selectedProcessingFee.amountCents,
       card_fees_status: selectedProcessingFee.status,
       voids_cents: voidsCents,

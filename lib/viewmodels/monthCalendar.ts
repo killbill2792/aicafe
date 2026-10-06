@@ -1,4 +1,4 @@
-import { computeCostRecovery, roundHalfUpToCent, runningCostsForPeriodCents, type DayContribution, type RecoveryBucket } from "@/lib/calc";
+import { computeCostRecovery, hasSalesCoverage, roundHalfUpToCent, runningCostsForPeriodCents, type DayContribution, type RecoveryBucket } from "@/lib/calc";
 import { regularHoursStateForDate } from "@/lib/business/openHours";
 import type { MonthCalendarData } from "@/lib/data/monthCalendar.server";
 import { dayContributionCents, recoveryBucketsFromAmounts } from "./costRecoveryShared";
@@ -59,9 +59,10 @@ export function buildMonthCalendarViewModel(params: {
 
   const buckets: RecoveryBucket[] = recoveryBucketsFromAmounts(categoryAmounts, recoveryOrder);
   const hasEstimatedCosts = categoryAmounts.some((c) => c.isEstimate && c.amountCents > 0);
+  const salesCoveredDays = days.filter(hasSalesCoverage);
   const recovery = computeCostRecovery(
     buckets,
-    [...days.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })), ...(isCurrentMonth ? projectedDays : [])],
+    [...salesCoveredDays.map((d) => ({ date: d.date, cents: dayContributionCents(d), projected: false })), ...(isCurrentMonth ? projectedDays : [])],
   );
   const milestonesByDate = new Map<string, string[]>();
   for (const bucket of recovery.buckets) {
@@ -77,9 +78,9 @@ export function buildMonthCalendarViewModel(params: {
     const milestoneBucketCodes = milestonesByDate.get(date) ?? [];
     const dayFacts = days.find((d) => d.date === date);
 
-    // Recorded facts always win over the regular-hours profile. This allows a special opening on
-    // a normally closed day to show the real business activity rather than hiding it as "Closed."
-    if (dayFacts) {
+    // Only explicit sales coverage makes this an actual performance day. A staff-only rollup is
+    // still Missing sales and must never become a red "loss" day.
+    if (dayFacts && hasSalesCoverage(dayFacts)) {
       const runningCostShareCents = roundHalfUpToCent(runningCostsForPeriodCents(categoryAmounts, date, date));
       const staffCents = dayFacts.wagesCents + dayFacts.staffTaxCents;
       const ownerProfitCents = dayFacts.netSalesCents - dayFacts.ingredientsCents - staffCents - dayFacts.cardFeesCents - runningCostShareCents;
@@ -143,7 +144,7 @@ export function buildMonthCalendarViewModel(params: {
 
   const finalBucket = recovery.buckets.at(-1);
   const coverageSignal =
-    !finalBucket || days.length === 0
+    !finalBucket || salesCoveredDays.length === 0 || (isCurrentMonth && salesCoveredDays.length < 7)
       ? { kind: "insufficient" as const }
       : finalBucket.coveredOn
         ? { kind: "covered" as const, date: finalBucket.coveredOn }

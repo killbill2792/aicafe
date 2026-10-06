@@ -11,6 +11,17 @@ const base = (overrides: Partial<SuggestPriceInput> = {}): SuggestPriceInput => 
 });
 
 describe("pricing engine", () => {
+  it("never recommends lowering an established healthy price just to hit the benchmark", () => {
+    const result = suggestPrice(base({
+      productCostCents: 600,
+      currentPriceCents: 2300,
+      recipeStatus: "READY",
+      profile: getPricingProfile("FOOD"),
+    }));
+    expect(result.recommendedPriceCents).toBe(2300);
+    expect(result.status).toBe("KEEP_CURRENT_PRICE");
+  });
+
   const establishedSignal = { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 1000, itemUnitsSoldInWindow: 100, monthlyRevenueCents: 100_000 };
 
   it("works with no AI configuration and emits integer-cent structured output", () => {

@@ -10,8 +10,7 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
     const peers = input.items.filter((peer) => peer.id !== item.id && peer.category === item.category && peer.currentPriceCents > 0 && peer.productCostCents > 0);
     const categoryPeers: CategoryPeerStats = peers.length >= MIN_CATEGORY_PEERS ? { medianPriceCents: median(peers.map((peer) => peer.currentPriceCents)), medianProductCostPercent: median(peers.map((peer) => peer.productCostCents / peer.currentPriceCents)) } : null;
     const posSignal = { daysWithSalesInWindow: input.business.daysWithSalesInWindow, windowDays: input.business.windowDays, totalOrdersInWindow: input.business.totalOrdersInWindow, itemUnitsSoldInWindow: item.unitsSoldInWindow, monthlyRevenueCents: input.business.monthlyRevenueCents };
-    const baseProfile = getPricingProfile(item.category);
-    const profile = { ...baseProfile, targetOperatingMargin: input.business.targetOperatingMargin ?? baseProfile.targetOperatingMargin };
+    const profile = getPricingProfile(item.category);
     const economics = input.business.processingFeesStatus === "missing" ? null : { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents };
     return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, recipeStatus: item.recipeStatus, profile, posSignal, economics, categoryPeers,
       businessEconomicsMissingInputs: input.business.processingFeesStatus === "missing" ? ["processingFees"] : [],
@@ -19,7 +18,6 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
         ...(input.business.processingFeesStatus === "estimated" ? ["processingFees"] : []),
         ...(input.business.payrollCostsStatus !== "actual" || input.business.payrollTaxRateStatus !== "confirmed" ? ["payrollBurden"] : []),
         ...(input.business.operatingCostsStatus === "estimated" ? ["operatingCosts"] : []),
-        ...(input.business.targetOperatingMarginStatus !== "confirmed" ? ["targetOperatingMargin"] : []),
       ] }) };
   });
 }

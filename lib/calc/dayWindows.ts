@@ -14,13 +14,16 @@ export function zeroDailyFacts(date: string): DailyFacts {
     ingredientsCents: 0,
     wagesCents: 0,
     staffTaxCents: 0,
+    salesDataStatus: "missing",
     cardFeesCents: 0,
     voidsCents: 0,
   };
 }
 
 export type DayWindows = {
-  /** Actual rows from `monthStart` (from `monthKey`) through `todayDateStr`, date-filtered — never
+  /** Every rollup row this month, including staff-only rows whose sales coverage is missing. */
+  monthRecordedDays: DailyFacts[];
+  /** Sales-covered rows from `monthStart` (from `monthKey`) through `todayDateStr`, date-filtered — never
    * "whatever rows happen to be last in the array," so a gap before today can't smuggle in a wrong day. */
   monthActualDays: DailyFacts[];
   /** Actual rows whose date falls in the 7 calendar days ending `todayDateStr` — the real week window,
@@ -40,9 +43,17 @@ export type DayWindows = {
 };
 
 /** Actual rows whose date falls within the `n` calendar days ending `todayDateStr` (inclusive). */
+export function hasSalesCoverage(day: DailyFacts): boolean {
+  if (day.salesDataStatus === "actual") return true;
+  // Positive sales facts are self-evidently covered even if an older fixture/import omitted the flag.
+  if (day.netSalesCents !== 0 || day.ordersCount > 0 || day.drinksCount > 0) return true;
+  // Undefined preserves legacy fixture/test semantics. Explicit "missing" with zero sales does not.
+  return day.salesDataStatus !== "missing";
+}
+
 function lastNCalendarDays(allDays: DailyFacts[], todayDateStr: string, n: number): DailyFacts[] {
   const start = format(subDays(parseISO(todayDateStr), n - 1), "yyyy-MM-dd");
-  return allDays.filter((d) => d.date >= start && d.date <= todayDateStr);
+  return allDays.filter((d) => d.date >= start && d.date <= todayDateStr && hasSalesCoverage(d));
 }
 
 /**
@@ -55,7 +66,8 @@ function lastNCalendarDays(allDays: DailyFacts[], todayDateStr: string, n: numbe
  */
 export function buildDayWindows(allDays: DailyFacts[], todayDateStr: string, monthKey: string): DayWindows {
   const monthStart = `${monthKey}-01`;
-  const monthActualDays = allDays.filter((d) => d.date >= monthStart && d.date <= todayDateStr);
+  const monthRecordedDays = allDays.filter((d) => d.date >= monthStart && d.date <= todayDateStr);
+  const monthActualDays = monthRecordedDays.filter(hasSalesCoverage);
 
   const last7Days = lastNCalendarDays(allDays, todayDateStr, 7);
   const last28Days = lastNCalendarDays(allDays, todayDateStr, 28);
@@ -63,10 +75,11 @@ export function buildDayWindows(allDays: DailyFacts[], todayDateStr: string, mon
   const todayRow = allDays.find((d) => d.date === todayDateStr);
 
   return {
+    monthRecordedDays,
     monthActualDays,
     last7Days,
     last28Days,
     todayDay: todayRow ?? zeroDailyFacts(todayDateStr),
-    todayHasData: Boolean(todayRow),
+    todayHasData: Boolean(todayRow && hasSalesCoverage(todayRow)),
   };
 }

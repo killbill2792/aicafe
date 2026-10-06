@@ -39,6 +39,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
           addHint: t("addHint"),
           edit: t("edit"),
           addAnother: t("addAnother"),
+          totalMonthly: t("totalMonthly"),
         }}
       />
     </PageShell>

@@ -1,16 +1,16 @@
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
-import { getOwnerEconomicsSettings } from "@/lib/data/getOwnerEconomicsSettings";
+import { getProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
 import BackHeader from "@/components/shared/BackHeader";
-import OwnerEconomicsForm from "@/components/more/OwnerEconomicsForm";
+import ProfitGoalSimulator from "@/components/more/ProfitGoalSimulator";
 import PageShell from "@/components/shared/PageShell";
 
 export const dynamic = "force-dynamic";
 
 export default async function EconomicsPage() {
   await requireOwnBusiness();
-  const [settings, t, tCommon] = await Promise.all([
-    getOwnerEconomicsSettings(),
+  const [data, t, tCommon] = await Promise.all([
+    getProfitGoalSimulatorData(),
     getTranslations("Economics"),
     getTranslations("Common"),
   ]);
@@ -18,8 +18,8 @@ export default async function EconomicsPage() {
   return (
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
-      <OwnerEconomicsForm
-        settings={settings}
+      <ProfitGoalSimulator
+        data={data}
         labels={{
           currentMargin: t("currentMargin"),
           currentMarginMissing: t("currentMarginMissing"),
@@ -27,23 +27,25 @@ export default async function EconomicsPage() {
           estimated: t("estimated"),
           targetMargin: t("targetMargin"),
           targetMarginHint: t("targetMarginHint"),
-          defaultAssumption: t("defaultAssumption"),
-          ownerConfirmed: t("ownerConfirmed"),
-          payrollBurden: t("payrollBurden"),
-          payrollBurdenHint: t("payrollBurdenHint"),
-          payrollEstimated: t("payrollEstimated"),
-          scenarioTitle: t("scenarioTitle"),
-          scenarioHint: t("scenarioHint"),
-          scenarioNoHistory: t("scenarioNoHistory"),
+          run: t("run"),
+          simulationOnly: t("simulationOnly"),
+          assumption: t("assumption"),
+          readyMeetsTarget: t("readyMeetsTarget"),
+          readyNeedsIncrease: t("readyNeedsIncrease"),
+          largeChange: t("largeChange"),
+          unavailableSales: t("unavailableSales"),
+          unavailableFees: t("unavailableFees"),
+          unavailableCosts: t("unavailableCosts"),
+          targetTested: t("targetTested"),
           item: t("item"),
           productCost: t("productCost"),
+          productCostPct: t("productCostPct"),
           currentPrice: t("currentPrice"),
-          suggestedPrice: t("suggestedPrice"),
+          simulatedPrice: t("simulatedPrice"),
           change: t("change"),
-          save: t("save"),
-          saving: t("saving"),
-          saved: t("saved"),
+          unavailableItem: t("unavailableItem"),
           invalid: t("invalid"),
+          targetNotFeasible: t("targetNotFeasible"),
         }}
       />
     </PageShell>
