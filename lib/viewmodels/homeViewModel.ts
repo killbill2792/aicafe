@@ -33,6 +33,18 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const isEstimate = snapshot.runningCostLines.some((l) => l.isEstimate && l.amountCents > 0);
   const coverage = periodCoverage(snapshot, period);
   const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
+  const missingProcessingFees = days.some((day) => day.netSalesCents > 0 && day.cardFeesStatus === "missing");
+  const operatingMargin =
+    ownerProfitDisplay.kind === "unavailable" || salesCents <= 0 || missingProcessingFees
+      ? null
+      : ratio(ownerProfitCents, salesCents);
+  const operatingMarginQuality =
+    operatingMargin === null
+      ? "missing" as const
+      : snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
+          days.some((day) => day.cardFeesStatus === "estimated" || day.staffTaxStatus === "estimated")
+        ? "estimated" as const
+        : "actual" as const;
   const comparisonState = periodComparisonState(coverage, previousPeriodCoverage(snapshot, period));
 
   const prevDays = previousPeriodDays(snapshot, period);
@@ -98,6 +110,10 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
     changeVsLastPeriodPct,
     costsRatio: ratio(totalCostsCents, salesCents),
     keepRatio: ratio(ownerProfitCents, salesCents),
+    operatingMargin,
+    operatingMarginQuality,
+    targetOperatingMargin: snapshot.business.targetOperatingMargin ?? 0.15,
+    targetOperatingMarginStatus: snapshot.business.targetOperatingMarginStatus ?? "default",
     recovery,
     buckets,
     bestItem,

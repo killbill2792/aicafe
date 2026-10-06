@@ -23,7 +23,9 @@ export type DailyFacts = {
   ingredientsCents: number;
   wagesCents: number;
   staffTaxCents: number;
+  staffTaxStatus?: "estimated" | "actual";
   cardFeesCents: number;
+  cardFeesStatus?: "actual" | "estimated" | "missing";
   voidsCents: number;
 };
 

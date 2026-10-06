@@ -28,6 +28,7 @@ import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
 import GettingStartedCard from "@/components/home/GettingStartedCard";
+import MarginGoalCard from "@/components/home/MarginGoalCard";
 import PageShell from "@/components/shared/PageShell";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { buildOperationsTeamViewModel, projectOperatingTasks } from "@/lib/viewmodels/operationsTeam";
@@ -152,6 +153,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           )}
         </div>
       </div>
+
+      <MarginGoalCard
+        currentMargin={vm.operatingMargin}
+        targetMargin={vm.targetOperatingMargin}
+        targetIsDefault={vm.targetOperatingMarginStatus !== "confirmed"}
+        currentMarginQuality={vm.operatingMarginQuality}
+        labels={{
+          title: t("marginGoalTitle"),
+          current: t("currentOperatingMargin"),
+          target: t("targetOperatingMargin"),
+          unavailable: t("marginUnavailable"),
+          defaultLabel: t("defaultTarget"),
+          currentActual: t("marginBasedOnCurrentData"),
+          currentEstimated: t("marginIncludesEstimates"),
+          edit: t("editAndTestMargin"),
+          explanation: t("marginExplanation"),
+        }}
+      />
 
       {vm.missingCategories.length > 0 && (
         <Link

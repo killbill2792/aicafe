@@ -148,7 +148,16 @@
     "gettingStartedAddStaff": "Agrega tu personal",
     "keepsAfterIngredients": "Deja aproximadamente {amount} después de ingredientes",
     "breakEvenMissingSales": "Aún no hay suficientes datos de ventas para calcularlo. Agrega ventas y bebidas recientes.",
-    "breakEvenMissingCosts": "Incompleto — agrega estos costos mensuales: {categories}."
+    "breakEvenMissingCosts": "Incompleto — agrega estos costos mensuales: {categories}.",
+    "marginGoalTitle": "Tu meta de ganancia",
+    "currentOperatingMargin": "Margen operativo actual",
+    "targetOperatingMargin": "Margen operativo objetivo",
+    "marginUnavailable": "Esperando datos completos",
+    "defaultTarget": "Suposición inicial del 15%",
+    "editAndTestMargin": "Editar y probar meta",
+    "marginExplanation": "El margen operativo es lo que queda después de ingredientes, personal, comisiones de tarjeta y costos operativos. Tu meta guía los precios sugeridos; nunca cambia los precios del menú automáticamente.",
+    "marginBasedOnCurrentData": "Basado en datos actuales",
+    "marginIncludesEstimates": "Incluye costos estimados"
   },
   "Money": {
     "title": "Dinero",
@@ -509,7 +518,8 @@
     "privacy": "Privacidad",
     "deleteAccount": "Eliminar cuenta",
     "cafeProfile": "Perfil del café",
-    "processingFees": "Comisiones de procesamiento"
+    "processingFees": "Comisiones de procesamiento",
+    "economics": "Meta de ganancia y nómina"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -936,5 +946,32 @@
     "coverageMissing": "Aún faltan",
     "coverageSalesDays": "Días con ventas",
     "incompleteWarning": "Completa el procesador, los porcentajes de pago y cada regla antes de guardar."
+  },
+  "Economics": {
+    "title": "Meta de ganancia y nómina",
+    "subtitle": "Define el margen que quieres alcanzar y confirma la carga de nómina usada en los cálculos.",
+    "currentMargin": "Margen operativo actual",
+    "currentMarginMissing": "Esperando datos completos de costos",
+    "actual": "Basado en datos reales",
+    "estimated": "Incluye datos estimados",
+    "targetMargin": "Margen operativo objetivo",
+    "targetMarginHint": "La meta general del café después de ingredientes, mano de obra, comisiones de procesamiento y costos operativos. No es margen de producto ni porcentaje de costo de ingredientes.",
+    "defaultAssumption": "Suposición inicial del 15%",
+    "ownerConfirmed": "Confirmado por el propietario",
+    "payrollBurden": "Carga de nómina adicional al salario",
+    "payrollBurdenHint": "Impuestos patronales y otros costos relacionados con salarios. Ingresa 0% si realmente no existe carga adicional.",
+    "payrollEstimated": "La tasa actual es una estimación hasta que la confirmes.",
+    "scenarioTitle": "Prueba la meta en los precios del menú",
+    "scenarioHint": "Cambia la meta o la carga de nómina para previsualizar artículos representativos antes de guardar. Los costos del producto no cambian; cambia la economía general del café, manteniendo el límite de seguridad existente del 15% por ajuste.",
+    "scenarioNoHistory": "Todavía no hay suficiente historial de ventas confiable para que la meta cambie precios ajustados al negocio. AI Cafe seguirá usando precios de referencia hasta tener suficientes pedidos reales.",
+    "item": "Artículo",
+    "productCost": "Costo del producto",
+    "currentPrice": "Precio actual",
+    "suggestedPrice": "Sugerido",
+    "change": "Cambio",
+    "save": "Guardar meta y nómina",
+    "saving": "Guardando…",
+    "saved": "Guardado. Los precios de Menú y Alex ahora usan esta meta y la carga estimada de nómina fue actualizada.",
+    "invalid": "Ingresa un margen objetivo entre 0% y 80% y una carga de nómina entre 0% y 100%."
   }
 }

@@ -123,6 +123,9 @@ export function getFixtureSnapshot(): BusinessSnapshot {
       name: "Your Café",
       timezone: "America/Los_Angeles",
       payrollTaxRate: FIXTURE_A_PAYROLL_TAX_RATE,
+      payrollTaxRateStatus: "confirmed",
+      targetOperatingMargin: 0.15,
+      targetOperatingMarginStatus: "default",
       openHours: {
         mon: [["06:30", "18:00"]], tue: [["06:30", "18:00"]], wed: [["06:30", "18:00"]], thu: [["06:30", "18:00"]],
         fri: [["06:30", "18:00"]], sat: [["07:00", "16:00"]], sun: [["07:00", "16:00"]],

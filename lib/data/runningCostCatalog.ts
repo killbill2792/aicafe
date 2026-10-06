@@ -37,7 +37,9 @@ export function rowToDailyFacts(row: {
   ingredients_cents: number;
   staff_wages_cents: number;
   staff_tax_cents: number;
+  staff_tax_status?: "estimated" | "actual";
   card_fees_cents: number;
+  card_fees_status?: "actual" | "estimated" | "missing";
   voids_cents: number;
 }): DailyFacts {
   return {
@@ -48,7 +50,9 @@ export function rowToDailyFacts(row: {
     ingredientsCents: row.ingredients_cents,
     wagesCents: row.staff_wages_cents,
     staffTaxCents: row.staff_tax_cents,
+    staffTaxStatus: row.staff_tax_status,
     cardFeesCents: row.card_fees_cents,
+    cardFeesStatus: row.card_fees_status,
     voidsCents: row.voids_cents,
   };
 }
