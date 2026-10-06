@@ -2,14 +2,14 @@ import "server-only";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import type { IngredientImportSummary, LaborImportSummary, SalesImportSummary } from "@/lib/actions/csvImport";
+import type { IngredientImportSummary, LaborImportSummary, ProcessingFeeImportSummary, SalesImportSummary } from "@/lib/actions/csvImport";
 
 export type UploadHistoryRow = {
   id: string;
-  kind: "sales_csv" | "labor_csv" | "ingredients_csv";
+  kind: "sales_csv" | "labor_csv" | "ingredients_csv" | "processing_fees_csv";
   status: "processing" | "needs_review" | "done" | "failed";
   createdAt: string;
-  summary: SalesImportSummary | LaborImportSummary | IngredientImportSummary | null;
+  summary: SalesImportSummary | LaborImportSummary | IngredientImportSummary | ProcessingFeeImportSummary | null;
 };
 
 /** Every CSV import this business has ever run, newest first — lets an owner (or whoever's
@@ -28,7 +28,7 @@ export async function getUploadHistory(): Promise<UploadHistoryRow[]> {
     .from("uploads")
     .select("id, kind, status, summary, created_at")
     .eq("business_id", businessId)
-    .in("kind", ["sales_csv", "labor_csv", "ingredients_csv"])
+    .in("kind", ["sales_csv", "labor_csv", "ingredients_csv", "processing_fees_csv"])
     .order("created_at", { ascending: false })
     .limit(50);
 

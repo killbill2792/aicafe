@@ -86,6 +86,19 @@ describe("pricing engine", () => {
       expect(after.businessAdjustmentFactor).toBe(1.03);
       expect(after.calculatedSuggestedPriceCents).toBe(550);
     });
+
+    it("falls back to a useful benchmark and reports missing processing fees when economics are incomplete", () => {
+      const result = suggestPrice(base({
+        currentPriceCents: 0,
+        posSignal: establishedSignal,
+        economics: null,
+        businessEconomicsMissingInputs: ["processingFees"],
+      }));
+      expect(result.calculationMode).toBe("BENCHMARK");
+      expect(result.recommendedPriceCents).toBe(525);
+      expect(result.dataQuality.missingInputs).toContain("processingFees");
+      expect(result.businessAdjustmentFactor).toBe(1);
+    });
   });
 
   // Regression coverage for the "Suggested: $0.00" production bug (2026-10-01): a legitimately

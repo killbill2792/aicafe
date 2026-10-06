@@ -12,7 +12,7 @@ import type { MenuItemCategoryCode } from "@/lib/constants";
  * file now calls that same shared function instead of reimplementing its own cost+completeness
  * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; recipeStatus: RecipeCostStatus; unitsSoldInWindow: number };
-export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number };
+export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing" };
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
@@ -24,7 +24,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   const [itemsResult, rollupsResult, recurringResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category").eq("business_id", businessId).eq("is_active", true),
-    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, card_fees_cents, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, card_fees_cents, card_fees_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, active_from, active_to").eq("business_id", businessId).lte("active_from", todayDateStr),
   ]);
   if (itemsResult.error) throw itemsResult.error;
@@ -55,7 +55,11 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const monthlyRevenueCents = Math.round(days.reduce((sum, day) => sum + day.netSalesCents, 0) * scale);
   const monthlyStaffCostCents = Math.round(staffCostCentsForPeriod(days) * scale);
   const monthlyProcessingFeesCents = monthlyProcessingFeesForWindow(days.map((day) => day.cardFeesCents), windowDays);
+  const salesDayFeeStatuses = (rollupsResult.data ?? []).filter((row) => row.orders_count > 0).map((row) => row.card_fees_status ?? "missing");
+  const processingFeesStatus = salesDayFeeStatuses.length === 0 || salesDayFeeStatuses.includes("missing")
+    ? "missing"
+    : salesDayFeeStatuses.includes("estimated") ? "estimated" : "actual";
   const monthlyOperatingCostCents = (recurringResult.data ?? []).filter((row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr)).reduce((sum, row) => sum + row.amount_cents, 0);
   const monthlyVariableProductCostCents = Math.round(items.reduce((sum, item) => sum + item.unitsSoldInWindow * item.productCostCents, 0) * scale);
-  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.ordersCount > 0).length, totalOrdersInWindow: days.reduce((sum, day) => sum + day.ordersCount, 0), monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents } };
+  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.ordersCount > 0).length, totalOrdersInWindow: days.reduce((sum, day) => sum + day.ordersCount, 0), monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus } };
 }

@@ -112,7 +112,7 @@ async function reseedDemoBusiness(client) {
   await insertRows(client, "recipe_lines",
     ["menu_item_id", "ingredient_id", "quantity"], data.recipeLines);
   await insertRows(client, "orders",
-    ["id", "business_id", "location_id", "pos_order_id", "closed_at", "business_date", "gross_sales_cents", "discounts_cents", "refunds_cents", "tax_cents", "tip_cents", "processing_fee_cents", "net_sales_cents", "customer_ref"],
+    ["id", "business_id", "location_id", "pos_order_id", "closed_at", "business_date", "gross_sales_cents", "discounts_cents", "refunds_cents", "tax_cents", "tip_cents", "processing_fee_cents", "processing_fee_status", "processing_fee_provider", "net_sales_cents", "customer_ref"],
     data.orders);
   await insertRows(client, "order_lines",
     ["id", "order_id", "menu_item_id", "pos_item_id", "name", "quantity", "net_sales_cents", "modifiers", "voided", "voided_by"],
@@ -120,8 +120,14 @@ async function reseedDemoBusiness(client) {
   await insertRows(client, "timecards",
     ["id", "business_id", "employee_id", "pos_timecard_id", "clock_in", "clock_out", "hourly_wage_cents", "breaks"],
     data.timecards);
+  await insertRows(client, "processing_fee_daily_candidates",
+    ["business_id", "business_date", "source_type", "provider", "amount_cents", "status", "source_reference", "metadata", "eligible"],
+    data.processingFeeDailyCandidates);
+  await insertRows(client, "processing_fee_daily_facts",
+    ["business_id", "business_date", "amount_cents", "status", "source_type", "provider", "source_reference", "metadata"],
+    data.processingFeeDailyFacts);
   await insertRows(client, "daily_rollups",
-    ["business_id", "business_date", "net_sales_cents", "orders_count", "drinks_count", "ingredients_cents", "staff_wages_cents", "staff_tax_cents", "card_fees_cents", "voids_cents"],
+    ["business_id", "business_date", "net_sales_cents", "orders_count", "drinks_count", "ingredients_cents", "staff_wages_cents", "staff_tax_cents", "card_fees_cents", "card_fees_status", "voids_cents"],
     data.dailyRollups);
   await insertRows(client, "expenses",
     ["id", "business_id", "spent_on", "amount_cents", "vendor", "category_code", "source", "status", "recurring_cost_id", "confidence", "reason", "attachment_path", "dedupe_key"],

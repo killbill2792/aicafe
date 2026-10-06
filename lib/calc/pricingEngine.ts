@@ -13,7 +13,7 @@ import type { BusinessEconomicsInput, CategoryPeerStats, PosHistorySignal, Prici
  * status (not a collapsed boolean) is what lets this engine tell "no recipe yet" apart from
  * "priced, but the cost happens to be tiny" instead of treating both as the same missing-data
  * case (the mismatch this type previously had with getMenuItemsForEdit's own RecipeCostStatus). */
-export type SuggestPriceInput = { productCostCents: number; currentPriceCents: number; recipeStatus: RecipeCostStatus; profile: PricingProfile; posSignal: PosHistorySignal; economics: BusinessEconomicsInput | null; categoryPeers: CategoryPeerStats };
+export type SuggestPriceInput = { productCostCents: number; currentPriceCents: number; recipeStatus: RecipeCostStatus; profile: PricingProfile; posSignal: PosHistorySignal; economics: BusinessEconomicsInput | null; categoryPeers: CategoryPeerStats; businessEconomicsMissingInputs?: string[]; businessEconomicsEstimatedInputs?: string[] };
 
 function unavailableResult(input: SuggestPriceInput, currentPriceCents: number, calculationMode: PricingResult["calculationMode"]): PricingResult {
   // Missing recipe, missing ingredient cost, or a genuinely zero-cost recipe — none of these
@@ -36,14 +36,15 @@ function unavailableResult(input: SuggestPriceInput, currentPriceCents: number, 
     assumptions: [],
     signals: [],
     explanationInputs: { targetProductCostPercent: input.profile.targetProductCostPercent, targetOperatingMargin: input.profile.targetOperatingMargin, reviewWindowDays: input.profile.reviewWindowDays },
-    dataQuality: { level: confidence.toLowerCase() as "low" | "medium" | "high", missingInputs: [missingInput], estimatedInputs: [], staleInputs: [] },
+    dataQuality: { level: confidence.toLowerCase() as "low" | "medium" | "high", missingInputs: [missingInput, ...(input.businessEconomicsMissingInputs ?? [])], estimatedInputs: input.businessEconomicsEstimatedInputs ?? [], staleInputs: [] },
     warnings: ["INCOMPLETE_RECIPE"],
   };
 }
 
 export function suggestPrice(input: SuggestPriceInput): PricingResult {
   const currentPriceCents = Math.max(0, Math.round(input.currentPriceCents));
-  const calculationMode = detectPricingMode(input.posSignal);
+  const historyMode = detectPricingMode(input.posSignal);
+  const calculationMode = historyMode === "BUSINESS_ADJUSTED" && !input.economics ? "BENCHMARK" : historyMode;
 
   // A genuinely positive, possibly-fractional product cost is the only case that supports a real
   // recommendation — e.g. 1.5¢ for 3ml of milk at $0.50/ml is valid, not "missing." Anything else
@@ -73,7 +74,7 @@ export function suggestPrice(input: SuggestPriceInput): PricingResult {
   const warnings = categorySanityWarnings(calculated, calculated > 0 ? productCostCents / calculated : 0, input.categoryPeers);
   if (adjustment.cappedForReview) warnings.unshift("BUSINESS_ADJUSTMENT_CAPPED");
   if (calculationMode === "BUSINESS_ADJUSTED" && !enoughSample) warnings.push("LOW_SAMPLE_SIZE");
-  const dataQuality = { level: confidence.toLowerCase() as "low" | "medium" | "high", missingInputs: [], estimatedInputs: calculationMode === "BENCHMARK" ? ["coffeeShopPricingProfile"] : [], staleInputs: [] };
+  const dataQuality = { level: confidence.toLowerCase() as "low" | "medium" | "high", missingInputs: input.businessEconomicsMissingInputs ?? [], estimatedInputs: [...(calculationMode === "BENCHMARK" ? ["coffeeShopPricingProfile"] : []), ...(input.businessEconomicsEstimatedInputs ?? [])], staleInputs: [] };
   const signals = stable.status === "REVIEW_PRICE" ? ["PRICE_REVIEW_REQUIRED"] : [];
   return {
     productCostCents: Math.round(productCostCents), baselinePriceCents: Math.round(baseline), calculatedSuggestedPriceCents: calculated,

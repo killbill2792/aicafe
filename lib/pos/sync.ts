@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { recomputeDailyRollup } from "./rollup";
 import { syncCanonicalCatalog } from "./syncCatalog";
+import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
 
 /**
  * Backfill or incremental sync (docs/06-integrations.md "Sync"): pulls orders/catalog/
@@ -56,6 +57,8 @@ export async function syncPosData(
           tax_cents: order.taxCents,
           tip_cents: order.tipCents,
           processing_fee_cents: order.processingFeeCents,
+          processing_fee_status: order.processingFeeStatus,
+          processing_fee_provider: adapter.provider,
           net_sales_cents: order.netSalesCents,
         },
         { onConflict: "business_id,pos_order_id" },
@@ -104,6 +107,28 @@ export async function syncPosData(
   }
 
   for (const date of affectedDates) {
+    const { data: feeOrders, error: feeOrdersError } = await supabase
+      .from("orders")
+      .select("processing_fee_cents, processing_fee_status")
+      .eq("business_id", businessId)
+      .eq("business_date", date)
+      .eq("processing_fee_provider", adapter.provider);
+    if (feeOrdersError) throw feeOrdersError;
+    const connectedFact = connectedActualFactFromOrders((feeOrders ?? []).map((order) => ({
+      processingFeeCents: Number(order.processing_fee_cents),
+      processingFeeStatus: order.processing_fee_status,
+    })), { businessId, businessDate: date, provider: adapter.provider });
+    if (connectedFact) {
+      await upsertProcessingFeeDailyFact(supabase, connectedFact);
+    } else {
+      await setProcessingFeeCandidateEligibility(supabase, {
+        businessId,
+        businessDate: date,
+        sourceType: "connected_pos_actual",
+        provider: adapter.provider,
+        eligible: false,
+      });
+    }
     await recomputeDailyRollup(supabase, businessId, date);
   }
 

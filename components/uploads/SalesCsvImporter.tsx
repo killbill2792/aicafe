@@ -12,6 +12,7 @@ const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "quantity", required: true },
   { key: "netSales", required: true },
   { key: "category", required: false },
+  { key: "processingFee", required: false },
 ];
 
 export default function SalesCsvImporter({

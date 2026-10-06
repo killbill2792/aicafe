@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
+import { processingFeeForRollup } from "./processingFees";
 
 /**
  * Recomputes daily_rollups for one business_date from the raw orders/order_lines/timecards
@@ -15,14 +16,24 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
 
   const { data: orders } = await supabase
     .from("orders")
-    .select("id, net_sales_cents, processing_fee_cents")
+    .select("id, net_sales_cents")
     .eq("business_id", businessId)
     .eq("business_date", businessDate);
 
   const orderIds = (orders ?? []).map((o) => o.id);
   const netSalesCents = (orders ?? []).reduce((s, o) => s + o.net_sales_cents, 0);
-  const cardFeesCents = (orders ?? []).reduce((s, o) => s + o.processing_fee_cents, 0);
   const ordersCount = orderIds.length;
+  const { data: processingFeeFact, error: processingFeeError } = await supabase
+    .from("processing_fee_daily_facts")
+    .select("amount_cents, status")
+    .eq("business_id", businessId)
+    .eq("business_date", businessDate)
+    .maybeSingle();
+  if (processingFeeError) throw processingFeeError;
+  const selectedProcessingFee = processingFeeForRollup(processingFeeFact ? {
+    amountCents: Number(processingFeeFact.amount_cents),
+    status: processingFeeFact.status,
+  } : null);
 
   const { data: lines } = orderIds.length
     ? await supabase
@@ -103,7 +114,8 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
       ingredients_cents: Math.round(ingredientsCents),
       staff_wages_cents: Math.round(wagesCents),
       staff_tax_cents: staffTaxCents,
-      card_fees_cents: cardFeesCents,
+      card_fees_cents: selectedProcessingFee.amountCents,
+      card_fees_status: selectedProcessingFee.status,
       voids_cents: voidsCents,
     },
     { onConflict: "business_id,business_date" },
