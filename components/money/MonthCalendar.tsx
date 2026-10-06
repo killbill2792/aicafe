@@ -18,8 +18,10 @@ export type MonthCalendarLabels = {
   legendGood: string;
   legendLoss: string;
   legendMissing: string;
+  legendClosed: string;
   legendUpcoming: string;
   noData: string;
+  closedDay: string;
   /** Contains a literal "%BUCKET%" placeholder, filled in client-side per covered bucket. */
   milestoneTemplate: string;
   sales: string;
@@ -90,7 +92,7 @@ export default function MonthCalendar({
   const selectedDetail = selectedDate ? detailsByDate[selectedDate] : null;
   const recordedDays = cells.filter((cell) => cell.state.kind === "actual").length;
   const profitableDays = cells.filter((cell) => cell.state.kind === "actual" && cell.state.tone === "good").length;
-  const elapsedDays = cells.filter((cell) => cell.state.kind !== "projected").length;
+  const elapsedDays = cells.filter((cell) => cell.state.kind !== "projected" && cell.state.kind !== "closed").length;
 
   return (
     <section className="flex flex-col gap-3 rounded-card-lg bg-card py-4">
@@ -153,9 +155,11 @@ export default function MonthCalendar({
           const stateClass =
             cell.state.kind === "actual"
               ? `${profitToneBgClass(cell.state.tone)} text-white`
-              : cell.state.kind === "missing"
-                ? "border-2 border-dotted border-[#C9BBA6] text-ink-muted"
-                : "border-2 border-dashed border-line text-ink-muted opacity-70";
+              : cell.state.kind === "closed"
+                ? "border border-line bg-paper text-ink-muted"
+                : cell.state.kind === "missing"
+                  ? "border-2 border-dotted border-[#C9BBA6] text-ink-muted"
+                  : "border-2 border-dashed border-line text-ink-muted opacity-70";
           return (
             <button
               key={cell.date}
@@ -190,6 +194,10 @@ export default function MonthCalendar({
           {labels.legendMissing}
         </span>
         <span className="flex items-center gap-1.5">
+          <span className="h-3.5 w-3.5 rounded-[4px] border border-line bg-paper" />
+          {labels.legendClosed}
+        </span>
+        <span className="flex items-center gap-1.5">
           <span className="h-3.5 w-3.5 rounded-[4px] border-2 border-dashed border-line" />
           {labels.legendUpcoming}
         </span>
@@ -201,7 +209,7 @@ export default function MonthCalendar({
             {new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${selectedDetail.date}T00:00:00`))}
           </span>
           {!selectedDetail.hasData ? (
-            <span className="text-sm text-ink-muted">{labels.noData}</span>
+            <span className="text-sm text-ink-muted">{selectedDetail.isClosed ? labels.closedDay : labels.noData}</span>
           ) : (
             <>
               <DetailRow label={labels.sales} cents={selectedDetail.salesCents} />

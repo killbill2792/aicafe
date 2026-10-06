@@ -233,7 +233,9 @@
     "calendarBillsCovered": "Bills covered on {date}",
     "calendarBillsProjected": "Projected bill coverage: {date}",
     "calendarBillsNotCovered": "Bills were not fully covered this month",
-    "calendarBillsInsufficient": "Not enough data to determine bill coverage"
+    "calendarBillsInsufficient": "Not enough data to determine bill coverage",
+    "calendarLegendClosed": "Closed",
+    "calendarClosed": "Closed according to your regular café hours."
   },
   "Menu": {
     "title": "Menu",
@@ -505,7 +507,8 @@
     "alerts": "Alerts",
     "connectRegister": "Connect your register",
     "privacy": "Privacy",
-    "deleteAccount": "Delete account"
+    "deleteAccount": "Delete account",
+    "cafeProfile": "Café profile"
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -864,5 +867,40 @@
     "supplySignal": "Maya is watching the ingredient and cup costs you have entered; stock quantities are not guessed.",
     "priceTaskSentenceLow": "Price may be too low for {item}.",
     "priceTaskSentenceHigh": "Price may be too high for {item}."
+  },
+  "CafeProfile": {
+    "title": "Café profile",
+    "subtitle": "Tell AI Cafe when and where your café operates.",
+    "businessDetails": "Café details",
+    "cafeName": "Café name",
+    "locationName": "Location name",
+    "openedOn": "Opened on",
+    "timezone": "Timezone",
+    "timezoneHint": "Use an IANA timezone such as America/Los_Angeles.",
+    "currency": "Currency",
+    "address": "Address",
+    "addressLine1": "Street address",
+    "addressLine2": "Suite / unit (optional)",
+    "city": "City",
+    "region": "State / region",
+    "postalCode": "Postal code",
+    "countryCode": "Country code",
+    "regularHours": "Regular hours",
+    "regularHoursHint": "Set each day to Open, Closed, or Not set. Only days you explicitly mark Closed are treated as closed in Money.",
+    "dayMon": "Mon",
+    "dayTue": "Tue",
+    "dayWed": "Wed",
+    "dayThu": "Thu",
+    "dayFri": "Fri",
+    "daySat": "Sat",
+    "daySun": "Sun",
+    "notSet": "Not set",
+    "open": "Open",
+    "closed": "Closed",
+    "opens": "Opens",
+    "closes": "Closes",
+    "save": "Save café profile",
+    "saving": "Saving…",
+    "saved": "Café profile saved."
   }
 }

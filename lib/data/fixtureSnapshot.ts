@@ -118,7 +118,16 @@ export function getFixtureSnapshot(): BusinessSnapshot {
   }));
 
   return {
-    business: { id: "fixture-a", name: "Your Café", timezone: "America/Los_Angeles", payrollTaxRate: FIXTURE_A_PAYROLL_TAX_RATE },
+    business: {
+      id: "fixture-a",
+      name: "Your Café",
+      timezone: "America/Los_Angeles",
+      payrollTaxRate: FIXTURE_A_PAYROLL_TAX_RATE,
+      openHours: {
+        mon: [["06:30", "18:00"]], tue: [["06:30", "18:00"]], wed: [["06:30", "18:00"]], thu: [["06:30", "18:00"]],
+        fri: [["06:30", "18:00"]], sat: [["07:00", "16:00"]], sun: [["07:00", "16:00"]],
+      },
+    },
     todayDateStr,
     monthKey: "2026-09",
     daysInMonth: 30,

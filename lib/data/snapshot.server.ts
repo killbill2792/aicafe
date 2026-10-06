@@ -7,6 +7,7 @@ import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runn
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
+import { normalizeOpenHours } from "@/lib/business/openHours";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -19,6 +20,15 @@ export async function getBusinessSnapshotFromDb(
     .eq("id", businessId)
     .single();
   if (businessError || !businessRow) throw new Error(`Business not found: ${businessId}`);
+
+  const { data: locationRow, error: locationError } = await supabase
+    .from("locations")
+    .select("open_hours")
+    .eq("business_id", businessId)
+    .order("name", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (locationError) throw locationError;
 
   const timezone = businessRow.timezone;
   const todayDateStr = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
@@ -131,7 +141,7 @@ export async function getBusinessSnapshotFromDb(
   const leakingCents = (alertRows ?? []).reduce((sum, a) => sum + Math.max(0, a.impact_cents ?? 0), 0);
 
   return {
-    business: { id: businessRow.id, name: businessRow.name, timezone, payrollTaxRate: Number(businessRow.payroll_tax_rate) },
+    business: { id: businessRow.id, name: businessRow.name, timezone, payrollTaxRate: Number(businessRow.payroll_tax_rate), openHours: normalizeOpenHours(locationRow?.open_hours) },
     todayDateStr,
     monthKey,
     daysInMonth,

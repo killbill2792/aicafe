@@ -233,7 +233,9 @@
     "calendarBillsCovered": "تمت تغطية الفواتير في {date}",
     "calendarBillsProjected": "التاريخ المتوقع لتغطية الفواتير: {date}",
     "calendarBillsNotCovered": "لم تتم تغطية الفواتير بالكامل هذا الشهر",
-    "calendarBillsInsufficient": "لا توجد بيانات كافية لتحديد تغطية الفواتير"
+    "calendarBillsInsufficient": "لا توجد بيانات كافية لتحديد تغطية الفواتير",
+    "calendarLegendClosed": "مغلق",
+    "calendarClosed": "مغلق وفق ساعات العمل المعتادة للمقهى."
   },
   "Menu": {
     "title": "القائمة",
@@ -505,7 +507,8 @@
     "alerts": "التنبيهات",
     "connectRegister": "اربط جهاز البيع الخاص بك",
     "privacy": "الخصوصية",
-    "deleteAccount": "حذف الحساب"
+    "deleteAccount": "حذف الحساب",
+    "cafeProfile": "ملف المقهى"
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
@@ -864,5 +867,40 @@
     "supplySignal": "تراقب مايا تكاليف المكونات والأكواب التي أدخلتها، ولا تخمّن كميات المخزون.",
     "priceTaskSentenceLow": "قد يكون سعر {item} منخفضًا جدًا.",
     "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا."
+  },
+  "CafeProfile": {
+    "title": "ملف المقهى",
+    "subtitle": "أخبر AI Cafe بمكان عمل المقهى وأوقاته.",
+    "businessDetails": "بيانات المقهى",
+    "cafeName": "اسم المقهى",
+    "locationName": "اسم الموقع",
+    "openedOn": "تاريخ الافتتاح",
+    "timezone": "المنطقة الزمنية",
+    "timezoneHint": "استخدم منطقة زمنية بصيغة IANA مثل America/Los_Angeles.",
+    "currency": "العملة",
+    "address": "العنوان",
+    "addressLine1": "عنوان الشارع",
+    "addressLine2": "الجناح / الوحدة (اختياري)",
+    "city": "المدينة",
+    "region": "الولاية / المنطقة",
+    "postalCode": "الرمز البريدي",
+    "countryCode": "رمز الدولة",
+    "regularHours": "ساعات العمل المعتادة",
+    "regularHoursHint": "حدد كل يوم كمفتوح أو مغلق أو غير محدد. فقط الأيام التي تحددها صراحةً كمغلقة ستظهر كمغلقة في قسم المال.",
+    "dayMon": "الإثنين",
+    "dayTue": "الثلاثاء",
+    "dayWed": "الأربعاء",
+    "dayThu": "الخميس",
+    "dayFri": "الجمعة",
+    "daySat": "السبت",
+    "daySun": "الأحد",
+    "notSet": "غير محدد",
+    "open": "مفتوح",
+    "closed": "مغلق",
+    "opens": "يفتح",
+    "closes": "يغلق",
+    "save": "حفظ ملف المقهى",
+    "saving": "جارٍ الحفظ…",
+    "saved": "تم حفظ ملف المقهى."
   }
 }

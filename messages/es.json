@@ -233,7 +233,9 @@
     "calendarBillsCovered": "Facturas cubiertas el {date}",
     "calendarBillsProjected": "Cobertura prevista de facturas: {date}",
     "calendarBillsNotCovered": "Las facturas no se cubrieron por completo este mes",
-    "calendarBillsInsufficient": "No hay suficientes datos para determinar la cobertura"
+    "calendarBillsInsufficient": "No hay suficientes datos para determinar la cobertura",
+    "calendarLegendClosed": "Cerrado",
+    "calendarClosed": "Cerrado según el horario habitual de tu café."
   },
   "Menu": {
     "title": "Menú",
@@ -505,7 +507,8 @@
     "alerts": "Alertas",
     "connectRegister": "Conecta tu caja registradora",
     "privacy": "Privacidad",
-    "deleteAccount": "Eliminar cuenta"
+    "deleteAccount": "Eliminar cuenta",
+    "cafeProfile": "Perfil del café"
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -864,5 +867,40 @@
     "supplySignal": "Maya vigila los costos de ingredientes y vasos que ingresaste; no adivina las existencias.",
     "priceTaskSentenceLow": "El precio puede ser demasiado bajo para {item}.",
     "priceTaskSentenceHigh": "El precio puede ser demasiado alto para {item}."
+  },
+  "CafeProfile": {
+    "title": "Perfil del café",
+    "subtitle": "Indica a AI Cafe cuándo y dónde opera tu café.",
+    "businessDetails": "Datos del café",
+    "cafeName": "Nombre del café",
+    "locationName": "Nombre de la ubicación",
+    "openedOn": "Fecha de apertura",
+    "timezone": "Zona horaria",
+    "timezoneHint": "Usa una zona horaria IANA, por ejemplo America/Los_Angeles.",
+    "currency": "Moneda",
+    "address": "Dirección",
+    "addressLine1": "Dirección",
+    "addressLine2": "Suite / unidad (opcional)",
+    "city": "Ciudad",
+    "region": "Estado / región",
+    "postalCode": "Código postal",
+    "countryCode": "Código de país",
+    "regularHours": "Horario habitual",
+    "regularHoursHint": "Marca cada día como Abierto, Cerrado o Sin definir. Solo los días que marques explícitamente como Cerrado se tratarán como cerrados en Dinero.",
+    "dayMon": "Lun",
+    "dayTue": "Mar",
+    "dayWed": "Mié",
+    "dayThu": "Jue",
+    "dayFri": "Vie",
+    "daySat": "Sáb",
+    "daySun": "Dom",
+    "notSet": "Sin definir",
+    "open": "Abierto",
+    "closed": "Cerrado",
+    "opens": "Abre",
+    "closes": "Cierra",
+    "save": "Guardar perfil del café",
+    "saving": "Guardando…",
+    "saved": "Perfil del café guardado."
   }
 }
