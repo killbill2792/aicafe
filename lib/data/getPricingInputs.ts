@@ -4,6 +4,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { subDays } from "date-fns";
 import { evaluateRecipeCost, monthlyProcessingFeesForWindow, staffCostCentsForPeriod, type DailyFacts, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
+import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
  * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
@@ -22,14 +23,16 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
-  const [itemsResult, rollupsResult, recurringResult] = await Promise.all([
+  const [itemsResult, rollupsResult, recurringResult, ordersResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category").eq("business_id", businessId).eq("is_active", true),
     supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, card_fees_cents, card_fees_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, active_from, active_to").eq("business_id", businessId).lte("active_from", todayDateStr),
+    supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
   ]);
   if (itemsResult.error) throw itemsResult.error;
   if (rollupsResult.error) throw rollupsResult.error;
   if (recurringResult.error) throw recurringResult.error;
+  if (ordersResult.error) throw ordersResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
   const [recipesResult, quantitiesResult] = itemIds.length ? await Promise.all([
@@ -59,7 +62,24 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const processingFeesStatus = salesDayFeeStatuses.length === 0 || salesDayFeeStatuses.includes("missing")
     ? "missing"
     : salesDayFeeStatuses.includes("estimated") ? "estimated" : "actual";
+  const ordersByDate = new Map<string, { posOrderId: string; netSalesCents: number; processingFeeProvider: string | null }[]>();
+  for (const order of ordersResult.data ?? []) {
+    const rows = ordersByDate.get(order.business_date) ?? [];
+    rows.push({
+      posOrderId: order.pos_order_id,
+      netSalesCents: Number(order.net_sales_cents),
+      processingFeeProvider: order.processing_fee_provider,
+    });
+    ordersByDate.set(order.business_date, rows);
+  }
+  const trustedOrdersInWindow = (rollupsResult.data ?? []).reduce((sum, row) => {
+    const count = trustedOrderCountForProcessingFeeEstimate(
+      ordersByDate.get(row.business_date) ?? [],
+      Number(row.net_sales_cents),
+    );
+    return sum + (count ?? 0);
+  }, 0);
   const monthlyOperatingCostCents = (recurringResult.data ?? []).filter((row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr)).reduce((sum, row) => sum + row.amount_cents, 0);
   const monthlyVariableProductCostCents = Math.round(items.reduce((sum, item) => sum + item.unitsSoldInWindow * item.productCostCents, 0) * scale);
-  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.ordersCount > 0).length, totalOrdersInWindow: days.reduce((sum, day) => sum + day.ordersCount, 0), monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus } };
+  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.netSalesCents > 0).length, totalOrdersInWindow: trustedOrdersInWindow, monthlyRevenueCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus } };
 }
