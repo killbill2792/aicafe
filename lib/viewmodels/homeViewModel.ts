@@ -34,8 +34,11 @@ export function buildHomeViewModel(snapshot: BusinessSnapshot, period: Period) {
   const coverage = periodCoverage(snapshot, period);
   const ownerProfitDisplay = ownerProfitDisplayState(ownerProfitCents, coverage);
   const missingProcessingFees = days.some((day) => day.netSalesCents > 0 && day.cardFeesStatus === "missing");
+  const missingProductCosts = snapshot.menuItems.some(
+    (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
+  );
   const operatingMargin =
-    ownerProfitDisplay.kind === "unavailable" || salesCents <= 0 || missingProcessingFees
+    ownerProfitDisplay.kind === "unavailable" || salesCents <= 0 || missingProcessingFees || missingProductCosts
       ? null
       : ratio(ownerProfitCents, salesCents);
   const operatingMarginQuality =

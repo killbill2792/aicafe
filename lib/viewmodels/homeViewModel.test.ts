@@ -46,6 +46,22 @@ describe("owner-truthful Home inputs", () => {
     expect(vm.targetOperatingMarginStatus).toBe("confirmed");
   });
 
+  it("does not show a current operating margin when a sold item has missing product cost", () => {
+    const snapshot = getFixtureSnapshot();
+    snapshot.menuItems.push({
+      id: "missing-cost",
+      name: "Missing cost item",
+      priceCents: 500,
+      prepSeconds: 30,
+      category: "drink",
+      ingredientsCentsToday: 0,
+      hasRecipe: false,
+      costStatus: "NO_RECIPE",
+      quantitySoldLast28Days: 10,
+    });
+    expect(buildHomeViewModel(snapshot, "month").operatingMargin).toBeNull();
+  });
+
   it("recognizes a fresh café without sales or known running-cost setup", () => {
     const snapshot = getFixtureSnapshot();
     snapshot.last28Days = [];

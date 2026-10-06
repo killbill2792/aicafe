@@ -69,8 +69,13 @@ export async function getOwnerEconomicsSettings(): Promise<OwnerEconomicsSetting
   const business = Array.isArray(raw) ? raw[0] : raw;
 
   const pricing = await getPricingInputs(supabase, own.business_id);
+  const hasMissingProductCosts = pricing.items.some(
+    (item) => item.unitsSoldInWindow > 0 && item.recipeStatus !== "READY",
+  );
   const economics =
-    pricing.business.monthlyRevenueCents > 0 && pricing.business.processingFeesStatus !== "missing"
+    pricing.business.monthlyRevenueCents > 0 &&
+    pricing.business.processingFeesStatus !== "missing" &&
+    !hasMissingProductCosts
       ? businessEconomics({
           monthlyRevenueCents: pricing.business.monthlyRevenueCents,
           monthlyVariableProductCostCents: pricing.business.monthlyVariableProductCostCents,
