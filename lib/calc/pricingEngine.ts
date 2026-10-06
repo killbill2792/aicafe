@@ -67,7 +67,10 @@ export function suggestPrice(input: SuggestPriceInput): PricingResult {
   // A genuinely positive raw price must never round down to literal $0.00 — that reads as "free"
   // or "broken," not "cheap." Floor at one rounding increment instead of letting applyRounding
   // crush a small-but-real price (e.g. 6.67¢ at a 25¢ increment) to zero.
-  const calculated = rawBeforeRounding > 0 ? Math.max(applyRounding(rawBeforeRounding, input.profile.roundingRule), input.profile.roundingRule.incrementCents) : 0;
+  const calculatedRaw = rawBeforeRounding > 0 ? Math.max(applyRounding(rawBeforeRounding, input.profile.roundingRule), input.profile.roundingRule.incrementCents) : 0;
+  // Existing market price is evidence. Without demand/elasticity evidence, AI Cafe may recommend
+  // an increase but never a decrease merely to pull a healthy item toward a benchmark ratio.
+  const calculated = currentPriceCents > 0 ? Math.max(currentPriceCents, calculatedRaw) : calculatedRaw;
   const stable = priceChangeStatus(currentPriceCents, calculated, input.profile.minimumPriceChangePercent, input.profile.minimumPriceChangeAmountCents);
   const enoughSample = input.posSignal.itemUnitsSoldInWindow >= MIN_ITEM_UNITS_SOLD;
   const confidence = pricingConfidence(calculationMode, true, enoughSample, adjustment.cappedForReview);

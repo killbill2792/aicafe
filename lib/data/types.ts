@@ -7,6 +7,7 @@ export type BusinessSettings = {
   timezone: string;
   payrollTaxRate: number;
   payrollTaxRateStatus?: "estimated" | "confirmed";
+  payrollTaxRateSource?: string;
   targetOperatingMargin?: number;
   targetOperatingMarginStatus?: "default" | "confirmed";
   /** Current regular weekly hours for the primary location; absent means unknown/unconfigured. */
@@ -56,7 +57,9 @@ export type BusinessSnapshot = {
   todayDateStr: string; // YYYY-MM-DD, business timezone
   monthKey: string; // YYYY-MM, current month
   daysInMonth: number;
-  /** Actual days so far this month, ascending, day 1 through today. */
+  /** Every rollup row so far this month, including staff-only rows with missing sales coverage. */
+  monthRecordedDays?: DailyFacts[];
+  /** Sales-covered days so far this month, ascending, day 1 through today. */
   monthActualDays: DailyFacts[];
   /** Last 28 actual days ending today (for effective fee rate, avg drinks/day, etc). */
   last28Days: DailyFacts[];

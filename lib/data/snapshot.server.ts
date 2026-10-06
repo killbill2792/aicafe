@@ -16,7 +16,7 @@ export async function getBusinessSnapshotFromDb(
 ): Promise<BusinessSnapshot> {
   const { data: businessRow, error: businessError } = await supabase
     .from("businesses")
-    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, target_operating_margin, target_operating_margin_status")
+    .select("id, name, timezone, payroll_tax_rate, payroll_tax_rate_status, payroll_tax_rate_source, target_operating_margin, target_operating_margin_status")
     .eq("id", businessId)
     .single();
   if (businessError || !businessRow) throw new Error(`Business not found: ${businessId}`);
@@ -51,7 +51,7 @@ export async function getBusinessSnapshotFromDb(
   const { data: rollupRows, error: rollupError } = await supabase
     .from("daily_rollups")
     .select(
-      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, voids_cents",
+      "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
     )
     .eq("business_id", businessId)
     .gte("business_date", prevMonthStart)
@@ -60,8 +60,10 @@ export async function getBusinessSnapshotFromDb(
   if (rollupError) throw rollupError;
 
   const allDays = (rollupRows ?? []).map(rowToDailyFacts);
-  const { monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
-  const previousMonthDays = allDays.filter((d) => d.date >= prevMonthStart && d.date <= prevMonthEnd);
+  const { monthRecordedDays, monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
+  const previousMonthDays = allDays.filter(
+    (d) => d.date >= prevMonthStart && d.date <= prevMonthEnd && d.salesDataStatus !== "missing",
+  );
 
   const [recurringResult, expensesResult, priorExpenseResult, recoveryOrderResult] = await Promise.all([
     supabase
@@ -147,6 +149,7 @@ export async function getBusinessSnapshotFromDb(
       timezone,
       payrollTaxRate: Number(businessRow.payroll_tax_rate),
       payrollTaxRateStatus: businessRow.payroll_tax_rate_status ?? "estimated",
+      payrollTaxRateSource: businessRow.payroll_tax_rate_source ?? "system_estimate",
       targetOperatingMargin: Number(businessRow.target_operating_margin ?? 0.15),
       targetOperatingMarginStatus: businessRow.target_operating_margin_status ?? "default",
       openHours: normalizeOpenHours(locationRow?.open_hours),
@@ -154,6 +157,7 @@ export async function getBusinessSnapshotFromDb(
     todayDateStr,
     monthKey,
     daysInMonth,
+    monthRecordedDays,
     monthActualDays,
     last28Days,
     last7Days,

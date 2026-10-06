@@ -38,6 +38,8 @@ export function rowToDailyFacts(row: {
   staff_wages_cents: number;
   staff_tax_cents: number;
   staff_tax_status?: "estimated" | "actual";
+  staff_tax_source?: string;
+  sales_data_status?: "actual" | "missing";
   card_fees_cents: number;
   card_fees_status?: "actual" | "estimated" | "missing";
   voids_cents: number;
@@ -51,6 +53,8 @@ export function rowToDailyFacts(row: {
     wagesCents: row.staff_wages_cents,
     staffTaxCents: row.staff_tax_cents,
     staffTaxStatus: row.staff_tax_status,
+    staffTaxSource: row.staff_tax_source,
+    salesDataStatus: row.sales_data_status,
     cardFeesCents: row.card_fees_cents,
     cardFeesStatus: row.card_fees_status,
     voidsCents: row.voids_cents,

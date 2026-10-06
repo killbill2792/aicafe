@@ -1,4 +1,5 @@
 import {
+  calculateBreakEvenSales,
   combinedHealthBand,
   computeCostRecovery,
   ingredientsHealthBand,
@@ -21,28 +22,98 @@ import {
   type Period,
 } from "./period";
 import { ownerProfitDisplayState } from "./ownerProfitDisplay";
+import { regularHoursStateForDate } from "@/lib/business/openHours";
 import { periodComparisonState } from "./periodComparison";
+
+function countOperatingDays(snapshot: BusinessSnapshot, throughDay: number): number {
+    let count = 0;
+  for (let day = 1; day <= throughDay; day++) {
+    const date = `${snapshot.monthKey}-${String(day).padStart(2, "0")}`;
+    if (regularHoursStateForDate(snapshot.business.openHours, date) !== "closed") count += 1;
+  }
+  return count;
+}
 
 export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const buckets = recoveryBuckets(snapshot);
   const actual = actualDayContributions(snapshot);
-  const projected = projectedDayContributions(snapshot);
+  const projected = snapshot.last28Days.length >= 7 ? projectedDayContributions(snapshot) : [];
   const recovery = computeCostRecovery(buckets, [...actual, ...projected]);
 
   const totalCents = buckets.reduce((s, b) => s + b.amountCents, 0);
   const allCovered = recovery.currentBucketCode === null;
 
+  const monthlyBillsCents = snapshot.runningCostLines
+    .filter((line) => !line.isMissing)
+    .reduce((sum, line) => sum + line.amountCents, 0);
+
+  const monthRecordedDays = snapshot.monthRecordedDays ?? snapshot.monthActualDays;
+  const staffSoFarCents = monthRecordedDays.reduce(
+    (sum, day) => sum + day.wagesCents + day.staffTaxCents,
+    0,
+  );
+  const todayDay = Number(snapshot.todayDateStr.slice(-2));
+  const elapsedOperatingDays = countOperatingDays(snapshot, todayDay);
+  const fullMonthOperatingDays = countOperatingDays(snapshot, snapshot.daysInMonth);
+  const monthlyStaffCents =
+    elapsedOperatingDays > 0
+      ? Math.round(staffSoFarCents * (fullMonthOperatingDays / elapsedOperatingDays))
+      : 0;
+
+  const salesHistory = snapshot.last28Days;
+  const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
+  const observedIngredientCents = sumCents(salesHistory, (day) => day.ingredientsCents);
+  const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
+  const missingProductCosts = snapshot.menuItems.some(
+    (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
+  );
+  const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
+  const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
+  const enoughSales = salesHistory.length >= 7;
+
+  const calculatedBreakEven =
+    enoughSales && !missingProductCosts && !missingProcessingFees && !missingBills
+      ? calculateBreakEvenSales({
+          monthlyBillsCents,
+          monthlyStaffCents,
+          observedSalesCents,
+          observedIngredientCents,
+          observedProcessingFeesCents,
+        })
+      : null;
+
+  const breakEven =
+    !enoughSales
+      ? { kind: "unavailable" as const, reason: "NOT_ENOUGH_SALES" as const }
+      : missingBills
+        ? { kind: "unavailable" as const, reason: "MISSING_BILLS" as const }
+        : missingProductCosts
+          ? { kind: "unavailable" as const, reason: "MISSING_PRODUCT_COSTS" as const }
+          : missingProcessingFees
+            ? { kind: "unavailable" as const, reason: "MISSING_PROCESSING_FEES" as const }
+            : calculatedBreakEven?.kind === "ready"
+              ? calculatedBreakEven
+              : { kind: "unavailable" as const, reason: "VARIABLE_COSTS_TOO_HIGH" as const };
+
+  const breakEvenUsesEstimates =
+    todayDay < snapshot.daysInMonth ||
+    snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
+    monthRecordedDays.some((day) => day.staffTaxStatus === "estimated") ||
+    salesHistory.some((day) => day.cardFeesStatus === "estimated");
+
   return {
     buckets: recovery.buckets,
     currentBucketCode: recovery.currentBucketCode,
     yoursSoFarCents: recovery.yoursSoFarCents,
-    // "cumulative including projected days − Σ all buckets" (docs/05-calculations.md) — what's
-    // left in the owner's pocket after bills, not total revenue.
     projectedMonthEndProfitCents: recovery.projectedMonthEndProfitCents,
     allCovered,
     totalCents,
     actualDays: actual,
     projectedDays: projected,
+    monthlyBillsCents,
+    monthlyStaffCents,
+    breakEven,
+    breakEvenUsesEstimates,
   };
 }
 

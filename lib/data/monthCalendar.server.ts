@@ -7,8 +7,7 @@ import { normalizeOpenHours, type OpenHours } from "@/lib/business/openHours";
 export type MonthCalendarData = {
   monthKey: string;
   daysInMonth: number;
-  /** Actual rollup rows this month only — never padded with fabricated zero days; a date with no
-   * entry here has no sales data at all (see docs/03-screens.md "Money calendar"). */
+  /** Rollup rows this month only — staff-only rows may be present with salesDataStatus="missing". */
   days: DailyFacts[];
   /** One entry per running-cost category for this month, for proration via `runningCostsForPeriodCents`. */
   categoryAmounts: CategoryMonthlyAmount[];
@@ -45,7 +44,7 @@ export async function getMonthCalendarFromDb(
     supabase
       .from("daily_rollups")
       .select(
-        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, card_fees_cents, voids_cents",
+        "business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status, card_fees_cents, card_fees_status, voids_cents",
       )
       .eq("business_id", businessId)
       .gte("business_date", monthStart)

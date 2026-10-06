@@ -50,22 +50,22 @@ describe("pricing processing-fee quality", () => {
     expect(result.dataQuality.estimatedInputs).toContain("processingFees");
   });
 
-  it("uses the café-specific target margin instead of a fixed global target", () => {
+  it("keeps Profit Goal simulator targets separate from operational Menu/Alex pricing", () => {
     const lowerTarget = buildPricingViewModel({
       items: [item],
       business: { ...business, targetOperatingMargin: 0.10 },
     })[0].result;
     const higherTarget = buildPricingViewModel({
       items: [item],
-      business: { ...business, targetOperatingMargin: 0.30 },
+      business: { ...business, targetOperatingMargin: 0.40 },
     })[0].result;
 
-    expect(lowerTarget.businessAdjustmentFactor).toBe(1);
-    expect(higherTarget.businessAdjustmentFactor).toBe(1.15);
-    expect(higherTarget.warnings).toContain("BUSINESS_ADJUSTMENT_CAPPED");
+    expect(lowerTarget.businessAdjustmentFactor).toBe(1.03);
+    expect(higherTarget.businessAdjustmentFactor).toBe(1.03);
+    expect(lowerTarget.recommendedPriceCents).toBe(higherTarget.recommendedPriceCents);
   });
 
-  it("marks default margin and payroll assumptions as estimated pricing inputs", () => {
+  it("marks payroll assumptions as estimated without treating the simulator target as an operational input", () => {
     const result = buildPricingViewModel({
       items: [item],
       business: {
@@ -75,16 +75,16 @@ describe("pricing processing-fee quality", () => {
         payrollCostsStatus: "estimated",
       },
     })[0].result;
-    expect(result.dataQuality.estimatedInputs).toContain("targetOperatingMargin");
     expect(result.dataQuality.estimatedInputs).toContain("payrollBurden");
+    expect(result.dataQuality.estimatedInputs).not.toContain("targetOperatingMargin");
   });
 
-  it("accepts a confirmed 0% operating-margin target", () => {
+  it("ignores a legacy saved 0% target in operational pricing", () => {
     const result = buildPricingViewModel({
       items: [item],
       business: { ...business, targetOperatingMargin: 0 },
     })[0].result;
-    expect(result.businessAdjustmentFactor).toBe(1);
+    expect(result.businessAdjustmentFactor).toBe(1.03);
   });
 
   it("does not let owner-estimated fees substitute for real transaction history", () => {

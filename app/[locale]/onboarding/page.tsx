@@ -70,6 +70,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               addHint: tBills("addHint"),
               edit: tBills("edit"),
               addAnother: tBills("addAnother"),
+              totalMonthly: tBills("totalMonthly"),
             }}
           />
           <Link href="/onboarding?step=3" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">

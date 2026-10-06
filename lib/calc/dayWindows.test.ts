@@ -27,6 +27,21 @@ describe("buildDayWindows", () => {
     expect(monthToDateSales).not.toBe(result.todayDay.netSalesCents);
   });
 
+  it("keeps a staff-only rollup out of sales coverage", () => {
+    const staffOnly = {
+      ...zeroDailyFacts("2026-10-02"),
+      wagesCents: 12_000,
+      staffTaxCents: 1_200,
+      salesDataStatus: "missing" as const,
+    };
+    const result = buildDayWindows([day("2026-10-01", 20_000), staffOnly], "2026-10-02", "2026-10");
+
+    expect(result.monthRecordedDays).toHaveLength(2);
+    expect(result.monthActualDays.map((d) => d.date)).toEqual(["2026-10-01"]);
+    expect(result.todayHasData).toBe(false);
+    expect(result.todayDay.wagesCents).toBe(12_000);
+  });
+
   it("missing today's row: today must not silently substitute the most recent existing day", () => {
     // Only Oct 1 has a rollup; "today" is Oct 2, which hasn't been uploaded yet.
     const allDays = [day("2026-09-28", 40_000), day("2026-09-29", 35_000), day("2026-10-01", 20_000)];

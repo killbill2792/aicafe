@@ -24,6 +24,9 @@ export type DailyFacts = {
   wagesCents: number;
   staffTaxCents: number;
   staffTaxStatus?: "estimated" | "actual";
+  staffTaxSource?: string;
+  /** Explicit sales coverage. "missing" means a row may exist for staff/costs but sales are unknown. */
+  salesDataStatus?: "actual" | "missing";
   cardFeesCents: number;
   cardFeesStatus?: "actual" | "estimated" | "missing";
   voidsCents: number;

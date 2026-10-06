@@ -56,6 +56,23 @@ describe("buildMonthCalendarViewModel", () => {
     expect(vm.detailsByDate["2026-10-01"].runningCostShareIsEstimate).toBe(false);
   });
 
+  it("keeps a staff-only rollup as Missing rather than turning it into a loss day", () => {
+    const staffOnly = {
+      ...zeroDailyFacts("2026-10-05"),
+      wagesCents: 15_000,
+      staffTaxCents: 1_500,
+      salesDataStatus: "missing" as const,
+    };
+    const vm = buildMonthCalendarViewModel({
+      monthData: monthData([staffOnly]),
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-31",
+      isCurrentMonth: false,
+    });
+    expect(vm.cells.find((c) => c.date === "2026-10-05")!.state).toEqual({ kind: "missing" });
+    expect(vm.detailsByDate["2026-10-05"]).toMatchObject({ hasData: false, isClosed: false });
+  });
+
   it("keeps a no-rollup day missing when regular hours are unset", () => {
     const vm = buildMonthCalendarViewModel({
       monthData: monthData([]),
@@ -148,7 +165,7 @@ describe("buildMonthCalendarViewModel", () => {
     expect(vm.coverageSignal).toEqual({ kind: "covered", date: "2026-10-02" });
   });
 
-  it("reports a deterministic projected coverage date without changing day states", () => {
+  it("does not project bill coverage from only one sales day", () => {
     const day = { ...zeroDailyFacts("2026-10-01"), netSalesCents: 400 };
     const vm = buildMonthCalendarViewModel({
       monthData: { ...monthData([day]), categoryAmounts: [{ ...CATEGORY_AMOUNTS[0], amountCents: 1_000 }] },
@@ -157,8 +174,24 @@ describe("buildMonthCalendarViewModel", () => {
       isCurrentMonth: true,
       projectedDays: [{ date: "2026-10-02", cents: 700, projected: true }],
     });
-    expect(vm.coverageSignal).toEqual({ kind: "projected", date: "2026-10-02" });
+    expect(vm.coverageSignal).toEqual({ kind: "insufficient" });
     expect(vm.cells.find((cell) => cell.date === "2026-10-02")?.state).toEqual({ kind: "projected" });
+  });
+
+  it("reports a deterministic projected coverage date once 7 trusted sales days exist", () => {
+    const days = Array.from({ length: 7 }, (_, index) => ({
+      ...zeroDailyFacts(`2026-10-${String(index + 1).padStart(2, "0")}`),
+      netSalesCents: 100,
+    }));
+    const vm = buildMonthCalendarViewModel({
+      monthData: { ...monthData(days), categoryAmounts: [{ ...CATEGORY_AMOUNTS[0], amountCents: 1_000 }] },
+      recoveryOrder: ["rent"],
+      todayDateStr: "2026-10-07",
+      isCurrentMonth: true,
+      projectedDays: [{ date: "2026-10-08", cents: 400, projected: true }],
+    });
+    expect(vm.coverageSignal).toEqual({ kind: "projected", date: "2026-10-08" });
+    expect(vm.cells.find((cell) => cell.date === "2026-10-08")?.state).toEqual({ kind: "projected" });
   });
 });
 

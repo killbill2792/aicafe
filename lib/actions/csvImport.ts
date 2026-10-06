@@ -179,7 +179,9 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
         eligible: false,
       });
     }
-    await recomputeDailyRollup(supabase, businessId, date);
+    // The sales file explicitly covers this date. Even a legitimate $0-sales export is known
+    // zero, not missing. Labor-only recomputes do not pass this override.
+    await recomputeDailyRollup(supabase, businessId, date, { salesDataStatus: "actual" });
   }
 
   const unmatchedItems = [...unmatchedCounts.entries()].map(([name, count]) => ({ name, rows: count }));

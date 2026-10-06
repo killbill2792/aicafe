@@ -34,16 +34,17 @@ describe("owner-truthful Home inputs", () => {
     expect(vm.missingCosts[0]?.categoryCode).toBe("water");
   });
 
-  it("exposes current operating margin and the café target separately", () => {
+  it("exposes current operating margin when sold product costs are complete", () => {
     const snapshot = getFixtureSnapshot();
-    snapshot.business.targetOperatingMargin = 0.45;
-    snapshot.business.targetOperatingMarginStatus = "confirmed";
+    snapshot.menuItems = snapshot.menuItems.map((item) => ({
+      ...item,
+      hasRecipe: true,
+      costStatus: "READY",
+    }));
     const vm = buildHomeViewModel(snapshot, "month");
 
     expect(vm.operatingMargin).not.toBeNull();
     expect(vm.operatingMargin).toBe(vm.keepRatio);
-    expect(vm.targetOperatingMargin).toBe(0.45);
-    expect(vm.targetOperatingMarginStatus).toBe("confirmed");
   });
 
   it("does not show a current operating margin when a sold item has missing product cost", () => {

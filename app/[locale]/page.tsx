@@ -156,18 +156,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <MarginGoalCard
         currentMargin={vm.operatingMargin}
-        targetMargin={vm.targetOperatingMargin}
-        targetIsDefault={vm.targetOperatingMarginStatus !== "confirmed"}
         currentMarginQuality={vm.operatingMarginQuality}
         labels={{
           title: t("marginGoalTitle"),
           current: t("currentOperatingMargin"),
-          target: t("targetOperatingMargin"),
           unavailable: t("marginUnavailable"),
-          defaultLabel: t("defaultTarget"),
           currentActual: t("marginBasedOnCurrentData"),
           currentEstimated: t("marginIncludesEstimates"),
-          edit: t("editAndTestMargin"),
+          edit: t("tryProfitGoal"),
           explanation: t("marginExplanation"),
         }}
       />

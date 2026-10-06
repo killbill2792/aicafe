@@ -4,15 +4,22 @@ import { fromZonedTime } from "date-fns-tz";
 import { itemIngredientCostCents, wagesCentsForTimecard } from "@/lib/calc";
 import { processingFeeForRollup } from "./processingFees";
 import { ensureOwnerConfirmedProcessingFeeEstimateForDay } from "./processingFeeEstimate.server";
+import { resolveSalesDataStatus, type SalesDataStatus } from "./salesCoverage";
 
 /**
  * Recomputes daily_rollups for one business_date from the raw orders/order_lines/timecards
  * already in the DB (docs/06-integrations.md: "After each sync, recompute daily_rollups for
  * affected business dates, then alerts"). Ingredients are theoretical, priced as of `businessDate`.
  */
-export async function recomputeDailyRollup(supabase: SupabaseClient, businessId: string, businessDate: string): Promise<void> {
-  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, timezone").eq("id", businessId).single();
+export async function recomputeDailyRollup(
+  supabase: SupabaseClient,
+  businessId: string,
+  businessDate: string,
+  options: { salesDataStatus?: SalesDataStatus } = {},
+): Promise<void> {
+  const { data: business } = await supabase.from("businesses").select("payroll_tax_rate, payroll_tax_rate_source, timezone").eq("id", businessId).single();
   const payrollTaxRate = Number(business?.payroll_tax_rate ?? 0.12);
+  const payrollTaxRateSource = business?.payroll_tax_rate_source ?? "system_estimate";
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
   const { data: orders } = await supabase
@@ -121,7 +128,7 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
   );
   const { data: existingRollup, error: existingRollupError } = await supabase
     .from("daily_rollups")
-    .select("staff_tax_cents, staff_tax_status")
+    .select("staff_tax_cents, staff_tax_status, staff_tax_source, sales_data_status")
     .eq("business_id", businessId)
     .eq("business_date", businessDate)
     .maybeSingle();
@@ -133,6 +140,16 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
   const staffTaxCents = staffTaxIsActual
     ? Number(existingRollup.staff_tax_cents)
     : Math.round(wagesCents * payrollTaxRate);
+  const staffTaxSource = staffTaxIsActual
+    ? existingRollup?.staff_tax_source ?? "legacy_actual"
+    : payrollTaxRateSource;
+  const salesDataStatus = resolveSalesDataStatus({
+    explicitStatus: options.salesDataStatus,
+    previousStatus: existingRollup?.sales_data_status,
+    ordersCount,
+    netSalesCents,
+    drinksCount,
+  });
 
   await supabase.from("daily_rollups").upsert(
     {
@@ -145,6 +162,8 @@ export async function recomputeDailyRollup(supabase: SupabaseClient, businessId:
       staff_wages_cents: Math.round(wagesCents),
       staff_tax_cents: staffTaxCents,
       staff_tax_status: staffTaxIsActual ? "actual" : "estimated",
+      staff_tax_source: staffTaxSource,
+      sales_data_status: salesDataStatus,
       card_fees_cents: selectedProcessingFee.amountCents,
       card_fees_status: selectedProcessingFee.status,
       voids_cents: voidsCents,

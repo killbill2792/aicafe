@@ -7,6 +7,7 @@ import { saveRecurringCost, deleteRecurringCost } from "@/lib/actions/expenses";
 import type { RecurringCostRow } from "@/lib/data/getRecurringCosts";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import { recurringCostAmountCentsFromInput } from "@/lib/expenses/recurringCostAmount";
+import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
 
 const SINGLE_SLOT_CATEGORIES: ExpenseCategoryCode[] = ["rent", "utilities_power", "water", "internet", "insurance", "loan", "software"];
 const OTHER_CATEGORY: ExpenseCategoryCode = "other";
@@ -122,7 +123,7 @@ export default function BillsManager({
 }: {
   bills: RecurringCostRow[];
   categoryLabels: Record<ExpenseCategoryCode, string>;
-  labels: BillFormLabels & { addHint: string; edit: string; addAnother: string };
+  labels: BillFormLabels & { addHint: string; edit: string; addAnother: string; totalMonthly: string };
   initialCategory?: ExpenseCategoryCode | null;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(initialCategory);
@@ -133,8 +134,16 @@ export default function BillsManager({
     setOpenKey((prev) => (prev === key ? null : key));
   }
 
+  const totalMonthlyCents = totalMonthlyRecurringCostsCents(bills);
+
   return (
     <div className="flex flex-col gap-2.5">
+      <section className="rounded-card-lg bg-good-tint p-4">
+        <span className="block text-sm font-semibold text-ink-muted">{labels.totalMonthly}</span>
+        <strong className="mt-1 block font-headline text-3xl text-ink">
+          <Money cents={totalMonthlyCents} />
+        </strong>
+      </section>
       {SINGLE_SLOT_CATEGORIES.map((category) => {
         const existing = byCategory.get(category) ?? null;
         const isOpen = openKey === category;

@@ -11,6 +11,17 @@ const base = (overrides: Partial<SuggestPriceInput> = {}): SuggestPriceInput => 
 });
 
 describe("pricing engine", () => {
+  it("never recommends lowering an established healthy price just to hit the benchmark", () => {
+    const result = suggestPrice(base({
+      productCostCents: 600,
+      currentPriceCents: 2300,
+      recipeStatus: "READY",
+      profile: getPricingProfile("FOOD"),
+    }));
+    expect(result.recommendedPriceCents).toBe(2300);
+    expect(result.status).toBe("KEEP_CURRENT_PRICE");
+  });
+
   const establishedSignal = { daysWithSalesInWindow: 80, windowDays: 90, totalOrdersInWindow: 1000, itemUnitsSoldInWindow: 100, monthlyRevenueCents: 100_000 };
 
   it("works with no AI configuration and emits integer-cent structured output", () => {
@@ -106,7 +117,7 @@ describe("pricing engine", () => {
   // rounding, and nothing distinguished that from "no valid price." These lock in the fix.
   describe("fractional cost and the never-$0.00 invariant", () => {
     it("handles a complete recipe with a fractional-cent intermediate cost (the exact production case: 3ml milk at $0.50/ml = 1.5¢)", () => {
-      const result = suggestPrice(base({ productCostCents: 1.5, currentPriceCents: 3000 }));
+      const result = suggestPrice(base({ productCostCents: 1.5, currentPriceCents: 0 }));
       expect(result.status).not.toBe("PRICE_UNAVAILABLE");
       expect(result.recommendedPriceCents).toBe(25); // 1.5/0.30 = 5¢ raw, rounds to nearest 25¢ = 0 -> floored to one increment
       expect(result.recommendedPriceCents).not.toBe(0);
