@@ -2,7 +2,7 @@ import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { buildDayWindows, evaluateRecipeCost, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
-import { ensureTodayScheduledShifts } from "./materializeSchedule";
+import { ensureScheduledShiftsThroughDate } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
@@ -33,10 +33,10 @@ export async function getBusinessSnapshotFromDb(
   const timezone = businessRow.timezone;
   const todayDateStr = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
 
-  // Auto-fills today's timecards from each employee's recurring schedule (a no-op past the first
-  // page load of the day, once today's already materialized) — must run before the daily_rollups
-  // read below so a freshly-materialized day's numbers show up in this same request.
-  await ensureTodayScheduledShifts(supabase, businessId, timezone, todayDateStr);
+  // Reconcile the owner's recurring schedules across the current month through today before
+  // reading rollups. This picks up already-entered weekend schedules without requiring re-entry,
+  // and existing manual/POS/imported timecards always win.
+  await ensureScheduledShiftsThroughDate(supabase, businessId, timezone, todayDateStr);
 
   const monthKey = todayDateStr.slice(0, 7);
   const [year, month] = monthKey.split("-").map(Number);
