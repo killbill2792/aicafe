@@ -117,7 +117,7 @@ describe("pricing engine", () => {
   // rounding, and nothing distinguished that from "no valid price." These lock in the fix.
   describe("fractional cost and the never-$0.00 invariant", () => {
     it("handles a complete recipe with a fractional-cent intermediate cost (the exact production case: 3ml milk at $0.50/ml = 1.5¢)", () => {
-      const result = suggestPrice(base({ productCostCents: 1.5, currentPriceCents: 3000 }));
+      const result = suggestPrice(base({ productCostCents: 1.5, currentPriceCents: 0 }));
       expect(result.status).not.toBe("PRICE_UNAVAILABLE");
       expect(result.recommendedPriceCents).toBe(25); // 1.5/0.30 = 5¢ raw, rounds to nearest 25¢ = 0 -> floored to one increment
       expect(result.recommendedPriceCents).not.toBe(0);
