@@ -41,8 +41,13 @@ describe("mealBreakStatus", () => {
   });
 
   it("does not call a schedule-generated prediction a real missed break", () => {
-    const status = mealBreakStatus({ clockIn: "2026-09-01T13:00:00Z", clockOut: "2026-09-01T21:00:00Z", hourlyWageCents: 2_000, breaks: [], scheduleId: "schedule-1" });
+    const status = mealBreakStatus({ clockIn: "2026-09-01T13:00:00Z", clockOut: "2026-09-01T21:00:00Z", hourlyWageCents: 2_000, breaks: [], scheduleId: "schedule-1", sourceType: "owner_schedule" });
     expect(status).toMatchObject({ warn: false, missed: false, penaltyCents: 0 });
+  });
+
+  it("treats a POS-confirmed row as actual even when it retains its schedule baseline", () => {
+    const status = mealBreakStatus({ clockIn: "2026-09-01T13:00:00Z", clockOut: "2026-09-01T21:00:00Z", hourlyWageCents: 2_000, breaks: [], scheduleId: "schedule-1", sourceType: "connected_pos", sourceProvider: "square" });
+    expect(status).toMatchObject({ warn: true, missed: true, penaltyCents: 2_000 });
   });
 
   it("is timezone-safe across an offset change because elapsed time uses instants", () => {
