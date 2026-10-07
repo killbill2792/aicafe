@@ -1008,7 +1008,8 @@
     "transactionMixHelp": "Solo avanzado. Con varias tarifas, indica qué parte del número de pagos usa esta tarifa. Todas las reglas juntas deben sumar 100%.",
     "standardRate": "Tarifa estándar",
     "advanced": "Configuración avanzada",
-    "advancedHint": "Ábrela solo si tienes tarifas distintas para tarjetas, pagos en línea u otros tipos de pago."
+    "advancedHint": "Ábrela solo si tienes tarifas distintas para tarjetas, pagos en línea u otros tipos de pago.",
+    "showFallback": "Configurar o editar estimación de respaldo"
   },
   "Economics": {
     "title": "Simulador de meta de ganancia",
