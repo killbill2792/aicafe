@@ -215,7 +215,7 @@ export default function ProcessingFeeEstimateForm({
     const ruleDrafts = advanced
       ? rules
       : [{
-          ...rules[0],
+          ...firstRule,
           label: labels.standardRate,
           salesMix: "100",
           transactionMix: "100",
