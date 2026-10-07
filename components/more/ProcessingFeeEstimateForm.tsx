@@ -276,8 +276,15 @@ export default function ProcessingFeeEstimateForm({
 
   const shownCoverage = savedSummary ?? coverage;
   const connected = providerLabel(sourceSummary.connectedProvider);
-  const firstRule = rules[0];
-  const firstFixedFee = Number(firstRule?.fixedFee || 0);
+  const firstRule = rules[0] ?? {
+    id: "rule-1",
+    label: "",
+    percentageRate: "",
+    fixedFee: "",
+    salesMix: "100",
+    transactionMix: "100",
+  };
+  const firstFixedFee = Number(firstRule.fixedFee || 0);
   const needsAverageTicket = firstFixedFee > 0 && sourceSummary.trustedOrderDays < coverage.salesDays;
   const completeActualCoverage =
     coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
@@ -382,7 +389,7 @@ export default function ProcessingFeeEstimateForm({
               <div className="flex items-center gap-2">
                 <input
                   inputMode="decimal"
-                  value={firstRule?.percentageRate ?? ""}
+                  value={firstRule.percentageRate}
                   onChange={(event) => updateRule(firstRule.id, "percentageRate", event.target.value)}
                   className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
                 />
@@ -396,7 +403,7 @@ export default function ProcessingFeeEstimateForm({
                 <span className="font-bold text-ink-muted">$</span>
                 <input
                   inputMode="decimal"
-                  value={firstRule?.fixedFee ?? ""}
+                  value={firstRule.fixedFee}
                   onChange={(event) => updateRule(firstRule.id, "fixedFee", event.target.value)}
                   className="min-h-12 min-w-0 flex-1 rounded-xl border border-line bg-card px-3 text-base"
                 />
