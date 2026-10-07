@@ -173,7 +173,7 @@ export async function getBusinessSnapshotFromDb(
   };
 }
 
-/** All of today's timecards (business-timezone calendar day), joined to the employee's name/role. */
+/** All of today's canonical timecards, joined to employee identity and expected schedule. */
 async function getStaffShiftsToday(
   supabase: SupabaseClient,
   businessId: string,
@@ -185,26 +185,71 @@ async function getStaffShiftsToday(
 
   const { data, error } = await supabase
     .from("timecards")
-    .select("id, employee_id, schedule_id, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name, role)")
+    .select("id, employee_id, pos_timecard_id, schedule_id, expected_schedule_id, source_type, source_provider, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name, role)")
     .eq("business_id", businessId)
     .gte("clock_in", dayStartUtc)
     .lte("clock_in", dayEndUtc)
     .order("clock_in", { ascending: true });
   if (error) throw error;
 
+  const expectedScheduleIds = [
+    ...new Set(
+      (data ?? [])
+        .map((row) => row.expected_schedule_id ?? row.schedule_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const scheduleById = new Map<string, { id: string; start_time: string; end_time: string }>();
+  if (expectedScheduleIds.length > 0) {
+    const { data: schedules, error: scheduleError } = await supabase
+      .from("staff_schedules")
+      .select("id, start_time, end_time")
+      .eq("business_id", businessId)
+      .in("id", expectedScheduleIds);
+    if (scheduleError) throw scheduleError;
+    for (const schedule of schedules ?? []) scheduleById.set(schedule.id, schedule);
+  }
+
   return (data ?? []).map((row) => {
-    const employee = row.employees as unknown as { display_name: string; role: string | null } | { display_name: string; role: string | null }[] | null;
+    const employee = row.employees as unknown as
+      | { display_name: string; role: string | null }
+      | { display_name: string; role: string | null }[]
+      | null;
     const emp = Array.isArray(employee) ? employee[0] : employee;
+    const expectedScheduleId = row.expected_schedule_id ?? row.schedule_id ?? null;
+    const schedule = expectedScheduleId ? scheduleById.get(expectedScheduleId) : undefined;
+    let expectedSchedule: StaffShift["expectedSchedule"] = null;
+    if (schedule) {
+      const expectedClockIn = fromZonedTime(`${todayDateStr}T${schedule.start_time}`, timezone);
+      let expectedClockOut = fromZonedTime(`${todayDateStr}T${schedule.end_time}`, timezone);
+      if (expectedClockOut.getTime() <= expectedClockIn.getTime()) {
+        expectedClockOut = new Date(expectedClockOut.getTime() + 24 * 3_600_000);
+      }
+      expectedSchedule = {
+        scheduleId: schedule.id,
+        clockIn: expectedClockIn.toISOString(),
+        clockOut: expectedClockOut.toISOString(),
+      };
+    }
+
+    const sourceType =
+      row.source_type ??
+      (row.pos_timecard_id ? "pos" : row.schedule_id ? "owner_manual_schedule" : "owner_manual");
+
     return {
       employeeId: row.employee_id ?? row.id,
       name: emp?.display_name ?? "Staff",
       role: emp?.role ?? null,
+      expectedSchedule,
       timecard: {
         clockIn: row.clock_in,
         clockOut: row.clock_out,
         hourlyWageCents: row.hourly_wage_cents,
         breaks: (row.breaks as { start: string; end: string; paid: boolean }[]) ?? [],
         scheduleId: row.schedule_id,
+        expectedScheduleId,
+        sourceType,
+        sourceProvider: row.source_provider,
       },
     };
   });
