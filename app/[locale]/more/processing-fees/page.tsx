@@ -34,6 +34,7 @@ export default async function ProcessingFeesPage() {
           uploadActual: t("uploadActual"),
           estimateTitle: t("estimateTitle"),
           estimateIntro: t("estimateIntro"),
+          showFallback: t("showFallback"),
           processor: t("processor"),
           processorPlaceholder: t("processorPlaceholder"),
           processorHelp: t("processorHelp"),
