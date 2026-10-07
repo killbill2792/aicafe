@@ -295,7 +295,7 @@
     "syncedFrom": "Synced from {source}",
     "inactive": "Inactive",
     "empty": "No menu items match this view.",
-    "addItem": "+ Add",
+    "addItem": "Add",
     "sellingPrice": "Selling price",
     "active": "Active",
     "recentSales": "Recent sales",
@@ -494,7 +494,7 @@
     "anHour": "an hour",
     "todaySoFar": "today so far",
     "onShiftNow": "On shift now",
-    "noOneOnShift": "No one is clocked in right now.",
+    "noOneOnShift": "No one is scheduled or clocked in right now.",
     "staffRole": "Staff",
     "sinceShort": "Since {time}",
     "sinceWage": "Since {time} · {wage}/hr",
@@ -505,10 +505,10 @@
     "healthyLine": "Under the line is healthy ({cents}¢)",
     "worstDayInsight": "{date} cost {cents}¢ per $1 sold — the highest this week.",
     "allHealthyInsight": "Your staff cost has stayed healthy all week.",
-    "addStaff": "+ Add staff",
+    "addStaff": "Add staff",
     "emptyShiftHero": "Nobody working now",
     "activeShiftHero": "{count, plural, one {# person on shift} other {# people on shift}}",
-    "noOneOnShiftHero": "No one is on shift right now",
+    "noOneOnShiftHero": "No one is scheduled or clocked in right now",
     "perHourRightNow": "/hour right now",
     "perMinuteSecondary": "{amount}/minute",
     "staffCostToday": "Staff cost today so far",
@@ -527,7 +527,16 @@
     "payrollSave": "Save labor-cost fallback",
     "payrollSaving": "Saving…",
     "payrollSaved": "Saved. Estimated payroll costs were refreshed; actual payroll was left untouched.",
-    "payrollInvalid": "Enter a percentage from 0% to 100%."
+    "payrollInvalid": "Enter a percentage from 0% to 100%.",
+    "teamToday": "Your team today",
+    "teamTodayHint": "Today’s saved hours and the source AI Cafe is using.",
+    "sourceOwnerSchedule": "Owner manual schedule",
+    "sourceOwnerManual": "Owner manual hours",
+    "sourcePos": "Clock-in data · {provider}",
+    "sourceImported": "Imported clock-in data",
+    "sourceAiCafe": "AI Cafe clock-in/out",
+    "offToday": "No hours recorded today",
+    "now": "Now"
   },
   "More": {
     "title": "More",
@@ -943,7 +952,8 @@
     "closes": "Closes",
     "save": "Save café profile",
     "saving": "Saving…",
-    "saved": "Café profile saved."
+    "saved": "Café profile saved.",
+    "signedInAs": "Signed in as {email}"
   },
   "ProcessingFees": {
     "title": "Processing fee estimate",
