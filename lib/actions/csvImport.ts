@@ -301,6 +301,8 @@ export async function importLaborRows(
         business_id: businessId,
         employee_id: employeeId,
         pos_timecard_id: posTimecardId,
+        source_type: "imported",
+        source_provider: "CSV",
         clock_in: row.clockIn,
         clock_out: row.clockOut,
         hourly_wage_cents: row.hourlyWageCents,
