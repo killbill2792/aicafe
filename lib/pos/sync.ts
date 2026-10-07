@@ -1,10 +1,103 @@
 import "server-only";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { PosAdapter } from "./types";
+import type { PosAdapter, PosTimecard } from "./types";
 import { recomputeDailyRollup } from "./rollup";
 import { syncCanonicalCatalog } from "./syncCatalog";
 import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
+
+
+function businessDayBounds(date: string, timezone: string): { startIso: string; endIso: string } {
+  return {
+    startIso: fromZonedTime(`${date}T00:00:00`, timezone).toISOString(),
+    endIso: fromZonedTime(`${date}T23:59:59.999`, timezone).toISOString(),
+  };
+}
+
+/**
+ * Keep one canonical attendance row per known shift. If an owner-entered schedule was already
+ * materialized, a later POS timecard upgrades that row to actual attendance and retains the
+ * schedule as expected_schedule_id. This prevents schedule + POS double-counting while preserving
+ * the planned-vs-actual baseline for the Staff screen and Olivia.
+ *
+ * If a POS row from an older sync already exists alongside a schedule row, the next sync folds the
+ * schedule reference into the POS row and removes only the duplicate schedule-generated row.
+ */
+async function upsertCanonicalPosTimecard(
+  supabase: SupabaseClient,
+  params: {
+    businessId: string;
+    employeeId: string;
+    timezone: string;
+    provider: string;
+    timecard: PosTimecard;
+  },
+): Promise<void> {
+  const { businessId, employeeId, timezone, provider, timecard } = params;
+  const businessDate = formatInTimeZone(new Date(timecard.clockIn), timezone, "yyyy-MM-dd");
+  const { startIso, endIso } = businessDayBounds(businessDate, timezone);
+
+  const [{ data: existingPos, error: existingPosError }, { data: scheduleRows, error: scheduleError }] =
+    await Promise.all([
+      supabase
+        .from("timecards")
+        .select("id, expected_schedule_id")
+        .eq("business_id", businessId)
+        .eq("pos_timecard_id", timecard.posTimecardId)
+        .maybeSingle(),
+      supabase
+        .from("timecards")
+        .select("id, schedule_id, expected_schedule_id")
+        .eq("business_id", businessId)
+        .eq("employee_id", employeeId)
+        .not("schedule_id", "is", null)
+        .gte("clock_in", startIso)
+        .lte("clock_in", endIso)
+        .order("clock_in", { ascending: true }),
+    ]);
+  if (existingPosError) throw existingPosError;
+  if (scheduleError) throw scheduleError;
+
+  const scheduleCandidate = (scheduleRows ?? []).find((row) => row.id !== existingPos?.id) ?? null;
+  const expectedScheduleId =
+    existingPos?.expected_schedule_id ??
+    scheduleCandidate?.expected_schedule_id ??
+    scheduleCandidate?.schedule_id ??
+    null;
+
+  const actualRow = {
+    business_id: businessId,
+    employee_id: employeeId,
+    pos_timecard_id: timecard.posTimecardId,
+    schedule_id: null,
+    expected_schedule_id: expectedScheduleId,
+    source_type: "pos",
+    source_provider: provider,
+    clock_in: timecard.clockIn,
+    clock_out: timecard.clockOut,
+    hourly_wage_cents: timecard.hourlyWageCents,
+    breaks: timecard.breaks,
+  };
+
+  if (existingPos) {
+    const { error } = await supabase.from("timecards").update(actualRow).eq("id", existingPos.id);
+    if (error) throw error;
+    if (scheduleCandidate) {
+      const { error: deleteError } = await supabase.from("timecards").delete().eq("id", scheduleCandidate.id);
+      if (deleteError) throw deleteError;
+    }
+    return;
+  }
+
+  if (scheduleCandidate) {
+    const { error } = await supabase.from("timecards").update(actualRow).eq("id", scheduleCandidate.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await supabase.from("timecards").insert(actualRow);
+  if (error) throw error;
+}
 
 /**
  * Backfill or incremental sync (docs/06-integrations.md "Sync"): pulls orders/catalog/
@@ -86,24 +179,17 @@ export async function syncPosData(
     }
   }
 
-  if (timecards.length > 0) {
-    await supabase.from("timecards").upsert(
-      timecards
-        .filter((tc) => employeeIdByPos.has(tc.posTeamMemberId))
-        .map((tc) => ({
-          business_id: businessId,
-          employee_id: employeeIdByPos.get(tc.posTeamMemberId),
-          pos_timecard_id: tc.posTimecardId,
-          clock_in: tc.clockIn,
-          clock_out: tc.clockOut,
-          hourly_wage_cents: tc.hourlyWageCents,
-          breaks: tc.breaks,
-        })),
-      { onConflict: "business_id,pos_timecard_id" },
-    );
-    for (const tc of timecards) {
-      affectedDates.add(formatInTimeZone(new Date(tc.clockIn), timezone, "yyyy-MM-dd"));
-    }
+  for (const tc of timecards) {
+    const employeeId = employeeIdByPos.get(tc.posTeamMemberId);
+    if (!employeeId) continue;
+    await upsertCanonicalPosTimecard(supabase, {
+      businessId,
+      employeeId,
+      timezone,
+      provider: adapter.provider,
+      timecard: tc,
+    });
+    affectedDates.add(formatInTimeZone(new Date(tc.clockIn), timezone, "yyyy-MM-dd"));
   }
 
   for (const date of affectedDates) {
