@@ -74,8 +74,10 @@ export type Timecard = {
   clockOut: string | null; // null = on shift now
   hourlyWageCents: number;
   breaks: TimecardBreak[];
-  /** Non-null rows are schedule-generated predictions, not confirmed clock records. */
+  /** Non-null rows retain the schedule baseline even when a later actual source reconciles it. */
   scheduleId?: string | null;
+  sourceType?: "owner_schedule" | "owner_manual" | "connected_pos" | "imported" | "ai_cafe";
+  sourceProvider?: string | null;
 };
 
 export type RecipeLine = {
