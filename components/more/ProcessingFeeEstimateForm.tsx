@@ -18,6 +18,7 @@ type Labels = {
   uploadActual: string;
   estimateTitle: string;
   estimateIntro: string;
+  showFallback: string;
   processor: string;
   processorPlaceholder: string;
   processorHelp: string;
@@ -173,6 +174,9 @@ export default function ProcessingFeeEstimateForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [savedSummary, setSavedSummary] = useState<typeof coverage | null>(null);
+  const initialCompleteActualCoverage =
+    coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
+  const [showEstimate, setShowEstimate] = useState(!initialCompleteActualCoverage);
 
   function updateRule(id: string, field: keyof Omit<RuleDraft, "id">, value: string) {
     setRules((current) => current.map((rule) => (rule.id === id ? { ...rule, [field]: value } : rule)));
@@ -287,7 +291,7 @@ export default function ProcessingFeeEstimateForm({
   const firstFixedFee = Number(firstRule.fixedFee || 0);
   const needsAverageTicket = firstFixedFee > 0 && sourceSummary.trustedOrderDays < coverage.salesDays;
   const completeActualCoverage =
-    coverage.salesDays > 0 && coverage.actualDays === coverage.salesDays && coverage.missingDays === 0;
+    shownCoverage.salesDays > 0 && shownCoverage.actualDays === shownCoverage.salesDays && shownCoverage.missingDays === 0;
 
   return (
     <div className="flex flex-col gap-4">
@@ -337,6 +341,17 @@ export default function ProcessingFeeEstimateForm({
         </Link>
       </section>
 
+      {completeActualCoverage && !showEstimate && (
+        <button
+          type="button"
+          onClick={() => setShowEstimate(true)}
+          className="min-h-12 rounded-full border border-line bg-card px-4 text-sm font-bold text-ink"
+        >
+          {labels.showFallback}
+        </button>
+      )}
+
+      {showEstimate && (
       <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4">
         <div>
           <h2 className="text-lg font-bold text-ink">{labels.estimateTitle}</h2>
@@ -445,8 +460,9 @@ export default function ProcessingFeeEstimateForm({
         </button>
         <p className="-mt-2 text-xs leading-snug text-ink-muted">{labels.advancedHint}</p>
       </section>
+      )}
 
-      {advanced && (
+      {showEstimate && advanced && (
         <section className="flex flex-col gap-3 rounded-card-lg bg-card p-4">
           <div>
             <h2 className="text-lg font-bold text-ink">{labels.rulesTitle}</h2>
@@ -594,14 +610,16 @@ export default function ProcessingFeeEstimateForm({
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       {savedSummary && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
 
-      <button
-        type="button"
-        onClick={save}
-        disabled={isPending}
-        className="min-h-14 rounded-full bg-ink px-5 text-base font-bold text-paper disabled:opacity-40"
-      >
-        {isPending ? labels.saving : labels.save}
-      </button>
+      {showEstimate && (
+        <button
+          type="button"
+          onClick={save}
+          disabled={isPending}
+          className="min-h-14 rounded-full bg-ink px-5 text-base font-bold text-paper disabled:opacity-40"
+        >
+          {isPending ? labels.saving : labels.save}
+        </button>
+      )}
     </div>
   );
 }
