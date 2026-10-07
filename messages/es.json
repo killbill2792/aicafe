@@ -295,7 +295,7 @@
     "syncedFrom": "Sincronizado desde {source}",
     "inactive": "Inactivo",
     "empty": "Ningún producto coincide con esta vista.",
-    "addItem": "+ Añadir",
+    "addItem": "Agregar",
     "sellingPrice": "Precio de venta",
     "active": "Activo",
     "recentSales": "Ventas recientes",
@@ -505,10 +505,10 @@
     "healthyLine": "Debajo de la línea es saludable ({cents}¢)",
     "worstDayInsight": "{date} costó {cents}¢ por $1 vendido — lo más alto esta semana.",
     "allHealthyInsight": "Tu costo de personal se mantuvo saludable toda la semana.",
-    "addStaff": "+ Agregar personal",
+    "addStaff": "Agregar personal",
     "emptyShiftHero": "Nadie está trabajando ahora",
-    "activeShiftHero": "{count, plural, one {# persona en turno} other {# personas en turno}}",
-    "noOneOnShiftHero": "No hay nadie en turno ahora",
+    "activeShiftHero": "{count, plural, one {# persona trabajando o programada ahora} other {# personas trabajando o programadas ahora}}",
+    "noOneOnShiftHero": "No hay nadie programado ni fichado en este momento",
     "perHourRightNow": "/hora ahora",
     "perMinuteSecondary": "{amount}/minuto",
     "staffCostToday": "Costo del personal hoy hasta ahora",
@@ -527,7 +527,22 @@
     "payrollSave": "Guardar respaldo de costos laborales",
     "payrollSaving": "Guardando…",
     "payrollSaved": "Guardado. Se actualizaron los costos estimados; la nómina real no fue modificada.",
-    "payrollInvalid": "Ingresa un porcentaje entre 0% y 100%."
+    "payrollInvalid": "Ingresa un porcentaje entre 0% y 100%.",
+    "todayTeam": "Equipo de hoy",
+    "todayTeamHint": "Horario de hoy con la fuente indicada.",
+    "noStaffYet": "Aún no has agregado personal.",
+    "sourceOwnerSchedule": "Horario manual del propietario",
+    "sourceOwnerManual": "Registro manual del propietario",
+    "sourceAiCafe": "AI CAFE",
+    "sourcePos": "Registro de reloj de {provider} POS",
+    "noShiftToday": "Sin turno hoy",
+    "laterToday": "Más tarde hoy",
+    "scheduledNow": "Programado ahora",
+    "workingNow": "Fichado ahora",
+    "finishedToday": "Terminó hoy",
+    "openShift": "ahora",
+    "scheduledTime": "Programado {time}",
+    "actualTime": "Real {time}"
   },
   "More": {
     "title": "Más",
@@ -908,7 +923,9 @@
     "staffTaskReason": "Revisa el problema indicado de personal o cobertura antes del turno.",
     "supplySignal": "Maya vigila los costos de ingredientes y vasos que ingresaste; no adivina las existencias.",
     "priceTaskSentenceLow": "El precio puede ser demasiado bajo para {item}.",
-    "priceTaskSentenceHigh": "El precio puede ser demasiado alto para {item}."
+    "priceTaskSentenceHigh": "El precio puede ser demasiado alto para {item}.",
+    "staffUnscheduledActual": "{employee} tiene un fichaje real pero no un horario del propietario.",
+    "staffScheduleDifference": "El fichaje real de {employee} difiere del horario del propietario."
   },
   "CafeProfile": {
     "title": "Perfil del café",
@@ -943,7 +960,8 @@
     "closes": "Cierra",
     "save": "Guardar perfil del café",
     "saving": "Guardando…",
-    "saved": "Perfil del café guardado."
+    "saved": "Perfil del café guardado.",
+    "signedInAs": "Sesión iniciada como"
   },
   "ProcessingFees": {
     "title": "Estimación de comisiones",
