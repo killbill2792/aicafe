@@ -20,6 +20,8 @@ export type StaffShiftVM = {
   todayCostCents: number;
   breakFlag: "ok" | "due_soon" | "missed";
   breakDueIso: string | null;
+  sourceType: "owner_schedule" | "owner_manual" | "connected_pos" | "imported" | "ai_cafe";
+  sourceProvider: string | null;
 };
 
 export type StaffViewModel = {
@@ -73,6 +75,8 @@ export function buildStaffViewModel(snapshot: BusinessSnapshot): StaffViewModel 
         todayCostCents,
         breakFlag,
         breakDueIso,
+        sourceType: s.timecard.sourceType ?? (s.timecard.scheduleId ? "owner_schedule" : "owner_manual"),
+        sourceProvider: s.timecard.sourceProvider ?? null,
       };
     })
     .sort((a, b) => new Date(a.clockInIso).getTime() - new Date(b.clockInIso).getTime());
