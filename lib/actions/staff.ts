@@ -194,7 +194,7 @@ export async function getShiftForDay(employeeId: string, date: string): Promise<
 
   const { data: timecard } = await supabase
     .from("timecards")
-    .select("clock_in, clock_out, hourly_wage_cents, breaks, schedule_id")
+    .select("clock_in, clock_out, hourly_wage_cents, breaks, schedule_id, source_type")
     .eq("business_id", business.businessId)
     .eq("employee_id", employeeId)
     .gte("clock_in", startIso)
@@ -206,7 +206,7 @@ export async function getShiftForDay(employeeId: string, date: string): Promise<
       .filter((b) => !b.paid)
       .reduce((sum, b) => sum + Math.round((new Date(b.end).getTime() - new Date(b.start).getTime()) / 60_000), 0);
     return {
-      source: timecard.schedule_id ? "scheduled" : "confirmed",
+      source: timecard.source_type === "owner_schedule" ? "scheduled" : "confirmed",
       clockIn: formatInTimeZone(timecard.clock_in, business.timezone, "HH:mm"),
       clockOut: formatInTimeZone(timecard.clock_out ?? timecard.clock_in, business.timezone, "HH:mm"),
       unpaidBreakMinutes: breakMinutes,
@@ -434,6 +434,7 @@ export async function setWeeklySchedule(input: z.infer<typeof SetWeeklyScheduleS
       .eq("business_id", business.businessId)
       .eq("employee_id", parsed.data.employeeId)
       .in("schedule_id", oldScheduleIds)
+      .eq("source_type", "owner_schedule")
       .gte("clock_in", startIso)
       .lte("clock_in", endIso);
     if (generatedLookupError) return { ok: false, error: generatedLookupError.message };
