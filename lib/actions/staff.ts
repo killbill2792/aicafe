@@ -288,6 +288,8 @@ export async function saveShiftForDay(input: z.infer<typeof ShiftSchema>): Promi
     business_id: business.businessId,
     employee_id: parsed.data.employeeId,
     schedule_id: null,
+    source_type: "owner_manual",
+    source_provider: "Owner",
     clock_in: clockInUtc.toISOString(),
     clock_out: clockOutUtc.toISOString(),
     hourly_wage_cents: parsed.data.hourlyWageCents,
