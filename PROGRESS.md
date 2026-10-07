@@ -2039,3 +2039,23 @@ payroll, or break-even logic is changed by this documentation pass.**
 - [ ] **Aggregate ingredient-cost design decision:** add only after the fallback/provenance and
   recipe-precedence rules are agreed and covered by tests.
 
+## Owner correction PR — UI fixes + Staff provenance/reconciliation (2026-10-06 — in progress)
+
+Plan:
+1. Make Profit Goal's Run simulation a real user-triggered result, show signed-in account identity
+   as secondary account context on Café profile, remove duplicate plus signs, and remove only the
+   two variable-cost detail cards from Money while leaving break-even math unchanged.
+2. Add explicit timecard provenance for Owner manual schedule, Owner manual actual, POS actual
+   (provider-tagged), and future AI CAFE clock records; preserve the expected schedule separately
+   from actual attendance.
+3. Reconcile a later POS timecard into an existing schedule-generated shift instead of creating a
+   duplicate competing row. Actual attendance becomes canonical for labor/compliance; the schedule
+   remains available as the comparison baseline. Unscheduled POS actuals remain real facts and
+   generate Olivia owner-attention work rather than being discarded.
+4. Rebuild Staff's current/today presentation around Scheduled vs Actual source tags, show the
+   active roster with today's timing where known, and place Add staff with that roster.
+5. Add focused regressions for source/provenance behavior, schedule-vs-POS reconciliation helpers,
+   and Staff task derivation. Apply the additive timecard-provenance migration before deploying the
+   application code. Do not change processing-fee estimation or ingredient-cost fallback logic in
+   this PR.
+
