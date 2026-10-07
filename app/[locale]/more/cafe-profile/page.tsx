@@ -8,7 +8,7 @@ import PageShell from "@/components/shared/PageShell";
 export const dynamic = "force-dynamic";
 
 export default async function CafeProfilePage() {
-  await requireOwnBusiness();
+  const user = await requireOwnBusiness();
   const [profile, t, tCommon] = await Promise.all([
     getCafeProfile(),
     getTranslations("CafeProfile"),
@@ -18,6 +18,9 @@ export default async function CafeProfilePage() {
   return (
     <PageShell className="flex flex-col gap-4 px-4 pb-8 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
+      {user?.email && (
+        <p className="px-1 text-sm text-ink-muted">{t("signedInAs", { email: user.email })}</p>
+      )}
       <CafeProfileForm
         profile={profile}
         labels={{
