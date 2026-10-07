@@ -1008,7 +1008,8 @@
     "transactionMixHelp": "Advanced only. If you have multiple rate types, this tells AI Cafe what share of processed payment count uses this rate. All rate rules together should total 100%.",
     "standardRate": "Standard rate",
     "advanced": "Advanced settings",
-    "advancedHint": "Only open this if you have different rates for different cards, online payments, or other payment types."
+    "advancedHint": "Only open this if you have different rates for different cards, online payments, or other payment types.",
+    "showFallback": "Set or edit fallback estimate"
   },
   "Economics": {
     "title": "Profit goal simulator",
