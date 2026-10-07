@@ -69,13 +69,21 @@ export type TimecardBreak = {
   paid: boolean;
 };
 
+export type TimecardSourceType = "owner_manual_schedule" | "owner_manual" | "pos" | "ai_cafe";
+
 export type Timecard = {
   clockIn: string; // ISO timestamp
   clockOut: string | null; // null = on shift now
   hourlyWageCents: number;
   breaks: TimecardBreak[];
-  /** Non-null rows are schedule-generated predictions, not confirmed clock records. */
+  /** Non-null only while the canonical row is still a schedule-generated expectation. */
   scheduleId?: string | null;
+  /** Preserved schedule baseline after actual attendance replaces the expectation. */
+  expectedScheduleId?: string | null;
+  /** Explicit provenance. Legacy/fixture rows may omit it and callers should infer conservatively. */
+  sourceType?: TimecardSourceType;
+  /** Concrete provider such as square, toast, csv, or ai_team when known. */
+  sourceProvider?: string | null;
 };
 
 export type RecipeLine = {
