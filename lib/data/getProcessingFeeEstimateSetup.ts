@@ -7,12 +7,22 @@ import {
   getOwnerConfirmedProcessingFeePlans,
   ownerConfirmedPlanForDate,
 } from "@/lib/pos/processingFeeEstimate.server";
-import type { OwnerConfirmedProcessingFeePlan } from "@/lib/pos/processingFeeEstimate";
+import {
+  trustedOrderCountForProcessingFeeEstimate,
+  type OwnerConfirmedProcessingFeePlan,
+  type ProcessingFeeOrderEvidence,
+} from "@/lib/pos/processingFeeEstimate";
 
 export type ProcessingFeeEstimateSetup = {
   today: string;
   plan: OwnerConfirmedProcessingFeePlan | null;
   coverage: { salesDays: number; actualDays: number; estimatedDays: number; missingDays: number };
+  sourceSummary: {
+    connectedProvider: string | null;
+    actualProviders: string[];
+    actualFeeCents: number;
+    trustedOrderDays: number;
+  };
 };
 
 export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEstimateSetup> {
@@ -21,6 +31,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       today: formatInTimeZone(new Date(), "America/Los_Angeles", "yyyy-MM-dd"),
       plan: null,
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
+      sourceSummary: { connectedProvider: null, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0 },
     };
   }
 
@@ -33,6 +44,7 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
       today: formatInTimeZone(new Date(), "America/Los_Angeles", "yyyy-MM-dd"),
       plan: null,
       coverage: { salesDays: 0, actualDays: 0, estimatedDays: 0, missingDays: 0 },
+      sourceSummary: { connectedProvider: null, actualProviders: [], actualFeeCents: 0, trustedOrderDays: 0 },
     };
   }
 
@@ -59,16 +71,37 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
   const today = formatInTimeZone(new Date(), timezone, "yyyy-MM-dd");
   const fromDate = formatInTimeZone(subDays(new Date(`${today}T12:00:00Z`), 89), "UTC", "yyyy-MM-dd");
 
-  const [plans, rollupsResult] = await Promise.all([
+  const [plans, rollupsResult, connectionsResult, factsResult, ordersResult] = await Promise.all([
     getOwnerConfirmedProcessingFeePlans(supabase, businessId),
     supabase
       .from("daily_rollups")
-      .select("net_sales_cents, card_fees_status")
+      .select("business_date, net_sales_cents, card_fees_status")
+      .eq("business_id", businessId)
+      .gte("business_date", fromDate)
+      .lte("business_date", today),
+    supabase
+      .from("pos_connections")
+      .select("provider, status, created_at")
+      .eq("business_id", businessId)
+      .eq("status", "active")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("processing_fee_daily_facts")
+      .select("business_date, amount_cents, status, source_type, provider")
+      .eq("business_id", businessId)
+      .gte("business_date", fromDate)
+      .lte("business_date", today),
+    supabase
+      .from("orders")
+      .select("business_date, pos_order_id, net_sales_cents, processing_fee_provider")
       .eq("business_id", businessId)
       .gte("business_date", fromDate)
       .lte("business_date", today),
   ]);
   if (rollupsResult.error) throw rollupsResult.error;
+  if (connectionsResult.error) throw connectionsResult.error;
+  if (factsResult.error) throw factsResult.error;
+  if (ordersResult.error) throw ordersResult.error;
 
   const salesDays = (rollupsResult.data ?? []).filter((row) => Number(row.net_sales_cents) > 0);
   const coverage = {
@@ -78,9 +111,39 @@ export async function getProcessingFeeEstimateSetup(): Promise<ProcessingFeeEsti
     missingDays: salesDays.filter((row) => row.card_fees_status === "missing").length,
   };
 
+  const ordersByDate = new Map<string, ProcessingFeeOrderEvidence[]>();
+  for (const order of ordersResult.data ?? []) {
+    const rows = ordersByDate.get(order.business_date) ?? [];
+    rows.push({
+      posOrderId: order.pos_order_id,
+      netSalesCents: Number(order.net_sales_cents),
+      processingFeeProvider: order.processing_fee_provider,
+    });
+    ordersByDate.set(order.business_date, rows);
+  }
+
+  const trustedOrderDays = salesDays.filter((row) =>
+    trustedOrderCountForProcessingFeeEstimate(
+      ordersByDate.get(row.business_date) ?? [],
+      Number(row.net_sales_cents),
+    ) !== null
+  ).length;
+
+  const actualFacts = (factsResult.data ?? []).filter((fact) => fact.status === "actual");
+  const actualProviders = [...new Set(actualFacts.map((fact) => String(fact.provider)).filter(Boolean))].sort();
+  const connectedProvider =
+    (connectionsResult.data ?? []).find((connection) => connection.provider !== "demo" && connection.provider !== "csv")?.provider ??
+    null;
+
   return {
     today,
     plan: ownerConfirmedPlanForDate(plans, today) ?? plans.at(-1) ?? null,
     coverage,
+    sourceSummary: {
+      connectedProvider,
+      actualProviders,
+      actualFeeCents: actualFacts.reduce((sum, fact) => sum + Number(fact.amount_cents), 0),
+      trustedOrderDays,
+    },
   };
 }
