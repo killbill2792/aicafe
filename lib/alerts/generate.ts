@@ -119,7 +119,7 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const { data: timecards } = await supabase
     .from("timecards")
-    .select("id, employee_id, schedule_id, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name)")
+    .select("id, employee_id, schedule_id, source_type, source_provider, clock_in, clock_out, hourly_wage_cents, breaks, employees(display_name)")
     .eq("business_id", businessId)
     .gte("clock_in", sevenDaysAgo);
 
@@ -127,7 +127,7 @@ async function generateMealBreakAlerts(supabase: SupabaseClient, businessId: str
   const validKeys = new Set<string>();
   for (const tc of timecards ?? []) {
     const status = mealBreakStatus(
-      { clockIn: tc.clock_in, clockOut: tc.clock_out, hourlyWageCents: tc.hourly_wage_cents, breaks: tc.breaks ?? [], scheduleId: tc.schedule_id },
+      { clockIn: tc.clock_in, clockOut: tc.clock_out, hourlyWageCents: tc.hourly_wage_cents, breaks: tc.breaks ?? [], scheduleId: tc.schedule_id, sourceType: tc.source_type, sourceProvider: tc.source_provider },
       tc.clock_out ? new Date(tc.clock_out) : new Date(),
     );
     if (!status.missed) continue;
