@@ -1938,3 +1938,104 @@ Result:
 - [x] Typecheck, 304 tests, and diff checks pass. Lint passes with the one pre-existing product-photo
   `<img>` warning. Build remains blocked only by the known inability to fetch the existing Figtree,
   Fraunces, and IBM Plex Sans Arabic Google Fonts.
+
+## Owner review — simulator, account identity, processing-fee UX, Staff truth, Money/Menu cleanup, aggregate ingredient cost (2026-10-06 — reviewed; implementation pending)
+
+This review was performed after reading `AGENTS.md`, the binding design system, calculations,
+integration docs, and the current implementation. **No calculation, POS, staff, recipe, pricing,
+payroll, or break-even logic is changed by this documentation pass.**
+
+### Findings and required follow-up
+
+1. **Profit goal simulator Run button appears non-functional**
+   - Current UI initializes the submitted target to 15% and computes the simulation immediately on
+     first render.
+   - Clicking **Run simulation** with the initial 15% therefore causes no visible state change; on
+     unavailable data the click can also appear to do nothing.
+   - [ ] Make Run simulation a real submit/run interaction (for example, no result until submitted,
+     then update/focus the result and provide visible feedback) without changing
+     `simulateProfitGoal()` math.
+
+2. **Signed-in account identity should be visible without turning email into a café field**
+   - Café profile currently calls `requireOwnBusiness()` but ignores the returned authenticated
+     user, so the page has no understated indication of which account is signed in.
+   - Email is account identity, not editable café data.
+   - [ ] Add a calm, secondary **Signed in as <email>** account-identity treatment in the appropriate
+     profile/settings context. Do not create a fake editable “your email” box and do not imply the
+     email belongs to the café/location.
+
+3. **Processing-fee estimate form needs owner-friendly explanation/progressive disclosure**
+   - The existing math/source precedence is intentional and remains unchanged:
+     connected POS actual > manual actual > owner-confirmed estimate > temporary estimate > missing.
+   - Current fields represent: processor label; effective-from date; share of sales processed;
+     share of orders processed; optional average processed ticket; and one or more rate rules with
+     percentage fee, fixed fee/order, sales mix, and order mix.
+   - The form is mathematically expressive but too technical for many owners.
+   - [ ] Keep a simple blended-rate path as the default owner experience, with advanced multi-rate
+     mixes only when needed; improve inline explanations without weakening provenance or actual-data
+     precedence.
+   - When a connected POS supplies trustworthy actual processing fees, those actual fees must
+     automatically outrank the estimate. If a POS supplies sales/order facts but not trustworthy
+     fee facts, the owner-confirmed estimate remains a fallback.
+
+4. **Staff needs expected-vs-actual truth, a complete team/timing pane, and source reconciliation**
+   - Current Staff view says “No one is clocked in right now” when `onShift` is empty, even though
+     manual schedules are expected data rather than literal clock-ins.
+   - Current `buildStaffViewModel()` can treat a materialized manual schedule as on-shift while the
+     current time is inside the scheduled interval, but the screen does not clearly distinguish
+     **Scheduled now** from **Clocked in now**, and it does not show the full active employee list
+     with today’s/saved timings.
+   - Current schedule materialization protects existing timecards when schedules are materialized.
+     However, if a schedule-generated row exists first and an actual POS timecard arrives later,
+     the POS sync can create a separate row instead of reconciling the expected row. This risks
+     duplicate staff cost/status.
+   - Required product rule: manual schedule = expected plan; trustworthy POS/imported timecard =
+     actual. Use the manual schedule when actual attendance is unavailable. When actual arrives,
+     actual wins for actual hours/cost/current status, while the schedule is retained as the
+     comparison baseline so AI Cafe can show a calm discrepancy (expected vs actual) without double
+     counting.
+   - [ ] Design and test canonical schedule-vs-actual reconciliation before changing staff math.
+   - [ ] Add a Staff/team pane listing active employees and their relevant timings/status, with
+     **Add staff** located on that pane.
+   - [ ] Distinguish source/status in plain language (for example Scheduled / Clocked in / Actual
+     from Square) rather than calling scheduled data a clock-in.
+   - [ ] Remove the duplicate plus on Add staff: the button already renders a Plus icon while the
+     English label is currently “+ Add staff”.
+
+5. **Money break-even card should be simpler**
+   - [ ] Remove the visible **Ingredients at break-even** and **Processing fees at break-even**
+     sub-cards from Money.
+   - This is presentation-only: ingredient cost and processing fees remain required variable costs
+     inside the true break-even calculation and its data-quality gates.
+   - Keep the owner-facing summary focused on **Monthly break-even sales**, **Monthly bills**, and
+     **Staff & employer costs**, with detail available deeper if needed.
+
+6. **Menu Add button has a duplicate plus**
+   - The button renders a Plus icon and the English label is currently “+ Add”.
+   - [ ] Use one plus only (icon + “Add”, or text-only), preserving the 48px touch target and
+     localized labels.
+
+7. **Some owners only know total ingredient cost per menu item**
+   - Current source-of-truth recipe cost is calculated from individual `recipe_lines` and
+     ingredient price history. Do not fabricate a fake ingredient line merely to force a total into
+     that model.
+   - Product decision to make before implementation: support an owner-provided **total ingredient
+     cost per item/size** as an explicitly sourced/statused fallback when a detailed recipe is not
+     available, while keeping detailed recipe costing as the richer source once available.
+   - A future implementation should preserve provenance, avoid double counting, define deterministic
+     precedence, and surface the difference if a later complete recipe total disagrees with the
+     owner-entered total.
+   - [ ] Do not change current recipe/pricing logic until this fallback model, precedence, UI copy,
+     and regression cases are explicitly approved.
+
+### Suggested implementation sequencing
+
+- [ ] **UI-only cleanup first:** real Run interaction, signed-in account identity treatment, remove
+  duplicate plus signs, remove the two Money detail cards. No business-math changes.
+- [ ] **Staff reconciliation second:** expected schedule vs actual POS/imported attendance, no
+  duplicate costs, full team/timing view, discrepancy presentation.
+- [ ] **Processing-fee comprehension pass:** simplify default UI/copy while retaining current
+  canonical fee math and source precedence.
+- [ ] **Aggregate ingredient-cost design decision:** add only after the fallback/provenance and
+  recipe-precedence rules are agreed and covered by tests.
+
