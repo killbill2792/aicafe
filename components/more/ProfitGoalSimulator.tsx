@@ -45,11 +45,12 @@ export default function ProfitGoalSimulator({
   labels: Labels;
 }) {
   const [draftTarget, setDraftTarget] = useState("15");
-  const [target, setTarget] = useState(15);
+  const [target, setTarget] = useState<number | null>(null);
+  const [hasRun, setHasRun] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const simulation = useMemo(() => {
-    if (!data.economics || !data.canSimulate) return null;
+    if (!data.economics || !data.canSimulate || target === null) return null;
     return simulateProfitGoal({
       economics: data.economics,
       targetOperatingMargin: target / 100,
@@ -65,6 +66,7 @@ export default function ProfitGoalSimulator({
       return;
     }
     setTarget(parsed);
+    setHasRun(true);
   }
 
   const unavailableText =
@@ -126,6 +128,9 @@ export default function ProfitGoalSimulator({
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       {unavailableText && <p className="rounded-xl bg-paper p-4 text-sm leading-snug text-ink-muted">{unavailableText}</p>}
+      {hasRun && data.canSimulate && target !== null && (
+        <p className="sr-only" aria-live="polite">{labels.targetTested.replace("{target}", `${target}%`)}</p>
+      )}
 
       {simulation?.kind === "unavailable" && (
         <p className="rounded-xl bg-warn-tint p-4 text-sm font-semibold leading-snug text-warn">
