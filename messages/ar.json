@@ -295,7 +295,7 @@
     "syncedFrom": "تمت المزامنة من {source}",
     "inactive": "غير نشط",
     "empty": "لا توجد أصناف تطابق هذا العرض.",
-    "addItem": "+ إضافة",
+    "addItem": "إضافة",
     "sellingPrice": "سعر البيع",
     "active": "نشط",
     "recentSales": "المبيعات الأخيرة",
@@ -505,10 +505,10 @@
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
     "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
-    "addStaff": "+ إضافة موظف",
+    "addStaff": "إضافة موظف",
     "emptyShiftHero": "لا أحد يعمل الآن",
-    "activeShiftHero": "{count, plural, one {شخص واحد في الوردية} two {شخصان في الوردية} few {# أشخاص في الوردية} other {# شخصًا في الوردية}}",
-    "noOneOnShiftHero": "لا أحد في وردية الآن",
+    "activeShiftHero": "{count, plural, one {شخص واحد يعمل أو مجدول الآن} two {شخصان يعملان أو مجدولان الآن} other {# أشخاص يعملون أو مجدولون الآن}}",
+    "noOneOnShiftHero": "لا يوجد أحد مجدول أو مسجل الحضور الآن",
     "perHourRightNow": "/ساعة الآن",
     "perMinuteSecondary": "{amount}/دقيقة",
     "staffCostToday": "تكلفة الموظفين اليوم حتى الآن",
@@ -527,7 +527,22 @@
     "payrollSave": "حفظ احتياطي تكاليف العمالة",
     "payrollSaving": "جارٍ الحفظ…",
     "payrollSaved": "تم الحفظ. تم تحديث التكاليف التقديرية ولم يتم تغيير الرواتب الفعلية.",
-    "payrollInvalid": "أدخل نسبة بين 0% و100%."
+    "payrollInvalid": "أدخل نسبة بين 0% و100%.",
+    "todayTeam": "فريق اليوم",
+    "todayTeamHint": "مواعيد اليوم مع إظهار مصدر البيانات.",
+    "noStaffYet": "لم تتم إضافة أي موظف بعد.",
+    "sourceOwnerSchedule": "جدول يدوي من المالك",
+    "sourceOwnerManual": "إدخال يدوي من المالك",
+    "sourceAiCafe": "AI CAFE",
+    "sourcePos": "بيانات الحضور من {provider} POS",
+    "noShiftToday": "لا توجد وردية اليوم",
+    "laterToday": "لاحقًا اليوم",
+    "scheduledNow": "مجدول الآن",
+    "workingNow": "مسجل الحضور الآن",
+    "finishedToday": "انتهت ورديته اليوم",
+    "openShift": "الآن",
+    "scheduledTime": "المجدول {time}",
+    "actualTime": "الفعلي {time}"
   },
   "More": {
     "title": "المزيد",
@@ -908,7 +923,9 @@
     "staffTaskReason": "راجع مشكلة الموظف أو التغطية المحددة قبل الوردية.",
     "supplySignal": "تراقب مايا تكاليف المكونات والأكواب التي أدخلتها، ولا تخمّن كميات المخزون.",
     "priceTaskSentenceLow": "قد يكون سعر {item} منخفضًا جدًا.",
-    "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا."
+    "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا.",
+    "staffUnscheduledActual": "لدى {employee} بيانات حضور فعلية من دون جدول أدخله المالك.",
+    "staffScheduleDifference": "وقت الحضور الفعلي لـ {employee} يختلف عن جدول المالك."
   },
   "CafeProfile": {
     "title": "ملف المقهى",
@@ -943,7 +960,8 @@
     "closes": "يغلق",
     "save": "حفظ ملف المقهى",
     "saving": "جارٍ الحفظ…",
-    "saved": "تم حفظ ملف المقهى."
+    "saved": "تم حفظ ملف المقهى.",
+    "signedInAs": "تم تسجيل الدخول باسم"
   },
   "ProcessingFees": {
     "title": "تقدير رسوم المعالجة",
