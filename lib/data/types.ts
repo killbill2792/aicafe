@@ -46,6 +46,8 @@ export type StaffShift = {
   name: string;
   role: string | null;
   timecard: Timecard;
+  /** Owner-entered expectation retained separately after an actual timecard supersedes it. */
+  expectedSchedule?: { scheduleId: string; clockIn: string; clockOut: string } | null;
 };
 
 /**
