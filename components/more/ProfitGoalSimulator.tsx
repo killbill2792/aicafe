@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatCents } from "@/lib/calc";
 import { simulateProfitGoal } from "@/lib/calc/profitGoalSimulator";
 import type { ProfitGoalSimulatorData } from "@/lib/data/getProfitGoalSimulatorData";
@@ -46,16 +46,19 @@ export default function ProfitGoalSimulator({
 }) {
   const [draftTarget, setDraftTarget] = useState("15");
   const [target, setTarget] = useState(15);
+  const [hasRun, setHasRun] = useState(false);
+  const [runCount, setRunCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const resultRef = useRef<HTMLDivElement>(null);
 
   const simulation = useMemo(() => {
-    if (!data.economics || !data.canSimulate) return null;
+    if (!hasRun || !data.economics || !data.canSimulate) return null;
     return simulateProfitGoal({
       economics: data.economics,
       targetOperatingMargin: target / 100,
       items: data.items,
     });
-  }, [data, target]);
+  }, [data, target, hasRun, runCount]);
 
   function run() {
     setError(null);
@@ -65,6 +68,9 @@ export default function ProfitGoalSimulator({
       return;
     }
     setTarget(parsed);
+    setHasRun(true);
+    setRunCount((count) => count + 1);
+    window.requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }));
   }
 
   const unavailableText =
@@ -117,7 +123,7 @@ export default function ProfitGoalSimulator({
           <button
             type="button"
             onClick={run}
-            className="mt-3 min-h-11 rounded-full bg-ink px-5 text-sm font-bold text-paper"
+            className="mt-3 min-h-12 rounded-full bg-ink px-5 text-sm font-bold text-paper"
           >
             {labels.run}
           </button>
@@ -125,7 +131,8 @@ export default function ProfitGoalSimulator({
       </section>
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
-      {unavailableText && <p className="rounded-xl bg-paper p-4 text-sm leading-snug text-ink-muted">{unavailableText}</p>}
+      <div ref={resultRef} aria-live="polite">
+      {hasRun && unavailableText && <p className="rounded-xl bg-paper p-4 text-sm leading-snug text-ink-muted">{unavailableText}</p>}
 
       {simulation?.kind === "unavailable" && (
         <p className="rounded-xl bg-warn-tint p-4 text-sm font-semibold leading-snug text-warn">
@@ -189,6 +196,7 @@ export default function ProfitGoalSimulator({
           </section>
         </>
       )}
+      </div>
     </div>
   );
 }
