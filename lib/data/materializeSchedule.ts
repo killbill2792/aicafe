@@ -35,6 +35,8 @@ function timecardRowFromSchedule(
     business_id: businessId,
     employee_id: schedule.employee_id,
     schedule_id: schedule.id,
+    source_type: "owner_schedule",
+    source_provider: "Owner",
     clock_in: clockInUtc.toISOString(),
     clock_out: clockOutUtc.toISOString(),
     hourly_wage_cents: schedule.hourly_wage_cents,
