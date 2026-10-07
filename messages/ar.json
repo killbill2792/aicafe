@@ -295,7 +295,7 @@
     "syncedFrom": "تمت المزامنة من {source}",
     "inactive": "غير نشط",
     "empty": "لا توجد أصناف تطابق هذا العرض.",
-    "addItem": "+ إضافة",
+    "addItem": "إضافة",
     "sellingPrice": "سعر البيع",
     "active": "نشط",
     "recentSales": "المبيعات الأخيرة",
@@ -494,7 +494,7 @@
     "anHour": "في الساعة",
     "todaySoFar": "اليوم حتى الآن",
     "onShiftNow": "في الدوام الآن",
-    "noOneOnShift": "لا أحد مسجل حضوره الآن.",
+    "noOneOnShift": "لا يوجد أحد مجدولاً أو مسجلاً في الدوام الآن.",
     "staffRole": "موظف",
     "sinceShort": "منذ الساعة {time}",
     "sinceWage": "منذ الساعة {time} · {wage}/ساعة",
@@ -505,10 +505,10 @@
     "healthyLine": "أسفل الخط سليم ({cents}¢)",
     "worstDayInsight": "{date} كلّف {cents}¢ لكل $1 مباع — الأعلى هذا الأسبوع.",
     "allHealthyInsight": "ظلت تكلفة موظفيك سليمة طوال الأسبوع.",
-    "addStaff": "+ إضافة موظف",
+    "addStaff": "إضافة موظف",
     "emptyShiftHero": "لا أحد يعمل الآن",
     "activeShiftHero": "{count, plural, one {شخص واحد في الوردية} two {شخصان في الوردية} few {# أشخاص في الوردية} other {# شخصًا في الوردية}}",
-    "noOneOnShiftHero": "لا أحد في وردية الآن",
+    "noOneOnShiftHero": "لا يوجد أحد مجدولاً أو مسجلاً في الدوام الآن",
     "perHourRightNow": "/ساعة الآن",
     "perMinuteSecondary": "{amount}/دقيقة",
     "staffCostToday": "تكلفة الموظفين اليوم حتى الآن",
@@ -527,7 +527,16 @@
     "payrollSave": "حفظ احتياطي تكاليف العمالة",
     "payrollSaving": "جارٍ الحفظ…",
     "payrollSaved": "تم الحفظ. تم تحديث التكاليف التقديرية ولم يتم تغيير الرواتب الفعلية.",
-    "payrollInvalid": "أدخل نسبة بين 0% و100%."
+    "payrollInvalid": "أدخل نسبة بين 0% و100%.",
+    "teamToday": "فريقك اليوم",
+    "teamTodayHint": "ساعات اليوم والمصدر الذي يستخدمه AI Cafe.",
+    "sourceOwnerSchedule": "جدول يدوي من المالك",
+    "sourceOwnerManual": "ساعات أدخلها المالك",
+    "sourcePos": "بيانات تسجيل الدوام · {provider}",
+    "sourceImported": "بيانات دوام مستوردة",
+    "sourceAiCafe": "تسجيل دوام AI Cafe",
+    "offToday": "لا توجد ساعات مسجلة اليوم",
+    "now": "الآن"
   },
   "More": {
     "title": "المزيد",
@@ -943,7 +952,8 @@
     "closes": "يغلق",
     "save": "حفظ ملف المقهى",
     "saving": "جارٍ الحفظ…",
-    "saved": "تم حفظ ملف المقهى."
+    "saved": "تم حفظ ملف المقهى.",
+    "signedInAs": "تم تسجيل الدخول باسم {email}"
   },
   "ProcessingFees": {
     "title": "تقدير رسوم المعالجة",
