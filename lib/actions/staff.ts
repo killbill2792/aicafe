@@ -277,7 +277,7 @@ export async function saveShiftForDay(input: z.infer<typeof ShiftSchema>): Promi
   const { startIso, endIso } = dayBoundsUtc(parsed.data.date, business.timezone);
   const { data: existing } = await supabase
     .from("timecards")
-    .select("id")
+    .select("id, schedule_id, expected_schedule_id")
     .eq("business_id", business.businessId)
     .eq("employee_id", parsed.data.employeeId)
     .gte("clock_in", startIso)
@@ -288,6 +288,9 @@ export async function saveShiftForDay(input: z.infer<typeof ShiftSchema>): Promi
     business_id: business.businessId,
     employee_id: parsed.data.employeeId,
     schedule_id: null,
+    expected_schedule_id: existing?.expected_schedule_id ?? existing?.schedule_id ?? null,
+    source_type: "owner_manual",
+    source_provider: null,
     clock_in: clockInUtc.toISOString(),
     clock_out: clockOutUtc.toISOString(),
     hourly_wage_cents: parsed.data.hourlyWageCents,
