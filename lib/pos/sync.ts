@@ -1,5 +1,5 @@
 import "server-only";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { recomputeDailyRollup } from "./rollup";
@@ -35,8 +35,9 @@ export async function syncPosData(
       { onConflict: "business_id,pos_team_member_id" },
     );
   }
-  const { data: employeeRows } = await supabase.from("employees").select("id, pos_team_member_id").eq("business_id", businessId);
+  const { data: employeeRows } = await supabase.from("employees").select("id, pos_team_member_id, display_name").eq("business_id", businessId);
   const employeeIdByPos = new Map((employeeRows ?? []).map((e) => [e.pos_team_member_id, e.id]));
+  const employeeNameById = new Map((employeeRows ?? []).map((e) => [e.id, e.display_name]));
 
   for (const order of orders) {
     const businessDate = formatInTimeZone(new Date(order.closedAt), timezone, "yyyy-MM-dd");
@@ -86,24 +87,122 @@ export async function syncPosData(
     }
   }
 
-  if (timecards.length > 0) {
-    await supabase.from("timecards").upsert(
-      timecards
-        .filter((tc) => employeeIdByPos.has(tc.posTeamMemberId))
-        .map((tc) => ({
-          business_id: businessId,
-          employee_id: employeeIdByPos.get(tc.posTeamMemberId),
-          pos_timecard_id: tc.posTimecardId,
-          clock_in: tc.clockIn,
-          clock_out: tc.clockOut,
-          hourly_wage_cents: tc.hourlyWageCents,
-          breaks: tc.breaks,
-        })),
-      { onConflict: "business_id,pos_timecard_id" },
-    );
-    for (const tc of timecards) {
-      affectedDates.add(formatInTimeZone(new Date(tc.clockIn), timezone, "yyyy-MM-dd"));
+  // Reconcile connected actual attendance into an existing owner/AI-Cafe row for the same
+  // employee/day instead of creating a second timecard. This keeps one canonical cost row while
+  // preserving the schedule itself in staff_schedules for expected-vs-actual comparison.
+  for (const tc of timecards) {
+    const employeeId = employeeIdByPos.get(tc.posTeamMemberId);
+    if (!employeeId) continue;
+
+    const businessDate = formatInTimeZone(new Date(tc.clockIn), timezone, "yyyy-MM-dd");
+    affectedDates.add(businessDate);
+    const dayStart = fromZonedTime(`${businessDate}T00:00:00`, timezone).toISOString();
+    const dayEnd = fromZonedTime(`${businessDate}T23:59:59.999`, timezone).toISOString();
+
+    const { data: samePosRow } = await supabase
+      .from("timecards")
+      .select("id")
+      .eq("business_id", businessId)
+      .eq("pos_timecard_id", tc.posTimecardId)
+      .maybeSingle();
+
+    if (samePosRow) {
+      await supabase.from("timecards").update({
+        employee_id: employeeId,
+        source_type: "connected_pos",
+        source_provider: adapter.provider,
+        clock_in: tc.clockIn,
+        clock_out: tc.clockOut,
+        hourly_wage_cents: tc.hourlyWageCents,
+        breaks: tc.breaks,
+      }).eq("id", samePosRow.id);
+      continue;
     }
+
+    const { data: priorRows } = await supabase
+      .from("timecards")
+      .select("id, schedule_id, source_type, source_provider, clock_in, clock_out")
+      .eq("business_id", businessId)
+      .eq("employee_id", employeeId)
+      .is("pos_timecard_id", null)
+      .gte("clock_in", dayStart)
+      .lte("clock_in", dayEnd)
+      .order("clock_in", { ascending: true })
+      .limit(1);
+    const prior = priorRows?.[0] ?? null;
+
+    if (prior) {
+      await supabase.from("timecards").update({
+        pos_timecard_id: tc.posTimecardId,
+        source_type: "connected_pos",
+        source_provider: adapter.provider,
+        clock_in: tc.clockIn,
+        clock_out: tc.clockOut,
+        hourly_wage_cents: tc.hourlyWageCents,
+        breaks: tc.breaks,
+      }).eq("id", prior.id);
+
+      const scheduledStart = new Date(prior.clock_in).getTime();
+      const scheduledEnd = prior.clock_out ? new Date(prior.clock_out).getTime() : null;
+      const actualStart = new Date(tc.clockIn).getTime();
+      const actualEnd = tc.clockOut ? new Date(tc.clockOut).getTime() : null;
+      const changed = scheduledStart !== actualStart || scheduledEnd !== actualEnd;
+
+      if (changed) {
+        const issue = prior.source_type === "owner_schedule"
+          ? "actual clock times differ from the owner schedule"
+          : prior.source_type === "ai_cafe"
+            ? "POS clock times differ from AI Cafe clock-in/out"
+            : "POS clock times differ from previously entered hours";
+        await supabase.from("operating_tasks").upsert({
+          business_id: businessId,
+          id: `staff-actual:${employeeId}:${businessDate}:${tc.posTimecardId}`,
+          agent_id: "olivia",
+          kind: "staff_coverage",
+          entity_type: "employee",
+          entity_id: employeeId,
+          status: "needs_owner",
+          payload: {
+            issue,
+            employeeName: employeeNameById.get(employeeId) ?? "Staff",
+            businessDate,
+            previousSource: prior.source_type,
+            previousProvider: prior.source_provider,
+            expectedClockIn: prior.clock_in,
+            expectedClockOut: prior.clock_out,
+            actualClockIn: tc.clockIn,
+            actualClockOut: tc.clockOut,
+            actualProvider: adapter.provider,
+          },
+          confidence: "high",
+          evidence: [{
+            source: "staff_actual_reconciliation",
+            facts: {
+              expectedClockIn: prior.clock_in,
+              expectedClockOut: prior.clock_out,
+              actualClockIn: tc.clockIn,
+              actualClockOut: tc.clockOut,
+              actualProvider: adapter.provider,
+            },
+          }],
+        }, { onConflict: "business_id,id" });
+      }
+      continue;
+    }
+
+    // No owner schedule/manual/AI-Cafe row exists for this employee/day, so this POS row becomes
+    // the canonical timecard for the day.
+    await supabase.from("timecards").insert({
+      business_id: businessId,
+      employee_id: employeeId,
+      pos_timecard_id: tc.posTimecardId,
+      source_type: "connected_pos",
+      source_provider: adapter.provider,
+      clock_in: tc.clockIn,
+      clock_out: tc.clockOut,
+      hourly_wage_cents: tc.hourlyWageCents,
+      breaks: tc.breaks,
+    });
   }
 
   for (const date of affectedDates) {
