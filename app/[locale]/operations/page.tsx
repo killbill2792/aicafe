@@ -64,7 +64,13 @@ function TaskList({ tasks, empty, names, t, category }: { tasks: OperatingTask[]
     const price = task.kind === "price_review";
     const itemName = String(task.payload.itemName).replace(" · ", " ");
     const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
-    const title = price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const staffIssue =
+      task.payload.issueCode === "unscheduled_actual"
+        ? t("staffUnscheduledActual", { employee: String(task.payload.employeeName ?? t("staffTask")) })
+        : task.payload.issueCode === "schedule_difference"
+          ? t("staffScheduleDifference", { employee: String(task.payload.employeeName ?? t("staffTask")) })
+          : String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue"));
+    const title = price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: staffIssue }) : t("mayaWatching");
     const detail = price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
     const action = price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     return <article key={task.id} data-entity-type={task.entityType} data-entity-id={task.entityId} className={`rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface}`}>
