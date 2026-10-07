@@ -2039,3 +2039,37 @@ payroll, or break-even logic is changed by this documentation pass.**
 - [ ] **Aggregate ingredient-cost design decision:** add only after the fallback/provenance and
   recipe-precedence rules are agreed and covered by tests.
 
+## UI + Staff provenance/reconciliation implementation (2026-10-06 — PR pending)
+
+Scope intentionally combines the owner-requested first two passes only. Processing-fee UX/rate
+entry and aggregate ingredient-cost fallback remain separate follow-up work.
+
+Implemented:
+- [x] Profit Goal Simulator is now submit-driven instead of pre-running the initial 15% target.
+- [x] Café Profile shows the authenticated account as quiet account identity, not an editable café field.
+- [x] Money removes the two visible Ingredients-at-break-even / Processing-fees-at-break-even cards;
+      break-even math and data-quality requirements are unchanged.
+- [x] Menu and Staff Add buttons render only one plus.
+- [x] Added explicit timecard provenance: owner_schedule, owner_manual, connected_pos, imported,
+      ai_cafe, with provider detail where available.
+- [x] Staff shows a full active-team pane with today's hours and source tags; Add staff lives on that pane.
+- [x] POS timecards reconcile into an existing employee/day row instead of creating a second
+      timecard when owner schedule/manual/AI Cafe data already exists.
+- [x] Reconciled actual POS rows retain their schedule_id for comparison but are treated as actual,
+      not schedule predictions; schedule edits only rebuild true owner_schedule rows.
+- [x] When connected actual clock times differ from the prior owner/AI-Cafe hours, an Olivia
+      needs-owner operating task is written with both prior and actual timestamps/provider evidence.
+- [x] Schema reserves ai_cafe provenance so the future worker-messaging clock-in/out transport can
+      write canonical actual attendance without another provenance redesign.
+- [x] Added regression coverage that a POS-confirmed timecard remains actual even when it retains
+      its schedule baseline.
+
+Deployment order:
+- Apply migration 30 (`20261007000030_timecard_provenance.sql`) before deploying this application code.
+
+Still intentionally deferred:
+- [ ] Processing-fee estimate comprehension/progressive-disclosure redesign and automatic-field rules.
+- [ ] Owner-provided total ingredient-cost fallback/provenance and precedence model.
+- [ ] Worker messaging transport that invokes AI Cafe clock-in/out; this PR provides the canonical
+      source boundary but does not pretend messaging delivery exists yet.
+
