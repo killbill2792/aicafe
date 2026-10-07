@@ -77,6 +77,49 @@ export function staffCoverageTask(params: { businessId: string; employeeId: stri
   return { id: `coverage:${params.employeeId}:${params.shiftDate}:${params.scheduledStart}`, businessId: params.businessId, agentId: "olivia", kind: "staff_coverage", entityType: "employee", entityId: params.employeeId, status: "needs_response", payload: { employeeName: params.employeeName, shiftDate: params.shiftDate, scheduledStart: params.scheduledStart, delayedStart: params.delayedStart, delayMinutes: params.delayMinutes, scheduleApplied: false }, confidence: "high", evidence: [{ source: "staff_schedule", facts: { shiftDate: params.shiftDate, scheduledStart: params.scheduledStart } }], createdAt: (params.now ?? new Date()).toISOString() };
 }
 
+export function staffAttendanceReviewTask(params: {
+  businessId: string;
+  employeeId: string;
+  employeeName: string;
+  businessDate: string;
+  issueCode: "unscheduled_actual" | "schedule_difference";
+  sourceType: string;
+  sourceProvider?: string | null;
+  startDifferenceMinutes?: number;
+  endDifferenceMinutes?: number | null;
+  now?: Date;
+}): OperatingTask {
+  return {
+    id: `attendance:${params.employeeId}:${params.businessDate}`,
+    businessId: params.businessId,
+    agentId: "olivia",
+    kind: "staff_coverage",
+    entityType: "employee",
+    entityId: params.employeeId,
+    status: "needs_owner",
+    payload: {
+      employeeName: params.employeeName,
+      businessDate: params.businessDate,
+      issueCode: params.issueCode,
+      sourceType: params.sourceType,
+      sourceProvider: params.sourceProvider ?? null,
+      startDifferenceMinutes: params.startDifferenceMinutes ?? null,
+      endDifferenceMinutes: params.endDifferenceMinutes ?? null,
+    },
+    confidence: "high",
+    evidence: [{
+      source: params.sourceProvider ?? params.sourceType,
+      facts: {
+        businessDate: params.businessDate,
+        issueCode: params.issueCode,
+        startDifferenceMinutes: params.startDifferenceMinutes ?? null,
+        endDifferenceMinutes: params.endDifferenceMinutes ?? null,
+      },
+    }],
+    createdAt: (params.now ?? new Date()).toISOString(),
+  };
+}
+
 export function supplyCheckTask(params: { businessId: string; itemId: string; itemName: string; reason: string; now?: Date }): OperatingTask {
   return { id: `supply:${params.itemId}`, businessId: params.businessId, agentId: "maya", kind: "supply_check", entityType: "ingredient_or_packaging", entityId: params.itemId, status: "needs_response", payload: { itemName: params.itemName, reason: params.reason, inventoryQuantityAvailable: false }, confidence: "low", evidence: [{ source: "human_confirmation_requested", facts: { inventoryQuantityAvailable: false } }], createdAt: (params.now ?? new Date()).toISOString() };
 }
