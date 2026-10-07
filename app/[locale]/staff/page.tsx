@@ -12,6 +12,7 @@ import StaffCostBars, { shortWeekday } from "@/components/staff/StaffCostBars";
 import PageShell from "@/components/shared/PageShell";
 import PayrollCostCard from "@/components/staff/PayrollCostCard";
 import { getPayrollCostSettings } from "@/lib/data/getPayrollCostSettings";
+import { getEmployees } from "@/lib/data/getEmployees";
 
 // Personalized, session-dependent — never statically prerendered.
 export const dynamic = "force-dynamic";
@@ -21,9 +22,17 @@ export default async function StaffPage() {
   const t = await getTranslations("Staff");
   const locale = await getLocale();
 
-  const [snapshot, payrollSettings] = await Promise.all([getSnapshot(), getPayrollCostSettings()]);
+  const [snapshot, payrollSettings, employees] = await Promise.all([getSnapshot(), getPayrollCostSettings(), getEmployees()]);
   const vm = buildStaffViewModel(snapshot);
+  const activeEmployees = employees.filter((employee) => employee.active);
   const clockLabel = (iso: string) => formatInTimeZone(iso, snapshot.business.timezone, "H:mm");
+  const sourceLabel = (sourceType: string | undefined, provider?: string | null) => {
+    if (sourceType === "connected_pos") return t("sourcePos", { provider: provider || "POS" });
+    if (sourceType === "imported") return t("sourceImported");
+    if (sourceType === "ai_cafe") return t("sourceAiCafe");
+    if (sourceType === "owner_manual") return t("sourceOwnerManual");
+    return t("sourceOwnerSchedule");
+  };
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
@@ -32,12 +41,7 @@ export default async function StaffPage() {
           <div className="text-xl font-bold text-ink">{t("title")}</div>
           <div className="text-sm font-medium text-ink-muted">{t("subtitle")}</div>
         </div>
-        <div className="flex items-center gap-2">
-          <Link href="/more/manage-staff" className="flex min-h-12 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
-            <Plus aria-hidden="true" size={19} /> {t("addStaff")}
-          </Link>
-          <LanguageSwitch href="/staff" />
-        </div>
+        <LanguageSwitch href="/staff" />
       </header>
 
       <section className={`flex flex-col gap-3.5 rounded-card-lg p-5 ${vm.onShift.length > 0 ? "bg-good text-white" : "border border-line bg-[#EDE5D9] text-ink"}`}>
@@ -84,6 +88,9 @@ export default async function StaffPage() {
                 <span className="truncate text-base font-bold">
                   {s.name} · {s.role ?? t("staffRole")}
                 </span>
+                <span className="mt-1 inline-flex w-fit rounded-full bg-paper px-2 py-1 text-xs font-bold text-ink-muted">
+                  {sourceLabel(s.sourceType, s.sourceProvider)}
+                </span>
                 {s.breakFlag !== "ok" ? (
                   <span className={`text-[13px] font-semibold ${s.breakFlag === "missed" ? "text-warn" : "text-ink-muted"}`}>
                     {t("sinceShort", { time: clockLabel(s.clockInIso) })} · {t(s.breakFlag === "missed" ? "breakMissed" : "breakDue", { time: clockLabel(s.breakDueIso!) })}
@@ -103,6 +110,46 @@ export default async function StaffPage() {
             </div>
           ))
         )}
+      </section>
+
+      <section className="flex flex-col rounded-card-lg bg-card px-[18px] py-4">
+        <div className="flex items-center justify-between gap-3 pb-2">
+          <div>
+            <h2 className="text-[17px] font-bold text-ink">{t("teamToday")}</h2>
+            <p className="text-sm text-ink-muted">{t("teamTodayHint")}</p>
+          </div>
+          <Link href="/more/manage-staff" className="flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
+            <Plus aria-hidden="true" size={19} /> {t("addStaff")}
+          </Link>
+        </div>
+        {activeEmployees.length === 0 ? (
+          <p className="py-3 text-[15px] text-ink-muted">{t("noStaff")}</p>
+        ) : activeEmployees.map((employee) => {
+          const shift = snapshot.staffShiftsToday.find((item) => item.employeeId === employee.id);
+          return (
+            <div key={employee.id} className="flex items-start gap-3 border-b border-line py-3 last:border-b-0">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-paper text-[17px] font-extrabold text-staff">
+                {employee.name.charAt(0)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="font-bold text-ink">{employee.name}</div>
+                <div className="text-sm text-ink-muted">{employee.role ?? t("staffRole")}</div>
+                {shift ? (
+                  <>
+                    <div className="mt-1 text-[15px] font-semibold text-ink">
+                      {clockLabel(shift.timecard.clockIn)} – {shift.timecard.clockOut ? clockLabel(shift.timecard.clockOut) : t("now")}
+                    </div>
+                    <span className="mt-1 inline-flex rounded-full bg-paper px-2 py-1 text-xs font-bold text-ink-muted">
+                      {sourceLabel(shift.timecard.sourceType, shift.timecard.sourceProvider)}
+                    </span>
+                  </>
+                ) : (
+                  <div className="mt-1 text-sm text-ink-muted">{t("offToday")}</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       <PayrollCostCard

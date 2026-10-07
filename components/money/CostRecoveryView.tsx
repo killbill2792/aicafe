@@ -170,18 +170,6 @@ export default async function CostRecoveryView({ snapshot, calMonthKey }: { snap
             <span className="block text-xs font-semibold text-ink-muted">{t("monthlyStaffEstimate")}</span>
             <strong className="mt-1 block text-xl text-ink"><Money cents={vm.monthlyStaffCents} /></strong>
           </div>
-          <div className="rounded-2xl bg-paper p-3">
-            <span className="block text-xs font-semibold text-ink-muted">{t("ingredientsAtBreakEven")}</span>
-            <strong className="mt-1 block text-xl text-ink">
-              {vm.breakEven.kind === "ready" ? <Money cents={vm.breakEven.ingredientCostsAtBreakEvenCents} /> : "—"}
-            </strong>
-          </div>
-          <div className="rounded-2xl bg-paper p-3">
-            <span className="block text-xs font-semibold text-ink-muted">{t("processingFeesAtBreakEven")}</span>
-            <strong className="mt-1 block text-xl text-ink">
-              {vm.breakEven.kind === "ready" ? <Money cents={vm.breakEven.processingFeesAtBreakEvenCents} /> : "—"}
-            </strong>
-          </div>
         </div>
       </section>
 
