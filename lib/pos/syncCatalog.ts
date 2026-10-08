@@ -2,6 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { catalogSourceFor, matchCatalogItem, type CanonicalMenuCandidate } from "./catalogMatching";
+import { recordInitialMenuPrice, setCanonicalMenuPrice } from "@/lib/menu/priceHistory";
 
 /** Enrich the canonical catalog without touching recipes, costs, or decision history. */
 export async function syncCanonicalCatalog(supabase: SupabaseClient, businessId: string, adapter: PosAdapter) {
@@ -20,11 +21,47 @@ export async function syncCanonicalCatalog(supabase: SupabaseClient, businessId:
     }
     if (result.candidateId) {
       matched += 1;
-      await supabase.from("menu_items").update({ pos_item_id: item.posItemId, name: item.name, price_cents: item.priceCents, category: item.category, is_active: true, catalog_source: catalogSourceFor(adapter.provider), catalog_last_synced_at: new Date().toISOString() }).eq("id", result.candidateId).eq("business_id", businessId);
+      if (item.priceCents !== null && item.priceCents > 0) {
+        await setCanonicalMenuPrice(supabase, {
+          businessId,
+          menuItemId: result.candidateId,
+          priceCents: item.priceCents,
+          sourceType: adapter.provider === "csv" ? "imported" : "connected_pos",
+          sourceProvider: adapter.provider,
+        });
+      }
+      await supabase.from("menu_items").update({
+        pos_item_id: item.posItemId,
+        name: item.name,
+        ...(item.priceCents === null ? { price_cents: null } : {}),
+        category: item.category,
+        is_active: true,
+        catalog_source: catalogSourceFor(adapter.provider),
+        catalog_last_synced_at: new Date().toISOString(),
+      }).eq("id", result.candidateId).eq("business_id", businessId);
       continue;
     }
     created += 1;
-    await supabase.from("menu_items").insert({ business_id: businessId, pos_item_id: item.posItemId, name: item.name, base_name: item.name, price_cents: item.priceCents, category: item.category, is_active: true, catalog_source: catalogSourceFor(adapter.provider), catalog_last_synced_at: new Date().toISOString() });
+    const { data: createdItem, error: createError } = await supabase.from("menu_items").insert({
+      business_id: businessId,
+      pos_item_id: item.posItemId,
+      name: item.name,
+      base_name: item.name,
+      price_cents: item.priceCents,
+      category: item.category,
+      is_active: true,
+      catalog_source: catalogSourceFor(adapter.provider),
+      catalog_last_synced_at: new Date().toISOString(),
+    }).select("id").single();
+    if (createError) throw createError;
+    if (createdItem && item.priceCents !== null && item.priceCents > 0) {
+      await recordInitialMenuPrice(supabase, {
+        businessId,
+        menuItemId: createdItem.id,
+        priceCents: item.priceCents,
+        sourceProvider: adapter.provider,
+      });
+    }
   }
   return { imported: imported.length, matched, needsReview, created };
 }
