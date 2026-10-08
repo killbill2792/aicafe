@@ -177,16 +177,16 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     .map((row) => row.business_date)
     .sort();
 
-  const latestChangeByItem = new Map<string, {
+  type RecordedPriceChange = {
     changedOn: string;
     oldPriceCents: number;
     newPriceCents: number;
     sourceType: "owner_manual" | "connected_pos" | "imported";
     sourceProvider: string | null;
-  }>();
+  };
+  const changesByItem = new Map<string, RecordedPriceChange[]>();
   for (const row of historyResult.data ?? []) {
     if (
-      latestChangeByItem.has(row.menu_item_id) ||
       row.old_price_cents === null ||
       Number(row.old_price_cents) <= 0 ||
       Number(row.new_price_cents) <= 0 ||
@@ -195,13 +195,15 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     ) {
       continue;
     }
-    latestChangeByItem.set(row.menu_item_id, {
+    const rows = changesByItem.get(row.menu_item_id) ?? [];
+    rows.push({
       changedOn: formatInTimeZone(new Date(row.changed_at), timezone, "yyyy-MM-dd"),
       oldPriceCents: Number(row.old_price_cents),
       newPriceCents: Number(row.new_price_cents),
       sourceType: row.source_type as "owner_manual" | "connected_pos" | "imported",
       sourceProvider: row.source_provider,
     });
+    changesByItem.set(row.menu_item_id, rows);
   }
 
   const marketByItem = new Map<string, MarketPriceObservation[]>();
@@ -232,6 +234,8 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     };
   }, null);
 
+  const hasLiveSquareCatalog = (connectionsResult.data ?? []).length > 0;
+
   return items.map((item) => {
     const input = inputById.get(item.id);
     const pricing = pricingById.get(item.id) ?? null;
@@ -245,7 +249,10 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
         revenueCents: itemDay?.revenueCents ?? 0,
       };
     });
-    const latestChange = latestChangeByItem.get(item.id) ?? null;
+    const latestChange =
+      (changesByItem.get(item.id) ?? []).find(
+        (change) => !hasLiveSquareCatalog || change.sourceType !== "owner_manual",
+      ) ?? null;
 
     return {
       ...item,
