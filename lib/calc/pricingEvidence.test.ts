@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   analyzePriceChangeSalesResponse,
   compareNearbyMarketPrice,
+  compareCostBasedPrice,
   type ItemSalesEvidenceDay,
   type MarketPriceObservation,
 } from "./pricingEvidence";
@@ -96,5 +97,26 @@ describe("nearby market comparison", () => {
       differenceCents: 87,
       position: "above",
     });
+  });
+});
+
+
+describe("cost-based price comparison", () => {
+  it("does not call a missing benchmark market evidence", () => {
+    expect(compareCostBasedPrice(650, null)).toEqual({ status: "unavailable" });
+  });
+
+  it("describes a price above the deterministic cost benchmark without calling it wrong", () => {
+    expect(compareCostBasedPrice(650, 500)).toMatchObject({
+      status: "ready",
+      benchmarkPriceCents: 500,
+      differenceCents: 150,
+      differencePercent: 30,
+      position: "above",
+    });
+  });
+
+  it("uses a neutral range around the benchmark", () => {
+    expect(compareCostBasedPrice(520, 500)).toMatchObject({ status: "ready", position: "within_range" });
   });
 });
