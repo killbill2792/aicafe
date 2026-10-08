@@ -39,6 +39,8 @@ export type PriceChangeSalesResponse =
       beforeRevenuePerDayCents: number;
       afterRevenuePerDayCents: number;
       revenuePerDayChangePercent: number;
+      unitsDirection: "up" | "down" | "flat";
+      revenueDirection: "up" | "down" | "flat";
     };
 
 export type CostBenchmarkComparison =
@@ -96,6 +98,12 @@ function dateAtOffset(date: string, days: number): string {
 function percentChange(before: number, after: number): number {
   if (before === 0) return 0;
   return ((after - before) / before) * 100;
+}
+
+function observedDirection(changePercent: number): "up" | "down" | "flat" {
+  if (changePercent > 1) return "up";
+  if (changePercent < -1) return "down";
+  return "flat";
 }
 
 export function analyzePriceChangeSalesResponse(
@@ -161,6 +169,8 @@ export function analyzePriceChangeSalesResponse(
   const beforeRevenuePerDayCents = Math.round(beforeRevenue / before.length);
   const afterRevenuePerDayCents = Math.round(afterRevenue / after.length);
 
+  const unitsPerDayChangePercent = percentChange(beforeUnitsPerDay, afterUnitsPerDay);
+  const revenuePerDayChangePercent = percentChange(beforeRevenuePerDayCents, afterRevenuePerDayCents);
   return {
     status: "ready",
     change,
@@ -170,10 +180,12 @@ export function analyzePriceChangeSalesResponse(
     afterCoveredDays: after.length,
     beforeUnitsPerDay,
     afterUnitsPerDay,
-    unitsPerDayChangePercent: percentChange(beforeUnitsPerDay, afterUnitsPerDay),
+    unitsPerDayChangePercent,
     beforeRevenuePerDayCents,
     afterRevenuePerDayCents,
-    revenuePerDayChangePercent: percentChange(beforeRevenuePerDayCents, afterRevenuePerDayCents),
+    revenuePerDayChangePercent,
+    unitsDirection: observedDirection(unitsPerDayChangePercent),
+    revenueDirection: observedDirection(revenuePerDayChangePercent),
   };
 }
 
