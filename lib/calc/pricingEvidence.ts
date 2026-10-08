@@ -18,6 +18,8 @@ export type PriceChangeSalesResponse =
   | {
       status: "not_enough_data";
       change: MenuPriceChange;
+      priceChangeCents: number;
+      priceChangePercent: number;
       beforeCoveredDays: number;
       afterCoveredDays: number;
       beforeUnits: number;
@@ -27,6 +29,8 @@ export type PriceChangeSalesResponse =
   | {
       status: "ready";
       change: MenuPriceChange;
+      priceChangeCents: number;
+      priceChangePercent: number;
       beforeCoveredDays: number;
       afterCoveredDays: number;
       beforeUnitsPerDay: number;
@@ -116,6 +120,8 @@ export function analyzePriceChangeSalesResponse(
   const windowDays = options.windowDays ?? PRICE_RESPONSE_WINDOW_DAYS;
   const minimumCoveredDays = options.minimumCoveredDays ?? PRICE_RESPONSE_MIN_COVERED_DAYS;
   const minimumBeforeUnits = options.minimumBeforeUnits ?? PRICE_RESPONSE_MIN_BEFORE_UNITS;
+  const priceChangeCents = change.newPriceCents - change.oldPriceCents;
+  const priceChangePercent = (priceChangeCents / change.oldPriceCents) * 100;
   const beforeStart = dateAtOffset(change.changedOn, -windowDays);
   const beforeEnd = dateAtOffset(change.changedOn, -1);
   const afterStart = dateAtOffset(change.changedOn, 1);
@@ -137,6 +143,8 @@ export function analyzePriceChangeSalesResponse(
     return {
       status: "not_enough_data",
       change,
+      priceChangeCents,
+      priceChangePercent,
       beforeCoveredDays: before.length,
       afterCoveredDays: after.length,
       beforeUnits,
@@ -156,6 +164,8 @@ export function analyzePriceChangeSalesResponse(
   return {
     status: "ready",
     change,
+    priceChangeCents,
+    priceChangePercent,
     beforeCoveredDays: before.length,
     afterCoveredDays: after.length,
     beforeUnitsPerDay,
