@@ -37,6 +37,16 @@ export type PriceChangeSalesResponse =
       revenuePerDayChangePercent: number;
     };
 
+export type CostBenchmarkComparison =
+  | { status: "unavailable" }
+  | {
+      status: "ready";
+      benchmarkPriceCents: number;
+      differenceCents: number;
+      differencePercent: number;
+      position: "above" | "below" | "within_range";
+    };
+
 export type MarketPriceObservation = {
   competitorName: string;
   priceCents: number;
@@ -155,6 +165,25 @@ export function analyzePriceChangeSalesResponse(
     afterRevenuePerDayCents,
     revenuePerDayChangePercent: percentChange(beforeRevenuePerDayCents, afterRevenuePerDayCents),
   };
+}
+
+export function compareCostBasedPrice(
+  currentPriceCents: number,
+  benchmarkPriceCents: number | null,
+  withinRangePercent = 5,
+): CostBenchmarkComparison {
+  if (currentPriceCents <= 0 || benchmarkPriceCents === null || benchmarkPriceCents <= 0) {
+    return { status: "unavailable" };
+  }
+  const differenceCents = currentPriceCents - benchmarkPriceCents;
+  const differencePercent = (differenceCents / benchmarkPriceCents) * 100;
+  const position =
+    differencePercent > withinRangePercent
+      ? "above"
+      : differencePercent < -withinRangePercent
+        ? "below"
+        : "within_range";
+  return { status: "ready", benchmarkPriceCents, differenceCents, differencePercent, position };
 }
 
 function median(values: number[]): number {
