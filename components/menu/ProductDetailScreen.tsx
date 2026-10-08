@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { renameProduct, setMenuItemActive, updateMenuItemPrice } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
-import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
+import { EMPTY_MENU_PRICING_EVIDENCE, type MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 import type { MenuDetailTab } from "@/lib/viewmodels/menuDetail";
@@ -60,7 +60,7 @@ function PriceEvidencePanel({
  t:ReturnType<typeof useTranslations<"Menu">>;
  format:ReturnType<typeof useFormatter>;
 }){
- const evidence=size.pricingEvidence;
+ const evidence=size.pricingEvidence ?? EMPTY_MENU_PRICING_EVIDENCE;
  const cost=evidence.costBenchmark;
  const sales=evidence.salesResponse;
  const market=evidence.nearbyMarket;
