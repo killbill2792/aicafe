@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Info } from "lucide-react";
 
 export default function InfoPopover({
@@ -8,17 +8,17 @@ export default function InfoPopover({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLSpanElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
 
   useEffect(() => {
     if (!open) return;
 
     const closeOnPointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      if (!buttonRef.current?.contains(event.target as Node)) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -33,8 +33,9 @@ export default function InfoPopover({
   }, [open]);
 
   return (
-    <span ref={rootRef} className="relative inline-flex">
+    <span className="relative inline-flex">
       <button
+        ref={buttonRef}
         type="button"
         aria-label={label}
         aria-expanded={open}
