@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { renameProduct, setMenuItemActive, updateMenuItemPrice } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
-import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
+import { EMPTY_MENU_PRICING_EVIDENCE, type MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 import type { MenuDetailTab } from "@/lib/viewmodels/menuDetail";
@@ -39,6 +39,7 @@ function SizeCard({size,t,chip,editing,onPrice,onPriceClose,saveLabel,cancelLabe
    {ready&&keep!==null&&<div className="mt-3 flex h-2.5 overflow-hidden rounded-full bg-line" aria-label={t("costKeepSummary",{cost:formatCents(size.ingredientsCostCents!),keep:formatCents(keep)})}><span className="bg-ingredients" style={{flexGrow:size.ingredientsCostCents!,flexBasis:0}}/><span className="bg-good" style={{flexGrow:Math.max(keep,0),flexBasis:0}}/></div>}
    <div className="mt-4 rounded-2xl bg-paper p-3"><div className="flex items-end justify-between gap-3"><div className="min-w-0 flex-1"><p className="text-sm text-ink-muted">{t("unitsSold")}</p><p className="text-2xl font-extrabold">{units===null?t("noSalesData"):format.number(units)}</p></div>{daily&&<SalesBars days={daily}/>}</div><div className="mt-2 grid grid-cols-3 rounded-xl bg-card p-1" aria-label={t("salesPeriod")}>{(["today","days7","days30"] as const).map(value=><button key={value} type="button" aria-pressed={period===value} onClick={()=>setPeriod(value)} className={`min-h-12 rounded-lg px-1 text-sm font-bold ${period===value?"bg-ink text-paper":"text-ink-muted"}`}>{t(value==="today"?"today":value==="days7"?"last7Days":"last30Days")}</button>)}</div></div>
    <div className="mt-3 grid grid-cols-2 gap-2"><StatusBox label={t("priceStatus")} value={chip.label} good={chip.good}/><StatusBox label={t("recipeStatus")} value={ready?t("recipeReady"):t("needsReview")} good={ready}/></div>
+   <PriceEvidencePanel size={size} t={t} format={format}/>
    <button type="button" onClick={onRecipe} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-good px-2 font-bold text-white hover:bg-good/90"><FilePenLine size={18}/>{ready?t("editRecipe"):t("reviewRecipe")}</button>
   </div><button type="button" onClick={onToggle} className={`flex min-h-12 w-full items-center justify-center gap-2 border-t px-3 font-bold ${size.active?"border-warn/20 bg-warn-tint/35 text-warn":"border-good/20 bg-good-tint text-good"}`}><Power size={18}/>{size.active?t("noLongerServing"):t("serveAgain")}</button>
  </article>;
@@ -49,6 +50,71 @@ function InlinePrice({size,editing,onEdit,onClose,saveLabel,cancelLabel,suggeste
  if(!editing)return <button type="button" onClick={()=>{setValue((size.priceCents/100).toFixed(2));setError(null);onEdit();}} className="flex min-h-12 items-center gap-1.5 rounded-lg text-xl font-extrabold hover:text-good"><span>{formatCents(size.priceCents)}</span><Pencil size={17} aria-hidden="true"/></button>;
  const suggested=(status.kind==="low"||status.kind==="high")?status.suggestedPriceCents:null;
  return <div className="min-w-[150px]"><label className="flex h-12 items-center rounded-lg border border-ink bg-card px-2 font-bold"><span aria-hidden="true">$</span><input ref={inputRef} aria-label={inputLabel} inputMode="decimal" value={value} onChange={event=>setValue(event.target.value)} className="w-20 min-w-0 px-1 outline-none"/></label>{suggested!==null&&<p className="mt-1 text-sm font-medium text-ink-muted">{suggestedLabel} {formatCents(suggested)}</p>}{error&&<p className="mt-1 text-sm text-warn" role="alert">{error}</p>}<div className="mt-2 flex gap-1"><button type="button" disabled={pending} onClick={()=>start(async()=>{const cents=Math.round(Number(value)*100);const result=await updateMenuItemPrice({menuItemId:size.id,priceCents:cents});if(result.ok){router.refresh();onClose();}else setError(result.error);})} className="min-h-12 rounded-lg bg-ink px-3 text-sm font-bold text-paper disabled:opacity-40">{saveLabel}</button><button type="button" disabled={pending} onClick={()=>{setError(null);onClose();}} className="min-h-12 rounded-lg px-2 text-sm font-bold">{cancelLabel}</button></div></div>;
+}
+function PriceEvidencePanel({
+ size,
+ t,
+ format,
+}:{
+ size:MenuControlItem;
+ t:ReturnType<typeof useTranslations<"Menu">>;
+ format:ReturnType<typeof useFormatter>;
+}){
+ const evidence=size.pricingEvidence ?? EMPTY_MENU_PRICING_EVIDENCE;
+ const cost=evidence.costBenchmark;
+ const sales=evidence.salesResponse;
+ const market=evidence.nearbyMarket;
+ const pct=(value:number)=>`${format.number(Math.abs(value),{maximumFractionDigits:1})}%`;
+ const units=(value:number)=>format.number(value,{maximumFractionDigits:1});
+ const changeDate=(date:string)=>format.dateTime(new Date(`${date}T12:00:00Z`),{month:"short",day:"numeric",year:"numeric"});
+ const provider=(value:string|null)=>value?value.charAt(0).toUpperCase()+value.slice(1):"POS";
+ const source=sales.status==="no_change_history"
+   ? null
+   : sales.change.sourceType==="owner_manual"
+     ? t("priceSourceOwner")
+     : sales.change.sourceType==="connected_pos"
+       ? t("priceSourcePos",{provider:provider(sales.change.sourceProvider)})
+       : t("priceSourceImported");
+ const costText=cost.status==="unavailable"
+   ? t("costBenchmarkUnavailable")
+   : cost.position==="above"
+     ? t("costBenchmarkAbove",{amount:formatCents(Math.abs(cost.differenceCents)),benchmark:formatCents(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
+     : cost.position==="below"
+       ? t("costBenchmarkBelow",{amount:formatCents(Math.abs(cost.differenceCents)),benchmark:formatCents(cost.benchmarkPriceCents),percent:pct(cost.differencePercent)})
+       : t("costBenchmarkNear",{benchmark:formatCents(cost.benchmarkPriceCents)});
+ let salesText:string;
+ let salesDetail:string|null=null;
+ if(sales.status==="no_change_history"){
+   salesText=t("salesResponseNoHistory");
+ }else{
+   const changed=sales.priceChangeCents>0
+     ? t("priceChangedUp",{amount:formatCents(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)})
+     : t("priceChangedDown",{amount:formatCents(Math.abs(sales.priceChangeCents)),date:changeDate(sales.change.changedOn)});
+   if(sales.status==="not_enough_data"){
+     salesText=changed;
+     salesDetail=t("salesResponseNotEnough",{before:sales.beforeCoveredDays,after:sales.afterCoveredDays,minimum:sales.minimumCoveredDays});
+   }else{
+     const unitKey=sales.unitsDirection==="up"?"salesUnitsUp":sales.unitsDirection==="down"?"salesUnitsDown":"salesUnitsFlat";
+     const revenueKey=sales.revenueDirection==="up"?"salesRevenueUp":sales.revenueDirection==="down"?"salesRevenueDown":"salesRevenueFlat";
+     salesText=changed;
+     salesDetail=`${t(unitKey,{percent:pct(sales.unitsPerDayChangePercent),before:units(sales.beforeUnitsPerDay),after:units(sales.afterUnitsPerDay)})} ${t(revenueKey,{percent:pct(sales.revenuePerDayChangePercent),before:formatCents(sales.beforeRevenuePerDayCents),after:formatCents(sales.afterRevenuePerDayCents)})}`;
+   }
+ }
+ const marketText=market.status==="unavailable"
+   ? t("marketUnavailable",{count:market.verifiedNearbyCount,minimum:market.minimumCompetitors})
+   : market.position==="above"
+     ? t("marketAbove",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)})
+     : market.position==="below"
+       ? t("marketBelow",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)})
+       : t("marketNear",{count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)});
+ return <section className="mt-3 rounded-2xl border border-line bg-[#FBF7F1] p-4">
+   <h4 className="text-lg font-extrabold text-ink">{t("priceAnalysisTitle")}</h4>
+   <div className="mt-3 space-y-3">
+     <div><p className="font-bold text-ink">{t("costBenchmarkTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{costText}</p><p className="mt-1 text-sm text-ink-muted">{t("costBenchmarkNotMarket")}</p></div>
+     <div className="border-t border-line pt-3"><div className="flex flex-wrap items-center gap-2"><p className="font-bold text-ink">{t("salesResponseTitle")}</p>{source&&<span className="rounded-full bg-card px-2 py-1 text-xs font-bold text-ink-muted">{source}</span>}</div><p className="mt-1 text-[17px] leading-snug text-ink-muted">{salesText}</p>{salesDetail&&<p className="mt-1 text-[17px] leading-snug text-ink">{salesDetail}</p>}{sales.status==="ready"&&<p className="mt-1 text-sm text-ink-muted">{t("salesResponseCaveat")}</p>}</div>
+     <div className="border-t border-line pt-3"><p className="font-bold text-ink">{t("marketComparisonTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{marketText}</p></div>
+   </div>
+ </section>;
 }
 function SalesBars({days}:{days:{date:string;quantity:number}[]}){const peak=Math.max(...days.map(day=>day.quantity),1);return <div className="flex h-14 w-28 items-end justify-end gap-px border-b border-line" aria-hidden="true">{days.map(day=><span key={day.date} className="min-w-[2px] flex-1 rounded-t-sm bg-good/75" style={{height:day.quantity?`${Math.max((day.quantity/peak)*100,4)}%`:0}}/>)}</div>}
 function StatusBox({label,value,good}:{label:string;value:string;good:boolean}){return <div className={`rounded-xl p-3 ${good?"bg-good-tint":"bg-amber-50"}`}><p className="text-sm text-ink-muted">{label}</p><p className={`mt-1 flex items-start gap-1.5 font-bold ${good?"text-good":"text-warn"}`}>{good?<Check className="mt-0.5 shrink-0" size={17}/>:<TriangleAlert className="mt-0.5 shrink-0" size={17}/>}<span>{value}</span></p></div>}

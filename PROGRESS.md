@@ -2118,3 +2118,67 @@ Still deferred:
 - [ ] Additional POS-specific tender/payment-method ingestion if we later want AI Cafe to derive the
       processed-sales share itself rather than asking the owner when that fact is unavailable.
 
+## Pricing evidence analysis + processing-fee info popover (2026-10-08 — implementation in progress)
+
+Owner correction:
+- "Your price looks right" is too strong. KEEP_CURRENT_PRICE only means the deterministic cost-based
+  engine does not currently recommend a price change; it is not proof of market fit or demand.
+- Pricing analysis must separate cost evidence, the café's own sales response after a real price
+  change, and sourced market/competitor evidence. Never call an internal cost benchmark an
+  "industry standard."
+- When a price changes, preserve source-aware price history so later analysis can compare covered
+  sales days before vs after the change. If there is not enough comparable history, explicitly say
+  there is not enough sales data instead of predicting demand.
+- Nearby competitor claims are allowed only when sourced market observations exist. With no verified
+  market observations, show that nearby competitor pricing is unavailable rather than guessing.
+- Processing-fee info popovers should close on outside click/tap and Escape; owners should not need
+  to click the info icon a second time.
+
+Plan:
+1. Replace the native persistent <details> processing-fee help with a controlled accessible popover
+   that closes on outside interaction/Escape.
+2. Add additive menu price-history provenance and record real owner/POS price changes idempotently.
+3. Add pure/tested before-vs-after sales-response analysis using only sales-covered days with a
+   minimum sample requirement; report units/day and revenue/day changes as observations, not causal
+   predictions.
+4. Add source-aware market-price observation support. The UI may compare against verified nearby
+   observations when present and must otherwise say market evidence is unavailable.
+5. Replace "Your price looks right" / equivalent copy with evidence-specific language and surface
+   the price-change sales analysis on the product size card. Localize EN/ES/AR.
+6. Run focused regression checks and keep pricing recommendation math unchanged.
+
+Result:
+- [x] Processing-fee help uses a controlled 48px info button; open help closes on outside
+      click/tap and Escape instead of requiring a second click on the icon.
+- [x] "Your price looks right" / "Prices look right" is replaced with neutral cost-evidence copy:
+      "No cost-based price change suggested." This does not claim market or demand optimality.
+- [x] Migration 31 adds tenant-scoped menu price history with source provenance and an atomic
+      set-menu-price RPC. Owner edits and connected POS catalog changes now record real price
+      changes without changing deterministic recommendation math.
+- [x] Price response analysis compares 14 calendar-day windows around the latest recorded price
+      change using only days explicitly marked with actual sales coverage. It requires at least
+      7 covered days on each side and at least 20 pre-change units; otherwise the UI says there is
+      not enough sales data.
+- [x] When sufficient data exists, the product size view reports the recorded price increase/decrease,
+      units sold per sales day before vs after, and revenue per sales day before vs after, with an
+      explicit note that correlation is not proof of causation.
+- [x] The price screen separates the deterministic product-cost benchmark from market evidence and
+      explicitly says the cost benchmark is not an industry or competitor price.
+- [x] Migration 31 adds source-aware nearby market observations. A market comparison requires at
+      least 3 distinct observations within 8 km and no older than 90 days, then compares current
+      price with their median. Without enough sourced observations, AI Cafe says so and does not guess.
+- [x] EN / ES / AR copy updated, including AI Team zero-state wording so it no longer says
+      "Prices look steady" as if demand/market fit were proven.
+- [x] Added pure regression tests for insufficient sales data, observed before/after changes,
+      covered zero-unit days, cost-benchmark comparison, competitor minimum sample, distance,
+      freshness/deduplication, and median comparison.
+
+Deployment order:
+- Apply migration 31 (`20261008000031_pricing_evidence.sql`) before deploying this application code.
+- Price-response analytics become trustworthy for price changes recorded after this migration.
+  Existing current prices are seeded as an initial baseline; AI Cafe deliberately does not infer
+  historical list-price changes from discounted order-line revenue.
+- Nearby competitor comparison remains unavailable until a trusted collection process writes
+  sourced observations. This milestone builds the evidence boundary and truthful UI; it does not
+  scrape or invent competitor menus.
+
