@@ -36,7 +36,7 @@ export type MenuPricingEvidence = {
 
 export type MenuControlItem = MenuItemForEdit & {
   pricing: PricingResult | null;
-  pricingEvidence: MenuPricingEvidence;
+  pricingEvidence?: MenuPricingEvidence;
   unitsSold: number | null;
   unitsSoldByPeriod?: ItemSalesPeriodTotals;
   unitsSoldDailyByPeriod?: ItemSalesDailyByPeriod;
@@ -45,7 +45,7 @@ export type MenuControlItem = MenuItemForEdit & {
   lastSyncedAt: string | null;
 };
 
-const EMPTY_EVIDENCE: MenuPricingEvidence = {
+export const EMPTY_MENU_PRICING_EVIDENCE: MenuPricingEvidence = {
   costBenchmark: { status: "unavailable" },
   salesResponse: { status: "no_change_history" },
   nearbyMarket: { status: "unavailable", verifiedNearbyCount: 0, minimumCompetitors: 3 },
@@ -58,7 +58,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     return items.map((item) => ({
       ...item,
       pricing: null,
-      pricingEvidence: EMPTY_EVIDENCE,
+      pricingEvidence: EMPTY_MENU_PRICING_EVIDENCE,
       unitsSold: null,
       unitsSoldByPeriod: { today: null, days7: null, days30: null },
       unitsSoldDailyByPeriod: { today: null, days7: null, days30: null },
