@@ -2073,3 +2073,48 @@ Still intentionally deferred:
 - [ ] Worker messaging transport that invokes AI Cafe clock-in/out; this PR provides the canonical
       source boundary but does not pretend messaging delivery exists yet.
 
+## Processing-fee UX + automatic-source pass (2026-10-06 — PR pending)
+
+Scope is intentionally limited to processing-fee comprehension and automatic-use behavior. No pricing,
+break-even, ingredient, or source-precedence formula changed.
+
+Implemented:
+- [x] Processing Fees now leads with what AI Cafe already knows instead of opening on a technical
+      rate-plan form.
+- [x] Connected POS/provider identity is surfaced when available.
+- [x] The screen shows recent sales-day coverage by actual / estimated / missing processing fees.
+- [x] Connected/imported actual fees remain canonical and automatically outrank the owner estimate.
+- [x] If recent sales days are fully covered by actual fees, the fallback estimator is collapsed by
+      default instead of asking the owner for unnecessary assumptions.
+- [x] Added a direct path to upload an actual processing-fee report; owners with actual fee amounts
+      are encouraged to use actuals rather than convert them into percentages.
+- [x] Simplified the default manual fallback to: processor, effective date, one processed-sales
+      share, percentage fee, and optional fixed fee.
+- [x] In simple mode, the processed-sales share is also used for processed-transaction share. Owners
+      with a materially different transaction mix can open Advanced settings.
+- [x] Advanced settings retain the existing multiple-rate model, separate transaction share, sales
+      mix, transaction mix, and rule labels.
+- [x] Added tap/click info help for every technical processing-fee field.
+- [x] AI Cafe detects recent days with trustworthy real provider order counts. For fixed per-payment
+      fees, those order counts are used automatically. Average processed payment is requested only
+      when fixed-fee math needs a transaction estimate and trustworthy order counts are unavailable.
+- [x] Active connected provider pre-fills the processor label when there is no saved owner plan.
+- [x] EN / ES / AR copy updated for the simplified owner flow and help text.
+- [x] Existing deterministic source priority is unchanged:
+      connected POS actual > manual/imported actual > owner-confirmed estimate > temporary estimate > missing.
+
+Provider behavior confirmed during implementation:
+- Square Payments exposes assessed processing fees on the Payment object, so Square actual fees can
+  be used directly when complete.
+- Do not assume Toast/Clover expose merchant contract rate terms. If a provider returns trustworthy
+  actual fee amounts, use them; otherwise keep the owner-confirmed estimate as fallback.
+- Rate-plan terms are not required when actual processing fees are available.
+
+No migration is required for this pass.
+
+Still deferred:
+- [ ] Owner-provided aggregate ingredient cost per menu item/size with explicit fallback provenance
+      and deterministic precedence against a complete recipe.
+- [ ] Additional POS-specific tender/payment-method ingestion if we later want AI Cafe to derive the
+      processed-sales share itself rather than asking the owner when that fact is unavailable.
+
