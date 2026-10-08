@@ -2118,3 +2118,32 @@ Still deferred:
 - [ ] Additional POS-specific tender/payment-method ingestion if we later want AI Cafe to derive the
       processed-sales share itself rather than asking the owner when that fact is unavailable.
 
+## Pricing evidence analysis + processing-fee info popover (2026-10-08 — implementation in progress)
+
+Owner correction:
+- "Your price looks right" is too strong. KEEP_CURRENT_PRICE only means the deterministic cost-based
+  engine does not currently recommend a price change; it is not proof of market fit or demand.
+- Pricing analysis must separate cost evidence, the café's own sales response after a real price
+  change, and sourced market/competitor evidence. Never call an internal cost benchmark an
+  "industry standard."
+- When a price changes, preserve source-aware price history so later analysis can compare covered
+  sales days before vs after the change. If there is not enough comparable history, explicitly say
+  there is not enough sales data instead of predicting demand.
+- Nearby competitor claims are allowed only when sourced market observations exist. With no verified
+  market observations, show that nearby competitor pricing is unavailable rather than guessing.
+- Processing-fee info popovers should close on outside click/tap and Escape; owners should not need
+  to click the info icon a second time.
+
+Plan:
+1. Replace the native persistent <details> processing-fee help with a controlled accessible popover
+   that closes on outside interaction/Escape.
+2. Add additive menu price-history provenance and record real owner/POS price changes idempotently.
+3. Add pure/tested before-vs-after sales-response analysis using only sales-covered days with a
+   minimum sample requirement; report units/day and revenue/day changes as observations, not causal
+   predictions.
+4. Add source-aware market-price observation support. The UI may compare against verified nearby
+   observations when present and must otherwise say market evidence is unavailable.
+5. Replace "Your price looks right" / equivalent copy with evidence-specific language and surface
+   the price-change sales analysis on the product size card. Localize EN/ES/AR.
+6. Run focused regression checks and keep pricing recommendation math unchanged.
+
