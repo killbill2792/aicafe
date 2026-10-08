@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Info, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { Link, useRouter } from "@/i18n/navigation";
 import { saveOwnerProcessingFeeEstimatePlan } from "@/lib/actions/processingFeeEstimate";
 import { formatCents } from "@/lib/calc";
 import type { OwnerConfirmedProcessingFeePlan } from "@/lib/pos/processingFeeEstimate";
+import InfoPopover from "@/components/shared/InfoPopover";
 
 type Labels = {
   assumptionBanner: string;
@@ -121,27 +122,11 @@ function providerLabel(provider: string | null): string {
   return provider.charAt(0).toUpperCase() + provider.slice(1);
 }
 
-function Help({ label, children }: { label: string; children: string }) {
-  return (
-    <details className="relative inline-block">
-      <summary
-        aria-label={label}
-        className="flex h-8 w-8 cursor-pointer list-none items-center justify-center rounded-full text-ink-muted hover:bg-paper [&::-webkit-details-marker]:hidden"
-      >
-        <Info aria-hidden="true" size={17} />
-      </summary>
-      <p className="absolute end-0 z-20 mt-1 w-64 rounded-2xl border border-line bg-card p-3 text-xs font-normal leading-relaxed text-ink shadow-lg">
-        {children}
-      </p>
-    </details>
-  );
-}
-
 function FieldTitle({ children, help, helpLabel }: { children: string; help: string; helpLabel: string }) {
   return (
     <span className="flex items-center justify-between gap-2">
       <span>{children}</span>
-      <Help label={helpLabel}>{help}</Help>
+      <InfoPopover label={helpLabel}>{help}</InfoPopover>
     </span>
   );
 }
