@@ -45,7 +45,7 @@ export type MenuControlItem = MenuItemForEdit & {
   lastSyncedAt: string | null;
 };
 
-export const EMPTY_MENU_PRICING_EVIDENCE: MenuPricingEvidence = {
+const EMPTY_EVIDENCE: MenuPricingEvidence = {
   costBenchmark: { status: "unavailable" },
   salesResponse: { status: "no_change_history" },
   nearbyMarket: { status: "unavailable", verifiedNearbyCount: 0, minimumCompetitors: 3 },
@@ -58,7 +58,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     return items.map((item) => ({
       ...item,
       pricing: null,
-      pricingEvidence: EMPTY_MENU_PRICING_EVIDENCE,
+      pricingEvidence: EMPTY_EVIDENCE,
       unitsSold: null,
       unitsSoldByPeriod: { today: null, days7: null, days30: null },
       unitsSoldDailyByPeriod: { today: null, days7: null, days30: null },
