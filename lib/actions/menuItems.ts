@@ -15,6 +15,7 @@ import { executeGroupedProductRename } from "@/lib/menu/renameProduct";
 import { existingProductPhotoAnchor } from "@/lib/menu/productPhotoAnchor";
 import { logQueryError, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { needsIngredientConversion, toBaseUnitQuantity, type BaseUnit, type IngredientUnitConversion, type RecipeDisplayUnit } from "@/lib/calc/recipeUnits";
+import { recordInitialMenuPrice, setCanonicalMenuPrice } from "@/lib/menu/priceHistory";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 export type ActionResultWithId = { ok: true; id: string } | { ok: false; error: string };
@@ -115,6 +116,19 @@ export async function addMenuItem(input: z.infer<typeof MenuItemSchema>): Promis
     return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
   }
 
+  try {
+    await recordInitialMenuPrice(supabase, {
+      businessId,
+      menuItemId: data.id,
+      priceCents: parsed.data.priceCents,
+      sourceProvider: "Owner",
+    });
+  } catch (historyError) {
+    logQueryError("addMenuItem:priceHistory", historyError instanceof Error ? { message: historyError.message } : null);
+    await supabase.from("menu_items").delete().eq("id", data.id).eq("business_id", businessId);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
+
   if (parsed.data.copyRecipeFromItemId) {
     const copied = await copyRecipeLines(supabase, businessId, parsed.data.copyRecipeFromItemId, data.id);
     if (!copied) {
@@ -168,13 +182,25 @@ export async function updateMenuItem(input: z.infer<typeof UpdateMenuItemSchema>
   const sizeLabel = parsed.data.sizeLabel?.trim() || null;
   const menuGroupResult = await safeNormalizedMenuGroup(supabase, businessId, parsed.data.menuGroup);
   if (!menuGroupResult.ok) return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  try {
+    const found = await setCanonicalMenuPrice(supabase, {
+      businessId,
+      menuItemId: parsed.data.id,
+      priceCents: parsed.data.priceCents,
+      sourceType: "owner_manual",
+      sourceProvider: "Owner",
+    });
+    if (!found) return { ok: false, error: "Item not found." };
+  } catch (priceError) {
+    logQueryError("updateMenuItem:price", priceError instanceof Error ? { message: priceError.message } : null);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
   const { data: updated, error } = await supabase
     .from("menu_items")
     .update({
       name: productSizeName(parsed.data.name, sizeLabel),
       base_name: parsed.data.name,
       size_label: sizeLabel,
-      price_cents: parsed.data.priceCents,
       prep_seconds: parsed.data.prepSeconds,
       category: parsed.data.category,
       menu_group: menuGroupResult.menuGroup,
@@ -215,9 +241,19 @@ export async function updateMenuItemPrice(input: z.infer<typeof PriceSchema>): P
   const businessId = await currentBusinessId();
   if (!businessId) return { ok: false, error: "Sign in first." };
   const supabase = await createServerSupabaseClient();
-  const { data, error } = await supabase.from("menu_items").update({ price_cents: parsed.data.priceCents }).eq("id", parsed.data.menuItemId).eq("business_id", businessId).select("id");
-  if (error) { logQueryError("updateMenuItemPrice", error); return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE }; }
-  if (!data?.length) return { ok: false, error: "Item not found." };
+  try {
+    const found = await setCanonicalMenuPrice(supabase, {
+      businessId,
+      menuItemId: parsed.data.menuItemId,
+      priceCents: parsed.data.priceCents,
+      sourceType: "owner_manual",
+      sourceProvider: "Owner",
+    });
+    if (!found) return { ok: false, error: "Item not found." };
+  } catch (error) {
+    logQueryError("updateMenuItemPrice", error instanceof Error ? { message: error.message } : null);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
   revalidatePath("/menu"); revalidatePath(`/menu/${parsed.data.menuItemId}`); revalidatePath("/");
   return { ok: true };
 }
