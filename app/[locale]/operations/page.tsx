@@ -12,6 +12,8 @@ import { formatCents } from "@/lib/calc";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
+import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
+import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { priceReviewDirection, priceReviewHref } from "@/lib/viewmodels/priceReviewTask";
 
@@ -28,6 +30,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   const selectedAgent = parseAgentId(agent);
   const selectedStatus = parseStatus(status);
   const statusQuery = status === "needs_you" || status === "handled" || status === "watching" ? status : undefined;
+  const ownerCanSubscribe = await authenticatedConversationContext().then(() => true).catch(() => false);
   const names: Record<AgentId, string> = { alex: "Alex", olivia: "Olivia", maya: "Maya", leo: "Leo" };
   const scoped = (tasks: OperatingTask[]) => selectedAgent ? tasks.filter((task) => task.agentId === selectedAgent) : tasks;
   const lists = { needs_you: scoped(team.needsYou), handled: scoped(team.handled), watching: scoped(team.watching) };
@@ -36,6 +39,12 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
     <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} />
+    {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
+      title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
+      enable: t("whatsAppAlertsEnable"), disable: t("whatsAppAlertsDisable"),
+      loading: t("whatsAppAlertsLoading"), saved: t("whatsAppAlertsSaved"),
+      error: t("whatsAppAlertsError"), verifiedPhone: t("whatsAppAlertsPhone"),
+    }}/>}
 
     <Link href="/operations/rules"
       className="flex min-h-12 items-center justify-center self-start rounded-full border border-ink bg-card px-5 text-[17px] font-bold text-ink no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">

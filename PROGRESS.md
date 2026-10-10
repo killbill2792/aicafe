@@ -2400,6 +2400,23 @@ Phase 5 implementation and handoff:
 - [ ] Free-form owner instructions are stored and auditable, but do not drive new autonomous business operations. Owner approval of a rule is **not** approval to execute an operational action; future executor must bind to canonical existing task/decision workflow.
 - [x] Temporary branch-only CI workflow removed before handoff; no permanent workflow added.
 
+## Phase 6 — owner-reviewed voice and private reference files (2026-10-10)
+- [x] Browser voice recognition where supported; transcript appears in editable Home input and is never automatically sent. No audio persisted.
+- [x] Additive migration 35 creates private Storage bucket and owner/café/thread RLS metadata; server validates 2 MiB limit, content-type and file signature. Uploaded documents are **unanalysed references** only and never change café prices, costs or reply evidence.
+- [x] Authenticated owner-only attachment list/upload API; localized EN/ES/AR Home affordances; source filenames visible in conversation and reopenable using owner-authenticated 60-second download links.
+- [x] CI TypeScript, changed-file lint, tests, build and diff passed. No financial calculation modifications or new packages.
+- [ ] Browser support varies; device tests still required. No OCR/document extraction or server audio-transcription fallback in this phase.
+- [ ] Apply migration 35 after reconciling 33/34; test actual Supabase Storage RLS with multiple identities before deployment.
+
+## Phase 7 — opt-in proactive owner WhatsApp task alerts (2026-10-10)
+- [x] Owner phone consent is explicit, tied to the current verified Supabase Auth phone by API and database trigger, owner/café-scoped under RLS; opt-out is supported.
+- [x] The daily cron reads the existing persisted `operating_tasks` inbox and only selects an actual `needs_owner` task. Checks membership and phone verification again before delivery.
+- [x] Meta WhatsApp template adapter makes a real configured provider call, returns success only on a provider receipt, sends task category only and reserves a unique outbox row first. No automatic resend after an uncertain result.
+- [x] Owner-facing localized EN/ES/AR preference panel. Default off unless AI_CAFE_WHATSAPP_ENABLED, verified consent, CRON_SECRET, Meta credentials and approved template.
+- [x] Tests, TypeScript, changed-file lint and production build passed. No existing operating-task, pricing or finance engine mutation.
+- [ ] Migration 36 needs a deliberately reconciled SQL rollout after 33–35. Provider Meta template, account, cron environment and staging verification are external prerequisites.
+- [ ] Staff-to-AI WhatsApp conversations and employee consent/webhook responses are **not** enabled by this owner alert delivery phase.
+
 ## Phase 8 — sourced supplier evidence and optional public research (2026-10-10)
 - [x] Immutable owner-reported supplier quotation records by café, source/date, cents and package units. RLS for café owners, idempotent create endpoint, no direct updates/deletes.
 - [x] Source review UI under Team, EN/ES/AR, with strict matching-unit cents-only comparisons and transparent owner-reported provenance. No automatic supplier cost/recipe/price/POS write.

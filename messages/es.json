@@ -1000,6 +1000,14 @@
     "homeSupplyNeedsResponse": "Se necesita una respuesta sobre los suministros: {item}.",
     "homeSupplies": "suministros",
     "teamRulesLink": "Reglas del equipo",
+    "whatsAppAlertsTitle": "Alertas de WhatsApp del equipo",
+    "whatsAppAlertsDescription": "Alerta diaria opcional por una tarea del equipo pendiente. Solo propietarios con un teléfono verificado pueden activarla. El envío requiere un proveedor configurado.",
+    "whatsAppAlertsEnable": "Activar alertas",
+    "whatsAppAlertsDisable": "Desactivar alertas",
+    "whatsAppAlertsLoading": "Actualizando…",
+    "whatsAppAlertsSaved": "Preferencia guardada.",
+    "whatsAppAlertsError": "No se pudo guardar la preferencia.",
+    "whatsAppAlertsPhone": "Primero verifica tu teléfono en tu cuenta.",
     "supplierSourcesLink": "Fuentes de proveedores"
   },
   "CafeProfile": {
@@ -1162,7 +1170,13 @@
     "periodUnavailable": "Puedo verificar hoy, los últimos siete días si están dentro del mes cargado o el mes actual. Aún no hay datos fiables para períodos anteriores o futuros.",
     "rulesIntro": "Estas son las instrucciones aprobadas del equipo (orientación, no acciones automáticas):",
     "rulesNone": "No hay instrucciones aprobadas para ese miembro. Abre Equipo → Reglas del equipo para crear una.",
-    "ruleItem": "{agent}: {instruction}"
+    "ruleItem": "{agent}: {instruction}",
+    "listening": "Escuchando… revisa el texto antes de enviarlo.",
+    "voiceReview": "Transcripción lista. Revisa y edita antes de enviarla.",
+    "voiceUnavailable": "El reconocimiento de voz no está disponible en este navegador. Escribe tu mensaje.",
+    "attachmentSaved": "Archivo guardado en privado. No se ha analizado.",
+    "attachmentNotice": "Solo archivos de referencia: los documentos no se analizan ni actualizan los datos del café.",
+    "attachmentUpload": "Subiendo archivo… (PDF, imagen o texto; máximo 2 MB)."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
