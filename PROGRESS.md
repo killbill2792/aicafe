@@ -2399,3 +2399,11 @@ Phase 5 implementation and handoff:
 - [ ] Before production rollout, review and apply migration `20261010000034_ai_owner_rules.sql` **after confirming migration 33 is installed**, reconcile Supabase migration history and verify owner/manager/other-café RLS in staging. **No blanket `supabase db push`** and no production migration executed here.
 - [ ] Free-form owner instructions are stored and auditable, but do not drive new autonomous business operations. Owner approval of a rule is **not** approval to execute an operational action; future executor must bind to canonical existing task/decision workflow.
 - [x] Temporary branch-only CI workflow removed before handoff; no permanent workflow added.
+
+## Phase 6 — owner-reviewed voice and private reference files (2026-10-10)
+- [x] Browser voice recognition where supported; transcript appears in editable Home input and is never automatically sent. No audio persisted.
+- [x] Additive migration 35 creates private Storage bucket and owner/café/thread RLS metadata; server validates 2 MiB limit, content-type and file signature. Uploaded documents are **unanalysed references** only and never change café prices, costs or reply evidence.
+- [x] Authenticated owner-only attachment list/upload API; localized EN/ES/AR Home affordances; source filenames visible in conversation and reopenable using owner-authenticated 60-second download links.
+- [x] CI TypeScript, changed-file lint, tests, build and diff passed. No financial calculation modifications or new packages.
+- [ ] Browser support varies; device tests still required. No OCR/document extraction or server audio-transcription fallback in this phase.
+- [ ] Apply migration 35 after reconciling 33/34; test actual Supabase Storage RLS with multiple identities before deployment.

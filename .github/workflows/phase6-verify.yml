@@ -1,0 +1,23 @@
+name: Phase 6 Supervisor Verification
+on:
+  push:
+    branches: [chatgpt/supervisor-phase6-voice-attachments]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: ESLint
+        run: npx eslint 'app/[locale]/page.tsx' 'app/api/ai/threads/[threadId]/attachments/route.ts' 'app/api/ai/threads/[threadId]/attachments/[attachmentId]/route.ts' components/home/SupervisorChatComposer.tsx lib/ai/conversations/attachments.ts lib/ai/conversations/attachments.test.ts
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Diff
+        run: git diff --check origin/main...HEAD

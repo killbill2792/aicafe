@@ -221,6 +221,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             you: tChat("chatYou"),
             supervisor: tChat("chatSupervisor"),
             source: tChat("chatSource"),
+            listening: tChat("listening"),
+            voiceReview: tChat("voiceReview"),
+            voiceUnavailable: tChat("voiceUnavailable"),
+            attachmentSaved: tChat("attachmentSaved"),
+            attachmentNotice: tChat("attachmentNotice"),
+            attachmentUpload: tChat("attachmentUpload"),
           }}
           copy={{
             eyebrow: t("supervisorEyebrow"),
