@@ -73,3 +73,25 @@ export async function syncAndGetOperatingTasks(derived: OperatingTask[]): Promis
       ...(row.short_text ? { shortText: row.short_text } : {}), respondedAt: row.responded_at })),
   };
 }
+
+/**
+ * Phase 2 read-only projection of the SAME persisted operating_tasks inbox.
+ * Unlike syncAndGetOperatingTasks(), this never reconciles, inserts, updates,
+ * expires, or responds to tasks. Future Supervisor summaries must use these
+ * statuses, not raw engine signals, for Needs You / Handled / Watching claims.
+ */
+export async function readPersistedOperatingTasks(businessId: string): Promise<OperatingTask[]> {
+  if (!isSupabaseConfigured()) throw new Error("Persisted café tasks are unavailable");
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Authenticated owner required");
+  const activeBusinessId = await getActiveBusinessId(user.id);
+  if (businessId !== activeBusinessId) throw new Error("Café task access scope mismatch");
+  const { data, error } = await supabase
+    .from("operating_tasks")
+    .select("id, business_id, agent_id, kind, entity_type, entity_id, status, payload, confidence, evidence, created_at, resolved_at")
+    .eq("business_id", businessId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data as TaskRow[]).map(fromRow);
+}
