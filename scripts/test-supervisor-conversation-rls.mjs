@@ -1,7 +1,7 @@
 /**
- * Isolated PostgreSQL RLS smoke test for Phase 3.
+ * Isolated PostgreSQL RLS smoke tests for Phase 3 and Phase 5.
  * Runs only against the disposable GitHub Actions Postgres service, not Supabase.
- * It loads just the new migration plus minimal auth/tenancy scaffolding.
+ * It loads the AI conversation and owner-rule migrations with minimal auth/tenancy scaffolding.
  */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,6 +28,9 @@ const A_KEY = "55555555-5555-4555-8555-555555555555";
 const B_THREAD = "66666666-6666-4666-8666-666666666666";
 
 const migration = readFileSync(new URL("../supabase/migrations/20261010000033_ai_conversations.sql", import.meta.url), "utf8");
+const rulesMigration = readFileSync(new URL("../supabase/migrations/20261010000034_ai_owner_rules.sql", import.meta.url), "utf8");
+const RULE_A = "77777777-7777-4777-8777-777777777777";
+const RULE_B = "88888888-8888-4888-8888-888888888888";
 
 async function asActor(userId, fn) {
   await client.query("BEGIN");
@@ -154,6 +157,90 @@ async function main() {
       );
     });
   }
+
+  // Additive Phase 5 migration: no financial tables or existing tasks changed.
+  await client.query(rulesMigration);
+
+  await asActor(OWNER_A, async () => {
+    const inserted = await client.query(
+      "insert into ai_team_rules(id,business_id,created_by,agent_id,instruction) values($1,$2,$3,'alex','Ask me before price changes') returning status,version",
+      [RULE_A,CAFE_A,OWNER_A],
+    );
+    assert.deepEqual(inserted.rows[0], { status: "draft", version: 1 });
+    assert.equal((await client.query("select * from ai_rule_events where rule_id=$1",[RULE_A])).rowCount,1);
+
+    await rejectQuery(
+      "insert into ai_team_rules(business_id,created_by,agent_id,instruction,status) values($1,$2,'leo','Make every cost editable','active')",
+      [CAFE_A,OWNER_A],"42501",
+    );
+    await rejectQuery("update ai_team_rules set instruction='Change all prices now' where id=$1",[RULE_A],"23514");
+    await rejectQuery("update ai_team_rules set business_id=$1 where id=$2",[CAFE_B,RULE_A],"23514");
+    await rejectQuery("update ai_team_rules set status='paused' where id=$1",[RULE_A],"23514");
+
+    const approved = await client.query(
+      "update ai_team_rules set status='active' where id=$1 and version=1 returning status,version,reviewed_by",
+      [RULE_A],
+    );
+    assert.deepEqual(approved.rows[0], { status: "active", version: 2, reviewed_by: OWNER_A });
+    // Concurrent reviewer sees 0 rows for their stale version.
+    assert.equal((await client.query(
+      "update ai_team_rules set status='paused' where id=$1 and version=1 returning id",
+      [RULE_A],
+    )).rowCount,0);
+    const paused = await client.query(
+      "update ai_team_rules set status='paused' where id=$1 returning status,version",[RULE_A],
+    );
+    assert.deepEqual(paused.rows[0],{ status:"paused",version:3 });
+    const resumed = await client.query(
+      "update ai_team_rules set status='active' where id=$1 returning status,version",[RULE_A],
+    );
+    assert.deepEqual(resumed.rows[0],{ status:"active",version:4 });
+    await rejectQuery("update ai_team_rules set status='rejected' where id=$1",[RULE_A],"23514");
+    await rejectQuery("delete from ai_team_rules where id=$1",[RULE_A],"42501");
+    await rejectQuery(
+      "insert into ai_rule_events(business_id,rule_id,actor_user_id,agent_id,instruction_snapshot,new_status,version) values($1,$2,$3,'alex','forged','active',99)",
+      [CAFE_A,RULE_A,OWNER_A],"42501",
+    );
+    const audit=await client.query(
+      "select previous_status,new_status,version,actor_user_id from ai_rule_events where rule_id=$1 order id",[RULE_A],
+    );
+    assert.deepEqual(audit.rows.map(x=>[x.previous_status,x.new_status,x.version,x.actor_user_id]),[
+      [null,"draft",1,OWNER_A],["draft","active",2,OWNER_A],
+      ["active","paused",3,OWNER_A],["paused","active",4,OWNER_A],
+    ]);
+    // Same owner can create rules for another café they belong to; tenant scope still applies.
+    await client.query(
+      "insert into ai_team_rules(id,business_id,created_by,agent_id,instruction) values($1,$2,$3,'supervisor','Always show estimates')",
+      [RULE_B,CAFE_B,OWNER_A],
+    );
+  });
+
+  // A different owner of the SAME café can review café-wide instructions.
+  // They cannot access another café, even though a shared co-owner can see café A.
+  await asActor(OWNER_B, async () => {
+    assert.equal((await client.query("select id from ai_team_rules where id=$1",[RULE_A])).rowCount,1);
+    assert.equal((await client.query("select id from ai_team_rules where id=$1",[RULE_B])).rowCount,0);
+    assert.equal((await client.query("select id from ai_rule_events where rule_id=$1",[RULE_A])).rowCount,4);
+    await rejectQuery(
+      "insert into ai_team_rules(business_id,created_by,agent_id,instruction) values($1,$2,'maya','Change all supplier contacts')",
+      [CAFE_B,OWNER_B],"42501",
+    );
+    const cross=await client.query(
+      "update ai_team_rules set status='paused' where id=$1 returning id",[RULE_B],
+    );
+    assert.equal(cross.rowCount,0);
+  });
+  for (const actor of [MANAGER,OUTSIDER]) {
+    await asActor(actor, async () => {
+      assert.equal((await client.query("select * from ai_team_rules")).rowCount,0);
+      assert.equal((await client.query("select * from ai_rule_events")).rowCount,0);
+      await rejectQuery(
+        "insert into ai_team_rules(business_id,created_by,agent_id,instruction) values($1,$2,'alex','Approve all price changes')",
+        [CAFE_A,actor],"42501",
+      );
+    });
+  }
+  console.log("Owner rules migration PostgreSQL RLS and approval tests passed");
 
   console.log("Conversation migration PostgreSQL RLS tests passed");
 }
