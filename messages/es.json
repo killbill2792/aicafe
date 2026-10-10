@@ -998,7 +998,8 @@
     "homePriceAwaitingVerification": "Esperando verificar el precio aceptado de {item}.",
     "homePriceReviewLater": "Revisión del precio de {item} programada para más adelante.",
     "homeSupplyNeedsResponse": "Se necesita una respuesta sobre los suministros: {item}.",
-    "homeSupplies": "suministros"
+    "homeSupplies": "suministros",
+    "teamRulesLink": "Reglas del equipo"
   },
   "CafeProfile": {
     "title": "Perfil del café",
@@ -1157,6 +1158,44 @@
     "staffSummary": "Olivia tiene {count} solicitudes de personal pendientes en el equipo.",
     "staffNone": "Olivia no tiene tareas abiertas registradas. Esto no constituye una auditoría completa del personal.",
     "weekOverview": "Estos son los últimos siete días naturales según los datos registrados.",
-    "periodUnavailable": "Puedo verificar hoy, los últimos siete días si están dentro del mes cargado o el mes actual. Aún no hay datos fiables para períodos anteriores o futuros."
+    "periodUnavailable": "Puedo verificar hoy, los últimos siete días si están dentro del mes cargado o el mes actual. Aún no hay datos fiables para períodos anteriores o futuros.",
+    "rulesIntro": "Estas son las instrucciones aprobadas del equipo (orientación, no acciones automáticas):",
+    "rulesNone": "No hay instrucciones aprobadas para ese miembro. Abre Equipo → Reglas del equipo para crear una.",
+    "ruleItem": "{agent}: {instruction}"
+  },
+  "TeamRules": {
+    "title": "Reglas y aprobaciones del equipo",
+    "back": "Volver al equipo",
+    "intro": "Escribe instrucciones para el Supervisor o un especialista. El borrador no estará activo hasta que lo apruebes.",
+    "agent": "Miembro del equipo",
+    "instruction": "Regla o instrucción",
+    "instructionHint": "Por ejemplo: Consúltame antes de sugerir cambios de turnos.",
+    "saveDraft": "Guardar borrador",
+    "rules": "Tus reglas",
+    "audit": "Historial de aprobaciones",
+    "emptyRules": "Todavía no hay reglas.",
+    "emptyAudit": "Todavía no hay decisiones registradas.",
+    "approve": "Aprobar regla",
+    "reject": "Rechazar",
+    "pause": "Pausar",
+    "resume": "Reactivar",
+    "draft": "Pendiente de aprobación",
+    "active": "Aprobada",
+    "paused": "Pausada",
+    "rejected": "Rechazada",
+    "warning": "Las reglas sirven como orientación para futuras funciones. Aprobarlas no cambia precios, turnos, nóminas ni pedidos. Las decisiones actuales siguen en el buzón del equipo.",
+    "loading": "Cargando reglas…",
+    "saving": "Guardando…",
+    "error": "No pudimos completar la solicitud. Inténtalo de nuevo.",
+    "conflict": "La regla cambió en otro lugar. Recarga para revisar su versión.",
+    "loadMore": "Ver registros anteriores",
+    "by": "Registrado por",
+    "created": "Creada",
+    "to": "A",
+    "supervisor": "Supervisor",
+    "alex": "Alex · Precios",
+    "olivia": "Olivia · Personal",
+    "maya": "Maya · Suministros",
+    "leo": "Leo · Dinero"
   }
 }

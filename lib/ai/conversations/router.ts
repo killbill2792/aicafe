@@ -1,4 +1,5 @@
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
+import type { TeamRule } from "@/lib/ai/policies/contracts";
 import type { CafeState } from "@/lib/operating/types";
 import type { GroundedSupervisorReply, SupervisorIntent, EvidenceReference, SupervisorReplyBlock } from "./contracts";
 import { assessGrounding } from "./grounding";
@@ -24,10 +25,14 @@ export type SupervisorReplyCopy = {
   tasks: (needs: number, handled: number, watching: number) => string;
   staffingTasks: (count: number) => string;
   staffingNone: string;
+  rulesIntro: string;
+  rulesNone: string;
+  ruleItem: (agent: string, instruction: string) => string;
 };
 
 export function detectSupervisorIntent(raw: string): SupervisorIntent {
   const text = raw.normalize("NFKC").toLocaleLowerCase().trim();
+  if (/\b(rules?|instructions?|guidelines?|policies)\b|reglas|instrucciones|normas|قواعد|تعليمات/.test(text)) return "owner_rules";
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
   if (/\b(attention|urgent|tasks?|needs you|team|handled|watching|issues?)\b|atención|tareas|equipo|الاهتمام|انتباه|المهام|الفريق/.test(text)) return "operating_tasks";
@@ -77,7 +82,7 @@ function periodFor(text: string, state: CafeState) {
  * Values come exclusively from Phase 2 typed tools and are never guessed.
  */
 export async function answerSupervisorQuestion(
-  input: { text: string; state: CafeState; tools: BusinessScopedCafeTools },
+  input: { text: string; state: CafeState; tools: BusinessScopedCafeTools; activeRules?: TeamRule[] | null },
   copy: SupervisorReplyCopy,
 ): Promise<GroundedSupervisorReply> {
   const intent = detectSupervisorIntent(input.text);
@@ -94,6 +99,32 @@ export async function answerSupervisorQuestion(
   const source: EvidenceReference = {
     source: "cafe_state", identifier: "profitability:" + from + ":" + to, asOf: observedAt,
   };
+
+  if (intent === "owner_rules") {
+    if (!input.activeRules) {
+      return {
+        intent, status: "insufficient_evidence", evidence: [],
+        blocks: [{ type: "warning", code: "rules_unavailable", text: copy.missingEvidence }],
+      };
+    }
+    const source: EvidenceReference = {
+      source: "owner_rules", identifier: "approved-guidance", asOf: new Date().toISOString(),
+    };
+    const normalizedText = input.text.normalize("NFKC").toLocaleLowerCase();
+    const named = (["supervisor", "alex", "olivia", "maya", "leo"] as const)
+      .find((agent) => normalizedText.includes(agent));
+    const active = input.activeRules.filter((rule) =>
+      rule.status === "active" && (!named || rule.agentId === named));
+    return {
+      intent, status: "verified", evidence: [source],
+      blocks: active.length === 0
+        ? [{ type: "text", text: copy.rulesNone }]
+        : [{ type: "text", text: copy.rulesIntro },
+            ...active.slice(0, 3).map((rule) => ({
+              type: "text" as const, text: copy.ruleItem(rule.agentId, rule.instruction),
+            }))],
+    };
+  }
 
   if (intent === "profitability" || intent === "cafe_overview") {
     const result = await tools.getProfitability(dates);

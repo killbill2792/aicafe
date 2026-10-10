@@ -2375,3 +2375,27 @@ Phase 4 implementation and safety closure:
 - [ ] Vercel deployment preview could NOT be verified: Vercel's commit status points to `upgradeToPro=build-rate-limit`. This is a deployment-rate limit; GitHub CI production build passed. Re-try preview after Vercel rate-limit clears before production activation.
 - [ ] Phase 3 migration #33's live Supabase application and migration history are not independently confirmed in this chat. Enable `SUPERVISOR_CHAT_ENABLED=true` only after reconciling migration 33 and staging end-to-end owner/RLS checks.
 - [ ] Whole-repository lint baseline errors identified in Phase 1 remain unrelated; changed files pass.
+
+## Supervisor Phase 5 — owner rules, reviewed policies and safe permissions (2026-10-10, review ready)
+
+Merged baseline: PR #36 (main 82b7c907). Existing priced/menu/staff/POS financial math and the persisted Team task workflow MUST remain untouched.
+
+Phase 5 scope:
+1. Store typed Supervisor/Alex/Olivia/Maya/Leo owner instructions as owner-only café-scoped **drafts**. Activation or rejection requires a separate explicit owner approval. Pausing and resuming are owner-reviewed state transitions; every transition is immutable audited history.
+2. Validate and enforce all transitions server-side and database-side. No free-form rule text is ever evaluated as code, SQL, an action, or permissions escalation.
+3. A default-deny authorization contract preserves existing read-only tools; no price, staff schedule, POS, supplier email, payroll or expense changes may be executed by the Supervisor merely because an owner wrote a rule or approved a policy. Existing Team price-review/coverage pathways remain canonical, not duplicated.
+4. Provide an accessible localized Team → Rules screen for creating draft instructions per agent, reviewing/approving/rejecting, pausing/reactivating, and viewing the audit trail. Add a small link on the existing Team page without displacing its persisted inbox.
+5. Add authenticated bounded JSON APIs, owner+café RLS SQL and separate disposable PostgreSQL security checks. Build/tests/lint/Next prod compile, PR open but not merge. Additive migration #34 must be reviewed/applied in order after migration #33; never blanket db push.
+
+Phase 5 implementation and handoff:
+- [x] Adds explicit owner-only, café-scoped AI Team rules for Supervisor, Alex, Olivia, Maya and Leo. Instructions are immutable human guidance. Owners save drafts, then approve/reject; active rules can be paused/resumed. No draft silently activates or becomes a new Team operating task.
+- [x] Includes `ai_team_rules` and append-only `ai_rule_events` (additive migration 34), database-enforced transition graph and owner role RLS, concurrent version checks, actor/time attribution, no direct audit insert or rule delete permission.
+- [x] New owner-authenticated JSON APIs, versioned change review, bounded strict validation, same-origin write protection and sensitive no-store responses. New Team → Rules page and history, localized EN/ES/AR and accessible text/buttons.
+- [x] The Phase 4 grounded Supervisor can **read back** up to three active approved instructions on request, citing the authenticated rules source. It never executes or interprets arbitrary instruction text as permission.
+- [x] A typed `evaluateSupervisorPermission` boundary permits allow-listed reads only; new AI-side price, payroll, staff, supplier, POS and unknown writes always deny. Existing Team task and domain action workflows remain unchanged.
+- [x] No edits to `lib/calc/`, business pricing formulas, POS connections, payroll engines, operating_tasks lifecycle or existing money pages. No new npm packages.
+- [x] Verified TypeScript, changed-file ESLint, **516 Vitest tests**, PostgreSQL migration/RLS/approval checks for both migrations 33 and 34, Next.js production build, and `git diff --check`, on commit 5e0faee. GitHub CI succeeded.
+- [ ] Vercel preview was **not** verified; Vercel returned a build-rate-limit account link (`upgradeToPro=build-rate-limit`). GitHub Next.js production build passed; retry preview after rate limit clears.
+- [ ] Before production rollout, review and apply migration `20261010000034_ai_owner_rules.sql` **after confirming migration 33 is installed**, reconcile Supabase migration history and verify owner/manager/other-café RLS in staging. **No blanket `supabase db push`** and no production migration executed here.
+- [ ] Free-form owner instructions are stored and auditable, but do not drive new autonomous business operations. Owner approval of a rule is **not** approval to execute an operational action; future executor must bind to canonical existing task/decision workflow.
+- [x] Temporary branch-only CI workflow removed before handoff; no permanent workflow added.

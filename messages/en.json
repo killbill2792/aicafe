@@ -998,7 +998,8 @@
     "homePriceAwaitingVerification": "Waiting to verify the accepted price for {item}.",
     "homePriceReviewLater": "Price review for {item} scheduled for later.",
     "homeSupplyNeedsResponse": "Supply check needs a response: {item}.",
-    "homeSupplies": "supplies"
+    "homeSupplies": "supplies",
+    "teamRulesLink": "Team rules"
   },
   "CafeProfile": {
     "title": "Café profile",
@@ -1157,6 +1158,44 @@
     "staffSummary": "Olivia's existing Team inbox has {count} staff-related requests awaiting attention.",
     "staffNone": "Olivia has no open tasks recorded in the Team inbox. This is not a full staffing audit.",
     "weekOverview": "Here are the last seven calendar days from recorded data.",
-    "periodUnavailable": "I can verify today, the last seven days if they fall in the loaded month, or the current month. Older or future periods are not connected yet."
+    "periodUnavailable": "I can verify today, the last seven days if they fall in the loaded month, or the current month. Older or future periods are not connected yet.",
+    "rulesIntro": "These are your approved Team instructions (guidance, not automatic actions):",
+    "rulesNone": "No approved instructions are recorded for that team member. Open Team → Team rules to create one.",
+    "ruleItem": "{agent}: {instruction}"
+  },
+  "TeamRules": {
+    "title": "Team rules & approvals",
+    "back": "Back to Team",
+    "intro": "Write guidance for the Supervisor or a specialist. Your draft is not active until you approve it.",
+    "agent": "Team member",
+    "instruction": "Rule or instruction",
+    "instructionHint": "For example: Ask me before suggesting changes to staff coverage.",
+    "saveDraft": "Save draft",
+    "rules": "Your rules",
+    "audit": "Approval history",
+    "emptyRules": "No rules added yet.",
+    "emptyAudit": "No decisions recorded yet.",
+    "approve": "Approve rule",
+    "reject": "Reject",
+    "pause": "Pause",
+    "resume": "Resume",
+    "draft": "Awaiting approval",
+    "active": "Approved",
+    "paused": "Paused",
+    "rejected": "Rejected",
+    "warning": "Rules guide future workflows only. Approval never changes register prices, employee schedules, payroll, or supplier orders. Existing Team decisions stay in the Team inbox.",
+    "loading": "Loading your rules…",
+    "saving": "Saving…",
+    "error": "We couldn't complete that request. Please try again.",
+    "conflict": "This rule was changed elsewhere. Reload to review the latest version.",
+    "loadMore": "Show older records",
+    "by": "Recorded by",
+    "created": "Created",
+    "to": "To",
+    "supervisor": "Supervisor",
+    "alex": "Alex · Prices",
+    "olivia": "Olivia · Staff",
+    "maya": "Maya · Supplies",
+    "leo": "Leo · Money"
   }
 }

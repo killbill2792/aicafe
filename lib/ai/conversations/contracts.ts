@@ -48,12 +48,12 @@ export type ConversationPage<T> = { items: T[]; nextOffset: number | null };
 /** Future Phase 4 contract: only vetted evidence may enter a Supervisor response. */
 export type SupervisorIntent =
   | "cafe_overview" | "profitability" | "menu_pricing" | "staff"
-  | "operating_tasks" | "expenses" | "unknown";
+  | "operating_tasks" | "expenses" | "owner_rules" | "unknown";
 
 export type GroundingStatus = "verified" | "estimated" | "insufficient_evidence";
 
 export type EvidenceReference = {
-  source: "cafe_state" | "pricing_engine" | "operating_tasks" | "verified_external";
+  source: "cafe_state" | "pricing_engine" | "operating_tasks" | "owner_rules" | "verified_external";
   identifier: string;
   asOf: string;
 };
@@ -73,7 +73,7 @@ export type GroundedSupervisorReply = {
 
 /** Only server-verified, allow-listed blocks may be persisted as Supervisor replies. */
 export const evidenceReferenceSchema = z.strictObject({
-  source: z.enum(["cafe_state", "pricing_engine", "operating_tasks", "verified_external"]),
+  source: z.enum(["cafe_state", "pricing_engine", "operating_tasks", "owner_rules", "verified_external"]),
   identifier: z.string().min(1).max(160),
   asOf: z.string().min(1).max(40),
 });
@@ -96,7 +96,7 @@ const taskBlockSchema = z.strictObject({
 });
 export const groundedReplySchema = z.strictObject({
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
-    "operating_tasks", "expenses", "unknown"]),
+    "operating_tasks", "expenses", "owner_rules", "unknown"]),
   status: z.enum(["verified", "estimated", "insufficient_evidence"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",

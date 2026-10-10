@@ -29,6 +29,9 @@ const copy: SupervisorReplyCopy = {
   tasks: (n, h, w) => "Needs " + n + " handled " + h + " watching " + w,
   staffingTasks: (n) => "Olivia has " + n + " open tasks",
   staffingNone: "No open Olivia tasks recorded",
+  rulesIntro: "Approved guidance only",
+  rulesNone: "No approved rules",
+  ruleItem: (agent, instruction) => agent + ": " + instruction,
 };
 
 function tools(overrides: Record<string, unknown> = {}): BusinessScopedCafeTools {
@@ -175,6 +178,41 @@ describe("Phase 4 finite Supervisor router", () => {
     });
     expect(result.evidence.some((e) => e.identifier === "product:latte")).toBe(true);
     expect(result.blocks.some((b) => b.type === "warning" && b.code === "review_only")).toBe(true);
+  });
+
+  it("reads only approved owner instructions for the named specialist", async () => {
+    const activeRules = [
+      { id: "1", agentId: "alex" as const, instruction: "Ask me before recommending changes",
+        status: "active" as const, version: 2, createdBy: "owner", reviewedBy: "owner",
+        createdAt: "2026-10-10T05:00:00Z", updatedAt: "2026-10-10T06:00:00Z" },
+      { id: "2", agentId: "olivia" as const, instruction: "Prefer morning coverage",
+        status: "active" as const, version: 2, createdBy: "owner", reviewedBy: "owner",
+        createdAt: "2026-10-10T05:00:00Z", updatedAt: "2026-10-10T06:00:00Z" },
+      { id: "3", agentId: "alex" as const, instruction: "Do not apply prices",
+        status: "draft" as const, version: 1, createdBy: "owner", reviewedBy: null,
+        createdAt: "2026-10-10T05:00:00Z", updatedAt: "2026-10-10T06:00:00Z" },
+    ];
+    const result = await answerSupervisorQuestion({
+      text: "What rules have I set for Alex?",
+      state: cafeStateFromSnapshot(fixture), tools: tools(), activeRules,
+    }, copy);
+    expect(result.status).toBe("verified");
+    expect(result.evidence).toMatchObject([{ source: "owner_rules" }]);
+    expect(result.blocks.some((b) => b.type === "text" &&
+      b.text.includes("Ask me before recommending changes"))).toBe(true);
+    expect(result.blocks.some((b) => b.type === "text" &&
+      b.text.includes("Prefer morning coverage"))).toBe(false);
+    expect(result.blocks.some((b) => b.type === "text" &&
+      b.text.includes("Do not apply prices"))).toBe(false);
+  });
+
+  it("does not invent owner rules when the policy reader is unavailable", async () => {
+    const result = await answerSupervisorQuestion({
+      text: "Show me my AI rules", state: cafeStateFromSnapshot(fixture),
+      tools: tools(), activeRules: null,
+    }, copy);
+    expect(result.status).toBe("insufficient_evidence");
+    expect(result.evidence).toEqual([]);
   });
 
   it("does not invoke any café tool for an unsupported prompt", async () => {
