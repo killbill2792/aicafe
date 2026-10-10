@@ -2416,3 +2416,11 @@ Phase 5 implementation and handoff:
 - [x] Tests, TypeScript, changed-file lint and production build passed. No existing operating-task, pricing or finance engine mutation.
 - [ ] Migration 36 needs a deliberately reconciled SQL rollout after 33–35. Provider Meta template, account, cron environment and staging verification are external prerequisites.
 - [ ] Staff-to-AI WhatsApp conversations and employee consent/webhook responses are **not** enabled by this owner alert delivery phase.
+
+## Phase 8 — sourced supplier evidence and optional public research (2026-10-10)
+- [x] Immutable owner-reported supplier quotation records by café, source/date, cents and package units. RLS for café owners, idempotent create endpoint, no direct updates/deletes.
+- [x] Source review UI under Team, EN/ES/AR, with strict matching-unit cents-only comparisons and transparent owner-reported provenance. No automatic supplier cost/recipe/price/POS write.
+- [x] Optional Brave Search API on explicit owner request only, gated by SUPPLIER_RESEARCH_ENABLED and BRAVE_SEARCH_API_KEY. Fixed provider endpoint, HTTPS links and time-stamped **unverified** search snippets; no arbitrary URL fetching.
+- [x] TypeScript, changed-file lint, tests and build verified via GitHub branch CI before review.
+- [ ] Migration 37 requires review, ordered SQL application after migrations 33–36 and staging café RLS checks. Public research requires an external key and quota; default off.
+- [ ] Direct Gmail/supplier-email OAuth synchronization, automatic email reading, fact validation and competitor market monitoring are NOT connected. A manually recorded email excerpt is owner-sourced, not provider-verified.

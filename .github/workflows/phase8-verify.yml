@@ -1,0 +1,23 @@
+name: Phase 8 Supplier Evidence Verification
+on:
+  push:
+    branches: [chatgpt/supervisor-phase8-supplier-evidence]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: ESLint
+        run: npx eslint 'app/[locale]/operations/page.tsx' 'app/[locale]/operations/suppliers/page.tsx' 'app/api/ai/suppliers/**/*.ts' components/operations/SupplierEvidenceManager.tsx 'lib/ai/suppliers/**/*.ts' lib/calc/supplierQuotes.ts lib/calc/supplierQuotes.test.ts
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Diff
+        run: git diff --check origin/main...HEAD

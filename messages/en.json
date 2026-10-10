@@ -1007,7 +1007,8 @@
     "whatsAppAlertsLoading": "Updating…",
     "whatsAppAlertsSaved": "Preference saved.",
     "whatsAppAlertsError": "Unable to save your preference.",
-    "whatsAppAlertsPhone": "Verify your phone number in your account first."
+    "whatsAppAlertsPhone": "Verify your phone number in your account first.",
+    "supplierSourcesLink": "Supplier sources"
   },
   "CafeProfile": {
     "title": "Café profile",
@@ -1211,5 +1212,30 @@
     "olivia": "Olivia · Staff",
     "maya": "Maya · Supplies",
     "leo": "Leo · Money"
+  },
+  "SupplierEvidence": {
+    "back": "Back to Team",
+    "title": "Supplier sources",
+    "description": "Record actual supplier quotes with their sources. They are owner-reported, not verified or automatically added to costs.",
+    "supplier": "Supplier name",
+    "item": "Item",
+    "price": "Package price (USD)",
+    "count": "Package quantity",
+    "unit": "Package unit",
+    "sourceKind": "Where this came from",
+    "sourceUrl": "Source website (optional)",
+    "date": "Quote date",
+    "save": "Record quote",
+    "saving": "Saving…",
+    "saved": "Quote recorded as owner-reported evidence.",
+    "error": "Unable to save or load this source.",
+    "history": "Recorded supplier quotes",
+    "empty": "No quotes recorded.",
+    "notVerified": "Owner-reported, not independently verified",
+    "search": "Search public sources",
+    "searchButton": "Search",
+    "searchUnavailable": "Public research is not connected or unavailable.",
+    "webNotice": "Search results are unverified snippets, not confirmed prices or stock. Requires a configured research provider.",
+    "comparison": "Latest matching-package difference"
   }
 }
