@@ -82,6 +82,8 @@ describe("Phase 4 finite Supervisor router", () => {
   it("routes supported concepts across English, Spanish and Arabic", () => {
     expect(detectSupervisorIntent("How are we doing today?")).toBe("profitability");
     expect(detectSupervisorIntent("How many products am I selling so far?")).toBe("unit_sales");
+    expect(detectSupervisorIntent("How many tasks need me?")).toBe("operating_tasks");
+    expect(detectSupervisorIntent("How many staff are working?")).toBe("staff");
     expect(detectSupervisorIntent("cuántos productos estoy vendiendo")).toBe("unit_sales");
     expect(detectSupervisorIntent("كم منتج بعت؟")).toBe("unit_sales");
     expect(detectSupervisorIntent("How much have I spent this month?")).toBe("expenses");
