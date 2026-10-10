@@ -14,6 +14,8 @@ const copy: SupervisorReplyCopy = {
   estimatedNotice: "Includes estimates",
   todayOverview: "Today from recorded data",
   monthOverview: "This month from recorded data",
+  weekOverview: "Last seven calendar days",
+  periodUnavailable: "Previous periods are unavailable",
   sales: "Sales",
   totalCosts: "Costs",
   ownerProfit: "Owner profit",
@@ -81,6 +83,29 @@ describe("Phase 4 finite Supervisor router", () => {
     expect(result.status).toBe("insufficient_evidence");
     expect(result.evidence).toEqual([]);
     expect(result.blocks).toEqual([{ type: "warning", code: "insufficient_evidence", text: copy.missingEvidence }]);
+  });
+
+  it("queries the actual seven-day calendar window, never today's facts for a week question", async () => {
+    const getProfitability = vi.fn(async () => cafeStateFromSnapshot(fixture,
+      { from: "2026-09-03", to: "2026-09-09" }).profitability);
+    const result = await answerSupervisorQuestion({
+      text: "How much profit this week?", tools: tools({ getProfitability }),
+      state: cafeStateFromSnapshot(fixture),
+    }, copy);
+    expect(getProfitability).toHaveBeenCalledWith({ from: "2026-09-03", to: "2026-09-09" });
+    expect(result.blocks.some((b) => b.type === "text" && b.text === copy.weekOverview)).toBe(true);
+  });
+
+  it("refuses yesterday and prior-month requests rather than returning today's money", async () => {
+    const getProfitability = vi.fn();
+    for (const question of ["What was profit last month?", "What were sales yesterday?", "¿Cuánto vendimos el mes pasado?"]) {
+      const result = await answerSupervisorQuestion({
+        text: question, tools: tools({ getProfitability }), state: cafeStateFromSnapshot(fixture),
+      }, copy);
+      expect(result.status).toBe("insufficient_evidence");
+      expect(result.blocks).toEqual([{ type: "warning", code: "unsupported_period", text: copy.periodUnavailable }]);
+    }
+    expect(getProfitability).not.toHaveBeenCalled();
   });
 
   it("distinguishes period-prorated recurring bills from total costs", async () => {
