@@ -20,6 +20,12 @@ const copy = {
   periodRange: (from: string, to: string) => from + " to " + to,
   salesQuantityIntro: "Covered sales", unitsSold: "Units sold", ordersCount: "Orders",
   drinksCount: "Drinks", distinctProducts: "Distinct products",
+  menuTotal: "Products in menu", menuActive: "Active products",
+  menuCategoryDrink: "Drinks in menu", menuCategoryFood: "Food in menu",
+  menuStockNotice: "Live stock availability is not tracked yet.",
+  menuListIntro: "Active menu:",
+  menuProductDetails: (name: string, category: string) => name + " / " + category,
+  noSalesToday: "No sales have been recorded for today yet.",
   bestSeller: (name: string) => "Best: " + name,
   leastSeller: (name: string) => "Least: " + name,
   matchedProduct: (name: string) => name + " units",
@@ -61,6 +67,74 @@ async function ask(plan: SupervisorPlan, scoped = tools()) {
 }
 
 describe("Responses executor preserves canonical accounting and evidence", () => {
+  it("answers 'how many products are in my menu' from CafeState, never Square product-sales backfill", async () => {
+    const scoped = tools({ getProductSales: vi.fn(async () => { throw new Error("must not query POS"); }) });
+    const answer = await ask({ name: "read_menu", arguments: {
+      operation: "product_count", product_name: null,
+    } }, scoped);
+    expect(answer.intent).toBe("menu_catalog");
+    expect(answer.blocks.find((b) => b.type === "count")).toMatchObject({
+      label: "Products in menu", value: fixture.menuItems.length,
+    });
+    expect(scoped.getProductSales).not.toHaveBeenCalled();
+  });
+  it("answers 'what are my total products that are available for today' without fake inventory", async () => {
+    const scoped = tools();
+    const answer = await ask({ name: "read_menu", arguments: {
+      operation: "active_product_count", product_name: null,
+    } }, scoped);
+    expect(answer.blocks.find((b) => b.type === "count")).toMatchObject({
+      label: "Active products", value: fixture.menuItems.filter((p) => p.active !== false).length,
+    });
+    expect(answer.blocks.some((b) => b.type === "text" && b.text.includes("Live stock"))).toBe(true);
+    expect(scoped.getProductSales).not.toHaveBeenCalled();
+  });
+  it("answers 'what are my total sales for today' without reporting a fabricated zero", async () => {
+    const noToday = { ...state, sales: { available: true as const, value: state.sales.available
+      ? state.sales.value.filter((day) => day.date !== state.asOf) : [], quality } };
+    const scoped = tools({ getSalesTrend: vi.fn(async () => {
+      throw new Error("no today rollup to sum");
+    }) });
+    const answer = await executeSupervisorPlan({
+      plan: { name: "read_sales", arguments: { metric: "sales_revenue", period: "today",
+        category: "all", product_name: null } }, state: noToday, tools: scoped,
+      copy, readRules: async () => [],
+    });
+    expect(answer.blocks).toMatchObject([{ type: "text", text: "No sales have been recorded for today yet." }]);
+    expect(answer.blocks.some((b) => b.type === "metric")).toBe(false);
+    expect(scoped.getSalesTrend).not.toHaveBeenCalled();
+  });
+  it("answers 'what are my total sales for today' with a verified existing today sales row", async () => {
+    const scoped = tools();
+    const answer = await ask({ name: "read_sales", arguments: { metric: "sales_revenue",
+      period: "today", category: "all", product_name: null } }, scoped);
+    expect(answer.blocks.find((b) => b.type === "metric")).toMatchObject({
+      label: "Net sales", valueCents: fixture.todayDay.netSalesCents,
+    });
+    expect(scoped.getSalesTrend).toHaveBeenCalledWith({ from: fixture.todayDateStr, to: fixture.todayDateStr });
+  });
+  it("answers 'how are we doing today' from canonical sales, costs and owner profit", async () => {
+    const scoped = tools();
+    const answer = await ask({ name: "read_finances", arguments: { metric: "overview", period: "today" } }, scoped);
+    const expected = cafeStateFromSnapshot(fixture, { from: fixture.todayDateStr, to: fixture.todayDateStr }).profitability;
+    expect(expected.available).toBe(true);
+    const values = answer.blocks.filter((b) => b.type === "metric");
+    expect(values).toHaveLength(3);
+    expect(values.map((b) => b.type === "metric" ? b.valueCents : null)).toEqual(expected.available ? [
+      expected.value.netSalesCents, expected.value.totalCostsCents, expected.value.ownerProfitCents,
+    ] : []);
+  });
+  it("answers 'what did the team handle' with actual persisted handled cards", async () => {
+    const task = { id: "handled-task", businessId: "fixture-a", agentId: "leo",
+      kind: "supply_check", status: "handled", payload: { itemName: "Milk" },
+      confidence: "high", evidence: [], createdAt: "2026-09-09T00:00:00Z" };
+    const answer = await ask({ name: "read_team", arguments: { agent: "all", status: "handled" } },
+      tools({ getTeamTasks: async () => ({ available: true, value: [task], quality }) }));
+    expect(answer.blocks.find((b) => b.type === "task_card")).toMatchObject({
+      title: "supply_check: Milk", agent: "leo", status: "handled",
+      href: "/operations?status=handled&agent=leo",
+    });
+  });
   it("answers previously failed month expense question with canonical total costs, not bills", async () => {
     const scoped = tools();
     const reply = await ask({ name: "read_finances", arguments: {

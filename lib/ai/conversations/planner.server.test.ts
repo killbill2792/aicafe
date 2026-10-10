@@ -12,6 +12,14 @@ const cases = [
   ["How many orders did we receive today?", "read_sales", { metric: "orders", period: "today", category: "all", product_name: null }],
   ["What is my best-selling drink?", "read_sales", { metric: "best_seller", period: "month_to_date", category: "drink", product_name: null }],
   ["Which products sell the least?", "read_sales", { metric: "least_seller", period: "month_to_date", category: "all", product_name: null }],
+  ["what are my total sales for today", "read_sales", { metric: "sales_revenue", period: "today", category: "all", product_name: null }],
+  ["what are my total products that are available for today", "read_menu", { operation: "active_product_count", product_name: null }],
+  ["what are my monthly bills", "read_finances", { metric: "monthly_bills", period: "month_to_date" }],
+  ["how many products are in my menu", "read_menu", { operation: "product_count", product_name: null }],
+  ["what is my most selling product", "read_sales", { metric: "best_seller", period: "month_to_date", category: "all", product_name: null }],
+  ["what needs my attention", "read_team", { agent: "all", status: "needs_you" }],
+  ["what did the team handle", "read_team", { agent: "all", status: "handled" }],
+  ["how are we doing today", "read_finances", { metric: "overview", period: "today" }],
   ["What needs my attention?", "read_team", { agent: "all", status: "needs_you" }],
 ] as const;
 const mockResponse = (name: string, args: object) => ({
@@ -43,7 +51,10 @@ describe("Responses-only Supervisor tool planner", () => {
       expect(payload.tool_choice).toBe("required");
       expect(payload.parallel_tool_calls).toBe(false);
       expect(payload.store).toBe(false);
-      expect((payload.tools as unknown[]).length).toBe(6);
+      expect((payload.tools as unknown[]).length).toBe(7);
+      expect(payload.reasoning).toEqual({ effort: "none" });
+      expect(payload.max_output_tokens).toBe(800);
+      expect(payload.model).toBe(process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna");
       expect(JSON.stringify(payload.tools)).not.toContain("business_id");
       expect(JSON.stringify(payload.tools)).not.toContain("write_");
       expect(transport).toHaveBeenCalledWith("https://api.openai.com/v1/responses", expect.objectContaining({ method: "POST" }));
@@ -66,8 +77,48 @@ describe("Responses-only Supervisor tool planner", () => {
       metric: "product_units", period: "month_to_date", category: "all", product_name: "x".repeat(121),
     }))).toThrow();
   });
+  it("retries exactly once after an incomplete response and validates the successful tool", async () => {
+    const old = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "test-only";
+    const transport = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "incomplete", output: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(mockResponse("read_menu", {
+        operation: "product_count", product_name: null,
+      })), { status: 200 }));
+    try {
+      const result = await planSupervisorQuestion({ text: "how many products are in my menu",
+        asOf: "2026-10-10", locale: "en", history: [] }, transport);
+      expect(result.plan.name).toBe("read_menu");
+      expect(transport).toHaveBeenCalledTimes(2);
+    } finally {
+      if (old === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old;
+    }
+  });
+  it("never retries permanent OpenAI errors and never exposes provider response content", async () => {
+    const old = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "test-only";
+    const transport = vi.fn().mockResolvedValue(new Response('{"error":"sensitive provider output"}', { status: 401 }));
+    try {
+      await expect(planSupervisorQuestion({ text: "hello", asOf: "2026-10-10",
+        locale: "en", history: [] }, transport)).rejects.toThrow("Supervisor planner unavailable");
+      expect(transport).toHaveBeenCalledTimes(1);
+    } finally {
+      if (old === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old;
+    }
+  });
+  it("retries malformed function arguments exactly once and fails without fabricated replies", async () => {
+    const old = process.env.OPENAI_API_KEY; process.env.OPENAI_API_KEY = "test-only";
+    const transport = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output: [
+      { type: "function_call", name: "read_menu", arguments: "{", call_id: "call_1" },
+    ] }), { status: 200 }));
+    try {
+      await expect(planSupervisorQuestion({ text: "how many products", asOf: "2026-10-10",
+        locale: "en", history: [] }, transport)).rejects.toThrow("Supervisor planner unavailable");
+      expect(transport).toHaveBeenCalledTimes(2);
+    } finally {
+      if (old === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = old;
+    }
+  });
   it("never exposes an unscoped generic SQL or mutation tool", () => {
     const names = SUPERVISOR_FUNCTIONS.map((x) => x.name);
-    expect(names).toEqual(["read_finances", "read_sales", "read_team", "read_pricing", "read_rules", "clarify"]);
+    expect(names).toEqual(["read_finances", "read_menu", "read_sales", "read_team", "read_pricing", "read_rules", "clarify"]);
   });
 });

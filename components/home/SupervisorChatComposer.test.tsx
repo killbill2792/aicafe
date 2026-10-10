@@ -35,14 +35,42 @@ describe("modern Supervisor conversation shell", () => {
     expect(html).not.toContain("SUPERVISOR_CHAT_ENABLED");
     expect(html).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
   });
-  it("never lets a browser speech callback submit dictated content", () => {
+  it("renders actual precomputed Today and persisted Team previews inside the empty chat", () => {
+    const html = renderToStaticMarkup(createElement(SupervisorChatComposer, {
+      enabled: true, unavailableReason: null, locale: "en", copy,
+      snapshot: { title: "Today", hasSales: false, caption: "No sales data yet",
+        stats: [{ label: "Sales", value: "No sales recorded yet" }], seeAll: "See all",
+        sections: [{ title: "Needs you", empty: "No pending tasks", href: "/operations?status=needs_you",
+          items: [], count: 0 }],
+      },
+    }));
+    expect(html).toContain("No sales recorded yet");
+    expect(html).toContain("Needs you");
+    expect(html).toContain("See all");
+    expect(html).toContain('aria-label="Dictate"');
+    expect(html).not.toContain("Listening… review the transcript before sending");
+  });
+  it("captures bounded audio with MediaRecorder, transcribes in a private endpoint, and never sends automatically", () => {
     const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");
-    const handler = source.slice(source.indexOf("recognition.onresult = "), source.indexOf("recognition.onerror = "));
+    const handler = source.slice(source.indexOf("async function transcribeAudio"), source.indexOf("function stopRecording"));
+    expect(source).toContain("new MediaRecorder(");
+    expect(source).toContain('fetch("/api/ai/transcribe"');
+    expect(source).toContain("recordingLimit.current = setTimeout");
+    expect(source).not.toContain("SpeechRecognition");
+    expect(source).not.toContain("webkitSpeechRecognition");
     expect(handler).toContain("setDraft(");
     expect(handler).not.toContain("sendText(");
-    expect(handler).not.toContain("fetch(");
     expect(source).toContain("onSubmit={(event)");
-    expect(source).toContain("dictation === \"listening\"");
-    expect(source).toContain("copy.voiceStop");
+    expect(source).toContain('bg-red-600');
+    expect(source).toContain("copy.transcribing");
   });
+  it("places retry under a durable unanswered owner bubble with its existing clientMessageId", () => {
+    const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");
+    expect(source).toContain('message.role === "owner"');
+    expect(source).toContain("answeredOwnerIds");
+    expect(source).toContain("pendingOwnerIds.has(message.id)");
+    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
+    expect(source).toContain("retryId.current = existingKey ?? retryId.current ?? crypto.randomUUID()");
+  });
+
 });

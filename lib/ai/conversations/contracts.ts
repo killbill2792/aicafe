@@ -48,7 +48,7 @@ export type ConversationPage<T> = { items: T[]; nextOffset: number | null };
 /** Future Phase 4 contract: only vetted evidence may enter a Supervisor response. */
 export type SupervisorIntent =
   | "cafe_overview" | "profitability" | "menu_pricing" | "staff"
-  | "operating_tasks" | "expenses" | "sales_quantity" | "owner_rules" | "unknown";
+  | "operating_tasks" | "expenses" | "sales_quantity" | "menu_catalog" | "owner_rules" | "unknown";
 
 export type GroundingStatus = "verified" | "estimated" | "insufficient_evidence";
 
@@ -113,7 +113,7 @@ const taskBlockSchema = z.strictObject({
 });
 export const groundedReplySchema = z.strictObject({
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
-    "operating_tasks", "expenses", "sales_quantity", "owner_rules", "unknown"]),
+    "operating_tasks", "expenses", "sales_quantity", "menu_catalog", "owner_rules", "unknown"]),
   status: z.enum(["verified", "estimated", "insufficient_evidence"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",

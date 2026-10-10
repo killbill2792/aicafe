@@ -98,6 +98,23 @@ describe("Supervisor Phase 3 conversation foundation", () => {
     expect(repo.insertOwnerMessage).not.toHaveBeenCalled();
   });
 
+  it("planner failure after owner persistence leaves one unanswered message and Retry reuses the key", async () => {
+    const repo = repository();
+    let persisted: ConversationMessage | null = null;
+    repo.findMessageByKey = vi.fn(async () => persisted);
+    repo.insertOwnerMessage = vi.fn(async () => { persisted = ownerMessage; return ownerMessage; });
+    repo.listMessages = vi.fn(async () => ({ items: persisted ? [persisted] : [], nextOffset: null }));
+    const service = new ConversationService(repo, a);
+    const initial = await service.addOwnerMessage(thread.id, ownerMessage.clientMessageId!, ownerMessage.text!);
+    expect(initial).toEqual(ownerMessage);
+    // The planner is an external operation and can fail *after* the owner row commits.
+    const planner = vi.fn(async () => { throw new Error("Supervisor planner unavailable"); });
+    await expect(planner()).rejects.toThrow();
+    expect((await service.listMessages(thread.id, 0)).items).toEqual([ownerMessage]);
+    const retried = await service.addOwnerMessage(thread.id, ownerMessage.clientMessageId!, ownerMessage.text!);
+    expect(retried.id).toBe(initial.id);
+    expect(repo.insertOwnerMessage).toHaveBeenCalledTimes(1);
+  });
   it("reuses the exact persisted owner message for idempotent replays", async () => {
     const repo = repository();
     repo.findMessageByKey = vi.fn(async () => ownerMessage);
