@@ -10,7 +10,7 @@ export interface ConversationRepository {
   findThread(scope: ConversationScope, threadId: string): Promise<ConversationThread | null>;
   findThreadByRequest(scope: ConversationScope, requestId: string): Promise<ConversationThread | null>;
   insertThread(scope: ConversationScope, requestId: string, title: string | null): Promise<ConversationThread>;
-  listThreads(scope: ConversationScope): Promise<ConversationThread[]>;
+  listThreads(scope: ConversationScope, offset: number): Promise<ConversationPage<ConversationThread>>;
   findMessageByKey(scope: ConversationScope, threadId: string, key: string): Promise<ConversationMessage | null>;
   insertOwnerMessage(scope: ConversationScope, threadId: string, key: string, text: string): Promise<ConversationMessage>;
   listMessages(scope: ConversationScope, threadId: string, offset: number): Promise<ConversationPage<ConversationMessage>>;
@@ -41,8 +41,8 @@ export class ConversationService {
     }
   }
 
-  listThreads(): Promise<ConversationThread[]> {
-    return this.repository.listThreads(this.scope);
+  listThreads(offset: number): Promise<ConversationPage<ConversationThread>> {
+    return this.repository.listThreads(this.scope, offset);
   }
 
   async getThread(threadId: string): Promise<ConversationThread> {
