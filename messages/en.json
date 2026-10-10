@@ -990,7 +990,15 @@
     "priceTaskSentenceHigh": "Price may be too high for {item}.",
     "homeHandledPrice": "Kept the current price for {item}.",
     "homeHandledCoverage": "Approved staff coverage was applied.",
-    "homeMoneyUpdate": "Money update needs review."
+    "homeMoneyUpdate": "Money update needs review.",
+    "homeVerifiedPriceApplied": "Verified price update for {item}.",
+    "homePriceReviewClosed": "Price review completed for {item}.",
+    "homeCoverageReviewed": "Staff coverage request reviewed.",
+    "homeTaskHandled": "Team task marked handled.",
+    "homePriceAwaitingVerification": "Waiting to verify the accepted price for {item}.",
+    "homePriceReviewLater": "Price review for {item} scheduled for later.",
+    "homeSupplyNeedsResponse": "Supply check needs a response: {item}.",
+    "homeSupplies": "supplies"
   },
   "CafeProfile": {
     "title": "Café profile",
