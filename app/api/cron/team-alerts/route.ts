@@ -19,6 +19,9 @@ export async function GET(request:Request){
   const auth=await db.auth.admin.getUserById(sub.owner_user_id);
   const person=auth.data.user;
   if(auth.error||!person?.phone_confirmed_at||person.phone!==sub.phone_e164)continue;
+  const member=await db.from("memberships").select("role")
+    .eq("business_id",sub.business_id).eq("user_id",sub.owner_user_id).maybeSingle();
+  if(member.error||member.data?.role!=="owner")continue;
   const {data:tasks,error:taskError}=await db.from("operating_tasks")
     .select("id,kind,status").eq("business_id",sub.business_id).eq("status","needs_owner")
     .order("created_at",{ascending:false}).limit(1);
