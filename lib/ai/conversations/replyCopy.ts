@@ -23,6 +23,9 @@ export type SupervisorReplyCopy = {
   ordersCount: string;
   drinksCount: string;
   distinctProducts: string;
+  menuTotal: string; menuActive: string; menuCategoryDrink: string; menuCategoryFood: string;
+  menuStockNotice: string; menuListIntro: string; menuProductDetails: (name: string, category: string) => string;
+  noSalesToday: string;
   bestSeller: (name: string) => string;
   leastSeller: (name: string) => string;
   matchedProduct: (name: string) => string;
