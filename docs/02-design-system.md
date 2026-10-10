@@ -77,17 +77,19 @@ Dark mode: not in v1. Café screens are used in bright light.
 ## Layout
 - Mobile first, 360–430px wide. Single column, max content width 480px (`max-w-app`).
 - Tablet/desktop: the app shell uses the available width instead of staying pinned to 480px.
-  Ordinary single-column screens (Home, Money, Staff, More, every form) get a wider but still
-  readable centered column, `max-w-app-content` (840px). The Menu list and product detail screens
-  — the ones with enough content to actually use more space — get `max-w-app-wide` (1280px).
+  Ordinary single-column screens (Money, Staff, More, every form) get a wider but still
+  readable centered column, `max-w-app-content` (840px). The Supervisor-first Home, Menu list,
+  and product detail screens have enough structured content to use `max-w-app-wide` (1280px).
   Every screen's outer `<main>` gets this policy via the shared `components/shared/PageShell.tsx`
   wrapper rather than each page styling its own width. Forms stay comfortably narrow (e.g.
   `max-w-md`) even inside a wide shell — never stretch a form to the full shell width.
 - Navigation: bottom tab bar on mobile (`components/TabBar.tsx`, below the `md` breakpoint), a
-  fixed left sidebar on tablet/desktop (`components/SideNav.tsx`, `md:` and up) — the same 6
-  primary destinations, shared via `components/shared/navTabs.ts`: **Home, AI Team, Money, Menu,
-  Staff, More**. Mobile may use the shorter localized label **Team** for AI Team. "Add cost" is a large round button fixed above the tab bar on Home and
-  Money (tucks closer to the bottom edge on desktop, since there's no bottom tab bar to clear).
+  fixed left sidebar on tablet/desktop (`components/SideNav.tsx`, `md:` and up) — the same 5
+  primary destinations, shared via `components/shared/navTabs.ts`: **Home, Money, Menu, Staff,
+  More**. The AI Team remains available at `/operations` through the prominent **Team** button on
+  Supervisor Home; owners do not have to choose a specialist before asking the Supervisor. "Add cost"
+  is a large round button fixed above the tab bar on Home and Money (tucks closer to the bottom edge
+  on desktop, since there's no bottom tab bar to clear).
 - Card radius 20–24px, inner padding 16–20px, gap 14px between cards.
 - Touch targets at least 48px tall. Primary buttons 56px.
 - Numbers right-aligned in lists. Currency always shown ($).

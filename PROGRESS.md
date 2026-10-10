@@ -2245,3 +2245,52 @@ Verification and review closure:
 - [x] Temporary branch-only verification workflow removed before merge; no permanent CI behavior
       is introduced by this phase.
 
+## Supervisor-first Home UI (2026-10-10 — review ready, PR #33)
+
+Owner-approved scope:
+- Reorganize the existing Home into a Supervisor-first experience without replacing trusted Home calculations.
+- Reuse the existing persisted operating-task system for Needs you / Handled / Watching; do not create a second inbox or status model.
+- Keep /operations as the transparent Team workspace, but remove Team from primary navigation and expose it through a prominent Home Team button.
+- Build the Ask anything composer as presentation-only in this PR. No fake AI responses, no conversational backend, no voice/transcription transport, and no new database migration.
+- Use only current deterministic Home / Today-at-a-glance values. Do not invent labor or other metrics because they appear in a concept image.
+- Preserve the existing Business overview sections beneath the new Supervisor/task area.
+
+Plan:
+1. Add a warm, mobile-first Supervisor hero, Team button, disabled future-ready Ask anything composer, and suggestion chips.
+2. Add a compact Today snapshot from existing Home/Today viewmodels.
+3. Add compact Needs you / Handled / Watching previews from persisted operating tasks, with existing teammate avatars/colors and links into the existing Team inbox.
+4. Move the existing period-based money/detail content under a clear Business overview section, removing duplicated above-the-fold metrics where appropriate.
+5. Change shared primary navigation to Home / Money / Menu / Staff / More while keeping /operations intact and reachable from Home.
+6. Update EN / ES / AR copy and the binding navigation design note. No schema, calculation, pricing, POS, or task-lifecycle changes.
+7. Verify TypeScript, lint, tests, build, and diff cleanliness. Use a temporary branch-only verification workflow if local dependency installation is unavailable, then remove it before review.
+
+Asset note:
+- Current main has only Alex / Olivia / Maya / Leo under public/ai-team; no approved standalone Supervisor avatar is present. This PR must not substitute one of those teammates or invent a new character. The hero will reserve the intended large Supervisor visual area using a neutral brand treatment until the approved asset is supplied.
+
+Implementation result:
+- [x] Home now leads with one warm Supervisor surface, a prominent Team button, the exact “Ask anything…” composer wording, future attachment/voice/send affordances, and suggestion shortcuts. The composer is deliberately disabled in this UI-only PR so it cannot pretend a conversation or action succeeded.
+- [x] The Supervisor visual area is 150px on mobile and 190px on desktop. Main currently contains no approved standalone Supervisor avatar under `public/ai-team/` (only Alex, Olivia, Maya, and Leo), so this PR uses a neutral café/AI brand treatment rather than inventing or substituting a teammate. Swap in the approved Supervisor asset when it is supplied.
+- [x] The compact Today snapshot reuses existing deterministic Home/Today-at-a-glance data for sales, owner profit, orders, and total costs, including existing Estimate / Partial truth labels where applicable.
+- [x] Home now previews the existing persisted operating-task inbox as Needs you / Handled / Watching, with existing teammate avatars/colors and existing task destinations. No second task table, lifecycle, or status model was created.
+- [x] Existing owner-profit, cost recovery, margin, missing-cost, profit/cost, staff, menu, break-even, and alerts features remain under Business overview; money calculations and deterministic engines are unchanged.
+- [x] Shared primary navigation is now Home / Money / Menu / Staff / More. `/operations` remains intact and is reached through Home’s prominent Team button.
+- [x] EN / ES / AR Supervisor Home copy and the binding design-system navigation note are updated.
+- [x] No database migration, Supabase push, AI conversation backend, provider call, task action, POS write, or new dependency is part of this PR.
+
+Verification:
+- [x] `npx tsc --noEmit`
+- [x] ESLint on every changed TS/TSX file
+- [x] `npm run test`: 426 tests passed (including six new Home estimate-source regressions)
+- [x] `npm run build`
+- [x] `git diff --check origin/main...HEAD`
+- [ ] Full-repository `npm run lint` still has two pre-existing errors outside this PR: `components/menu/AggregateProductCostEditor.tsx:41` (React set-state-in-effect rule) and `scripts/seed/demoData.mjs:639` (invalid-character parse error), plus existing warnings. The changed Supervisor Home files lint cleanly.
+
+Phase-one review closure:
+- [x] Verified `main` still ends at PR #32 and that this PR changes no `lib/calc/`, existing operating-task lifecycle, pricing engine, POS adapter, or database migration files.
+- [x] New Today snapshot labels estimates when positive running costs, today's card processing fees, or today's payroll taxes use estimated sources; no new money calculation was introduced.
+- [x] Task previews distinguish verified price application, owner-kept prices, future reminders, and pending verification. Supply checks route to existing Team inbox.
+- [x] Review findings addressed: all See all links have at least 48px touch targets; task body and empty-state text use 17px.
+- [x] The Home screen specification now documents the Supervisor-first layout while preserving the original business overview below it.
+- [x] CI on the final implementation (before removing the temporary branch-only workflow) passed TypeScript, changed-file ESLint, all 426 Vitest tests, Next.js production build, and diff whitespace check.
+- [x] Vercel preview for the implementation passed. The temporary branch-only verification workflow is removed in the final cleanup commit.
+- [x] All three original PR review threads were addressed and resolved. No merge was performed.
