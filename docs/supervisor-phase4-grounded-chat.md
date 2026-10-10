@@ -66,3 +66,9 @@ For Production or Preview, configure Supabase credentials in Vercel
 service role must be server-only, never prefixed `NEXT_PUBLIC_`.
 No new Supabase migration is required by this repair. A successful build
 does not prove the live DB was checked from the owner's authenticated session.
+
+## 2026-10-10 follow-up — distinct business facts
+
+Supervisor now routes natural phrasing about monthly bills, total costs, recorded expense entries, accrued fixed bills, orders, drinks and item units. Current-month recurring bills use the active `recurring_costs` rows and exact `totalMonthlyRecurringCostsCents` helper used by Bills. Total business costs come only from canonical period-scoped profitability (the Money model); never from the recurring-bill metric. Actual expense entries are their own limited, explicitly labeled set. Periods and estimation are stated; incomplete evidence returns a warning without a fabricated metric.
+
+Daily drinks/order counts require complete sales coverage. Item totals and rankings additionally require verified completed Square item-data backfill and date-scoped `menu_item_quantities_sold` (invoker-RLS) read. The 28-day snapshot field is never mapped to month-to-date. No changes to the existing `lib/calc` or database schema.

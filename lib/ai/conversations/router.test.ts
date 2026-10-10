@@ -21,6 +21,23 @@ const copy: SupervisorReplyCopy = {
   ownerProfit: "Owner profit",
   recurringBills: "Bills",
   billsIntro: "These are recurring bills",
+  monthlyBillsIntro: "Monthly budget:",
+  accruedBillsIntro: "Accrued:",
+  actualExpensesIntro: "Recorded:",
+  businessCostsIntro: "Canonical costs:",
+  actualExpensesLabel: "Actual expenses",
+  accruedBillsLabel: "Accrued bills",
+  periodRange: (from, to) => from + " to " + to,
+  salesQuantityIntro: "Quantities:",
+  unitsSold: "Units",
+  ordersCount: "Orders",
+  drinksCount: "Drinks",
+  distinctProducts: "Distinct",
+  bestSeller: (name) => "Most: " + name,
+  leastSeller: (name) => "Least: " + name,
+  matchedProduct: (name) => "Units: " + name,
+  productNotFound: "No identified item",
+  productUnitsUnavailable: "No verified product units; showing daily aggregates",
   pricingIntro: "Review products",
   pricingNone: "No recorded pricing reviews",
   pricingUnavailable: "Pricing unavailable",
@@ -111,15 +128,149 @@ describe("Phase 4 finite Supervisor router", () => {
     expect(getProfitability).not.toHaveBeenCalled();
   });
 
-  it("distinguishes period-prorated recurring bills from total costs", async () => {
-    const result = await answerSupervisorQuestion({
-      text: "What are our rent and bills?", tools: tools(),
-      state: cafeStateFromSnapshot(fixture),
+  it("full monthly bills use the Bills budget rather than a prorated snapshot", async () => {
+    const { totalMonthlyRecurringCostsCents } = await import("@/lib/expenses/recurringMonthlyTotal");
+    const rows = [{ amountCents: 650_000, frequency: "monthly" as const },
+      { amountCents: 120_000, frequency: "yearly" as const }];
+    const budget = totalMonthlyRecurringCostsCents(rows);
+    const getMonthlyBills = vi.fn(async () => ({
+      available: true as const, value: { totalCents: budget },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    }));
+    const state = cafeStateFromSnapshot(fixture);
+    const answer = await answerSupervisorQuestion({
+      text: "What are my monthly bills?", state, tools: tools({ getMonthlyBills }),
     }, copy);
-    expect(result.intent).toBe("expenses");
-    expect(result.blocks.some((b) => b.type === "text" && b.text === copy.billsIntro)).toBe(true);
-    const metric = result.blocks.find((b) => b.type === "metric");
-    expect(metric && metric.type === "metric" && metric.valueCents).toBe(32000);
+    expect(answer.blocks.find((b) => b.type === "metric")).toMatchObject({
+      valueCents: budget, label: "Bills",
+    });
+    expect(answer.blocks.some((b) => b.type === "text" && b.text.includes("2026-09-30"))).toBe(true);
+    expect(getMonthlyBills).toHaveBeenCalledOnce();
+  });
+
+  it("uses canonical Money total costs for month-to-date business expenses", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const period = { from: "2026-09-01", to: "2026-09-09" };
+    const canonical = cafeStateFromSnapshot(fixture, period).profitability;
+    const getProfitability = vi.fn(async () => canonical);
+    const answer = await answerSupervisorQuestion({
+      text: "Hi, what are my total expenses for the month?", state,
+      tools: tools({ getProfitability, getExpenseSummary: vi.fn(() => { throw Error("wrong source"); }) }),
+    }, copy);
+    expect(getProfitability).toHaveBeenCalledWith(period);
+    expect(answer.blocks.find((b) => b.type === "metric")).toMatchObject({
+      type: "metric", label: "Costs",
+      valueCents: canonical.available ? canonical.value.totalCostsCents : -1,
+    });
+    expect(answer.blocks.some((b) => b.type === "text" && b.text.includes("2026-09-01 to 2026-09-09"))).toBe(true);
+  });
+
+  it("accrues fixed bills but never prorates recorded actual expense entries", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const bills = tools({ getMonthlyBills: async () => ({
+      available: true, value: { totalCents: 310_000 },
+      quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    }), getRecordedExpenses: async () => ({
+      available: true, value: { totalCents: 67_500 },
+      quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    }) });
+    const accrued = await answerSupervisorQuestion({
+      text: "How much of my fixed bills has accrued so far?", state, tools: bills,
+    }, copy);
+    expect(accrued.blocks.find((b) => b.type === "metric")).toMatchObject({
+      valueCents: 93_000, label: "Accrued bills",
+    });
+    const actual = await answerSupervisorQuestion({
+      text: "How much have I spent so far this month?", state, tools: bills,
+    }, copy);
+    expect(actual.blocks.find((b) => b.type === "metric")).toMatchObject({
+      valueCents: 67_500, label: "Actual expenses",
+    });
+  });
+
+  it("withholds total costs when canonical financial evidence is incomplete", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const answer = await answerSupervisorQuestion({ state,
+      text: "What are my total expenses this month?", tools: tools({
+        getProfitability: async () => ({ available: false, value: null,
+          quality: { level: "low", missingInputs: ["productCost:missing"], estimatedInputs: [], staleInputs: [] } }),
+      }),
+    }, copy);
+    expect(answer.status).toBe("insufficient_evidence");
+    expect(answer.blocks.every((b) => b.type !== "metric")).toBe(true);
+  });
+
+  it("routes natural language volume, ranking and order questions", () => {
+    for (const q of ["How many products am I selling so far?", "How many drinks have I sold today?",
+      "Which products sell the most?", "Which products sell the least?", "What is my best-selling drink?",
+      "How many coffees did I sell?", "How many orders did we receive today?",
+      "¿Cuántos productos he vendido este mes?", "كم مشروب بعت اليوم؟"]) {
+      expect(detectSupervisorIntent(q)).toBe("sales_quantity");
+    }
+  });
+
+  it("does not substitute last-28-day menu quantities for month-to-date units", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const productSales = vi.fn(async () => ({
+      available: true as const,
+      value: [{ id: "latte", name: "Latte", category: "drink", units: 21 },
+        { id: "muffin", name: "Muffin", category: "food", units: 7 }],
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    }));
+    const answer = await answerSupervisorQuestion({
+      text: "How many products am I selling so far?", state,
+      tools: tools({ getSalesTrend: async () => state.sales, getProductSales: productSales }),
+    }, copy);
+    expect(productSales).toHaveBeenCalledWith({ from: "2026-09-01", to: "2026-09-09" });
+    expect(answer.blocks.find((b) => b.type === "count")).toMatchObject({ value: 28, label: "Units" });
+    expect(state.products.available && state.products.value[0].quantitySoldLast28Days).toBe(3360);
+  });
+
+  it("distinguishes drinks sold from order count and item units", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const getProductSales = vi.fn();
+    const scoped = tools({ getSalesTrend: async (dates: { from: string; to: string }) =>
+      cafeStateFromSnapshot(fixture, dates).sales, getProductSales });
+    const drinks = await answerSupervisorQuestion({ text: "How many drinks sold today?", state, tools: scoped }, copy);
+    const orders = await answerSupervisorQuestion({ text: "How many orders today?", state, tools: scoped }, copy);
+    expect(drinks.blocks.find((b) => b.type === "count")).toMatchObject({
+      value: fixture.todayDay.drinksCount, label: "Drinks",
+    });
+    expect(orders.blocks.find((b) => b.type === "count")).toMatchObject({
+      value: fixture.todayDay.ordersCount, label: "Orders",
+    });
+    expect(getProductSales).not.toHaveBeenCalled();
+  });
+
+  it("uses only verified item-level totals for best and least sellers", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const getProductSales = async () => ({
+      available: true as const,
+      value: [{ id: "a", name: "Latte", category: "drink" as const, units: 8 },
+        { id: "b", name: "Mocha", category: "drink" as const, units: 2 },
+        { id: "c", name: "Muffin", category: "food" as const, units: 16 }],
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    });
+    const scoped = tools({ getSalesTrend: async () => state.sales, getProductSales });
+    const best = await answerSupervisorQuestion({ text: "What's the best-selling drink this month?", state, tools: scoped }, copy);
+    const least = await answerSupervisorQuestion({ text: "Which products sell the least this month?", state, tools: scoped }, copy);
+    expect(best.blocks.find((b) => b.type === "count")).toMatchObject({ label: "Most: Latte", value: 8 });
+    expect(least.blocks.find((b) => b.type === "count")).toMatchObject({ label: "Least: Mocha", value: 2 });
+  });
+
+  it("falls back to verified aggregate drinks/orders but never guesses item quantities", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const answer = await answerSupervisorQuestion({
+      text: "How many products sold this month?", state,
+      tools: tools({ getSalesTrend: async () => state.sales, getProductSales: async () => ({
+        available: false, value: null,
+        quality: { level: "low", missingInputs: ["itemSalesCoverage"], estimatedInputs: [], staleInputs: [] },
+      }) }),
+    }, copy);
+    expect(answer.blocks.some((b) => b.type === "warning" && b.code === "item_units_unavailable")).toBe(true);
+    expect(answer.blocks.filter((b) => b.type === "count").map((b) =>
+      b.type === "count" ? b.label : "")).toEqual(["Drinks", "Orders"]);
+    expect(answer.blocks.some((b) => b.type === "count" && b.label === "Units")).toBe(false);
   });
 
   it("counts only persisted actionable tasks, not raw signals or inferred actions", async () => {

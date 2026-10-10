@@ -22,3 +22,7 @@ live authenticated Supabase staging checks. Never blindly `supabase db push`.
 Activation: existing `SUPERVISOR_CHAT_ENABLED=true` plus existing Phase 3
 schema, valid Supabase storage and service-role configured. No extra provider
 credentials needed; browser transcription availability depends on device.
+
+## 2026-10-10 dictation UX improvement
+
+The microphone shows a clear localized Listening state and Stop control, then a Recognizing state while the browser finalizes transcription. Final text appears in the editable composer; only an explicit user Send can submit. Errors, blocked permissions, no-speech, browser unsupported and cancellation have localized status messages; recognition stops and handlers are detached on navigation, disable and unmount. Activity pulses represent an active session, not measured audio amplitude.

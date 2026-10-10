@@ -1,0 +1,45 @@
+name: Supervisor Intelligence and Voice Verification
+on:
+  push:
+    branches:
+      - chatgpt/supervisor-finance-sales-voice-20261010
+  pull_request:
+    paths:
+      - 'lib/ai/**'
+      - 'lib/ai/conversations/**'
+      - 'app/api/ai/**'
+      - 'components/home/SupervisorChatComposer.tsx'
+      - 'messages/**'
+      - '.github/workflows/supervisor-intelligence-verify.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: ESLint changed TypeScript
+        run: |
+          npx eslint 'lib/ai/supervisorFacts.server.ts' 'lib/ai/supervisorFacts.server.test.ts' \
+            'lib/ai/tools.ts' 'lib/ai/tools.test.ts' \
+            'lib/ai/conversations/router.ts' 'lib/ai/conversations/router.test.ts' \
+            'lib/ai/conversations/dictationState.ts' 'lib/ai/conversations/dictationState.test.ts' \
+            'lib/ai/conversations/contracts.ts' 'lib/ai/conversations/replyValidation.ts' \
+            'lib/ai/cafeTools.server.ts' 'app/api/ai/threads/[threadId]/messages/route.ts' \
+            'app/[locale]/page.tsx' 'components/home/SupervisorChatComposer.tsx'
+      - name: All unit and regression tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Whitespace
+        run: git diff --check origin/main...HEAD

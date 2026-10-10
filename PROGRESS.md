@@ -1,5 +1,14 @@
 # Progress
 
+## Supervisor financial accuracy, sales intelligence and dictation UX (2026-10-10 — PR review)
+
+- Start at merge commit 63bf783 (PR #41 already merged); preserve backend gating, RLS and immutable replies.
+- Read recurring bills directly from the active bill rows and Bills' monthly-equivalent helper. Distinguish monthly budget, accrued share, recorded actual expense entries and canonical Money total costs; never prorate already-recorded actuals.
+- For sales quantity, use coverage-checked daily rollups for orders/drinks and a read-only, invoker-RLS item-quantity RPC for products/rankings, gated on canonical Square backfill coverage. Never use last-28-day snapshot quantities as month-to-date.
+- Implement explicit dictation states, Stop and transcript review with EN/ES/AR, retaining owner-controlled Send. Preserve attachments/history.
+- No new migration, financial formula, pricing change, or package dependency. Verification runs in `.github/workflows/supervisor-intelligence-verify.yml`. Live production database/RLS and Vercel deployment require owner-side staging confirmation.
+
+
 State file so any agent (Claude Code, Codex, Kimi) can pick up where the last one stopped.
 Read `CLAUDE.md` (or `AGENTS.md`) first, then this file, then only the `docs/` files the next task needs.
 

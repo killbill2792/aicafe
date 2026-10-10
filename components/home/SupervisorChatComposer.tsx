@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useReducer, useRef, useState, type ChangeEvent } from "react";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
-import { Mic, Plus, Send } from "lucide-react";
+import { Mic, Plus, Send, Square } from "lucide-react";
+import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
 import { formatCents } from "@/lib/calc";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 
@@ -30,6 +31,12 @@ export type SupervisorChatCopy = {
   listening: string;
   voiceReview: string;
   voiceUnavailable: string;
+  voiceStop: string;
+  voiceProcessing: string;
+  voicePermissionDenied: string;
+  voiceNoSpeech: string;
+  voiceError: string;
+  voiceCanceled: string;
   attachmentSaved: string;
   attachmentNotice: string;
   attachmentUpload: string;
@@ -43,7 +50,7 @@ type Locale = "en" | "es" | "ar";
 type SpeechRecognizer = {
  lang:string; interimResults:boolean;
  onresult:((event:{results:ArrayLike<ArrayLike<{transcript:string}>>})=>void)|null;
- onerror:(()=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void;
+ onerror:((event:{error:string})=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void;
 };
 function recognitionForBrowser():SpeechRecognizer|null {
  const w=window as Window & {
@@ -103,6 +110,15 @@ function SupervisorMessage({ message, copy }: { message: ConversationMessage; co
                 </p>}
               </div>;
             }
+            if (block.type === "count" && typeof block.label === "string" &&
+                typeof block.value === "number" && Number.isSafeInteger(block.value) && block.value >= 0) {
+              const source = isRecord(block.source) ? block.source : null;
+              return <div key={index} className="rounded-xl bg-[#F3F7F4] p-3">
+                <p className="text-[17px] font-semibold text-ink">{block.label}</p>
+                <p className="font-headline text-2xl font-bold text-ink">{new Intl.NumberFormat().format(block.value)}</p>
+                {source && <p className="mt-1 break-all text-sm text-ink-muted">{copy.source}: {String(source.source ?? "")} · {String(source.asOf ?? "")}</p>}
+              </div>;
+            }
             return null;
           })}
         </div>}
@@ -125,7 +141,7 @@ export default function SupervisorChatComposer({
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [listening,setListening]=useState(false);
+  const [dictation, dispatchDictation] = useReducer(nextDictationStage, "idle");
   const [uploading,setUploading]=useState(false);
   const [attachments,setAttachments]=useState<StoredAttachment[]>([]);
   const [mediaNotice,setMediaNotice]=useState("");
@@ -134,7 +150,24 @@ export default function SupervisorChatComposer({
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
-  useEffect(()=>()=>speech.current?.stop(),[]);
+  useEffect(() => () => {
+    const active = speech.current;
+    speech.current = null;
+    if (active) {
+      active.onresult = null; active.onerror = null; active.onend = null;
+      active.stop();
+    }
+  }, []);
+  useEffect(() => {
+    if (enabled) return;
+    const active = speech.current;
+    speech.current = null;
+    if (active) {
+      active.onresult = null; active.onerror = null; active.onend = null;
+      active.stop();
+    }
+    dispatchDictation({ type: "reset" });
+  }, [enabled]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
@@ -253,22 +286,60 @@ export default function SupervisorChatComposer({
     return created.thread.id;
   }
 
-  function listen(){
-    if(!enabled||sending||uploading)return;
-    if(speech.current){speech.current.stop();return;}
-    const recognition=recognitionForBrowser();
-    if(!recognition){setMediaNotice(copy.voiceUnavailable);return;}
-    speech.current=recognition;
-    recognition.lang=locale==="ar"?"ar":locale==="es"?"es-ES":"en-US";
-    recognition.interimResults=false;
-    recognition.onresult=(event)=>{
-      const transcript=Array.from(event.results).map((result)=>result[0]?.transcript??"").join(" ").trim();
-      if(transcript){setDraft(transcript.slice(0,4000));retryId.current=null;setMediaNotice(copy.voiceReview);}
+  function listen() {
+    if (!enabled || sending || uploading || dictation === "recognizing") return;
+    if (speech.current) {
+      dispatchDictation({ type: "stop" });
+      speech.current.stop();
+      setMediaNotice(copy.voiceProcessing);
+      return;
+    }
+    const recognition = recognitionForBrowser();
+    if (!recognition) {
+      dispatchDictation({ type: "error" });
+      setMediaNotice(copy.voiceUnavailable);
+      return;
+    }
+    let hadResult = false;
+    let hadError = false;
+    speech.current = recognition;
+    recognition.lang = locale === "ar" ? "ar-SA" : locale === "es" ? "es-ES" : "en-US";
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      if (speech.current !== recognition) return;
+      const transcript = Array.from(event.results)
+        .map((result) => result[0]?.transcript ?? "").join(" ").trim();
+      if (!transcript) return;
+      hadResult = true;
+      setDraft((current) => (current.trim() ? current.trimEnd() + " " : "") .concat(transcript).slice(0, 4000));
+      retryId.current = null;
+      dispatchDictation({ type: "result" });
+      setMediaNotice(copy.voiceReview);
     };
-    recognition.onerror=()=>setMediaNotice(copy.voiceUnavailable);
-    recognition.onend=()=>{speech.current=null;setListening(false);};
-    try{recognition.start();setListening(true);setMediaNotice(copy.listening);}
-    catch{speech.current=null;setListening(false);setMediaNotice(copy.voiceUnavailable);}
+    recognition.onerror = (event) => {
+      if (speech.current !== recognition) return;
+      hadError = true;
+      dispatchDictation({ type: "error" });
+      setMediaNotice(event.error === "not-allowed" || event.error === "service-not-allowed"
+        ? copy.voicePermissionDenied
+        : event.error === "no-speech" ? copy.voiceNoSpeech
+        : event.error === "aborted" ? copy.voiceCanceled : copy.voiceError);
+    };
+    recognition.onend = () => {
+      if (speech.current !== recognition) return;
+      speech.current = null;
+      dispatchDictation({ type: "end", hadResult, hadError });
+      if (!hadResult && !hadError) setMediaNotice(copy.voiceNoSpeech);
+    };
+    try {
+      recognition.start();
+      dispatchDictation({ type: "start" });
+      setMediaNotice(copy.listening);
+    } catch {
+      speech.current = null;
+      dispatchDictation({ type: "error" });
+      setMediaNotice(copy.voiceError);
+    }
   }
 
   async function attach(event:ChangeEvent<HTMLInputElement>){
@@ -292,6 +363,13 @@ export default function SupervisorChatComposer({
 
   function selectThread(id: string | null) {
     if (sending) return;
+    const active = speech.current;
+    speech.current = null;
+    if (active) {
+      active.onresult = null; active.onerror = null; active.onend = null;
+      active.stop();
+    }
+    dispatchDictation({ type: "reset" });
     setThreadId(id);
     setMessages([]);
     setAttachments([]);
@@ -359,10 +437,15 @@ export default function SupervisorChatComposer({
             maxLength={4000} disabled={!enabled || sending}
             placeholder={copy.askAnything}
             className="min-w-0 flex-1 bg-transparent px-1 text-[17px] font-semibold text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed" />
-          <button type="button" disabled={!enabled||sending||uploading}
-            onClick={listen} aria-label={copy.voiceInput} aria-pressed={listening}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E8F1EE] text-good disabled:cursor-not-allowed">
-            <Mic aria-hidden="true" size={22} />
+          <button type="button" disabled={!enabled||sending||uploading||dictation==="recognizing"}
+            onClick={listen} aria-label={dictation==="listening" ? copy.voiceStop : copy.voiceInput}
+            title={dictation==="listening" ? copy.voiceStop : copy.voiceInput}
+            aria-pressed={dictation==="listening"} aria-controls="supervisor-dictation-state"
+            className={dictation==="listening"
+              ? "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-good text-white ring-4 ring-good/20 shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+              : "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E8F1EE] text-good disabled:cursor-not-allowed focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"}>
+            {dictation==="listening" ? <Square aria-hidden="true" size={20} fill="currentColor" />
+              : <Mic aria-hidden="true" size={22} />}
           </button>
           <button type="submit" disabled={!enabled || sending || !draft.trim()}
             aria-label={copy.sendMessage}
@@ -372,6 +455,22 @@ export default function SupervisorChatComposer({
         </div>
       </form>
 
+      {(dictation==="listening" || dictation==="recognizing") && (
+        <div id="supervisor-dictation-state" role="status" aria-live="polite"
+          className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-good bg-good-tint px-4 py-3 text-[17px] font-bold text-ink shadow-sm">
+          <span className="flex items-center gap-3">
+            <span className="relative flex h-4 w-4 shrink-0">
+              {dictation==="listening" && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-good/30 motion-reduce:animate-none" />}
+              <span className="relative h-4 w-4 rounded-full bg-good" />
+            </span>
+            {dictation==="listening" ? copy.listening : copy.voiceProcessing}
+          </span>
+          {dictation==="listening" && <button type="button" onClick={listen}
+            className="min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+            {copy.voiceStop}
+          </button>}
+        </div>
+      )}
       <p role="status" aria-live="polite"
         className={enabled
           ? "mt-2 text-[15px] font-medium text-ink-muted"

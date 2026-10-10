@@ -16,11 +16,11 @@ export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedS
     throw new Error("Supervisor response requires trusted evidence");
   }
   if (validated.status === "insufficient_evidence" &&
-      validated.blocks.some((block) => block.type === "metric" || block.type === "task_status")) {
+      validated.blocks.some((block) => block.type === "metric" || block.type === "count" || block.type === "task_status")) {
     throw new Error("Insufficient evidence cannot contain factual metrics or task claims");
   }
   for (const block of validated.blocks) {
-    if ((block.type === "metric" || block.type === "task_status") &&
+    if ((block.type === "metric" || block.type === "count" || block.type === "task_status") &&
         !validated.evidence.some((e) => e.source === block.source.source &&
           e.identifier === block.source.identifier && e.asOf === block.source.asOf)) {
       throw new Error("Metric or task is missing its exact grounding reference");
