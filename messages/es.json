@@ -990,7 +990,15 @@
     "priceTaskSentenceHigh": "El precio puede ser demasiado alto para {item}.",
     "homeHandledPrice": "Se mantuvo el precio actual de {item}.",
     "homeHandledCoverage": "Se aplicó la cobertura de personal aprobada.",
-    "homeMoneyUpdate": "Hay una actualización de dinero para revisar."
+    "homeMoneyUpdate": "Hay una actualización de dinero para revisar.",
+    "homeVerifiedPriceApplied": "Cambio de precio verificado para {item}.",
+    "homePriceReviewClosed": "Revisión de precio completada para {item}.",
+    "homeCoverageReviewed": "Solicitud de cobertura de personal revisada.",
+    "homeTaskHandled": "Tarea del equipo marcada como resuelta.",
+    "homePriceAwaitingVerification": "Esperando verificar el precio aceptado de {item}.",
+    "homePriceReviewLater": "Revisión del precio de {item} programada para más adelante.",
+    "homeSupplyNeedsResponse": "Se necesita una respuesta sobre los suministros: {item}.",
+    "homeSupplies": "suministros"
   },
   "CafeProfile": {
     "title": "Perfil del café",
