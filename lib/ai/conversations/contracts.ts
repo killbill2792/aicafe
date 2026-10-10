@@ -11,7 +11,7 @@ export const addOwnerMessageInput = z.strictObject({
 });
 export const threadIdInput = z.uuid();
 
-export const messagePageInput = z.strictObject({
+export const pageInput = z.strictObject({
   offset: z.coerce.number().int().min(0).max(10000).default(0),
 });
 export const PAGE_SIZE = 50;
