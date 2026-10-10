@@ -246,6 +246,10 @@ export async function answerSupervisorQuestion(
           references.push(costSource);
           blocks.push({ type: "metric", label: copy.operatingCostsSoFar,
             valueCents: costs.value.totalCostsCents, source: costSource });
+          if (costs.quality.estimatedInputs.length && !bills.quality.estimatedInputs.length) {
+            blocks.push({ type: "warning", code: "costs_estimated",
+              text: copy.estimatedNotice });
+          }
         } else {
           blocks.push({ type: "warning", code: "total_costs_incomplete",
             text: copy.operatingCostsUnavailable });
