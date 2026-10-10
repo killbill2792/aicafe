@@ -28,7 +28,7 @@ export default function TabBar() {
                 }`}
               >
                 <Icon aria-hidden="true" size={22} />
-                <span>{t(key === "team" ? "teamShort" : key)}</span>
+                <span>{t(key)}</span>
               </Link>
             </li>
           );
