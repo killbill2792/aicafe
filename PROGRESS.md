@@ -2266,3 +2266,21 @@ Plan:
 
 Asset note:
 - Current main has only Alex / Olivia / Maya / Leo under public/ai-team; no approved standalone Supervisor avatar is present. This PR must not substitute one of those teammates or invent a new character. The hero will reserve the intended large Supervisor visual area using a neutral brand treatment until the approved asset is supplied.
+
+Implementation result:
+- [x] Home now leads with one warm Supervisor surface, a prominent Team button, the exact “Ask anything…” composer wording, future attachment/voice/send affordances, and suggestion shortcuts. The composer is deliberately disabled in this UI-only PR so it cannot pretend a conversation or action succeeded.
+- [x] The Supervisor visual area is 150px on mobile and 190px on desktop. Main currently contains no approved standalone Supervisor avatar under `public/ai-team/` (only Alex, Olivia, Maya, and Leo), so this PR uses a neutral café/AI brand treatment rather than inventing or substituting a teammate. Swap in the approved Supervisor asset when it is supplied.
+- [x] The compact Today snapshot reuses existing deterministic Home/Today-at-a-glance data for sales, owner profit, orders, and total costs, including existing Estimate / Partial truth labels where applicable.
+- [x] Home now previews the existing persisted operating-task inbox as Needs you / Handled / Watching, with existing teammate avatars/colors and existing task destinations. No second task table, lifecycle, or status model was created.
+- [x] Existing owner-profit, cost recovery, margin, missing-cost, profit/cost, staff, menu, break-even, and alerts features remain under Business overview; money calculations and deterministic engines are unchanged.
+- [x] Shared primary navigation is now Home / Money / Menu / Staff / More. `/operations` remains intact and is reached through Home’s prominent Team button.
+- [x] EN / ES / AR Supervisor Home copy and the binding design-system navigation note are updated.
+- [x] No database migration, Supabase push, AI conversation backend, provider call, task action, POS write, or new dependency is part of this PR.
+
+Verification:
+- [x] `npx tsc --noEmit`
+- [x] ESLint on every changed TS/TSX file
+- [x] `npm run test`: 420 tests passed
+- [x] `npm run build`
+- [x] `git diff --check origin/main...HEAD`
+- [ ] Full-repository `npm run lint` still has two pre-existing errors outside this PR: `components/menu/AggregateProductCostEditor.tsx:41` (React set-state-in-effect rule) and `scripts/seed/demoData.mjs:639` (invalid-character parse error), plus existing warnings. The changed Supervisor Home files lint cleanly.
