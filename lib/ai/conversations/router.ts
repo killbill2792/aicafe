@@ -34,6 +34,7 @@ export type SupervisorReplyCopy = {
   leastSeller: (name: string) => string;
   matchedProduct: (name: string) => string;
   productNotFound: string;
+  productUnitsUnavailable: string;
   pricingIntro: string;
   pricingNone: string;
   pricingUnavailable: string;
@@ -226,7 +227,21 @@ export async function answerSupervisorQuestion(
       }], copy);
     }
     const products = await tools.getProductSales(dates);
-    if (!products.available) return replyForSlice(intent, products, [ref], [], copy);
+    if (!products.available) {
+      // Daily aggregate counts may still be trustworthy even when item-level
+      // backfill is missing. Name the distinction rather than guess a total.
+      const aggregateRef: EvidenceReference = {
+        source: "cafe_state", identifier: "rollup_orders_drinks:" + from + ":" + to, asOf: observedAt,
+      };
+      return replyForSlice(intent, trend, [aggregateRef], [
+        intro,
+        { type: "warning", code: "item_units_unavailable", text: copy.productUnitsUnavailable },
+        { type: "count", label: copy.drinksCount,
+          value: trend.value.reduce((sum, d) => sum + d.drinksCount, 0), source: aggregateRef },
+        { type: "count", label: copy.ordersCount,
+          value: trend.value.reduce((sum, d) => sum + d.ordersCount, 0), source: aggregateRef },
+      ], copy);
+    }
     let rows = products.value;
     // There is no trustworthy "coffee" category in the menu schema: it only
     // distinguishes drink vs food. A coffee-name substring is not a full taxonomy.
