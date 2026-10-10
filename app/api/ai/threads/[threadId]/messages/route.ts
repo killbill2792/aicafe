@@ -77,6 +77,8 @@ export async function POST(request: Request, context: RouteContext) {
       fullMonthlyBills: t("fullMonthlyBills"),
       operatingCostsSoFar: t("operatingCostsSoFar"),
       operatingCostsUnavailable: t("operatingCostsUnavailable"),
+      productUnits: t("productUnits"),
+      itemSalesUnavailable: t("itemSalesUnavailable"),
       drinkUnits: t("drinkUnits"),
       recordedOrders: t("recordedOrders"),
       productSalesIntro: t("productSalesIntro"),
