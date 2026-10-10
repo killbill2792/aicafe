@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import { Mic, Plus, Send } from "lucide-react";
 import { formatCents } from "@/lib/calc";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
@@ -25,8 +26,27 @@ export type SupervisorChatCopy = {
   you: string;
   supervisor: string;
   source: string;
+  listening: string;
+  voiceReview: string;
+  voiceUnavailable: string;
+  attachmentSaved: string;
+  attachmentNotice: string;
+  attachmentUpload: string;
 };
 type Locale = "en" | "es" | "ar";
+type SpeechRecognizer = {
+ lang:string; interimResults:boolean;
+ onresult:((event:{results:ArrayLike<ArrayLike<{transcript:string}>>})=>void)|null;
+ onerror:(()=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void;
+};
+function recognitionForBrowser():SpeechRecognizer|null {
+ const w=window as Window & {
+  SpeechRecognition?:new()=>SpeechRecognizer;
+  webkitSpeechRecognition?:new()=>SpeechRecognizer;
+ };
+ const Recognizer=w.SpeechRecognition ?? w.webkitSpeechRecognition;
+ return Recognizer?new Recognizer():null;
+}
 
 type MessageResponse = {
   message: ConversationMessage;
@@ -98,9 +118,16 @@ export default function SupervisorChatComposer({
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [listening,setListening]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [attachments,setAttachments]=useState<StoredAttachment[]>([]);
+  const [mediaNotice,setMediaNotice]=useState("");
+  const speech=useRef<SpeechRecognizer|null>(null);
+  const filePicker=useRef<HTMLInputElement|null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
+  useEffect(()=>()=>speech.current?.stop(),[]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
@@ -130,6 +157,16 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId, sending]);
+  useEffect(()=>{
+    if(!enabled || !threadId)return;
+    const controller=new AbortController();
+    void fetch("/api/ai/threads/"+encodeURIComponent(threadId)+"/attachments",{
+      signal:controller.signal,cache:"no-store",
+    }).then((response)=>jsonFrom<{items:StoredAttachment[]}>(response))
+      .then(({items})=>{if(!controller.signal.aborted)setAttachments(items);})
+      .catch(()=>{if(!controller.signal.aborted)setError(true);});
+    return ()=>controller.abort();
+  },[enabled,threadId]);
 
   async function refreshThreads() {
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
@@ -196,10 +233,62 @@ export default function SupervisorChatComposer({
     }
   }
 
+  async function ensureThread():Promise<string>{
+    if(threadId)return threadId;
+    threadRequestId.current ??= crypto.randomUUID();
+    const created=await jsonFrom<{thread:ConversationThread}>(await fetch("/api/ai/threads",{
+      method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({requestId:threadRequestId.current}),
+    }));
+    setThreadId(created.thread.id);
+    threadRequestId.current=null;
+    await refreshThreads();
+    return created.thread.id;
+  }
+
+  function listen(){
+    if(!enabled||sending||uploading)return;
+    if(speech.current){speech.current.stop();return;}
+    const recognition=recognitionForBrowser();
+    if(!recognition){setMediaNotice(copy.voiceUnavailable);return;}
+    speech.current=recognition;
+    recognition.lang=locale==="ar"?"ar":locale==="es"?"es-ES":"en-US";
+    recognition.interimResults=false;
+    recognition.onresult=(event)=>{
+      const transcript=Array.from(event.results).map((result)=>result[0]?.transcript??"").join(" ").trim();
+      if(transcript){setDraft(transcript.slice(0,4000));retryId.current=null;setMediaNotice(copy.voiceReview);}
+    };
+    recognition.onerror=()=>setMediaNotice(copy.voiceUnavailable);
+    recognition.onend=()=>{speech.current=null;setListening(false);};
+    try{recognition.start();setListening(true);setMediaNotice(copy.listening);}
+    catch{speech.current=null;setListening(false);setMediaNotice(copy.voiceUnavailable);}
+  }
+
+  async function attach(event:ChangeEvent<HTMLInputElement>){
+    const file=event.target.files?.[0];
+    event.target.value="";
+    if(!file||!enabled||uploading||sending)return;
+    if(file.size>2*1024*1024||file.size===0){setMediaNotice(copy.attachmentUpload);return;}
+    setUploading(true);setError(false);
+    try{
+      const id=await ensureThread();
+      const form=new FormData();form.append("file",file);
+      const response=await fetch("/api/ai/threads/"+encodeURIComponent(id)+"/attachments",{
+        method:"POST",body:form,
+      });
+      const result=await jsonFrom<{attachment:StoredAttachment}>(response);
+      setAttachments((prev)=>[result.attachment,...prev]);
+      setMediaNotice(copy.attachmentSaved);
+    }catch{setError(true);setMediaNotice(copy.attachmentUpload);}
+    finally{setUploading(false);}
+  }
+
   function selectThread(id: string | null) {
     if (sending) return;
     setThreadId(id);
     setMessages([]);
+    setAttachments([]);
+    setMediaNotice("");
     setNextOffset(null);
     setError(false);
     setDraft("");
@@ -236,10 +325,20 @@ export default function SupervisorChatComposer({
         {messages.map((message) => <SupervisorMessage key={message.id} message={message} copy={copy} />)}
       </div>}
 
+      {enabled && attachments.length>0 && <section aria-label={copy.addAttachment}
+        className="mb-3 rounded-xl border border-[#D8C8B5] bg-white p-3">
+        <p className="text-[17px] text-ink-muted">{copy.attachmentNotice}</p>
+        <ul className="mt-2 space-y-2">{attachments.map((file)=>
+          <li key={file.id} className="break-all text-[17px] text-ink">{file.originalName}</li>)}</ul>
+      </section>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
         className="rounded-[24px] border border-[#D8C8B5] bg-card/95 p-2 shadow-[0_10px_30px_rgba(42,29,20,0.08)]">
         <div className="flex min-h-14 items-center gap-2" role="group" aria-label={copy.composerLabel}>
-          <button type="button" disabled aria-label={copy.addAttachment}
+          <input ref={filePicker} type="file" className="sr-only"
+            accept=".txt,.pdf,.jpg,.jpeg,.png,.webp,text/plain,application/pdf,image/jpeg,image/png,image/webp"
+            onChange={(event)=>void attach(event)}/>
+          <button type="button" disabled={!enabled||sending||uploading}
+            onClick={()=>filePicker.current?.click()} aria-label={copy.addAttachment}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#F3ECE3] text-ink-muted disabled:cursor-not-allowed">
             <Plus aria-hidden="true" size={24} />
           </button>
@@ -249,7 +348,8 @@ export default function SupervisorChatComposer({
             maxLength={4000} disabled={!enabled || sending}
             placeholder={copy.askAnything}
             className="min-w-0 flex-1 bg-transparent px-1 text-[17px] font-semibold text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed" />
-          <button type="button" disabled aria-label={copy.voiceInput}
+          <button type="button" disabled={!enabled||sending||uploading}
+            onClick={listen} aria-label={copy.voiceInput} aria-pressed={listening}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E8F1EE] text-good disabled:cursor-not-allowed">
             <Mic aria-hidden="true" size={22} />
           </button>
@@ -264,6 +364,8 @@ export default function SupervisorChatComposer({
       <p className="mt-2 text-[15px] font-medium text-ink-muted">{enabled ? copy.live : copy.comingSoon}</p>
       <div role="status" aria-live="polite" className="mt-1 text-[17px] text-ink">
         {sending && copy.sending}
+        {uploading && copy.attachmentUpload}
+        {mediaNotice && <span className="block">{mediaNotice}</span>}
         {error && (enabled ? copy.retry : copy.unavailable)}
       </div>
       <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1 md:flex-wrap" aria-label={copy.composerLabel}>
