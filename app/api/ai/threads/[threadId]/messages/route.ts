@@ -85,6 +85,7 @@ export async function POST(request: Request, context: RouteContext) {
       leastSeller: (name) => t("leastSeller", { name }),
       matchedProduct: (name) => t("matchedProduct", { name }),
       productNotFound: t("productNotFound"),
+      productUnitsUnavailable: t("productUnitsUnavailable"),
       pricingIntro: t("pricingIntro"),
       pricingNone: t("pricingNone"),
       pricingUnavailable: t("insufficient"),
