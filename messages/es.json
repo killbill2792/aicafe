@@ -1192,12 +1192,14 @@
     "operatingCostsUnavailable": "No puedo verificar todos los costos del negocio de este mes con los datos actuales de ventas, personal, ingredientes y comisiones.",
     "drinkUnits": "Bebidas vendidas (días registrados)",
     "recordedOrders": "Pedidos (días registrados)",
-    "productSalesIntro": "Los registros de ventas cuentan bebidas y pedidos. No permiten confirmar el total de todos los productos vendidos ni de cada artículo.",
+    "productSalesIntro": "Estas son las cantidades que constan en los registros. Los productos identificados excluyen líneas no vinculadas y pueden faltar días de venta.",
     "productSalesPartial": "Cobertura parcial: hay datos de ventas para {observed} de {expected} días. Las cifras anteriores solo incluyen esos días.",
     "voiceStarting": "Activando el micrófono…",
     "voiceStop": "Detener grabación",
     "voiceProcessing": "Finalizando transcripción…",
-    "voiceNoSpeech": "No se detectaron palabras. Vuelve a dictar o escribe la pregunta."
+    "voiceNoSpeech": "No se detectaron palabras. Vuelve a dictar o escribe la pregunta.",
+    "productUnits": "Unidades vendidas de productos del menú identificados",
+    "itemSalesUnavailable": "No hay ventas verificadas por producto para este período. Las bebidas y los pedidos siguientes provienen de registros agregados."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
