@@ -2295,7 +2295,7 @@ Phase-one review closure:
 - [x] Vercel preview for the implementation passed. The temporary branch-only verification workflow is removed in the final cleanup commit.
 - [x] All three original PR review threads were addressed and resolved. No merge was performed.
 
-## Supervisor Phase 2 — trusted read-only engine boundary (2026-10-10, implementation in progress)
+## Supervisor Phase 2 — trusted read-only engine boundary (2026-10-10, review ready)
 
 Verified starting point:
 - PR #33 merged into main at a09dbb7; Phase 1 Home and all existing money/pricing/POS/task workflows remain unchanged.
@@ -2309,3 +2309,21 @@ Planned:
 4. Make `StructuredCafeTools` return typed, evidence-carrying slices for profitability, pricing, products, labor, sales, and costs. Add a business-scoped tool facade so future Supervisor calls cannot supply arbitrary café IDs.
 5. Add focused regression tests: Fixture A exact owner-profit numbers, correct proration, sparse/missing/estimated data, unsupported periods, canonical pricing evidence, tenant safety, and absent-service cases.
 6. Run TypeScript, changed-file lint, Vitest, build, whitespace checks. Open review PR and do not merge; no new schema or `supabase db push`.
+
+Implementation result:
+- [x] `CafeState` now computes period-specific cents using existing `lib/calc` functions for profit and calendar-prorated monthly costs. A complete 9-day Fixture A gives sales 2,160,000¢, total costs 1,637,568¢, and owner profit 522,432¢; one day gives owner profit 58,048¢.
+- [x] Individual bill lines for a requested period reconcile to the same rounded aggregate, with no parallel money formula.
+- [x] Missing sales-day coverage, fees, expected bills, or sold-product cost prevents a "verified profitability" claim; estimated cost sources remain marked. Past/invalid/cross-month date requests fail closed until an authoritative historical bill loader is available.
+- [x] Authenticated production factory binds the owner's current café, reads the same `getSnapshot` + `getMenuControlCenter` sources used by the existing screens, and projects only canonical pricing results belonging to that café. Historical reads never treat current pricing as historic pricing.
+- [x] `StructuredCafeTools` exposes typed `KnownSlice` responses for profitability, product economics, sales trends, pricing, period costs, labor, and unavailable inventory. `getExpenseChanges` explicitly refuses change claims without matched prior-period evidence.
+- [x] `BusinessScopedCafeTools` removes caller-supplied business IDs from future Supervisor tools; tenant mismatches are rejected.
+- [x] Read-only `getTeamTasks` queries the existing persisted task inbox under RLS, preserves `needs_owner` / `handled` / `watching` evidence, and NEVER invokes the task reconciliation/writing function. Raw pricing signals remain separate from actionable task status.
+- [x] No existing Home/Money/Menu calculation, task lifecycle, POS adapter, pricing formula, UI route, production migration, AI provider, or external API was modified or invoked.
+- [x] Added `docs/supervisor-phase2-engine-boundary.md` for next-phase integration boundaries and known missing capabilities.
+
+Verification and handoff:
+- [x] GitHub branch CI: `npx tsc --noEmit`, changed-file ESLint, **456 Vitest tests**, `npm run build`, `git diff --check origin/main...HEAD` all passed.
+- [x] Vercel preview successful on the tested implementation.
+- [x] Temporary branch-only verification workflow removed before PR review. No permanent CI workflow is introduced.
+- [ ] The existing whole-repository lint baseline still has errors unrelated to this phase (see Phase 1); this PR's files pass lint.
+- [ ] Phase 3 is conversation identity/schema/threads/messages/grounded routing. The Home Ask anything field remains disabled until working backend wiring is reviewed and deployed.
