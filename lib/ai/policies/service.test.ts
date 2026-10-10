@@ -102,7 +102,7 @@ describe("Phase 5 owner rules and approval state machine", () => {
 
   it("rejects inconsistent database transition outcomes", async () => {
     const repo = repository();
-    repo.compareAndSetStatus = vi.fn(async () => ({ ...draft, status: "active", version: 8 }));
+    repo.compareAndSetStatus = vi.fn(async () => ({ ...draft, status: "active" as const, version: 8 }));
     await expect(new TeamRulesService(repo, owner).reviewRule(draft.id, 1, "approve"))
       .rejects.toBeInstanceOf(RuleConflict);
   });
