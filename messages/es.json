@@ -1175,6 +1175,7 @@
     "leastSeller": "Menos vendido: {name}",
     "matchedProduct": "Unidades vendidas: {name}",
     "productNotFound": "No puedo identificar un producto o categoría con datos fiables. Prueba con el nombre exacto del producto.",
+    "productUnitsUnavailable": "No hay unidades por producto ni rankings verificados para este período. Muestro recuentos verificados de bebidas y pedidos, no totales por producto.",
     "voiceStop": "Detener dictado",
     "voiceProcessing": "Finalizando reconocimiento de voz…",
     "voicePermissionDenied": "Se bloqueó el micrófono. Permite el acceso en el navegador y vuelve a intentar.",
