@@ -43,3 +43,37 @@ create index if not exists ai_delivery_attempts_latest_idx on ai_delivery_attemp
   (business_id,owner_user_id,created_at desc);
 alter table ai_delivery_attempts enable row level security;
 -- Only the trusted service-role cron can reserve/mark deliveries.
+
+-- Prevent direct PostgREST callers from forging consent or destinations:
+-- an opt-in can only point to this actor's CURRENT verified Auth phone.
+create or replace function guard_ai_notification_consent()
+returns trigger language plpgsql security definer set search_path=public
+as $$
+declare verified_phone text;
+begin
+  if new.owner_user_id is distinct from auth.uid() then
+    raise exception 'Owner identity mismatch' using errcode='42501';
+  end if;
+  if tg_op='UPDATE' and (
+    new.business_id is distinct from old.business_id
+    or new.owner_user_id is distinct from old.owner_user_id) then
+    raise exception 'Subscription ownership cannot change' using errcode='23514';
+  end if;
+  if new.opted_in then
+    select u.phone into verified_phone from auth.users u
+      where u.id=auth.uid() and u.phone_confirmed_at is not null;
+    if verified_phone is null or new.phone_e164 is distinct from verified_phone then
+      raise exception 'Verified phone required for WhatsApp consent' using errcode='42501';
+    end if;
+    if new.consent_at is null then
+      raise exception 'Consent timestamp required' using errcode='23514';
+    end if;
+  end if;
+  new.updated_at := now();
+  return new;
+end;
+$$;
+revoke all on function guard_ai_notification_consent() from public;
+create trigger ai_notification_consent_guard
+before insert or update on ai_owner_notifications
+for each row execute function guard_ai_notification_consent();
