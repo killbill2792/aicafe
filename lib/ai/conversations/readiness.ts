@@ -3,6 +3,7 @@ export type SupervisorChatUnavailableReason =
   | "explicitly_disabled"
   | "supabase_unconfigured"
   | "server_writer_unconfigured"
+  | "planner_unconfigured"
   | "owner_access_required"
   | "storage_unavailable";
 
@@ -13,6 +14,7 @@ export type SupervisorChatReadiness =
 export function supervisorChatConfigStatus(options: {
   configuredSupabase: boolean;
   serviceRolePresent: boolean;
+  plannerKeyPresent?: boolean;
   featureFlag?: string;
 }): SupervisorChatReadiness {
   // An explicit false is the emergency operator kill switch.
@@ -24,6 +26,9 @@ export function supervisorChatConfigStatus(options: {
   }
   if (!options.serviceRolePresent) {
     return { enabled: false, reason: "server_writer_unconfigured" };
+  }
+  if (options.plannerKeyPresent === false) {
+    return { enabled: false, reason: "planner_unconfigured" };
   }
   // Missing flag is not a permanent "coming soon" state after all prerequisites
   // are installed. Real café/owner/database readiness is checked separately.
