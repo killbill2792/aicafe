@@ -10,6 +10,7 @@ export type PolicyScope = ConversationScope;
 export interface TeamRulesRepository {
   listRules(scope: PolicyScope, offset: number): Promise<RulesPage<TeamRule>>;
   listEvents(scope: PolicyScope, offset: number): Promise<RulesPage<RuleEvent>>;
+  listActiveRules(scope: PolicyScope): Promise<TeamRule[]>;
   findRule(scope: PolicyScope, id: string): Promise<TeamRule | null>;
   createDraft(scope: PolicyScope, agentId: RuleAgent, instruction: string): Promise<TeamRule>;
   compareAndSetStatus(scope: PolicyScope, id: string, expectedVersion: number, status: RuleStatus):
@@ -36,6 +37,10 @@ export class TeamRulesService {
 
   listEvents(offset = 0) {
     return this.repository.listEvents(this.scope, offset);
+  }
+
+  listActiveRules() {
+    return this.repository.listActiveRules(this.scope);
   }
 
   createDraft(agentId: RuleAgent, instruction: string) {
