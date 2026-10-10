@@ -27,6 +27,27 @@ describe("Phase 4 privileged reply validation", () => {
     })).toThrow();
   });
 
+  it("requires exact citations and safe whole-unit counts (never currency)", () => {
+    const reply: GroundedSupervisorReply = {
+      intent: "unit_sales", status: "verified", evidence: [source],
+      blocks: [{ type: "count", label: "Products sold", value: 30, source }],
+    };
+    expect(validateGroundedReply(reply)).toEqual(reply);
+    expect(() => validateGroundedReply({
+      ...reply, blocks: [{ type: "count", label: "Products", value: -1, source }],
+    })).toThrow();
+    expect(() => validateGroundedReply({
+      ...reply, blocks: [{ type: "count", label: "Products", value: 2.5, source }],
+    })).toThrow();
+    expect(() => validateGroundedReply({
+      ...reply, blocks: [{ type: "count", label: "Products", value: 30,
+        source: { ...source, identifier: "unverified" } }],
+    })).toThrow("exact grounding");
+    expect(() => validateGroundedReply({
+      ...reply, status: "insufficient_evidence", evidence: [],
+    })).toThrow("cannot contain factual metrics");
+  });
+
   it("rejects hallucinated metrics on insufficient-evidence replies", () => {
     expect(() => validateGroundedReply({
       ...valid, status: "insufficient_evidence", evidence: [],
