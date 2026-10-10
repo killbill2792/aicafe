@@ -1161,7 +1161,13 @@
     "periodUnavailable": "I can verify today, the last seven days if they fall in the loaded month, or the current month. Older or future periods are not connected yet.",
     "rulesIntro": "These are your approved Team instructions (guidance, not automatic actions):",
     "rulesNone": "No approved instructions are recorded for that team member. Open Team → Team rules to create one.",
-    "ruleItem": "{agent}: {instruction}"
+    "ruleItem": "{agent}: {instruction}",
+    "listening": "Listening… review the transcript before sending.",
+    "voiceReview": "Transcript ready. Check and edit it before you send.",
+    "voiceUnavailable": "Speech recognition isn't available in this browser. Please type your message.",
+    "attachmentSaved": "File stored privately. It has not been analysed.",
+    "attachmentNotice": "Reference files only: uploaded documents are not analysed or applied to café records.",
+    "attachmentUpload": "Uploading file… (PDF, image, or text; 2 MB maximum)."
   },
   "TeamRules": {
     "title": "Team rules & approvals",
