@@ -2,7 +2,8 @@ import { getTranslations } from "next-intl/server";
 import { authenticatedConversationService, authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { createAuthenticatedCafeTools } from "@/lib/ai/cafeTools.server";
-import { answerSupervisorQuestion } from "@/lib/ai/conversations/router";
+import { answerSupervisorQuestion, detectSupervisorIntent } from "@/lib/ai/conversations/router";
+import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
@@ -50,7 +51,12 @@ export async function POST(request: Request, context: RouteContext) {
       throw new ConversationApiError(403, "business_scope_mismatch");
     }
     const t = await getTranslations({ locale: input.locale, namespace: "SupervisorChat" });
-    const reply = await answerSupervisorQuestion({ text: input.text, tools, state }, {
+    const activeRules = detectSupervisorIntent(input.text) === "owner_rules"
+      ? await (await authenticatedTeamRulesService()).listActiveRules()
+      : null;
+    const reply = await answerSupervisorQuestion({
+      text: input.text, tools, state, activeRules,
+    }, {
       unsupported: t("unknownRequest"),
       missingEvidence: t("insufficient"),
       estimatedNotice: t("estimation"),
@@ -71,6 +77,9 @@ export async function POST(request: Request, context: RouteContext) {
       tasks: (needs, handled, watching) => t("tasksSummary", { needs, handled, watching }),
       staffingTasks: (count) => t("staffSummary", { count }),
       staffingNone: t("staffNone"),
+      rulesIntro: t("rulesIntro"),
+      rulesNone: t("rulesNone"),
+      ruleItem: (agent, instruction) => t("ruleItem", { agent, instruction }),
     });
     const stored = await persistGroundedSupervisorReply(scope, message, reply);
     return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
