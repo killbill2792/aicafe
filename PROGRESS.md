@@ -2327,3 +2327,28 @@ Verification and handoff:
 - [x] Temporary branch-only verification workflow removed before PR review. No permanent CI workflow is introduced.
 - [ ] The existing whole-repository lint baseline still has errors unrelated to this phase (see Phase 1); this PR's files pass lint.
 - [ ] Phase 3 is conversation identity/schema/threads/messages/grounded routing. The Home Ask anything field remains disabled until working backend wiring is reviewed and deployed.
+
+## Supervisor Phase 3 — secured conversation foundation (2026-10-10, review ready)
+
+Starting point: PR #34 is merged on main at 3c06226. The trusted Phase 2 read-only tool boundary, pricing and financial calculations, Team task lifecycle, POS behavior and the Phase 1 disabled composer must not change.
+
+Scope:
+1. Add additive `ai_threads` / `ai_messages` schema with strong owner+café identity, RLS, append-only owner message writes, composite tenant-consistent foreign keys, client-idempotency keys and room for future structured responses. Do not run blanket `supabase db push`.
+2. Implement authenticated Next.js APIs for thread creation/listing and owner-message append/history, with bounded Zod validation, strict tenant+owner scoping, CSRF/origin safeguards and no-cache responses. Do not let callers insert Supervisor messages or alter business/owner identity.
+3. Ensure source-of-truth owner messages are stored as owner messages. Do not fabricate AI replies, change tasks or invoke providers. The Ask anything composer stays disabled until grounded response routing is implemented in a subsequent PR.
+4. Define typed Supervisor intent/grounding/structured reply contracts and a strict evidence gate for later connection to `BusinessScopedCafeTools`; any missing verified data is explicitly insufficient evidence.
+5. Add regression tests for role spoofing, cross-owner/café isolation, malformed inputs, idempotency, incomplete grounding, and read-only semantics. Verify TypeScript, changed-file lint, tests, production build, Vercel and migration review. No production migration applied automatically.
+
+Deploy order: review/apply migration 33 explicitly after reconciling production migration history, then deploy Phase 3 API code. The new routes fail closed if migrations are unavailable.
+
+Phase 3 implementation / verification:
+- [x] New additive migration 33 creates owner-private `ai_threads` and `ai_messages` with strict owner+café RLS, no authenticated UPDATE/DELETE policies, composite tenant/owner consistency, request/message idempotency keys, and structured future Supervisor message schema.
+- [x] No authenticated owner can insert a Supervisor response or invent AI-generated facts; only owner text can be appended through session-authenticated API. The current Home composer intentionally stays disabled; sending a stored message returns `replyStatus: "not_enabled"`.
+- [x] Authenticated owner-only thread/message endpoints support bounded strict JSON, same-origin POST protection, privacy/no-store headers, cursor-offset pagination, retries, conflict detection, and sanitized errors. No fixture fallback.
+- [x] Phase 4 contracts cover Supervisor intent, evidence references, typed reply blocks, and a fail-closed verified/estimated/insufficient-evidence assessment; no generic model path or café-specific AI guesses added.
+- [x] PostgreSQL integration RLS smoke test executes migration 33 on a disposable isolated Postgres instance. Proved owner A can write/read, owner B of the same café cannot read owner A, manager and outsider cannot read/write, authenticated owner cannot forge Supervisor messages or edit/delete history, and trigger timestamps update.
+- [x] No changes to `lib/calc/`, Home/Money/Menu/Staff screens, pricing engine, POS integration, Team task lifecycle, or existing financial tables; no new dependencies and no production database mutations.
+- [x] CI on tested commit d7058b2: `npx tsc --noEmit`, changed-file ESLint, **482 Vitest tests**, PostgreSQL RLS smoke test, `npm run build`, and `git diff --check` all passed; Vercel preview succeeded.
+- [x] Temporary branch-only verification workflow removed after checks; the PostgreSQL smoke test script remains available for future execution.
+- [ ] Before activating this PR in production, review/reconcile migration history and apply migration 33 deliberately (do not blanket `supabase db push`). Staging Supabase end-to-end session tests should supplement disposable-Postgres RLS tests.
+- [ ] Phase 4 implements grounded tool routing, structured Supervisor replies, safe authorized response persistence and finally enables the Home Ask anything UI after successful end-to-end checks.
