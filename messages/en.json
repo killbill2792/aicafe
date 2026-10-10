@@ -1155,6 +1155,8 @@
     "priceItem": "Review price: {item}",
     "tasksSummary": "The Team inbox currently records {needs} needing attention, {handled} handled and {watching} being watched.",
     "staffSummary": "Olivia's existing Team inbox has {count} staff-related requests awaiting attention.",
-    "staffNone": "Olivia has no open tasks recorded in the Team inbox. This is not a full staffing audit."
+    "staffNone": "Olivia has no open tasks recorded in the Team inbox. This is not a full staffing audit.",
+    "weekOverview": "Here are the last seven calendar days from recorded data.",
+    "periodUnavailable": "I can verify today, the last seven days if they fall in the loaded month, or the current month. Older or future periods are not connected yet."
   }
 }
