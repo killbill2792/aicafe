@@ -66,8 +66,9 @@ describe("modern Supervisor conversation shell", () => {
   });
   it("places retry under a durable unanswered owner bubble with its existing clientMessageId", () => {
     const source = readFileSync("components/home/SupervisorChatComposer.tsx", "utf8");
-    expect(source).toContain('messages[messages.length - 1].role === "owner"');
-    expect(source).toContain("pending?.id === message.id");
+    expect(source).toContain('message.role === "owner"');
+    expect(source).toContain("answeredOwnerIds");
+    expect(source).toContain("pendingOwnerIds.has(message.id)");
     expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
     expect(source).toContain("retryId.current = existingKey ?? retryId.current ?? crypto.randomUUID()");
   });
