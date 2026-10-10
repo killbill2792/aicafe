@@ -2231,3 +2231,17 @@ Deployment order:
 - Apply migration 32 (`20261010000032_aggregate_product_cost.sql`) before deploying this app code.
 - Because production migration history is historically unreconciled, apply migration 32 deliberately;
   do not run a blanket `supabase db push` across old migrations.
+
+Verification and review closure:
+- [x] Moved sold-item product-cost aggregation/rounding into `lib/calc/productCosts.ts` so both
+      break-even surfaces use one pure money calculation.
+- [x] Archived menu items sold inside the break-even window remain in the resolved cost set even
+      though they stay excluded from the active Menu display.
+- [x] Estimated fallback provenance now propagates into Profit Goal / break-even quality, and
+      imported/estimated costs are labeled truthfully in Menu.
+- [x] The drinks/day break-even restores missing-sales precedence before missing-product-costs.
+- [x] GitHub branch verification passed `npx tsc --noEmit` and the full `npm test` suite.
+- [x] Vercel preview deployment succeeded after the strict-TypeScript fix.
+- [x] Temporary branch-only verification workflow removed before merge; no permanent CI behavior
+      is introduced by this phase.
+
