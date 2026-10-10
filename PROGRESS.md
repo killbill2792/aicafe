@@ -2245,7 +2245,7 @@ Verification and review closure:
 - [x] Temporary branch-only verification workflow removed before merge; no permanent CI behavior
       is introduced by this phase.
 
-## Supervisor-first Home UI (2026-10-10 — implementation in progress)
+## Supervisor-first Home UI (2026-10-10 — review ready, PR #33)
 
 Owner-approved scope:
 - Reorganize the existing Home into a Supervisor-first experience without replacing trusted Home calculations.
@@ -2280,7 +2280,17 @@ Implementation result:
 Verification:
 - [x] `npx tsc --noEmit`
 - [x] ESLint on every changed TS/TSX file
-- [x] `npm run test`: 420 tests passed
+- [x] `npm run test`: 426 tests passed (including six new Home estimate-source regressions)
 - [x] `npm run build`
 - [x] `git diff --check origin/main...HEAD`
 - [ ] Full-repository `npm run lint` still has two pre-existing errors outside this PR: `components/menu/AggregateProductCostEditor.tsx:41` (React set-state-in-effect rule) and `scripts/seed/demoData.mjs:639` (invalid-character parse error), plus existing warnings. The changed Supervisor Home files lint cleanly.
+
+Phase-one review closure:
+- [x] Verified `main` still ends at PR #32 and that this PR changes no `lib/calc/`, existing operating-task lifecycle, pricing engine, POS adapter, or database migration files.
+- [x] New Today snapshot labels estimates when positive running costs, today's card processing fees, or today's payroll taxes use estimated sources; no new money calculation was introduced.
+- [x] Task previews distinguish verified price application, owner-kept prices, future reminders, and pending verification. Supply checks route to existing Team inbox.
+- [x] Review findings addressed: all See all links have at least 48px touch targets; task body and empty-state text use 17px.
+- [x] The Home screen specification now documents the Supervisor-first layout while preserving the original business overview below it.
+- [x] CI on the final implementation (before removing the temporary branch-only workflow) passed TypeScript, changed-file ESLint, all 426 Vitest tests, Next.js production build, and diff whitespace check.
+- [x] Vercel preview for the implementation passed. The temporary branch-only verification workflow is removed in the final cleanup commit.
+- [x] All three original PR review threads were addressed and resolved. No merge was performed.
