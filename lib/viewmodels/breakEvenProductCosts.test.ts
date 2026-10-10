@@ -54,3 +54,32 @@ describe("break-even resolved product costs", () => {
     expect(buildBreakEvenViewModel(snapshot).unavailableReason).toBe("missing_product_costs");
   });
 });
+
+
+describe("break-even archived sold items", () => {
+  it("includes a sold archived item's resolved cost without adding it back to the active menu list", () => {
+    const snapshot = getFixtureSnapshot();
+    snapshot.menuItems = [];
+    snapshot.breakEvenProductCosts = [{
+      id: "archived-latte",
+      name: "Archived latte",
+      priceCents: 600,
+      prepSeconds: 60,
+      category: "drink",
+      active: false,
+      ingredientsCentsToday: 200,
+      hasRecipe: false,
+      costStatus: "READY",
+      costSource: "owner_total",
+      ownerTotalCostCents: 200,
+      costQuality: "actual",
+      quantitySoldLast28Days: 10,
+    }];
+    const observedSales = snapshot.last28Days.reduce((sum, day) => sum + day.netSalesCents, 0);
+    const vm = buildCostRecoveryViewModel(snapshot);
+    expect(vm.breakEven.kind).toBe("ready");
+    if (vm.breakEven.kind === "ready") {
+      expect(vm.breakEven.ingredientRate).toBeCloseTo(2_000 / observedSales, 8);
+    }
+  });
+});

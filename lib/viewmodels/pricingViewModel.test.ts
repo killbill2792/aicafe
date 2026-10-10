@@ -112,9 +112,21 @@ describe("pricing product-cost completeness", () => {
   it("uses business economics when sold product costs are complete", () => {
     const result = buildPricingViewModel({
       items: [item],
-      business: { ...business, productCostsStatus: "complete" },
+      business: { ...business, productCostsStatus: "actual" },
     })[0].result;
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
     expect(result.dataQuality.missingInputs).not.toContain("productCosts");
+  });
+});
+
+
+describe("pricing estimated owner product costs", () => {
+  it("uses estimated product cost economics but marks the result estimated", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "estimated" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
+    expect(result.dataQuality.estimatedInputs).toContain("productCosts");
   });
 });
