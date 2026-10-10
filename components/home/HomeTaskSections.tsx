@@ -23,7 +23,7 @@ export default function HomeTaskSections({
   sections,
   seeAll,
 }: {
-  sections: [SectionCopy, SectionCopy, SectionCopy];
+  sections: SectionCopy[];
   seeAll: string;
 }) {
   return (
