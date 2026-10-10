@@ -8,6 +8,7 @@ export const createThreadInput = z.strictObject({
 export const addOwnerMessageInput = z.strictObject({
   clientMessageId: z.uuid(),
   text: z.string().trim().min(1).max(4000),
+  locale: z.enum(["en", "es", "ar"]).default("en"),
 });
 export const threadIdInput = z.uuid();
 
@@ -69,3 +70,35 @@ export type GroundedSupervisorReply = {
   evidence: EvidenceReference[];
   blocks: SupervisorReplyBlock[];
 };
+
+/** Only server-verified, allow-listed blocks may be persisted as Supervisor replies. */
+export const evidenceReferenceSchema = z.strictObject({
+  source: z.enum(["cafe_state", "pricing_engine", "operating_tasks", "verified_external"]),
+  identifier: z.string().min(1).max(160),
+  asOf: z.string().min(1).max(40),
+});
+const textBlockSchema = z.strictObject({
+  type: z.literal("text"), text: z.string().trim().min(1).max(1200),
+});
+const warningBlockSchema = z.strictObject({
+  type: z.literal("warning"), code: z.string().min(1).max(80),
+  text: z.string().trim().min(1).max(1200),
+});
+const metricBlockSchema = z.strictObject({
+  type: z.literal("metric"), label: z.string().min(1).max(140),
+  valueCents: z.number().int().safe(),
+  source: evidenceReferenceSchema,
+});
+const taskBlockSchema = z.strictObject({
+  type: z.literal("task_status"), taskId: z.string().min(1).max(200),
+  status: z.enum(["needs_owner", "needs_response", "watching", "handled", "expired"]),
+  source: evidenceReferenceSchema,
+});
+export const groundedReplySchema = z.strictObject({
+  intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
+    "operating_tasks", "expenses", "unknown"]),
+  status: z.enum(["verified", "estimated", "insufficient_evidence"]),
+  evidence: z.array(evidenceReferenceSchema).max(30),
+  blocks: z.array(z.discriminatedUnion("type",
+    [textBlockSchema, warningBlockSchema, metricBlockSchema, taskBlockSchema])).min(1).max(30),
+});
