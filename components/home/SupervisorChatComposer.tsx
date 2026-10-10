@@ -114,6 +114,40 @@ function SupervisorMessage({ message, copy, locale }: {
   </article>;
 }
 
+function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
+  return <div className="w-full space-y-4 text-start">
+    <section aria-label={snapshot.title}>
+      <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink-muted">{snapshot.title}</h3>
+      <div className="grid grid-cols-2 gap-2">
+        {snapshot.stats.map((stat) => <div key={stat.label}
+          className="rounded-2xl border border-[#E2D3BF] bg-white p-3 shadow-sm">
+          <p className="text-[13px] font-semibold text-ink-muted">{stat.label}</p>
+          <p className="mt-1 break-words text-xl font-extrabold text-ink">{stat.value}</p>
+        </div>)}
+      </div>
+      {snapshot.caption && <p className="mt-2 text-sm text-ink-muted">{snapshot.caption}</p>}
+    </section>
+    {snapshot.sections.map((section) => <section key={section.href}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-extrabold uppercase tracking-wide text-ink-muted">
+          {section.title} <span className="text-ink">{section.count}</span>
+        </h3>
+        <Link href={section.href} className="text-sm font-bold text-good underline">{snapshot.seeAll}</Link>
+      </div>
+      {section.items.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {section.items.map((task) => <Link key={task.id} href={task.href}
+          className="flex min-h-16 items-center gap-2 rounded-2xl border border-[#E2D3BF] bg-white p-3 text-ink no-underline hover:bg-[#FFF7EC]">
+          <AgentAvatar agentId={task.agentId} size="task" />
+          <span className="min-w-0 flex-1">
+            <span className={`block text-sm font-bold ${agentVisuals[task.agentId].accent}`}>{task.agentName}</span>
+            <span className="block text-[15px] font-semibold">{task.title}</span>
+          </span>
+        </Link>)}
+      </div> : <p className="mt-1 text-sm text-ink-muted">{section.empty}</p>}
+    </section>)}
+  </div>;
+}
+
 export default function SupervisorChatComposer({
   enabled, locale, copy, snapshot, onActivityChange,
 }: {
@@ -134,6 +168,7 @@ export default function SupervisorChatComposer({
   } | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [dictation, dispatchDictation] = useReducer(nextDictationStage, "idle");
@@ -230,9 +265,10 @@ export default function SupervisorChatComposer({
       .then((page) => {
         if (controller.signal.aborted) return;
         setMessages(page.items); setNextOffset(page.nextOffset);
+        setThreadTitle(threads.find((thread) => thread.id === threadId)?.title ?? null);
       }).catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId, sending]);
+  }, [enabled, threadId, sending, threads]);
   useEffect(() => {
     if (!enabled || !threadId) return;
     const controller = new AbortController();
@@ -258,6 +294,7 @@ export default function SupervisorChatComposer({
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
       await fetch("/api/ai/threads", { cache: "no-store" }));
     setThreads(page.items);
+    if (threadId) setThreadTitle(page.items.find((thread) => thread.id === threadId)?.title ?? null);
   }
   async function ensureThread(): Promise<string> {
     if (threadId) return threadId;
@@ -266,7 +303,7 @@ export default function SupervisorChatComposer({
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ requestId: threadRequestId.current }),
     }));
-    setThreadId(created.thread.id);
+    setThreadId(created.thread.id); setThreadTitle(created.thread.title);
     threadRequestId.current = null;
     return created.thread.id;
   }
@@ -322,6 +359,8 @@ export default function SupervisorChatComposer({
     if (sending) return;
     cleanupRecording(); dispatchDictation({ type: "reset" });
     setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
+    setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
+    setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     retryId.current = null; threadRequestId.current = null;
     composer.current?.focus();
@@ -417,29 +456,38 @@ export default function SupervisorChatComposer({
     }
   }
 
+  const pending = !sending && messages.length > 0 &&
+    messages[messages.length - 1].role === "owner" &&
+    messages[messages.length - 1].clientMessageId
+      ? messages[messages.length - 1] : null;
+  const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
+
   return <section className="relative mt-4 flex h-[min(75vh,790px)] min-h-[530px] flex-col overflow-hidden rounded-[26px] border border-[#E2D3BF] bg-[#FFFDF9] shadow-[0_14px_38px_rgba(45,31,22,0.09)]"
     aria-label={copy.composerLabel}>
     <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#E9DAC8] bg-white/85 px-4 py-3 md:px-5">
       <button type="button" onClick={() => setHistoryOpen(true)} disabled={!enabled}
         aria-label={copy.historyTitle} title={copy.historyTitle}
-        className="inline-flex min-h-12 items-center gap-2 rounded-xl px-3 text-[17px] font-bold text-ink hover:bg-[#F3ECE3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-[#F3ECE3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
         <History size={22} aria-hidden="true" />
-        <span>{copy.threads}</span>
       </button>
+      <h2 className="min-w-0 flex-1 truncate text-center text-[16px] font-bold text-ink">
+        {threadTitle || copy.supervisor}
+      </h2>
       <button type="button" onClick={() => selectThread(null)} disabled={!enabled || sending}
         aria-label={copy.startNewChat} title={copy.startNewChat}
-        className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#F2EBDF] px-4 text-[16px] font-bold text-ink hover:bg-[#E8DECF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
-        <Plus size={21} aria-hidden="true" /><span className="hidden sm:inline">{copy.newThread}</span>
+        className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-[#F2EBDF] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+        <Plus size={22} aria-hidden="true" />
       </button>
     </header>
     <div ref={transcript} className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain px-4 py-5 md:px-8 md:py-7"
       role="log" aria-live="polite" aria-label={copy.threads}>
-      {messages.length === 0 && <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 py-8 text-center">
+      {messages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 py-6 text-center">
         <div className="flex h-20 w-20 items-center justify-center rounded-[28px] bg-[#E9F1E8] text-good shadow-inner">
           <Sparkles aria-hidden="true" size={42} />
         </div>
         <h2 className="font-headline text-3xl font-bold text-ink">{copy.emptyHeading}</h2>
         <p className="max-w-md text-[17px] leading-relaxed text-ink-muted">{copy.emptyIntro}</p>
+        {snapshot && <HomeSnapshot snapshot={snapshot} />}
         <div className="mt-2 flex max-w-[640px] flex-wrap justify-center gap-2">
           {copy.suggestions.map((suggestion) =>
             <button key={suggestion} type="button" disabled={!enabled || sending}
@@ -450,12 +498,29 @@ export default function SupervisorChatComposer({
         </div>
         {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
+      {messages.length > 0 && snapshot && <section className="mb-4 rounded-xl border border-[#E2D3BF] bg-[#F6F0E7] p-2">
+        <button type="button" onClick={() => setSnapshotExpanded((v) => !v)}
+          aria-expanded={snapshotExpanded}
+          aria-label={snapshotExpanded ? copy.snapshotCollapse : copy.snapshotExpand}
+          className="flex min-h-10 w-full items-center justify-between gap-2 px-2 text-start text-sm font-semibold text-ink">
+          <span>{copy.todaySummary} · {snapshot.stats[0]?.value} · {snapshot.sections[0]?.count ?? 0} {copy.needsYou}</span>
+          <ChevronDown size={18} className={snapshotExpanded ? "rotate-180" : ""} aria-hidden="true" />
+        </button>
+        {snapshotExpanded && <div className="p-2"><HomeSnapshot snapshot={snapshot} /></div>}
+      </section>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-[#F4EBDD]">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
-      {messages.map((message) =>
-        <SupervisorMessage key={message.id} message={message} copy={copy} locale={locale} />)}
+      {messages.map((message) => <div key={message.id} className="space-y-2">
+        <SupervisorMessage message={message} copy={copy} locale={locale} />
+        {pending?.id === message.id && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
+          <AlertCircle size={18} aria-hidden="true" />
+          <span className="flex-1">{copy.answerFailed}</span>
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
+            className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
+        </div>}
+      </div>)}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />
         {copy.sending}
@@ -470,23 +535,6 @@ export default function SupervisorChatComposer({
           <Paperclip size={17} aria-hidden="true" /><span className="truncate">{file.originalName}</span>
         </a>)}
       </div>}
-      {(dictation === "listening" || dictation === "recognizing") && <div id="supervisor-dictation-state" role="status" aria-live="polite"
-        className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-good bg-[#E8F3E8] px-4 py-3 text-[17px] font-bold text-ink shadow-sm">
-        <span className="inline-flex items-center gap-3">
-          <span className="relative flex h-4 w-4">
-            {dictation === "listening" && <span className="absolute h-4 w-4 animate-ping rounded-full bg-good/40 motion-reduce:animate-none" />}
-            <span className="relative h-4 w-4 rounded-full bg-good" />
-          </span>
-          {dictation === "listening" ? copy.listening : copy.voiceProcessing}
-        </span>
-        {dictation === "listening" && <button type="button" onClick={listen}
-          className="min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-          {copy.voiceStop}
-        </button>}
-      </div>}
-      {dictation === "ready" && <p role="status" className="mb-2 flex items-center gap-2 text-[15px] font-semibold text-good">
-        <Check size={18} aria-hidden="true" /> {copy.voiceReview}
-      </p>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
         className="rounded-[23px] border border-[#D8C8B5] bg-white p-2 shadow-[0_5px_18px_rgba(42,29,20,0.06)]">
         <label htmlFor="supervisor-home-composer" className="sr-only">{copy.askAnything}</label>
@@ -497,27 +545,33 @@ export default function SupervisorChatComposer({
           placeholder={copy.askAnything}
           className="max-h-44 min-h-[64px] w-full resize-y rounded-xl bg-transparent px-3 py-2 text-[17px] leading-relaxed text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1">
             <input ref={filePicker} type="file" className="sr-only"
               accept=".txt,.pdf,.jpg,.jpeg,.png,.webp,text/plain,application/pdf,image/jpeg,image/png,image/webp"
               onChange={(event) => void attach(event)} />
             <button type="button" onClick={() => filePicker.current?.click()}
               aria-label={copy.addAttachment} title={copy.addAttachment}
-              disabled={!enabled || sending || uploading}
-              className="flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-[#F2EBE0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+              disabled={!enabled || sending || uploading || dictation === "listening"}
+              className="flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-[#F2EBE0] disabled:opacity-50">
               <Plus size={23} aria-hidden="true" />
             </button>
-            <button type="button" onClick={listen}
+            <button type="button" onClick={() => void listen()}
               aria-label={dictation === "listening" ? copy.voiceStop : copy.voiceInput}
               title={dictation === "listening" ? copy.voiceStop : copy.voiceInput}
-              aria-pressed={dictation === "listening"} aria-controls="supervisor-dictation-state"
+              aria-pressed={dictation === "listening"}
               disabled={!enabled || sending || uploading || dictation === "recognizing"}
               className={dictation === "listening"
-                ? "flex h-12 w-12 items-center justify-center rounded-full bg-good text-white ring-4 ring-good/25 shadow-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"
-                : "flex h-12 w-12 items-center justify-center rounded-full text-good hover:bg-[#E6F1E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-40"}>
+                ? "relative flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white ring-4 ring-red-200 shadow-lg animate-pulse motion-reduce:animate-none"
+                : "flex h-12 w-12 items-center justify-center rounded-full text-good hover:bg-[#E6F1E8] disabled:opacity-40"}>
               {dictation === "listening" ? <Square size={21} fill="currentColor" aria-hidden="true" />
                 : <Mic size={23} aria-hidden="true" />}
             </button>
+            {dictation === "listening" && <span className="text-sm font-bold text-red-700" role="status">
+              {copy.recording} {durationLabel} · {copy.voiceStop}
+            </span>}
+            {dictation === "recognizing" && <span className="inline-flex items-center gap-1 text-sm font-semibold text-ink-muted" role="status">
+              <LoaderCircle size={15} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> {copy.transcribing}
+            </span>}
           </div>
           <button type="submit" aria-label={copy.sendMessage}
             disabled={!enabled || sending || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
@@ -527,7 +581,7 @@ export default function SupervisorChatComposer({
         </div>
       </form>
       <div role="status" aria-live="polite" className="mt-1 min-h-5 text-[14px] font-medium text-ink-muted">
-        {error ? copy.retry : uploading ? copy.attachmentUpload
+        {error && !pending ? copy.answerFailed : uploading ? copy.attachmentUpload
           : dictation === "error" || dictation === "ready" ? mediaNotice
             : mediaNotice === copy.attachmentSaved ? mediaNotice : ""}
       </div>
