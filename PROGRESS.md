@@ -2375,3 +2375,14 @@ Phase 4 implementation and safety closure:
 - [ ] Vercel deployment preview could NOT be verified: Vercel's commit status points to `upgradeToPro=build-rate-limit`. This is a deployment-rate limit; GitHub CI production build passed. Re-try preview after Vercel rate-limit clears before production activation.
 - [ ] Phase 3 migration #33's live Supabase application and migration history are not independently confirmed in this chat. Enable `SUPERVISOR_CHAT_ENABLED=true` only after reconciling migration 33 and staging end-to-end owner/RLS checks.
 - [ ] Whole-repository lint baseline errors identified in Phase 1 remain unrelated; changed files pass.
+
+## Supervisor Phase 5 — owner rules, reviewed policies and safe permissions (2026-10-10, in progress)
+
+Merged baseline: PR #36 (main 82b7c907). Existing priced/menu/staff/POS financial math and the persisted Team task workflow MUST remain untouched.
+
+Phase 5 scope:
+1. Store typed Supervisor/Alex/Olivia/Maya/Leo owner instructions as owner-only café-scoped **drafts**. Activation or rejection requires a separate explicit owner approval. Pausing and resuming are owner-reviewed state transitions; every transition is immutable audited history.
+2. Validate and enforce all transitions server-side and database-side. No free-form rule text is ever evaluated as code, SQL, an action, or permissions escalation.
+3. A default-deny authorization contract preserves existing read-only tools; no price, staff schedule, POS, supplier email, payroll or expense changes may be executed by the Supervisor merely because an owner wrote a rule or approved a policy. Existing Team price-review/coverage pathways remain canonical, not duplicated.
+4. Provide an accessible localized Team → Rules screen for creating draft instructions per agent, reviewing/approving/rejecting, pausing/reactivating, and viewing the audit trail. Add a small link on the existing Team page without displacing its persisted inbox.
+5. Add authenticated bounded JSON APIs, owner+café RLS SQL and separate disposable PostgreSQL security checks. Build/tests/lint/Next prod compile, PR open but not merge. Additive migration #34 must be reviewed/applied in order after migration #33; never blanket db push.
