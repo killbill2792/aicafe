@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
+import { readPersistedOperatingTasks } from "@/lib/data/operatingTasks";
 import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
 import { signalsFromPricing } from "@/lib/operating/signals";
 import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
@@ -52,6 +53,10 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     new SupabaseDecisionStore(client),
     async (requested) => (await pricingMenu(requested))
       .flatMap((item) => item.pricing ? signalsFromPricing(item.id, item.pricing) : []),
+    async (requested) => {
+      assertBusiness(requested);
+      return readPersistedOperatingTasks(requested);
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
