@@ -317,8 +317,10 @@ export default function SupervisorChatComposer({
     const text = value.trim();
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     setSending(true); setError(false);
+    let attemptedThreadId: string | null = null;
     try {
       const id = await ensureThread();
+      attemptedThreadId = id;
       retryId.current = existingKey ?? retryId.current ?? crypto.randomUUID();
       const posted = await jsonFrom<MessageResponse>(await fetch(
         "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
@@ -335,9 +337,9 @@ export default function SupervisorChatComposer({
     } catch {
       // The owner message may already be durable; reconcile from storage so its
       // adjacent Retry button appears immediately, as well as after refresh.
-      if (threadId) {
+      if (attemptedThreadId) {
         try {
-          const page = await loadMessages(threadId);
+          const page = await loadMessages(attemptedThreadId);
           setMessages(page.items); setNextOffset(page.nextOffset);
         } catch { /* the owner's original draft and key remain intact */ }
       }
@@ -475,10 +477,15 @@ export default function SupervisorChatComposer({
     }
   }
 
-  const pending = !sending && messages.length > 0 &&
-    messages[messages.length - 1].role === "owner" &&
-    messages[messages.length - 1].clientMessageId
-      ? messages[messages.length - 1] : null;
+  // Structured Supervisor messages carry an explicit ownerMessageId. An unanswered
+  // owner turn can occur anywhere in history, not only at the end of a thread.
+  const answeredOwnerIds = new Set(messages.flatMap((message) =>
+    message.role === "supervisor" && typeof message.grounding?.ownerMessageId === "string"
+      ? [message.grounding.ownerMessageId] : []));
+  const pendingOwnerIds = new Set(!sending ? messages
+    .filter((message) => message.role === "owner" && Boolean(message.clientMessageId) &&
+      !answeredOwnerIds.has(message.id))
+    .map((message) => message.id) : []);
   const durationLabel = String(Math.floor(elapsed / 60)) + ":" + String(elapsed % 60).padStart(2, "0");
 
   return <section className="relative mt-4 flex h-[min(75vh,790px)] min-h-[530px] flex-col overflow-hidden rounded-[26px] border border-[#E2D3BF] bg-[#FFFDF9] shadow-[0_14px_38px_rgba(45,31,22,0.09)]"
@@ -533,7 +540,7 @@ export default function SupervisorChatComposer({
       </button>}
       {messages.map((message) => <div key={message.id} className="space-y-2">
         <SupervisorMessage message={message} copy={copy} locale={locale} />
-        {pending?.id === message.id && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
+        {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
           <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
@@ -600,7 +607,7 @@ export default function SupervisorChatComposer({
         </div>
       </form>
       <div role="status" aria-live="polite" className="mt-1 min-h-5 text-[14px] font-medium text-ink-muted">
-        {error && !pending ? copy.answerFailed : uploading ? copy.attachmentUpload
+        {error && pendingOwnerIds.size === 0 ? copy.answerFailed : uploading ? copy.attachmentUpload
           : dictation === "error" || dictation === "ready" ? mediaNotice
             : mediaNotice === copy.attachmentSaved ? mediaNotice : ""}
       </div>
