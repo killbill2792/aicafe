@@ -72,7 +72,7 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
         {block.type === "metric" ? formatCents(number) : new Intl.NumberFormat(locale).format(number)}
       </p>
       {source && <p className="mt-2 text-[13px] text-ink-muted">
-        {copy.source}: {String(source.source ?? "")} · {String(source.asOf ?? "")}
+        {copy.source}: {source.source === "cafe_state" ? copy.sourceCafe : source.source === "pricing_engine" ? copy.sourcePricing : source.source === "operating_tasks" ? copy.sourceTasks : source.source === "owner_rules" ? copy.sourceRules : copy.sourceVerified} · {String(source.asOf ?? "")}
       </p>}
     </div>;
   }
