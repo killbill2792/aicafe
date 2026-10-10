@@ -59,8 +59,10 @@ beforeEach(() => {
   mock.writerQueries = [];
   delete process.env.SUPERVISOR_CHAT_ENABLED;
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-server-key";
+  process.env.OPENAI_API_KEY = "test-openai-key";
 });
 afterEach(() => {
+  delete process.env.OPENAI_API_KEY;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
   delete process.env.SUPERVISOR_CHAT_ENABLED;
 });
@@ -69,7 +71,7 @@ describe("owner-scoped Supervisor server activation preflight", () => {
   it("enables live chat when installed backend + RLS + secure writer work, with no feature flag", async () => {
     expect(isSupervisorChatConfigured()).toBe(true);
     expect(await getSupervisorChatReadiness(true)).toEqual({ enabled: true, reason: null });
-    expect(mock.sessionQueries).toEqual(["ai_threads"]);
+    expect(mock.sessionQueries).toEqual(["ai_threads", "ai_usage_events"]);
     expect(mock.writerQueries).toEqual(["ai_messages"]);
   });
 
@@ -82,6 +84,14 @@ describe("owner-scoped Supervisor server activation preflight", () => {
       enabled: false, reason: "owner_access_required",
     });
     expect(mock.writerQueries).toHaveLength(0);
+  });
+
+  it("does not enable a paid planner without a configured OpenAI key", async () => {
+    delete process.env.OPENAI_API_KEY;
+    expect(isSupervisorChatConfigured()).toBe(false);
+    expect(await getSupervisorChatReadiness(true)).toEqual({
+      enabled: false, reason: "planner_unconfigured",
+    });
   });
 
   it("does not enable a deployed app without working storage access", async () => {

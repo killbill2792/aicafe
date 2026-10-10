@@ -204,7 +204,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         />
       )}
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)] lg:items-start">
+      <div className="flex flex-col gap-4">
         <SupervisorHomePanel
           locale={locale}
           chatEnabled={chatReadiness.enabled}
@@ -222,6 +222,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             you: tChat("chatYou"),
             supervisor: tChat("chatSupervisor"),
             source: tChat("chatSource"),
+            sourceCafe: tChat("sourceCafe"),
+            sourcePricing: tChat("sourcePricing"),
+            sourceTasks: tChat("sourceTasks"),
+            sourceRules: tChat("sourceRules"),
+            sourceVerified: tChat("sourceVerified"),
+            usageHeading: tChat("usageHeading"),
+            usageRequests: tChat("usageRequests"),
+            usageTokens: tChat("usageTokens"),
+            usageEstimate: tChat("usageEstimate"),
+            usageCostUnknown: tChat("usageCostUnknown"),
             listening: tChat("listening"),
             voiceReview: tChat("voiceReview"),
             voiceUnavailable: tChat("voiceUnavailable"),
@@ -239,6 +249,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             statusWriter: tChat("statusWriter"),
             statusOwner: tChat("statusOwner"),
             statusStorage: tChat("statusStorage"),
+            emptyHeading: tChat("emptyHeading"),
+            emptyIntro: tChat("emptyIntro"),
+            historyTitle: tChat("historyTitle"),
+            closeHistory: tChat("closeHistory"),
+            startNewChat: tChat("startNewChat"),
+            reviewHint: tChat("reviewHint"),
+            taskOpen: tChat("taskOpen"),
+            needsYou: tChat("needsYou"),
+            handled: tChat("handled"),
+            watching: tChat("watching"),
           }}
           copy={{
             eyebrow: t("supervisorEyebrow"),

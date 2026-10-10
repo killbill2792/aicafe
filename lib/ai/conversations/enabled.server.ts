@@ -13,6 +13,7 @@ export function isSupervisorChatConfigured(): boolean {
   return supervisorChatConfigStatus({
     configuredSupabase: isSupabaseConfigured(),
     serviceRolePresent: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    plannerKeyPresent: Boolean(process.env.OPENAI_API_KEY),
     featureFlag: process.env.SUPERVISOR_CHAT_ENABLED,
   }).enabled;
 }
@@ -26,6 +27,7 @@ export async function getSupervisorChatReadiness(signedIn: boolean): Promise<Sup
   const config = supervisorChatConfigStatus({
     configuredSupabase: isSupabaseConfigured(),
     serviceRolePresent: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+    plannerKeyPresent: Boolean(process.env.OPENAI_API_KEY),
     featureFlag: process.env.SUPERVISOR_CHAT_ENABLED,
   });
   if (!config.enabled) return config;
@@ -39,6 +41,9 @@ export async function getSupervisorChatReadiness(signedIn: boolean): Promise<Sup
     const { error: writerError } = await admin.from("ai_messages").select("id")
       .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId).limit(1);
     if (writerError) return { enabled: false, reason: "storage_unavailable" };
+    const { error: usageError } = await session.from("ai_usage_events").select("id")
+      .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId).limit(1);
+    if (usageError) return { enabled: false, reason: "storage_unavailable" };
     return { enabled: true, reason: null };
   } catch (error) {
     if (error instanceof ConversationApiError &&
