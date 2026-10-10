@@ -47,10 +47,14 @@ export async function POST(request: Request) {
     } finally {
       reader.releaseLock();
     }
+    const combined = new ArrayBuffer(total);
+    const bytes = new Uint8Array(combined);
+    let at = 0;
+    for (const part of parts) { bytes.set(part, at); at += part.byteLength; }
     const body = new Request(request.url, {
       method: "POST",
       headers: { "content-type": request.headers.get("content-type")! },
-      body: new Blob(parts),
+      body: new Blob([combined]),
     });
     const form = await body.formData();
     const audio = form.get("audio");
