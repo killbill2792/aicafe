@@ -108,7 +108,15 @@ export async function POST(request: Request, context: RouteContext) {
         rulesIntro: t("rulesIntro"),
         rulesNone: t("rulesNone"),
         ruleItem: (agent, instruction) => t("ruleItem", { agent, instruction }),
-        taskCard: (kind, name) => t("taskCard", { kind, name }),
+        taskCard: (kind, name) => {
+          const kinds: Record<string, string> = {
+            price_review: t("taskPrice"), staff_coverage: t("taskStaff"),
+            supply_check: t("taskSupply"), money_update: t("taskMoney"),
+            data_quality: t("taskData"),
+          };
+          const label = kinds[kind] ?? t("taskGeneral");
+          return name.trim() ? t("taskCard", { kind: label, name }) : label;
+        },
         taskGroup: (status, count) => t("taskGroup", { status, count }),
         clarifyPeriod: t("clarifyPeriod"),
         clarifyProduct: t("clarifyProduct"),
