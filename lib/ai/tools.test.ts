@@ -95,6 +95,46 @@ describe("StructuredCafeTools read-only evidence boundary", () => {
     expect(getPricingRecommendation).toHaveBeenCalledWith("fixture-a", "latte");
   });
 
+  it("never presents raw pricing signals as completed team tasks", async () => {
+    const withoutReader = await makeTools().getTeamTasks("fixture-a");
+    expect(withoutReader.available).toBe(false);
+    expect(withoutReader.quality.missingInputs).toEqual(["operatingTasks"]);
+  });
+
+  it("returns the existing persisted task status and evidence without mutating it", async () => {
+    const original = {
+      id: "task1", businessId: "fixture-a", agentId: "alex" as const,
+      kind: "price_review" as const, status: "handled" as const,
+      payload: { ownerChoice: "keep_price" }, confidence: "high" as const,
+      evidence: [{ source: "PricingEngine", facts: { productCostCents: 180 } }],
+      createdAt: "2026-09-01T00:00:00Z",
+    };
+    const taskReader = vi.fn(async () => [original]);
+    const tools = new StructuredCafeTools(
+      new SnapshotCafeStateService(async () => fixture), fakeDecisions,
+      async () => [], taskReader,
+    );
+    const tasks = await tools.getTeamTasks("fixture-a");
+    expect(tasks.available).toBe(true);
+    if (tasks.available) {
+      expect(tasks.value[0]).toEqual(original);
+      expect(tasks.value[0].status).toBe("handled");
+    }
+    expect(taskReader).toHaveBeenCalledWith("fixture-a");
+  });
+
+  it("rejects accidentally returned tasks from another café", async () => {
+    const tools = new StructuredCafeTools(
+      new SnapshotCafeStateService(async () => fixture), fakeDecisions, async () => [],
+      async () => [{
+        id: "x", businessId: "other", agentId: "alex", kind: "price_review",
+        status: "needs_owner", payload: {}, confidence: "high", evidence: [],
+        createdAt: "2026-09-01T00:00:00Z",
+      }],
+    );
+    await expect(tools.getTeamTasks("fixture-a")).rejects.toThrow("business mismatch");
+  });
+
   it("does not permit creating a business-scoped reader with no business ID", () => {
     expect(() => new BusinessScopedCafeTools(makeTools(), "")).toThrow("Missing authorized café");
   });
