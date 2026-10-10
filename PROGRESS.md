@@ -2403,7 +2403,7 @@ Phase 5 implementation and handoff:
 ## Phase 6 — owner-reviewed voice and private reference files (2026-10-10)
 - [x] Browser voice recognition where supported; transcript appears in editable Home input and is never automatically sent. No audio persisted.
 - [x] Additive migration 35 creates private Storage bucket and owner/café/thread RLS metadata; server validates 2 MiB limit, content-type and file signature. Uploaded documents are **unanalysed references** only and never change café prices, costs or reply evidence.
-- [x] Authenticated owner-only attachment list/upload API; localized EN/ES/AR Home affordances; source filenames visible in conversation.
+- [x] Authenticated owner-only attachment list/upload API; localized EN/ES/AR Home affordances; source filenames visible in conversation and reopenable using owner-authenticated 60-second download links.
 - [x] CI TypeScript, changed-file lint, tests, build and diff passed. No financial calculation modifications or new packages.
 - [ ] Browser support varies; device tests still required. No OCR/document extraction or server audio-transcription fallback in this phase.
 - [ ] Apply migration 35 after reconciling 33/34; test actual Supabase Storage RLS with multiple identities before deployment.
