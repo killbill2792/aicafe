@@ -459,7 +459,7 @@ export default function SupervisorChatComposer({
             </button>
           </div>
           <button type="submit" aria-label={copy.sendMessage}
-            disabled={!enabled || sending || !draft.trim() || Boolean(speech.current) || dictation === "recognizing"}
+            disabled={!enabled || sending || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
             className="flex h-12 min-w-12 items-center justify-center rounded-full bg-ink text-white shadow-sm hover:bg-[#463125] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
             <Send size={21} aria-hidden="true" />
           </button>
