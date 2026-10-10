@@ -88,8 +88,10 @@ function periodFor(text: string, state: CafeState, defaultMonth = false) {
   // Phase 2 does not have authoritative prior-month bill histories.
   // Refuse historical/future requests rather than silently showing today.
   const unsupported = /\b(yesterday|tomorrow|previous|last month|last week|prior month|next month|next week)\b|mes pasado|semana pasada|ayer|mañana|الأمس|غدا|غداً|الشهر الماضي|الأسبوع الماضي|الأسبوع السابق|الشهر السابق|\b20\d{2}[-/]\d{1,2}\b/i.test(q);
-  const wantsMonth = defaultMonth || /\b(this month|current month|monthly|month|so far|to date|month-to-date)\b|este mes|mensual|hasta ahora|الشهر|شهري|حتى الآن/.test(q);
   const wantsWeek = /\b(this week|past seven days|last seven days|7 days|week|weekly)\b|esta semana|últimos siete días|آخر سبعة أيام|هذا الأسبوع/.test(q);
+  const wantsToday = /\b(today|this morning)\b|hoy|اليوم/.test(q);
+  const wantsMonth = /\b(this month|current month|monthly|month|so far|to date|month-to-date)\b|este mes|mensual|hasta ahora|الشهر|شهري|حتى الآن/.test(q) ||
+    (defaultMonth && !wantsToday && !wantsWeek);
   const from = wantsMonth ? state.period.from
     : wantsWeek ? new Date(Date.parse(state.asOf + "T12:00:00Z") - 6 * 86400000)
       .toISOString().slice(0, 10)
@@ -226,14 +228,15 @@ export async function answerSupervisorQuestion(
     const products = await tools.getProductSales(dates);
     if (!products.available) return replyForSlice(intent, products, [ref], [], copy);
     let rows = products.value;
-    if (wantsDrinks || /\bcoffee(s)?\b|cafés?|قهو/.test(q)) {
-      // "Coffee" has no reliable catalog taxonomy: avoid silently equating all drinks with coffee.
-      if (/\bcoffee(s)?\b|cafés?|قهو/.test(q)) {
-        rows = rows.filter((p) => /\bcoffee\b/i.test(p.name));
-        if (!rows.length) return { intent, status: "insufficient_evidence", evidence: [],
-          blocks: [{ type: "warning", code: "product_not_identified", text: copy.productNotFound }] };
-      } else rows = rows.filter((p) => p.category === "drink");
+    // There is no trustworthy "coffee" category in the menu schema: it only
+    // distinguishes drink vs food. A coffee-name substring is not a full taxonomy.
+    const coffeeRequest = /\bcoffee(s)?\b|cafés?|قهو/.test(q);
+    const requestedNames = rows.filter((p) => q.includes(p.name.normalize("NFKC").toLocaleLowerCase()));
+    if (coffeeRequest && requestedNames.length === 0) {
+      return { intent, status: "insufficient_evidence", evidence: [],
+        blocks: [{ type: "warning", code: "product_not_identified", text: copy.productNotFound }] };
     }
+    if (wantsDrinks || coffeeRequest) rows = rows.filter((p) => p.category === "drink");
     const named = rows.filter((p) => q.includes(p.name.normalize("NFKC").toLocaleLowerCase()));
     if (named.length) rows = named;
     if (!rows.length) return { intent, status: "insufficient_evidence", evidence: [],
