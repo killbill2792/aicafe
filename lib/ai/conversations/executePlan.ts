@@ -67,6 +67,46 @@ export async function executeSupervisorPlan(input: PlanExecutorInput): Promise<G
       : plan.arguments.topic === "product" ? copy.clarifyProduct : copy.clarifyQuestion;
     return noEvidence("unknown", msg, "clarification");
   }
+  if (plan.name === "read_menu") {
+    // Menu catalog comes from the authenticated current café snapshot, never sales backfill.
+    const products = state.products;
+    const source = ref("menu:catalog:" + asOf, asOf);
+    if (!products.available) return noEvidence("menu_catalog", copy.missingEvidence);
+    const { operation, product_name } = plan.arguments;
+    const all = products.value;
+    const active = all.filter((item) => item.active !== false);
+    const data = known(all.map((item) => ({ id: item.id, name: item.name, category: item.category, active: item.active })));
+    const countBlock = (label: string, value: number): SupervisorReplyBlock =>
+      ({ type: "count", label, value, source });
+    if (operation === "product_count") return fromEvidence("menu_catalog", data, [source], [
+      countBlock(copy.menuTotal, all.length),
+    ], copy);
+    if (operation === "active_product_count") return fromEvidence("menu_catalog", data, [source], [
+      countBlock(copy.menuActive, active.length),
+      { type: "text", text: copy.menuStockNotice },
+    ], copy);
+    if (operation === "category_summary") return fromEvidence("menu_catalog", data, [source], [
+      countBlock(copy.menuTotal, all.length),
+      countBlock(copy.menuCategoryDrink, all.filter((item) => item.category === "drink").length),
+      countBlock(copy.menuCategoryFood, all.filter((item) => item.category === "food").length),
+    ], copy);
+    if (operation === "active_products") return fromEvidence("menu_catalog", data, [source], [
+      countBlock(copy.menuActive, active.length),
+      { type: "text", text: (copy.menuListIntro + " " + active.slice(0, 15).map((item) => item.name).join(", ")).slice(0, 1200) },
+      { type: "text", text: copy.menuStockNotice },
+    ], copy);
+    if (!product_name?.trim()) return noEvidence("menu_catalog", copy.clarifyProduct, "product_not_identified");
+    const query = product_name.normalize("NFKC").toLocaleLowerCase().trim();
+    const exact = all.filter((item) => item.name.normalize("NFKC").toLocaleLowerCase() === query);
+    const partial = all.filter((item) => item.name.normalize("NFKC").toLocaleLowerCase().includes(query));
+    const match = exact.length === 1 ? exact[0] : partial.length === 1 ? partial[0] : null;
+    if (!match) return noEvidence("menu_catalog", copy.productNotFound, "product_not_identified");
+    return fromEvidence("menu_catalog", data, [source], [
+      { type: "text", text: copy.menuProductDetails(match.name, match.category) },
+      { type: "metric", label: match.name, valueCents: match.priceCents, source },
+      { type: "text", text: copy.menuStockNotice },
+    ], copy);
+  }
   if (plan.name === "read_finances") {
     const { metric, period } = plan.arguments;
     if (period === "yesterday" || period === "previous_month" || period === "other_period") {
@@ -140,6 +180,18 @@ export async function executeSupervisorPlan(input: PlanExecutorInput): Promise<G
     const { metric, period, category, product_name } = plan.arguments;
     if (period === "yesterday" || period === "previous_month" || period === "other_period") {
       return noEvidence("sales_quantity", copy.periodUnavailable, "unsupported_period");
+    }
+    // No today rollup is not a verified $0 sale. Home explicitly distinguishes
+    // todayHasData=false; the current-month CaféState preserves its absence.
+    if (period === "today" && metric === "sales_revenue" &&
+      (!state.sales.available || !state.sales.value.some((day) => day.date === asOf))) {
+      if (!state.sales.available && state.sales.quality.missingInputs.includes("periodOutsideLoadedMonth")) {
+        return noEvidence("sales_quantity", copy.periodUnavailable, "unsupported_period");
+      }
+      const source = ref("sales:no_recorded_row:" + asOf, asOf);
+      return fromEvidence("sales_quantity", known({ date: asOf, hasRecordedSales: false }), [source], [
+        { type: "text", text: copy.noSalesToday },
+      ], copy);
     }
     const { from, to } = datesFor(state, period);
     const source = ref("sales:" + metric + ":" + from + ":" + to, asOf);
