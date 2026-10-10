@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { ArrowDown, Clock3, History, Mic, Plus, Send, Sparkles, Square, X, Check, AlertCircle, Paperclip } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, Check, AlertCircle, Paperclip } from "lucide-react";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -12,7 +12,7 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string;
   comingSoon: string; suggestions: string[];
-  threads: string; newThread: string; empty: string; loading: string; sending: string;
+  live: string; threads: string; newThread: string; empty: string; loading: string; sending: string;
   retry: string; unavailable: string; more: string; you: string; supervisor: string; source: string;
   listening: string; voiceReview: string; voiceUnavailable: string; voiceStop: string;
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
