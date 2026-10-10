@@ -146,7 +146,13 @@ export async function answerSupervisorQuestion(
       source: "pricing_engine", identifier: "canonical-menu-recommendations", asOf: observedAt,
     };
     if (!result.available) return replyForSlice(intent, result, [ref], [], copy);
-    const recommended = Object.entries(result.value).filter(([, price]) =>
+    const normalizedRequest = input.text.normalize("NFKC").toLocaleLowerCase();
+    const namedItems = state.products.available ? state.products.value
+      .filter((p) => p.name.length > 1 &&
+        normalizedRequest.includes(p.name.normalize("NFKC").toLocaleLowerCase()))
+      .map((p) => p.id) : [];
+    const recommended = Object.entries(result.value).filter(([id, price]) =>
+      (namedItems.length === 0 || namedItems.includes(id)) &&
       price.status === "REVIEW_PRICE" && price.recommendedPriceCents !== null &&
       price.recommendedPriceCents > 0 && price.dataQuality.missingInputs.length === 0,
     );
