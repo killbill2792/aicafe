@@ -2245,3 +2245,24 @@ Verification and review closure:
 - [x] Temporary branch-only verification workflow removed before merge; no permanent CI behavior
       is introduced by this phase.
 
+## Supervisor-first Home UI (2026-10-10 — implementation in progress)
+
+Owner-approved scope:
+- Reorganize the existing Home into a Supervisor-first experience without replacing trusted Home calculations.
+- Reuse the existing persisted operating-task system for Needs you / Handled / Watching; do not create a second inbox or status model.
+- Keep /operations as the transparent Team workspace, but remove Team from primary navigation and expose it through a prominent Home Team button.
+- Build the Ask anything composer as presentation-only in this PR. No fake AI responses, no conversational backend, no voice/transcription transport, and no new database migration.
+- Use only current deterministic Home / Today-at-a-glance values. Do not invent labor or other metrics because they appear in a concept image.
+- Preserve the existing Business overview sections beneath the new Supervisor/task area.
+
+Plan:
+1. Add a warm, mobile-first Supervisor hero, Team button, disabled future-ready Ask anything composer, and suggestion chips.
+2. Add a compact Today snapshot from existing Home/Today viewmodels.
+3. Add compact Needs you / Handled / Watching previews from persisted operating tasks, with existing teammate avatars/colors and links into the existing Team inbox.
+4. Move the existing period-based money/detail content under a clear Business overview section, removing duplicated above-the-fold metrics where appropriate.
+5. Change shared primary navigation to Home / Money / Menu / Staff / More while keeping /operations intact and reachable from Home.
+6. Update EN / ES / AR copy and the binding navigation design note. No schema, calculation, pricing, POS, or task-lifecycle changes.
+7. Verify TypeScript, lint, tests, build, and diff cleanliness. Use a temporary branch-only verification workflow if local dependency installation is unavailable, then remove it before review.
+
+Asset note:
+- Current main has only Alex / Olivia / Maya / Leo under public/ai-team; no approved standalone Supervisor avatar is present. This PR must not substitute one of those teammates or invent a new character. The hero will reserve the intended large Supervisor visual area using a neutral brand treatment until the approved asset is supplied.
