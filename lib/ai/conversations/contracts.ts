@@ -48,7 +48,7 @@ export type ConversationPage<T> = { items: T[]; nextOffset: number | null };
 /** Future Phase 4 contract: only vetted evidence may enter a Supervisor response. */
 export type SupervisorIntent =
   | "cafe_overview" | "profitability" | "menu_pricing" | "staff"
-  | "operating_tasks" | "expenses" | "owner_rules" | "unknown";
+  | "operating_tasks" | "expenses" | "unit_sales" | "owner_rules" | "unknown";
 
 export type GroundingStatus = "verified" | "estimated" | "insufficient_evidence";
 
@@ -62,6 +62,7 @@ export type SupervisorReplyBlock =
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
+  | { type: "count"; label: string; value: number; source: EvidenceReference }
   | { type: "task_status"; taskId: string; status: string; source: EvidenceReference };
 
 export type GroundedSupervisorReply = {
@@ -89,6 +90,10 @@ const metricBlockSchema = z.strictObject({
   valueCents: z.number().int().safe(),
   source: evidenceReferenceSchema,
 });
+const countBlockSchema = z.strictObject({
+  type: z.literal("count"), label: z.string().min(1).max(140),
+  value: z.number().int().nonnegative().safe(), source: evidenceReferenceSchema,
+});
 const taskBlockSchema = z.strictObject({
   type: z.literal("task_status"), taskId: z.string().min(1).max(200),
   status: z.enum(["needs_owner", "needs_response", "watching", "handled", "expired"]),
@@ -96,9 +101,9 @@ const taskBlockSchema = z.strictObject({
 });
 export const groundedReplySchema = z.strictObject({
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
-    "operating_tasks", "expenses", "owner_rules", "unknown"]),
+    "operating_tasks", "expenses", "unit_sales", "owner_rules", "unknown"]),
   status: z.enum(["verified", "estimated", "insufficient_evidence"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",
-    [textBlockSchema, warningBlockSchema, metricBlockSchema, taskBlockSchema])).min(1).max(30),
+    [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, taskBlockSchema])).min(1).max(30),
 });
