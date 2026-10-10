@@ -7,8 +7,7 @@ create table if not exists ai_threads (
   business_id uuid not null references businesses(id) on delete cascade,
   owner_user_id uuid not null references auth.users(id) on delete cascade,
   client_request_id uuid not null,
-  title text not null default 'New conversation'
-    check (char_length(title) between 1 and 120),
+  title text check (title is null or char_length(title) between 1 and 120),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   last_message_at timestamptz,
@@ -50,10 +49,11 @@ create table if not exists ai_messages (
       and text_content is null
       and structured_content is not null
       and grounding is not null
-      and jsonb_typeof(structured_content) = 'array'
-      and jsonb_array_length(structured_content) between 1 and 30
+      and case when jsonb_typeof(structured_content) = 'array'
+        then jsonb_array_length(structured_content) between 1 and 30
+        else false end
       and jsonb_typeof(grounding) = 'object'
-      and grounding ? 'status')
+      and grounding->>'status' in ('verified', 'estimated', 'insufficient_evidence'))
   )
 );
 create index if not exists ai_messages_thread_recent_idx
