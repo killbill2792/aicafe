@@ -1,6 +1,6 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { buildDayWindows, evaluateRecipeCost, type ExpenseCategoryCode } from "@/lib/calc";
+import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
 import { ensureScheduledShiftsThroughDate } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
@@ -228,16 +228,18 @@ async function getMenuItemSnapshots(
 
   const itemIds = items.map((i) => i.id);
 
-  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }] = await Promise.all([
+  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }, { data: aggregateCosts, error: aggregateCostError }] = await Promise.all([
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
     supabase.rpc("menu_item_quantities_sold", {
       p_business_id: businessId,
       p_from: last28DateStrs[0] ?? todayDateStr,
       p_to: todayDateStr,
     }),
+    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents").eq("business_id", businessId).in("menu_item_id", itemIds),
   ]);
   if (quantityError) throw quantityError;
   if (recipeError) throw recipeError;
+  if (aggregateCostError) throw aggregateCostError;
 
   const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
   const { data: priceRows, error: priceError } =
@@ -260,13 +262,15 @@ async function getMenuItemSnapshots(
   for (const row of quantitySoldRows ?? []) {
     quantityByItem[row.menu_item_id] = Number(row.total_quantity);
   }
+  const aggregateByItem = new Map((aggregateCosts ?? []).map((row) => [row.menu_item_id, Number(row.cost_cents)]));
 
   return items.map((item) => {
     const lines = (recipeLines ?? [])
       .filter((r) => r.menu_item_id === item.id)
       .map((r) => ({ ingredientId: r.ingredient_id, quantity: Number(r.quantity) }));
     const recipeCost = evaluateRecipeCost(lines, latestPriceMicros);
-    const ingredientsCentsToday = recipeCost.costCents ?? 0;
+    const resolvedCost = resolveProductCost(recipeCost, aggregateByItem.get(item.id) ?? null);
+    const ingredientsCentsToday = resolvedCost.costCents ?? 0;
     return {
       id: item.id,
       name: item.name,
@@ -277,7 +281,12 @@ async function getMenuItemSnapshots(
       // Lines with no priced ingredient cost 0 by default, not because the drink is actually
       // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
       hasRecipe: lines.length > 0,
-      costStatus: recipeCost.status,
+      costStatus: resolvedCost.status,
+      costSource: resolvedCost.source,
+      recipeCostCents: recipeCost.costCents,
+      recipeCostStatus: recipeCost.status,
+      ownerTotalCostCents: resolvedCost.ownerTotalCostCents,
+      costDifferenceCents: resolvedCost.differenceCents,
       quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
     };
   });

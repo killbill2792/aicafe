@@ -22,11 +22,17 @@ const GALLON_ML = 3_785;
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const days = snapshot.last28Days;
   const netSales = sumCents(days, (d) => d.netSalesCents);
-  const ingredients = sumCents(days, (d) => d.ingredientsCents);
+  const missingProductCosts = snapshot.menuItems.some(
+    (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
+  );
+  const ingredients = Math.round(snapshot.menuItems.reduce(
+    (sum, item) => sum + (item.costStatus === "READY" ? item.ingredientsCentsToday * item.quantitySoldLast28Days : 0),
+    0,
+  ));
   const cardFees = sumCents(days, (d) => d.cardFeesCents);
   const drinks = sumCents(days, (d) => d.drinksCount);
 
-  const avgMoneyLeft = avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
+  const avgMoneyLeft = missingProductCosts ? 0 : avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
   const avgDailyStaffCost = days.length ? staffCostCentsForPeriod(days) / days.length : 0;
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
@@ -35,7 +41,9 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const missingCostLabels = missingCosts.map((line) => line.label);
   const unavailableReason = missingCostLabels.length > 0
     ? "missing_costs" as const
-    : days.length === 0 || drinks <= 0 || avgMoneyLeft <= 0
+    : missingProductCosts
+      ? "missing_product_costs" as const
+      : days.length === 0 || drinks <= 0 || avgMoneyLeft <= 0
       ? "missing_sales" as const
       : dailyCosts <= 0
         ? "missing_costs" as const

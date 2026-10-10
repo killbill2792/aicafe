@@ -8,7 +8,7 @@ const item: PricingItemInput = {
   category: "ESPRESSO_DRINK",
   currentPriceCents: 0,
   productCostCents: 160,
-  recipeStatus: "READY",
+  productCostStatus: "READY",
   unitsSoldInWindow: 100,
 };
 

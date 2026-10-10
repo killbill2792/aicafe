@@ -36,7 +36,7 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
 
   const pricing = await getPricingInputs(supabase, own.business_id);
   const hasMissingProductCosts = pricing.items.some(
-    (item) => item.unitsSoldInWindow > 0 && item.recipeStatus !== "READY",
+    (item) => item.unitsSoldInWindow > 0 && item.productCostStatus !== "READY",
   );
 
   let unavailableReason: ProfitGoalSimulatorData["unavailableReason"] = null;

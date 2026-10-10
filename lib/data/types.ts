@@ -38,6 +38,11 @@ export type MenuItemSnapshot = {
    * callers must not treat that 0 as a real cost. */
   hasRecipe: boolean;
   costStatus: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
+  costSource?: "recipe" | "owner_total" | null;
+  recipeCostCents?: number | null;
+  recipeCostStatus?: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
+  ownerTotalCostCents?: number | null;
+  costDifferenceCents?: number | null;
   quantitySoldLast28Days: number;
 };
 

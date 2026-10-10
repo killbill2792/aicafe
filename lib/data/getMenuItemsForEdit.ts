@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
-import { evaluateRecipeCost, type RecipeCostStatus } from "@/lib/calc";
+import { evaluateRecipeCost, resolveProductCost, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
 
@@ -40,8 +40,16 @@ export type MenuItemForEdit = {
   recipe: RecipeLineForEdit[];
   /** Today's priced ingredient cost for this item's current recipe — 0 when the recipe has no
    * ingredients yet, or none of them have a priced cost. Powers the "suggested price" hint. */
+  /** Resolved cost: complete recipe first, otherwise owner-entered total fallback. */
   ingredientsCostCents: number | null;
   costStatus: RecipeCostStatus;
+  costSource: ProductCostSource | null;
+  recipeCostCents: number | null;
+  recipeCostStatus: RecipeCostStatus;
+  ownerTotalCostCents: number | null;
+  ownerTotalCostStatus: "confirmed" | "estimated" | null;
+  ownerTotalCostSource: "owner_manual" | "imported" | null;
+  costDifferenceCents: number | null;
   missingCostIngredientNames: string[];
 };
 
@@ -84,15 +92,23 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
 
   const itemIds = (items ?? []).map((i) => i.id);
-  const recipeLinesResult =
+  const [recipeLinesResult, aggregateCostsResult] =
     itemIds.length > 0
-      ? await supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds)
-      : { data: [] as never[], error: null };
+      ? await Promise.all([
+          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds),
+          supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, source_type, status").eq("business_id", businessId).in("menu_item_id", itemIds),
+        ])
+      : [{ data: [] as never[], error: null }, { data: [] as never[], error: null }];
   if (recipeLinesResult.error) {
     logQueryError("getMenuItemsForEdit:recipe_lines", recipeLinesResult.error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
+  if (aggregateCostsResult.error) {
+    logQueryError("getMenuItemsForEdit:aggregate_costs", aggregateCostsResult.error);
+    throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  }
   const recipeLines = recipeLinesResult.data;
+  const aggregateCostByItem = new Map((aggregateCostsResult.data ?? []).map((row) => [row.menu_item_id, row]));
 
   const ingredientOptions: IngredientOption[] = (ingredients ?? []).map((i) => ({
     id: i.id,
@@ -144,10 +160,12 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
 
   const menuItems: MenuItemForEdit[] = (items ?? []).map((item) => {
     const recipe = (recipeByItem.get(item.id) ?? []).sort((a, b) => a.ingredientName.localeCompare(b.ingredientName));
-    const cost = evaluateRecipeCost(
+    const recipeCost = evaluateRecipeCost(
       recipe.map((r) => ({ ingredientId: r.ingredientId, quantity: r.quantity })),
       latestPriceMicros,
     );
+    const aggregate = aggregateCostByItem.get(item.id);
+    const cost = resolveProductCost(recipeCost, aggregate ? Number(aggregate.cost_cents) : null);
     const recipeWithCosts = recipe.map((line) => ({
       ...line,
       costCents: latestPriceMicros[line.ingredientId] === undefined
@@ -171,7 +189,14 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       recipe: recipeWithCosts,
       ingredientsCostCents: cost.costCents,
       costStatus: cost.status,
-      missingCostIngredientNames: recipe.filter((line) => cost.missingIngredientIds.includes(line.ingredientId)).map((line) => line.ingredientName),
+      costSource: cost.source,
+      recipeCostCents: recipeCost.costCents,
+      recipeCostStatus: recipeCost.status,
+      ownerTotalCostCents: aggregate ? Number(aggregate.cost_cents) : null,
+      ownerTotalCostStatus: aggregate ? aggregate.status as "confirmed" | "estimated" : null,
+      ownerTotalCostSource: aggregate ? aggregate.source_type as "owner_manual" | "imported" : null,
+      costDifferenceCents: cost.differenceCents,
+      missingCostIngredientNames: recipe.filter((line) => recipeCost.missingIngredientIds.includes(line.ingredientId)).map((line) => line.ingredientName),
     };
   });
 

@@ -62,11 +62,16 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const salesHistory = snapshot.last28Days;
   const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
-  const observedIngredientCents = sumCents(salesHistory, (day) => day.ingredientsCents);
-  const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
   const missingProductCosts = snapshot.menuItems.some(
     (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
   );
+  // Use the same resolved sold-item cost as Menu/Pricing/Simulator. Recipe-only rollups would
+  // undercount a café that legitimately uses an owner-total fallback.
+  const observedIngredientCents = Math.round(snapshot.menuItems.reduce(
+    (sum, item) => sum + (item.costStatus === "READY" ? item.ingredientsCentsToday * item.quantitySoldLast28Days : 0),
+    0,
+  ));
+  const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
   const enoughSales = salesHistory.length >= 7;
