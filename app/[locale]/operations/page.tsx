@@ -36,6 +36,10 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
   return <PageShell className="flex flex-col gap-3.5 px-4 pb-28 pt-6">
     <header><p className="text-sm font-semibold text-ink-muted">{t("eyebrow")}</p><h1 className="font-headline text-3xl font-bold text-ink">{t("title")}</h1><p className="mt-1 text-[17px] text-ink-muted">{selectedAgent ? t("focusedOn", { name: names[selectedAgent], role: copy.roles[selectedAgent] }) : t("intro")}</p></header>
     <AITeamCard team={team} copy={copy} selectedAgent={selectedAgent} selectedStatus={statusQuery} />
+    <Link href="/operations/rules"
+      className="flex min-h-12 items-center justify-center self-start rounded-full border border-ink bg-card px-5 text-[17px] font-bold text-ink no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+      {t("teamRulesLink")} →
+    </Link>
     <nav className="grid grid-cols-3 gap-1 rounded-2xl bg-card p-1" aria-label={t("inboxStatusLabel")}>
       {(["needs_you", "handled", "watching"] as const).map((value) => <Link key={value} href={{ pathname: "/operations", query: { ...(selectedAgent ? { agent: selectedAgent } : {}), status: value } }} aria-current={selectedStatus === value ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-sm font-bold no-underline ${selectedStatus === value ? "bg-ink text-paper" : "text-ink-muted"}`}>{t(value === "needs_you" ? "needsYou" : value)} {lists[value].length}</Link>)}
     </nav>
