@@ -38,3 +38,31 @@ No new npm dependencies, Supabase schema, POS mutations, money math or task life
 
 ## CI/deployment status for this implementation
 GitHub Actions passed TypeScript, changed-file ESLint, 501 Vitest tests and the production build. Vercel's preview status on this PR is a **build-rate limit**, not a code compilation error. Retry Vercel preview after the rate limit clears and perform a logged-in staging walkthrough before turning on the feature flag in production.
+
+## Post-deployment fix — disabled Home composer
+The initial Phase 4 rollout required `SUPERVISOR_CHAT_ENABLED=true`
+explicitly. Merely merging all the PRs did not populate this environment
+variable, so the entire Home composer, suggestions and microphone were
+`disabled` (the "unavailable" cursor), even if SQL migrations succeeded.
+
+**Repaired behavior:** If the feature flag is **absent** or `true`, a signed-in
+owner sees interactive chat only when all these backend prerequisites
+are verified on the server:
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` and
+  `SUPABASE_SERVICE_ROLE_KEY` are configured;
+- the current session is an actual **owner** of the selected café;
+- a session-scoped RLS SELECT of `ai_threads` succeeds; and
+- the trusted server writer can SELECT `ai_messages` using its
+  privately configured service-role key.
+
+`SUPERVISOR_CHAT_ENABLED=false` **still explicitly disables** all
+Supervisor chat and attachment POSTs as an emergency switch. Failures never
+make the composer clickable: the owner sees a localized EN/ES/AR explanation
+instead of an unexplained disabled cursor. No model-generated money math
+or permission change was introduced.
+
+For Production or Preview, configure Supabase credentials in Vercel
+**Settings → Environment Variables** and redeploy after changes. The
+service role must be server-only, never prefixed `NEXT_PUBLIC_`.
+No new Supabase migration is required by this repair. A successful build
+does not prove the live DB was checked from the owner's authenticated session.

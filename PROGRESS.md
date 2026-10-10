@@ -2424,3 +2424,21 @@ Phase 5 implementation and handoff:
 - [x] TypeScript, changed-file lint, tests and build verified via GitHub branch CI before review.
 - [ ] Migration 37 requires review, ordered SQL application after migrations 33–36 and staging café RLS checks. Public research requires an external key and quota; default off.
 - [ ] Direct Gmail/supplier-email OAuth synchronization, automatic email reading, fact validation and competitor market monitoring are NOT connected. A manually recorded email excerpt is owner-sourced, not provider-verified.
+
+## Post-deployment repair — Supervisor composer activation (2026-10-10, review ready)
+
+Finding: the deployed Home composer is gated by `SUPERVISOR_CHAT_ENABLED === "true"`, a server-only service-role key and configured Supabase. Deployment/SQL application by themselves do not set the extra flag. Because `enabled=false` is passed to the client composer, text, voice, attachments and every suggestion are disabled with the unavailable cursor. Existing code gives owners no accurate explanation of which prerequisite is unmet. User has explicitly requested activation.
+
+Plan:
+1. Preserve explicit emergency opt-out `SUPERVISOR_CHAT_ENABLED=false`, but use configured private service-role + Supabase + authenticated **owner** + real conversation-table access to enable the working read-only Supervisor by default; do not enable merely from deployed code without prerequisites.
+2. Add a fail-closed, server-side readiness/preflight check against the authenticated owner-scoped thread table and privileged Supervisor message writer. Treat missing tables, insufficient access and bad server credentials as *unavailable* rather than interactive.
+3. Replace misleading "coming soon" and unexplained disabled hover with localized EN/ES/AR setup status for missing prerequisites and owner-only access; suggestions work normally only when ready.
+4. Keep API authorization, same-origin checks, guarded privileged writes, source grounding, existing calculations/POS/Team task lifecycle intact. Tests cover absent flag, explicit opt-out, missing key and insufficient rights; run CI and review PR. No automatic main merge or production environment mutations.
+
+Verified repair outcomes:
+- [x] Deployment absent flag now means eligible for activation, not permanent "coming soon". `SUPERVISOR_CHAT_ENABLED=false` remains an explicit server-side emergency stop.
+- [x] Home checks owner role, authenticated session's café-private `ai_threads` RLS read, and privileged reply writer's `ai_messages` read. Do not activate when the session is a manager, tables are unavailable, or backend keys are missing/invalid.
+- [x] Clearly localized EN/ES/AR reasons for each unavailable state instead of silent disabled controls. When ready, suggestions and text submission use the existing persisted, evidence-gated chat without changing any business numbers or permissions.
+- [x] All **534 Vitest tests (77 files)**, TypeScript, changed-file ESLint, Next.js production build, and diff check pass on branch CI run `38072892356`. Tests include five server readiness scenarios. No new npm packages or SQL migrations.
+- [ ] Vercel environment values are not readable from the GitHub-only connection: actual Production and Preview `SUPABASE_SERVICE_ROLE_KEY` and `SUPERVISOR_CHAT_ENABLED` values must be confirmed in Vercel Settings and redeployed if changed.
+- [ ] Preview/prod sign-in test still required: owner opens Home, taps a suggestion, observes persisted Supervisor reply, tries another thread, and checks non-owner denial.

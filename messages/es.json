@@ -1176,7 +1176,12 @@
     "voiceUnavailable": "El reconocimiento de voz no está disponible en este navegador. Escribe tu mensaje.",
     "attachmentSaved": "Archivo guardado en privado. No se ha analizado.",
     "attachmentNotice": "Solo archivos de referencia: los documentos no se analizan ni actualizan los datos del café.",
-    "attachmentUpload": "Subiendo archivo… (PDF, imagen o texto; máximo 2 MB)."
+    "attachmentUpload": "Subiendo archivo… (PDF, imagen o texto; máximo 2 MB).",
+    "statusDisabled": "El chat del Supervisor se desactivó en la configuración de despliegue. Cambia SUPERVISOR_CHAT_ENABLED de false a true (o elimina false) y vuelve a desplegar.",
+    "statusDatabase": "El chat del Supervisor necesita que la conexión con Supabase esté configurada.",
+    "statusWriter": "El chat del Supervisor requiere SUPABASE_SERVICE_ROLE_KEY únicamente en el servidor. No añadas NEXT_PUBLIC_ a esta clave.",
+    "statusOwner": "El chat del Supervisor requiere iniciar sesión como propietario de la cafetería y tener una cafetería activa propia.",
+    "statusStorage": "El chat del Supervisor no puede acceder a su historial privado ni al escritor de respuestas seguro. Comprueba la migración #33 y los permisos del servidor."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
