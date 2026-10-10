@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, Check, AlertCircle, Paperclip } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, Check, AlertCircle, Paperclip, LoaderCircle, ChevronDown } from "lucide-react";
+import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
+import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
@@ -24,23 +26,18 @@ export type SupervisorChatCopy = {
   needsYou: string; handled: string; watching: string;
   usageHeading: string; usageRequests: string; usageTokens: string;
   usageEstimate: string; usageCostUnknown: string;
+  answerFailed: string; retryAnswer: string; todaySummary: string;
+  snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
-type SpeechRecognizer = {
-  lang: string; interimResults: boolean; continuous?: boolean;
-  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
-  onerror: ((event: { error: string }) => void) | null; onend: (() => void) | null;
-  start: () => void; stop: () => void;
+export type SupervisorHomeSnapshot = {
+  title: string; stats: { label: string; value: string }[];
+  caption: string | null; hasSales: boolean;
+  sections: { title: string; empty: string; href: string;
+    items: HomeTaskPreviewItem[]; count: number }[];
+  seeAll: string;
 };
 type MessageResponse = { message: ConversationMessage; reply: ConversationMessage; replyStatus: "complete" };
-function recognitionForBrowser(): SpeechRecognizer | null {
-  const w = window as Window & {
-    SpeechRecognition?: new () => SpeechRecognizer;
-    webkitSpeechRecognition?: new () => SpeechRecognizer;
-  };
-  const Recognizer = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-  return Recognizer ? new Recognizer() : null;
-}
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -118,16 +115,19 @@ function SupervisorMessage({ message, copy, locale }: {
 }
 
 export default function SupervisorChatComposer({
-  enabled, locale, copy, onActivityChange,
+  enabled, locale, copy, snapshot, onActivityChange,
 }: {
   enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
-  locale: Locale; copy: SupervisorChatCopy; onActivityChange?: (active: boolean) => void;
+  locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
+  onActivityChange?: (active: boolean) => void;
 }) {
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [snapshotExpanded, setSnapshotExpanded] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [usage, setUsage] = useState<{
     requests: number; inputTokens: number; outputTokens: number;
     estimatedCostMicros: number | null;
@@ -140,7 +140,11 @@ export default function SupervisorChatComposer({
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState<StoredAttachment[]>([]);
   const [mediaNotice, setMediaNotice] = useState("");
-  const speech = useRef<SpeechRecognizer | null>(null);
+  const recorder = useRef<MediaRecorder | null>(null);
+  const recordingStream = useRef<MediaStream | null>(null);
+  const audioChunks = useRef<Blob[]>([]);
+  const recordingStartedAt = useRef(0);
+  const recordingLimit = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
@@ -148,33 +152,47 @@ export default function SupervisorChatComposer({
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
-  function cleanupSpeech() {
-    const active = speech.current;
-    speech.current = null;
+  function cleanupRecording() {
+    const active = recorder.current;
+    recorder.current = null;
     if (active) {
-      active.onresult = null; active.onerror = null; active.onend = null;
-      try { active.stop(); } catch { /* Browser recognition already ended. */ }
+      active.ondataavailable = null; active.onstop = null; active.onerror = null;
+      if (active.state !== "inactive") { try { active.stop(); } catch { /* recording already ended */ } }
     }
+    recordingStream.current?.getTracks().forEach((track) => track.stop());
+    recordingStream.current = null;
+    audioChunks.current = [];
+    if (recordingLimit.current) clearTimeout(recordingLimit.current);
+    recordingLimit.current = null;
   }
   useEffect(() => () => {
-    const active = speech.current;
-    speech.current = null;
+    const active = recorder.current;
     if (active) {
-      active.onresult = null; active.onerror = null; active.onend = null;
-      try { active.stop(); } catch { /* cleanup */ }
+      active.onstop = null;
+      if (active.state !== "inactive") active.stop();
     }
+    recordingStream.current?.getTracks().forEach((track) => track.stop());
+    if (recordingLimit.current) clearTimeout(recordingLimit.current);
   }, []);
   useEffect(() => {
     if (!enabled) {
-      const active = speech.current;
-      speech.current = null;
+      const active = recorder.current;
       if (active) {
-        active.onresult = null; active.onerror = null; active.onend = null;
-        try { active.stop(); } catch { /* cleanup */ }
+        active.onstop = null;
+        if (active.state !== "inactive") active.stop();
       }
+      recordingStream.current?.getTracks().forEach((track) => track.stop());
+      recorder.current = null;
+      recordingStream.current = null;
+      audioChunks.current = [];
       dispatchDictation({ type: "reset" });
     }
   }, [enabled]);
+  useEffect(() => {
+    if (dictation !== "listening") return;
+    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - recordingStartedAt.current) / 1000)), 250);
+    return () => clearInterval(interval);
+  }, [dictation]);
   useEffect(() => { onActivityChange?.(messages.length > 0 || sending); }, [messages.length, sending, onActivityChange]);
   useEffect(() => {
     if (!historyOpen || !enabled) return;
@@ -252,13 +270,13 @@ export default function SupervisorChatComposer({
     threadRequestId.current = null;
     return created.thread.id;
   }
-  async function sendText(value: string) {
+  async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
-    if (!enabled || !text || sending || uploading || speech.current || dictation === "recognizing" || text.length > 4000) return;
+    if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     setSending(true); setError(false);
     try {
       const id = await ensureThread();
-      retryId.current ??= crypto.randomUUID();
+      retryId.current = existingKey ?? retryId.current ?? crypto.randomUUID();
       const posted = await jsonFrom<MessageResponse>(await fetch(
         "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
           method: "POST", headers: { "content-type": "application/json" },
@@ -268,10 +286,18 @@ export default function SupervisorChatComposer({
       setMessages(page.items.length ? page.items : [posted.message, posted.reply]);
       setNextOffset(page.nextOffset);
       await refreshThreads();
-      setDraft(""); retryId.current = null;
+      if (!existingKey) setDraft("");
+      retryId.current = null;
       dispatchDictation({ type: "reset" }); setMediaNotice("");
     } catch {
-      // Draft and retry key are preserved even if a reply or connection failed after owner insert.
+      // The owner message may already be durable; reconcile from storage so its
+      // adjacent Retry button appears immediately, as well as after refresh.
+      if (threadId) {
+        try {
+          const page = await loadMessages(threadId);
+          setMessages(page.items); setNextOffset(page.nextOffset);
+        } catch { /* the owner's original draft and key remain intact */ }
+      }
       setError(true);
     } finally {
       setSending(false);
@@ -294,58 +320,77 @@ export default function SupervisorChatComposer({
   }
   function selectThread(id: string | null) {
     if (sending) return;
-    cleanupSpeech(); dispatchDictation({ type: "reset" });
+    cleanupRecording(); dispatchDictation({ type: "reset" });
     setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
     retryId.current = null; threadRequestId.current = null;
     composer.current?.focus();
   }
-  function listen() {
-    if (!enabled || sending || uploading || dictation === "recognizing") return;
-    if (speech.current) {
-      dispatchDictation({ type: "stop" });
-      setMediaNotice(copy.voiceProcessing);
-      try { speech.current.stop(); } catch { cleanupSpeech(); dispatchDictation({ type: "error" }); }
-      return;
-    }
-    const recognition = recognitionForBrowser();
-    if (!recognition) {
-      dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceUnavailable); return;
-    }
-    speech.current = recognition;
-    let resultReceived = false;
-    let errored = false;
-    recognition.lang = locale === "ar" ? "ar-SA" : locale === "es" ? "es-ES" : "en-US";
-    recognition.interimResults = false;
-    recognition.onresult = (event) => {
-      if (speech.current !== recognition) return;
-      const heard = Array.from(event.results).map((r) => r[0]?.transcript ?? "").join(" ").trim();
-      if (!heard) return;
-      resultReceived = true;
+  async function transcribeAudio(blob: Blob, durationSeconds: number) {
+    try {
+      const extension = blob.type.startsWith("audio/mp4") ? "mp4" :
+        blob.type.startsWith("audio/ogg") ? "ogg" : "webm";
+      const body = new FormData();
+      body.append("audio", new File([blob], "dictation." + extension, { type: blob.type }));
+      body.append("durationSeconds", String(durationSeconds));
+      const response = await jsonFrom<{ text: string }>(await fetch("/api/ai/transcribe", {
+        method: "POST", credentials: "same-origin", body,
+      }));
+      const heard = response.text.trim();
+      if (!heard) throw new Error("empty_transcript");
       setDraft((current) => ((current.trim() ? current.trimEnd() + " " : "") + heard).slice(0, 4000));
       retryId.current = null;
       dispatchDictation({ type: "result" }); setMediaNotice(copy.voiceReview);
       composer.current?.focus();
-    };
-    recognition.onerror = (event) => {
-      if (speech.current !== recognition) return;
-      errored = true;
-      dispatchDictation({ type: "error" });
-      setMediaNotice(event.error === "not-allowed" || event.error === "service-not-allowed"
-        ? copy.voicePermissionDenied : event.error === "no-speech" ? copy.voiceNoSpeech
-          : event.error === "aborted" ? copy.voiceCanceled : copy.voiceError);
-    };
-    recognition.onend = () => {
-      if (speech.current !== recognition) return;
-      speech.current = null;
-      dispatchDictation({ type: "end", hadResult: resultReceived, hadError: errored });
-      if (!resultReceived && !errored) setMediaNotice(copy.voiceNoSpeech);
-    };
-    try {
-      recognition.start();
-      dispatchDictation({ type: "start" }); setMediaNotice(copy.listening);
     } catch {
-      cleanupSpeech(); dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError);
+      dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError);
+    }
+  }
+  function stopRecording() {
+    const active = recorder.current;
+    if (!active || active.state === "inactive") return;
+    dispatchDictation({ type: "stop" });
+    setMediaNotice("");
+    try { active.stop(); } catch { cleanupRecording(); dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); }
+  }
+  async function listen() {
+    if (!enabled || sending || uploading || dictation === "recognizing") return;
+    if (recorder.current) { stopRecording(); return; }
+    if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceUnavailable); return;
+    }
+    let stream: MediaStream | null = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]
+        .find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      if (!mimeType) throw new Error("unsupported_audio");
+      const active = new MediaRecorder(stream, { mimeType });
+      recorder.current = active; recordingStream.current = stream;
+      audioChunks.current = []; recordingStartedAt.current = Date.now(); setElapsed(0);
+      active.ondataavailable = (event) => { if (event.data.size) audioChunks.current.push(event.data); };
+      active.onerror = () => { cleanupRecording(); dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); };
+      active.onstop = () => {
+        if (recorder.current !== active) return;
+        const durationSeconds = Math.max(0.1, (Date.now() - recordingStartedAt.current) / 1000);
+        const blob = new Blob(audioChunks.current, { type: active.mimeType.split(";")[0] });
+        recorder.current = null;
+        recordingStream.current?.getTracks().forEach((track) => track.stop());
+        recordingStream.current = null; audioChunks.current = [];
+        if (recordingLimit.current) clearTimeout(recordingLimit.current);
+        recordingLimit.current = null;
+        if (blob.size === 0 || blob.size > 8 * 1024 * 1024) {
+          dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); return;
+        }
+        void transcribeAudio(blob, durationSeconds);
+      };
+      active.start(250);
+      dispatchDictation({ type: "start" }); setMediaNotice("");
+      recordingLimit.current = setTimeout(() => stopRecording(), 45_000);
+    } catch {
+      stream?.getTracks().forEach((track) => track.stop());
+      cleanupRecording();
+      dispatchDictation({ type: "error" }); setMediaNotice(copy.voicePermissionDenied);
     }
   }
   async function attach(event: ChangeEvent<HTMLInputElement>) {
