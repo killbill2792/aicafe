@@ -1,6 +1,7 @@
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { TeamRule } from "@/lib/ai/policies/contracts";
-import type { CafeState } from "@/lib/operating/types";
+import type { CafeState, KnownSlice } from "@/lib/operating/types";
+import { roundHalfUpToCent, runningCostsForPeriodCents } from "@/lib/calc";
 import type { GroundedSupervisorReply, SupervisorIntent, EvidenceReference, SupervisorReplyBlock } from "./contracts";
 import { assessGrounding } from "./grounding";
 
@@ -17,6 +18,22 @@ export type SupervisorReplyCopy = {
   ownerProfit: string;
   recurringBills: string;
   billsIntro: string;
+  monthlyBillsIntro: string;
+  accruedBillsIntro: string;
+  actualExpensesIntro: string;
+  businessCostsIntro: string;
+  actualExpensesLabel: string;
+  accruedBillsLabel: string;
+  periodRange: (from: string, to: string) => string;
+  salesQuantityIntro: string;
+  unitsSold: string;
+  ordersCount: string;
+  drinksCount: string;
+  distinctProducts: string;
+  bestSeller: (name: string) => string;
+  leastSeller: (name: string) => string;
+  matchedProduct: (name: string) => string;
+  productNotFound: string;
   pricingIntro: string;
   pricingNone: string;
   pricingUnavailable: string;
@@ -33,17 +50,20 @@ export type SupervisorReplyCopy = {
 export function detectSupervisorIntent(raw: string): SupervisorIntent {
   const text = raw.normalize("NFKC").toLocaleLowerCase().trim();
   if (/\b(rules?|instructions?|guidelines?|policies)\b|reglas|instrucciones|normas|قواعد|تعليمات/.test(text)) return "owner_rules";
+  if (/(how many|number of|units?|quantit|sold|selling|best.sell|least.sell|most.sell|top.sell|popular|cuánt|vendid|unidades|más vendid|menos vendid|كم|الأكثر مبيع|الأقل مبيع)/.test(text) &&
+      /(products?|items?|drinks?|coffees?|coffee|orders?|cups?|beverages?|latte|cappuccino|sold|selling|productos?|bebidas?|cafés?|pedidos|منتج|مشروب|قهو|طلبات)/.test(text)) return "sales_quantity";
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
   if (/\b(attention|urgent|tasks?|needs you|team|handled|watching|issues?)\b|atención|tareas|equipo|الاهتمام|انتباه|المهام|الفريق/.test(text)) return "operating_tasks";
-  if (/\b(bills?|expenses?|rent|utilities|running costs?)\b|facturas|gastos|alquiler|فواتير|مصاريف|إيجار/.test(text)) return "expenses";
+  if (/\b(profit|profits|margin|earnings?)\b|ganancia|beneficio|ربح/.test(text)) return "profitability";
+  if (/\b(bills?|expenses?|rent|utilities|running costs?|total costs?|spent|spending|fixed costs?)\b|facturas|gastos|alquiler|فواتير|مصاريف|إيجار|أنفقت/.test(text)) return "expenses";
   if (/\b(profit|sales|revenue|costs?|earning|money|today|week|month|doing|business|overview)\b|ganancia|beneficio|ventas|hoy|semana|mes|negocio|cómo vamos|ربح|مبيعات|اليوم|الأسبوع|الشهر|كيف الحال/.test(text)) return "profitability";
   return "unknown";
 }
 
 function replyForSlice(
   intent: SupervisorIntent,
-  slice: CafeState["profitability"] | CafeState["expenses"] | CafeState["pricingRecommendations"] | CafeState["labor"] | CafeState["sales"] | Awaited<ReturnType<BusinessScopedCafeTools["getTeamTasks"]>>,
+  slice: KnownSlice<unknown>,
   evidence: EvidenceReference[],
   blocks: SupervisorReplyBlock[],
   copy: SupervisorReplyCopy,
@@ -63,12 +83,12 @@ function replyForSlice(
   };
 }
 
-function periodFor(text: string, state: CafeState) {
+function periodFor(text: string, state: CafeState, defaultMonth = false) {
   const q = text.normalize("NFKC").toLocaleLowerCase();
   // Phase 2 does not have authoritative prior-month bill histories.
   // Refuse historical/future requests rather than silently showing today.
   const unsupported = /\b(yesterday|tomorrow|previous|last month|last week|prior month|next month|next week)\b|mes pasado|semana pasada|ayer|mañana|الأمس|غدا|غداً|الشهر الماضي|الأسبوع الماضي|الأسبوع السابق|الشهر السابق|\b20\d{2}[-/]\d{1,2}\b/i.test(q);
-  const wantsMonth = /\b(this month|current month|monthly|month)\b|este mes|mensual|الشهر|شهري/.test(q);
+  const wantsMonth = defaultMonth || /\b(this month|current month|monthly|month|so far|to date|month-to-date)\b|este mes|mensual|hasta ahora|الشهر|شهري|حتى الآن/.test(q);
   const wantsWeek = /\b(this week|past seven days|last seven days|7 days|week|weekly)\b|esta semana|últimos siete días|آخر سبعة أيام|هذا الأسبوع/.test(q);
   const from = wantsMonth ? state.period.from
     : wantsWeek ? new Date(Date.parse(state.asOf + "T12:00:00Z") - 6 * 86400000)
@@ -87,8 +107,9 @@ export async function answerSupervisorQuestion(
 ): Promise<GroundedSupervisorReply> {
   const intent = detectSupervisorIntent(input.text);
   const { state, tools } = input;
-  const { from, to, label, unsupported } = periodFor(input.text, state);
-  if (unsupported && (intent === "profitability" || intent === "expenses")) {
+  const { from, to, label, unsupported } = periodFor(input.text, state,
+    intent === "expenses" || (intent === "sales_quantity" && /\b(so far|to date|month-to-date)\b|hasta ahora|حتى الآن/i.test(input.text)));
+  if (unsupported && (intent === "profitability" || intent === "expenses" || intent === "sales_quantity")) {
     return {
       intent, status: "insufficient_evidence", evidence: [],
       blocks: [{ type: "warning", code: "unsupported_period", text: copy.periodUnavailable }],
