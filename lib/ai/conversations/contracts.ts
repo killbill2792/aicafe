@@ -24,7 +24,7 @@ export type ConversationScope = {
 
 export type ConversationThread = {
   id: string;
-  title: string;
+  title: string | null;
   createdAt: string;
   updatedAt: string;
   lastMessageAt: string | null;
