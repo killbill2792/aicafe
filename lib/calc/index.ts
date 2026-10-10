@@ -8,6 +8,7 @@ export * from "./perDrink";
 export * from "./breakEven";
 export * from "./costRecovery";
 export * from "./ingredients";
+export * from "./productCosts";
 export * from "./alerts";
 export * from "./scenario";
 export * from "./pricingBaseline";

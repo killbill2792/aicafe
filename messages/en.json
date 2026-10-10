@@ -445,7 +445,12 @@
     "aggregateCostInvalid": "Enter a total greater than $0.",
     "aggregateCostError": "We couldn't save that product cost. Try again.",
     "costSourceRecipe": "Calculated from recipe",
-    "costSourceOwner": "Owner entered"
+    "costSourceOwner": "Owner entered",
+    "aggregateCostOwnerEstimateActive": "Using owner-entered estimate",
+    "aggregateCostImportedActive": "Using imported total",
+    "aggregateCostImportedEstimateActive": "Using imported estimate",
+    "costSourceImported": "Imported",
+    "costSourceEstimate": "Estimate"
   },
   "ManageMenu": {
     "title": "Manage menu",

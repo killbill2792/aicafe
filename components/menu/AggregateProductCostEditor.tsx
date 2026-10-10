@@ -16,6 +16,9 @@ type Labels = {
   remove: string;
   saved: string;
   usingOwner: string;
+  usingOwnerEstimate: string;
+  usingImported: string;
+  usingImportedEstimate: string;
   usingRecipe: string;
   recipeOnly: string;
   missing: string;
@@ -66,7 +69,12 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
   }
 
   function status(item: MenuItemForEdit): string {
-    if (item.costSource === "owner_total") return labels.usingOwner;
+    if (item.costSource === "owner_total") {
+      if (item.ownerTotalCostSource === "imported") {
+        return item.ownerTotalCostStatus === "estimated" ? labels.usingImportedEstimate : labels.usingImported;
+      }
+      return item.ownerTotalCostStatus === "estimated" ? labels.usingOwnerEstimate : labels.usingOwner;
+    }
     if (item.costSource === "recipe" && item.ownerTotalCostCents != null) return labels.usingRecipe;
     if (item.costSource === "recipe") return labels.recipeOnly;
     return labels.missing;

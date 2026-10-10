@@ -445,7 +445,12 @@
     "aggregateCostInvalid": "أدخل إجمالياً أكبر من 0 دولار.",
     "aggregateCostError": "تعذر حفظ تكلفة المنتج. حاول مرة أخرى.",
     "costSourceRecipe": "محسوب من الوصفة",
-    "costSourceOwner": "أدخله المالك"
+    "costSourceOwner": "أدخله المالك",
+    "aggregateCostOwnerEstimateActive": "يُستخدم التقدير الذي أدخله المالك",
+    "aggregateCostImportedActive": "يُستخدم الإجمالي المستورد",
+    "aggregateCostImportedEstimateActive": "يُستخدم التقدير المستورد",
+    "costSourceImported": "مستورد",
+    "costSourceEstimate": "تقدير"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",

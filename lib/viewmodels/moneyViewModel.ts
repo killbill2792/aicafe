@@ -6,6 +6,7 @@ import {
   ownerProfitCentsForPeriod,
   ratio,
   staffHealthBand,
+  summarizeResolvedSoldProductCosts,
   sumCents,
   totalCostsCentsForPeriod,
 } from "@/lib/calc";
@@ -63,15 +64,10 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
   const salesHistory = snapshot.last28Days;
   const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
   const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
-  const missingProductCosts = breakEvenCostItems.some(
-    (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
-  );
-  // Use the same resolved sold-item cost as Menu/Pricing/Simulator. Recipe-only rollups would
-  // undercount a café that legitimately uses an owner-total fallback.
-  const observedIngredientCents = Math.round(breakEvenCostItems.reduce(
-    (sum, item) => sum + (item.costStatus === "READY" ? item.ingredientsCentsToday * item.quantitySoldLast28Days : 0),
-    0,
-  ));
+  const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
+  const missingProductCosts = productCosts.missingProductCosts;
+  // Use the same pure sold-item product-cost aggregation as the drinks/day break-even surface.
+  const observedIngredientCents = productCosts.totalCostCents;
   const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
@@ -106,7 +102,7 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
     monthRecordedDays.some((day) => day.staffTaxStatus === "estimated") ||
     salesHistory.some((day) => day.cardFeesStatus === "estimated") ||
-    breakEvenCostItems.some((item) => item.quantitySoldLast28Days > 0 && item.costQuality === "estimated");
+    productCosts.usesEstimatedProductCosts;
 
   return {
     buckets: recovery.buckets,
