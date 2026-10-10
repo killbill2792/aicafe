@@ -7,7 +7,7 @@ import { PAGE_SIZE, THREAD_PAGE_SIZE } from "./contracts";
 import type { ConversationRepository } from "./service";
 
 type ThreadRow = {
-  id: string; title: string; created_at: string; updated_at: string;
+  id: string; title: string | null; created_at: string; updated_at: string;
   last_message_at: string | null;
 };
 type MessageRow = {
@@ -58,7 +58,7 @@ export class SupabaseConversationRepository implements ConversationRepository {
     return data ? thread(data as ThreadRow) : null;
   }
 
-  async insertThread(scope: ConversationScope, requestId: string, title: string) {
+  async insertThread(scope: ConversationScope, requestId: string, title: string | null) {
     const { data, error } = await this.client.from("ai_threads")
       .insert({
         business_id: scope.businessId,
