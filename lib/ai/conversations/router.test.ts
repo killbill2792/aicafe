@@ -29,6 +29,8 @@ const copy: SupervisorReplyCopy = {
   fullMonthlyBills: "Monthly bill budget",
   operatingCostsSoFar: "Operating costs month to date",
   operatingCostsUnavailable: "Cannot verify full operating costs",
+  productUnits: "Mapped menu units",
+  itemSalesUnavailable: "Item sales unavailable",
   drinkUnits: "Recorded drinks",
   recordedOrders: "Recorded orders",
   productSalesIntro: "Drinks are not all products",
@@ -55,6 +57,11 @@ function tools(overrides: Record<string, unknown> = {}): BusinessScopedCafeTools
   getMonthlyRecurringBills: vi.fn(async () => ({
       available: true as const,
       value: { amountCents: 730012, rows: 8 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    })),
+    getItemUnitsSold: vi.fn(async () => ({
+      available: true as const,
+      value: { units: 42, itemsWithSales: 5 },
       quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
     })),
     getRecordedExpenses: vi.fn(async () => ({
@@ -202,19 +209,37 @@ describe("Phase 4 finite Supervisor router", () => {
     expect(result.intent).toBe("unit_sales");
     expect(result.status).toBe("verified");
     const counts = result.blocks.filter(b=>b.type === "count");
-    expect(counts).toHaveLength(2);
-    expect(counts[0]).toMatchObject({ type: "count",label:"Recorded drinks" });
-    expect(counts[1]).toMatchObject({ type: "count",label:"Recorded orders" });
+    expect(counts).toHaveLength(3);
+    expect(counts[0]).toMatchObject({ type: "count",label:"Mapped menu units", value:42 });
+    expect(counts[1]).toMatchObject({ type: "count",label:"Recorded drinks" });
+    expect(counts[2]).toMatchObject({ type: "count",label:"Recorded orders" });
     expect(result.blocks.some(b=>b.type === "metric")).toBe(false);
     expect(result.blocks.some(b=>b.type === "text" && b.text === copy.productSalesIntro)).toBe(true);
   });
 
   it("discloses incomplete daily rollups instead of treating missing days as zero sales", async () => {
-    const state = cafeStateFromSnapshot(fixture);
+    const original = cafeStateFromSnapshot(fixture);
+    const state = original.sales.available ? {
+      ...original, sales: { ...original.sales, value: original.sales.value.slice(1) },
+    } : original;
     const result = await answerSupervisorQuestion({ text: "How many products did I sell this month?",
       tools: tools(), state }, copy);
     expect(result.blocks.some(b => b.type === "warning" && b.code === "partial_sales_coverage"))
       .toBe(true);
+  });
+
+  it("warns when POS itemization is unavailable while keeping verified drink/order rollups", async () => {
+    const result = await answerSupervisorQuestion({
+      text: "how many products am I selling so far",
+      tools: tools({ getItemUnitsSold: async () => ({
+        available: false, value: null,
+        quality: { level:"low", missingInputs:["itemizedProductSales"],
+          estimatedInputs:[], staleInputs:[] },
+      }) }),
+      state: cafeStateFromSnapshot(fixture),
+    }, copy);
+    expect(result.blocks.some(b=>b.type==="warning" && b.code==="itemized_sales_unavailable")).toBe(true);
+    expect(result.blocks.filter(b=>b.type==="count")).toHaveLength(2);
   });
 
   it("never fabricates units from an empty sales period", async () => {
