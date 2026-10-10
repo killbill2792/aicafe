@@ -258,6 +258,51 @@ export async function updateMenuItemPrice(input: z.infer<typeof PriceSchema>): P
   return { ok: true };
 }
 
+const AggregateProductCostSchema = z.object({
+  menuItemId: z.string().uuid(),
+  costCents: z.number().int().positive(),
+});
+
+export async function saveMenuItemAggregateCost(input: z.infer<typeof AggregateProductCostSchema>): Promise<ActionResult> {
+  const parsed = AggregateProductCostSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, error: "Enter a valid total product cost." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { data: item } = await supabase.from("menu_items").select("id").eq("id", parsed.data.menuItemId).eq("business_id", businessId).single();
+  if (!item) return { ok: false, error: "Item not found." };
+  const { error } = await supabase.from("menu_item_cost_fallbacks").upsert({
+    business_id: businessId,
+    menu_item_id: item.id,
+    cost_cents: parsed.data.costCents,
+    source_type: "owner_manual",
+    status: "confirmed",
+    source_label: "Owner",
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "business_id,menu_item_id" });
+  if (error) {
+    logQueryError("saveMenuItemAggregateCost", error);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
+  revalidatePath("/menu"); revalidatePath(`/menu/${item.id}`); revalidatePath("/money"); revalidatePath("/more/break-even");
+  return { ok: true };
+}
+
+export async function removeMenuItemAggregateCost(menuItemId: string): Promise<ActionResult> {
+  const parsed = z.string().uuid().safeParse(menuItemId);
+  if (!parsed.success) return { ok: false, error: "Item not found." };
+  const businessId = await currentBusinessId();
+  if (!businessId) return { ok: false, error: "Sign in first." };
+  const supabase = await createServerSupabaseClient();
+  const { error } = await supabase.from("menu_item_cost_fallbacks").delete().eq("business_id", businessId).eq("menu_item_id", parsed.data);
+  if (error) {
+    logQueryError("removeMenuItemAggregateCost", error);
+    return { ok: false, error: MENU_SAVE_FAILURE_MESSAGE };
+  }
+  revalidatePath("/menu"); revalidatePath(`/menu/${parsed.data}`); revalidatePath("/money"); revalidatePath("/more/break-even");
+  return { ok: true };
+}
+
 const PhotoSchema = z.object({ menuItemId: z.string().uuid(), storagePath: z.string().min(1).max(300) });
 /** Registers an already-uploaded private Storage object as the one photo for this base product. */
 export async function saveProductPhoto(input: z.infer<typeof PhotoSchema>): Promise<ActionResult> {

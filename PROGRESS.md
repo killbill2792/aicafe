@@ -2210,3 +2210,24 @@ Plan:
    incomplete-recipe fallback, complete-recipe override, and break-even missing-cost behavior.
 6. No POS writes. No ingredient-level usage is inferred from the aggregate total.
 
+
+
+Implementation result:
+- [x] Added migration 32 with a tenant-scoped per-size aggregate product-cost fallback. It stays
+      separate from recipe lines and carries source/status provenance.
+- [x] One pure resolver now drives Menu, pricing, Profit Goal Simulator, and Break-even:
+      complete recipe > owner total > unavailable. The two values are never added together.
+- [x] When both values exist, the detailed recipe remains active while the owner total and
+      difference stay visible for review.
+- [x] Product Recipe workspace lets the owner enter/remove one total per size; Overview labels the
+      active source as Calculated from recipe or Owner entered.
+- [x] Break-even now derives ingredient cost from resolved sold-item costs and refuses to calculate
+      when a sold item still lacks a usable product cost.
+- [x] Alex/pricing evidence copy now says product cost rather than recipe cost.
+- [x] Aggregate totals intentionally do not create ingredient-level usage/waste data.
+- [x] EN / ES / AR copy and focused resolver/break-even regressions added.
+
+Deployment order:
+- Apply migration 32 (`20261010000032_aggregate_product_cost.sql`) before deploying this app code.
+- Because production migration history is historically unreconciled, apply migration 32 deliberately;
+  do not run a blanket `supabase db push` across old migrations.
