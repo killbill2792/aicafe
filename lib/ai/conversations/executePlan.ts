@@ -4,7 +4,7 @@ import type { OperatingTask } from "@/lib/operating/tasks";
 import type { CafeState, KnownSlice } from "@/lib/operating/types";
 import { runningCostsForPeriodCents, roundHalfUpToCent } from "@/lib/calc";
 import type { EvidenceReference, GroundedSupervisorReply, SupervisorIntent, SupervisorReplyBlock } from "./contracts";
-import type { SupervisorReplyCopy } from "./router";
+import type { SupervisorReplyCopy } from "./replyCopy";
 import type { SupervisorPlan } from "./planner.server";
 import { assessGrounding } from "./grounding";
 
