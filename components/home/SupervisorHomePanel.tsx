@@ -1,3 +1,6 @@
+"use client";
+
+import { useCallback, useState } from "react";
 import { Coffee, Sparkles, UsersRound } from "lucide-react";
 import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
@@ -26,9 +29,11 @@ export default function SupervisorHomePanel({
   chatUnavailableReason: SupervisorChatUnavailableReason | null;
   locale: "en" | "es" | "ar";
 }) {
+  const [activeConversation, setActiveConversation] = useState(false);
+  const onActivityChange = useCallback((active: boolean) => setActiveConversation(active), []);
   return (
     <section className="overflow-hidden rounded-[28px] border border-[#D8C8B5] bg-[#F0E5D8] p-5 shadow-[0_18px_48px_rgba(42,29,20,0.08)] md:p-6">
-      <div className="grid items-center gap-5 md:grid-cols-[minmax(0,1fr)_210px]">
+      <div className={activeConversation ? "flex items-center justify-between gap-3" : "grid items-center gap-5 md:grid-cols-[minmax(0,1fr)_210px]"}>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="flex min-h-10 items-center gap-2 rounded-full bg-card/80 px-3 text-sm font-extrabold text-ink">
@@ -44,24 +49,25 @@ export default function SupervisorHomePanel({
             </Link>
           </div>
 
-          <h1 className="mt-5 max-w-xl font-headline text-4xl font-bold leading-[1.05] text-ink md:text-5xl">
+          {!activeConversation && <h1 className="mt-5 max-w-xl font-headline text-4xl font-bold leading-[1.05] text-ink md:text-5xl">
             {copy.heading}
-          </h1>
-          <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-ink-muted">{copy.intro}</p>
+          </h1>}
+          {!activeConversation && <p className="mt-3 max-w-xl text-[17px] leading-relaxed text-ink-muted">{copy.intro}</p>}
         </div>
 
-        <div className="flex justify-center md:justify-end" aria-hidden="true">
+        {!activeConversation && <div className="flex justify-center md:justify-end" aria-hidden="true">
           <div className="relative flex h-[150px] w-[150px] items-center justify-center md:h-[190px] md:w-[190px]">
             <span className="absolute inset-[5%] rounded-[46%_54%_56%_44%/50%_43%_57%_50%] bg-[#DCC8AD]" />
             <span className="absolute inset-[17%] rounded-[52%_48%_45%_55%/44%_55%_45%_56%] bg-[#FFF8EF] shadow-[0_16px_30px_rgba(42,29,20,0.14)]" />
             <Coffee className="relative z-10 text-[#6F4936]" size={58} strokeWidth={2.2} />
             <Sparkles className="absolute end-[22%] top-[18%] z-10 text-[#B67A22]" size={25} />
           </div>
-        </div>
+        </div>}
       </div>
 
       <SupervisorChatComposer
         enabled={chatEnabled}
+        onActivityChange={onActivityChange}
         unavailableReason={chatUnavailableReason}
         locale={locale}
         copy={{ ...copy, ...chatCopy }}
