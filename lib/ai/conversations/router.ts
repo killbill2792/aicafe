@@ -1,6 +1,6 @@
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { TeamRule } from "@/lib/ai/policies/contracts";
-import type { CafeState } from "@/lib/operating/types";
+import type { CafeState, KnownSlice } from "@/lib/operating/types";
 import type { GroundedSupervisorReply, SupervisorIntent, EvidenceReference, SupervisorReplyBlock } from "./contracts";
 import { assessGrounding } from "./grounding";
 
@@ -49,14 +49,14 @@ export function detectSupervisorIntent(raw: string): SupervisorIntent {
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
   if (/\b(attention|urgent|tasks?|needs you|team|handled|watching|issues?)\b|atención|tareas|equipo|الاهتمام|انتباه|المهام|الفريق/.test(text)) return "operating_tasks";
-  if (/\b(bills?|expenses?|rent|utilities|running costs?)\b|facturas|gastos|alquiler|فواتير|مصاريف|إيجار/.test(text)) return "expenses";
+  if (/\b(bills?|expenses?|rent|utilities|running costs?|spent|paid|payments made)\b|facturas|gastos|alquiler|gastad|pagad|فواتير|مصاريف|إيجار|أنفقت/.test(text)) return "expenses";
   if (/\b(profit|sales|revenue|costs?|earning|money|today|week|month|doing|business|overview)\b|ganancia|beneficio|ventas|hoy|semana|mes|negocio|cómo vamos|ربح|مبيعات|اليوم|الأسبوع|الشهر|كيف الحال/.test(text)) return "profitability";
   return "unknown";
 }
 
 function replyForSlice(
   intent: SupervisorIntent,
-  slice: CafeState["profitability"] | CafeState["expenses"] | CafeState["pricingRecommendations"] | CafeState["labor"] | CafeState["sales"] | Awaited<ReturnType<BusinessScopedCafeTools["getTeamTasks"]>>,
+  slice: KnownSlice<unknown>,
   evidence: EvidenceReference[],
   blocks: SupervisorReplyBlock[],
   copy: SupervisorReplyCopy,
