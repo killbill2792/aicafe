@@ -31,17 +31,19 @@ A 5-step wizard with a progress bar (steps are a real sequence, so numbered dots
 5. **What gets paid first?** Drag to order expenses for cost recovery. Default: Rent, Staff*, Utilities, Insurance, Loan, Software, Supplies. (*Staff is paid per cup by default; see calculations.)
 End: "You're set. Here's your café this month." → Home.
 
-## S3. Home (Overview)
-Mockup: `overview.html`
+## S3. Home (Supervisor-first Overview)
+Visual direction: the owner-approved Supervisor-first concept, interpreted through `docs/02-design-system.md`. The original `overview.html` still governs the trusted business sections below the new Supervisor area.
+
 Top to bottom:
-1. Header: café name, date, Live dot, language switch.
-2. Period switch.
-3. **Hero card (green): Owner profit** for the period, "Estimate" pill if any estimate is included, change vs same point last period with arrow.
-4. **Three tiles**: Sales / Total costs / You keep, each with $ big and % small.
-5. **Cost recovery strip**: the expense icons in a row, each filled to its % covered, with a caption like "Rent ✓ Sep 7 · Utilities ✓ Sep 8 · Insurance 60%". Tap → Money tab, Cost recovery view.
-6. **Today in cups card**: "Today's 212 cups paid $398 toward insurance & loan." After all covered: "Every cup today is yours. A latte makes you $2.75."
-7. Section cards (tap to open): Profit & costs, Menu (best and worst earner), Break-even (need vs average), Staff (cost per minute now), Alerts (count + $ leaking).
-8. Missing-cost banner if any category is empty this month.
+1. Header: café name, date, Live indicator, and language switch. Reconnect / getting-started banners remain visible when needed.
+2. **Supervisor hero**: warm, friendly introduction with a prominent Team button linking to the existing `/operations` page. Reserve a large avatar-sized visual area; until the standalone approved Supervisor asset is available, use a neutral café-branded placeholder (never another teammate's avatar).
+3. **Ask anything… composer**: `+` / Ask anything… / microphone / send, followed by suggestion shortcuts. In the first UI-only PR, controls are explicitly disabled with clear coming-soon copy; no fake AI answers, voice input, or attachment actions.
+4. **Today snapshot**: sales, orders, owner profit when available, and total costs — only from the existing deterministic Home and Today viewmodels, with estimate/partial/unavailable truth preserved.
+5. **Needs you / Handled / Watching**: compact previews from the current persisted `operating_tasks` inbox, never a second task list or status model. Keep evidence-based status language and links to existing Team/task destinations.
+6. **Business overview**: preserve the existing Today / Week / Month selector; Owner profit hero and trend; Sales / Total costs / You keep tiles; Margin Goal; missing-cost banner; Cost Recovery strip and Today sales-to-bills explanation; Profit & costs; Staff; Menu; Break-even; and Alerts.
+7. Floating Add cost button remains available.
+
+The business money calculations, task lifecycle, and specialist pages are unchanged by this first Home presentation phase. The Supervisor conversation backend, approved actions, voice, owner rules, and worker messaging arrive only in later gated phases.
 
 ## S4. Money → Cost recovery (signature screen)
 Mockup: `cost-recovery.html`
