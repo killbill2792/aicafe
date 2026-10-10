@@ -32,6 +32,8 @@ jobs:
             'lib/ai/conversations/replyValidation.ts' 'components/home/SupervisorChatComposer.tsx' \
             'components/home/SupervisorHomePanel.tsx' 'app/[locale]/page.tsx' \
             'app/api/ai/usage/route.ts' 'app/api/ai/threads/[threadId]/messages/route.ts'
+      - name: Full repository ESLint
+        run: npm run lint
       - name: Unit and regression tests
         run: npm test
       - name: Next.js production build
