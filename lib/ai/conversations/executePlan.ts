@@ -174,12 +174,16 @@ export async function executeSupervisorPlan(input: PlanExecutorInput): Promise<G
       ], copy);
     }
     let rows = products.value;
-    if (category === "coffee") {
-      // There is no coffee taxonomy beyond 'drink' and 'food'. A guess based on
-      // menu item names would present a fabricated complete coffee total.
+    if (category === "coffee" && !product_name?.trim()) {
+      // There is no complete "coffee" taxonomy beyond drink/food.
       return noEvidence("sales_quantity", copy.productNotFound, "product_category_unavailable");
     }
-    if (category === "drink" || category === "food") rows = rows.filter((p) => p.category === category);
+    if (metric === "named_product_units" && !product_name?.trim()) {
+      return noEvidence("sales_quantity", copy.productNotFound, "product_not_identified");
+    }
+    if (category === "coffee" || category === "drink" || category === "food") {
+      rows = rows.filter((p) => p.category === (category === "coffee" ? "drink" : category));
+    }
     if (product_name?.trim()) {
       const q = product_name.normalize("NFKC").toLocaleLowerCase().trim();
       const exact = rows.filter((p) => p.name.normalize("NFKC").toLocaleLowerCase() === q);
