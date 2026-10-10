@@ -8,7 +8,7 @@ send audio to browser provider services: don't promise offline processing.
 Private file upload: PDF, PNG, JPEG, WebP, or UTF-8 plain text, maximum 2 MiB.
 The server verifies signature and size, checks authenticated owner/thread,
 uploads to private Supabase Storage bucket, and inserts one owner/café/thread
-scoped immutable `ai_attachments` metadata row. The UI lists private names.
+scoped immutable `ai_attachments` metadata row. The UI lists private filenames and allows owner-authenticated short-lived (60-second) download links. Files remain private.
 Files are **stored but not analysed**. They do not alter ingredient prices,
 receipts, inventory, POS, profit, or reply evidence. There is NO OCR integration
 or audio server recording in this phase, and no fake extraction.
