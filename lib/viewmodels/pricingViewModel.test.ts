@@ -96,3 +96,25 @@ describe("pricing processing-fee quality", () => {
     expect(result.dataQuality.estimatedInputs).toContain("processingFees");
   });
 });
+
+
+describe("pricing product-cost completeness", () => {
+  it("does not use incomplete business economics when another sold item has no resolved product cost", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "missing" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BENCHMARK");
+    expect(result.businessAdjustmentFactor).toBe(1);
+    expect(result.dataQuality.missingInputs).toContain("productCosts");
+  });
+
+  it("uses business economics when sold product costs are complete", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "complete" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
+    expect(result.dataQuality.missingInputs).not.toContain("productCosts");
+  });
+});
