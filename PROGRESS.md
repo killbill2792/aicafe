@@ -2424,3 +2424,13 @@ Phase 5 implementation and handoff:
 - [x] TypeScript, changed-file lint, tests and build verified via GitHub branch CI before review.
 - [ ] Migration 37 requires review, ordered SQL application after migrations 33–36 and staging café RLS checks. Public research requires an external key and quota; default off.
 - [ ] Direct Gmail/supplier-email OAuth synchronization, automatic email reading, fact validation and competitor market monitoring are NOT connected. A manually recorded email excerpt is owner-sourced, not provider-verified.
+
+## Post-deployment repair — Supervisor composer remains disabled (2026-10-10, in progress)
+
+Finding: the deployed Home composer is gated by `SUPERVISOR_CHAT_ENABLED === "true"`, a server-only service-role key and configured Supabase. Deployment/SQL application by themselves do not set the extra flag. Because `enabled=false` is passed to the client composer, text, voice, attachments and every suggestion are disabled with the unavailable cursor. Existing code gives owners no accurate explanation of which prerequisite is unmet. User has explicitly requested activation.
+
+Plan:
+1. Preserve explicit emergency opt-out `SUPERVISOR_CHAT_ENABLED=false`, but use configured private service-role + Supabase + authenticated **owner** + real conversation-table access to enable the working read-only Supervisor by default; do not enable merely from deployed code without prerequisites.
+2. Add a fail-closed, server-side readiness/preflight check against the authenticated owner-scoped thread table and privileged Supervisor message writer. Treat missing tables, insufficient access and bad server credentials as *unavailable* rather than interactive.
+3. Replace misleading "coming soon" and unexplained disabled hover with localized EN/ES/AR setup status for missing prerequisites and owner-only access; suggestions work normally only when ready.
+4. Keep API authorization, same-origin checks, guarded privileged writes, source grounding, existing calculations/POS/Team task lifecycle intact. Tests cover absent flag, explicit opt-out, missing key and insufficient rights; run CI and review PR. No automatic main merge or production environment mutations.
