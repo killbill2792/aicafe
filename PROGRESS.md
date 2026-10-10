@@ -2294,3 +2294,18 @@ Phase-one review closure:
 - [x] CI on the final implementation (before removing the temporary branch-only workflow) passed TypeScript, changed-file ESLint, all 426 Vitest tests, Next.js production build, and diff whitespace check.
 - [x] Vercel preview for the implementation passed. The temporary branch-only verification workflow is removed in the final cleanup commit.
 - [x] All three original PR review threads were addressed and resolved. No merge was performed.
+
+## Supervisor Phase 2 — trusted read-only engine boundary (2026-10-10, implementation in progress)
+
+Verified starting point:
+- PR #33 merged into main at a09dbb7; Phase 1 Home and all existing money/pricing/POS/task workflows remain unchanged.
+- Existing `cafeStateFromSnapshot()` presented a full month's recurring costs against only the loaded sales days and marked snapshots fully known despite uncovered sales, missing card fees or product costs. The pricing slice was always unavailable despite canonical `getMenuControlCenter()` evidence; the tool interface returned unknown/unlabeled records and `getExpenseChanges` returned non-change rows.
+- Phase 2 fixes the **AI-only** read boundary; it must not touch Home, money calculations, the canonical pricing engine, task persistence, POS writes, or production migrations.
+
+Planned:
+1. Make snapshot-to-CafeState period-scoped: use the existing pure cost math and calendar-day running-cost proration, keep observed partial slices visible as partial, and refuse confident profitability when source coverage or crucial costs are missing.
+2. Carry source/estimate quality, dates, and missing-input reasons explicitly through typed `KnownSlice` results. Mark unavailable inventory, suppliers, unknown historic comparisons, and unsupported date ranges rather than inventing figures.
+3. Add an optional, explicitly supplied canonical menu-pricing loader to the state service. It may only project items belonging to the loaded café; never compute new suggestions or interpret a cost benchmark as verified market evidence.
+4. Make `StructuredCafeTools` return typed, evidence-carrying slices for profitability, pricing, products, labor, sales, and costs. Add a business-scoped tool facade so future Supervisor calls cannot supply arbitrary café IDs.
+5. Add focused regression tests: Fixture A exact owner-profit numbers, correct proration, sparse/missing/estimated data, unsupported periods, canonical pricing evidence, tenant safety, and absent-service cases.
+6. Run TypeScript, changed-file lint, Vitest, build, whitespace checks. Open review PR and do not merge; no new schema or `supabase db push`.
