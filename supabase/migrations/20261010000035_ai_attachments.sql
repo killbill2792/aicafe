@@ -2,7 +2,10 @@
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('ai-chat-private','ai-chat-private',false,2097152,
   array['text/plain','application/pdf','image/jpeg','image/png','image/webp'])
-on conflict(id) do nothing;
+on conflict(id) do update set
+ public=false,
+ file_size_limit=excluded.file_size_limit,
+ allowed_mime_types=excluded.allowed_mime_types;
 create table if not exists ai_attachments (
  id uuid primary key default gen_random_uuid(),
  business_id uuid not null, owner_user_id uuid not null, thread_id uuid not null,
