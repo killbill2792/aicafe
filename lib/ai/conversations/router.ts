@@ -9,6 +9,8 @@ export type SupervisorReplyCopy = {
   estimatedNotice: string;
   todayOverview: string;
   monthOverview: string;
+  weekOverview: string;
+  periodUnavailable: string;
   sales: string;
   totalCosts: string;
   ownerProfit: string;
@@ -57,13 +59,18 @@ function replyForSlice(
 }
 
 function periodFor(text: string, state: CafeState) {
-  const q = text.toLocaleLowerCase();
-  const wantsMonth = /\b(month|monthly)\b|mes|mensual|الشهر|شهري/.test(q);
-  return {
-    from: wantsMonth ? state.period.from : state.asOf,
-    to: state.asOf,
-    today: !wantsMonth,
-  };
+  const q = text.normalize("NFKC").toLocaleLowerCase();
+  // Phase 2 does not have authoritative prior-month bill histories.
+  // Refuse historical/future requests rather than silently showing today.
+  const unsupported = /\b(yesterday|tomorrow|previous|last month|last week|prior month|next month|next week)\b|mes pasado|semana pasada|ayer|mañana|الأمس|غدا|غداً|الشهر الماضي|الأسبوع الماضي|الأسبوع السابق|الشهر السابق|\b20\d{2}[-/]\d{1,2}\b/i.test(q);
+  const wantsMonth = /\b(this month|current month|monthly|month)\b|este mes|mensual|الشهر|شهري/.test(q);
+  const wantsWeek = /\b(this week|past seven days|last seven days|7 days|week|weekly)\b|esta semana|últimos siete días|آخر سبعة أيام|هذا الأسبوع/.test(q);
+  const from = wantsMonth ? state.period.from
+    : wantsWeek ? new Date(Date.parse(state.asOf + "T12:00:00Z") - 6 * 86400000)
+      .toISOString().slice(0, 10)
+    : state.asOf;
+  return { from, to: state.asOf, label: wantsMonth ? "month" as const :
+    wantsWeek ? "week" as const : "today" as const, unsupported };
 }
 
 /** This is intentionally a finite, deterministic router, NOT a free-form LLM.
@@ -75,7 +82,13 @@ export async function answerSupervisorQuestion(
 ): Promise<GroundedSupervisorReply> {
   const intent = detectSupervisorIntent(input.text);
   const { state, tools } = input;
-  const { from, to, today } = periodFor(input.text, state);
+  const { from, to, label, unsupported } = periodFor(input.text, state);
+  if (unsupported && (intent === "profitability" || intent === "expenses")) {
+    return {
+      intent, status: "insufficient_evidence", evidence: [],
+      blocks: [{ type: "warning", code: "unsupported_period", text: copy.periodUnavailable }],
+    };
+  }
   const dates = { from, to };
   const observedAt = state.asOf;
   const source: EvidenceReference = {
@@ -87,7 +100,7 @@ export async function answerSupervisorQuestion(
     if (!result.available) return replyForSlice(intent, result, [source], [], copy);
     const data = result.value;
     return replyForSlice(intent, result, [source], [
-      { type: "text", text: today ? copy.todayOverview : copy.monthOverview },
+      { type: "text", text: label === "month" ? copy.monthOverview : label === "week" ? copy.weekOverview : copy.todayOverview },
       { type: "metric", label: copy.sales, valueCents: data.netSalesCents, source },
       { type: "metric", label: copy.totalCosts, valueCents: data.totalCostsCents, source },
       { type: "metric", label: copy.ownerProfit, valueCents: data.ownerProfitCents, source },
