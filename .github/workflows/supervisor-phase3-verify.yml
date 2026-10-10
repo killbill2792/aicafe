@@ -1,0 +1,29 @@
+name: Supervisor Phase 3 Verification
+on:
+  push:
+    branches:
+      - chatgpt/supervisor-phase3-conversations
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Dependencies
+        run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Changed-file ESLint
+        run: npx eslint 'app/api/ai/**/*.ts' 'lib/ai/conversations/**/*.ts'
+      - name: Regression tests
+        run: npm run test
+      - name: Production build
+        run: npm run build
+      - name: Diff integrity
+        run: git diff --check origin/main...HEAD
