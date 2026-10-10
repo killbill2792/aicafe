@@ -119,7 +119,7 @@ describe("Supervisor Phase 3 conversation foundation", () => {
 
   it("rejects replaying a client key against a Supervisor-authored result", async () => {
     const repo = repository();
-    repo.findMessageByKey = vi.fn(async () => ({ ...ownerMessage, role: "supervisor", contentType: "blocks" }));
+    repo.findMessageByKey = vi.fn(async () => ({ ...ownerMessage, role: "supervisor" as const, contentType: "blocks" as const }));
     await expect(new ConversationService(repo, a).addOwnerMessage(thread.id, "key1", ownerMessage.text!))
       .rejects.toBeInstanceOf(ConversationConflict);
   });
