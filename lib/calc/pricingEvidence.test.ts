@@ -85,6 +85,15 @@ describe("nearby market comparison", () => {
     expect(result.status).toBe("unavailable");
   });
 
+  it("ignores stale competitor observations", () => {
+    const result = compareNearbyMarketPrice(650, [
+      obs("A", 500, 500, "2026-06-01"),
+      obs("B", 550, 900, "2026-10-01"),
+      obs("C", 575, 1_200, "2026-10-01"),
+    ], "2026-10-08");
+    expect(result).toEqual({ status: "unavailable", verifiedNearbyCount: 2, minimumCompetitors: 3 });
+  });
+
   it("compares against the median of latest distinct nearby competitors", () => {
     const result = compareNearbyMarketPrice(650, [
       obs("A", 500, 500), obs("A", 450, 500, "2026-09-01"),

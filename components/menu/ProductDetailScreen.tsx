@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { renameProduct, setMenuItemActive, updateMenuItemPrice } from "@/lib/actions/menuItems";
 import type { IngredientOption, MenuItemForEdit } from "@/lib/data/getMenuItemsForEdit";
-import { EMPTY_MENU_PRICING_EVIDENCE, type MenuControlItem } from "@/lib/data/getMenuControlCenter";
+import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
 import type { IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 import type { MenuDetailTab } from "@/lib/viewmodels/menuDetail";
@@ -17,6 +17,11 @@ import RecipeMatrix from "./RecipeMatrix";
 import { getItemPricingStatus } from "@/lib/viewmodels/menuCatalogViewModel";
 
 type Period="today"|"days7"|"days30";
+const EMPTY_PRICE_EVIDENCE = {
+ costBenchmark: { status: "unavailable" as const },
+ salesResponse: { status: "no_change_history" as const },
+ nearbyMarket: { status: "unavailable" as const, verifiedNearbyCount: 0, minimumCompetitors: 3 },
+};
 export default function ProductDetailScreen({item,ingredients,ingredientConversions,siblingSizes,productEditItems,photo,businessId,focusedSizeId,initialTab,initialPriceItemId}:{item:MenuControlItem;ingredients:IngredientOption[];menuGroupOptions:string[];ingredientConversions:Record<string,IngredientUnitConversion[]>;siblingSizes:MenuControlItem[];productEditItems:MenuItemForEdit[];photo:ProductPhoto;businessId:string|null;focusedSizeId?:string;justCreated?:boolean;initialTab:MenuDetailTab;initialPriceItemId?:string;copiedFrom?:string}){
  const t=useTranslations("Menu");const te=useTranslations("ManageMenu");const router=useRouter();const pathname=usePathname();const statusChip=usePricingStatusChip();const all=stableSortSizes([item,...siblingSizes]);const [tab,setTab]=useState(initialTab);const [editingPriceId,setEditingPriceId]=useState<string|null>(all.some(size=>size.id===initialPriceItemId)?initialPriceItemId??null:null);const [renaming,setRenaming]=useState(false);const [name,setName]=useState(item.baseName);const [pending,start]=useTransition();const [error,setError]=useState<string|null>(null);const productActive=all.some(size=>size.active);
  function navigate(next:MenuDetailTab,size?:string){setTab(next);router.replace(`${pathname}?tab=${next}${size?`&size=${encodeURIComponent(size)}`:""}`,{scroll:false});}
@@ -60,7 +65,7 @@ function PriceEvidencePanel({
  t:ReturnType<typeof useTranslations<"Menu">>;
  format:ReturnType<typeof useFormatter>;
 }){
- const evidence=size.pricingEvidence ?? EMPTY_MENU_PRICING_EVIDENCE;
+ const evidence=size.pricingEvidence ?? EMPTY_PRICE_EVIDENCE;
  const cost=evidence.costBenchmark;
  const sales=evidence.salesResponse;
  const market=evidence.nearbyMarket;
