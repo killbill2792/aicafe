@@ -169,7 +169,7 @@ export default function SupervisorChatComposer({
       dispatchDictation({ type: "reset" });
     }
   }, [enabled]);
-  useEffect(() => { onActivityChange?.(messages.length > 0); }, [messages.length, onActivityChange]);
+  useEffect(() => { onActivityChange?.(messages.length > 0 || sending); }, [messages.length, sending, onActivityChange]);
   useEffect(() => {
     if (!historyOpen) return;
     const keydown = (event: globalThis.KeyboardEvent) => {
@@ -183,7 +183,7 @@ export default function SupervisorChatComposer({
     const controller = new AbortController();
     void fetch("/api/ai/threads", { signal: controller.signal, cache: "no-store" })
       .then((res) => jsonFrom<ConversationPage<ConversationThread>>(res))
-      .then((page) => { if (!controller.signal.aborted) setThreads(page.items); })
+      .then((page) => { if (!controller.signal.aborted) { setThreads(page.items); if (page.items.length) setThreadId((current) => current ?? page.items[0].id); } })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled]);
