@@ -33,6 +33,16 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     }
   });
 
+  it("reconciles prorated expense lines to the exact running-cost aggregate", () => {
+    const state = cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-09" });
+    expect(state.expenses.available).toBe(true);
+    if (state.expenses.available) {
+      const sum = state.expenses.value.reduce((total, line) => total + line.amountCents, 0);
+      expect(sum).toBe(32_000);
+      expect(state.expenses.value.find((line) => line.categoryCode === "rent")?.amountCents).toBe(20_000);
+    }
+  });
+
   it("does not treat uncovered sales dates as zero sales or a verified profit", () => {
     const snapshot = { ...fixture, monthActualDays: fixture.monthActualDays.slice(0, 8) };
     const state = cafeStateFromSnapshot(snapshot);
