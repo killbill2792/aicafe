@@ -999,7 +999,15 @@
     "homePriceReviewLater": "Price review for {item} scheduled for later.",
     "homeSupplyNeedsResponse": "Supply check needs a response: {item}.",
     "homeSupplies": "supplies",
-    "teamRulesLink": "Team rules"
+    "teamRulesLink": "Team rules",
+    "whatsAppAlertsTitle": "WhatsApp Team alerts",
+    "whatsAppAlertsDescription": "Optional once-daily alert for one unresolved Team task. Only an owner with a verified phone can opt in. Actual sending also requires a configured WhatsApp provider.",
+    "whatsAppAlertsEnable": "Opt in to alerts",
+    "whatsAppAlertsDisable": "Turn alerts off",
+    "whatsAppAlertsLoading": "Updating…",
+    "whatsAppAlertsSaved": "Preference saved.",
+    "whatsAppAlertsError": "Unable to save your preference.",
+    "whatsAppAlertsPhone": "Verify your phone number in your account first."
   },
   "CafeProfile": {
     "title": "Café profile",
