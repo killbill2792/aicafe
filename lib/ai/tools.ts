@@ -4,6 +4,7 @@ import type { DecisionStore } from "@/lib/operating/decisions";
 import type { OperatingTask } from "@/lib/operating/tasks";
 import type { MenuItemSnapshot, RunningCostLine } from "@/lib/data/types";
 import type { DailyFacts, PricingResult, DataQuality } from "@/lib/calc";
+import type { MonthlyBills, RecordedExpenses, SoldProduct } from "./supervisorFacts.server";
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
@@ -14,6 +15,9 @@ export interface CafeToolset {
   getPricingRecommendation(businessId: string, productId: string): Promise<KnownSlice<PricingResult>>;
   getExpenseSummary(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RunningCostLine[]>>;
   /** No comparable previous expense history is wired yet. Do not invent a change. */
+  getMonthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>>;
+  getRecordedExpenses(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RecordedExpenses>>;
+  getProductSales(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<SoldProduct[]>>;
   getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>>;
   getLaborMetrics(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafeLaborDay[]>>;
   getInventoryStatus(businessId: string): Promise<KnownSlice<never>>;
@@ -45,6 +49,11 @@ export class StructuredCafeTools implements CafeToolset {
     private decisions: DecisionStore,
     private signalReader: (businessId: string) => Promise<CafeSignal[]>,
     private taskReader?: (businessId: string) => Promise<OperatingTask[]>,
+    private factReaders?: {
+      monthlyBills: CafeToolset["getMonthlyBills"];
+      recordedExpenses: CafeToolset["getRecordedExpenses"];
+      productSales: CafeToolset["getProductSales"];
+    },
   ) {}
 
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
@@ -77,6 +86,15 @@ export class StructuredCafeTools implements CafeToolset {
   }
   async getExpenseSummary(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RunningCostLine[]>> {
     return (await this.states.getHistoricalState(businessId, period)).expenses;
+  }
+  getMonthlyBills(businessId: string) {
+    return this.factReaders?.monthlyBills(businessId) ?? Promise.resolve(missing<MonthlyBills>("recurringBills"));
+  }
+  getRecordedExpenses(businessId: string, period: CafeStatePeriod) {
+    return this.factReaders?.recordedExpenses(businessId, period) ?? Promise.resolve(missing<RecordedExpenses>("actualExpenseEntries"));
+  }
+  getProductSales(businessId: string, period: CafeStatePeriod) {
+    return this.factReaders?.productSales(businessId, period) ?? Promise.resolve(missing<SoldProduct[]>("itemSalesCoverage"));
   }
   async getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>> {
     const current = await this.states.getHistoricalState(businessId, period);
@@ -131,6 +149,9 @@ export class BusinessScopedCafeTools {
   getSalesTrend(period: CafeStatePeriod) { return this.tools.getSalesTrend(this.businessId, period); }
   getPricingRecommendation(productId: string) { return this.tools.getPricingRecommendation(this.businessId, productId); }
   getExpenseSummary(period: CafeStatePeriod) { return this.tools.getExpenseSummary(this.businessId, period); }
+  getMonthlyBills() { return this.tools.getMonthlyBills(this.businessId); }
+  getRecordedExpenses(period: CafeStatePeriod) { return this.tools.getRecordedExpenses(this.businessId, period); }
+  getProductSales(period: CafeStatePeriod) { return this.tools.getProductSales(this.businessId, period); }
   getExpenseChanges(period: CafeStatePeriod) { return this.tools.getExpenseChanges(this.businessId, period); }
   getLaborMetrics(period: CafeStatePeriod) { return this.tools.getLaborMetrics(this.businessId, period); }
   getInventoryStatus() { return this.tools.getInventoryStatus(this.businessId); }
