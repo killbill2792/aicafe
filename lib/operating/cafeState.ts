@@ -90,7 +90,7 @@ function supportedPeriod(snapshot: BusinessSnapshot, period: CafeStatePeriod): b
     period.to.slice(0, 7) === snapshot.monthKey;
 }
 
-/** 
+/**
  * Projects the SAME deterministic facts as Home and Money. There is no new pricing,
  * cost calculation, or inferred demand here. All unsupported facts fail closed.
  */
