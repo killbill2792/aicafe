@@ -82,8 +82,9 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
       ]);
       if (items.error) throw items.error;
       if (quantities.error) throw quantities.error;
-      const byId = new Map((quantities.data ?? []).map((row) =>
-        [row.menu_item_id, Number(row.total_quantity)] as const));
+      const quantityRows = (quantities.data ?? []) as Array<{ menu_item_id: string; total_quantity: number | string }>;
+      const byId = new Map<string, number>(quantityRows.map((row) =>
+        [row.menu_item_id, Number(row.total_quantity)]));
       // Preserve archived products, as historic sales can include inactive menu items.
       return known((items.data ?? []).map((item) => ({
         id: item.id, name: item.name,
