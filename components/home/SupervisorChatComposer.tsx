@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, Check, AlertCircle, Paperclip, LoaderCircle, ChevronDown } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
@@ -179,6 +179,8 @@ export default function SupervisorChatComposer({
   const recordingStream = useRef<MediaStream | null>(null);
   const audioChunks = useRef<Blob[]>([]);
   const recordingStartedAt = useRef(0);
+  const recordingGeneration = useRef(0);
+  const requestingMicrophone = useRef(false);
   const recordingLimit = useRef<ReturnType<typeof setTimeout> | null>(null);
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
@@ -188,6 +190,8 @@ export default function SupervisorChatComposer({
   const threadRequestId = useRef<string | null>(null);
 
   function cleanupRecording() {
+    recordingGeneration.current++;
+    requestingMicrophone.current = false;
     const active = recorder.current;
     recorder.current = null;
     if (active) {
@@ -201,6 +205,7 @@ export default function SupervisorChatComposer({
     recordingLimit.current = null;
   }
   useEffect(() => () => {
+    recordingGeneration.current++;
     const active = recorder.current;
     if (active) {
       active.onstop = null;
@@ -211,6 +216,7 @@ export default function SupervisorChatComposer({
   }, []);
   useEffect(() => {
     if (!enabled) {
+      recordingGeneration.current++;
       const active = recorder.current;
       if (active) {
         active.onstop = null;
@@ -365,7 +371,7 @@ export default function SupervisorChatComposer({
     retryId.current = null; threadRequestId.current = null;
     composer.current?.focus();
   }
-  async function transcribeAudio(blob: Blob, durationSeconds: number) {
+  async function transcribeAudio(blob: Blob, durationSeconds: number, generation: number) {
     try {
       const extension = blob.type.startsWith("audio/mp4") ? "mp4" :
         blob.type.startsWith("audio/ogg") ? "ogg" : "webm";
@@ -375,6 +381,7 @@ export default function SupervisorChatComposer({
       const response = await jsonFrom<{ text: string }>(await fetch("/api/ai/transcribe", {
         method: "POST", credentials: "same-origin", body,
       }));
+      if (recordingGeneration.current !== generation) return;
       const heard = response.text.trim();
       if (!heard) throw new Error("empty_transcript");
       setDraft((current) => ((current.trim() ? current.trimEnd() + " " : "") + heard).slice(0, 4000));
@@ -382,7 +389,9 @@ export default function SupervisorChatComposer({
       dispatchDictation({ type: "result" }); setMediaNotice(copy.voiceReview);
       composer.current?.focus();
     } catch {
-      dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError);
+      if (recordingGeneration.current === generation) {
+        dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError);
+      }
     }
   }
   function stopRecording() {
@@ -395,12 +404,18 @@ export default function SupervisorChatComposer({
   async function listen() {
     if (!enabled || sending || uploading || dictation === "recognizing") return;
     if (recorder.current) { stopRecording(); return; }
+    if (requestingMicrophone.current) return;
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceUnavailable); return;
     }
     let stream: MediaStream | null = null;
+    requestingMicrophone.current = true;
+    const generation = ++recordingGeneration.current;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (generation !== recordingGeneration.current) {
+        stream.getTracks().forEach((track) => track.stop()); return;
+      }
       const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]
         .find((candidate) => MediaRecorder.isTypeSupported(candidate));
       if (!mimeType) throw new Error("unsupported_audio");
@@ -421,15 +436,19 @@ export default function SupervisorChatComposer({
         if (blob.size === 0 || blob.size > 8 * 1024 * 1024) {
           dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); return;
         }
-        void transcribeAudio(blob, durationSeconds);
+        void transcribeAudio(blob, durationSeconds, generation);
       };
       active.start(250);
       dispatchDictation({ type: "start" }); setMediaNotice("");
       recordingLimit.current = setTimeout(() => stopRecording(), 45_000);
     } catch {
       stream?.getTracks().forEach((track) => track.stop());
-      cleanupRecording();
-      dispatchDictation({ type: "error" }); setMediaNotice(copy.voicePermissionDenied);
+      if (generation === recordingGeneration.current) {
+        cleanupRecording();
+        dispatchDictation({ type: "error" }); setMediaNotice(copy.voicePermissionDenied);
+      }
+    } finally {
+      requestingMicrophone.current = false;
     }
   }
   async function attach(event: ChangeEvent<HTMLInputElement>) {
@@ -551,7 +570,7 @@ export default function SupervisorChatComposer({
               onChange={(event) => void attach(event)} />
             <button type="button" onClick={() => filePicker.current?.click()}
               aria-label={copy.addAttachment} title={copy.addAttachment}
-              disabled={!enabled || sending || uploading || dictation === "listening"}
+              disabled={!enabled || sending || uploading || dictation === "listening" || dictation === "recognizing"}
               className="flex h-12 w-12 items-center justify-center rounded-full text-ink-muted hover:bg-[#F2EBE0] disabled:opacity-50">
               <Plus size={23} aria-hidden="true" />
             </button>
