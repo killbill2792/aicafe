@@ -1,0 +1,23 @@
+name: Phase 7 Proactive Team Verification
+on:
+  push:
+    branches: [chatgpt/supervisor-phase7-team-alerts-whatsapp]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-node@v4
+        with: {node-version: 22, cache: npm}
+      - run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: ESLint
+        run: npx eslint 'app/[locale]/operations/page.tsx' app/api/ai/notifications/route.ts app/api/cron/team-alerts/route.ts components/operations/OwnerWhatsAppAlerts.tsx 'lib/ai/notifications/**/*.ts'
+      - name: Tests
+        run: npm test
+      - name: Build
+        run: npm run build
+      - name: Diff
+        run: git diff --check origin/main...HEAD
