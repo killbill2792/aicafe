@@ -1,5 +1,16 @@
 # Progress
 
+## Supervisor Experience: Responses API & full chat — 2026-10-10
+
+- Confirmed merged main at 18ed4486 (prior PR #43 merged), isolated feature branch.
+- Removed the regex-first Supervisor router. Added strict OpenAI Responses function planner and allow-listed, typed, authenticated, evidence-validated executor; no AI math or business writes.
+- Expanded per-owner modern conversation with History drawer, first-question titles, dynamic hero, private attachments, task cards and explicit dictation states; EN/ES/AR.
+- Added additive migration 38 for owner/café scoped token usage and optional configured USD micros (not applied). New owner-only usage endpoint, preflight checks for provider key and telemetry schema.
+- Added exact failure-question regression, cross-tool evidence cases, planner allow-list tests, UI shell and voice-no-autosend checks. Full CI in .github/workflows/supervisor-experience-verify.yml.
+- Deployment: review/apply SQL in staging, configure server-only OpenAI key and token rates, run live tenant/RLS/browser tests and Vercel preview; **no automatic merge**.
+- Detailed handoff: docs/supervisor-experience-responses.md.
+
+
 ## Supervisor financial accuracy, sales intelligence and dictation UX (2026-10-10 — PR review)
 
 - Start at merge commit 63bf783 (PR #41 already merged); preserve backend gating, RLS and immutable replies.
