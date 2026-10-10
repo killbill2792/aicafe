@@ -26,6 +26,7 @@ export function assessGrounding(
   );
   const missingInputs = [
     ...(slice?.quality.missingInputs ?? ["unavailableToolResult"]),
+    ...(slice?.quality.staleInputs ?? []).map((input) => "stale:" + input),
     ...(!slice?.available ? ["unavailableToolResult"] : []),
     ...(validEvidence.length === 0 ? ["missingEvidenceReferences"] : []),
   ];
