@@ -13,7 +13,7 @@ export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string;
   comingSoon: string; suggestions: string[];
   live: string; threads: string; newThread: string; empty: string; loading: string; sending: string;
-  retry: string; unavailable: string; more: string; you: string; supervisor: string; source: string;
+  retry: string; unavailable: string; more: string; you: string; supervisor: string; source: string; sourceCafe: string; sourcePricing: string; sourceTasks: string; sourceRules: string; sourceVerified: string;
   listening: string; voiceReview: string; voiceUnavailable: string; voiceStop: string;
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
   voiceError: string; voiceCanceled: string;
