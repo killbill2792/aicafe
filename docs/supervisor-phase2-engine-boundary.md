@@ -26,6 +26,7 @@ The data/decision client stays inside the authenticated server composition. Do n
 | `getExpenseChanges` | Not yet connected to matched prior-period expense history | Unavailable (`previousExpenseHistory`) rather than falsely showing current bills as a change |
 | `getLaborMetrics` | Existing daily rollups including staff-only dates | Loaded wages/taxes only; estimated taxes flagged |
 | `getInventoryStatus` | No verified inventory quantities | Unavailable; never infer in-stock/low-stock |
+| `getTeamTasks` | Read-only query of existing RLS-scoped `operating_tasks` | Preserves persisted Needs You / Handled / Watching states and task evidence; never syncs or changes status |
 | `getActiveSignals` | Existing deterministic pricing signal calculation | Raw evidence signals, not owner-actionable persisted task statuses |
 | `getDecisionHistory` | Existing RLS-scoped `cafe_decisions` | Read-only; rejects any returned cross-business record |
 
@@ -35,7 +36,7 @@ The data/decision client stays inside the authenticated server composition. Do n
 - Missing sales days are not assumed to be zero-sales days. A partial observed sales slice may exist, but verified profitability and sales trends are unavailable until coverage is complete.
 - Pricing cannot be treated as a historical observation when querying prior periods; it is loaded only in current state.
 - Explicit missing card fees, missing expected recurring costs, and sold products without a resolved cost prevent a verified profitability result. Positive estimated costs, processing fees, payroll taxes, and estimated product costs remain labeled in `quality.estimatedInputs`.
-- No data is written, no price is applied to POS, and no conversation, autonomous worker action, proactive task mutation, AI model call, or new Supabase migration is introduced in Phase 2.
+- No data is written by these read tools, no price is applied to POS, and no conversation, autonomous worker action, proactive task mutation, AI model call, or new Supabase migration is introduced in Phase 2.
 - The existing persisted operating-task lifecycle is **separate** from raw deterministic signals. Future phases must retrieve actionable Needs You / Handled / Watching through that same task system; do not create a second inbox.
 
 ## Next phase
