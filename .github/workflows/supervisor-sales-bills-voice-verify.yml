@@ -1,0 +1,25 @@
+name: Supervisor Sales Bills Dictation Verification
+on:
+  push:
+    branches:
+      - chatgpt/supervisor-fix-sales-bills-dictation
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install
+        run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Changed-file ESLint
+        run: npx eslint 'app/[locale]/page.tsx' 'app/api/ai/threads/[threadId]/messages/route.ts' 'components/home/SupervisorChatComposer.tsx' 'lib/ai/cafeTools.server.ts' 'lib/ai/tools.ts' 'lib/ai/conversations/router.ts' 'lib/ai/conversations/router.test.ts' 'lib/ai/conversations/contracts.ts' 'lib/ai/conversations/replyValidation.ts' 'lib/ai/conversations/speechResults.ts' 'lib/ai/conversations/speechResults.test.ts'
+      - name: Full tests
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Diff
+        run: git diff --check origin/main...HEAD
