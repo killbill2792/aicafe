@@ -22,6 +22,8 @@ export type SupervisorChatCopy = {
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
+  usageHeading: string; usageRequests: string; usageTokens: string;
+  usageEstimate: string; usageCostUnknown: string;
 };
 type Locale = "en" | "es" | "ar";
 type SpeechRecognizer = {
@@ -126,6 +128,10 @@ export default function SupervisorChatComposer({
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [usage, setUsage] = useState<{
+    requests: number; inputTokens: number; outputTokens: number;
+    estimatedCostMicros: number | null;
+  } | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -170,6 +176,16 @@ export default function SupervisorChatComposer({
     }
   }, [enabled]);
   useEffect(() => { onActivityChange?.(messages.length > 0 || sending); }, [messages.length, sending, onActivityChange]);
+  useEffect(() => {
+    if (!historyOpen || !enabled) return;
+    const controller = new AbortController();
+    void fetch("/api/ai/usage", { signal: controller.signal, cache: "no-store" })
+      .then((res) => jsonFrom<{ requests: number; inputTokens: number;
+        outputTokens: number; estimatedCostMicros: number | null }>(res))
+      .then((data) => { if (!controller.signal.aborted) setUsage(data); })
+      .catch(() => { if (!controller.signal.aborted) setUsage(null); });
+    return () => controller.abort();
+  }, [enabled, historyOpen]);
   useEffect(() => {
     if (!historyOpen) return;
     const keydown = (event: globalThis.KeyboardEvent) => {
@@ -503,6 +519,15 @@ export default function SupervisorChatComposer({
             </span>
           </button>)}
         </div>
+        {usage && <div className="border-t border-[#E1D4C2] p-4 text-[15px] text-ink-muted">
+          <p className="mb-2 font-bold text-ink">{copy.usageHeading}</p>
+          <p>{copy.usageRequests}: {new Intl.NumberFormat(locale).format(usage.requests)}</p>
+          <p>{copy.usageTokens}: {new Intl.NumberFormat(locale).format(usage.inputTokens + usage.outputTokens)}</p>
+          <p>{copy.usageEstimate}: {usage.estimatedCostMicros === null
+            ? copy.usageCostUnknown
+            : new Intl.NumberFormat(locale, { style: "currency", currency: "USD",
+              minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(usage.estimatedCostMicros / 1_000_000)}</p>
+        </div>}
       </aside>
     </div>}
   </section>;
