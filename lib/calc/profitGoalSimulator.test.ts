@@ -14,7 +14,7 @@ const item = {
   name: "Example",
   currentPriceCents: 2_300,
   productCostCents: 600,
-  recipeStatus: "READY" as const,
+  productCostStatus: "READY" as const,
   unitsSoldInWindow: 50,
 };
 

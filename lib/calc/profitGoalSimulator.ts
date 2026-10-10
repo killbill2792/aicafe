@@ -8,7 +8,7 @@ export type ProfitGoalSimulationItemInput = {
   name: string;
   currentPriceCents: number;
   productCostCents: number;
-  recipeStatus: RecipeCostStatus;
+  productCostStatus: RecipeCostStatus;
   unitsSoldInWindow: number;
 };
 
@@ -78,7 +78,7 @@ export function simulateProfitGoal(params: {
   const requiredPriceIncreasePercent = (revenueMultiplier - 1) * 100;
 
   const simulatedItems = items.map((item): ProfitGoalSimulationItem => {
-    const productCostCents = item.recipeStatus === "READY" && item.productCostCents > 0 ? item.productCostCents : null;
+    const productCostCents = item.productCostStatus === "READY" && item.productCostCents > 0 ? item.productCostCents : null;
     const productCostPercent =
       productCostCents !== null && item.currentPriceCents > 0 ? productCostCents / item.currentPriceCents : null;
 
