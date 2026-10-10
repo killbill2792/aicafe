@@ -1,5 +1,5 @@
 import { authenticatedConversationService } from "@/lib/ai/conversations/auth.server";
-import { addOwnerMessageInput, messagePageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
+import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ export async function GET(request: Request, context: RouteContext) {
     const { threadId } = await context.params;
     const id = parseInput(threadIdInput, threadId);
     const query = new URL(request.url).searchParams;
-    const page = parseInput(messagePageInput, { offset: query.get("offset") ?? undefined });
+    const page = parseInput(pageInput, { offset: query.get("offset") ?? undefined });
     const service = await authenticatedConversationService();
     const messages = await service.listMessages(id, page.offset);
     return conversationJson(messages);
