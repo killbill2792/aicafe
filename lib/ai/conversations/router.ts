@@ -25,6 +25,8 @@ export type SupervisorReplyCopy = {
   fullMonthlyBills: string;
   operatingCostsSoFar: string;
   operatingCostsUnavailable: string;
+  productUnits: string;
+  itemSalesUnavailable: string;
   drinkUnits: string;
   recordedOrders: string;
   productSalesIntro: string;
@@ -166,10 +168,23 @@ export async function answerSupervisorQuestion(
     };
     const uniqueDays = new Set(observed.map(day => day.date)).size;
     const partial = uniqueDays !== expected;
+    const items = await tools.getItemUnitsSold({ from: start, to: state.asOf });
+    const itemSource: EvidenceReference = {
+      source: "cafe_state", identifier: "menu-item-units:" + start + ":" + state.asOf,
+      asOf: state.asOf,
+    };
+    const itemAvailable = items.available && items.quality.missingInputs.length === 0 &&
+      items.quality.staleInputs.length === 0;
+    const evidence = itemAvailable ? [salesSource, itemSource] : [salesSource];
     return {
-      intent, status: "verified", evidence: [salesSource],
+      intent, status: "verified", evidence,
       blocks: [
         { type: "text", text: copy.productSalesIntro },
+        ...(itemAvailable ? [{
+          type: "count" as const, label: copy.productUnits, value: items.value.units,
+          source: itemSource,
+        }] : [{ type: "warning" as const, code: "itemized_sales_unavailable",
+          text: copy.itemSalesUnavailable }]),
         { type: "count", label: copy.drinkUnits,
           value: observed.reduce((sum, day) => sum + day.drinksCount, 0), source: salesSource },
         { type: "count", label: copy.recordedOrders,
