@@ -2352,3 +2352,14 @@ Phase 3 implementation / verification:
 - [x] Temporary branch-only verification workflow removed after checks; the PostgreSQL smoke test script remains available for future execution.
 - [ ] Before activating this PR in production, review/reconcile migration history and apply migration 33 deliberately (do not blanket `supabase db push`). Staging Supabase end-to-end session tests should supplement disposable-Postgres RLS tests.
 - [ ] Phase 4 implements grounded tool routing, structured Supervisor replies, safe authorized response persistence and finally enables the Home Ask anything UI after successful end-to-end checks.
+
+## Supervisor Phase 4 — grounded read-only conversation (2026-10-10, in progress)
+
+Starting point: PR #35 is merged at b160197. Production migration #33 may have been applied manually; deployment history must be reconciled and authenticated staging tested. No further production SQL push in this phase.
+
+Plan:
+1. Reuse the authenticated, owner-scoped Phase 3 message flow and Phase 2 café tools. Add deterministic, allow-listed intent selection for overview/profit, Team tasks, staff, menu price review and bill summaries. Unknown requests must say they are unsupported; never route arbitrary model-suggested tools.
+2. For every answer, require real per-business evidence (existing profit engine, pricing engine, or persisted operating_tasks), classify verified vs estimated vs insufficient, and return typed structured reply blocks. Money always remains integer cents from trusted tools.
+3. Store Supervisor blocks via an audited privileged **server-only writer** bound to a previously authenticated owner message, with deterministic idempotency; never expose an insert-Supervisor endpoint or permit client-selected business/user/role/evidence.
+4. Enable the Home text composer, suggestion chips and persisted chat history behind `SUPERVISOR_CHAT_ENABLED=true` plus configured service role and authenticated session. Keep +, microphone and WhatsApp disabled until their real workflows are available. EN/ES/AR and accessible controls. No fake replies.
+5. Keep read-only: no price updates, task status changes, POS writes, new tables, or calculations. Add router, idempotency, fail-closed, data quality and tenant-isolation tests; run build/CI and open an unmerged PR.
