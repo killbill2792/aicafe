@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 
-const period = z.enum(["today", "month_to_date", "last_seven_days", "last_28_days"]);
+const period = z.enum(["today", "month_to_date", "last_seven_days", "last_28_days", "yesterday", "previous_month", "other_period"]);
 const financeMetric = z.enum(["monthly_bills", "accrued_fixed_bills", "recorded_spending", "total_business_costs", "owner_profit", "sales_revenue", "overview"]);
 const salesMetric = z.enum(["product_units", "drinks", "orders", "distinct_products", "best_seller", "least_seller", "named_product_units", "sales_revenue"]);
 const agent = z.enum(["all", "supervisor", "alex", "olivia", "maya", "leo"]);
@@ -90,7 +90,7 @@ export async function planSupervisorQuestion(input: {
     "for 'spent this month' use recorded_spending and for 'fixed bills accrued' use accrued_fixed_bills.",
     "For product quantities choose read_sales/product_units, NEVER revenue or order count.",
     "For general 'how are my sales doing' use sales_revenue.",
-    "Historic periods beyond loaded dates are allowed as tool arguments but may fail closed.",
+    "For yesterday choose yesterday, for last month choose previous_month, and for any other unrepresented dates choose other_period. Never relabel historic periods as current.",
     "Use clarify only for unrelated requests or genuinely unresolved ambiguity.",
     "The data tool is authoritative and may return unavailable.",
     "The output MUST be a function call, never a free-form answer.",
