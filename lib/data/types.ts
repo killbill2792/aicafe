@@ -31,7 +31,8 @@ export type MenuItemSnapshot = {
   priceCents: number;
   prepSeconds: number;
   category: "drink" | "food";
-  /** Theoretical ingredient cost at today's ingredient prices. */
+  active?: boolean;
+  /** Resolved ingredient/product cost at today's known prices. */
   ingredientsCentsToday: number;
   /** False when there's no recipe yet, or the recipe exists but nothing on it has a priced cost —
    * ingredientsCentsToday is 0 in both cases, not because the drink is actually free to make, so
@@ -43,6 +44,7 @@ export type MenuItemSnapshot = {
   recipeCostStatus?: "READY" | "NO_RECIPE" | "MISSING_INGREDIENT_COST";
   ownerTotalCostCents?: number | null;
   costDifferenceCents?: number | null;
+  costQuality?: "actual" | "estimated" | null;
   quantitySoldLast28Days: number;
 };
 
@@ -83,6 +85,8 @@ export type BusinessSnapshot = {
   runningCostLines: RunningCostLine[];
   recoveryOrder: string[];
   menuItems: MenuItemSnapshot[];
+  /** Every menu item sold in the current 28-day break-even window, including archived items. */
+  breakEvenProductCosts?: MenuItemSnapshot[];
   /** M7 wires real alert generation; both snapshot sources report zero until then. */
   alerts: { count: number; leakingCents: number };
   /** All of today's timecard rows (open and already-clocked-out), for the Staff screen. */

@@ -60,6 +60,7 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
     !current
       ? "missing" as const
       : pricing.business.processingFeesStatus === "estimated" ||
+          pricing.business.productCostsStatus === "estimated" ||
           pricing.business.payrollCostsStatus === "estimated" ||
           pricing.business.operatingCostsStatus === "estimated"
         ? "estimated" as const

@@ -62,12 +62,13 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const salesHistory = snapshot.last28Days;
   const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
-  const missingProductCosts = snapshot.menuItems.some(
+  const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
+  const missingProductCosts = breakEvenCostItems.some(
     (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
   );
   // Use the same resolved sold-item cost as Menu/Pricing/Simulator. Recipe-only rollups would
   // undercount a café that legitimately uses an owner-total fallback.
-  const observedIngredientCents = Math.round(snapshot.menuItems.reduce(
+  const observedIngredientCents = Math.round(breakEvenCostItems.reduce(
     (sum, item) => sum + (item.costStatus === "READY" ? item.ingredientsCentsToday * item.quantitySoldLast28Days : 0),
     0,
   ));
@@ -104,7 +105,8 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     todayDay < snapshot.daysInMonth ||
     snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
     monthRecordedDays.some((day) => day.staffTaxStatus === "estimated") ||
-    salesHistory.some((day) => day.cardFeesStatus === "estimated");
+    salesHistory.some((day) => day.cardFeesStatus === "estimated") ||
+    breakEvenCostItems.some((item) => item.quantitySoldLast28Days > 0 && item.costQuality === "estimated");
 
   return {
     buckets: recovery.buckets,

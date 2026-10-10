@@ -20,6 +20,7 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
       ],
       businessEconomicsEstimatedInputs: [
         ...(input.business.processingFeesStatus === "estimated" ? ["processingFees"] : []),
+        ...(input.business.productCostsStatus === "estimated" ? ["productCosts"] : []),
         ...(input.business.payrollCostsStatus !== "actual" || input.business.payrollTaxRateStatus !== "confirmed" ? ["payrollBurden"] : []),
         ...(input.business.operatingCostsStatus === "estimated" ? ["operatingCosts"] : []),
       ] }) };

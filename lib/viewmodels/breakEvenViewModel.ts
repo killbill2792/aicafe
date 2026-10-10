@@ -22,10 +22,11 @@ const GALLON_ML = 3_785;
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const days = snapshot.last28Days;
   const netSales = sumCents(days, (d) => d.netSalesCents);
-  const missingProductCosts = snapshot.menuItems.some(
+  const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
+  const missingProductCosts = breakEvenCostItems.some(
     (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
   );
-  const ingredients = Math.round(snapshot.menuItems.reduce(
+  const ingredients = Math.round(breakEvenCostItems.reduce(
     (sum, item) => sum + (item.costStatus === "READY" ? item.ingredientsCentsToday * item.quantitySoldLast28Days : 0),
     0,
   ));
