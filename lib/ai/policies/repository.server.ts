@@ -52,6 +52,14 @@ export class SupabaseTeamRulesRepository implements TeamRulesRepository {
       nextOffset: rows.length > RULE_PAGE_SIZE ? offset + RULE_PAGE_SIZE : null };
   }
 
+  async listActiveRules(scope: PolicyScope): Promise<TeamRule[]> {
+    const { data, error } = await this.client.from("ai_team_rules").select(COLUMNS)
+      .eq("business_id", scope.businessId).eq("status", "active")
+      .order("created_at", { ascending: false }).limit(20);
+    if (error) throw error;
+    return (data as RuleRow[]).map(toRule);
+  }
+
   async findRule(scope: PolicyScope, id: string): Promise<TeamRule | null> {
     const { data, error } = await this.client.from("ai_team_rules").select(COLUMNS)
       .eq("id", id).eq("business_id", scope.businessId).maybeSingle();
