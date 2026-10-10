@@ -95,6 +95,21 @@ describe("StructuredCafeTools read-only evidence boundary", () => {
     expect(getPricingRecommendation).toHaveBeenCalledWith("fixture-a", "latte");
   });
 
+  it("binds recurring bills, recorded spending and item sales to the authenticated café", async () => {
+    const getMonthlyBills = vi.fn(async (business: string) => business);
+    const getRecordedExpenses = vi.fn(async (business: string) => business);
+    const getProductSales = vi.fn(async (business: string) => business);
+    const scoped = new BusinessScopedCafeTools({
+      getMonthlyBills, getRecordedExpenses, getProductSales,
+    } as unknown as StructuredCafeTools, "fixture-a");
+    await scoped.getMonthlyBills();
+    await scoped.getRecordedExpenses(period);
+    await scoped.getProductSales(period);
+    expect(getMonthlyBills).toHaveBeenCalledWith("fixture-a");
+    expect(getRecordedExpenses).toHaveBeenCalledWith("fixture-a", period);
+    expect(getProductSales).toHaveBeenCalledWith("fixture-a", period);
+  });
+
   it("never presents raw pricing signals as completed team tasks", async () => {
     const withoutReader = await makeTools().getTeamTasks("fixture-a");
     expect(withoutReader.available).toBe(false);
