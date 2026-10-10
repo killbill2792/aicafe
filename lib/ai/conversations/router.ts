@@ -137,6 +137,7 @@ export async function answerSupervisorQuestion(
       price.status === "REVIEW_PRICE" && price.recommendedPriceCents !== null &&
       price.recommendedPriceCents > 0 && price.dataQuality.missingInputs.length === 0,
     );
+    const evidence: EvidenceReference[] = [ref];
     const blocks: SupervisorReplyBlock[] = [{
       type: "text",
       text: recommended.length === 0 ? copy.pricingNone : copy.pricingIntro,
@@ -144,10 +145,13 @@ export async function answerSupervisorQuestion(
     for (const [id, price] of recommended.slice(0, 3)) {
       const item = state.products.available ? state.products.value.find((p) => p.id === id) : null;
       if (!item || price.recommendedPriceCents === null) continue;
+      const itemSource: EvidenceReference = {
+        source: "pricing_engine", identifier: "product:" + id, asOf: observedAt,
+      };
+      evidence.push(itemSource);
       blocks.push({
         type: "metric", label: copy.priceLabel(item.name),
-        valueCents: price.recommendedPriceCents,
-        source: { source: "pricing_engine", identifier: "product:" + id, asOf: observedAt },
+        valueCents: price.recommendedPriceCents, source: itemSource,
       });
     }
     if (recommended.length) blocks.push({
@@ -165,7 +169,7 @@ export async function answerSupervisorQuestion(
         staleInputs: [] as string[],
       },
     };
-    return replyForSlice(intent, evidenceQuality, [ref], blocks, copy);
+    return replyForSlice(intent, evidenceQuality, evidence, blocks, copy);
   }
 
   return {
