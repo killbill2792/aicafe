@@ -63,7 +63,10 @@ export type SupervisorReplyBlock =
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
   | { type: "count"; label: string; value: number; source: EvidenceReference }
-  | { type: "task_status"; taskId: string; status: string; source: EvidenceReference };
+  | { type: "task_status"; taskId: string; status: string; source: EvidenceReference }
+  | { type: "task_card"; taskId: string; agent: "alex" | "olivia" | "maya" | "leo";
+      title: string; status: "needs_owner" | "needs_response" | "watching" | "handled" | "expired";
+      href: string; source: EvidenceReference };
 
 export type GroundedSupervisorReply = {
   intent: SupervisorIntent;
@@ -94,6 +97,15 @@ const countBlockSchema = z.strictObject({
   type: z.literal("count"), label: z.string().min(1).max(140),
   value: z.number().int().nonnegative().safe(), source: evidenceReferenceSchema,
 });
+const taskCardBlockSchema = z.strictObject({
+  type: z.literal("task_card"),
+  taskId: z.string().min(1).max(200),
+  agent: z.enum(["alex", "olivia", "maya", "leo"]),
+  title: z.string().min(1).max(160),
+  status: z.enum(["needs_owner", "needs_response", "watching", "handled", "expired"]),
+  href: z.string().max(160).refine((s) => s.startsWith("/operations") && !s.startsWith("//")),
+  source: evidenceReferenceSchema,
+});
 const taskBlockSchema = z.strictObject({
   type: z.literal("task_status"), taskId: z.string().min(1).max(200),
   status: z.enum(["needs_owner", "needs_response", "watching", "handled", "expired"]),
@@ -105,5 +117,5 @@ export const groundedReplySchema = z.strictObject({
   status: z.enum(["verified", "estimated", "insufficient_evidence"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",
-    [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, taskBlockSchema])).min(1).max(30),
+    [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, taskBlockSchema, taskCardBlockSchema])).min(1).max(30),
 });
