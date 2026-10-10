@@ -2407,3 +2407,12 @@ Phase 5 implementation and handoff:
 - [x] CI TypeScript, changed-file lint, tests, build and diff passed. No financial calculation modifications or new packages.
 - [ ] Browser support varies; device tests still required. No OCR/document extraction or server audio-transcription fallback in this phase.
 - [ ] Apply migration 35 after reconciling 33/34; test actual Supabase Storage RLS with multiple identities before deployment.
+
+## Phase 7 — opt-in proactive owner WhatsApp task alerts (2026-10-10)
+- [x] Owner phone consent is explicit, tied to the current verified Supabase Auth phone by API and database trigger, owner/café-scoped under RLS; opt-out is supported.
+- [x] The daily cron reads the existing persisted `operating_tasks` inbox and only selects an actual `needs_owner` task. Checks membership and phone verification again before delivery.
+- [x] Meta WhatsApp template adapter makes a real configured provider call, returns success only on a provider receipt, sends task category only and reserves a unique outbox row first. No automatic resend after an uncertain result.
+- [x] Owner-facing localized EN/ES/AR preference panel. Default off unless AI_CAFE_WHATSAPP_ENABLED, verified consent, CRON_SECRET, Meta credentials and approved template.
+- [x] Tests, TypeScript, changed-file lint and production build passed. No existing operating-task, pricing or finance engine mutation.
+- [ ] Migration 36 needs a deliberately reconciled SQL rollout after 33–35. Provider Meta template, account, cron environment and staging verification are external prerequisites.
+- [ ] Staff-to-AI WhatsApp conversations and employee consent/webhook responses are **not** enabled by this owner alert delivery phase.
