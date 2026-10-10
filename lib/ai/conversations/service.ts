@@ -9,7 +9,7 @@ export class ConversationConflict extends Error {}
 export interface ConversationRepository {
   findThread(scope: ConversationScope, threadId: string): Promise<ConversationThread | null>;
   findThreadByRequest(scope: ConversationScope, requestId: string): Promise<ConversationThread | null>;
-  insertThread(scope: ConversationScope, requestId: string, title: string): Promise<ConversationThread>;
+  insertThread(scope: ConversationScope, requestId: string, title: string | null): Promise<ConversationThread>;
   listThreads(scope: ConversationScope): Promise<ConversationThread[]>;
   findMessageByKey(scope: ConversationScope, threadId: string, key: string): Promise<ConversationMessage | null>;
   insertOwnerMessage(scope: ConversationScope, threadId: string, key: string, text: string): Promise<ConversationMessage>;
@@ -24,7 +24,7 @@ export class ConversationService {
     if (!scope.businessId || !scope.ownerUserId) throw new Error("Missing authorized conversation identity");
   }
 
-  async createThread(requestId: string, title = "New conversation"): Promise<ConversationThread> {
+  async createThread(requestId: string, title: string | null = null): Promise<ConversationThread> {
     const existing = await this.repository.findThreadByRequest(this.scope, requestId);
     if (existing) {
       if (existing.title !== title) throw new ConversationConflict("Thread request key reused with different content");
