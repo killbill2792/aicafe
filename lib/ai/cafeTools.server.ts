@@ -12,7 +12,7 @@ import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
 import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthlyTotal";
 import type { CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
-import type { SupervisorBills, SupervisorRecordedExpenses } from "./tools";
+import type { SupervisorBills, SupervisorRecordedExpenses, SupervisorItemUnits } from "./tools";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -100,6 +100,34 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       return { available: true,
         value: { amountCents: actual.reduce((sum, row) => sum + row.amount_cents, 0),
           rows: actual.length },
+        quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] } };
+    },
+    async (requested, period: CafeStatePeriod): Promise<KnownSlice<SupervisorItemUnits>> => {
+      assertBusiness(requested);
+      // Same read-only per-item quantity RPC already used in the Menu snapshot.
+      const { data, error } = await client.rpc("menu_item_quantities_sold", {
+        p_business_id: requested, p_from: period.from, p_to: period.to,
+      });
+      if (error) throw error;
+      const rows = data ?? [];
+      if (!rows.length) {
+        return { available: false, value: null,
+          quality: { level: "low", missingInputs: ["itemizedProductSales"],
+            estimatedInputs: [], staleInputs: [] } };
+      }
+      if (rows.some((row: { total_quantity: unknown }) =>
+        !Number.isSafeInteger(Number(row.total_quantity)) || Number(row.total_quantity) < 0)) {
+        throw new Error("Invalid itemized sale quantity");
+      }
+      const ids = new Set<string>();
+      let units = 0;
+      for (const row of rows) {
+        if (!row.menu_item_id) continue;
+        units += Number(row.total_quantity);
+        if (Number(row.total_quantity) > 0) ids.add(row.menu_item_id);
+      }
+      if (!Number.isSafeInteger(units)) throw new Error("Invalid itemized sales total");
+      return { available: true, value: { units, itemsWithSales: ids.size },
         quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] } };
     },
   );
