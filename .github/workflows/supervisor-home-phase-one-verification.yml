@@ -21,7 +21,7 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
       - name: Lint changed files
-        run: npx eslint 'app/[locale]/page.tsx' components/TabBar.tsx components/home/HomeTaskSections.tsx components/home/SupervisorHomePanel.tsx components/shared/navTabs.ts
+        run: npx eslint 'app/[locale]/page.tsx' components/TabBar.tsx components/home/HomeTaskSections.tsx components/home/SupervisorHomePanel.tsx components/shared/navTabs.ts lib/viewmodels/homeSnapshotQuality.ts lib/viewmodels/homeSnapshotQuality.test.ts
       - name: All tests
         run: npm run test
       - name: Production build
