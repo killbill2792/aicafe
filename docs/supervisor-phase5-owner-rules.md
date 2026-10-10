@@ -14,7 +14,11 @@ Supervisor continues to use its existing trusted read-only café tools. Merely
 writing or approving a rule **does not execute it**, change the price engine,
 apply a price to Square/Toast, update payroll, alter schedules, message staff,
 place orders, or bypass an approval. Automated interpretation of arbitrary
-natural-language rules is not introduced in this phase.
+natural-language rules is not introduced in this phase. The Supervisor can
+answer "What rules did I give Alex?" by reading only **active**, owner-approved
+instructions under the same café scope. Those instructions are displayed as
+quoted data, never executed as commands or treated as authority for business
+writes.
 
 `evaluateSupervisorPermission()` is explicitly default-deny: only known
 allow-listed **reads** are permitted. All business writes remain forbidden in
