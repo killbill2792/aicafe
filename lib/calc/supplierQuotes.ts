@@ -10,3 +10,12 @@ export function compareSupplierQuotePrices(
   return {comparable:false,reason:"package_mismatch"};
  return {comparable:true,differenceCents:b.priceCents-a.priceCents};
 }
+
+/** Parse a typed USD monetary value without floating-point multiplication. */
+export function parseSupplierDollars(value:string):number|null{
+ const clean=value.trim();
+ if(!/^[0-9]{1,7}(?:\.[0-9]{1,2})?$/.test(clean))return null;
+ const [whole,fraction=""]=clean.split(".");
+ const cents=Number(whole)*100+Number(fraction.padEnd(2,"0"));
+ return Number.isSafeInteger(cents)&&cents>0?cents:null;
+}
