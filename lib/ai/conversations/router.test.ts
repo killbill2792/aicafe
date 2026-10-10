@@ -21,6 +21,20 @@ const copy: SupervisorReplyCopy = {
   ownerProfit: "Owner profit",
   recurringBills: "Bills",
   billsIntro: "These are recurring bills",
+  monthlyBillsIntro: "Full month bills",
+  totalExpenseIntro: "Monthly bills and actual costs differ",
+  spendingIntro: "Recorded payments",
+  spendingLabel: "Payments recorded",
+  spendingNone: "No payments recorded",
+  fullMonthlyBills: "Monthly bill budget",
+  operatingCostsSoFar: "Operating costs month to date",
+  operatingCostsUnavailable: "Cannot verify full operating costs",
+  productUnits: "Mapped menu units",
+  itemSalesUnavailable: "Item sales unavailable",
+  drinkUnits: "Recorded drinks",
+  recordedOrders: "Recorded orders",
+  productSalesIntro: "Drinks are not all products",
+  productSalesPartial: (observed, expected) => "Recorded " + observed + " of " + expected + " days",
   pricingIntro: "Review products",
   pricingNone: "No recorded pricing reviews",
   pricingUnavailable: "Pricing unavailable",
@@ -40,7 +54,22 @@ function tools(overrides: Record<string, unknown> = {}): BusinessScopedCafeTools
       cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-09" }).profitability),
     getExpenseSummary: vi.fn(async () =>
       cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-09" }).expenses),
-    getTeamTasks: vi.fn(async () => ({
+  getMonthlyRecurringBills: vi.fn(async () => ({
+      available: true as const,
+      value: { amountCents: 730012, rows: 8 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    })),
+    getItemUnitsSold: vi.fn(async () => ({
+      available: true as const,
+      value: { units: 42, itemsWithSales: 5 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    })),
+    getRecordedExpenses: vi.fn(async () => ({
+      available: true as const,
+      value: { amountCents: 125023, rows: 4 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    })),
+        getTeamTasks: vi.fn(async () => ({
       available: true, value: [], quality: {
         level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [],
       },
@@ -52,6 +81,12 @@ function tools(overrides: Record<string, unknown> = {}): BusinessScopedCafeTools
 describe("Phase 4 finite Supervisor router", () => {
   it("routes supported concepts across English, Spanish and Arabic", () => {
     expect(detectSupervisorIntent("How are we doing today?")).toBe("profitability");
+    expect(detectSupervisorIntent("How many products am I selling so far?")).toBe("unit_sales");
+    expect(detectSupervisorIntent("How many tasks need me?")).toBe("operating_tasks");
+    expect(detectSupervisorIntent("How many staff are working?")).toBe("staff");
+    expect(detectSupervisorIntent("cuántos productos estoy vendiendo")).toBe("unit_sales");
+    expect(detectSupervisorIntent("كم منتج بعت؟")).toBe("unit_sales");
+    expect(detectSupervisorIntent("How much have I spent this month?")).toBe("expenses");
     expect(detectSupervisorIntent("What needs my attention?")).toBe("operating_tasks");
     expect(detectSupervisorIntent("Any staff issues?")).toBe("staff");
     expect(detectSupervisorIntent("Should I change any prices?")).toBe("menu_pricing");
@@ -111,15 +146,112 @@ describe("Phase 4 finite Supervisor router", () => {
     expect(getProfitability).not.toHaveBeenCalled();
   });
 
-  it("distinguishes period-prorated recurring bills from total costs", async () => {
+  it("answers total monthly expenses with FULL recurring bills, never the 10/31 prorated amount", async () => {
+    const getMonthlyRecurringBills = vi.fn(async () => ({
+      available: true as const, value: { amountCents: 730012, rows: 8 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
+    }));
+    const getProfitability = vi.fn(async () => ({
+      available: false as const, value: null,
+      quality: { level: "low" as const, missingInputs: ["salesCoverage"], estimatedInputs: [], staleInputs: [] },
+    }));
     const result = await answerSupervisorQuestion({
-      text: "What are our rent and bills?", tools: tools(),
+      text: "hi, what are my total expenses for the month?",
+      tools: tools({ getMonthlyRecurringBills, getProfitability }),
       state: cafeStateFromSnapshot(fixture),
     }, copy);
     expect(result.intent).toBe("expenses");
-    expect(result.blocks.some((b) => b.type === "text" && b.text === copy.billsIntro)).toBe(true);
-    const metric = result.blocks.find((b) => b.type === "metric");
-    expect(metric && metric.type === "metric" && metric.valueCents).toBe(32000);
+    expect(getMonthlyRecurringBills).toHaveBeenCalledTimes(1);
+    expect(getProfitability).toHaveBeenCalledWith({ from: fixture.monthKey+"-01", to: fixture.todayDateStr });
+    expect(result.blocks).toContainEqual(expect.objectContaining({
+      type: "metric", label: copy.fullMonthlyBills, valueCents: 730012,
+    }));
+    expect(result.blocks).toContainEqual({
+      type: "warning", code: "total_costs_incomplete", text: copy.operatingCostsUnavailable,
+    });
+    expect(result.blocks.some(b => b.type === "metric" && b.valueCents === 32000)).toBe(false);
+  });
+
+  it("monthly bills only uses the same full monthly recurring totals as the Bills page", async () => {
+    const getProfitability = vi.fn();
+    const result = await answerSupervisorQuestion({
+      text: "what are my monthly bills?", state: cafeStateFromSnapshot(fixture),
+      tools: tools({ getProfitability }),
+    }, copy);
+    expect(result.blocks.some(b => b.type === "metric" && b.valueCents === 730012)).toBe(true);
+    expect(getProfitability).not.toHaveBeenCalled();
+  });
+
+  it("recorded payments are never prorated or confused with projected bills", async () => {
+    const result = await answerSupervisorQuestion({
+      text: "How much have I spent this month?", tools: tools(),
+      state: cafeStateFromSnapshot(fixture),
+    }, copy);
+    expect(result.blocks).toContainEqual(expect.objectContaining({
+      type: "metric", label: copy.spendingLabel, valueCents: 125023,
+    }));
+    expect(result.blocks.some(b => b.type === "metric" && b.valueCents === 730012)).toBe(false);
+  });
+
+  it("explicitly requested accrual preserves the canonical prorated cost model", async () => {
+    const result = await answerSupervisorQuestion({
+      text: "How much are accrued recurring bills?", tools: tools(),
+      state: cafeStateFromSnapshot(fixture),
+    }, copy);
+    expect(result.blocks.some(b => b.type === "text" && b.text === copy.billsIntro)).toBe(true);
+    expect(result.blocks.some(b => b.type === "metric" && b.valueCents === 32000)).toBe(true);
+  });
+
+  it("answers product sales as DRINK and ORDER counts, never dollars or invented all-product totals", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const result = await answerSupervisorQuestion({
+      text: "how many products am I selling so far",
+      tools: tools(), state,
+    }, copy);
+    expect(result.intent).toBe("unit_sales");
+    expect(result.status).toBe("verified");
+    const counts = result.blocks.filter(b=>b.type === "count");
+    expect(counts).toHaveLength(3);
+    expect(counts[0]).toMatchObject({ type: "count",label:"Mapped menu units", value:42 });
+    expect(counts[1]).toMatchObject({ type: "count",label:"Recorded drinks" });
+    expect(counts[2]).toMatchObject({ type: "count",label:"Recorded orders" });
+    expect(result.blocks.some(b=>b.type === "metric")).toBe(false);
+    expect(result.blocks.some(b=>b.type === "text" && b.text === copy.productSalesIntro)).toBe(true);
+  });
+
+  it("discloses incomplete daily rollups instead of treating missing days as zero sales", async () => {
+    const original = cafeStateFromSnapshot(fixture);
+    const state = original.sales.available ? {
+      ...original, sales: { ...original.sales, value: original.sales.value.slice(1) },
+    } : original;
+    const result = await answerSupervisorQuestion({ text: "How many products did I sell this month?",
+      tools: tools(), state }, copy);
+    expect(result.blocks.some(b => b.type === "warning" && b.code === "partial_sales_coverage"))
+      .toBe(true);
+  });
+
+  it("warns when POS itemization is unavailable while keeping verified drink/order rollups", async () => {
+    const result = await answerSupervisorQuestion({
+      text: "how many products am I selling so far",
+      tools: tools({ getItemUnitsSold: async () => ({
+        available: false, value: null,
+        quality: { level:"low", missingInputs:["itemizedProductSales"],
+          estimatedInputs:[], staleInputs:[] },
+      }) }),
+      state: cafeStateFromSnapshot(fixture),
+    }, copy);
+    expect(result.blocks.some(b=>b.type==="warning" && b.code==="itemized_sales_unavailable")).toBe(true);
+    expect(result.blocks.filter(b=>b.type==="count")).toHaveLength(2);
+  });
+
+  it("never fabricates units from an empty sales period", async () => {
+    const state = cafeStateFromSnapshot(fixture);
+    const result = await answerSupervisorQuestion({ text: "how many products sold?",
+      state: { ...state, sales: { available: false, value: null,
+        quality: {level: "low", missingInputs: ["sales"], estimatedInputs:[],staleInputs:[] } } },
+      tools: tools() }, copy);
+    expect(result.status).toBe("insufficient_evidence");
+    expect(result.blocks.some(b=>b.type === "count")).toBe(false);
   });
 
   it("counts only persisted actionable tasks, not raw signals or inferred actions", async () => {

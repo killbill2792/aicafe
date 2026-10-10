@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
+import {appendSpeech,speechChunks} from "@/lib/ai/conversations/speechResults";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
-import { Mic, Plus, Send } from "lucide-react";
+import { Mic, MicOff, Plus, Send } from "lucide-react";
 import { formatCents } from "@/lib/calc";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 
@@ -30,6 +31,10 @@ export type SupervisorChatCopy = {
   listening: string;
   voiceReview: string;
   voiceUnavailable: string;
+  voiceStarting: string;
+  voiceStop: string;
+  voiceProcessing: string;
+  voiceNoSpeech: string;
   attachmentSaved: string;
   attachmentNotice: string;
   attachmentUpload: string;
@@ -42,8 +47,9 @@ export type SupervisorChatCopy = {
 type Locale = "en" | "es" | "ar";
 type SpeechRecognizer = {
  lang:string; interimResults:boolean;
- onresult:((event:{results:ArrayLike<ArrayLike<{transcript:string}>>})=>void)|null;
- onerror:(()=>void)|null; onend:(()=>void)|null; start:()=>void; stop:()=>void;
+ onresult:((event:{results:ArrayLike<ArrayLike<{transcript:string}> & {isFinal?:boolean}>})=>void)|null;
+ onstart:(()=>void)|null; onerror:((event:{error?:string})=>void)|null;
+ onend:(()=>void)|null; start:()=>void; stop:()=>void;
 };
 function recognitionForBrowser():SpeechRecognizer|null {
  const w=window as Window & {
@@ -103,6 +109,19 @@ function SupervisorMessage({ message, copy }: { message: ConversationMessage; co
                 </p>}
               </div>;
             }
+            if (block.type === "count" && typeof block.label === "string" &&
+              typeof block.value === "number" && Number.isSafeInteger(block.value) && block.value >= 0) {
+              const source = isRecord(block.source) ? block.source : null;
+              return <div key={index} className="rounded-xl bg-[#F3F7F4] p-3">
+                <p className="text-[17px] font-semibold text-ink">{block.label}</p>
+                <p className="font-headline text-2xl font-bold text-ink">
+                  {new Intl.NumberFormat().format(block.value)}
+                </p>
+                {source && <p className="mt-1 break-all text-sm text-ink-muted">
+                  {copy.source}: {String(source.source ?? "")} · {String(source.asOf ?? "")}
+                </p>}
+              </div>;
+            }
             return null;
           })}
         </div>}
@@ -125,16 +144,18 @@ export default function SupervisorChatComposer({
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [listening,setListening]=useState(false);
+  const [voicePhase,setVoicePhase]=useState<"idle"|"starting"|"listening"|"processing"|"review"|"error">("idle");
+  const [interimSpeech,setInterimSpeech]=useState("");
   const [uploading,setUploading]=useState(false);
   const [attachments,setAttachments]=useState<StoredAttachment[]>([]);
   const [mediaNotice,setMediaNotice]=useState("");
   const speech=useRef<SpeechRecognizer|null>(null);
+  const speechSession=useRef<{base:string;final:string;failed:boolean}|null>(null);
   const filePicker=useRef<HTMLInputElement|null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
-  useEffect(()=>()=>speech.current?.stop(),[]);
+  useEffect(()=>()=>{speech.current?.stop();speech.current=null;speechSession.current=null;},[]);
   useEffect(() => {
     if (!enabled) return;
     const controller = new AbortController();
@@ -184,7 +205,7 @@ export default function SupervisorChatComposer({
 
   async function sendText(input: string) {
     const text = input.trim();
-    if (!enabled || !text || sending || text.length > 4000) return;
+    if (!enabled || !text || sending || speech.current || text.length > 4000) return;
     setSending(true);
     setError(false);
     try {
@@ -255,20 +276,54 @@ export default function SupervisorChatComposer({
 
   function listen(){
     if(!enabled||sending||uploading)return;
-    if(speech.current){speech.current.stop();return;}
+    if(speech.current){
+      if(voicePhase==="processing")return;
+      setVoicePhase("processing");
+      setMediaNotice("");
+      speech.current.stop();
+      return;
+    }
     const recognition=recognitionForBrowser();
-    if(!recognition){setMediaNotice(copy.voiceUnavailable);return;}
+    if(!recognition){setVoicePhase("error");setMediaNotice(copy.voiceUnavailable);return;}
     speech.current=recognition;
+    speechSession.current={base:draft,final:"",failed:false};
+    setInterimSpeech("");
+    setVoicePhase("starting");setMediaNotice("");
     recognition.lang=locale==="ar"?"ar":locale==="es"?"es-ES":"en-US";
-    recognition.interimResults=false;
+    recognition.interimResults=true;
+    recognition.onstart=()=>setVoicePhase("listening");
     recognition.onresult=(event)=>{
-      const transcript=Array.from(event.results).map((result)=>result[0]?.transcript??"").join(" ").trim();
-      if(transcript){setDraft(transcript.slice(0,4000));retryId.current=null;setMediaNotice(copy.voiceReview);}
+      const session=speechSession.current;
+      if(!session)return;
+      const chunks=speechChunks(event.results);
+      if(chunks.final){
+        session.final=chunks.final;
+        setDraft(appendSpeech(session.base,chunks.final));
+        retryId.current=null;
+      }
+      setInterimSpeech(chunks.interim);
     };
-    recognition.onerror=()=>setMediaNotice(copy.voiceUnavailable);
-    recognition.onend=()=>{speech.current=null;setListening(false);};
-    try{recognition.start();setListening(true);setMediaNotice(copy.listening);}
-    catch{speech.current=null;setListening(false);setMediaNotice(copy.voiceUnavailable);}
+    recognition.onerror=()=>{
+      if(speechSession.current)speechSession.current.failed=true;
+      setInterimSpeech("");setVoicePhase("error");setMediaNotice(copy.voiceUnavailable);
+    };
+    recognition.onend=()=>{
+      const session=speechSession.current;
+      speech.current=null;speechSession.current=null;
+      setInterimSpeech("");
+      if(session?.failed)return;
+      if(session?.final){
+        setDraft(appendSpeech(session.base,session.final));
+        setVoicePhase("review");setMediaNotice(copy.voiceReview);
+      }else{
+        setVoicePhase("idle");setMediaNotice(copy.voiceNoSpeech);
+      }
+    };
+    try{recognition.start();}
+    catch{
+      speech.current=null;speechSession.current=null;
+      setVoicePhase("error");setMediaNotice(copy.voiceUnavailable);
+    }
   }
 
   async function attach(event:ChangeEvent<HTMLInputElement>){
@@ -291,6 +346,8 @@ export default function SupervisorChatComposer({
   }
 
   function selectThread(id: string | null) {
+    speech.current?.stop();speech.current=null;speechSession.current=null;
+    setVoicePhase("idle");setInterimSpeech("");
     if (sending) return;
     setThreadId(id);
     setMessages([]);
@@ -355,16 +412,27 @@ export default function SupervisorChatComposer({
           </button>
           <label htmlFor="supervisor-home-composer" className="sr-only">{copy.askAnything}</label>
           <input id="supervisor-home-composer" type="text"
-            value={draft} onChange={(event) => { setDraft(event.target.value); retryId.current = null; }}
+            value={draft} onChange={(event) => {
+              setDraft(event.target.value); retryId.current = null;
+              if(voicePhase==="review")setVoicePhase("idle");
+            }}
             maxLength={4000} disabled={!enabled || sending}
             placeholder={copy.askAnything}
             className="min-w-0 flex-1 bg-transparent px-1 text-[17px] font-semibold text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed" />
-          <button type="button" disabled={!enabled||sending||uploading}
-            onClick={listen} aria-label={copy.voiceInput} aria-pressed={listening}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E8F1EE] text-good disabled:cursor-not-allowed">
-            <Mic aria-hidden="true" size={22} />
+          <button type="button" disabled={!enabled||sending||uploading||voicePhase==="processing"}
+            onClick={listen}
+            aria-label={(voicePhase==="starting" || voicePhase==="listening") ? copy.voiceStop : copy.voiceInput}
+            aria-pressed={voicePhase==="listening"||voicePhase==="starting"}
+            title={(voicePhase==="starting" || voicePhase==="listening") ? copy.voiceStop : copy.voiceInput}
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full
+              transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink
+              disabled:cursor-not-allowed ${voicePhase==="listening"||voicePhase==="starting"
+                ? "bg-[#BE3434] text-white ring-4 ring-[#F5CDCD] animate-pulse"
+                : "bg-[#E8F1EE] text-good"}`}>
+            {voicePhase==="listening"||voicePhase==="starting" ? <MicOff aria-hidden="true" size={22}/> :
+              <Mic aria-hidden="true" size={22}/>}
           </button>
-          <button type="submit" disabled={!enabled || sending || !draft.trim()}
+          <button type="submit" disabled={!enabled || sending || (voicePhase==="starting"||voicePhase==="listening"||voicePhase==="processing") || !draft.trim()}
             aria-label={copy.sendMessage}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink text-paper disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <Send aria-hidden="true" size={20} />
@@ -372,6 +440,21 @@ export default function SupervisorChatComposer({
         </div>
       </form>
 
+      {(voicePhase==="starting"||voicePhase==="listening"||voicePhase==="processing"||voicePhase==="review") && (
+        <div role="status" aria-live="polite"
+          className={`mt-2 rounded-xl border p-3 text-[17px] font-semibold
+            ${voicePhase==="starting"||voicePhase==="listening" ? "border-[#C85555] bg-[#FFF0F0] text-[#922121]"
+              : "border-[#B3CFC0] bg-[#EDF7F1] text-ink"}`}>
+          <span className="inline-flex items-center gap-2">
+            {(voicePhase==="starting"||voicePhase==="listening") && (
+              <span aria-hidden="true" className="h-3 w-3 animate-pulse rounded-full bg-[#BE3434]"/>)}
+            {voicePhase==="starting" ? copy.voiceStarting :
+              voicePhase==="listening" ? copy.listening+" "+copy.voiceStop :
+              voicePhase==="processing" ? copy.voiceProcessing : copy.voiceReview}
+          </span>
+          {interimSpeech && <p className="mt-2 break-words font-normal text-ink">{interimSpeech}</p>}
+        </div>
+      )}
       <p role="status" aria-live="polite"
         className={enabled
           ? "mt-2 text-[15px] font-medium text-ink-muted"
@@ -390,7 +473,7 @@ export default function SupervisorChatComposer({
       </div>
       <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1 md:flex-wrap" aria-label={copy.composerLabel}>
         {copy.suggestions.map((suggestion) => (
-          <button key={suggestion} type="button" disabled={!enabled || sending}
+          <button key={suggestion} type="button" disabled={!enabled || sending || (voicePhase==="starting"||voicePhase==="listening"||voicePhase==="processing")}
             onClick={() => { if (draft !== suggestion) retryId.current = null; setDraft(suggestion); void sendText(suggestion); }}
             className="min-h-12 shrink-0 snap-start rounded-full border border-[#D8C8B5] bg-card px-4 text-[17px] font-bold text-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             {suggestion}

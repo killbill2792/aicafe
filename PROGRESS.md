@@ -2442,3 +2442,12 @@ Verified repair outcomes:
 - [x] All **534 Vitest tests (77 files)**, TypeScript, changed-file ESLint, Next.js production build, and diff check pass on branch CI run `38072892356`. Tests include five server readiness scenarios. No new npm packages or SQL migrations.
 - [ ] Vercel environment values are not readable from the GitHub-only connection: actual Production and Preview `SUPABASE_SERVICE_ROLE_KEY` and `SUPERVISOR_CHAT_ENABLED` values must be confirmed in Vercel Settings and redeployed if changed.
 - [ ] Preview/prod sign-in test still required: owner opens Home, taps a suggestion, observes persisted Supervisor reply, tries another thread, and checks non-owner denial.
+
+## Supervisor owner feedback — product sales, bills, and dictation (2026-10-10)
+
+- [x] The deterministic Supervisor router recognizes product unit questions ("how many products am I selling so far") and produces non-currency count blocks, authenticated item quantities from the existing Menu RPC, daily rollup drink counts and order counts. Itemized gaps and partial sales coverage are explicitly disclosed.
+- [x] Full monthly recurring bills use the existing Bills page source/normalization without prorating to the current day. "Total expenses for the month" distinguishes these full monthly commitments from separately grounded month-to-date operating costs; no invented complete totals on insufficient evidence. "Spent" uses recorded actual expense entries; "accrued" retains existing period proration.
+- [x] Distinct microphone starting, pulsing red listening/Stop, interim speech, finishing and editable transcript states. Voice never auto-sends; unsupported/failed/no speech cases have visible status messages. EN/ES/AR translations.
+- [x] Server owner and café access, read-only controls, original cost math and database tables are unchanged. No new SQL migration or provider key.
+- [x] GitHub branch test run 38075874469 passed TypeScript, changed-file ESLint, 544 Vitest tests, Next production build and diff check. Post-documentation rerun in progress; do not treat deployed browser voice recognition as tested on every device.
+- [ ] Review and manually merge new PR. Production owner must validate Bills agreement, product count coverage, voice permission and microphone states on actual browser/devices. No production deployment performed here.
