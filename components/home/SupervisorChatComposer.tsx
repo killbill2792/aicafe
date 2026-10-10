@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
@@ -502,7 +502,7 @@ export default function SupervisorChatComposer({
       role="log" aria-live="polite" aria-label={copy.threads}>
       {messages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4 py-6 text-center">
         <div className="flex h-20 w-20 items-center justify-center rounded-[28px] bg-[#E9F1E8] text-good shadow-inner">
-          <Sparkles aria-hidden="true" size={42} />
+          <Coffee aria-hidden="true" size={43} strokeWidth={2.2} />
         </div>
         <h2 className="font-headline text-3xl font-bold text-ink">{copy.emptyHeading}</h2>
         <p className="max-w-md text-[17px] leading-relaxed text-ink-muted">{copy.emptyIntro}</p>
