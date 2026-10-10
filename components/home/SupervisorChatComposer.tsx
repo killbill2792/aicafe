@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
-import { Mic, Plus, Send } from "lucide-react";
+import { Mic, MicOff, Plus, Send } from "lucide-react";
 import { formatCents } from "@/lib/calc";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 
@@ -98,6 +98,19 @@ function SupervisorMessage({ message, copy }: { message: ConversationMessage; co
               return <div key={index} className="rounded-xl bg-[#F3F7F4] p-3">
                 <p className="text-[17px] font-semibold text-ink">{block.label}</p>
                 <p className="font-headline text-2xl font-bold text-ink">{formatCents(block.valueCents)}</p>
+                {source && <p className="mt-1 break-all text-sm text-ink-muted">
+                  {copy.source}: {String(source.source ?? "")} · {String(source.asOf ?? "")}
+                </p>}
+              </div>;
+            }
+            if (block.type === "count" && typeof block.label === "string" &&
+              typeof block.value === "number" && Number.isSafeInteger(block.value) && block.value >= 0) {
+              const source = isRecord(block.source) ? block.source : null;
+              return <div key={index} className="rounded-xl bg-[#F3F7F4] p-3">
+                <p className="text-[17px] font-semibold text-ink">{block.label}</p>
+                <p className="font-headline text-2xl font-bold text-ink">
+                  {new Intl.NumberFormat().format(block.value)}
+                </p>
                 {source && <p className="mt-1 break-all text-sm text-ink-muted">
                   {copy.source}: {String(source.source ?? "")} · {String(source.asOf ?? "")}
                 </p>}
