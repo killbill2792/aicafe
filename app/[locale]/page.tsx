@@ -17,7 +17,6 @@ import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import AddCostFab from "@/components/shared/AddCostFab";
 import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
-import TodayAtAGlanceCard from "@/components/shared/TodayAtAGlanceCard";
 import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
 import {
   AlertsTeaserCard,
@@ -27,7 +26,7 @@ import {
   StaffTeaserCard,
 } from "@/components/home/SectionCards";
 import SupervisorHomePanel from "@/components/home/SupervisorHomePanel";
-import HomeTaskSections, { type HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
+import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { formatCents } from "@/lib/calc";
 import { getPosConnectionStatus } from "@/lib/data/getPosConnectionStatus";
 import ReconnectBanner from "@/components/shared/ReconnectBanner";
@@ -209,6 +208,26 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           locale={locale}
           chatEnabled={chatReadiness.enabled}
           chatUnavailableReason={chatReadiness.reason}
+          snapshot={{
+            title: t("todaySnapshotTitle"),
+            hasSales: snapshot.todayHasData,
+            stats: [
+              { label: t("glanceSales"), value: snapshot.todayHasData ? formatCents(glance.salesCents) : tCommon("noSalesToday") },
+              { label: `${t("ownerProfit")}${todayEstimateSuffix}${todayPartialSuffix}`, value: todayOwnerProfit },
+              { label: t("glanceOrders"), value: snapshot.todayHasData ? String(glance.ordersCount) : "—" },
+              { label: `${t("totalCosts")}${todayEstimateSuffix}`, value: formatCents(todayVm.totalCostsCents) },
+            ],
+            caption: glanceCopy.caption,
+            seeAll: t("taskSeeAll"),
+            sections: [
+              { title: tOperations("needsYou"), empty: tOperations("needsYouEmpty"),
+                href: "/operations?status=needs_you", items: needsYouPreview, count: team.needsYou.length },
+              { title: tOperations("handled"), empty: tOperations("handledEmpty"),
+                href: "/operations?status=handled", items: handledPreview, count: team.handled.length },
+              { title: tOperations("watching"), empty: tOperations("watchingEmpty"),
+                href: "/operations?status=watching", items: watchingPreview, count: team.watching.length },
+            ],
+          }}
           chatCopy={{
             live: tChat("chatLive"),
             threads: tChat("chatThreads"),
@@ -217,6 +236,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             loading: tChat("chatLoading"),
             sending: tChat("chatSending"),
             retry: tChat("chatRetry"),
+            answerFailed: tChat("answerFailed"), retryAnswer: tChat("retryAnswer"),
+            todaySummary: tChat("todaySummary"),
+            snapshotExpand: tChat("snapshotExpand"), snapshotCollapse: tChat("snapshotCollapse"),
+            recording: tChat("recording"), transcribing: tChat("transcribing"),
             unavailable: tChat("chatUnavailable"),
             more: tChat("chatMore"),
             you: tChat("chatYou"),
@@ -280,46 +303,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           }}
         />
 
-        <TodayAtAGlanceCard
-          title={t("todaySnapshotTitle")}
-          stats={[
-            { label: t("glanceSales"), value: formatCents(glance.salesCents) },
-            { label: `${t("ownerProfit")}${todayEstimateSuffix}${todayPartialSuffix}`, value: todayOwnerProfit },
-            { label: t("glanceOrders"), value: String(glance.ordersCount) },
-            { label: `${t("totalCosts")}${todayEstimateSuffix}`, value: formatCents(todayVm.totalCostsCents) },
-          ]}
-          secondaryStat={glance.drinksCount > 0 ? t("glanceDrinks", { count: glance.drinksCount }) : null}
-          caption={glanceCopy.caption}
-          icon={glanceCopy.icon}
-        />
       </div>
-
-      <HomeTaskSections
-        seeAll={t("taskSeeAll")}
-        sections={[
-          {
-            title: tOperations("needsYou"),
-            empty: tOperations("needsYouEmpty"),
-            href: "/operations?status=needs_you",
-            items: needsYouPreview,
-            count: team.needsYou.length,
-          },
-          {
-            title: tOperations("handled"),
-            empty: tOperations("handledEmpty"),
-            href: "/operations?status=handled",
-            items: handledPreview,
-            count: team.handled.length,
-          },
-          {
-            title: tOperations("watching"),
-            empty: tOperations("watchingEmpty"),
-            href: "/operations?status=watching",
-            items: watchingPreview,
-            count: team.watching.length,
-          },
-        ]}
-      />
 
       <section className="mt-1 flex flex-col gap-3.5" aria-labelledby="business-overview-title">
         <div className="px-1">
