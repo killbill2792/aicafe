@@ -159,7 +159,25 @@
     "marginExplanation": "شاهد هامش التشغيل الحالي ثم شغّل سيناريو خاصًا لفهم كيف قد يؤثر هدف ربح مختلف في التسعير. لا يغيّر المحاكي Toast أو Square أو أي نظام نقاط بيع.",
     "marginBasedOnCurrentData": "مبني على البيانات الحالية",
     "marginIncludesEstimates": "يتضمن تكاليف تقديرية",
-    "tryProfitGoal": "جرّب هدف ربح"
+    "tryProfitGoal": "جرّب هدف ربح",
+    "supervisorEyebrow": "المشرف بالذكاء الاصطناعي",
+    "supervisorHeading": "كيف يمكنني مساعدتك اليوم؟",
+    "supervisorIntro": "اسأل في مكان واحد. سأستعين بأليكس أو أوليفيا أو مايا أو ليو عندما تكون خبرتهم مطلوبة.",
+    "teamButton": "الفريق",
+    "askAnything": "اسأل أي شيء…",
+    "composerLabel": "اسأل مشرف الذكاء الاصطناعي",
+    "addAttachment": "إضافة مرفق",
+    "voiceInput": "استخدام الصوت",
+    "sendMessage": "إرسال",
+    "conversationComingSoon": "محادثة المشرف هي الخطوة التالية. بيانات مقهاك المباشرة والفريق متصلان هنا بالفعل.",
+    "suggestionHowDoing": "كيف تسير أمورنا اليوم؟",
+    "suggestionAttention": "ما الذي يحتاج إلى انتباهي؟",
+    "suggestionStaff": "هل توجد أي مشاكل تخص الموظفين؟",
+    "suggestionPrices": "هل ينبغي أن أغيّر أي أسعار؟",
+    "todaySnapshotTitle": "اليوم",
+    "taskSeeAll": "عرض الكل",
+    "businessOverviewTitle": "نظرة عامة على العمل",
+    "businessOverviewIntro": "بياناتك الموثوقة عن الربح والتكاليف والاسترداد والموظفين والقائمة ونقطة التعادل والتنبيهات."
   },
   "Money": {
     "title": "المال",
@@ -969,7 +987,10 @@
     "staffTaskReason": "راجع مشكلة الموظف أو التغطية المحددة قبل الوردية.",
     "supplySignal": "تراقب مايا تكاليف المكونات والأكواب التي أدخلتها، ولا تخمّن كميات المخزون.",
     "priceTaskSentenceLow": "قد يكون سعر {item} منخفضًا جدًا.",
-    "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا."
+    "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا.",
+    "homeHandledPrice": "تم الإبقاء على السعر الحالي لـ {item}.",
+    "homeHandledCoverage": "تم تطبيق تغطية الموظفين المعتمدة.",
+    "homeMoneyUpdate": "هناك تحديث مالي يحتاج إلى مراجعة."
   },
   "CafeProfile": {
     "title": "ملف المقهى",
