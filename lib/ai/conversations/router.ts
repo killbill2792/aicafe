@@ -50,7 +50,7 @@ export type SupervisorReplyCopy = {
 export function detectSupervisorIntent(raw: string): SupervisorIntent {
   const text = raw.normalize("NFKC").toLocaleLowerCase().trim();
   if (/\b(rules?|instructions?|guidelines?|policies)\b|reglas|instrucciones|normas|قواعد|تعليمات/.test(text)) return "owner_rules";
-  if (/(how many|number of|units?|quantit|sold|selling|best.sell|least.sell|most.sell|top.sell|popular|cuánt|vendid|unidades|más vendid|menos vendid|كم|الأكثر مبيع|الأقل مبيع)/.test(text) &&
+  if (/(how many|number of|units?|quantit|sold|selling|best.sell|least.sell|most.sell|top.sell|\bmost\b|\bleast\b|popular|cuánt|vendid|unidades|más vendid|menos vendid|كم|الأكثر مبيع|الأقل مبيع)/.test(text) &&
       /(products?|items?|drinks?|coffees?|coffee|orders?|cups?|beverages?|latte|cappuccino|sold|selling|productos?|bebidas?|cafés?|pedidos|منتج|مشروب|قهو|طلبات)/.test(text)) return "sales_quantity";
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
@@ -161,7 +161,7 @@ export async function answerSupervisorQuestion(
 
   if (intent === "expenses") {
     const q = input.text.normalize("NFKC").toLocaleLowerCase();
-    const isAccrual = /\b(accru|prorat|elapsed fixed|fixed bills so far)\b|devengad|prorrate|مستحق|المتراكمة/.test(q);
+    const isAccrual = /\b(accru\w*|prorat\w*|elapsed fixed|fixed bills so far)\b|devengad|prorrate|مستحق|المتراكمة/.test(q);
     const isRecorded = /\b(spent|spending|paid|actual expenses?|recorded expenses?|spent so far)\b|gastad|pagad|أنفقت|المدفوعة/.test(q);
     const isBills = !isRecorded && !isAccrual && /\b(bills?|rent|utilities|recurring|fixed)\b|facturas|alquiler|فواتير|إيجار/.test(q);
     if (isBills || isAccrual) {
