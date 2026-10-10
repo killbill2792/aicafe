@@ -2182,3 +2182,31 @@ Deployment order:
   sourced observations. This milestone builds the evidence boundary and truthful UI; it does not
   scrape or invent competitor menus.
 
+## Aggregate product-cost fallback (2026-10-09 — implementation in progress)
+
+Owner-approved scope:
+- Some cafés know the total ingredient/cup cost of a menu item/size but do not know every recipe
+  line. Support that fact directly instead of fabricating a fake ingredient.
+- A complete detailed recipe remains the preferred source. An owner-entered total cost is a fallback
+  only when the detailed recipe is missing or incomplete.
+- Preserve both values when both exist and surface their difference; never add them together.
+- Every displayed/used product cost must expose provenance.
+- Pricing, Profit Goal Simulator, and Break-even must use the same deterministic product-cost
+  resolver so one screen cannot treat a cost as known while another treats it as missing.
+- Aggregate fallback does not provide ingredient-level theoretical usage/waste detail; future waste
+  analytics must continue to require detailed recipe evidence.
+
+Plan:
+1. Add a tenant-scoped per-menu-item aggregate cost table with explicit source/status and timestamps.
+2. Add a pure `resolveProductCost()` calculation:
+   complete recipe > owner-confirmed total > unavailable.
+   If both complete recipe and owner total exist, recipe wins and the difference remains visible.
+3. Wire the resolver into Menu edit/read models, operational pricing inputs, Profit Goal Simulator,
+   and Break-even variable ingredient cost. Break-even must refuse rather than undercount when a
+   sold item still has no resolved cost.
+4. Add a simple per-size owner-total editor in the product Recipe workspace and source labels in
+   Overview. Keep detailed recipe editing intact and clearly explain which source is currently used.
+5. Localize EN / ES / AR and add focused regression tests for precedence, no double counting,
+   incomplete-recipe fallback, complete-recipe override, and break-even missing-cost behavior.
+6. No POS writes. No ingredient-level usage is inferred from the aggregate total.
+
