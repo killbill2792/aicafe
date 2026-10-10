@@ -335,6 +335,9 @@ export default function SupervisorChatComposer({
       retryId.current = null;
       dispatchDictation({ type: "reset" }); setMediaNotice("");
     } catch {
+      // For a saved turn, the displayed Retry has its original key. Do not
+      // accidentally reuse that key when the owner sends a different new draft.
+      if (existingKey) retryId.current = null;
       // The owner message may already be durable; reconcile from storage so its
       // adjacent Retry button appears immediately, as well as after refresh.
       if (attemptedThreadId) {
