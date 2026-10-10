@@ -70,10 +70,14 @@ fabricate business numbers.
 
 Automated tests cover input schemas, owner identity isolation at the service
 boundary, idempotent retries and conflicts, same-origin and size validation,
-evidence gate behavior, and source-level migration invariants.
-These are **not a substitute for live PostgreSQL RLS integration tests**.
-Before enabling the composer or Supervisor writes, test with two real owner
-identities, a manager identity, and two café memberships under Supabase RLS.
+evidence gate behavior, and source-level migration invariants. In addition,
+`scripts/test-supervisor-conversation-rls.mjs` runs the real migration under
+**disposable PostgreSQL**, authenticating as simulated owner A, owner B (same
+café), manager and outsider roles. It verifies role spoofing, immutable history,
+private reads and insert-scoped permissions. The branch CI passed this test.
+Before enabling the composer or Supervisor writes, also run a staging Supabase
+end-to-end test with real authenticated sessions. Do not run this disposable
+test script against production.
 
 Do not implement conversation -> generic LLM -> answer. Phase 4 must resolve
 intent -> scoped read-only tools -> evidence gate -> structured response, and
