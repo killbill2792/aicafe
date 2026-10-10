@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { RuleAgent, RuleDecision, RuleEvent, RulesPage, TeamRule } from "@/lib/ai/policies/contracts";
 import { POLICY_AGENTS } from "@/lib/ai/policies/contracts";
 
@@ -55,7 +55,7 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
     return () => { cancelled = true; };
   }, [load]);
 
-  async function create(event: React.FormEvent<HTMLFormElement>) {
+  async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy || instruction.trim().length < 5) return;
     setBusy(true); setError(null);
