@@ -421,9 +421,9 @@ export default function SupervisorChatComposer({
             className="min-w-0 flex-1 bg-transparent px-1 text-[17px] font-semibold text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed" />
           <button type="button" disabled={!enabled||sending||uploading||voicePhase==="processing"}
             onClick={listen}
-            aria-label={speech.current ? copy.voiceStop : copy.voiceInput}
+            aria-label={(voicePhase==="starting" || voicePhase==="listening") ? copy.voiceStop : copy.voiceInput}
             aria-pressed={voicePhase==="listening"||voicePhase==="starting"}
-            title={speech.current ? copy.voiceStop : copy.voiceInput}
+            title={(voicePhase==="starting" || voicePhase==="listening") ? copy.voiceStop : copy.voiceInput}
             className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full
               transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink
               disabled:cursor-not-allowed ${voicePhase==="listening"||voicePhase==="starting"
@@ -432,7 +432,7 @@ export default function SupervisorChatComposer({
             {voicePhase==="listening"||voicePhase==="starting" ? <MicOff aria-hidden="true" size={22}/> :
               <Mic aria-hidden="true" size={22}/>}
           </button>
-          <button type="submit" disabled={!enabled || sending || Boolean(speech.current) || !draft.trim()}
+          <button type="submit" disabled={!enabled || sending || (voicePhase==="starting"||voicePhase==="listening"||voicePhase==="processing") || !draft.trim()}
             aria-label={copy.sendMessage}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink text-paper disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <Send aria-hidden="true" size={20} />
@@ -473,7 +473,7 @@ export default function SupervisorChatComposer({
       </div>
       <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1 md:flex-wrap" aria-label={copy.composerLabel}>
         {copy.suggestions.map((suggestion) => (
-          <button key={suggestion} type="button" disabled={!enabled || sending || Boolean(speech.current)}
+          <button key={suggestion} type="button" disabled={!enabled || sending || (voicePhase==="starting"||voicePhase==="listening"||voicePhase==="processing")}
             onClick={() => { if (draft !== suggestion) retryId.current = null; setDraft(suggestion); void sendText(suggestion); }}
             className="min-h-12 shrink-0 snap-start rounded-full border border-[#D8C8B5] bg-card px-4 text-[17px] font-bold text-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             {suggestion}
