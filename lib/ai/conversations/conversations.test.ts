@@ -151,6 +151,18 @@ describe("Supervisor Phase 3 conversation foundation", () => {
     expect(assessGrounding("profitability", slice, [{ source: "cafe_state", identifier: "snapshot", asOf: "2026-10-10" }]).status).toBe("verified");
   });
 
+  it("never treats stale source inputs as verified grounding", () => {
+    const slice = {
+      available: true as const, value: { profitCents: 5000 },
+      quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: ["salesSync"] },
+    };
+    const result = assessGrounding("profitability", slice, [
+      { source: "cafe_state", identifier: "month-profit", asOf: "2026-10-10" },
+    ]);
+    expect(result.status).toBe("insufficient_evidence");
+    expect(result.missingInputs).toContain("stale:salesSync");
+  });
+
   it("preserves estimated versus missing distinctions and never upgrades missing to verified", () => {
     const evidence = [{ source: "pricing_engine" as const, identifier: "latte", asOf: "2026-10-10" }];
     const estimated = { available: true as const, value: { suggestedPriceCents: 600 }, quality: { level: "medium" as const, missingInputs: [], estimatedInputs: ["benchmark"], staleInputs: [] } };
