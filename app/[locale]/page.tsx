@@ -7,6 +7,7 @@ import { buildHomeViewModel } from "@/lib/viewmodels/homeViewModel";
 import { missingCostDestination } from "@/lib/expenses/expectedCosts";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
 import { buildTodayGlanceViewModel } from "@/lib/viewmodels/todayGlance";
+import { hasEstimatedTodayCosts } from "@/lib/viewmodels/homeSnapshotQuality";
 import { profitToneBgClass, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 import type { Period } from "@/lib/viewmodels/period";
 import Money from "@/components/shared/Money";
@@ -164,7 +165,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     todayVm.ownerProfitDisplay.kind === "unavailable"
       ? t("ownerProfitWaitingShort")
       : formatCents(todayVm.ownerProfitDisplay.ownerProfitCents);
-  const todayEstimateSuffix = todayVm.isEstimate ? ` · ${t("estimatePill")}` : "";
+  const todayEstimateSuffix = hasEstimatedTodayCosts(snapshot) ? ` · ${t("estimatePill")}` : "";
   const todayPartialSuffix = todayVm.ownerProfitDisplay.kind === "partial" ? ` · ${t("partialPill")}` : "";
 
   return (
