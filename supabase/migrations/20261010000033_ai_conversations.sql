@@ -48,6 +48,8 @@ create table if not exists ai_messages (
       and author_user_id is null
       and content_type = 'blocks'
       and text_content is null
+      and structured_content is not null
+      and grounding is not null
       and jsonb_typeof(structured_content) = 'array'
       and jsonb_array_length(structured_content) between 1 and 30
       and jsonb_typeof(grounding) = 'object'
