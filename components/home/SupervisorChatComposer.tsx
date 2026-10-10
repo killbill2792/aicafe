@@ -116,7 +116,7 @@ export default function SupervisorChatComposer({
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || !threadId) return;
+    if (!enabled || !threadId || sending) return;
     const controller = new AbortController();
     void fetch("/api/ai/threads/" + encodeURIComponent(threadId) + "/messages?offset=0",
       { signal: controller.signal, cache: "no-store" })
@@ -129,7 +129,7 @@ export default function SupervisorChatComposer({
       })
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
-  }, [enabled, threadId]);
+  }, [enabled, threadId, sending]);
 
   async function refreshThreads() {
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
@@ -269,7 +269,7 @@ export default function SupervisorChatComposer({
       <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1 md:flex-wrap" aria-label={copy.composerLabel}>
         {copy.suggestions.map((suggestion) => (
           <button key={suggestion} type="button" disabled={!enabled || sending}
-            onClick={() => { setDraft(suggestion); retryId.current = null; void sendText(suggestion); }}
+            onClick={() => { if (draft !== suggestion) retryId.current = null; setDraft(suggestion); void sendText(suggestion); }}
             className="min-h-12 shrink-0 snap-start rounded-full border border-[#D8C8B5] bg-card px-4 text-[17px] font-bold text-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             {suggestion}
           </button>
