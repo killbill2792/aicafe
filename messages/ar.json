@@ -990,7 +990,15 @@
     "priceTaskSentenceHigh": "قد يكون سعر {item} مرتفعًا جدًا.",
     "homeHandledPrice": "تم الإبقاء على السعر الحالي لـ {item}.",
     "homeHandledCoverage": "تم تطبيق تغطية الموظفين المعتمدة.",
-    "homeMoneyUpdate": "هناك تحديث مالي يحتاج إلى مراجعة."
+    "homeMoneyUpdate": "هناك تحديث مالي يحتاج إلى مراجعة.",
+    "homeVerifiedPriceApplied": "تم التحقق من تحديث سعر {item}.",
+    "homePriceReviewClosed": "اكتملت مراجعة سعر {item}.",
+    "homeCoverageReviewed": "تمت مراجعة طلب تغطية الموظفين.",
+    "homeTaskHandled": "تم وضع علامة تم التعامل معه على مهمة الفريق.",
+    "homePriceAwaitingVerification": "بانتظار التحقق من السعر المقبول لـ {item}.",
+    "homePriceReviewLater": "تم تأجيل مراجعة سعر {item} إلى وقت لاحق.",
+    "homeSupplyNeedsResponse": "فحص المستلزمات يحتاج إلى رد: {item}.",
+    "homeSupplies": "المستلزمات"
   },
   "CafeProfile": {
     "title": "ملف المقهى",
