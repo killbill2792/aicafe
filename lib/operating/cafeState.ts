@@ -147,8 +147,12 @@ export function cafeStateFromSnapshot(
     staffTaxCents: day.staffTaxCents,
     loadedStaffCostCents: staffCostCentsForPeriod([day]),
   }));
+  const laborDayCount = new Set(labor.map((day) => day.date)).size;
   const laborQuality = quality(
-    [...(!inRange ? ["periodOutsideLoadedMonth"] : []), ...(labor.length === 0 ? ["laborHistory"] : [])],
+    [
+      ...(!inRange ? ["periodOutsideLoadedMonth"] : []),
+      ...(laborDayCount !== expectedDays ? [`laborCoverage:${laborDayCount}/${expectedDays}`] : []),
+    ],
     taxEstimated,
   );
 
