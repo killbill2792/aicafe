@@ -158,6 +158,30 @@ describe("Responses executor preserves canonical accounting and evidence", () =>
     const { validateGroundedReply } = await import("./replyValidation");
     expect(() => validateGroundedReply(answer)).not.toThrow();
   });
+  it("never relabels previous-month or yesterday questions as current", async () => {
+    const scoped = tools();
+    for (const period of ["previous_month", "yesterday", "other_period"] as const) {
+      const reply = await ask({ name: "read_finances", arguments: {
+        metric: "monthly_bills", period,
+      } }, scoped);
+      expect(reply.status).toBe("insufficient_evidence");
+      expect(reply.blocks).toMatchObject([{ type: "warning", code: "unsupported_period" }]);
+    }
+    expect(scoped.getMonthlyBills).not.toHaveBeenCalled();
+  });
+  it("answers a named coffee product but never invents a complete coffee category", async () => {
+    const reply = await ask({ name: "read_sales", arguments: {
+      metric: "named_product_units", period: "month_to_date",
+      category: "coffee", product_name: "Latte",
+    } });
+    expect(reply.blocks.find((block) => block.type === "count")).toMatchObject({ value: 60 });
+    const missing = await ask({ name: "read_sales", arguments: {
+      metric: "named_product_units", period: "month_to_date",
+      category: "drink", product_name: null,
+    } });
+    expect(missing.status).toBe("insufficient_evidence");
+  });
+
   it("never fabricates team task claims when Team reader is unavailable", async () => {
     const answer = await ask({ name: "read_team", arguments: {
       agent: "all", status: "all",
