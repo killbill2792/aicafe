@@ -17,6 +17,18 @@ export type SupervisorReplyCopy = {
   ownerProfit: string;
   recurringBills: string;
   billsIntro: string;
+  monthlyBillsIntro: string;
+  totalExpenseIntro: string;
+  spendingIntro: string;
+  spendingLabel: string;
+  spendingNone: string;
+  fullMonthlyBills: string;
+  operatingCostsSoFar: string;
+  operatingCostsUnavailable: string;
+  drinkUnits: string;
+  recordedOrders: string;
+  productSalesIntro: string;
+  productSalesPartial: (observed: number, expected: number) => string;
   pricingIntro: string;
   pricingNone: string;
   pricingUnavailable: string;
@@ -33,6 +45,7 @@ export type SupervisorReplyCopy = {
 export function detectSupervisorIntent(raw: string): SupervisorIntent {
   const text = raw.normalize("NFKC").toLocaleLowerCase().trim();
   if (/\b(rules?|instructions?|guidelines?|policies)\b|reglas|instrucciones|normas|قواعد|تعليمات/.test(text)) return "owner_rules";
+  if (/\b(how many|number of|units? sold|quantity sold|products? (?:am i )?(?:selling|sold)|drinks? (?:am i )?(?:selling|sold)|orders? (?:so far|today|this month)|sales volume)\b|cuántos (?:productos|cafés|pedidos)|unidades vendidas|كم (?:منتج|طلب|مشروب)|عدد (?:المنتجات|الطلبات)/.test(text)) return "unit_sales";
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
   if (/\b(attention|urgent|tasks?|needs you|team|handled|watching|issues?)\b|atención|tareas|equipo|الاهتمام|انتباه|المهام|الفريق/.test(text)) return "operating_tasks";
@@ -88,7 +101,7 @@ export async function answerSupervisorQuestion(
   const intent = detectSupervisorIntent(input.text);
   const { state, tools } = input;
   const { from, to, label, unsupported } = periodFor(input.text, state);
-  if (unsupported && (intent === "profitability" || intent === "expenses")) {
+  if (unsupported && (intent === "profitability" || intent === "expenses" || intent === "unit_sales")) {
     return {
       intent, status: "insufficient_evidence", evidence: [],
       blocks: [{ type: "warning", code: "unsupported_period", text: copy.periodUnavailable }],
@@ -126,6 +139,47 @@ export async function answerSupervisorQuestion(
     };
   }
 
+  if (intent === "unit_sales") {
+    // The canonical daily rollups record orders and *drinks*, not all food and
+    // merchandise units. Never label drinks as every product sold.
+    const start = /\b(today|hoy|اليوم)\b/.test(input.text.toLocaleLowerCase()) ? state.asOf
+      : /\b(week|7 days|semana|أسبوع)\b/.test(input.text.toLocaleLowerCase()) ? from
+      : state.period.from;
+    const expected = Math.round((Date.parse(state.asOf + "T00:00:00Z") -
+      Date.parse(start + "T00:00:00Z")) / 86400000) + 1;
+    const sales = state.sales;
+    const observed = sales.available ? sales.value.filter(day =>
+      day.date >= start && day.date <= state.asOf && day.salesDataStatus !== "missing") : [];
+    if (observed.length === 0) return {
+      intent, status: "insufficient_evidence", evidence: [],
+      blocks: [{ type: "warning", code: "sales_unavailable", text: copy.missingEvidence }],
+    };
+    const valid = observed.every(day => [day.drinksCount, day.ordersCount].every(n =>
+      Number.isSafeInteger(n) && n >= 0));
+    if (!valid) return {
+      intent, status: "insufficient_evidence", evidence: [],
+      blocks: [{ type: "warning", code: "invalid_sales_units", text: copy.missingEvidence }],
+    };
+    const salesSource: EvidenceReference = {
+      source: "cafe_state", identifier: "sales-counts:" + start + ":" + state.asOf,
+      asOf: state.asOf,
+    };
+    const uniqueDays = new Set(observed.map(day => day.date)).size;
+    const partial = uniqueDays !== expected;
+    return {
+      intent, status: "verified", evidence: [salesSource],
+      blocks: [
+        { type: "text", text: copy.productSalesIntro },
+        { type: "count", label: copy.drinkUnits,
+          value: observed.reduce((sum, day) => sum + day.drinksCount, 0), source: salesSource },
+        { type: "count", label: copy.recordedOrders,
+          value: observed.reduce((sum, day) => sum + day.ordersCount, 0), source: salesSource },
+        ...(partial ? [{ type: "warning" as const, code: "partial_sales_coverage",
+          text: copy.productSalesPartial(uniqueDays, expected) }] : []),
+      ],
+    };
+  }
+
   if (intent === "profitability" || intent === "cafe_overview") {
     const result = await tools.getProfitability(dates);
     if (!result.available) return replyForSlice(intent, result, [source], [], copy);
@@ -139,6 +193,51 @@ export async function answerSupervisorQuestion(
   }
 
   if (intent === "expenses") {
+    const q = input.text.normalize("NFKC").toLocaleLowerCase();
+    const accrued = /\b(accrued|prorat|per day|so far in bills)\b|prorratead|تناسبي/.test(q);
+    const spent = /\b(spent|paid|payments made|actually spent)\b|gastad|pagad|أنفقت|مدفوع/.test(q);
+    if (spent) {
+      const actual = await tools.getRecordedExpenses({ from: state.period.from, to: state.asOf });
+      const ref: EvidenceReference = {
+        source: "cafe_state", identifier: "expense-ledger:" + state.period.from + ":" + state.asOf,
+        asOf: state.asOf,
+      };
+      if (!actual.available) return replyForSlice(intent, actual, [ref], [], copy);
+      return replyForSlice(intent, actual, [ref], [
+        { type: "text", text: actual.value.rows ? copy.spendingIntro : copy.spendingNone },
+        { type: "metric", label: copy.spendingLabel, valueCents: actual.value.amountCents, source: ref },
+      ], copy);
+    }
+    if (!accrued) {
+      const bills = await tools.getMonthlyRecurringBills();
+      const ref: EvidenceReference = {
+        source: "cafe_state", identifier: "recurring-bills:" + state.asOf.slice(0, 7),
+        asOf: state.asOf,
+      };
+      if (!bills.available) return replyForSlice(intent, bills, [ref], [], copy);
+      const qOnlyBills = /\b(bills?|rent|utilities|monthly bills?|recurring)\b|facturas|alquiler|فواتير|إيجار/.test(q) &&
+        !/\b(total expenses?|business expenses?|total costs?|all costs?)\b|gastos totales|المصاريف الكلية/.test(q);
+      const blocks: SupervisorReplyBlock[] = [
+        { type: "text", text: qOnlyBills ? copy.monthlyBillsIntro : copy.totalExpenseIntro },
+        { type: "metric", label: copy.fullMonthlyBills, valueCents: bills.value.amountCents, source: ref },
+      ];
+      const references: EvidenceReference[] = [ref];
+      if (!qOnlyBills) {
+        const costs = await tools.getProfitability({ from: state.period.from, to: state.asOf });
+        if (costs.available && costs.quality.missingInputs.length === 0 &&
+          costs.quality.staleInputs.length === 0) {
+          const costSource: EvidenceReference = { source: "cafe_state",
+            identifier: "operating-costs:" + state.period.from + ":" + state.asOf, asOf: state.asOf };
+          references.push(costSource);
+          blocks.push({ type: "metric", label: copy.operatingCostsSoFar,
+            valueCents: costs.value.totalCostsCents, source: costSource });
+        } else {
+          blocks.push({ type: "warning", code: "total_costs_incomplete",
+            text: copy.operatingCostsUnavailable });
+        }
+      }
+      return replyForSlice(intent, bills, references, blocks, copy);
+    }
     const result = await tools.getExpenseSummary(dates);
     if (!result.available) return replyForSlice(intent, result, [source], [], copy);
     // Use already period-prorated cents from the existing pure running-cost model.
