@@ -37,6 +37,7 @@ const copy: SupervisorReplyCopy = {
   leastSeller: (name) => "Least: " + name,
   matchedProduct: (name) => "Units: " + name,
   productNotFound: "No identified item",
+  productUnitsUnavailable: "No verified product units; showing daily aggregates",
   pricingIntro: "Review products",
   pricingNone: "No recorded pricing reviews",
   pricingUnavailable: "Pricing unavailable",
@@ -257,7 +258,7 @@ describe("Phase 4 finite Supervisor router", () => {
     expect(least.blocks.find((b) => b.type === "count")).toMatchObject({ label: "Least: Mocha", value: 2 });
   });
 
-  it("refuses item totals without reliable item-level coverage", async () => {
+  it("falls back to verified aggregate drinks/orders but never guesses item quantities", async () => {
     const state = cafeStateFromSnapshot(fixture);
     const answer = await answerSupervisorQuestion({
       text: "How many products sold this month?", state,
@@ -266,8 +267,10 @@ describe("Phase 4 finite Supervisor router", () => {
         quality: { level: "low", missingInputs: ["itemSalesCoverage"], estimatedInputs: [], staleInputs: [] },
       }) }),
     }, copy);
-    expect(answer.status).toBe("insufficient_evidence");
-    expect(answer.blocks.every((b) => b.type !== "count")).toBe(true);
+    expect(answer.blocks.some((b) => b.type === "warning" && b.code === "item_units_unavailable")).toBe(true);
+    expect(answer.blocks.filter((b) => b.type === "count").map((b) =>
+      b.type === "count" ? b.label : "")).toEqual(["Drinks", "Orders"]);
+    expect(answer.blocks.some((b) => b.type === "count" && b.label === "Units")).toBe(false);
   });
 
   it("counts only persisted actionable tasks, not raw signals or inferred actions", async () => {
