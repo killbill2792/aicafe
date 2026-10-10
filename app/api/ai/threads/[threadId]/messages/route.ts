@@ -56,6 +56,8 @@ export async function POST(request: Request, context: RouteContext) {
       estimatedNotice: t("estimation"),
       todayOverview: t("todayOverview"),
       monthOverview: t("monthOverview"),
+      weekOverview: t("weekOverview"),
+      periodUnavailable: t("periodUnavailable"),
       sales: t("sales"),
       totalCosts: t("costs"),
       ownerProfit: t("profit"),
