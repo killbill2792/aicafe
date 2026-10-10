@@ -10,6 +10,7 @@ import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
 import { signalsFromPricing } from "@/lib/operating/signals";
 import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
+import { supervisorFactReaders } from "./supervisorFacts.server";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -57,6 +58,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       assertBusiness(requested);
       return readPersistedOperatingTasks(requested);
     },
+    supervisorFactReaders(client, businessId),
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }
