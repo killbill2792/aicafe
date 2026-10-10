@@ -228,7 +228,8 @@ describe("Phase 4 finite Supervisor router", () => {
   it("distinguishes drinks sold from order count and item units", async () => {
     const state = cafeStateFromSnapshot(fixture);
     const getProductSales = vi.fn();
-    const scoped = tools({ getSalesTrend: async () => state.sales, getProductSales });
+    const scoped = tools({ getSalesTrend: async (dates: { from: string; to: string }) =>
+      cafeStateFromSnapshot(fixture, dates).sales, getProductSales });
     const drinks = await answerSupervisorQuestion({ text: "How many drinks sold today?", state, tools: scoped }, copy);
     const orders = await answerSupervisorQuestion({ text: "How many orders today?", state, tools: scoped }, copy);
     expect(drinks.blocks.find((b) => b.type === "count")).toMatchObject({
