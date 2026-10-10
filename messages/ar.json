@@ -999,7 +999,15 @@
     "homePriceReviewLater": "تم تأجيل مراجعة سعر {item} إلى وقت لاحق.",
     "homeSupplyNeedsResponse": "فحص المستلزمات يحتاج إلى رد: {item}.",
     "homeSupplies": "المستلزمات",
-    "teamRulesLink": "قواعد الفريق"
+    "teamRulesLink": "قواعد الفريق",
+    "whatsAppAlertsTitle": "تنبيهات الفريق عبر واتساب",
+    "whatsAppAlertsDescription": "تنبيه يومي اختياري لمهمة واحدة غير محسومة في الفريق. التفعيل للمالك صاحب الهاتف الموثق فقط، والإرسال يتطلب ربط مزود واتساب.",
+    "whatsAppAlertsEnable": "تفعيل التنبيهات",
+    "whatsAppAlertsDisable": "إيقاف التنبيهات",
+    "whatsAppAlertsLoading": "جارٍ التحديث…",
+    "whatsAppAlertsSaved": "تم حفظ التفضيل.",
+    "whatsAppAlertsError": "تعذر حفظ التفضيل.",
+    "whatsAppAlertsPhone": "تحقق من رقم هاتفك في حسابك أولاً."
   },
   "CafeProfile": {
     "title": "ملف المقهى",
