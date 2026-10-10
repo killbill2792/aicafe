@@ -117,7 +117,12 @@ export async function POST(request: Request, context: RouteContext) {
           const label = kinds[kind] ?? t("taskGeneral");
           return name.trim() ? t("taskCard", { kind: label, name }) : label;
         },
-        taskGroup: (status, count) => t("taskGroup", { status, count }),
+        taskGroup: (status, count) => t("taskGroup", {
+          status: status === "needs_you" ? t("needsYou") :
+            status === "handled" ? t("handled") :
+            status === "watching" ? t("watching") : status,
+          count,
+        }),
         clarifyPeriod: t("clarifyPeriod"),
         clarifyProduct: t("clarifyProduct"),
         clarifyQuestion: t("clarifyQuestion"),
