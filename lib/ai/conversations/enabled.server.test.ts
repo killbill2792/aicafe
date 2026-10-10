@@ -14,16 +14,18 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/client", () => ({
   isSupabaseConfigured: () => mock.supabase,
 }));
-class Forbidden extends Error {
-  constructor(public status: number, public code: string) { super(code); }
-}
-vi.mock("./auth.server", () => ({
-  ConversationApiError: Forbidden,
-  authenticatedConversationContext: async () => {
-    if (mock.denied) throw new Forbidden(403, "owner_access_required");
-    return { scope: mock.scope };
-  },
-}));
+vi.mock("./auth.server", () => {
+  class Forbidden extends Error {
+    constructor(public status: number, public code: string) { super(code); }
+  }
+  return {
+    ConversationApiError: Forbidden,
+    authenticatedConversationContext: async () => {
+      if (mock.denied) throw new Forbidden(403, "owner_access_required");
+      return { scope: mock.scope };
+    },
+  };
+});
 function query(kind: "session" | "writer") {
   return {
     from(table: string) {
