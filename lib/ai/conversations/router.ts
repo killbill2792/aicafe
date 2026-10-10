@@ -47,7 +47,7 @@ export type SupervisorReplyCopy = {
 export function detectSupervisorIntent(raw: string): SupervisorIntent {
   const text = raw.normalize("NFKC").toLocaleLowerCase().trim();
   if (/\b(rules?|instructions?|guidelines?|policies)\b|reglas|instrucciones|normas|قواعد|تعليمات/.test(text)) return "owner_rules";
-  if (/\b(how many|number of|units? sold|quantity sold|products? (?:am i )?(?:selling|sold)|drinks? (?:am i )?(?:selling|sold)|orders? (?:so far|today|this month)|sales volume)\b|cuántos (?:productos|cafés|pedidos)|unidades vendidas|كم (?:منتج|طلب|مشروب)|عدد (?:المنتجات|الطلبات)/.test(text)) return "unit_sales";
+  if (/\b(?:how many|number of)\s+(?:[a-z\s]{0,28})?(?:products?|menu items?|items?|drinks?|orders?|units?)\b|\b(?:units? sold|quantity sold|products? (?:am i )?(?:selling|sold)|drinks? (?:am i )?(?:selling|sold)|orders? (?:so far|today|this month)|sales volume|items? sold)\b|cuántos (?:productos|cafés|pedidos)|unidades vendidas|كم (?:منتج|طلب|مشروب)|عدد (?:المنتجات|الطلبات)/.test(text)) return "unit_sales";
   if (/\b(pric(e|es|ing)|menu|latte|cappuccino|markup)\b|precio|precios|menú|سعر|أسعار|قائمة/.test(text)) return "menu_pricing";
   if (/\b(staff|employee|labor|labour|shift|schedule|payroll)\b|personal|emplead|turno|موظف|عمال|دوام|مناوب/.test(text)) return "staff";
   if (/\b(attention|urgent|tasks?|needs you|team|handled|watching|issues?)\b|atención|tareas|equipo|الاهتمام|انتباه|المهام|الفريق/.test(text)) return "operating_tasks";
