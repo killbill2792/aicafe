@@ -1155,6 +1155,8 @@
     "priceItem": "Revisar precio: {item}",
     "tasksSummary": "El equipo registra {needs} tareas que requieren atención, {handled} resueltas y {watching} en observación.",
     "staffSummary": "Olivia tiene {count} solicitudes de personal pendientes en el equipo.",
-    "staffNone": "Olivia no tiene tareas abiertas registradas. Esto no constituye una auditoría completa del personal."
+    "staffNone": "Olivia no tiene tareas abiertas registradas. Esto no constituye una auditoría completa del personal.",
+    "weekOverview": "Estos son los últimos siete días naturales según los datos registrados.",
+    "periodUnavailable": "Puedo verificar hoy, los últimos siete días si están dentro del mes cargado o el mes actual. Aún no hay datos fiables para períodos anteriores o futuros."
   }
 }
