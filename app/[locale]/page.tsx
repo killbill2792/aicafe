@@ -51,12 +51,19 @@ function operatingTaskHref(task: OperatingTask): string {
   if (task.kind === "staff_coverage") {
     const query = new URLSearchParams();
     if (task.entityId) query.set("employee", task.entityId);
-    if (typeof task.payload.businessDate === "string") query.set("date", task.payload.businessDate);
+    const shiftDate = task.payload.shiftDate ?? task.payload.businessDate;
+    if (typeof shiftDate === "string") query.set("date", shiftDate);
     return `/more/manage-staff${query.size ? `?${query}` : ""}`;
   }
   if (task.kind === "data_quality") return missingCostDestination(String(task.payload.categoryCode) as ExpenseCategoryCode);
   if (task.kind === "money_update") return "/more/bills";
-  return "/more/uploads/ingredients";
+  // Supply questions need the existing Team inbox; an ingredient-cost upload is not a
+  // response to a staff/member stock check, and this UI must never imply it is.
+  if (task.kind === "supply_check") {
+    const status = task.status === "handled" ? "handled" : task.status === "watching" ? "watching" : "needs_you";
+    return `/operations?status=${status}&agent=maya`;
+  }
+  return "/operations";
 }
 
 function newestTaskTime(task: OperatingTask): number {
@@ -71,7 +78,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
   const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
   const vm = buildHomeViewModel(snapshot, period);
-  const todayVm = buildHomeViewModel(snapshot, "today");
+  // Today is already the active viewmodel on the default Home period. Avoid recomputing
+  // expensive cost-recovery projections just to render the compact snapshot.
+  const todayVm = period === "today" ? vm : buildHomeViewModel(snapshot, "today");
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const glance = buildTodayGlanceViewModel(snapshot);
   const [t, tCommon, tOperations, tCategories] = await Promise.all([
@@ -104,9 +113,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     let title: string;
 
     if (task.status === "handled" && task.kind === "price_review") {
-      title = tOperations("homeHandledPrice", { item: itemName });
+      // Handled covers both "keep current" and a separately verified price application.
+      // Never describe a verified price change as a decision to keep the old price.
+      title = tOperations(
+        task.payload.priceAppliedToPos === true
+          ? "homeVerifiedPriceApplied"
+          : task.payload.ownerChoice === "keep_price"
+            ? "homeHandledPrice"
+            : "homePriceReviewClosed",
+        { item: itemName },
+      );
     } else if (task.status === "handled" && task.kind === "staff_coverage") {
-      title = tOperations("homeHandledCoverage");
+      title = tOperations(task.payload.scheduleApplied === true ? "homeHandledCoverage" : "homeCoverageReviewed");
+    } else if (task.status === "handled") {
+      title = tOperations("homeTaskHandled");
+    } else if (task.kind === "price_review" && task.status === "watching" && task.payload.awaitingPriceApplication === true) {
+      title = tOperations("homePriceAwaitingVerification", { item: itemName });
+    } else if (task.kind === "price_review" && task.status === "watching" && typeof task.payload.snoozeMode === "string") {
+      title = tOperations("homePriceReviewLater", { item: itemName });
     } else if (task.kind === "price_review") {
       const direction = priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents));
       title = tOperations(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName });
@@ -116,6 +140,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       title = tOperations("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? tOperations("staffCoverageIssue")) });
     } else if (task.kind === "money_update") {
       title = tOperations("homeMoneyUpdate");
+    } else if (task.kind === "supply_check" && task.status === "needs_response") {
+      title = tOperations("homeSupplyNeedsResponse", { item: String(task.payload.itemName ?? tOperations("homeSupplies")) });
     } else {
       title = tOperations("mayaWatching");
     }
