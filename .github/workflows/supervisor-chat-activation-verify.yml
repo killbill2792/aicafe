@@ -1,0 +1,25 @@
+name: Supervisor Chat Activation Verification
+on:
+  push:
+    branches:
+      - chatgpt/fix-supervisor-chat-activation
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install
+        run: npm ci
+      - name: TypeScript
+        run: npx tsc --noEmit
+      - name: Changed-file ESLint
+        run: npx eslint 'app/[locale]/page.tsx' 'components/home/SupervisorHomePanel.tsx' 'components/home/SupervisorChatComposer.tsx' 'lib/ai/conversations/enabled.server.ts' 'lib/ai/conversations/enabled.server.test.ts' 'lib/ai/conversations/readiness.ts' 'lib/ai/conversations/readiness.test.ts'
+      - name: Full Vitest suite
+        run: npm test
+      - name: Production build
+        run: npm run build
+      - name: Whitespace
+        run: git diff --check origin/main...HEAD
