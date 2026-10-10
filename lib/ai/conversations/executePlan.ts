@@ -20,7 +20,7 @@ export type PlanExecutorInput = {
 
 const validCents = (value: number) => Number.isSafeInteger(value);
 const validCount = (value: number) => Number.isSafeInteger(value) && value >= 0;
-function datesFor(state: CafeState, period: "today" | "month_to_date" | "last_seven_days" | "last_28_days") {
+function datesFor(state: CafeState, period: "today" | "month_to_date" | "last_seven_days" | "last_28_days" | "yesterday" | "previous_month" | "other_period") {
   const to = state.asOf;
   const from = period === "month_to_date" ? state.asOf.slice(0, 7) + "-01"
     : period === "today" ? to
@@ -69,7 +69,13 @@ export async function executeSupervisorPlan(input: PlanExecutorInput): Promise<G
   }
   if (plan.name === "read_finances") {
     const { metric, period } = plan.arguments;
+    if (period === "yesterday" || period === "previous_month" || period === "other_period") {
+      return noEvidence("expenses", copy.periodUnavailable, "unsupported_period");
+    }
     const { from, to } = datesFor(state, period);
+    if (metric !== "monthly_bills" && from < state.period.from) {
+      return noEvidence("expenses", copy.periodUnavailable, "unsupported_period");
+    }
     const identifier = "finance:" + metric + ":" + from + ":" + to;
     const source = ref(identifier, asOf);
     if (metric === "monthly_bills" || metric === "accrued_fixed_bills") {
@@ -132,6 +138,9 @@ export async function executeSupervisorPlan(input: PlanExecutorInput): Promise<G
   }
   if (plan.name === "read_sales") {
     const { metric, period, category, product_name } = plan.arguments;
+    if (period === "yesterday" || period === "previous_month" || period === "other_period") {
+      return noEvidence("sales_quantity", copy.periodUnavailable, "unsupported_period");
+    }
     const { from, to } = datesFor(state, period);
     const source = ref("sales:" + metric + ":" + from + ":" + to, asOf);
     const intro = periodIntro(copy.salesQuantityIntro, from, to, copy);
