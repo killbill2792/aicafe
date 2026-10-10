@@ -999,7 +999,8 @@
     "homePriceReviewLater": "Revisión del precio de {item} programada para más adelante.",
     "homeSupplyNeedsResponse": "Se necesita una respuesta sobre los suministros: {item}.",
     "homeSupplies": "suministros",
-    "teamRulesLink": "Reglas del equipo"
+    "teamRulesLink": "Reglas del equipo",
+    "supplierSourcesLink": "Fuentes de proveedores"
   },
   "CafeProfile": {
     "title": "Perfil del café",
@@ -1197,5 +1198,30 @@
     "olivia": "Olivia · Personal",
     "maya": "Maya · Suministros",
     "leo": "Leo · Dinero"
+  },
+  "SupplierEvidence": {
+    "back": "Volver al equipo",
+    "title": "Fuentes de proveedores",
+    "description": "Guarda presupuestos reales con su fuente. Son datos declarados por el propietario, no verificados ni aplicados a los costos.",
+    "supplier": "Proveedor",
+    "item": "Producto",
+    "price": "Precio del paquete (USD)",
+    "count": "Cantidad",
+    "unit": "Unidad",
+    "sourceKind": "Origen de la información",
+    "sourceUrl": "Página web (opcional)",
+    "date": "Fecha",
+    "save": "Guardar precio",
+    "saving": "Guardando…",
+    "saved": "Precio guardado como dato del propietario.",
+    "error": "No se pudo guardar o cargar.",
+    "history": "Presupuestos guardados",
+    "empty": "Aún no hay presupuestos.",
+    "notVerified": "Declarado por el propietario; no verificado",
+    "search": "Buscar fuentes públicas",
+    "searchButton": "Buscar",
+    "searchUnavailable": "La investigación pública no está conectada.",
+    "webNotice": "Los resultados son fragmentos no verificados, no precios ni existencias confirmados. Requiere proveedor conectado.",
+    "comparison": "Diferencia entre paquetes iguales"
   }
 }
