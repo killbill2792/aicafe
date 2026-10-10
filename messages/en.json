@@ -1175,6 +1175,7 @@
     "leastSeller": "Least seller: {name}",
     "matchedProduct": "Units sold: {name}",
     "productNotFound": "I can't identify a reliably tracked product for that name or category. Try a specific menu-item name.",
+    "productUnitsUnavailable": "Exact menu-item units and rankings aren't verified for this period. These are verified aggregate drink and order counts instead, not product-unit totals.",
     "voiceStop": "Stop dictation",
     "voiceProcessing": "Finishing speech recognition…",
     "voicePermissionDenied": "Microphone access was blocked. Allow microphone permission in your browser, then try again.",
