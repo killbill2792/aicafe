@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
+import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import { Mic, Plus, Send } from "lucide-react";
 import { formatCents } from "@/lib/calc";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
@@ -32,6 +33,11 @@ export type SupervisorChatCopy = {
   attachmentSaved: string;
   attachmentNotice: string;
   attachmentUpload: string;
+  statusDisabled: string;
+  statusDatabase: string;
+  statusWriter: string;
+  statusOwner: string;
+  statusStorage: string;
 };
 type Locale = "en" | "es" | "ar";
 type SpeechRecognizer = {
@@ -108,8 +114,9 @@ function SupervisorMessage({ message, copy }: { message: ConversationMessage; co
  * and verified structured replies render here. No local fake AI response.
  */
 export default function SupervisorChatComposer({
-  enabled, locale, copy,
-}: { enabled: boolean; locale: Locale; copy: SupervisorChatCopy }) {
+  enabled, unavailableReason, locale, copy,
+}: { enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
+  locale: Locale; copy: SupervisorChatCopy }) {
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -365,7 +372,16 @@ export default function SupervisorChatComposer({
         </div>
       </form>
 
-      <p className="mt-2 text-[15px] font-medium text-ink-muted">{enabled ? copy.live : copy.comingSoon}</p>
+      <p role="status" aria-live="polite"
+        className={enabled
+          ? "mt-2 text-[15px] font-medium text-ink-muted"
+          : "mt-2 rounded-xl border border-[#D8C8B5] bg-[#FFF8EF] p-3 text-[17px] font-semibold text-ink"}>
+        {enabled ? copy.live :
+          unavailableReason === "explicitly_disabled" ? copy.statusDisabled :
+          unavailableReason === "supabase_unconfigured" ? copy.statusDatabase :
+          unavailableReason === "server_writer_unconfigured" ? copy.statusWriter :
+          unavailableReason === "owner_access_required" ? copy.statusOwner : copy.statusStorage}
+      </p>
       <div role="status" aria-live="polite" className="mt-1 text-[17px] text-ink">
         {sending && copy.sending}
         {uploading && copy.attachmentUpload}
