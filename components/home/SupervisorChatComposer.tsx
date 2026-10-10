@@ -329,7 +329,11 @@ export default function SupervisorChatComposer({
         className="mb-3 rounded-xl border border-[#D8C8B5] bg-white p-3">
         <p className="text-[17px] text-ink-muted">{copy.attachmentNotice}</p>
         <ul className="mt-2 space-y-2">{attachments.map((file)=>
-          <li key={file.id} className="break-all text-[17px] text-ink">{file.originalName}</li>)}</ul>
+          <li key={file.id} className="break-all text-[17px] text-ink">
+            <a href={"/api/ai/threads/"+encodeURIComponent(threadId??"")+
+              "/attachments/"+encodeURIComponent(file.id)}
+              target="_blank" rel="noopener noreferrer" className="underline">{file.originalName}</a>
+          </li>)}</ul>
       </section>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
         className="rounded-[24px] border border-[#D8C8B5] bg-card/95 p-2 shadow-[0_10px_30px_rgba(42,29,20,0.08)]">
