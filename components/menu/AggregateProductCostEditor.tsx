@@ -73,11 +73,14 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
   }
 
   function comparison(item: MenuItemForEdit): string | null {
-    if (item.recipeCostStatus !== "READY" || item.recipeCostCents === null || item.ownerTotalCostCents == null || item.costDifferenceCents === null) return null;
-    if (Math.abs(item.costDifferenceCents) < 0.5) return labels.same;
-    return item.costDifferenceCents > 0
-      ? labels.recipeHigher.replace("{amount}", formatCents(Math.abs(item.costDifferenceCents)))
-      : labels.recipeLower.replace("{amount}", formatCents(Math.abs(item.costDifferenceCents)));
+    const recipeCost = item.recipeCostCents;
+    const ownerTotal = item.ownerTotalCostCents;
+    const difference = item.costDifferenceCents;
+    if ((item.recipeCostStatus ?? item.costStatus) !== "READY" || recipeCost == null || ownerTotal == null || difference == null) return null;
+    if (Math.abs(difference) < 0.5) return labels.same;
+    return difference > 0
+      ? labels.recipeHigher.replace("{amount}", formatCents(Math.abs(difference)))
+      : labels.recipeLower.replace("{amount}", formatCents(Math.abs(difference)));
   }
 
   return (
