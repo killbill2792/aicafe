@@ -160,15 +160,100 @@ export async function answerSupervisorQuestion(
   }
 
   if (intent === "expenses") {
-    const result = await tools.getExpenseSummary(dates);
+    const q = input.text.normalize("NFKC").toLocaleLowerCase();
+    const isAccrual = /\b(accru|prorat|elapsed fixed|fixed bills so far)\b|devengad|prorrate|مستحق|المتراكمة/.test(q);
+    const isRecorded = /\b(spent|spending|paid|actual expenses?|recorded expenses?|spent so far)\b|gastad|pagad|أنفقت|المدفوعة/.test(q);
+    const isBills = !isRecorded && !isAccrual && /\b(bills?|rent|utilities|recurring|fixed)\b|facturas|alquiler|فواتير|إيجار/.test(q);
+    if (isBills || isAccrual) {
+      const result = await tools.getMonthlyBills();
+      const ref: EvidenceReference = {
+        source: "cafe_state", identifier: "recurring_budget:" + state.asOf.slice(0, 7), asOf: observedAt,
+      };
+      if (!result.available) return replyForSlice(intent, result, [ref], [], copy);
+      const monthKey = state.asOf.slice(0, 7);
+      const monthEnd = new Date(Date.UTC(Number(monthKey.slice(0, 4)),
+        Number(monthKey.slice(5, 7)), 0)).toISOString().slice(0, 10);
+      const amount = isAccrual
+        ? roundHalfUpToCent(runningCostsForPeriodCents([{
+            categoryCode: "bills", monthKey, amountCents: result.value.totalCents,
+            isEstimate: false, isMissing: false,
+          }], from, to))
+        : result.value.totalCents;
+      return replyForSlice(intent, result, [ref], [
+        { type: "text", text: (isAccrual ? copy.accruedBillsIntro : copy.monthlyBillsIntro)
+          + " " + copy.periodRange(isAccrual ? from : monthKey + "-01", isAccrual ? to : monthEnd) },
+        { type: "metric", label: isAccrual ? copy.accruedBillsLabel : copy.recurringBills,
+          valueCents: amount, source: ref },
+      ], copy);
+    }
+    if (isRecorded) {
+      const result = await tools.getRecordedExpenses(dates);
+      const ref: EvidenceReference = { source: "cafe_state", identifier: "actual_expense_entries:" + from + ":" + to, asOf: observedAt };
+      if (!result.available) return replyForSlice(intent, result, [ref], [], copy);
+      return replyForSlice(intent, result, [ref], [
+        { type: "text", text: copy.actualExpensesIntro + " " + copy.periodRange(from, to) },
+        { type: "metric", label: copy.actualExpensesLabel, valueCents: result.value.totalCents, source: ref },
+      ], copy);
+    }
+    // Total business costs: ONLY the canonical period-scoped financial engine,
+    // not the snapshot's hybrid actual-or-recurring category values re-prorated.
+    const result = await tools.getProfitability(dates);
     if (!result.available) return replyForSlice(intent, result, [source], [], copy);
-    // Use already period-prorated cents from the existing pure running-cost model.
-    // This is a recurring-bills summary, not an invented total business expense.
-    const amount = result.value.reduce((sum, row) => sum + row.amountCents, 0);
     return replyForSlice(intent, result, [source], [
-      { type: "text", text: copy.billsIntro },
-      { type: "metric", label: copy.recurringBills, valueCents: amount, source },
+      { type: "text", text: copy.businessCostsIntro + " " + copy.periodRange(from, to) },
+      { type: "metric", label: copy.totalCosts, valueCents: result.value.totalCostsCents, source },
     ], copy);
+  }
+
+  if (intent === "sales_quantity") {
+    const q = input.text.normalize("NFKC").toLocaleLowerCase();
+    const wantsOrders = /\borders?\b|pedidos|طلبات/.test(q);
+    const wantsDrinks = /\bdrinks?\b|bebidas|مشروب|مشروبات/.test(q);
+    const wantsRanking = /\b(best|most|top|least|worst|lowest|popular)\b|más vendid|menos vendid|الأكثر|الأقل/.test(q);
+    const wantsLeast = /\b(least|worst|lowest)\b|menos vendid|الأقل/.test(q);
+    const wantsDistinct = /\b(distinct|different|unique|variety)\b|diferentes|مختلف/.test(q);
+    const ref: EvidenceReference = { source: "cafe_state", identifier: "sales_units:" + from + ":" + to, asOf: observedAt };
+    const trend = await tools.getSalesTrend(dates);
+    if (!trend.available) return replyForSlice(intent, trend, [ref], [], copy);
+    const intro: SupervisorReplyBlock = { type: "text", text: copy.salesQuantityIntro + " " + copy.periodRange(from, to) };
+    if (wantsOrders || (wantsDrinks && !wantsRanking)) {
+      const value = trend.value.reduce((sum, d) => sum + (wantsOrders ? d.ordersCount : d.drinksCount), 0);
+      return replyForSlice(intent, trend, [ref], [intro, {
+        type: "count", label: wantsOrders ? copy.ordersCount : copy.drinksCount,
+        value, source: ref,
+      }], copy);
+    }
+    const products = await tools.getProductSales(dates);
+    if (!products.available) return replyForSlice(intent, products, [ref], [], copy);
+    let rows = products.value;
+    if (wantsDrinks || /\bcoffee(s)?\b|cafés?|قهو/.test(q)) {
+      // "Coffee" has no reliable catalog taxonomy: avoid silently equating all drinks with coffee.
+      if (/\bcoffee(s)?\b|cafés?|قهو/.test(q)) {
+        rows = rows.filter((p) => /\bcoffee\b/i.test(p.name));
+        if (!rows.length) return { intent, status: "insufficient_evidence", evidence: [],
+          blocks: [{ type: "warning", code: "product_not_identified", text: copy.productNotFound }] };
+      } else rows = rows.filter((p) => p.category === "drink");
+    }
+    const named = rows.filter((p) => q.includes(p.name.normalize("NFKC").toLocaleLowerCase()));
+    if (named.length) rows = named;
+    if (!rows.length) return { intent, status: "insufficient_evidence", evidence: [],
+      blocks: [{ type: "warning", code: "product_not_identified", text: copy.productNotFound }] };
+    if (wantsRanking) {
+      const ranked = [...rows].sort((a, b) => wantsLeast ? a.units - b.units || a.name.localeCompare(b.name)
+        : b.units - a.units || a.name.localeCompare(b.name));
+      const first = ranked[0];
+      return replyForSlice(intent, products, [ref], [intro, {
+        type: "count", label: wantsLeast ? copy.leastSeller(first.name) : copy.bestSeller(first.name),
+        value: first.units, source: ref,
+      }], copy);
+    }
+    const count = wantsDistinct ? rows.filter((p) => p.units > 0).length :
+      rows.reduce((sum, p) => sum + p.units, 0);
+    return replyForSlice(intent, products, [ref], [intro, {
+      type: "count", label: wantsDistinct ? copy.distinctProducts :
+        named.length ? copy.matchedProduct(named.map((p) => p.name).join(", ")) : copy.unitsSold,
+      value: count, source: ref,
+    }], copy);
   }
 
   if (intent === "staff" || intent === "operating_tasks") {
