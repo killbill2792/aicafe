@@ -11,7 +11,7 @@ describe("Public supplier research safeguards",()=>{
  });
  it("marks results unverified and skips HTTP/non-URL sources",async()=>{
   process.env.SUPPLIER_RESEARCH_ENABLED="true";process.env.BRAVE_SEARCH_API_KEY="key";
-  const send=vi.fn(async()=>({ok:true,json:async()=>({web:{results:[
+  const send=vi.fn(async (_url:string)=>({ok:true,json:async()=>({web:{results:[
    {title:"Vendor",url:"https://example.com/milk",description:"Current listing"},
    {title:"Danger",url:"http://example.com/insecure",description:"not returned"},
   ]}})}));
