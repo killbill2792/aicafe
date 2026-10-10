@@ -14,7 +14,7 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
       - name: ESLint
-        run: npx eslint 'app/[locale]/page.tsx' 'app/api/ai/threads/[threadId]/attachments/**/*.ts' components/home/SupervisorChatComposer.tsx lib/ai/conversations/attachments.ts lib/ai/conversations/attachments.test.ts
+        run: npx eslint 'app/[locale]/page.tsx' 'app/api/ai/threads/[threadId]/attachments/route.ts' 'app/api/ai/threads/[threadId]/attachments/[attachmentId]/route.ts' components/home/SupervisorChatComposer.tsx lib/ai/conversations/attachments.ts lib/ai/conversations/attachments.test.ts
       - name: Tests
         run: npm test
       - name: Build
