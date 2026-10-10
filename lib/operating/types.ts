@@ -1,7 +1,26 @@
 import type { BusinessSettings, MenuItemSnapshot, RunningCostLine } from "@/lib/data/types";
-import type { BusinessEconomicsResult, Confidence, DailyFacts, DataQuality, PricingResult } from "@/lib/calc";
+import type { Confidence, DailyFacts, DataQuality, PricingResult } from "@/lib/calc";
 
 export type CafeStatePeriod = { from: string; to: string };
+
+/** Period-specific, verified output from the existing deterministic profit functions.
+ * Values are cents (not forecast dollars), and remain unavailable if critical data is missing.
+ */
+export type CafePeriodProfitability = {
+  netSalesCents: number;
+  totalCostsCents: number;
+  ownerProfitCents: number;
+  operatingMargin: number;
+  coveredSalesDays: number;
+  expectedSalesDays: number;
+};
+
+export type CafeLaborDay = {
+  date: string;
+  wagesCents: number;
+  staffTaxCents: number;
+  loadedStaffCostCents: number;
+};
 export type KnownSlice<T> = { available: true; value: T; quality: DataQuality } | { available: false; value: null; quality: DataQuality };
 export type CafeState = {
   asOf: string;
@@ -10,7 +29,8 @@ export type CafeState = {
   products: KnownSlice<MenuItemSnapshot[]>;
   sales: KnownSlice<DailyFacts[]>;
   expenses: KnownSlice<RunningCostLine[]>;
-  profitability: KnownSlice<BusinessEconomicsResult>;
+  profitability: KnownSlice<CafePeriodProfitability>;
+  labor: KnownSlice<CafeLaborDay[]>;
   pricingRecommendations: KnownSlice<Record<string, PricingResult>>;
   inventory: KnownSlice<never>;
   suppliers: KnownSlice<never>;
