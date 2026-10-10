@@ -70,14 +70,19 @@ export class SupabaseConversationRepository implements ConversationRepository {
     return thread(data as ThreadRow);
   }
 
-  async listThreads(scope: ConversationScope) {
+  async listThreads(scope: ConversationScope, offset: number): Promise<ConversationPage<ConversationThread>> {
     const { data, error } = await this.client.from("ai_threads")
       .select(THREAD_COLUMNS)
       .eq("business_id", scope.businessId).eq("owner_user_id", scope.ownerUserId)
       .order("updated_at", { ascending: false }).order("id", { ascending: false })
-      .limit(THREAD_PAGE_SIZE);
+      .range(offset, offset + THREAD_PAGE_SIZE);
     if (error) throw error;
-    return (data as ThreadRow[]).map(thread);
+    const rows = data as ThreadRow[];
+    const hasMore = rows.length > THREAD_PAGE_SIZE;
+    return {
+      items: rows.slice(0, THREAD_PAGE_SIZE).map(thread),
+      nextOffset: hasMore ? offset + THREAD_PAGE_SIZE : null,
+    };
   }
 
   async findMessageByKey(scope: ConversationScope, threadId: string, key: string) {
