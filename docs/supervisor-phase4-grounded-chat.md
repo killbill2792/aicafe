@@ -4,7 +4,7 @@ Phase 4 makes the Phase 1 Ask anything control a **real, persisted read-only con
 
 ## Supported verified flows
 
-1. "How are we doing today?", "What was our profit this month?", similar EN/ES/AR phrasing: exact net sales, total costs and owner profit **from the existing `getProfitability` tool** for the supported calendar period; if sales coverage, product costs, processing fees or bills are missing, explain insufficient evidence, never guess a number. Estimated payroll, bills or fees are clearly marked.
+1. "How are we doing today?", "What was our profit this month?", "What about this week?" (last seven calendar days), similar EN/ES/AR phrasing: exact net sales, total costs and owner profit **from the existing `getProfitability` tool** for the supported calendar period; requests for yesterday, previous month/week or future dates explicitly fail closed; if sales coverage, product costs, processing fees or bills are missing, explain insufficient evidence, never guess a number. Estimated payroll, bills or fees are clearly marked.
 2. "What needs my attention?", "Any staff issues?": **read-only persisted Team inbox** (owner-needed, handled, watching, or Olivia-specific outstanding tasks). Zero open Olivia tasks is not a certification of staff coverage; no task status is changed.
 3. "Should I change prices?": list at most three canonical pricing-engine **review recommendations** with current cost/benchmark source, label estimates, and say explicitly that no prices are applied. No market/elasticity claims are inferred.
 4. "What about bills/rent?": only calendar-prorated recurring bills from the pure running-costs engine, **not** all operational costs.
@@ -35,3 +35,6 @@ Every output is a validated `GroundedSupervisorReply` with `verified | estimated
 This phase is not unrestricted "ask anything". Natural-language intent beyond the enumerated commands, multi-step planning, verified third-party research, voice transcription, attachments, owner-editable rules, staff messaging, WhatsApp and approved business writes require later phases. The safe fallback tells owners what is supported instead of inventing unsupported answers.
 
 No new npm dependencies, Supabase schema, POS mutations, money math or task lifecycle changes were introduced.
+
+## CI/deployment status for this implementation
+GitHub Actions passed TypeScript, changed-file ESLint, 501 Vitest tests and the production build. Vercel's preview status on this PR is a **build-rate limit**, not a code compilation error. Retry Vercel preview after the rate limit clears and perform a logged-in staging walkthrough before turning on the feature flag in production.

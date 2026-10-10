@@ -2353,7 +2353,7 @@ Phase 3 implementation / verification:
 - [ ] Before activating this PR in production, review/reconcile migration history and apply migration 33 deliberately (do not blanket `supabase db push`). Staging Supabase end-to-end session tests should supplement disposable-Postgres RLS tests.
 - [ ] Phase 4 implements grounded tool routing, structured Supervisor replies, safe authorized response persistence and finally enables the Home Ask anything UI after successful end-to-end checks.
 
-## Supervisor Phase 4 — grounded read-only conversation (2026-10-10, in progress)
+## Supervisor Phase 4 — grounded read-only conversation (2026-10-10, review ready)
 
 Starting point: PR #35 is merged at b160197. Production migration #33 may have been applied manually; deployment history must be reconciled and authenticated staging tested. No further production SQL push in this phase.
 
@@ -2363,3 +2363,15 @@ Plan:
 3. Store Supervisor blocks via an audited privileged **server-only writer** bound to a previously authenticated owner message, with deterministic idempotency; never expose an insert-Supervisor endpoint or permit client-selected business/user/role/evidence.
 4. Enable the Home text composer, suggestion chips and persisted chat history behind `SUPERVISOR_CHAT_ENABLED=true` plus configured service role and authenticated session. Keep +, microphone and WhatsApp disabled until their real workflows are available. EN/ES/AR and accessible controls. No fake replies.
 5. Keep read-only: no price updates, task status changes, POS writes, new tables, or calculations. Add router, idempotency, fail-closed, data quality and tenant-isolation tests; run build/CI and open an unmerged PR.
+
+Phase 4 implementation and safety closure:
+- [x] New finite intent router handles recorded-profit summaries for Today/last seven calendar days/current month; recurring bills; canonical pricing-review suggestions; persisted Team and Olivia task status; unsupported questions return an honest no-evidence response.
+- [x] Historic or future periods not backed by the Phase 2 trusted dataset are refused. Missing or stale data never becomes a verified metric; estimated sources are labeled. No pricing action, staff action, POS write, task reconciliation, AI provider guess, or business formula was added.
+- [x] Phase 1 Supervisor hero and placeholder preserved. The Home text composer, suggested prompts, history and new threads are functional behind `SUPERVISOR_CHAT_ENABLED=true`; voice/attachments remain disabled.
+- [x] Authenticated owner scope comes from Phase 3. A server-only service-role writer writes structured vetted Supervisor blocks with exact evidence, immutable original owner-message provenance and stable reply ID for race-safe retries. No client-accessible Supervisor insert endpoint.
+- [x] Localized response and Home chat text in EN/ES/AR. No additional SQL migration or npm dependency.
+- [x] Regression coverage includes missing/unverified/stale sources, exact owner-profit cents, pricing provenance, false period interpretation, persisted task statuses, owner/café-bound reply persistence and idempotency.
+- [x] GitHub Actions verified TypeScript, changed-file ESLint, **501 Vitest tests**, Next.js production build and `git diff --check` on implementation commit b2897c8. The temporary branch-only workflow was removed afterward.
+- [ ] Vercel deployment preview could NOT be verified: Vercel's commit status points to `upgradeToPro=build-rate-limit`. This is a deployment-rate limit; GitHub CI production build passed. Re-try preview after Vercel rate-limit clears before production activation.
+- [ ] Phase 3 migration #33's live Supabase application and migration history are not independently confirmed in this chat. Enable `SUPERVISOR_CHAT_ENABLED=true` only after reconciling migration 33 and staging end-to-end owner/RLS checks.
+- [ ] Whole-repository lint baseline errors identified in Phase 1 remain unrelated; changed files pass.
