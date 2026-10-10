@@ -202,7 +202,7 @@ async function main() {
       [CAFE_A,RULE_A,OWNER_A],"42501",
     );
     const audit=await client.query(
-      "select previous_status,new_status,version,actor_user_id from ai_rule_events where rule_id=$1 order id",[RULE_A],
+      "select previous_status,new_status,version,actor_user_id from ai_rule_events where rule_id=$1 order by id",[RULE_A],
     );
     assert.deepEqual(audit.rows.map(x=>[x.previous_status,x.new_status,x.version,x.actor_user_id]),[
       [null,"draft",1,OWNER_A],["draft","active",2,OWNER_A],
