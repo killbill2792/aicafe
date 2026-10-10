@@ -37,7 +37,8 @@ create table if not exists ai_delivery_attempts (
   sent_at timestamptz,
   foreign key(business_id,owner_user_id)
     references ai_owner_notifications(business_id,owner_user_id) on delete cascade,
-  unique(business_id,owner_user_id,task_id,task_status,business_date)
+  unique(business_id,owner_user_id,task_id,task_status,business_date),
+  unique(business_id,owner_user_id,business_date)
 );
 create index if not exists ai_delivery_attempts_latest_idx on ai_delivery_attempts
   (business_id,owner_user_id,created_at desc);
