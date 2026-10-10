@@ -35,6 +35,7 @@ create table if not exists ai_messages (
   unique (thread_id, client_message_id),
   check (
     (role = 'owner'
+      and author_user_id is not null
       and author_user_id = owner_user_id
       and content_type = 'text'
       and text_content is not null
@@ -53,7 +54,7 @@ create table if not exists ai_messages (
         then jsonb_array_length(structured_content) between 1 and 30
         else false end
       and jsonb_typeof(grounding) = 'object'
-      and grounding->>'status' in ('verified', 'estimated', 'insufficient_evidence'))
+      and coalesce(grounding->>'status', '') in ('verified', 'estimated', 'insufficient_evidence'))
   )
 );
 create index if not exists ai_messages_thread_recent_idx
