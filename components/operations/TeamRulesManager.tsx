@@ -49,11 +49,25 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    void load().catch(() => { if (!cancelled) setError("error"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [load]);
+    const controller = new AbortController();
+    void Promise.all([
+      fetch("/api/ai/rules", { signal: controller.signal, cache: "no-store" })
+        .then(readResponse<RulesPage<TeamRule>>),
+      fetch("/api/ai/rules/audit", { signal: controller.signal, cache: "no-store" })
+        .then(readResponse<RulesPage<RuleEvent>>),
+    ]).then(([rulesPage, auditPage]) => {
+      if (controller.signal.aborted) return;
+      setRules(rulesPage.items);
+      setNextRuleOffset(rulesPage.nextOffset);
+      setEvents(auditPage.items);
+      setNextAuditOffset(auditPage.nextOffset);
+    }).catch(() => {
+      if (!controller.signal.aborted) setError("error");
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
+    return () => controller.abort();
+  }, []);
 
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
