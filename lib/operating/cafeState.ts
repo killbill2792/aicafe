@@ -5,6 +5,8 @@ import {
   totalCostsCentsForPeriod,
   ownerProfitCentsForPeriod,
   runningCostsForPeriodCents,
+  runningCostsForPeriodCentsByCategory,
+  allocateIntegerCentsByCategory,
   roundHalfUpToCent,
   ratio,
   staffCostCentsForPeriod,
@@ -166,15 +168,29 @@ export function cafeStateFromSnapshot(
 
   // Monthly running costs must be *calendar-prorated* over the requested range.
   // Full-month costs against today's or sparse sales gave a fictional loss.
-  const running = inRange
-    ? runningCostsForPeriodCents(snapshot.runningCostLines.map((line) => ({
-        categoryCode: line.categoryCode,
-        monthKey: snapshot.monthKey,
-        amountCents: line.amountCents,
-        isEstimate: line.isEstimate,
-        isMissing: line.isMissing,
-      })), period.from, period.to)
-    : 0;
+  const monthlyLines = snapshot.runningCostLines.map((line) => ({
+    categoryCode: line.categoryCode,
+    monthKey: snapshot.monthKey,
+    amountCents: line.amountCents,
+    isEstimate: line.isEstimate,
+    isMissing: line.isMissing,
+  }));
+  const running = inRange ? runningCostsForPeriodCents(monthlyLines, period.from, period.to) : 0;
+  // Reuse the SAME cent-safe largest-remainder allocator used by Money's category
+  // breakdown, so an arbitrary supported range's detail rows reconcile to the
+  // aggregate rounded operating costs even when individual lines have fractional cents.
+  const rawByCategory = inRange
+    ? runningCostsForPeriodCentsByCategory(monthlyLines, period.from, period.to)
+    : new Map<string, number>();
+  const allocated = allocateIntegerCentsByCategory(new Map(
+    snapshot.runningCostLines
+      .filter((line) => !line.isMissing)
+      .map((line) => [line.categoryCode, rawByCategory.get(line.categoryCode) ?? 0]),
+  ), roundHalfUpToCent(running));
+  const periodExpenses = snapshot.runningCostLines.map((line) => ({
+    ...line,
+    amountCents: line.isMissing ? 0 : allocated.get(line.categoryCode) ?? 0,
+  }));
   const salesCents = netSalesCentsForPeriod(days);
   const totalCosts = totalCostsCentsForPeriod(days, running);
   const profit = ownerProfitCentsForPeriod(days, running);
@@ -193,7 +209,7 @@ export function cafeStateFromSnapshot(
     business: snapshot.business,
     products: known(snapshot.menuItems, quality(missingProductCosts, estimatedProductCosts)),
     sales: !inRange ? unavailable("periodOutsideLoadedMonth") : days.length ? known(days, observedQuality) : unavailable(...basicMissing, "salesHistory"),
-    expenses: !inRange ? unavailable("periodOutsideLoadedMonth") : known(snapshot.runningCostLines, quality(expenseMissing, expenseEstimated)),
+    expenses: !inRange ? unavailable("periodOutsideLoadedMonth") : known(periodExpenses, quality(expenseMissing, expenseEstimated)),
     profitability: financialQuality.missingInputs.length || observedDays === 0
       ? { available: false, value: null, quality: financialQuality }
       : known(financials, financialQuality),
