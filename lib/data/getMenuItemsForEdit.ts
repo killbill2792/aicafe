@@ -43,13 +43,13 @@ export type MenuItemForEdit = {
   /** Resolved cost: complete recipe first, otherwise owner-entered total fallback. */
   ingredientsCostCents: number | null;
   costStatus: RecipeCostStatus;
-  costSource: ProductCostSource | null;
-  recipeCostCents: number | null;
-  recipeCostStatus: RecipeCostStatus;
-  ownerTotalCostCents: number | null;
-  ownerTotalCostStatus: "confirmed" | "estimated" | null;
-  ownerTotalCostSource: "owner_manual" | "imported" | null;
-  costDifferenceCents: number | null;
+  costSource?: ProductCostSource | null;
+  recipeCostCents?: number | null;
+  recipeCostStatus?: RecipeCostStatus;
+  ownerTotalCostCents?: number | null;
+  ownerTotalCostStatus?: "confirmed" | "estimated" | null;
+  ownerTotalCostSource?: "owner_manual" | "imported" | null;
+  costDifferenceCents?: number | null;
   missingCostIngredientNames: string[];
 };
 

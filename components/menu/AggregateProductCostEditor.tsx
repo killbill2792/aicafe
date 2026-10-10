@@ -30,12 +30,12 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents === null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])),
+    Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents == null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])),
   );
   const [message, setMessage] = useState<{ id: string; text: string; good: boolean } | null>(null);
 
   useEffect(() => {
-    setValues(Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents === null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])));
+    setValues(Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents == null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])));
   }, [items]);
 
   function save(item: MenuItemForEdit) {
@@ -67,13 +67,13 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
 
   function status(item: MenuItemForEdit): string {
     if (item.costSource === "owner_total") return labels.usingOwner;
-    if (item.costSource === "recipe" && item.ownerTotalCostCents !== null) return labels.usingRecipe;
+    if (item.costSource === "recipe" && item.ownerTotalCostCents != null) return labels.usingRecipe;
     if (item.costSource === "recipe") return labels.recipeOnly;
     return labels.missing;
   }
 
   function comparison(item: MenuItemForEdit): string | null {
-    if (item.recipeCostStatus !== "READY" || item.recipeCostCents === null || item.ownerTotalCostCents === null || item.costDifferenceCents === null) return null;
+    if (item.recipeCostStatus !== "READY" || item.recipeCostCents === null || item.ownerTotalCostCents == null || item.costDifferenceCents === null) return null;
     if (Math.abs(item.costDifferenceCents) < 0.5) return labels.same;
     return item.costDifferenceCents > 0
       ? labels.recipeHigher.replace("{amount}", formatCents(Math.abs(item.costDifferenceCents)))
@@ -116,7 +116,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                 <button type="button" disabled={pending} onClick={() => save(item)} className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-40">
                   {labels.save}
                 </button>
-                {item.ownerTotalCostCents !== null && (
+                {item.ownerTotalCostCents != null && (
                   <button type="button" disabled={pending} onClick={() => remove(item)} className="flex min-h-12 items-center gap-2 rounded-full px-3 font-bold text-warn disabled:opacity-40">
                     <Trash2 size={18} aria-hidden="true" />
                     {labels.remove}

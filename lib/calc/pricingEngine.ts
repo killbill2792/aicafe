@@ -13,17 +13,21 @@ import type { BusinessEconomicsInput, CategoryPeerStats, PosHistorySignal, Prici
  * status (not a collapsed boolean) is what lets this engine tell "no recipe yet" apart from
  * "priced, but the cost happens to be tiny" instead of treating both as the same missing-data
  * case (the mismatch this type previously had with getMenuItemsForEdit's own RecipeCostStatus). */
-export type SuggestPriceInput = { productCostCents: number; currentPriceCents: number; productCostStatus: RecipeCostStatus; profile: PricingProfile; posSignal: PosHistorySignal; economics: BusinessEconomicsInput | null; categoryPeers: CategoryPeerStats; businessEconomicsMissingInputs?: string[]; businessEconomicsEstimatedInputs?: string[] };
+export type SuggestPriceInput = { productCostCents: number; currentPriceCents: number; productCostStatus?: RecipeCostStatus; /** @deprecated use productCostStatus */ recipeStatus?: RecipeCostStatus; profile: PricingProfile; posSignal: PosHistorySignal; economics: BusinessEconomicsInput | null; categoryPeers: CategoryPeerStats; businessEconomicsMissingInputs?: string[]; businessEconomicsEstimatedInputs?: string[] };
 
-function unavailableResult(input: SuggestPriceInput, currentPriceCents: number, calculationMode: PricingResult["calculationMode"]): PricingResult {
+function resolvedProductCostStatus(input: SuggestPriceInput): RecipeCostStatus {
+  return input.productCostStatus ?? input.recipeStatus ?? "NO_RECIPE";
+}
+
+function unavailableResult(input: SuggestPriceInput, currentPriceCents: number, calculationMode: PricingResult["calculationMode"], costStatus = resolvedProductCostStatus(input)): PricingResult {
   // Missing recipe, missing ingredient cost, or a genuinely zero-cost recipe — none of these
   // support a real price recommendation. Surface that explicitly as PRICE_UNAVAILABLE with null
   // price fields; never fall through to the baseline/rounding math, which would otherwise compute
   // a numeric $0.00 from a 0 or non-existent product cost and present it as a real suggestion.
   const confidence = pricingConfidence(calculationMode, false, false, false);
-  const missingInput = input.productCostStatus === "NO_RECIPE" ? "recipe" : input.productCostStatus === "MISSING_INGREDIENT_COST" ? "ingredientCost" : "productCost";
+  const missingInput = costStatus === "NO_RECIPE" ? "recipe" : costStatus === "MISSING_INGREDIENT_COST" ? "ingredientCost" : "productCost";
   return {
-    productCostCents: input.productCostStatus === "READY" ? input.productCostCents : null,
+    productCostCents: costStatus === "READY" ? input.productCostCents : null,
     baselinePriceCents: null,
     calculatedSuggestedPriceCents: null,
     currentPriceCents,
@@ -49,8 +53,9 @@ export function suggestPrice(input: SuggestPriceInput): PricingResult {
   // A genuinely positive, possibly-fractional product cost is the only case that supports a real
   // recommendation — e.g. 1.5¢ for 3ml of milk at $0.50/ml is valid, not "missing." Anything else
   // (no recipe, an unpriced ingredient, or a recipe that priced to exactly 0) is PRICE_UNAVAILABLE.
-  if (input.productCostStatus !== "READY" || !(input.productCostCents > 0)) {
-    return unavailableResult(input, currentPriceCents, calculationMode);
+  const costStatus = resolvedProductCostStatus(input);
+  if (costStatus !== "READY" || !(input.productCostCents > 0)) {
+    return unavailableResult(input, currentPriceCents, calculationMode, costStatus);
   }
 
   // Precision is preserved through this math (per docs/05-calculations.md / lib/calc/types.ts:
