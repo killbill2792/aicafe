@@ -18,6 +18,7 @@ function repository(): TeamRulesRepository {
   return {
     listRules: vi.fn(async () => ({ items: [draft], nextOffset: null })),
     listEvents: vi.fn(async () => ({ items: [], nextOffset: null })),
+    listActiveRules: vi.fn(async () => [{ ...draft, status: "active" as const }]),
     findRule: vi.fn(async () => draft),
     createDraft: vi.fn(async () => draft),
     compareAndSetStatus: vi.fn(async (_scope, _id, version, status) => ({
@@ -112,6 +113,8 @@ describe("Phase 5 owner rules and approval state machine", () => {
     const service = new TeamRulesService(repo, owner);
     expect((await service.listRules(20)).items).toEqual([draft]);
     await service.listEvents(20);
+    expect((await service.listActiveRules())[0].status).toBe("active");
+    expect(repo.listActiveRules).toHaveBeenCalledWith(owner);
     expect(repo.listRules).toHaveBeenCalledWith(owner, 20);
     expect(repo.listEvents).toHaveBeenCalledWith(owner, 20);
   });
