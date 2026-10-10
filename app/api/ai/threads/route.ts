@@ -1,14 +1,15 @@
 import { authenticatedConversationService } from "@/lib/ai/conversations/auth.server";
-import { createThreadInput } from "@/lib/ai/conversations/contracts";
+import { createThreadInput, pageInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const offset = parseInput(pageInput, { offset: new URL(request.url).searchParams.get("offset") ?? undefined }).offset;
     const service = await authenticatedConversationService();
-    return conversationJson({ threads: await service.listThreads() });
+    return conversationJson(await service.listThreads(offset));
   } catch (error) {
     return conversationError(error);
   }
