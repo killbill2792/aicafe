@@ -1,5 +1,6 @@
 import { TrendingDown, TrendingUp } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getLocale, getTranslations } from "next-intl/server";
+import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { Link } from "@/i18n/navigation";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getSnapshot } from "@/lib/data/getSnapshot";
@@ -73,7 +74,10 @@ function newestTaskTime(task: OperatingTask): number {
 }
 
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
-  await requireOwnBusiness();
+  const signedInUser = await requireOwnBusiness();
+  const requestedLocale = await getLocale();
+  const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
+  const chatEnabled = Boolean(signedInUser) && isSupervisorChatConfigured();
   const { period: periodParam } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
@@ -84,11 +88,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const todayVm = period === "today" ? vm : buildHomeViewModel(snapshot, "today");
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const glance = buildTodayGlanceViewModel(snapshot);
-  const [t, tCommon, tOperations, tCategories] = await Promise.all([
+  const [t, tCommon, tOperations, tCategories, tChat] = await Promise.all([
     getTranslations("Home"),
     getTranslations("Common"),
     getTranslations("Operations"),
     getTranslations("Categories"),
+    getTranslations("SupervisorChat"),
   ]);
   const posStatus = await getPosConnectionStatus();
   const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
@@ -201,6 +206,22 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)] lg:items-start">
         <SupervisorHomePanel
+          locale={locale}
+          chatEnabled={chatEnabled}
+          chatCopy={{
+            live: tChat("chatLive"),
+            threads: tChat("chatThreads"),
+            newThread: tChat("chatNew"),
+            empty: tChat("chatEmpty"),
+            loading: tChat("chatLoading"),
+            sending: tChat("chatSending"),
+            retry: tChat("chatRetry"),
+            unavailable: tChat("chatUnavailable"),
+            more: tChat("chatMore"),
+            you: tChat("chatYou"),
+            supervisor: tChat("chatSupervisor"),
+            source: tChat("chatSource"),
+          }}
           copy={{
             eyebrow: t("supervisorEyebrow"),
             heading: t("supervisorHeading"),

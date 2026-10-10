@@ -13,7 +13,7 @@ export class ConversationApiError extends Error {
 /** API-specific auth. Unlike page guards, never redirect an XHR to HTML.
  * No demo fixture fallback and no manager/profit-bypass access.
  */
-export async function authenticatedConversationService(): Promise<ConversationService> {
+export async function authenticatedConversationContext(): Promise<{ service: ConversationService; scope: ConversationScope }> {
   if (!isSupabaseConfigured()) throw new ConversationApiError(503, "service_unavailable");
   const client = await createServerSupabaseClient();
   const { data: { user }, error: userError } = await client.auth.getUser();
@@ -26,5 +26,10 @@ export async function authenticatedConversationService(): Promise<ConversationSe
   if (membership?.role !== "owner") throw new ConversationApiError(403, "owner_access_required");
 
   const scope: ConversationScope = { businessId, ownerUserId: user.id };
-  return new ConversationService(new SupabaseConversationRepository(client), scope);
+  return { scope, service: new ConversationService(new SupabaseConversationRepository(client), scope) };
+}
+
+/** Backward-compatible Phase 3 API factory. */
+export async function authenticatedConversationService(): Promise<ConversationService> {
+  return (await authenticatedConversationContext()).service;
 }

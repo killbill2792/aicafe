@@ -1,4 +1,5 @@
-import { Coffee, Mic, Plus, Send, Sparkles, UsersRound } from "lucide-react";
+import { Coffee, Sparkles, UsersRound } from "lucide-react";
+import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
 import { Link } from "@/i18n/navigation";
 
 type SupervisorCopy = {
@@ -15,7 +16,14 @@ type SupervisorCopy = {
   suggestions: string[];
 };
 
-export default function SupervisorHomePanel({ copy }: { copy: SupervisorCopy }) {
+export default function SupervisorHomePanel({
+  copy, chatCopy, chatEnabled, locale,
+}: {
+  copy: SupervisorCopy;
+  chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
+  chatEnabled: boolean;
+  locale: "en" | "es" | "ar";
+}) {
   return (
     <section className="overflow-hidden rounded-[28px] border border-[#D8C8B5] bg-[#F0E5D8] p-5 shadow-[0_18px_48px_rgba(42,29,20,0.08)] md:p-6">
       <div className="grid items-center gap-5 md:grid-cols-[minmax(0,1fr)_210px]">
@@ -50,57 +58,11 @@ export default function SupervisorHomePanel({ copy }: { copy: SupervisorCopy }) 
         </div>
       </div>
 
-      <div className="mt-5 rounded-[24px] border border-[#D8C8B5] bg-card/95 p-2 shadow-[0_10px_30px_rgba(42,29,20,0.08)]">
-        <div className="flex min-h-14 items-center gap-2" role="group" aria-label={copy.composerLabel}>
-          <button
-            type="button"
-            disabled
-            aria-label={copy.addAttachment}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#F3ECE3] text-ink-muted disabled:cursor-not-allowed disabled:opacity-100"
-          >
-            <Plus aria-hidden="true" size={24} />
-          </button>
-          <label htmlFor="supervisor-home-composer" className="sr-only">{copy.askAnything}</label>
-          <input
-            id="supervisor-home-composer"
-            type="text"
-            disabled
-            placeholder={copy.askAnything}
-            className="min-w-0 flex-1 bg-transparent px-1 text-[17px] font-semibold text-ink outline-none placeholder:text-ink-muted disabled:cursor-not-allowed disabled:opacity-100"
-          />
-          <button
-            type="button"
-            disabled
-            aria-label={copy.voiceInput}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#E8F1EE] text-good disabled:cursor-not-allowed disabled:opacity-100"
-          >
-            <Mic aria-hidden="true" size={22} />
-          </button>
-          <button
-            type="button"
-            disabled
-            aria-label={copy.sendMessage}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-ink text-paper disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <Send aria-hidden="true" size={20} />
-          </button>
-        </div>
-      </div>
-
-      <p className="mt-2 text-sm font-medium text-ink-muted">{copy.comingSoon}</p>
-
-      <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-1 md:flex-wrap" aria-label={copy.composerLabel}>
-        {copy.suggestions.map((suggestion) => (
-          <button
-            key={suggestion}
-            type="button"
-            disabled
-            className="min-h-12 shrink-0 snap-start rounded-full border border-[#D8C8B5] bg-card px-4 text-[15px] font-bold text-ink shadow-sm disabled:cursor-not-allowed disabled:opacity-100"
-          >
-            {suggestion}
-          </button>
-        ))}
-      </div>
+      <SupervisorChatComposer
+        enabled={chatEnabled}
+        locale={locale}
+        copy={{ ...copy, ...chatCopy }}
+      />
     </section>
   );
 }
