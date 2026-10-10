@@ -1176,7 +1176,12 @@
     "voiceUnavailable": "Speech recognition isn't available in this browser. Please type your message.",
     "attachmentSaved": "File stored privately. It has not been analysed.",
     "attachmentNotice": "Reference files only: uploaded documents are not analysed or applied to café records.",
-    "attachmentUpload": "Uploading file… (PDF, image, or text; 2 MB maximum)."
+    "attachmentUpload": "Uploading file… (PDF, image, or text; 2 MB maximum).",
+    "statusDisabled": "Supervisor chat was explicitly turned off in deployment settings. Change SUPERVISOR_CHAT_ENABLED from false to true (or remove the false value) and redeploy.",
+    "statusDatabase": "Supervisor chat needs the Supabase connection configured before it can start.",
+    "statusWriter": "Supervisor chat needs the server-only SUPABASE_SERVICE_ROLE_KEY configured in the deployment. Do not add NEXT_PUBLIC_ to this key.",
+    "statusOwner": "Supervisor chat requires a signed-in café owner account and an active café you own.",
+    "statusStorage": "Supervisor chat cannot access its private conversation storage or secure reply writer. Verify Supabase migration #33 and the server permissions."
   },
   "TeamRules": {
     "title": "Team rules & approvals",
