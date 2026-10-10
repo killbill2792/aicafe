@@ -1,5 +1,6 @@
 import { Coffee, Sparkles, UsersRound } from "lucide-react";
 import SupervisorChatComposer, { type SupervisorChatCopy } from "./SupervisorChatComposer";
+import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import { Link } from "@/i18n/navigation";
 
 type SupervisorCopy = {
@@ -17,11 +18,12 @@ type SupervisorCopy = {
 };
 
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, locale,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, locale,
 }: {
   copy: SupervisorCopy;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
   chatEnabled: boolean;
+  chatUnavailableReason: SupervisorChatUnavailableReason | null;
   locale: "en" | "es" | "ar";
 }) {
   return (
@@ -60,6 +62,7 @@ export default function SupervisorHomePanel({
 
       <SupervisorChatComposer
         enabled={chatEnabled}
+        unavailableReason={chatUnavailableReason}
         locale={locale}
         copy={{ ...copy, ...chatCopy }}
       />
