@@ -130,6 +130,16 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
     }
   });
 
+  it("marks a partial staff history as partial, not a full labor period", () => {
+    const snapshot: BusinessSnapshot = {
+      ...fixture,
+      monthRecordedDays: fixture.monthActualDays.slice(0, 3),
+    };
+    const state = cafeStateFromSnapshot(snapshot);
+    expect(state.labor.available).toBe(true);
+    expect(state.labor.quality.missingInputs).toContain("laborCoverage:3/9");
+  });
+
   it("retains missing inventory, suppliers and pricing without a verified loader", () => {
     const state = cafeStateFromSnapshot(fixture);
     expect(state.inventory.quality.missingInputs).toEqual(["inventory"]);
