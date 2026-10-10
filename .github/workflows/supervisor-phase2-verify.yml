@@ -20,7 +20,7 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
       - name: Changed file lint
-        run: npx eslint lib/operating/cafeState.ts lib/operating/cafeState.test.ts lib/operating/types.ts lib/ai/tools.ts lib/ai/tools.test.ts lib/ai/cafeTools.server.ts
+        run: npx eslint lib/operating/cafeState.ts lib/operating/cafeState.test.ts lib/operating/types.ts lib/data/operatingTasks.ts lib/ai/tools.ts lib/ai/tools.test.ts lib/ai/cafeTools.server.ts
       - name: All tests
         run: npm run test
       - name: Production build
