@@ -25,7 +25,7 @@ function repository(): ConversationRepository {
     findThread: vi.fn(async () => thread),
     findThreadByRequest: vi.fn(async () => null),
     insertThread: vi.fn(async () => thread),
-    listThreads: vi.fn(async () => [thread]),
+    listThreads: vi.fn(async () => ({ items: [thread], nextOffset: null })),
     findMessageByKey: vi.fn(async () => null),
     insertOwnerMessage: vi.fn(async () => ownerMessage),
     listMessages: vi.fn(async () => ({ items: [ownerMessage], nextOffset: null })),
@@ -122,6 +122,13 @@ describe("Supervisor Phase 3 conversation foundation", () => {
     repo.findMessageByKey = vi.fn(async () => ({ ...ownerMessage, role: "supervisor", contentType: "blocks" }));
     await expect(new ConversationService(repo, a).addOwnerMessage(thread.id, "key1", ownerMessage.text!))
       .rejects.toBeInstanceOf(ConversationConflict);
+  });
+
+  it("paginates threads without making another business available", async () => {
+    const repo = repository();
+    const result = await new ConversationService(repo, a).listThreads(20);
+    expect(result.items).toEqual([thread]);
+    expect(repo.listThreads).toHaveBeenCalledWith(a, 20);
   });
 
   it("keeps message history scoped and requires access before querying", async () => {
