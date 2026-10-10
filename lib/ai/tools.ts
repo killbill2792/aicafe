@@ -1,6 +1,7 @@
 import type { CafeStateService } from "@/lib/operating/cafeState";
 import type { CafeDecision, CafeSignal, CafeStatePeriod, KnownSlice, CafePeriodProfitability, CafeLaborDay } from "@/lib/operating/types";
 import type { DecisionStore } from "@/lib/operating/decisions";
+import type { OperatingTask } from "@/lib/operating/tasks";
 import type { MenuItemSnapshot, RunningCostLine } from "@/lib/data/types";
 import type { DailyFacts, PricingResult, DataQuality } from "@/lib/calc";
 
@@ -16,6 +17,7 @@ export interface CafeToolset {
   getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>>;
   getLaborMetrics(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafeLaborDay[]>>;
   getInventoryStatus(businessId: string): Promise<KnownSlice<never>>;
+  getTeamTasks(businessId: string): Promise<KnownSlice<OperatingTask[]>>;
   getActiveSignals(businessId: string): Promise<CafeSignal[]>;
   getDecisionHistory(businessId: string): Promise<CafeDecision[]>;
   getOperatingSnapshot(businessId: string): Promise<{ signals: CafeSignal[]; decisions: CafeDecision[] }>;
@@ -42,6 +44,7 @@ export class StructuredCafeTools implements CafeToolset {
     private states: CafeStateService,
     private decisions: DecisionStore,
     private signalReader: (businessId: string) => Promise<CafeSignal[]>,
+    private taskReader?: (businessId: string) => Promise<OperatingTask[]>,
   ) {}
 
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
@@ -87,6 +90,16 @@ export class StructuredCafeTools implements CafeToolset {
   async getInventoryStatus(businessId: string): Promise<KnownSlice<never>> {
     return (await this.states.getCurrentState(businessId)).inventory;
   }
+  async getTeamTasks(businessId: string): Promise<KnownSlice<OperatingTask[]>> {
+    if (!this.taskReader) return missing("operatingTasks");
+    const tasks = await this.taskReader(businessId);
+    if (tasks.some((task) => task.businessId !== businessId)) {
+      throw new Error("Café task business mismatch");
+    }
+    return { available: true, value: tasks, quality: {
+      level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [],
+    } };
+  }
   getActiveSignals(businessId: string) { return this.signalReader(businessId); }
   async getDecisionHistory(businessId: string) {
     const decisions = await this.decisions.getDecisionHistory(businessId);
@@ -121,6 +134,7 @@ export class BusinessScopedCafeTools {
   getExpenseChanges(period: CafeStatePeriod) { return this.tools.getExpenseChanges(this.businessId, period); }
   getLaborMetrics(period: CafeStatePeriod) { return this.tools.getLaborMetrics(this.businessId, period); }
   getInventoryStatus() { return this.tools.getInventoryStatus(this.businessId); }
+  getTeamTasks() { return this.tools.getTeamTasks(this.businessId); }
   getActiveSignals() { return this.tools.getActiveSignals(this.businessId); }
   getDecisionHistory() { return this.tools.getDecisionHistory(this.businessId); }
   getOperatingSnapshot() { return this.tools.getOperatingSnapshot(this.businessId); }
