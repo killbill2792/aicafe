@@ -1,0 +1,20 @@
+# AI CAFE Supervisor Experience — Responses function planner
+
+## Safe architecture
+This release removes the regex-first router. Production conversation POST calls the OpenAI Responses API with strict, allow-listed functions and a single required function call. Functions: read_finances, read_sales, read_team, read_pricing, read_rules, clarify. The model receives the owner's question and a bounded number of recent owner messages, not raw business tables or tenant identifiers. The server validates the selected function and executes only authenticated BusinessScopedCafeTools, then constructs evidence-validated reply cards. The model cannot author financial amounts, evidence links, tasks, prices or business writes.
+
+Financial answers remain on existing Money/Bills engines. Monthly bills are the full recurring budget; total month-to-date costs use the canonical profitability calculation; recorded expenses and calendar-accrued bills are explicitly distinct. Product-level units require verified Square backfill coverage and date-scoped read-only RLS RPC. 28-day quantities are never labeled as calendar MTD. Missing or partial evidence yields warnings or separately labeled verified aggregate drinks/orders, not invented item totals. Generic coffee taxonomy remains unavailable where the menu only classifies drink versus food.
+
+Team cards only render real persisted Needs You/Handled/Watching tasks and link to existing task workflows. No changes to deterministic calculations, pricing, payroll, POS mutations, supplier or WhatsApp integration, attachments, authorization, message persistence or idempotency.
+
+## Client UI
+Supervisor becomes a full-width tall conversation with rich in-chat empty state, suggestions only when empty (clicking fills an editable composer), sticky multiline Ask Anything input, History drawer, new-chat icon, automatically generated first-question titles, auto-scroll and structured source cards. The large hero collapses during a conversation. The Voice button visibly indicates Listening, offers Stop, shows recognizing, ready transcript, no-speech/permission/browser errors, and never automatically sends dictated text. The interface and recognition settings support English, Spanish and Arabic. Browser speech processing may rely on the browser provider.
+
+## Required staging setup — not executed in this PR
+1. Review and reconcile the additive migration 20261010000038_ai_usage_telemetry.sql with current Supabase migration history. Apply in staging first, not production without approval. Usage events have owner/café RLS, unique owner-message IDs and owner SELECT only; model token counts and optionally priced USD micros are stored without prompts, replies, secrets, attachments or voice.
+2. Configure server-only OPENAI_API_KEY, optionally SUPERVISOR_OPENAI_MODEL (default gpt-4.1-mini), and SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS plus SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS from verified model pricing. Unknown rates produce NULL cost rather than invented zero. Never prefix the API key NEXT_PUBLIC_. SUPERVISOR_CHAT_ENABLED=false remains a kill switch.
+3. Owner-only GET /api/ai/usage returns tenant-filtered usage totals; test manager/other-owner access denial. The chat preflight requires the configured planner key and the usage RLS table so it cannot start incurring billable calls on an unprepared deployment.
+4. In staging ask exactly "Hi, what are my total expenses for the month?" and "How many products am I selling so far?" Compare periods and definitions with Money, Bills and POS. Test today vs MTD, unknown item coverage, profitability missing inputs, tasks in all status columns, pricing read-only, retry/idempotency, EN/ES/AR, desktop/mobile and microphone permission denial.
+5. Verify GitHub CI, mergeability and Vercel preview. Run staged authenticated RLS tests (including scripts/test-supervisor-conversation-rls.mjs) with representative owner/manager/different-café accounts. Do not merge without owner approval.
+
+No new npm dependencies or production changes are applied by this PR.
