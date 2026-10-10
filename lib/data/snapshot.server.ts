@@ -1,6 +1,6 @@
 import "server-only";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { buildDayWindows, evaluateRecipeCost, type ExpenseCategoryCode } from "@/lib/calc";
+import { buildDayWindows, evaluateRecipeCost, resolveProductCost, type ExpenseCategoryCode } from "@/lib/calc";
 import { generateAlerts } from "@/lib/alerts/generate";
 import { ensureScheduledShiftsThroughDate } from "./materializeSchedule";
 import { RUNNING_COST_CODES, RUNNING_COST_LABELS, rowToDailyFacts } from "./runningCostCatalog";
@@ -129,7 +129,9 @@ export async function getBusinessSnapshotFromDb(
       return { categoryCode: code, label: RUNNING_COST_LABELS[code] ?? code, amountCents: 0, isEstimate: false, isMissing: isExpected, isExpected };
     });
 
-  const menuItems = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
+  const allMenuItemSnapshots = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
+  const menuItems = allMenuItemSnapshots.filter((item) => item.active !== false);
+  const breakEvenProductCosts = allMenuItemSnapshots.filter((item) => item.quantitySoldLast28Days > 0);
   const staffShiftsToday = await getStaffShiftsToday(supabase, businessId, timezone, todayDateStr);
 
   // Regenerate alerts opportunistically (no cron yet — see PROGRESS.md) so the Home teaser and
@@ -167,6 +169,7 @@ export async function getBusinessSnapshotFromDb(
     runningCostLines,
     recoveryOrder: orderedCodes,
     menuItems,
+    breakEvenProductCosts,
     alerts: { count: alertsCount ?? 0, leakingCents },
     staffShiftsToday,
     staffNowIso: new Date().toISOString(),
@@ -220,24 +223,25 @@ async function getMenuItemSnapshots(
 ): Promise<MenuItemSnapshot[]> {
   const { data: items, error: itemsError } = await supabase
     .from("menu_items")
-    .select("id, name, price_cents, prep_seconds, category")
-    .eq("business_id", businessId)
-    .eq("is_active", true);
+    .select("id, name, price_cents, prep_seconds, category, is_active")
+    .eq("business_id", businessId);
   if (itemsError) throw itemsError;
   if (!items || items.length === 0) return [];
 
   const itemIds = items.map((i) => i.id);
 
-  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }] = await Promise.all([
+  const [{ data: recipeLines, error: recipeError }, { data: quantitySoldRows, error: quantityError }, { data: aggregateCosts, error: aggregateCostError }] = await Promise.all([
     supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
     supabase.rpc("menu_item_quantities_sold", {
       p_business_id: businessId,
       p_from: last28DateStrs[0] ?? todayDateStr,
       p_to: todayDateStr,
     }),
+    supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status").eq("business_id", businessId).in("menu_item_id", itemIds),
   ]);
   if (quantityError) throw quantityError;
   if (recipeError) throw recipeError;
+  if (aggregateCostError) throw aggregateCostError;
 
   const ingredientIds = [...new Set((recipeLines ?? []).map((r) => r.ingredient_id))];
   const { data: priceRows, error: priceError } =
@@ -260,24 +264,40 @@ async function getMenuItemSnapshots(
   for (const row of quantitySoldRows ?? []) {
     quantityByItem[row.menu_item_id] = Number(row.total_quantity);
   }
+  const aggregateByItem = new Map((aggregateCosts ?? []).map((row) => [row.menu_item_id, row]));
 
   return items.map((item) => {
     const lines = (recipeLines ?? [])
       .filter((r) => r.menu_item_id === item.id)
       .map((r) => ({ ingredientId: r.ingredient_id, quantity: Number(r.quantity) }));
     const recipeCost = evaluateRecipeCost(lines, latestPriceMicros);
-    const ingredientsCentsToday = recipeCost.costCents ?? 0;
+    const aggregate = aggregateByItem.get(item.id);
+    const resolvedCost = resolveProductCost(recipeCost, aggregate ? Number(aggregate.cost_cents) : null);
+    const ingredientsCentsToday = resolvedCost.costCents ?? 0;
+    const costQuality =
+      resolvedCost.status !== "READY"
+        ? null
+        : resolvedCost.source === "owner_total" && aggregate?.status === "estimated"
+          ? "estimated" as const
+          : "actual" as const;
     return {
       id: item.id,
       name: item.name,
       priceCents: item.price_cents ?? 0,
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "food" : "drink") as "drink" | "food",
+      active: item.is_active,
       ingredientsCentsToday,
       // Lines with no priced ingredient cost 0 by default, not because the drink is actually
       // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
       hasRecipe: lines.length > 0,
-      costStatus: recipeCost.status,
+      costStatus: resolvedCost.status,
+      costSource: resolvedCost.source,
+      recipeCostCents: recipeCost.costCents,
+      recipeCostStatus: recipeCost.status,
+      ownerTotalCostCents: resolvedCost.ownerTotalCostCents,
+      costDifferenceCents: resolvedCost.differenceCents,
+      costQuality,
       quantitySoldLast28Days: quantityByItem[item.id] ?? 0,
     };
   });

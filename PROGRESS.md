@@ -2182,3 +2182,66 @@ Deployment order:
   sourced observations. This milestone builds the evidence boundary and truthful UI; it does not
   scrape or invent competitor menus.
 
+## Aggregate product-cost fallback (2026-10-09 — implementation in progress)
+
+Owner-approved scope:
+- Some cafés know the total ingredient/cup cost of a menu item/size but do not know every recipe
+  line. Support that fact directly instead of fabricating a fake ingredient.
+- A complete detailed recipe remains the preferred source. An owner-entered total cost is a fallback
+  only when the detailed recipe is missing or incomplete.
+- Preserve both values when both exist and surface their difference; never add them together.
+- Every displayed/used product cost must expose provenance.
+- Pricing, Profit Goal Simulator, and Break-even must use the same deterministic product-cost
+  resolver so one screen cannot treat a cost as known while another treats it as missing.
+- Aggregate fallback does not provide ingredient-level theoretical usage/waste detail; future waste
+  analytics must continue to require detailed recipe evidence.
+
+Plan:
+1. Add a tenant-scoped per-menu-item aggregate cost table with explicit source/status and timestamps.
+2. Add a pure `resolveProductCost()` calculation:
+   complete recipe > owner-confirmed total > unavailable.
+   If both complete recipe and owner total exist, recipe wins and the difference remains visible.
+3. Wire the resolver into Menu edit/read models, operational pricing inputs, Profit Goal Simulator,
+   and Break-even variable ingredient cost. Break-even must refuse rather than undercount when a
+   sold item still has no resolved cost.
+4. Add a simple per-size owner-total editor in the product Recipe workspace and source labels in
+   Overview. Keep detailed recipe editing intact and clearly explain which source is currently used.
+5. Localize EN / ES / AR and add focused regression tests for precedence, no double counting,
+   incomplete-recipe fallback, complete-recipe override, and break-even missing-cost behavior.
+6. No POS writes. No ingredient-level usage is inferred from the aggregate total.
+
+
+
+Implementation result:
+- [x] Added migration 32 with a tenant-scoped per-size aggregate product-cost fallback. It stays
+      separate from recipe lines and carries source/status provenance.
+- [x] One pure resolver now drives Menu, pricing, Profit Goal Simulator, and Break-even:
+      complete recipe > owner total > unavailable. The two values are never added together.
+- [x] When both values exist, the detailed recipe remains active while the owner total and
+      difference stay visible for review.
+- [x] Product Recipe workspace lets the owner enter/remove one total per size; Overview labels the
+      active source as Calculated from recipe or Owner entered.
+- [x] Break-even now derives ingredient cost from resolved sold-item costs and refuses to calculate
+      when a sold item still lacks a usable product cost.
+- [x] Alex/pricing evidence copy now says product cost rather than recipe cost.
+- [x] Aggregate totals intentionally do not create ingredient-level usage/waste data.
+- [x] EN / ES / AR copy and focused resolver/break-even regressions added.
+
+Deployment order:
+- Apply migration 32 (`20261010000032_aggregate_product_cost.sql`) before deploying this app code.
+- Because production migration history is historically unreconciled, apply migration 32 deliberately;
+  do not run a blanket `supabase db push` across old migrations.
+
+Verification and review closure:
+- [x] Moved sold-item product-cost aggregation/rounding into `lib/calc/productCosts.ts` so both
+      break-even surfaces use one pure money calculation.
+- [x] Archived menu items sold inside the break-even window remain in the resolved cost set even
+      though they stay excluded from the active Menu display.
+- [x] Estimated fallback provenance now propagates into Profit Goal / break-even quality, and
+      imported/estimated costs are labeled truthfully in Menu.
+- [x] The drinks/day break-even restores missing-sales precedence before missing-product-costs.
+- [x] GitHub branch verification passed `npx tsc --noEmit` and the full `npm test` suite.
+- [x] Vercel preview deployment succeeded after the strict-TypeScript fix.
+- [x] Temporary branch-only verification workflow removed before merge; no permanent CI behavior
+      is introduced by this phase.
+

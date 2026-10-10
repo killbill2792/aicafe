@@ -55,3 +55,77 @@ export function sumTheoreticalIngredientsCents<T>(
 ): number {
   return lines.reduce((sum, line) => sum + costForLine(line), 0);
 }
+
+
+export type ProductCostSource = "recipe" | "owner_total";
+
+export type ProductCostResolution = {
+  status: RecipeCostStatus;
+  costCents: number | null;
+  source: ProductCostSource | null;
+  recipeStatus: RecipeCostStatus;
+  recipeCostCents: number | null;
+  ownerTotalCostCents: number | null;
+  /** Recipe cost minus owner total when both are available. Never added into the resolved cost. */
+  differenceCents: number | null;
+};
+
+/**
+ * One canonical product-cost precedence rule:
+ * complete detailed recipe > owner-confirmed aggregate total > unavailable.
+ *
+ * The owner total stays preserved after a recipe becomes complete so the UI can show the
+ * difference, but the values are never combined.
+ */
+export function resolveProductCost(
+  recipe: RecipeCostResult,
+  ownerTotalCostCents: number | null | undefined,
+): ProductCostResolution {
+  const ownerTotal =
+    ownerTotalCostCents !== null &&
+    ownerTotalCostCents !== undefined &&
+    Number.isFinite(ownerTotalCostCents) &&
+    ownerTotalCostCents > 0
+      ? ownerTotalCostCents
+      : null;
+  const recipeCost = recipe.costCents !== null && Number.isFinite(recipe.costCents) ? recipe.costCents : null;
+  const recipeUsable = recipe.status === "READY" && recipeCost !== null && recipeCost > 0;
+  const differenceCents =
+    recipe.status === "READY" && recipeCost !== null && ownerTotal !== null
+      ? recipeCost - ownerTotal
+      : null;
+
+  if (recipeUsable) {
+    return {
+      status: "READY",
+      costCents: recipeCost,
+      source: "recipe",
+      recipeStatus: recipe.status,
+      recipeCostCents: recipeCost,
+      ownerTotalCostCents: ownerTotal,
+      differenceCents,
+    };
+  }
+
+  if (ownerTotal !== null) {
+    return {
+      status: "READY",
+      costCents: ownerTotal,
+      source: "owner_total",
+      recipeStatus: recipe.status,
+      recipeCostCents: recipeCost,
+      ownerTotalCostCents: ownerTotal,
+      differenceCents,
+    };
+  }
+
+  return {
+    status: recipe.status,
+    costCents: recipeCost,
+    source: null,
+    recipeStatus: recipe.status,
+    recipeCostCents: recipeCost,
+    ownerTotalCostCents: null,
+    differenceCents: null,
+  };
+}

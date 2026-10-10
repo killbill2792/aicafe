@@ -8,7 +8,7 @@ const item: PricingItemInput = {
   category: "ESPRESSO_DRINK",
   currentPriceCents: 0,
   productCostCents: 160,
-  recipeStatus: "READY",
+  productCostStatus: "READY",
   unitsSoldInWindow: 100,
 };
 
@@ -94,5 +94,39 @@ describe("pricing processing-fee quality", () => {
     })[0].result;
     expect(result.calculationMode).toBe("BENCHMARK");
     expect(result.dataQuality.estimatedInputs).toContain("processingFees");
+  });
+});
+
+
+describe("pricing product-cost completeness", () => {
+  it("does not use incomplete business economics when another sold item has no resolved product cost", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "missing" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BENCHMARK");
+    expect(result.businessAdjustmentFactor).toBe(1);
+    expect(result.dataQuality.missingInputs).toContain("productCosts");
+  });
+
+  it("uses business economics when sold product costs are complete", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "actual" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
+    expect(result.dataQuality.missingInputs).not.toContain("productCosts");
+  });
+});
+
+
+describe("pricing estimated owner product costs", () => {
+  it("uses estimated product cost economics but marks the result estimated", () => {
+    const result = buildPricingViewModel({
+      items: [item],
+      business: { ...business, productCostsStatus: "estimated" },
+    })[0].result;
+    expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");
+    expect(result.dataQuality.estimatedInputs).toContain("productCosts");
   });
 });

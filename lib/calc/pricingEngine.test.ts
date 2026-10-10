@@ -5,7 +5,7 @@ import { businessAdjustmentFactor, businessEconomics, monthlyProcessingFeesForWi
 import { suggestPrice, type SuggestPriceInput } from "./pricingEngine";
 
 const base = (overrides: Partial<SuggestPriceInput> = {}): SuggestPriceInput => ({
-  productCostCents: 160, currentPriceCents: 500, recipeStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"),
+  productCostCents: 160, currentPriceCents: 500, productCostStatus: "READY", profile: getPricingProfile("ESPRESSO_DRINK"),
   posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 },
   economics: null, categoryPeers: null, ...overrides,
 });
@@ -15,7 +15,7 @@ describe("pricing engine", () => {
     const result = suggestPrice(base({
       productCostCents: 600,
       currentPriceCents: 2300,
-      recipeStatus: "READY",
+      productCostStatus: "READY",
       profile: getPricingProfile("FOOD"),
     }));
     expect(result.recommendedPriceCents).toBe(2300);
@@ -130,7 +130,7 @@ describe("pricing engine", () => {
     });
 
     it("returns PRICE_UNAVAILABLE, not a numeric zero, for a missing ingredient cost", () => {
-      const result = suggestPrice(base({ recipeStatus: "MISSING_INGREDIENT_COST", productCostCents: 0 }));
+      const result = suggestPrice(base({ productCostStatus: "MISSING_INGREDIENT_COST", productCostCents: 0 }));
       expect(result.status).toBe("PRICE_UNAVAILABLE");
       expect(result.recommendedPriceCents).toBeNull();
       expect(result.calculatedSuggestedPriceCents).toBeNull();
@@ -139,19 +139,19 @@ describe("pricing engine", () => {
     });
 
     it("returns PRICE_UNAVAILABLE for no recipe at all", () => {
-      const result = suggestPrice(base({ recipeStatus: "NO_RECIPE", productCostCents: 0 }));
+      const result = suggestPrice(base({ productCostStatus: "NO_RECIPE", productCostCents: 0 }));
       expect(result.status).toBe("PRICE_UNAVAILABLE");
       expect(result.recommendedPriceCents).toBeNull();
     });
 
     it("returns PRICE_UNAVAILABLE for a recipe that priced to an actual zero/invalid cost, not READY-with-zero", () => {
-      const result = suggestPrice(base({ recipeStatus: "READY", productCostCents: 0 }));
+      const result = suggestPrice(base({ productCostStatus: "READY", productCostCents: 0 }));
       expect(result.status).toBe("PRICE_UNAVAILABLE");
       expect(result.recommendedPriceCents).toBeNull();
     });
 
     it("stays PRICE_UNAVAILABLE even when a current price already exists — never falls back to REVIEW_PRICE/KEEP_CURRENT_PRICE with a null or zero number", () => {
-      const result = suggestPrice(base({ recipeStatus: "MISSING_INGREDIENT_COST", productCostCents: 0, currentPriceCents: 3000 }));
+      const result = suggestPrice(base({ productCostStatus: "MISSING_INGREDIENT_COST", productCostCents: 0, currentPriceCents: 3000 }));
       expect(result.status).toBe("PRICE_UNAVAILABLE");
       expect(result.currentPriceCents).toBe(3000); // still reported — just not used to compute a fake recommendation
       expect(result.recommendedPriceCents).toBeNull();

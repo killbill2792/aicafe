@@ -11,11 +11,16 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
     const categoryPeers: CategoryPeerStats = peers.length >= MIN_CATEGORY_PEERS ? { medianPriceCents: median(peers.map((peer) => peer.currentPriceCents)), medianProductCostPercent: median(peers.map((peer) => peer.productCostCents / peer.currentPriceCents)) } : null;
     const posSignal = { daysWithSalesInWindow: input.business.daysWithSalesInWindow, windowDays: input.business.windowDays, totalOrdersInWindow: input.business.totalOrdersInWindow, itemUnitsSoldInWindow: item.unitsSoldInWindow, monthlyRevenueCents: input.business.monthlyRevenueCents };
     const profile = getPricingProfile(item.category);
-    const economics = input.business.processingFeesStatus === "missing" ? null : { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents };
-    return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, recipeStatus: item.recipeStatus, profile, posSignal, economics, categoryPeers,
-      businessEconomicsMissingInputs: input.business.processingFeesStatus === "missing" ? ["processingFees"] : [],
+    const businessEconomicsComplete = input.business.processingFeesStatus !== "missing" && input.business.productCostsStatus !== "missing";
+    const economics = businessEconomicsComplete ? { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents } : null;
+    return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, productCostStatus: item.productCostStatus, profile, posSignal, economics, categoryPeers,
+      businessEconomicsMissingInputs: [
+        ...(input.business.processingFeesStatus === "missing" ? ["processingFees"] : []),
+        ...(input.business.productCostsStatus === "missing" ? ["productCosts"] : []),
+      ],
       businessEconomicsEstimatedInputs: [
         ...(input.business.processingFeesStatus === "estimated" ? ["processingFees"] : []),
+        ...(input.business.productCostsStatus === "estimated" ? ["productCosts"] : []),
         ...(input.business.payrollCostsStatus !== "actual" || input.business.payrollTaxRateStatus !== "confirmed" ? ["payrollBurden"] : []),
         ...(input.business.operatingCostsStatus === "estimated" ? ["operatingCosts"] : []),
       ] }) };

@@ -9,7 +9,7 @@ import { buildOperationsTeamViewModel } from "./operationsTeam";
 const pricing = suggestPrice({
   productCostCents: 180,
   currentPriceCents: 550,
-  recipeStatus: "READY",
+  productCostStatus: "READY",
   profile: getPricingProfile("ESPRESSO_DRINK"),
   posSignal: { daysWithSalesInWindow: 0, windowDays: 90, totalOrdersInWindow: 0, itemUnitsSoldInWindow: 0, monthlyRevenueCents: 0 },
   economics: null,

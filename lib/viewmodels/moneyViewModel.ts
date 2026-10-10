@@ -6,6 +6,7 @@ import {
   ownerProfitCentsForPeriod,
   ratio,
   staffHealthBand,
+  summarizeResolvedSoldProductCosts,
   sumCents,
   totalCostsCentsForPeriod,
 } from "@/lib/calc";
@@ -62,11 +63,12 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
 
   const salesHistory = snapshot.last28Days;
   const observedSalesCents = sumCents(salesHistory, (day) => day.netSalesCents);
-  const observedIngredientCents = sumCents(salesHistory, (day) => day.ingredientsCents);
+  const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
+  const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
+  const missingProductCosts = productCosts.missingProductCosts;
+  // Use the same pure sold-item product-cost aggregation as the drinks/day break-even surface.
+  const observedIngredientCents = productCosts.totalCostCents;
   const observedProcessingFeesCents = sumCents(salesHistory, (day) => day.cardFeesCents);
-  const missingProductCosts = snapshot.menuItems.some(
-    (item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY",
-  );
   const missingProcessingFees = salesHistory.some((day) => day.cardFeesStatus === "missing");
   const missingBills = snapshot.runningCostLines.some((line) => line.isMissing && line.isExpected);
   const enoughSales = salesHistory.length >= 7;
@@ -99,7 +101,8 @@ export function buildCostRecoveryViewModel(snapshot: BusinessSnapshot) {
     todayDay < snapshot.daysInMonth ||
     snapshot.runningCostLines.some((line) => line.isEstimate && line.amountCents > 0) ||
     monthRecordedDays.some((day) => day.staffTaxStatus === "estimated") ||
-    salesHistory.some((day) => day.cardFeesStatus === "estimated");
+    salesHistory.some((day) => day.cardFeesStatus === "estimated") ||
+    productCosts.usesEstimatedProductCosts;
 
   return {
     buckets: recovery.buckets,

@@ -3,6 +3,7 @@ import {
   dailyCostsToCoverCents,
   drinksNeededPerDay,
   staffCostCentsForPeriod,
+  summarizeResolvedSoldProductCosts,
   sumCents,
   whatIfIngredientCostChange,
   whatIfOneLessPerson,
@@ -22,11 +23,13 @@ const GALLON_ML = 3_785;
 export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const days = snapshot.last28Days;
   const netSales = sumCents(days, (d) => d.netSalesCents);
-  const ingredients = sumCents(days, (d) => d.ingredientsCents);
+  const breakEvenCostItems = snapshot.breakEvenProductCosts ?? snapshot.menuItems;
+  const productCosts = summarizeResolvedSoldProductCosts(breakEvenCostItems);
+  const ingredients = productCosts.totalCostCents;
   const cardFees = sumCents(days, (d) => d.cardFeesCents);
   const drinks = sumCents(days, (d) => d.drinksCount);
 
-  const avgMoneyLeft = avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
+  const avgMoneyLeft = productCosts.missingProductCosts ? 0 : avgMoneyLeftPerDrinkCents(netSales, ingredients, cardFees, drinks);
   const runningPerDay = snapshot.runningCostLines.reduce((s, l) => s + l.amountCents, 0) / snapshot.daysInMonth;
   const avgDailyStaffCost = days.length ? staffCostCentsForPeriod(days) / days.length : 0;
   const dailyCosts = dailyCostsToCoverCents(runningPerDay, avgDailyStaffCost);
@@ -35,11 +38,15 @@ export function buildBreakEvenViewModel(snapshot: BusinessSnapshot) {
   const missingCostLabels = missingCosts.map((line) => line.label);
   const unavailableReason = missingCostLabels.length > 0
     ? "missing_costs" as const
-    : days.length === 0 || drinks <= 0 || avgMoneyLeft <= 0
+    : days.length === 0 || drinks <= 0
       ? "missing_sales" as const
-      : dailyCosts <= 0
-        ? "missing_costs" as const
-        : null;
+      : productCosts.missingProductCosts
+        ? "missing_product_costs" as const
+        : avgMoneyLeft <= 0
+          ? "missing_sales" as const
+          : dailyCosts <= 0
+            ? "missing_costs" as const
+            : null;
 
   const todayDrinks = snapshot.todayDay.drinksCount;
   const progressPct = needed > 0 && Number.isFinite(needed) ? Math.min(100, (todayDrinks / needed) * 100) : 0;
