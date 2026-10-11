@@ -3,6 +3,7 @@ import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { createAuthenticatedCafeTools } from "@/lib/ai/cafeTools.server";
 import { planSupervisorQuestion } from "@/lib/ai/conversations/planner.server";
+import { isCurrentStaffIssuesQuestion, answerCurrentStaffIssues } from "@/lib/ai/conversations/staffIssues";
 import { executeSupervisorPlan } from "@/lib/ai/conversations/executePlan";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
@@ -49,6 +50,25 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
     const tools = await createAuthenticatedCafeTools();
+    // A current staff-issues request has a precise, read-only Team source.
+    // Do not block it on a general café snapshot or a remote LLM planner.
+    if (isCurrentStaffIssuesQuestion(input.text, input.locale)) {
+      const t = await getTranslations({ locale: input.locale, namespace: "SupervisorChat" });
+      const reply = answerCurrentStaffIssues({
+        tasks: await tools.getTeamTasks(),
+        asOf: new Date().toISOString(),
+        copy: {
+          summary: (needs, watching) => t("staffIssuesSummary", { needs, watching }),
+          none: t("staffIssuesNone"),
+          missing: t("staffIssuesUnavailable"),
+          estimated: t("estimation"),
+          taskName: t("taskStaff"),
+          taskCard: (name) => t("taskCard", { kind: t("taskStaff"), name }),
+        },
+      });
+      const stored = await persistGroundedSupervisorReply(scope, message, reply);
+      return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
+    }
     const state = await tools.getCafeSummary();
     if (state.business.id !== scope.businessId) throw new ConversationApiError(403, "business_scope_mismatch");
     const historyPage = await service.listMessages(id, 0);

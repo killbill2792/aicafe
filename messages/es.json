@@ -1251,7 +1251,10 @@
     "statusDatabase": "El chat del Supervisor necesita que la conexión con Supabase esté configurada.",
     "statusWriter": "El chat del Supervisor requiere SUPABASE_SERVICE_ROLE_KEY únicamente en el servidor. No añadas NEXT_PUBLIC_ a esta clave.",
     "statusOwner": "El chat del Supervisor requiere iniciar sesión como propietario de la cafetería y tener una cafetería activa propia.",
-    "statusStorage": "El chat del Supervisor no puede acceder a su historial privado ni al escritor de respuestas seguro. Comprueba la migración #33 y los permisos del servidor."
+    "statusStorage": "El chat del Supervisor no puede acceder a su historial privado ni al escritor de respuestas seguro. Comprueba la migración #33 y los permisos del servidor.",
+    "staffIssuesSummary": "Los registros de Equipo muestran {needs} solicitudes de cobertura de personal que requieren atención y {watching} en seguimiento. Son tareas registradas, no una comprobación completa de asistencia o disponibilidad.",
+    "staffIssuesNone": "No hay incidencias abiertas de cobertura de personal registradas en Equipo ahora mismo. Esto no confirma que todos los turnos estén cubiertos ni que no existan otros problemas.",
+    "staffIssuesUnavailable": "No puedo verificar los problemas de personal porque los registros de tareas de Equipo no están disponibles. Revisa la página de Equipo."
   },
   "TeamRules": {
     "title": "Reglas y aprobaciones del equipo",
