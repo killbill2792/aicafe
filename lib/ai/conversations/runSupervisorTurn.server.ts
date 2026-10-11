@@ -202,20 +202,27 @@ export async function runSupervisorTurn(input: {
           throw new Error("Supervisor provider unavailable");
         }
         const body: unknown = await response.json();
-        if (!body || typeof body!=="object" || !("output" in body) ||
-          (body as {status?:unknown}).status==="incomplete") throw new Error("Supervisor provider incomplete");
-        payload=body as Record<string,unknown>;
+        if (!body || typeof body!=="object" || Array.isArray(body))
+          throw new Error("Supervisor provider incomplete");
+        const received = body as Record<string,unknown>;
+        // Every successfully decoded provider response can consume billable tokens,
+        // including "incomplete" responses that we reject and retry. Capture it
+        // before the completeness check so route.ts persists all incurred usage.
+        usage.modelCallCount++;
+        usage.model = typeof received.model==="string" ? received.model.slice(0,80) : model;
+        const used = received.usage as {input_tokens?:unknown;output_tokens?:unknown}|undefined;
+        usage.inputTokens+=integer(used?.input_tokens);
+        usage.outputTokens+=integer(used?.output_tokens);
+        input.onUsage?.({...usage});
+        if (!("output" in received) || received.status==="incomplete")
+          throw new Error("Supervisor provider incomplete");
+        payload=received;
         break;
       } catch {
         if (!retryable || attempt===1) throw new Error("Supervisor provider unavailable");
       } finally { clearTimeout(timeout); }
     }
     if (!payload) throw new Error("Supervisor provider unavailable");
-    usage.modelCallCount++;
-    usage.model = typeof payload.model==="string" ? payload.model.slice(0,80) : model;
-    const used = payload.usage as {input_tokens?:unknown;output_tokens?:unknown}|undefined;
-    usage.inputTokens+=integer(used?.input_tokens); usage.outputTokens+=integer(used?.output_tokens);
-    input.onUsage?.({...usage});
     const output = payload.output;
     const calls = parseSupervisorCalls(output);
     if (round===0 && !calls.length) throw new Error("Supervisor first round requires a safe tool");

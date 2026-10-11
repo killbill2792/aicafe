@@ -53,6 +53,50 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     ]));
     expect(JSON.stringify(bodies)).not.toContain("business_id");
   });
+  it("production request exposes the exact ten shared tool schemas, including compare and control",async()=>{
+    const shared = (await import("./supervisorFunctions.mjs")).SUPERVISOR_FUNCTIONS;
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body)) as Record<string,unknown>;
+      bodies.push(body);
+      return bodies.length===1?response([control]):response([finish([])]);
+    });
+    await runSupervisorTurn({...base,text:"Hi"},transport);
+    const offered=bodies[0].tools as Array<{name:string}>;
+    expect(offered).toHaveLength(10);
+    expect(offered.map(x=>x.name)).toEqual(shared.map(x=>x.name));
+    expect(new Set(offered.map(x=>x.name)).size).toBe(10);
+    expect(offered).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:"compare_periods"}),
+      expect.objectContaining({name:"conversation_control"}),
+    ]));
+  });
+  it("reports tokens for an incomplete provider response before retrying it",async()=>{
+    const reports:Array<{inputTokens:number;outputTokens:number;modelCallCount:number}>=[];
+    const incomplete=new Response(JSON.stringify({status:"incomplete",model:"gpt-6-luna",
+      usage:{input_tokens:90,output_tokens:25},output:[]}),{status:200});
+    const transport=vi.fn().mockResolvedValueOnce(incomplete)
+      .mockResolvedValueOnce(response([control]))
+      .mockResolvedValueOnce(response([finish([])]));
+    const result=await runSupervisorTurn({...base,text:"Hi",onUsage:u=>reports.push({...u})},transport);
+    expect(result.usage).toMatchObject({inputTokens:290,outputTokens:105,
+      modelCallCount:3,toolCallCount:1});
+    expect(reports[0]).toMatchObject({inputTokens:90,outputTokens:25,modelCallCount:1});
+    expect(reports.at(-1)).toMatchObject({inputTokens:290,outputTokens:105,modelCallCount:3});
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+  it("preserves incomplete-response usage when both provider attempts fail",async()=>{
+    const reports:Array<{inputTokens:number;outputTokens:number;modelCallCount:number}>=[];
+    const incomplete=(inTokens:number,outTokens:number)=>new Response(JSON.stringify({
+      status:"incomplete",model:"gpt-6-luna",usage:{input_tokens:inTokens,output_tokens:outTokens},output:[],
+    }),{status:200});
+    const transport=vi.fn().mockResolvedValueOnce(incomplete(110,30))
+      .mockResolvedValueOnce(incomplete(140,35));
+    await expect(runSupervisorTurn({...base,onUsage:u=>reports.push({...u})},transport))
+      .rejects.toThrow("provider unavailable");
+    expect(reports.at(-1)).toMatchObject({inputTokens:250,outputTokens:65,modelCallCount:2});
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
   it("keeps partial observed sales card and missing-coverage warning",async()=>{
     const transport=vi.fn().mockResolvedValueOnce(response([sales])).mockResolvedValueOnce(response([finish(["t1:total"])]));
     const r=await runSupervisorTurn({...base,text:"What about last week?"},transport);
