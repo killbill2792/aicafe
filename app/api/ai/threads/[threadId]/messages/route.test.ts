@@ -85,7 +85,7 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
       const response=await POST(request(mocks.message.text),ctx);
       expect(response.status).toBe(500);
       expect(await response.json()).toEqual({error:"conversation_request_failed"});
-      const rows=reported.map(JSON.parse);
+      const rows=reported.map(value=>JSON.parse(value));
       expect(rows).toEqual(expect.arrayContaining([
         expect.objectContaining({stage:"owner_message_persisted"}),
         expect.objectContaining({stage:"reply_persistence",category:"reply_persistence"}),

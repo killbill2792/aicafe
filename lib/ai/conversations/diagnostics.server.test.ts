@@ -10,7 +10,7 @@ describe("Sanitized Supervisor production diagnostics",()=>{
       modelCallCount:2,toolCallCount:1});
     logger.emit({stage:"provider_response",category:"provider_http",httpStatus:400,
       round:1,attempt:1,providerStatus:"failed"});
-    const rows=written.map(JSON.parse);
+    const rows=written.map(value=>JSON.parse(value));
     expect(rows[0].requestId).toBe(rows[1].requestId);
     expect(rows[0].advertisedToolNames).toEqual(["get_financials","conversation_control"]);
     expect(rows[1]).toMatchObject({category:"provider_http",httpStatus:400});
