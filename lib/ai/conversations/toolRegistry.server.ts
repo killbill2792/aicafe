@@ -150,9 +150,10 @@ function taskCard(task: OperatingTask, asOf: string): ServerTask {
 export function intentForCalls(names: SupervisorToolName[]): SupervisorIntent {
   const unique = [...new Set(names)];
   if (unique.length !== 1) return "cafe_overview";
-  return { get_cafe_overview: "cafe_overview", get_sales: "sales_quantity", get_menu: "menu_catalog",
+  const intents: Record<SupervisorToolName, SupervisorIntent> = { get_cafe_overview: "cafe_overview", get_sales: "sales_quantity", get_menu: "menu_catalog",
     get_financials: "profitability", get_staff: "staff", get_team: "operating_tasks",
-    get_pricing: "menu_pricing", get_owner_rules: "owner_rules" }[unique[0]];
+    get_pricing: "menu_pricing", get_owner_rules: "owner_rules" };
+  return intents[unique[0]];
 }
 
 /** A fixed, authenticated, READ-ONLY domain registry. No user/model business selector or SQL capability. */
