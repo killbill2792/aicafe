@@ -1,4 +1,5 @@
 import {beforeEach,describe,expect,it,vi} from "vitest";
+vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>{
   const message={id:"owner-msg",role:"owner",contentType:"text",
     threadId:"a1989b23-e2b8-412e-a08f-46fb2726eedc",text:"Are there any staff problems now?",
@@ -32,6 +33,7 @@ vi.mock("@/lib/ai/conversations/replyWriter.server",()=>({
   getExistingSupervisorReply:mocks.getExisting,persistGroundedSupervisorReply:mocks.persist,
 }));
 import {POST} from "./route";
+import {SupervisorStageError} from "@/lib/ai/conversations/diagnostics.server";
 const request=(text:string)=>new Request("https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
   method:"POST",headers:{origin:"https://cafe.test","content-type":"application/json"},
   body:JSON.stringify({clientMessageId:mocks.message.clientMessageId,text,locale:"en"}),
@@ -74,6 +76,44 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
     expect(response.status).toBe(200);
     expect(mocks.run).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
+  });
+  it("categorizes persistence failures in safe server diagnostics and preserves generic owner error",async()=>{
+    const reported:string[]=[];
+    const logger=vi.spyOn(console,"info").mockImplementation(message=>reported.push(String(message)));
+    try {
+      mocks.persist.mockRejectedValueOnce(new Error("DO NOT LOG private SQL, wages, or bill figures"));
+      const response=await POST(request(mocks.message.text),ctx);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({error:"conversation_request_failed"});
+      const rows=reported.map(JSON.parse);
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({stage:"owner_message_persisted"}),
+        expect.objectContaining({stage:"reply_persistence",category:"reply_persistence"}),
+      ]));
+      expect(new Set(rows.map(x=>x.requestId)).size).toBe(1);
+      expect(reported.join(" ")).not.toContain("DO NOT LOG");
+      expect(reported.join(" ")).not.toContain(mocks.message.text);
+    }finally{logger.mockRestore();}
+  });
+  it.each([
+    ["provider_http","provider_response"],
+    ["provider_timeout","provider_request"],
+    ["provider_incomplete","provider_response"],
+    ["invalid_tool_call","tool_call_parse"],
+    ["tool_execution","tool_execution"],
+    ["final_output_validation","final_response_validation"],
+  ] as const)("keeps owner error generic for internal %s",async(category,stage)=>{
+    const reported:string[]=[];
+    const logger=vi.spyOn(console,"info").mockImplementation(message=>reported.push(String(message)));
+    try{
+      mocks.run.mockRejectedValueOnce(new SupervisorStageError(category,stage,{round:1,attempt:1}));
+      const response=await POST(request(mocks.message.text),ctx);
+      expect(response.status).toBe(500);
+      expect(await response.json()).toEqual({error:"conversation_request_failed"});
+      expect(reported.join(" ")).toContain('"category":"'+category+'"');
+      expect(reported.join(" ")).not.toContain(mocks.message.text);
+      expect(mocks.persist).not.toHaveBeenCalled();
+    }finally{logger.mockRestore();}
   });
   it("preserves Retry state on provider errors instead of claiming missing café data",async()=>{
     mocks.run.mockRejectedValue(new Error("Supervisor provider unavailable"));

@@ -2,6 +2,8 @@ import {beforeAll,afterAll,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
 import {parseSupervisorCalls} from "./toolRegistry.server";
+import {SupervisorStageError} from "./diagnostics.server";
+import {buildSupervisorInstructions,buildSupervisorRequest} from "./supervisorRequest.mjs";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 let originalKey:string|undefined;
 beforeAll(()=>{originalKey=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="mock-key";});
@@ -93,9 +95,68 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     const transport=vi.fn().mockResolvedValueOnce(incomplete(110,30))
       .mockResolvedValueOnce(incomplete(140,35));
     await expect(runSupervisorTurn({...base,onUsage:u=>reports.push({...u})},transport))
-      .rejects.toThrow("provider unavailable");
+      .rejects.toMatchObject({category:"provider_incomplete",stage:"provider_response"});
     expect(reports.at(-1)).toMatchObject({inputTokens:250,outputTokens:65,modelCallCount:2});
     expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it("uses the exact shared production request builder including strict schema and tools",async()=>{
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      bodies.push(JSON.parse(String(init.body)));
+      return bodies.length===1?response([control]):response([finish([])]);
+    });
+    await runSupervisorTurn({...base,text:"Hi"},transport);
+    const instructions=buildSupervisorInstructions({locale:base.locale,asOf:base.asOf,timezone:base.timezone});
+    const expected=buildSupervisorRequest({model:"gpt-6-luna",instructions,
+      input:[{role:"user",content:"Hi"}],round:0});
+    expect(bodies[0]).toEqual(expected);
+    expect((bodies[0].tools as unknown[]).length).toBe(10);
+  });
+  it("reports provider non-2xx without swallowing its safe HTTP status",async()=>{
+    const stages:string[]=[];
+    const transport=vi.fn().mockResolvedValue(new Response("do-not-log-raw-provider-body",{status:401}));
+    const error=await runSupervisorTurn({...base,onDiagnostic:d=>stages.push(d.stage)},transport)
+      .then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_http",stage:"provider_response",httpStatus:401});
+    expect(stages).toContain("provider_request");
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("classifies provider timeout distinctly from provider HTTP failures",async()=>{
+    const transport=vi.fn().mockRejectedValue(Object.assign(new Error("private network error"),{name:"AbortError"}));
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_timeout",stage:"provider_request",timeout:true});
+    expect(transport).toHaveBeenCalledTimes(2);
+  });
+  it("rejects malformed function arguments as invalid_tool_call",async()=>{
+    const invalid={type:"function_call",name:"get_financials",arguments:"{broken-json",call_id:"c1"};
+    const error=await runSupervisorTurn(base,vi.fn().mockResolvedValue(response([invalid])))
+      .then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
+  });
+  it("classifies thrown business reader errors without surfacing financial or employee information",async()=>{
+    const redacted="private salary or café data must never appear";
+    const brokenTools={...tools,getMonthlyBills:vi.fn(async()=>{throw Error(redacted);})};
+    const transport=vi.fn().mockResolvedValueOnce(response([bills]));
+    const events:unknown[]=[];
+    const error=await runSupervisorTurn({...base,tools:brokenTools as unknown as BusinessScopedCafeTools,
+      onDiagnostic:d=>events.push(d)},transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"tool_execution",stage:"tool_execution"});
+    expect(JSON.stringify(events)).not.toContain(redacted);
+  });
+  it("classifies final structured validation errors separately",async()=>{
+    const bad={type:"message",content:[{type:"output_text",
+      text:JSON.stringify({headline:"invented business profit decreased",summary:"",
+        fact_ids:[],task_ids:[],insight_ids:[],evidence_refs:[]})}]};
+    const transport=vi.fn().mockResolvedValueOnce(response([control]))
+      .mockResolvedValueOnce(response([bad]));
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"final_output_validation",stage:"final_response_validation"});
+  });
+  it("classifies invalid final JSON as final_output_malformed",async()=>{
+    const transport=vi.fn().mockResolvedValueOnce(response([control]))
+      .mockResolvedValueOnce(response([{type:"message",content:[{type:"output_text",text:"{bad"}]}]));
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"final_output_malformed",stage:"final_response_parse"});
   });
   it("keeps partial observed sales card and missing-coverage warning",async()=>{
     const transport=vi.fn().mockResolvedValueOnce(response([sales])).mockResolvedValueOnce(response([finish(["t1:total"])]));
@@ -120,7 +181,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
   it("requires first-round function call; a raw chat answer cannot escape grounding",async()=>{
     const transport=vi.fn().mockResolvedValue(response([finish([])]));
     await expect(runSupervisorTurn({...base,text:"How can I improve my café?"},transport))
-      .rejects.toThrow("first round");
+      .rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
   });
   it("greeting/clarification work through conversation_control without touching business readers",async()=>{
     const transport=vi.fn().mockResolvedValueOnce(response([control])).mockResolvedValueOnce(response([finish([])]));
@@ -134,16 +195,16 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
   });
   it("rejects control combined with business tools and over-budget calls",async()=>{
     const mixed=vi.fn().mockResolvedValue(response([control,team]));
-    await expect(runSupervisorTurn(base,mixed)).rejects.toThrow("control cannot accompany");
+    await expect(runSupervisorTurn(base,mixed)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
     const over=vi.fn().mockResolvedValue(response(Array.from({length:6},(_,i)=>
       call("get_cafe_overview",{focus:"today"},"call"+i))));
-    await expect(runSupervisorTurn(base,over)).rejects.toThrow("budget");
+    await expect(runSupervisorTurn(base,over)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
   });
   it("maintains max three rounds; third round cannot request another tool",async()=>{
     const transport=vi.fn().mockResolvedValueOnce(response([bills]))
       .mockResolvedValueOnce(response([team]))
       .mockResolvedValueOnce(response([bills]));
-    await expect(runSupervisorTurn(base,transport)).rejects.toThrow("budget");
+    await expect(runSupervisorTurn(base,transport)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
     expect(transport).toHaveBeenCalledTimes(3);
   });
 });

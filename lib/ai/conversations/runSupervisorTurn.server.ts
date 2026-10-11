@@ -6,36 +6,21 @@ import type { GroundedSupervisorReply, SupervisorReplyBlock, EvidenceReference }
 import type { ConversationalTurn } from "./context";
 import { createSupervisorToolRegistry, intentForCalls, parseSupervisorCalls,
   SUPERVISOR_FUNCTIONS, type ToolEvidence, type SupervisorToolName } from "./toolRegistry.server";
+import { HEADLINES, SUMMARIES, SUPERVISOR_ENDPOINT, buildSupervisorInstructions, buildSupervisorRequest } from "./supervisorRequest.mjs";
+import { SupervisorStageError, type SupervisorDiagnostic } from "./diagnostics.server";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
   modelCallCount: number; toolCallCount: number;
 };
 type Transport = (url: string, init: RequestInit) => Promise<Response>;
-const HEADLINES = ["Here is the recorded picture","Here is what stands out","Here is what I found",
-  "I need a little clarification","Hello","Aquí está lo registrado","Esto es lo que encontré",
-  "هذه هي البيانات المسجلة","مرحباً"] as const;
-const SUMMARIES = ["Based on the available café records","The available sources have some limitations",
-  "How can I help with your café?","Please clarify what information you need","",
-  "Según los datos disponibles del café","بناءً على سجلات المقهى المتاحة"] as const;
 const FINAL = z.strictObject({
-  headline:z.enum(HEADLINES),summary:z.enum(SUMMARIES),
+  headline:z.enum(HEADLINES as [string, ...string[]]),summary:z.enum(SUMMARIES as [string, ...string[]]),
   fact_ids:z.array(z.string().max(80)).max(12),
   task_ids:z.array(z.string().max(200)).max(8),
   insight_ids:z.array(z.string().max(80)).max(12),
   evidence_refs:z.array(z.string().max(160)).max(20),
 });
-const finalSchema = {
-  type:"object",additionalProperties:false,
-  required:["headline","summary","fact_ids","task_ids","insight_ids","evidence_refs"],
-  properties:{
-    headline:{type:"string",enum:[...HEADLINES]},summary:{type:"string",enum:[...SUMMARIES]},
-    fact_ids:{type:"array",items:{type:"string"}},
-    task_ids:{type:"array",items:{type:"string"}},
-    insight_ids:{type:"array",items:{type:"string"}},
-    evidence_refs:{type:"array",items:{type:"string"}},
-  },
-};
 const MAX_ROUNDS = 3, MAX_TOOLS = 5;
 const integer = (x: unknown) => Number.isSafeInteger(x) && (x as number) >= 0 ? x as number : 0;
 
@@ -147,36 +132,15 @@ export async function runSupervisorTurn(input: {
   tools: BusinessScopedCafeTools; history: ConversationalTurn[];
   readRules: () => Promise<TeamRule[]>;
   onUsage?: (usage: SupervisorUsage) => void;
+  onDiagnostic?: (diagnostic: SupervisorDiagnostic) => void;
 }, transport: Transport = fetch): Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}> {
   const key = process.env.OPENAI_API_KEY;
-  if (!key) throw new Error("Supervisor provider unavailable");
+  if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
   const model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
   const usage: SupervisorUsage = {model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0};
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
-  const instructions = [
-    "You are AI CAFE Supervisor. Answer the owner's goal in " + input.locale + " using ONLY café tool evidence.",
-    "Semantically interpret natural varied phrasing; combine tools when a question spans multiple domains.",
-    "Prior Owner AND Supervisor context is provided. Follow-ups may refer to previous rankings or answers.",
-    "Never invent café facts, records, totals, shifts, employee behavior, or missing item sales.",
-    "Distinguish staff employee records from AI Team task records, menu from item sales, bills from actual spending.",
-    "Use tools for business questions. Tools are read-only. Never request writes or unapproved actions.",
-    "Use canonical arithmetic from tools; do not independently calculate amounts or derived prices.",
-    "Observe coverage: partial recorded numbers are not full totals; estimated inputs are identified.",
-    "If a fact is missing, say what is known and what is unavailable. Avoid generic advice without evidence.",
-    "The first response MUST request one or more allow-listed tools.",
-    "For greetings, genuine clarifications or unrelated requests use conversation_control exclusively.",
-    "For café/business advice or owner-specific questions MUST request café data tools, not conversation_control.",
-    "On final answer output JSON: headline, summary, fact_ids, task_ids, insight_ids, evidence_refs.",
-    "Select only IDs exactly provided by this turn's tools. No made-up IDs.",
-    "Only select trusted insight_ids for comparative, qualitative or causal café conclusions.",
-    "headline and summary MUST be exact allowed connective phrases from the schema, with no business claims.",
-    "HEADLINE and SUMMARY must contain NO digits, currency signs, monetary values, URLs or precise numeric claims.",
-    "Numbers and task cards come ONLY from referenced fact_ids/task_ids, resolved by server.",
-    "Summaries must make only claims supported by tool content; concise, owner-friendly.",
-    "A first model response with no function call is invalid.",
-    "Café local date: " + input.asOf + ", timezone: " + input.timezone + ".",
-  ].join("\n");
+  const instructions=buildSupervisorInstructions({locale:input.locale,asOf:input.asOf,timezone:input.timezone});
   const history = input.history.slice(-12).filter(x=>x.text).map(x=>({
     role: x.role==="owner" ? "user" : "assistant", content:x.text.slice(0,850),
   }));
@@ -184,77 +148,118 @@ export async function runSupervisorTurn(input: {
   for (let round=0;round<MAX_ROUNDS;round++) {
     let payload: Record<string,unknown> | null = null;
     for (let attempt=0;attempt<2;attempt++) {
-      const controller = new AbortController(), timeout = setTimeout(()=>controller.abort(),18_000);
-      let retryable = true;
+      const roundNumber=round+1, attemptNumber=attempt+1;
+      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),18_000);
+      input.onDiagnostic?.({stage:"provider_request",model,round:roundNumber,attempt:attemptNumber,
+        advertisedToolCount:SUPERVISOR_FUNCTIONS.length,
+        advertisedToolNames:SUPERVISOR_FUNCTIONS.map(x=>x.name),
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       try {
-        const response = await transport("https://api.openai.com/v1/responses",{
-          method:"POST",signal:controller.signal,
-          headers:{"content-type":"application/json",authorization:"Bearer "+key},
-          body:JSON.stringify({
-            model,instructions,input:conversation,store:false,reasoning:{effort:"none"},
-            max_output_tokens:1300,parallel_tool_calls:true,tool_choice:round===0?"required":"auto",
-            tools:SUPERVISOR_FUNCTIONS,
-            text:{format:{type:"json_schema",name:"supervisor_final",strict:true,schema:finalSchema}},
-          }),
-        });
-        if (!response.ok) {
-          retryable=[408,409,429].includes(response.status)||response.status>=500;
-          throw new Error("Supervisor provider unavailable");
+        let response:Response;
+        try {
+          response=await transport(SUPERVISOR_ENDPOINT,{
+            method:"POST",signal:controller.signal,
+            headers:{"content-type":"application/json",authorization:"Bearer "+key},
+            body:JSON.stringify(buildSupervisorRequest({model,instructions,input:conversation,round})),
+          });
+        } catch(error) {
+          const timedOut=controller.signal.aborted||(error instanceof Error&&
+            (error.name==="AbortError"||error.name==="TimeoutError"));
+          throw new SupervisorStageError(timedOut?"provider_timeout":"provider_http",
+            "provider_request",{round:roundNumber,attempt:attemptNumber,timeout:timedOut});
         }
-        const body: unknown = await response.json();
-        if (!body || typeof body!=="object" || Array.isArray(body))
-          throw new Error("Supervisor provider incomplete");
-        const received = body as Record<string,unknown>;
-        // Every successfully decoded provider response can consume billable tokens,
-        // including "incomplete" responses that we reject and retry. Capture it
-        // before the completeness check so route.ts persists all incurred usage.
+        if(!response.ok) throw new SupervisorStageError("provider_http","provider_response",
+          {round:roundNumber,attempt:attemptNumber,httpStatus:response.status});
+        let body:unknown;
+        try {body=await response.json();}
+        catch {throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {round:roundNumber,attempt:attemptNumber,httpStatus:response.status});}
+        if(!body||typeof body!=="object"||Array.isArray(body))
+          throw new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:roundNumber,attempt:attemptNumber,httpStatus:response.status});
+        const received=body as Record<string,unknown>;
+        // Count all decoded provider usage, including incomplete Responses, BEFORE rejecting.
         usage.modelCallCount++;
-        usage.model = typeof received.model==="string" ? received.model.slice(0,80) : model;
-        const used = received.usage as {input_tokens?:unknown;output_tokens?:unknown}|undefined;
+        usage.model=typeof received.model==="string"?received.model.slice(0,80):model;
+        const used=received.usage as {input_tokens?:unknown;output_tokens?:unknown}|undefined;
         usage.inputTokens+=integer(used?.input_tokens);
         usage.outputTokens+=integer(used?.output_tokens);
         input.onUsage?.({...usage});
-        if (!("output" in received) || received.status==="incomplete")
-          throw new Error("Supervisor provider incomplete");
+        const providerStatus=typeof received.status==="string"?received.status:"unknown";
+        input.onDiagnostic?.({stage:"provider_response",model:usage.model,
+          httpStatus:response.status,providerStatus,round:roundNumber,attempt:attemptNumber,
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+        if(received.status==="incomplete") throw new SupervisorStageError("provider_incomplete","provider_response",
+          {round:roundNumber,attempt:attemptNumber,httpStatus:response.status,providerStatus});
+        if(!Array.isArray(received.output)||received.status!=="completed")
+          throw new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:roundNumber,attempt:attemptNumber,httpStatus:response.status,providerStatus});
         payload=received;
         break;
-      } catch {
-        if (!retryable || attempt===1) throw new Error("Supervisor provider unavailable");
-      } finally { clearTimeout(timeout); }
+      } catch(error) {
+        const classified=error instanceof SupervisorStageError?error:
+          new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:roundNumber,attempt:attemptNumber});
+        input.onDiagnostic?.({stage:classified.stage,category:classified.category,
+          model,round:roundNumber,attempt:attemptNumber,httpStatus:classified.httpStatus,
+          providerStatus:classified.providerStatus,timeout:classified.timeout,
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+        const retry=classified.category==="provider_timeout"||
+          classified.category==="provider_incomplete"||
+          classified.category==="provider_invalid_payload"||
+          (classified.category==="provider_http"&&
+            (classified.httpStatus===undefined||
+            [408,409,429].includes(classified.httpStatus)||classified.httpStatus>=500));
+        if(!retry||attempt===1) throw classified;
+      } finally {clearTimeout(timeout);}
     }
-    if (!payload) throw new Error("Supervisor provider unavailable");
+    if (!payload) throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:round+1});
     const output = payload.output;
-    const calls = parseSupervisorCalls(output);
-    if (round===0 && !calls.length) throw new Error("Supervisor first round requires a safe tool");
+    let calls:ReturnType<typeof parseSupervisorCalls>;
+    try {calls=parseSupervisorCalls(output);}
+    catch {throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});}
+    input.onDiagnostic?.({stage:"tool_call_parse",model,round:round+1,
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+    if (round===0 && !calls.length) throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
     if (calls.length) {
       if(calls.some(x=>x.name==="conversation_control") && calls.length!==1)
-        throw new Error("Conversation control cannot accompany café data");
+        throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
       if(round>0 && calls.some(x=>x.name==="conversation_control"))
-        throw new Error("Conversation control only valid on first round");
+        throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
       if (round===MAX_ROUNDS-1 || usage.toolCallCount+calls.length>MAX_TOOLS)
-        throw new Error("Supervisor safe tool budget exceeded");
+        throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
       const duplicates = new Set<string>();
       for (const call of calls) {
-        if (duplicates.has(call.call_id)) throw new Error("Duplicate Supervisor call ID");
+        if (duplicates.has(call.call_id)) throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
         duplicates.add(call.call_id);
       }
       // Preserve every Responses output item, including reasoning, and pair each tool output by call_id.
       conversation.push(...(output as unknown[]));
       for (const call of calls) {
-        const result = await registry(call,++usage.toolCallCount);
+        ++usage.toolCallCount;
+        input.onDiagnostic?.({stage:"tool_execution",model,round:round+1,
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+        let result:ToolEvidence;
+        try {result=await registry(call,usage.toolCallCount);}
+        catch {throw new SupervisorStageError("tool_execution","tool_execution",{round:round+1});}
         called.push(call.name);toolResults.push(result);
         const trimmed = JSON.stringify(result);
-        if (trimmed.length>14000) throw new Error("Supervisor tool result exceeded safe size");
+        if (trimmed.length>14000) throw new SupervisorStageError("tool_execution","tool_execution",{round:round+1});
         conversation.push({type:"function_call_output",call_id:call.call_id,output:trimmed});
       }
       input.onUsage?.({...usage});
       continue;
     }
     const text = textFromResponse(output);
-    if (!text) throw new Error("Supervisor final response unavailable");
+    input.onDiagnostic?.({stage:"final_response_parse",model,round:round+1,
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+    if (!text) throw new SupervisorStageError("final_output_missing","final_response_parse",{round:round+1});
     let parsed: unknown;
-    try { parsed=JSON.parse(text); } catch { throw new Error("Supervisor final response malformed"); }
-    return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale),usage};
+    try { parsed=JSON.parse(text); } catch { throw new SupervisorStageError("final_output_malformed","final_response_parse",{round:round+1}); }
+    input.onDiagnostic?.({stage:"final_response_validation",model,round:round+1,
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+    try {return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale),usage};}
+    catch {throw new SupervisorStageError("final_output_validation","final_response_validation",{round:round+1});}
   }
-  throw new Error("Supervisor safe turn limit exceeded");
+  throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:MAX_ROUNDS});
 }

@@ -8,6 +8,7 @@ import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
+import { createSupervisorDiagnosticLogger, classifySupervisorError, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,6 +28,10 @@ export async function GET(request: Request, context: RouteContext) {
 
 /** Bounded Responses tool loop. Only server-authorized read-only evidence enters model context. */
 export async function POST(request: Request, context: RouteContext) {
+  const diagnostics=createSupervisorDiagnosticLogger();
+  const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+  let stage:SupervisorStage="conversation_auth";
+  diagnostics.emit({stage,model});
   try {
     requireSameOrigin(request);
     if (!isSupervisorChatConfigured()) throw new ConversationApiError(503, "supervisor_not_enabled");
@@ -36,6 +41,8 @@ export async function POST(request: Request, context: RouteContext) {
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
+    stage="owner_message_persisted";
+    diagnostics.emit({stage,model});
     const previousReply = await getExistingSupervisorReply(scope, message);
     if (previousReply) return conversationJson({ message, reply: previousReply, replyStatus: "complete" }, 200);
     if (thread.title === null) {
@@ -46,7 +53,11 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
     const tools = await createAuthenticatedCafeTools();
+    stage="cafe_tools_created";
+    diagnostics.emit({stage,model});
     const identity = await readSupervisorCafeIdentity(scope.businessId);
+    stage="cafe_identity_loaded";
+    diagnostics.emit({stage,model});
     const messages = (await service.listMessages(id, 0)).items;
     const history = compactConversationContext(messages, message.id);
     let aggregatedUsage: SupervisorUsage | null = null;
@@ -58,6 +69,10 @@ export async function POST(request: Request, context: RouteContext) {
         tools, history,
         readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
         onUsage: (usage) => { aggregatedUsage = usage; },
+        onDiagnostic: (event) => {
+          stage=event.stage;
+          diagnostics.emit(event);
+        },
       });
       reply = completed.reply;
     } finally {
@@ -69,9 +84,12 @@ export async function POST(request: Request, context: RouteContext) {
         }); } catch { /* telemetry is nonblocking on deployments awaiting migration */ }
       }
     }
+    stage="reply_persistence";
+    diagnostics.emit({stage,model});
     const stored = await persistGroundedSupervisorReply(scope, message, reply);
     return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
-  } catch (error) {
+  } catch(error) {
+    diagnostics.emit({...classifySupervisorError(error,stage),model});
     return conversationError(error);
   }
 }
