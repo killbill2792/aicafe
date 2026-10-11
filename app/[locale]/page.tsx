@@ -435,7 +435,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </section>
 
-      <AddCostFab />
+      {/* Home keeps the Supervisor composer unobstructed on mobile. Other pages retain the FAB. */}
+      <AddCostFab hideOnMobile />
     </PageShell>
   );
 }

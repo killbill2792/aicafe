@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "db:reset": "node scripts/db-reset.mjs",
-    "supervisor:live-eval": "node scripts/supervisor-live-eval.mjs"
+    "supervisor:live-eval": "node scripts/supervisor-live-eval.mjs",
+    "supervisor:provider-smoke": "node scripts/supervisor-provider-smoke.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^11.0.0",

@@ -6,6 +6,8 @@ on:
     paths:
       - 'app/api/ai/**'
       - 'app/[locale]/page.tsx'
+      - 'components/shared/AddCostFab.tsx'
+      - 'components/home/SupervisorFabOverlap.test.ts'
       - 'components/home/**'
       - 'lib/ai/**'
       - 'messages/**'
@@ -33,10 +35,11 @@ jobs:
             'lib/ai/conversations/domainProjections.ts' 'lib/ai/conversations/domainProjections.test.ts' \
             'lib/ai/conversations/periodComparison.ts' 'lib/ai/conversations/periodComparison.test.ts' \
             'lib/ai/conversations/semanticEval.ts' 'lib/ai/conversations/semantic-eval.test.ts' \
-            'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
+            'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/conversations/diagnostics.server.ts' 'lib/ai/conversations/diagnostics.server.test.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
             'lib/ai/conversations/replyValidation.ts' 'components/home/SupervisorChatComposer.tsx' \
             'components/home/SupervisorHomePanel.tsx' 'app/[locale]/page.tsx' \
-            'app/api/ai/usage/route.ts' 'app/api/ai/threads/[threadId]/messages/route.ts'
+            'components/shared/AddCostFab.tsx' 'components/home/SupervisorFabOverlap.test.ts' \
+            'app/api/ai/usage/route.ts' 'app/api/ai/threads/[threadId]/messages/route.ts' 'app/api/ai/threads/[threadId]/messages/route.test.ts'
       # Keep repository-wide lint findings visible without blocking scoped changes:
       # baseline main has existing errors in AggregateProductCostEditor and seed/demoData.mjs.
       - name: Full repository ESLint (baseline audit)
