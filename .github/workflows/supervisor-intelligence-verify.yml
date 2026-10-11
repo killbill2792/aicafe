@@ -36,7 +36,10 @@ jobs:
             'lib/ai/conversations/dictationState.ts' 'lib/ai/conversations/dictationState.test.ts' \
             'lib/ai/conversations/contracts.ts' 'lib/ai/conversations/replyValidation.ts' \
             'lib/ai/conversations/dateRange.ts' 'lib/ai/conversations/context.ts' \
-            'lib/ai/conversations/toolRegistry.server.ts' 'lib/ai/supervisorReads.server.ts' \
+            'lib/ai/conversations/domainProjections.ts' 'lib/ai/conversations/domainProjections.test.ts' \
+            'lib/ai/conversations/periodComparison.ts' 'lib/ai/conversations/periodComparison.test.ts' \
+            'lib/ai/conversations/semanticEval.ts' 'lib/ai/conversations/semantic-eval.test.ts' \
+            'lib/ai/conversations/toolRegistry.server.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
             'lib/ai/cafeTools.server.ts' 'app/api/ai/threads/[threadId]/messages/route.ts' \
             'app/[locale]/page.tsx' 'components/home/SupervisorChatComposer.tsx'
       - name: All unit and regression tests

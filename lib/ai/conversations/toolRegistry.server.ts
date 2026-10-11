@@ -5,6 +5,7 @@ import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { TeamRule } from "@/lib/ai/policies/contracts";
 import type { OperatingTask } from "@/lib/operating/tasks";
 import type { EvidenceReference, SupervisorIntent, GroundingStatus, SupervisorReplyBlock } from "./contracts";
+import { compareCompleteValues } from "./periodComparison";
 import { dateSelectionSchema, rangeExpectedDays, resolveCafeDateRange } from "./dateRange";
 
 const agent = z.enum(["all", "alex", "olivia", "maya", "leo"]);
@@ -39,6 +40,12 @@ const schemas = {
   }),
   get_pricing: z.strictObject({ product_name: z.string().max(120).nullable(), limit: z.number().int().min(1).max(10) }),
   get_owner_rules: z.strictObject({ agent }),
+  compare_periods: z.strictObject({
+    metric:z.enum(["net_sales","orders","loaded_labor","owner_profit","total_business_costs"]),
+    current_period:date.period,current_from:date.from,current_to:date.to,
+    comparison_period:date.period,comparison_from:date.from,comparison_to:date.to,
+  }),
+  conversation_control:z.strictObject({intent:z.enum(["greeting","clarification","unsupported"])}),
 } as const;
 
 export type SupervisorToolName = keyof typeof schemas;
@@ -97,11 +104,13 @@ export function parseSupervisorCalls(output: unknown): SupervisorToolCall[] {
 }
 
 export type ServerFact = { id: string; label: string; value: number; kind: "metric" | "count"; source: EvidenceReference };
+export type ServerInsight={id:string;text:string;source:EvidenceReference};
 export type ServerTask = Extract<SupervisorReplyBlock, {type:"task_card"}>;
 export type ToolEvidence = {
   status: GroundingStatus; coverage: Record<string, string | number | boolean | null>;
   missingInputs: string[]; estimatedInputs: string[];
-  data: unknown; facts: ServerFact[]; tasks: ServerTask[]; evidence: EvidenceReference[];
+  data: unknown; facts: ServerFact[]; tasks: ServerTask[]; insights:ServerInsight[];
+  evidence: EvidenceReference[]; control?:"greeting"|"clarification"|"unsupported";
 };
 type Context = {
   tools: BusinessScopedCafeTools; asOf: string;
@@ -118,17 +127,22 @@ function quality<T>(slice: KnownSlice<T>, evidence: EvidenceReference[],
   return { status: !slice.available ? "unavailable" : missingInputs.length ? "partial"
     : estimatedInputs.length ? "estimated" : "verified",
     missingInputs, estimatedInputs, coverage, data: slice.available ? data : null,
-    facts: [], tasks: [], evidence: slice.available ? evidence : [] };
+    facts: [], tasks: [], insights:[], evidence: slice.available ? evidence : [] };
 }
 function absent(reason: string): ToolEvidence {
   return { status: "unavailable", coverage: {}, missingInputs: [reason],
-    estimatedInputs: [], data: null, facts: [], tasks: [], evidence: [] };
+    estimatedInputs: [], data: null, facts: [], tasks: [], insights:[], evidence: [] };
 }
 function addFact(result: ToolEvidence, id: string, label: string, value: number, kind: ServerFact["kind"],
   source: EvidenceReference) {
   if (!Number.isSafeInteger(value) || (kind === "count" && value < 0)) return;
   result.facts.push({id, label: limitText(label), value, kind, source});
   if (!result.evidence.some(x => x.identifier === source.identifier && x.source === source.source)) result.evidence.push(source);
+}
+function addInsight(result:ToolEvidence,id:string,text:string,source:EvidenceReference) {
+  result.insights.push({id,text:text.slice(0,450),source});
+  if(!result.evidence.some(x=>x.identifier===source.identifier && x.source===source.source))
+    result.evidence.push(source);
 }
 function sliceValue<T>(slice: KnownSlice<T>): T | null { return slice.available ? slice.value : null; }
 function matchName(name: string, pattern: string | null) {
@@ -152,7 +166,8 @@ export function intentForCalls(names: SupervisorToolName[]): SupervisorIntent {
   if (unique.length !== 1) return "cafe_overview";
   const intents: Record<SupervisorToolName, SupervisorIntent> = { get_cafe_overview: "cafe_overview", get_sales: "sales_quantity", get_menu: "menu_catalog",
     get_financials: "profitability", get_staff: "staff", get_team: "operating_tasks",
-    get_pricing: "menu_pricing", get_owner_rules: "owner_rules" };
+    get_pricing: "menu_pricing", get_owner_rules: "owner_rules",
+    compare_periods:"cafe_overview",conversation_control:"unknown" };
   return intents[unique[0]];
 }
 
@@ -164,6 +179,73 @@ export function createSupervisorToolRegistry(context: Context) {
   return async (call: SupervisorToolCall, index: number): Promise<ToolEvidence> => {
     schemas[call.name].parse(call.arguments);
     const prefix = "t" + index + ":";
+    if(call.name==="conversation_control") {
+      const a=schemas.conversation_control.parse(call.arguments);
+      const result=absent("conversationControl");
+      result.control=a.intent;
+      return result;
+    }
+    if(call.name==="compare_periods") {
+      const a=schemas.compare_periods.parse(call.arguments);
+      const current=dateArgs({period:a.current_period,from:a.current_from,to:a.current_to},asOf);
+      const previous=dateArgs({period:a.comparison_period,from:a.comparison_from,to:a.comparison_to},asOf);
+      const money=a.metric!=="orders";
+      const source=ref("comparison:"+a.metric+":"+current.from+":"+previous.from,asOf);
+      const metricReader=async (range:CafeStatePeriod):Promise<KnownSlice<number>>=>{
+        if(a.metric==="net_sales"||a.metric==="orders") {
+          const slice=await tools.getSalesTrend(range);
+          if(!slice.available) return slice;
+          const coverage=new Set(slice.value.map(x=>x.date)).size;
+          const expected=rangeExpectedDays(range);
+          const missing=coverage===expected?[]:["salesCoverage:"+coverage+"/"+expected];
+          return {available:true,value:slice.value.reduce((n,d)=>n+
+            (a.metric==="orders"?d.ordersCount:d.netSalesCents),0),quality:{
+              ...slice.quality,missingInputs:[...slice.quality.missingInputs,...missing]}};
+        }
+        if(a.metric==="loaded_labor") {
+          const slice=await tools.getLaborMetrics(range);
+          if(!slice.available) return slice;
+          const covered=new Set(slice.value.map(x=>x.date)).size;
+          return {available:true,value:slice.value.reduce((n,d)=>n+d.loadedStaffCostCents,0),
+            quality:{...slice.quality,missingInputs:[...slice.quality.missingInputs,
+              ...(covered===rangeExpectedDays(range)?[]:["laborCoverage"])]}};
+        }
+        const slice=await tools.getProfitability(range);
+        if(!slice.available) return slice;
+        return {available:true,value:a.metric==="owner_profit"?slice.value.ownerProfitCents:
+          slice.value.totalCostsCents,quality:slice.quality};
+      };
+      const [curr,prev]=await Promise.all([metricReader(current),metricReader(previous)]);
+      const comparison=compareCompleteValues(curr,prev);
+      const result=quality(comparison,[source],{current,comparison:previous,metric:a.metric,
+        completeComparison:comparison.available});
+      if(!comparison.available){
+        result.missingInputs.push(...comparison.quality.missingInputs);
+        if(curr.available){
+          addFact(result,prefix+"observedCurrent","Recorded current "+a.metric.replaceAll("_"," "),
+            curr.value,money?"metric":"count",source);
+        }
+        if(prev.available){
+          addFact(result,prefix+"observedPrevious","Recorded comparison "+a.metric.replaceAll("_"," "),
+            prev.value,money?"metric":"count",source);
+        }
+        result.status=result.facts.length?"partial":"unavailable";
+        addInsight(result,prefix+"incomplete","A complete comparison is not supported by the available period coverage.",source);
+        return result;
+      }
+      const c=comparison.value, kind=money?"metric":"count";
+      addFact(result,prefix+"current","Current "+a.metric.replaceAll("_"," "),c.current,kind,source);
+      addFact(result,prefix+"previous","Comparison "+a.metric.replaceAll("_"," "),c.previous,kind,source);
+      if(money) addFact(result,prefix+"difference","Change in "+a.metric.replaceAll("_"," "),c.difference,"metric",source);
+      result.data={metric:a.metric,direction:c.direction,percentageChange:c.changePercent,
+        difference:c.difference};
+      addInsight(result,prefix+"direction",
+        a.metric.replaceAll("_"," ")+" "+(c.direction==="unchanged"?"was unchanged":
+        c.direction==="up"?"increased":"decreased")+" versus the comparison period"+
+        (c.changePercent===null?" (percentage unavailable).":" by "+Math.abs(c.changePercent)+"%."),
+        source);
+      return result;
+    }
     if (call.name === "get_cafe_overview") {
       const a = schemas.get_cafe_overview.parse(call.arguments);
       const snapshot = await state();
@@ -232,7 +314,10 @@ export function createSupervisorToolRegistry(context: Context) {
         totalIsRecordedOnly: dates.size !== days,
       });
       if (!sales.available) return r;
-      if (dates.size !== days) { r.status = "partial"; r.missingInputs.push("salesCoverage:" + dates.size + "/" + days); }
+      if (dates.size !== days) {
+        r.status = "partial"; r.missingInputs.push("salesCoverage:" + dates.size + "/" + days);
+        addInsight(r,prefix+"partial","Only recorded sales are shown; some calendar days lack sales coverage.",source);
+      }
       const field = a.metric === "orders" ? "ordersCount" : "netSalesCents";
       const kind = a.metric === "orders" ? "count" : "metric";
       const label = a.metric === "orders" ? "Recorded orders" : "Recorded net sales";
@@ -283,6 +368,8 @@ export function createSupervisorToolRegistry(context: Context) {
         const bills = await tools.getMonthlyBills();
         const result = quality(bills,[source],{ month:asOf.slice(0,7), periodMeaning:"FULL MONTH, not prorated", rangeNotApplied:true });
         if (bills.available) addFact(result,prefix+"bills","Recurring monthly bills",bills.value.totalCents,"metric",source);
+        if (result.status==="estimated") addInsight(result,prefix+"billsEstimate",
+          "Recurring monthly bills include estimated entries.",source);
         return result;
       }
       if (a.metric === "recorded_spending") {
@@ -291,7 +378,18 @@ export function createSupervisorToolRegistry(context: Context) {
         if (spent.available) addFact(result,prefix+"spent","Recorded actual spending",spent.value.totalCents,"metric",source);
         return result;
       }
-      if (a.metric === "break_even") return absent("CanonicalBreakEvenNotExposedBySupervisorReadTools");
+      if(a.metric==="break_even"){
+        if(range.to!==asOf) return absent("HistoricalBreakEvenSnapshotUnavailable");
+        const be=await tools.getBreakEven(),r=quality(be,[source],
+          {calculation:"buildBreakEvenViewModel (same as Break-even screen)"});
+        if(!be.available)return r;
+        addFact(r,prefix+"drinks","Drinks needed per day",be.value.drinksNeededPerDay,"count",source);
+        addFact(r,prefix+"hour","Approximate drinks per hour",be.value.drinksPerHour,"count",source);
+        addFact(r,prefix+"daily","Daily costs to cover",be.value.dailyCostsToCoverCents,"metric",source);
+        addFact(r,prefix+"left","Average money left per drink",be.value.averageMoneyLeftPerDrinkCents,"metric",source);
+        if(be.value.todayDrinks!==null) addFact(r,prefix+"today","Today's recorded drinks",be.value.todayDrinks,"count",source);
+        return r;
+      }
       if (a.metric === "cost_breakdown") {
         const expenses = await tools.getExpenseSummary(range);
         const result = quality(expenses,[source],null,{from:range.from,to:range.to});
@@ -308,9 +406,43 @@ export function createSupervisorToolRegistry(context: Context) {
     }
     if (call.name === "get_staff") {
       const a = schemas.get_staff.parse(call.arguments);
-      const range = dateArgs(a,asOf);
+      const futureLimit=new Date(asOf+"T12:00:00Z");futureLimit.setUTCDate(futureLimit.getUTCDate()+90);
+      const range=a.view==="schedule"&&a.period==="custom" ?
+        resolveCafeDateRange({period:"custom",from:a.from,to:a.to},futureLimit.toISOString().slice(0,10)) : dateArgs(a,asOf);
       const source = ref("staff:" + a.view + ":" + range.from + ":" + range.to,asOf,"staff_timecards");
-      if (a.view === "schedule") return absent("StaffScheduleHistoricalCoverageUnavailable");
+      if(a.view==="schedule"){
+        const row=await tools.getRecurringSchedule(range,asOf);
+        const result=quality(row,[source],row.available?row.value:null);
+        if(row.available){
+          addFact(result,prefix+"scheduled","Owner-entered active weekly schedule rows",
+            row.value.shifts.length,"count",source);
+          addInsight(result,prefix+"scheduledInsight",
+            "The displayed shifts are owner-entered recurring plans, not confirmed attendance.",source);
+          for(const [i,shift] of row.value.shifts.slice(0,8).entries())
+            addInsight(result,prefix+"shift"+i,
+              (shift.displayName??"Employee")+" — weekly weekday "+shift.dayOfWeek+
+              ", "+shift.startTime+" to "+shift.endTime+
+              " (recurring planned shift; not confirmed clock-in).",source);
+        }
+        return result;
+      }
+      if(a.view==="current_staffing") {
+        if(range.from!==asOf||range.to!==asOf) return absent("CurrentStaffingOnlyForToday");
+        const current=await tools.getCurrentStaff();
+        const result=quality(current,[source],current.available?current.value:null);
+        if(current.available){
+          addFact(result,prefix+"current","People shown on shift by Staff",current.value.count,"count",source);
+          addInsight(result,prefix+"status",
+            "Current staffing uses the same on-shift calculation as the Staff screen; scheduled shifts may be predictions.",
+            source);
+          for(const [i,person] of current.value.people.slice(0,8).entries())
+            addInsight(result,prefix+"person"+i,
+              person.name+" — "+(person.role??"staff")+
+              " ("+(person.isSchedulePrediction?"scheduled prediction":"recorded timecard")+
+              ", break status: "+person.breakStatus+").",source);
+        }
+        return result;
+      }
       if (a.view === "coverage_issues") {
         const tasks = await tools.getTeamTasks();
         const result = quality(tasks,[ref("staff_coverage_tasks",asOf,"operating_tasks")],
@@ -320,6 +452,7 @@ export function createSupervisorToolRegistry(context: Context) {
           addFact(result,prefix+"issues","Recorded open staff coverage tasks",open.length,"count",result.evidence[0]);
           result.tasks = open.slice(0,5).map(t=>taskCard(t,asOf));
           result.evidence.push(...result.tasks.map(t=>t.source));
+          if(open.length===0)addInsight(result,prefix+"noCoverage","No open staff coverage tasks are recorded; this does not prove the roster is fully covered.",result.evidence[0]);
         }
         return result;
       }
@@ -374,6 +507,7 @@ export function createSupervisorToolRegistry(context: Context) {
       result.tasks = rows.slice(0,a.limit).map(t=>taskCard(t,asOf));
       result.evidence.push(...result.tasks.map(t=>t.source));
       result.data = { note:"Persisted AI Team task inbox, not a staff roster", returned:result.tasks.length };
+      if(!rows.length)addInsight(result,prefix+"noTasks","No matching AI Team tasks are recorded.",source);
       return result;
     }
     if (call.name === "get_pricing") {
@@ -397,6 +531,7 @@ export function createSupervisorToolRegistry(context: Context) {
         }
       }
       result.data = { recommendations:rows.length, reviewOnly:true };
+      if(rows.length)addInsight(result,prefix+"pricingReview","Pricing engine has review-only recommendations; prices have not been changed.",source);
       return result;
     }
     const a = schemas.get_owner_rules.parse(call.arguments);

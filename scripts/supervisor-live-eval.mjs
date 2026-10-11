@@ -1,37 +1,49 @@
 #!/usr/bin/env node
-// Developer-only live semantic evaluation. Never run in CI. Requires BOTH --live and explicit OPENAI_API_KEY.
-import { readFileSync } from "node:fs";
-const enabled = process.argv.includes("--live");
-if (!enabled || !process.env.OPENAI_API_KEY) {
-  console.error("Live Supervisor eval is opt-in: OPENAI_API_KEY=... node scripts/supervisor-live-eval.mjs --live");
-  process.exitCode=2;
-} else {
-  const cases = JSON.parse(readFileSync(new URL("../lib/ai/conversations/semantic-eval.fixture.json",import.meta.url),"utf8"));
-  const names=["get_cafe_overview","get_sales","get_menu","get_financials","get_staff","get_team","get_pricing","get_owner_rules"];
-  const tools = names.map(name=>({
-    type:"function",name,description:"Read-only domain capability for authenticated café: "+name,
-    strict:true,parameters:{type:"object",properties:{probe:{type:"string",enum:["read_only"]}},
-      required:["probe"],additionalProperties:false},
-  }));
-  let successes=0;
-  for(const example of cases) {
-    const response=await fetch("https://api.openai.com/v1/responses",{
-      method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+process.env.OPENAI_API_KEY},
-      body:JSON.stringify({
-        model:process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna",
-        instructions:"Choose the appropriate read-only café domain tools semantically. No DB writes, no answer from memory. Date and prior turns are implicit. Use at least one relevant tool. Staff and AI Team are distinct.",
-        input:example.question,tools,tool_choice:"required",parallel_tool_calls:true,
-        reasoning:{effort:"none"},store:false,max_output_tokens:350,
-      }),
-    });
-    if(!response.ok) throw Error("OpenAI eval HTTP "+response.status);
-    const body=await response.json();
-    const selected=(body.output??[]).filter(x=>x.type==="function_call").map(x=>x.name);
-    const ok=example.expectedTools.some(name=>selected.includes(name));
-    if(ok) successes++;
-    process.stdout.write((ok?"PASS":"FAIL")+" "+JSON.stringify({question:example.question,
-      expected:example.expectedTools,actual:selected})+"\n");
-  }
-  console.log("Semantic eval:",successes+"/"+cases.length);
-  if(successes!==cases.length) process.exitCode=1;
+/** MANUAL PAID SEMANTIC TEST. Uses EXACT production Responses tool schemas, not probe tools. */
+import {readFileSync} from "node:fs";
+import {SUPERVISOR_FUNCTIONS} from "../lib/ai/conversations/supervisorFunctions.mjs";
+if(!process.env.OPENAI_API_KEY) {
+  console.error("NOT RUN: set OPENAI_API_KEY securely, then run npm run supervisor:live-eval");
+  process.exit(2);
 }
+const cases=JSON.parse(readFileSync(new URL("../lib/ai/conversations/semantic-eval.fixture.json",import.meta.url),"utf8"));
+const matches=(actual,plans)=>plans.some(plan=>plan.every(required=>actual.some(call=>
+  call.name===required.name&&Object.entries(required.arguments??{}).every(([key,val])=>call.arguments[key]===val))));
+const results=[];
+for(const c of cases){
+  const input=[...(c.history??[]),{role:"user",content:c.question}];
+  const response=await fetch("https://api.openai.com/v1/responses",{
+    method:"POST",headers:{"content-type":"application/json",authorization:"Bearer "+process.env.OPENAI_API_KEY},
+    body:JSON.stringify({model:process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna",
+      instructions:[
+        "You are the AI CAFE Supervisor selecting authorized read-only tools semantically.",
+        "For a business question request the relevant café domain tools; multiple calls allowed.",
+        "Use prior owner AND Supervisor messages for follow-up references.",
+        "Distinguish human staff and AI Team, menu inventory from product sales, monthly bills from actual expenses.",
+        "Use comparison tools for numeric trends instead of inventing arithmetic.",
+        "The first round must request at least one real café tool or conversation_control for non-business messages.",
+        "Never invent business data, payroll, costs, staffing or sales records.",
+        "Cafe local date 2026-10-10, timezone America/Los_Angeles.",
+      ].join("\n"),
+      input,tools:SUPERVISOR_FUNCTIONS,tool_choice:"required",
+      parallel_tool_calls:true,store:false,reasoning:{effort:"none"},max_output_tokens:900,
+    }),
+  });
+  if(!response.ok) {
+    const status=response.status;
+    console.error("Live eval stopped: provider response",status,"for question",c.question);
+    process.exit(2);
+  }
+  const payload=await response.json();
+  const actual=(payload.output??[]).filter(item=>item.type==="function_call").map(item=>{
+    let args={};try{args=JSON.parse(item.arguments);}catch{/* invalid is a failed case */}
+    return {name:item.name,arguments:args};
+  });
+  const pass=matches(actual,c.acceptablePlans);
+  results.push({question:c.question,pass,model:payload.model,actual,
+    acceptablePlans:c.acceptablePlans});
+  console.log(JSON.stringify(results.at(-1)));
+}
+const passed=results.filter(x=>x.pass).length;
+console.log("LIVE GPT SEMANTIC EVAL:",passed,"/",results.length,"passed");
+if(passed!==results.length)process.exitCode=1;

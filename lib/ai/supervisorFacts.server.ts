@@ -28,6 +28,8 @@ export function resolveItemSalesCoverage(
   period: CafeStatePeriod,
 ): ItemSalesCoverage {
   const covered = connections.filter(connection=>{
+    // Explicit contractual coverage only. Unknown connectors have no inferred 90-day backfill rule.
+    if(connection.provider!=="square") return false;
     const startDate = connection.backfill_completed_at?.slice(0,10);
     const lastSynced = connection.last_synced_at?.slice(0,10);
     if (!startDate || !lastSynced) return false;
@@ -81,7 +83,7 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
     },
 
     /** Order-lines RPC is invoker-security, scoped by business AND its underlying RLS.
-     * A provider-backed completed canonical item import and through-date sync prove item coverage.
+     * Only an explicitly supported provider policy can prove canonical item coverage.
      * Without both, even a nonzero sum is only an observed subset, not a total.
      */
     async productSales(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<SoldProduct[]>> {

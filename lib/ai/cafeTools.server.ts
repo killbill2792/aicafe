@@ -4,6 +4,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
+import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
+import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { readPersistedOperatingTasks } from "@/lib/data/operatingTasks";
 import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
@@ -41,10 +43,12 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     // Uses the exact data source and pricing engine already used by Menu and Team.
     return getMenuControlCenter();
   };
+  let snapshotPromise: ReturnType<typeof getSnapshot> | null = null;
+  const currentSnapshot = () => snapshotPromise ??= getSnapshot();
   const states = new SnapshotCafeStateService(
     async (requested) => {
       assertBusiness(requested);
-      const snapshot = await getSnapshot();
+      const snapshot = await currentSnapshot();
       if (snapshot.business.id !== businessId) throw new Error("Café snapshot business mismatch");
       return snapshot;
     },
@@ -61,6 +65,30 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     },
     supervisorFactReaders(client, businessId),
     supervisorHistoricalReaders(client, businessId),
+    {
+      currentStaff: async (requested) => {
+        assertBusiness(requested);
+        const snapshot = await currentSnapshot();
+        if(snapshot.business.id !== businessId) throw new Error("Café snapshot scope mismatch");
+        return {available:true,value:projectCurrentStaff(snapshot),quality:{
+          level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
+      },
+      recurringSchedule: async (requested,range,asOf) => {
+        assertBusiness(requested);
+        const [rows, employees] = await Promise.all([
+          getStaffSchedules(),client.from("employees").select("id,display_name").eq("business_id",businessId).limit(200),
+        ]);
+        if(employees.error) throw employees.error;
+        const byId = Object.fromEntries((employees.data ?? []).map(e=>[e.id,e.display_name]));
+        return projectRecurringSchedule(rows,byId,range,asOf);
+      },
+      breakEven: async (requested) => {
+        assertBusiness(requested);
+        const snapshot = await currentSnapshot();
+        if(snapshot.business.id !== businessId) throw new Error("Café snapshot scope mismatch");
+        return projectBreakEven(snapshot);
+      },
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
 }

@@ -1,18 +1,22 @@
-import { describe,expect,it,vi } from "vitest";
-vi.mock("server-only",()=>({}));
+import {describe,expect,it} from "vitest";
 import cases from "./semantic-eval.fixture.json";
-import { SUPERVISOR_FUNCTIONS } from "./toolRegistry.server";
-describe("Supervisor semantic evaluation fixture validity (mocked CI)",()=>{
-  it("covers varied phrasings across every domain, dates, multilingual and follow-up intents",()=>{
-    expect(cases.length).toBeGreaterThan(24);
-    expect(new Set(cases.flatMap(x=>x.expectedTools)).size).toBe(8);
-    const registered: Set<string> = new Set(SUPERVISOR_FUNCTIONS.map(t=>t.name));
-    for(const example of cases) {
-      expect(example.question.trim().length).toBeGreaterThan(0);
-      expect(example.expectedTools.length).toBeGreaterThan(0);
-      for(const family of example.expectedTools) expect(registered.has(family)).toBe(true);
-      expect(example.evidenceClass).toMatch(/verified|partial|estimated|unavailable/);
-      expect(example.responseType).toBeTruthy();
+import {SUPERVISOR_FUNCTIONS} from "./supervisorFunctions.mjs";
+import {matchesAcceptablePlan} from "./semanticEval";
+describe("Live semantic eval fixture integrity ONLY (no model inference in CI)",()=>{
+  it("covers distinct capabilities, varied language, follow-up context and strict complete-plan matching",()=>{
+    expect(cases.length).toBeGreaterThan(30);
+    const known=new Set(SUPERVISOR_FUNCTIONS.map(x=>x.name));
+    for(const c of cases){
+      expect(c.question.trim()).toBeTruthy();
+      expect(c.acceptablePlans.length).toBeGreaterThan(0);
+      for(const plan of c.acceptablePlans){
+        expect(plan.length).toBeGreaterThan(0);
+        for(const item of plan)expect(known.has(item.name)).toBe(true);
+      }
     }
+    expect(matchesAcceptablePlan([{name:"get_sales",arguments:{}}],[
+      [{name:"get_sales"},{name:"get_team"}]])).toBe(false);
+    expect(matchesAcceptablePlan([{name:"get_sales",arguments:{}},{name:"get_team",arguments:{}}],[
+      [{name:"get_sales"},{name:"get_team"}]])).toBe(true);
   });
 });

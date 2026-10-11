@@ -10,7 +10,8 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:reset": "node scripts/db-reset.mjs"
+    "db:reset": "node scripts/db-reset.mjs",
+    "supervisor:live-eval": "node scripts/supervisor-live-eval.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^11.0.0",

@@ -12,20 +12,27 @@ export type SupervisorUsage = {
   modelCallCount: number; toolCallCount: number;
 };
 type Transport = (url: string, init: RequestInit) => Promise<Response>;
+const HEADLINES = ["Here is the recorded picture","Here is what stands out","Here is what I found",
+  "I need a little clarification","Hello","Aquí está lo registrado","Esto es lo que encontré",
+  "هذه هي البيانات المسجلة","مرحباً"] as const;
+const SUMMARIES = ["Based on the available café records","The available sources have some limitations",
+  "How can I help with your café?","Please clarify what information you need","",
+  "Según los datos disponibles del café","بناءً على سجلات المقهى المتاحة"] as const;
 const FINAL = z.strictObject({
-  headline: z.string().trim().max(130),
-  summary: z.string().trim().max(500),
-  fact_ids: z.array(z.string().max(80)).max(12),
-  task_ids: z.array(z.string().max(200)).max(8),
-  evidence_refs: z.array(z.string().max(160)).max(20),
+  headline:z.enum(HEADLINES),summary:z.enum(SUMMARIES),
+  fact_ids:z.array(z.string().max(80)).max(12),
+  task_ids:z.array(z.string().max(200)).max(8),
+  insight_ids:z.array(z.string().max(80)).max(12),
+  evidence_refs:z.array(z.string().max(160)).max(20),
 });
 const finalSchema = {
   type:"object",additionalProperties:false,
-  required:["headline","summary","fact_ids","task_ids","evidence_refs"],
+  required:["headline","summary","fact_ids","task_ids","insight_ids","evidence_refs"],
   properties:{
-    headline:{type:"string"},summary:{type:"string"},
+    headline:{type:"string",enum:[...HEADLINES]},summary:{type:"string",enum:[...SUMMARIES]},
     fact_ids:{type:"array",items:{type:"string"}},
     task_ids:{type:"array",items:{type:"string"}},
+    insight_ids:{type:"array",items:{type:"string"}},
     evidence_refs:{type:"array",items:{type:"string"}},
   },
 };
@@ -46,6 +53,7 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   const final = FINAL.parse(raw);
   const facts = results.flatMap(r=>r.facts);
   const tasks = results.flatMap(r=>r.tasks);
+  const insights = results.flatMap(r=>r.insights);
   const availableRefs = results.flatMap(r=>r.evidence);
   const selectedFacts = final.fact_ids.map(id=>{
     const found = facts.find(f=>f.id===id);
@@ -57,13 +65,18 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
     if (!found) throw new Error("Unverified Supervisor task reference");
     return found;
   });
+  const selectedInsights=final.insight_ids.map(id=>{
+    const found=insights.find(s=>s.id===id);
+    if(!found) throw new Error("Unverified Supervisor insight reference");
+    return found;
+  });
   const refs: EvidenceReference[] = [];
   for (const identifier of final.evidence_refs) {
     const found = availableRefs.find(x=>x.identifier===identifier);
     if (!found) throw new Error("Unverified Supervisor evidence reference");
     refs.push(found);
   }
-  for (const r of selectedFacts.map(x=>x.source).concat(selectedTasks.map(x=>x.source))) refs.push(r);
+  for (const r of selectedFacts.map(x=>x.source).concat(selectedTasks.map(x=>x.source),selectedInsights.map(x=>x.source))) refs.push(r);
   const evidence = refs.filter((x,i,arr)=>arr.findIndex(y=>
     y.identifier===x.identifier && y.source===x.source && y.asOf===x.asOf)===i).slice(0,30);
   // Free-form text cannot introduce new amounts, dates, counts or links.
@@ -80,8 +93,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       : {type:"count",label:f.label,value:f.value,source:f.source});
   }
   blocks.push(...selectedTasks.slice(0,8));
+  for(const insight of selectedInsights)blocks.push({type:"text",text:insight.text});
   const relevant = results;
-  const hasFacts = selectedFacts.length>0 || selectedTasks.length>0 || evidence.length>0;
+  const hasFacts = selectedFacts.length>0 || selectedTasks.length>0 || selectedInsights.length>0 || evidence.length>0;
   const anyPartial = relevant.some(x=>x.status==="partial");
   const anyEstimated = relevant.some(x=>x.status==="estimated");
   const anyMissing = relevant.some(x=>x.status==="unavailable");
@@ -98,6 +112,22 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   if (status==="partial" || status==="estimated" || status==="unavailable")
     blocks.push({type:"warning",code:status,text:notices[locale][status]});
   if (blocks.length===0) blocks.push({type:"warning",code:"unavailable",text:"No verified café records available for this answer."});
+  const control=results.length===1?results[0].control:null;
+  if(control){
+    const messages={
+      en:{greeting:"Hello. What would you like to know about your café?",
+        clarification:"What would you like me to check in your café records?",
+        unsupported:"I can help with questions grounded in your café records."},
+      es:{greeting:"Hola. ¿Qué te gustaría saber de tu cafetería?",
+        clarification:"¿Qué información de tu cafetería quieres consultar?",
+        unsupported:"Puedo ayudarte con preguntas basadas en los datos de tu cafetería."},
+      ar:{greeting:"مرحباً. ماذا تريد أن تعرف عن المقهى؟",
+        clarification:"ما المعلومات التي تريد التحقق منها في سجلات المقهى؟",
+        unsupported:"يمكنني مساعدتك في الأسئلة المستندة إلى سجلات المقهى."}
+    };
+    return {intent:"unknown",status:"unavailable",evidence:[],
+      blocks:[{type:"text",text:messages[locale][control]}]};
+  }
   if (!results.length) {
     return {intent:"unknown",status:"unavailable",evidence:[],
       blocks:[{type:"text",text:statement || "Could you clarify your question?"}]};
@@ -134,12 +164,17 @@ export async function runSupervisorTurn(input: {
     "Use canonical arithmetic from tools; do not independently calculate amounts or derived prices.",
     "Observe coverage: partial recorded numbers are not full totals; estimated inputs are identified.",
     "If a fact is missing, say what is known and what is unavailable. Avoid generic advice without evidence.",
-    "On final answer output JSON: headline, summary, fact_ids, task_ids, evidence_refs.",
+    "The first response MUST request one or more allow-listed tools.",
+    "For greetings, genuine clarifications or unrelated requests use conversation_control exclusively.",
+    "For café/business advice or owner-specific questions MUST request café data tools, not conversation_control.",
+    "On final answer output JSON: headline, summary, fact_ids, task_ids, insight_ids, evidence_refs.",
     "Select only IDs exactly provided by this turn's tools. No made-up IDs.",
+    "Only select trusted insight_ids for comparative, qualitative or causal café conclusions.",
+    "headline and summary MUST be exact allowed connective phrases from the schema, with no business claims.",
     "HEADLINE and SUMMARY must contain NO digits, currency signs, monetary values, URLs or precise numeric claims.",
     "Numbers and task cards come ONLY from referenced fact_ids/task_ids, resolved by server.",
     "Summaries must make only claims supported by tool content; concise, owner-friendly.",
-    "For greetings and genuine clarification you may produce a final response with no tools.",
+    "A first model response with no function call is invalid."
     "Café local date: " + input.asOf + ", timezone: " + input.timezone + ".",
   ].join("\n");
   const history = input.history.slice(-12).filter(x=>x.text).map(x=>({
@@ -157,7 +192,7 @@ export async function runSupervisorTurn(input: {
           headers:{"content-type":"application/json",authorization:"Bearer "+key},
           body:JSON.stringify({
             model,instructions,input:conversation,store:false,reasoning:{effort:"none"},
-            max_output_tokens:1300,parallel_tool_calls:true,tool_choice:"auto",
+            max_output_tokens:1300,parallel_tool_calls:true,tool_choice:round===0?"required":"auto",
             tools:SUPERVISOR_FUNCTIONS,
             text:{format:{type:"json_schema",name:"supervisor_final",strict:true,schema:finalSchema}},
           }),
@@ -183,7 +218,12 @@ export async function runSupervisorTurn(input: {
     input.onUsage?.({...usage});
     const output = payload.output;
     const calls = parseSupervisorCalls(output);
+    if (round===0 && !calls.length) throw new Error("Supervisor first round requires a safe tool");
     if (calls.length) {
+      if(calls.some(x=>x.name==="conversation_control") && calls.length!==1)
+        throw new Error("Conversation control cannot accompany café data");
+      if(round>0 && calls.some(x=>x.name==="conversation_control"))
+        throw new Error("Conversation control only valid on first round");
       if (round===MAX_ROUNDS-1 || usage.toolCallCount+calls.length>MAX_TOOLS)
         throw new Error("Supervisor safe tool budget exceeded");
       const duplicates = new Set<string>();

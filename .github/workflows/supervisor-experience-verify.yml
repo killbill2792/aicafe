@@ -30,7 +30,10 @@ jobs:
           npx eslint 'lib/ai/conversations/runSupervisorTurn.server.ts' 'lib/ai/conversations/toolRegistry.server.ts' \
             'lib/ai/conversations/usage.server.ts' 'lib/ai/conversations/contracts.ts' \
             'lib/ai/conversations/dateRange.ts' 'lib/ai/conversations/context.ts' \
-            'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/supervisorReads.server.ts' \
+            'lib/ai/conversations/domainProjections.ts' 'lib/ai/conversations/domainProjections.test.ts' \
+            'lib/ai/conversations/periodComparison.ts' 'lib/ai/conversations/periodComparison.test.ts' \
+            'lib/ai/conversations/semanticEval.ts' 'lib/ai/conversations/semantic-eval.test.ts' \
+            'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
             'lib/ai/conversations/replyValidation.ts' 'components/home/SupervisorChatComposer.tsx' \
             'components/home/SupervisorHomePanel.tsx' 'app/[locale]/page.tsx' \
             'app/api/ai/usage/route.ts' 'app/api/ai/threads/[threadId]/messages/route.ts'
