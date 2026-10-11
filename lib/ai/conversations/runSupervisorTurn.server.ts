@@ -7,7 +7,7 @@ import type { ConversationalTurn } from "./context";
 import { createSupervisorToolRegistry, intentForCalls, parseSupervisorCalls,
   SUPERVISOR_FUNCTIONS, type ToolEvidence, type SupervisorToolName } from "./toolRegistry.server";
 import { HEADLINES, SUMMARIES, SUPERVISOR_ENDPOINT, buildSupervisorInstructions, buildSupervisorRequest } from "./supervisorRequest.mjs";
-import { SupervisorStageError, type SupervisorDiagnostic } from "./diagnostics.server";
+import { SupervisorStageError, readSafeProviderError, type SupervisorDiagnostic } from "./diagnostics.server";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
@@ -168,8 +168,12 @@ export async function runSupervisorTurn(input: {
           throw new SupervisorStageError(timedOut?"provider_timeout":"provider_http",
             "provider_request",{round:roundNumber,attempt:attemptNumber,timeout:timedOut});
         }
-        if(!response.ok) throw new SupervisorStageError("provider_http","provider_response",
-          {round:roundNumber,attempt:attemptNumber,httpStatus:response.status});
+        if(!response.ok) {
+          const safeProviderError=await readSafeProviderError(response);
+          throw new SupervisorStageError("provider_http","provider_response",
+            {round:roundNumber,attempt:attemptNumber,httpStatus:response.status,
+              ...safeProviderError});
+        }
         let body:unknown;
         try {body=await response.json();}
         catch {throw new SupervisorStageError("provider_invalid_payload","provider_response",
@@ -203,6 +207,8 @@ export async function runSupervisorTurn(input: {
         input.onDiagnostic?.({stage:classified.stage,category:classified.category,
           model,round:roundNumber,attempt:attemptNumber,httpStatus:classified.httpStatus,
           providerStatus:classified.providerStatus,timeout:classified.timeout,
+          providerErrorType:classified.providerErrorType,providerErrorCode:classified.providerErrorCode,
+          providerRequestId:classified.providerRequestId,
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         const retry=classified.category==="provider_timeout"||
           classified.category==="provider_incomplete"||
