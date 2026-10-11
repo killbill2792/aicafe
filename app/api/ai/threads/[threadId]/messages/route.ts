@@ -1,10 +1,8 @@
-import { getTranslations } from "next-intl/server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
-import { createAuthenticatedCafeTools } from "@/lib/ai/cafeTools.server";
-import { planSupervisorQuestion } from "@/lib/ai/conversations/planner.server";
-import { isCurrentStaffIssuesQuestion, answerCurrentStaffIssues } from "@/lib/ai/conversations/staffIssues";
-import { executeSupervisorPlan } from "@/lib/ai/conversations/executePlan";
+import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
+import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
+import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
@@ -27,9 +25,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 }
 
-/** Strict OpenAI planner -> ONE typed owner-scoped read tool -> deterministic evidence-validated reply.
- * The model has no raw database connection, financial arithmetic, permissions or write tools.
- */
+/** Bounded Responses tool loop. Only server-authorized read-only evidence enters model context. */
 export async function POST(request: Request, context: RouteContext) {
   try {
     requireSameOrigin(request);
@@ -50,23 +46,30 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
     const tools = await createAuthenticatedCafeTools();
-    // A current staff-issues request has a precise, read-only Team source.
-    // Do not block it on a general café snapshot or a remote LLM planner.
-    if (isCurrentStaffIssuesQuestion(input.text, input.locale)) {
-      const t = await getTranslations({ locale: input.locale, namespace: "SupervisorChat" });
-      const reply = answerCurrentStaffIssues({
-        tasks: await tools.getTeamTasks(),
-        asOf: new Date().toISOString(),
-        copy: {
-          summary: (needs, watching) => t("staffIssuesSummary", { needs, watching }),
-          none: t("staffIssuesNone"),
-          missing: t("staffIssuesUnavailable"),
-          estimated: t("estimation"),
-          taskName: t("taskStaff"),
-          taskCard: (name) => t("taskCard", { kind: t("taskStaff"), name }),
-        },
+    const identity = await readSupervisorCafeIdentity(scope.businessId);
+    const messages = (await service.listMessages(id, 0)).items;
+    const history = compactConversationContext(messages, message.id);
+    let aggregatedUsage: SupervisorUsage | null = null;
+    let reply;
+    try {
+      const completed = await runSupervisorTurn({
+        text: input.text, locale: input.locale, asOf: identity.asOf,
+        timezone: identity.timezone, cafeName: identity.cafeName,
+        tools, history,
+        readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
+        onUsage: (usage) => { aggregatedUsage = usage; },
       });
-      const stored = await persistGroundedSupervisorReply(scope, message, reply);
+      reply = completed.reply;
+    } finally {
+      // Also record the usage already incurred if a later provider round failed.
+      // A failed owner turn remains unanswered and can be retried idempotently.
+      if (aggregatedUsage) {
+        try { await recordSupervisorUsage({
+          scope, threadId: id, ownerMessageId: message.id, usage: aggregatedUsage,
+        }); } catch { /* telemetry is nonblocking on deployments awaiting migration */ }
+      }
+    }
+    const stored = await persistGroundedSupervisorReply(scope, message, reply);
       return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
     }
     const state = await tools.getCafeSummary();

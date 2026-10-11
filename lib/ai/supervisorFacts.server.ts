@@ -6,6 +6,9 @@ import { totalMonthlyRecurringCostsCents } from "@/lib/expenses/recurringMonthly
 /** Distinct, verified facts. Neither scheduled bills nor elapsed running costs are cash spent. */
 export type MonthlyBills = { totalCents: number };
 export type RecordedExpenses = { totalCents: number };
+export type ItemSalesCoverage = {
+  covered: boolean; sources: string[]; from: string | null; through: string | null;
+};
 export type SoldProduct = { id: string; name: string; category: "drink" | "food"; units: number };
 
 function known<T>(value: T, estimated = false): KnownSlice<T> {
@@ -20,6 +23,22 @@ function missing<T>(reason: string): KnownSlice<T> {
   } };
 }
 
+export function resolveItemSalesCoverage(
+  connections: Array<{provider:string;last_synced_at:string|null;backfill_completed_at:string|null}>,
+  period: CafeStatePeriod,
+): ItemSalesCoverage {
+  const covered = connections.filter(connection=>{
+    const startDate = connection.backfill_completed_at?.slice(0,10);
+    const lastSynced = connection.last_synced_at?.slice(0,10);
+    if (!startDate || !lastSynced) return false;
+    const earliest = new Date(Date.parse(startDate+"T12:00:00Z")-89*86_400_000)
+      .toISOString().slice(0,10);
+    return earliest<=period.from && lastSynced>=period.to;
+  });
+  return {covered:covered.length>0,sources:[...new Set(covered.map(c=>c.provider))].slice(0,5),
+    from:covered.length ? period.from : null,through:covered.length ? period.to : null};
+}
+
 /** The same active rows and monthly-equivalent helper used by getRecurringCosts/BillsManager. */
 export function supervisorFactReaders(client: SupabaseClient, authorizedBusinessId: string) {
   function assertScope(businessId: string) {
@@ -27,6 +46,14 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
   }
 
   return {
+    async itemSalesCoverage(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<ItemSalesCoverage>> {
+      assertScope(businessId);
+      const { data, error } = await client.from("pos_connections")
+        .select("provider,last_synced_at,backfill_completed_at").eq("business_id",businessId).eq("status","active");
+      if (error) throw error;
+      const coverage = resolveItemSalesCoverage(data ?? [],period);
+      return coverage.covered ? known(coverage) : missing("itemSalesCoverageNotProven");
+    },
     async monthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>> {
       assertScope(businessId);
       const { data, error } = await client.from("recurring_costs")
@@ -54,25 +81,18 @@ export function supervisorFactReaders(client: SupabaseClient, authorizedBusiness
     },
 
     /** Order-lines RPC is invoker-security, scoped by business AND its underlying RLS.
-     * A completed Square backfill and sync through the period prove item-level coverage.
+     * A provider-backed completed canonical item import and through-date sync prove item coverage.
      * Without both, even a nonzero sum is only an observed subset, not a total.
      */
     async productSales(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<SoldProduct[]>> {
       assertScope(businessId);
       const { data: connections, error: connectionError } = await client.from("pos_connections")
-        .select("last_synced_at, backfill_completed_at")
-        .eq("business_id", businessId).eq("provider", "square").eq("status", "active")
+        .select("provider, last_synced_at, backfill_completed_at")
+        .eq("business_id", businessId).eq("status", "active")
         .not("last_synced_at", "is", null).not("backfill_completed_at", "is", null);
       if (connectionError) throw connectionError;
-      // The Menu model treats completed Square backfill as a 90-day window.
-      const covered = (connections ?? []).some((connection) => {
-        const backfill = connection.backfill_completed_at?.slice(0, 10);
-        const synced = connection.last_synced_at?.slice(0, 10);
-        if (!backfill || !synced) return false;
-        const start = new Date(Date.parse(backfill + "T12:00:00Z") - 89 * 86_400_000)
-          .toISOString().slice(0, 10);
-        return start <= period.from && synced >= period.to;
-      });
+      const coverage = resolveItemSalesCoverage(connections ?? [],period);
+      const covered = coverage.covered;
       if (!covered) return missing("itemSalesCoverage");
       const [items, quantities] = await Promise.all([
         client.from("menu_items").select("id, name, category").eq("business_id", businessId),

@@ -1,7 +1,7 @@
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationScope } from "./contracts";
-import type { SupervisorUsage } from "./planner.server";
+import type { SupervisorUsage } from "./runSupervisorTurn.server";
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
  * A missing rate is NULL, not a fabricated "$0" estimate. No financial business math is touched.
@@ -51,6 +51,7 @@ export async function recordSupervisorUsage(params: {
     thread_id: threadId, owner_message_id: ownerMessageId,
     provider: "openai", model: usage.model,
     input_tokens: usage.inputTokens, output_tokens: usage.outputTokens,
+    model_call_count: usage.modelCallCount, tool_call_count: usage.toolCallCount,
     estimated_cost_micros: cost,
   }, { onConflict: "owner_message_id", ignoreDuplicates: true });
   if (error) throw error;

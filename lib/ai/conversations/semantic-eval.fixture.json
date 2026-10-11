@@ -1,0 +1,265 @@
+[
+  {
+    "question": "what did we make today",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "sales so far?",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "how much business have we done",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what's revenue looking like",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "how many things are on my menu",
+    "expectedTools": [
+      "get_menu"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many items do I offer",
+    "expectedTools": [
+      "get_menu"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "what drinks are active",
+    "expectedTools": [
+      "get_menu"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "what's my most popular drink",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "ranking"
+  },
+  {
+    "question": "which item is selling worst",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "ranking"
+  },
+  {
+    "question": "how many different things sold",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "any staff problems",
+    "expectedTools": [
+      "get_staff"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "are we short anybody",
+    "expectedTools": [
+      "get_staff"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "do I need to worry about coverage",
+    "expectedTools": [
+      "get_staff"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "what's happening with the team today",
+    "expectedTools": [
+      "get_team",
+      "get_staff"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "what do my monthly bills add up to",
+    "expectedTools": [
+      "get_financials"
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what are my regular monthly costs",
+    "expectedTools": [
+      "get_financials"
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what did I actually spend",
+    "expectedTools": [
+      "get_financials"
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what needs me",
+    "expectedTools": [
+      "get_team"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "did the AI team handle anything",
+    "expectedTools": [
+      "get_team"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "what are you watching",
+    "expectedTools": [
+      "get_team"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "why is profit down",
+    "expectedTools": [
+      "get_financials",
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "comparison"
+  },
+  {
+    "question": "anything I should worry about",
+    "expectedTools": [
+      "get_team",
+      "get_financials"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "how are we doing today",
+    "expectedTools": [
+      "get_sales",
+      "get_financials",
+      "get_team"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "what about yesterday",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "followup"
+  },
+  {
+    "question": "why",
+    "expectedTools": [
+      "get_sales",
+      "get_financials"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "followup"
+  },
+  {
+    "question": "what about the second one",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "followup"
+  },
+  {
+    "question": "compare that with last week",
+    "expectedTools": [
+      "get_sales"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "comparison"
+  },
+  {
+    "question": "¿Cómo vamos hoy?",
+    "expectedTools": [
+      "get_sales",
+      "get_financials"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "هل هناك مشاكل في الموظفين؟",
+    "expectedTools": [
+      "get_staff"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "what pricing reviews need approval",
+    "expectedTools": [
+      "get_pricing"
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "recommendation"
+  },
+  {
+    "question": "what owner rules have I approved",
+    "expectedTools": [
+      "get_owner_rules"
+    ],
+    "evidenceClass": "verified",
+    "responseType": "rules"
+  },
+  {
+    "question": "show me a quick café snapshot",
+    "expectedTools": [
+      "get_cafe_overview"
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  }
+]

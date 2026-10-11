@@ -4,7 +4,8 @@ import type { DecisionStore } from "@/lib/operating/decisions";
 import type { OperatingTask } from "@/lib/operating/tasks";
 import type { MenuItemSnapshot, RunningCostLine } from "@/lib/data/types";
 import type { DailyFacts, PricingResult, DataQuality } from "@/lib/calc";
-import type { MonthlyBills, RecordedExpenses, SoldProduct } from "./supervisorFacts.server";
+import type { MenuCatalogProduct, StaffAttendance } from "./supervisorReads.server";
+import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } from "./supervisorFacts.server";
 
 /** A read-only, evidence-carrying allow-list. The AI never receives a raw DB client. */
 export interface CafeToolset {
@@ -18,6 +19,9 @@ export interface CafeToolset {
   getMonthlyBills(businessId: string): Promise<KnownSlice<MonthlyBills>>;
   getRecordedExpenses(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<RecordedExpenses>>;
   getProductSales(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<SoldProduct[]>>;
+  getItemSalesCoverage(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<ItemSalesCoverage>>;
+  getMenuCatalog(businessId: string): Promise<KnownSlice<MenuCatalogProduct[]>>;
+  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string): Promise<KnownSlice<StaffAttendance>>;
   getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>>;
   getLaborMetrics(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafeLaborDay[]>>;
   getInventoryStatus(businessId: string): Promise<KnownSlice<never>>;
@@ -53,6 +57,12 @@ export class StructuredCafeTools implements CafeToolset {
       monthlyBills: CafeToolset["getMonthlyBills"];
       recordedExpenses: CafeToolset["getRecordedExpenses"];
       productSales: CafeToolset["getProductSales"];
+      itemSalesCoverage: CafeToolset["getItemSalesCoverage"];
+    },
+    private historicalReaders?: {
+      salesTrend: CafeToolset["getSalesTrend"];
+      menuCatalog: CafeToolset["getMenuCatalog"];
+      staffAttendance: CafeToolset["getStaffAttendance"];
     },
   ) {}
 
@@ -68,6 +78,7 @@ export class StructuredCafeTools implements CafeToolset {
     return product ? { available: true, value: product, quality: productQuality(product) } : missing(`product:${productId}`);
   }
   async getSalesTrend(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>> {
+    if (this.historicalReaders) return this.historicalReaders.salesTrend(businessId, period);
     const slice = (await this.states.getHistoricalState(businessId, period)).sales;
     if (!slice.available) return slice;
     // A sparse date series is an observation, not evidence of a real trend. The
@@ -95,6 +106,17 @@ export class StructuredCafeTools implements CafeToolset {
   }
   getProductSales(businessId: string, period: CafeStatePeriod) {
     return this.factReaders?.productSales(businessId, period) ?? Promise.resolve(missing<SoldProduct[]>("itemSalesCoverage"));
+  }
+  getItemSalesCoverage(businessId: string, period: CafeStatePeriod) {
+    return this.factReaders?.itemSalesCoverage(businessId, period) ??
+      Promise.resolve(missing<ItemSalesCoverage>("itemSalesCoverageNotProven"));
+  }
+  getMenuCatalog(businessId: string) {
+    return this.historicalReaders?.menuCatalog(businessId) ?? Promise.resolve(missing<MenuCatalogProduct[]>("menuCatalog"));
+  }
+  getStaffAttendance(businessId: string, period: CafeStatePeriod, timezone: string) {
+    return this.historicalReaders?.staffAttendance(businessId, period, timezone) ??
+      Promise.resolve(missing<StaffAttendance>("timecards"));
   }
   async getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>> {
     const current = await this.states.getHistoricalState(businessId, period);
@@ -152,6 +174,11 @@ export class BusinessScopedCafeTools {
   getMonthlyBills() { return this.tools.getMonthlyBills(this.businessId); }
   getRecordedExpenses(period: CafeStatePeriod) { return this.tools.getRecordedExpenses(this.businessId, period); }
   getProductSales(period: CafeStatePeriod) { return this.tools.getProductSales(this.businessId, period); }
+  getItemSalesCoverage(period: CafeStatePeriod) { return this.tools.getItemSalesCoverage(this.businessId, period); }
+  getMenuCatalog() { return this.tools.getMenuCatalog(this.businessId); }
+  getStaffAttendance(period: CafeStatePeriod, timezone: string) {
+    return this.tools.getStaffAttendance(this.businessId, period, timezone);
+  }
   getExpenseChanges(period: CafeStatePeriod) { return this.tools.getExpenseChanges(this.businessId, period); }
   getLaborMetrics(period: CafeStatePeriod) { return this.tools.getLaborMetrics(this.businessId, period); }
   getInventoryStatus() { return this.tools.getInventoryStatus(this.businessId); }

@@ -12,10 +12,10 @@ export function supervisorReplyIdFor(ownerMessageId: string): string {
 /** Reject metrics with no exact source citation before the privileged insert. */
 export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedSupervisorReply {
   const validated = groundedReplySchema.parse(reply);
-  if (validated.status !== "insufficient_evidence" && validated.evidence.length === 0) {
+  if (!["insufficient_evidence","unavailable"].includes(validated.status) && validated.evidence.length === 0) {
     throw new Error("Supervisor response requires trusted evidence");
   }
-  if (validated.status === "insufficient_evidence" &&
+  if (["insufficient_evidence","unavailable"].includes(validated.status) &&
       validated.blocks.some((block) => block.type === "metric" || block.type === "count" || block.type === "task_status" || block.type === "task_card")) {
     throw new Error("Insufficient evidence cannot contain factual metrics or task claims");
   }
