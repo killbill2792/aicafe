@@ -21,7 +21,7 @@ const tools={
 } as unknown as BusinessScopedCafeTools;
 const registry=createSupervisorToolRegistry({tools,asOf:"2026-10-10",cafeName:"Sample",
   timezone:"America/Los_Angeles",readRules:async()=>[]});
-const execute=(name:SupervisorToolCall["name"],args:object,index=1)=>registry({
+const execute=(name:SupervisorToolCall["name"],args:Record<string,unknown>,index=1)=>registry({
   name,arguments:args,call_id:"c"+index},index);
 const dates=(period:string)=>({period,from:null,to:null});
 describe("Read-only domain registry computes grounded facts and trusted insights",()=>{
