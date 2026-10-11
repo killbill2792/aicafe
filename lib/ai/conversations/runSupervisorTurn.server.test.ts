@@ -2,7 +2,7 @@ import {beforeAll,afterAll,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
 import {parseSupervisorCalls} from "./toolRegistry.server";
-import {SupervisorStageError} from "./diagnostics.server";
+import {SupervisorStageError,createSupervisorDiagnosticLogger} from "./diagnostics.server";
 import {buildSupervisorInstructions,buildSupervisorRequest} from "./supervisorRequest.mjs";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 let originalKey:string|undefined;
@@ -120,6 +120,47 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     expect(error).toMatchObject({category:"provider_http",stage:"provider_response",httpStatus:401});
     expect(stages).toContain("provider_request");
     expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("reports only sanitized 403 provider error type, code and optional request ID",async()=>{
+    const logLines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>logLines.push(line));
+    const sensitive="SECRET owner prompt, financial data and provider error.message";
+    const body={
+      error:{type:"permission_error",code:"organization_blocked",message:sensitive,
+        secret:"not-allow-listed"},
+      prompt:sensitive,cafeData:{cost:999},randomField:"arbitrary private field",
+    };
+    const headers={"content-type":"application/json","x-request-id":"req_test-403.ABC"};
+    const transport=vi.fn().mockResolvedValue(new Response(JSON.stringify(body),{status:403,headers}));
+    const error=await runSupervisorTurn({...base,onDiagnostic:d=>logger.emit(d)},transport)
+      .then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({stage:"provider_response",category:"provider_http",httpStatus:403,
+      providerErrorType:"permission_error",providerErrorCode:"organization_blocked",
+      providerRequestId:"req_test-403.ABC"});
+    expect(transport).toHaveBeenCalledTimes(1);
+    const events=logLines.map(line=>JSON.parse(line));
+    expect(events).toContainEqual(expect.objectContaining({
+      stage:"provider_response",category:"provider_http",httpStatus:403,
+      providerErrorType:"permission_error",providerErrorCode:"organization_blocked",
+      providerRequestId:"req_test-403.ABC",round:1,attempt:1}));
+    const serialized=logLines.join("\n");
+    for(const forbidden of [sensitive,"not-allow-listed","arbitrary private field","cost","999","message","cafeData","prompt"])
+      expect(serialized).not.toContain(forbidden);
+  });
+  it("handles malformed provider 403 error JSON without exposing its text",async()=>{
+    const messages:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>messages.push(line));
+    const transport=vi.fn().mockResolvedValue(new Response("PRIVATE invalid response body",{
+      status:403,headers:{"content-type":"text/plain","x-request-id":"invalid id with spaces"},
+    }));
+    const error=await runSupervisorTurn({...base,onDiagnostic:d=>logger.emit(d)},transport)
+      .then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({stage:"provider_response",category:"provider_http",httpStatus:403});
+    expect(error?.providerErrorCode).toBeUndefined();
+    expect(error?.providerErrorType).toBeUndefined();
+    expect(error?.providerRequestId).toBeUndefined();
+    expect(messages.join("\n")).not.toContain("PRIVATE invalid response body");
+    expect(messages.join("\n")).not.toContain("invalid id with spaces");
   });
   it("classifies provider timeout distinctly from provider HTTP failures",async()=>{
     const transport=vi.fn().mockRejectedValue(Object.assign(new Error("private network error"),{name:"AbortError"}));

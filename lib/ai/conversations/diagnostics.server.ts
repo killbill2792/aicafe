@@ -16,6 +16,7 @@ export type SupervisorErrorCategory =
 export type SupervisorDiagnostic = {
   stage:SupervisorStage; category?:SupervisorErrorCategory;
   model?:string;httpStatus?:number;providerStatus?:string;
+  providerErrorType?:string;providerErrorCode?:string;providerRequestId?:string;
   round?:number;attempt?:number;advertisedToolCount?:number;
   advertisedToolNames?:string[];modelCallCount?:number;toolCallCount?:number;
   timeout?:boolean;
@@ -32,10 +33,38 @@ const categories:readonly SupervisorErrorCategory[]=[
 ];
 const safeModel=(s?:string)=>typeof s==="string"?s.replace(/[^a-zA-Z0-9_.-]/g,"").slice(0,80):undefined;
 const safeCount=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>=0?n:undefined;
+/** Reject non-identifier strings, never log provider messages or arbitrary properties. */
+const safeProviderIdentifier=(value:unknown):string|undefined=>{
+  if(typeof value!=="string")return undefined;
+  const limited=value.slice(0,64);
+  return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
+};
+/** Inspect only the provider's error.type and error.code in a non-2xx response.
+ * No raw error body or error.message escapes this function. Malformed JSON is safe. */
+export async function readSafeProviderError(response:Response):Promise<Pick<SupervisorDiagnostic,
+  "providerErrorType"|"providerErrorCode"|"providerRequestId">>{
+  const providerRequestId=safeProviderIdentifier(response.headers.get("x-request-id"));
+  let providerErrorType:string|undefined,providerErrorCode:string|undefined;
+  try{
+    const body:unknown=await response.json();
+    if(body!==null&&typeof body==="object"&&!Array.isArray(body)&&
+      "error" in body&&body.error!==null&&typeof body.error==="object"&&!Array.isArray(body.error)){
+      const error=body.error as Record<string,unknown>;
+      providerErrorType=safeProviderIdentifier(error.type);
+      providerErrorCode=safeProviderIdentifier(error.code);
+    }
+  }catch{
+    // Non-JSON or broken provider responses retain the status without leaking content.
+  }
+  return {providerErrorType,providerErrorCode,providerRequestId};
+}
 export class SupervisorStageError extends Error {
   readonly stage:SupervisorStage;
   readonly category:SupervisorErrorCategory;
   readonly httpStatus?:number;
+  readonly providerErrorType?:string;
+  readonly providerErrorCode?:string;
+  readonly providerRequestId?:string;
   readonly providerStatus?:string;
   readonly round?:number;
   readonly attempt?:number;
@@ -45,6 +74,9 @@ export class SupervisorStageError extends Error {
     this.name="SupervisorStageError";
     this.category=category;this.stage=stage;
     this.httpStatus=meta.httpStatus;this.providerStatus=meta.providerStatus;
+    this.providerErrorType=safeProviderIdentifier(meta.providerErrorType);
+    this.providerErrorCode=safeProviderIdentifier(meta.providerErrorCode);
+    this.providerRequestId=safeProviderIdentifier(meta.providerRequestId);
     this.round=meta.round;this.attempt=meta.attempt;this.timeout=meta.timeout===true;
   }
 }
@@ -63,6 +95,9 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.httpStatus)!==undefined?{httpStatus:d.httpStatus}:{}),
         ...(d.providerStatus&&["completed","incomplete","failed","cancelled","queued","in_progress","unknown"].includes(d.providerStatus)?
           {providerStatus:d.providerStatus}:{}),
+        ...(safeProviderIdentifier(d.providerErrorType)?{providerErrorType:safeProviderIdentifier(d.providerErrorType)}:{}),
+        ...(safeProviderIdentifier(d.providerErrorCode)?{providerErrorCode:safeProviderIdentifier(d.providerErrorCode)}:{}),
+        ...(safeProviderIdentifier(d.providerRequestId)?{providerRequestId:safeProviderIdentifier(d.providerRequestId)}:{}),
         ...(safeCount(d.round)!==undefined?{round:d.round}:{}),
         ...(safeCount(d.attempt)!==undefined?{attempt:d.attempt}:{}),
         ...(safeCount(d.advertisedToolCount)!==undefined?{advertisedToolCount:d.advertisedToolCount}:{}),
@@ -80,6 +115,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
   if(error instanceof SupervisorStageError) return {
     stage:error.stage,category:error.category,httpStatus:error.httpStatus,
     providerStatus:error.providerStatus,round:error.round,attempt:error.attempt,timeout:error.timeout,
+    providerErrorType:error.providerErrorType,providerErrorCode:error.providerErrorCode,
+    providerRequestId:error.providerRequestId,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }
