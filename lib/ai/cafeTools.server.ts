@@ -4,6 +4,8 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { getSnapshot } from "@/lib/data/getSnapshot";
+import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
+import { projectCurrentStaff, projectBreakEven, projectRecurringSchedule } from "./conversations/domainProjections";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
 import { readPersistedOperatingTasks } from "@/lib/data/operatingTasks";
 import { SnapshotCafeStateService } from "@/lib/operating/cafeState";
@@ -11,6 +13,7 @@ import { signalsFromPricing } from "@/lib/operating/signals";
 import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
 import { supervisorFactReaders } from "./supervisorFacts.server";
+import { supervisorHistoricalReaders } from "./supervisorReads.server";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -40,10 +43,12 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     // Uses the exact data source and pricing engine already used by Menu and Team.
     return getMenuControlCenter();
   };
+  let snapshotPromise: ReturnType<typeof getSnapshot> | null = null;
+  const currentSnapshot = () => snapshotPromise ??= getSnapshot();
   const states = new SnapshotCafeStateService(
     async (requested) => {
       assertBusiness(requested);
-      const snapshot = await getSnapshot();
+      const snapshot = await currentSnapshot();
       if (snapshot.business.id !== businessId) throw new Error("Café snapshot business mismatch");
       return snapshot;
     },
@@ -59,6 +64,46 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
       return readPersistedOperatingTasks(requested);
     },
     supervisorFactReaders(client, businessId),
+    supervisorHistoricalReaders(client, businessId),
+    {
+      currentStaff: async (requested) => {
+        assertBusiness(requested);
+        const snapshot = await currentSnapshot();
+        if(snapshot.business.id !== businessId) throw new Error("Café snapshot scope mismatch");
+        return {available:true,value:projectCurrentStaff(snapshot),quality:{
+          level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}};
+      },
+      recurringSchedule: async (requested,range,asOf) => {
+        assertBusiness(requested);
+        const [rows, employees] = await Promise.all([
+          getStaffSchedules(),client.from("employees").select("id,display_name").eq("business_id",businessId).limit(200),
+        ]);
+        if(employees.error) throw employees.error;
+        const byId = Object.fromEntries((employees.data ?? []).map(e=>[e.id,e.display_name]));
+        return projectRecurringSchedule(rows,byId,range,asOf);
+      },
+      breakEven: async (requested) => {
+        assertBusiness(requested);
+        const snapshot = await currentSnapshot();
+        if(snapshot.business.id !== businessId) throw new Error("Café snapshot scope mismatch");
+        return projectBreakEven(snapshot);
+      },
+    },
   );
   return new BusinessScopedCafeTools(tools, businessId);
+}
+
+/** Owner-scoped calendar and café identity without loading the mutable Home snapshot. */
+export async function readSupervisorCafeIdentity(authorizedBusinessId: string) {
+  const client = await createServerSupabaseClient();
+  const { data, error } = await client.from("businesses").select("id,name,timezone")
+    .eq("id",authorizedBusinessId).single();
+  if (error || !data || data.id !== authorizedBusinessId) throw new Error("Café identity unavailable");
+  // en-CA has historically varied by Node ICU; formatToParts yields an invariant ISO date.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone:data.timezone,year:"numeric",month:"2-digit",day:"2-digit",
+  }).formatToParts(new Date());
+  const value = (kind: string) => parts.find(p=>p.type===kind)?.value ?? "";
+  return { cafeName:String(data.name).slice(0,120), timezone:String(data.timezone),
+    asOf:value("year")+"-"+value("month")+"-"+value("day") };
 }

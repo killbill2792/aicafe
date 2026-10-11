@@ -1,0 +1,619 @@
+[
+  {
+    "question": "what did we make today",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "sales so far?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "how much business have we done",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what's revenue looking like",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "how many things are on my menu",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many items do I offer",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "what drinks are active",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "what's my most popular drink",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "units",
+            "group_by": "product"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "ranking"
+  },
+  {
+    "question": "which item is selling worst",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "units",
+            "group_by": "product"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "ranking"
+  },
+  {
+    "question": "how many different things sold",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "any staff problems",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "are we short anybody",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "coverage_issues"
+          }
+        }
+      ],
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "schedule"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "do I need to worry about coverage",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "what's happening with the team today",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team"
+        },
+        {
+          "name": "get_staff"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "what do my monthly bills add up to",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "monthly_bills"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what are my regular monthly costs",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "monthly_bills"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what did I actually spend",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "recorded_spending"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "what needs me",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "did the AI team handle anything",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "what are you watching",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "why is profit down",
+    "acceptablePlans": [
+      [
+        {
+          "name": "compare_periods",
+          "arguments": {
+            "metric": "owner_profit"
+          }
+        },
+        {
+          "name": "compare_periods",
+          "arguments": {
+            "metric": "net_sales"
+          }
+        }
+      ],
+      [
+        {
+          "name": "compare_periods",
+          "arguments": {
+            "metric": "net_sales"
+          }
+        },
+        {
+          "name": "compare_periods",
+          "arguments": {
+            "metric": "loaded_labor"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "comparison"
+  },
+  {
+    "question": "anything I should worry about",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team"
+        },
+        {
+          "name": "get_financials"
+        },
+        {
+          "name": "get_staff"
+        }
+      ],
+      [
+        {
+          "name": "get_cafe_overview"
+        },
+        {
+          "name": "get_staff"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "how are we doing today",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_cafe_overview"
+        }
+      ],
+      [
+        {
+          "name": "get_sales"
+        },
+        {
+          "name": "get_financials"
+        },
+        {
+          "name": "get_team"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "what about yesterday",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "period": "yesterday"
+          }
+        }
+      ],
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "period": "yesterday"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "followup",
+    "history": [
+      {
+        "role": "user",
+        "content": "What were my top products and sales yesterday?"
+      },
+      {
+        "role": "assistant",
+        "content": "Recorded sales show Iced Latte in first place, Mocha in second place, and Muffin in third place. Their item sales were based on covered order lines."
+      }
+    ]
+  },
+  {
+    "question": "why",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        }
+      ],
+      [
+        {
+          "name": "compare_periods"
+        }
+      ],
+      [
+        {
+          "name": "get_menu"
+        },
+        {
+          "name": "get_sales"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "followup",
+    "history": [
+      {
+        "role": "user",
+        "content": "What were my top products and sales yesterday?"
+      },
+      {
+        "role": "assistant",
+        "content": "Recorded sales show Iced Latte in first place, Mocha in second place, and Muffin in third place. Their item sales were based on covered order lines."
+      }
+    ]
+  },
+  {
+    "question": "what about the second one",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "product_name": "Mocha"
+          }
+        }
+      ],
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "product_name": "Mocha"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "followup",
+    "history": [
+      {
+        "role": "user",
+        "content": "What were my top products and sales yesterday?"
+      },
+      {
+        "role": "assistant",
+        "content": "Recorded sales show Iced Latte in first place, Mocha in second place, and Muffin in third place. Their item sales were based on covered order lines."
+      }
+    ]
+  },
+  {
+    "question": "compare that with last week",
+    "acceptablePlans": [
+      [
+        {
+          "name": "compare_periods"
+        }
+      ],
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "period": "previous_week"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "comparison",
+    "history": [
+      {
+        "role": "user",
+        "content": "What were my top products and sales yesterday?"
+      },
+      {
+        "role": "assistant",
+        "content": "Recorded sales show Iced Latte in first place, Mocha in second place, and Muffin in third place. Their item sales were based on covered order lines."
+      }
+    ]
+  },
+  {
+    "question": "¿Cómo vamos hoy?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales"
+        },
+        {
+          "name": "get_financials"
+        }
+      ],
+      [
+        {
+          "name": "get_cafe_overview"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "هل هناك مشاكل في الموظفين؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "task"
+  },
+  {
+    "question": "what pricing reviews need approval",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "estimated_or_verified",
+    "responseType": "recommendation"
+  },
+  {
+    "question": "what owner rules have I approved",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_owner_rules"
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "rules"
+  },
+  {
+    "question": "show me a quick café snapshot",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_cafe_overview"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "overview"
+  },
+  {
+    "question": "what did Olivia handle?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team",
+          "arguments": {
+            "agent": "olivia"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "who is working right now",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "current_staffing"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "staff"
+  },
+  {
+    "question": "which shifts are planned next week",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "schedule"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "schedule"
+  },
+  {
+    "question": "how much to break even per day",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "break_even"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "metric"
+  }
+]

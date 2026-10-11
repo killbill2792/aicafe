@@ -55,7 +55,7 @@ export async function persistGroundedSupervisorReply(
     intent: safe.intent,
     evidence: safe.evidence,
     ownerMessageId: ownerMessage.id,
-    responder: "deterministic-structured-cafe-tools-v1",
+    responder: "bounded-grounded-responses-supervisor-v2",
   };
   const { data, error } = await admin.from("ai_messages").insert({
     id, business_id: scope.businessId, owner_user_id: scope.ownerUserId,

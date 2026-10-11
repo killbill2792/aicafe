@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 vi.mock("server-only", () => ({}));
 
-import { supervisorFactReaders } from "./supervisorFacts.server";
+import { resolveItemSalesCoverage, supervisorFactReaders } from "./supervisorFacts.server";
 
 type Result = { data: unknown; error: null };
 function query(result: Result) {
@@ -55,7 +55,7 @@ describe("Supervisor owner-scoped facts", () => {
   it("obtains date-scoped quantities through the invoker-RLS RPC with all menu items", async () => {
     const client = {
       from: vi.fn((table: string) => query({ data: table === "pos_connections"
-        ? [{ last_synced_at: "2026-10-10T23:00:00Z", backfill_completed_at: "2026-10-01T20:00:00Z" }]
+        ? [{ provider:"square",last_synced_at: "2026-10-10T23:00:00Z", backfill_completed_at: "2026-10-01T20:00:00Z" }]
         : [{ id: "one", name: "Latte", category: "drink" }, { id: "two", name: "Muffin", category: "food" }],
       error: null })),
       rpc: vi.fn(async () => ({ data: [{ menu_item_id: "one", total_quantity: 19 }], error: null })),
@@ -71,6 +71,14 @@ describe("Supervisor owner-scoped facts", () => {
     });
   });
 
+  it("only proves explicitly contracted Square item-sales backfill; unknown provider remains unproven",()=>{
+    const period={from:"2026-10-01",to:"2026-10-10"};
+    const base={last_synced_at:"2026-10-10T23:00:00Z",backfill_completed_at:"2026-10-01T20:00:00Z"};
+    expect(resolveItemSalesCoverage([{provider:"toast",...base}],period).covered).toBe(false);
+    expect(resolveItemSalesCoverage([{provider:"square",...base}],period))
+      .toMatchObject({covered:true,sources:["square"],from:"2026-10-01",through:"2026-10-10"});
+    expect(resolveItemSalesCoverage([{provider:"square",...base,last_synced_at:"2026-10-09T20:00:00Z"}],period).covered).toBe(false);
+  });
   it("denies cross-café and empty identifiers before hitting any database reader", async () => {
     const client = { from: vi.fn(), rpc: vi.fn() } as unknown as SupabaseClient;
     const readers = supervisorFactReaders(client, "cafe-a");

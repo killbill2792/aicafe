@@ -1,10 +1,8 @@
-import { getTranslations } from "next-intl/server";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
-import { createAuthenticatedCafeTools } from "@/lib/ai/cafeTools.server";
-import { planSupervisorQuestion } from "@/lib/ai/conversations/planner.server";
-import { isCurrentStaffIssuesQuestion, answerCurrentStaffIssues } from "@/lib/ai/conversations/staffIssues";
-import { executeSupervisorPlan } from "@/lib/ai/conversations/executePlan";
+import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
+import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
+import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
@@ -27,9 +25,7 @@ export async function GET(request: Request, context: RouteContext) {
   }
 }
 
-/** Strict OpenAI planner -> ONE typed owner-scoped read tool -> deterministic evidence-validated reply.
- * The model has no raw database connection, financial arithmetic, permissions or write tools.
- */
+/** Bounded Responses tool loop. Only server-authorized read-only evidence enters model context. */
 export async function POST(request: Request, context: RouteContext) {
   try {
     requireSameOrigin(request);
@@ -50,109 +46,29 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
     const tools = await createAuthenticatedCafeTools();
-    // A current staff-issues request has a precise, read-only Team source.
-    // Do not block it on a general café snapshot or a remote LLM planner.
-    if (isCurrentStaffIssuesQuestion(input.text, input.locale)) {
-      const t = await getTranslations({ locale: input.locale, namespace: "SupervisorChat" });
-      const reply = answerCurrentStaffIssues({
-        tasks: await tools.getTeamTasks(),
-        asOf: new Date().toISOString(),
-        copy: {
-          summary: (needs, watching) => t("staffIssuesSummary", { needs, watching }),
-          none: t("staffIssuesNone"),
-          missing: t("staffIssuesUnavailable"),
-          estimated: t("estimation"),
-          taskName: t("taskStaff"),
-          taskCard: (name) => t("taskCard", { kind: t("taskStaff"), name }),
-        },
+    const identity = await readSupervisorCafeIdentity(scope.businessId);
+    const messages = (await service.listMessages(id, 0)).items;
+    const history = compactConversationContext(messages, message.id);
+    let aggregatedUsage: SupervisorUsage | null = null;
+    let reply;
+    try {
+      const completed = await runSupervisorTurn({
+        text: input.text, locale: input.locale, asOf: identity.asOf,
+        timezone: identity.timezone, cafeName: identity.cafeName,
+        tools, history,
+        readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
+        onUsage: (usage) => { aggregatedUsage = usage; },
       });
-      const stored = await persistGroundedSupervisorReply(scope, message, reply);
-      return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
+      reply = completed.reply;
+    } finally {
+      // Also record the usage already incurred if a later provider round failed.
+      // A failed owner turn remains unanswered and can be retried idempotently.
+      if (aggregatedUsage) {
+        try { await recordSupervisorUsage({
+          scope, threadId: id, ownerMessageId: message.id, usage: aggregatedUsage,
+        }); } catch { /* telemetry is nonblocking on deployments awaiting migration */ }
+      }
     }
-    const state = await tools.getCafeSummary();
-    if (state.business.id !== scope.businessId) throw new ConversationApiError(403, "business_scope_mismatch");
-    const historyPage = await service.listMessages(id, 0);
-    const history = historyPage.items
-      .filter((row) => row.role === "owner" && row.id !== message.id && row.text)
-      .slice(-6)
-      .map((row) => ({ role: "owner" as const, text: row.text ?? "" }));
-    const { plan, usage } = await planSupervisorQuestion({
-      text: input.text, locale: input.locale, asOf: state.asOf, history,
-    });
-    // Each OpenAI call incurs usage regardless of reply availability.
-    // Missing/unapplied telemetry migration must not turn a successful grounded read into a loss of chat.
-    try { await recordSupervisorUsage({ scope, threadId: id, ownerMessageId: message.id, usage }); }
-    catch { /* deployed databases must apply reviewed migration 38 before usage reporting */ }
-    const t = await getTranslations({ locale: input.locale, namespace: "SupervisorChat" });
-    const reply = await executeSupervisorPlan({
-      plan, state, tools,
-      readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
-      copy: {
-        unsupported: t("unknownRequest"),
-        missingEvidence: t("insufficient"),
-        estimatedNotice: t("estimation"),
-        todayOverview: t("todayOverview"),
-        monthOverview: t("monthOverview"),
-        weekOverview: t("weekOverview"),
-        periodUnavailable: t("periodUnavailable"),
-        sales: t("sales"),
-        totalCosts: t("costs"),
-        ownerProfit: t("profit"),
-        recurringBills: t("recurringBills"),
-        billsIntro: t("billsIntro"),
-        monthlyBillsIntro: t("monthlyBillsIntro"),
-        accruedBillsIntro: t("accruedBillsIntro"),
-        actualExpensesIntro: t("actualExpensesIntro"),
-        businessCostsIntro: t("businessCostsIntro"),
-        actualExpensesLabel: t("actualExpensesLabel"),
-        accruedBillsLabel: t("accruedBillsLabel"),
-        periodRange: (from, to) => t("periodRange", { from, to }),
-        salesQuantityIntro: t("salesQuantityIntro"),
-        unitsSold: t("unitsSold"),
-        ordersCount: t("ordersCount"),
-        drinksCount: t("drinksCount"),
-        distinctProducts: t("distinctProducts"),
-        menuTotal: t("menuTotal"), menuActive: t("menuActive"),
-        menuCategoryDrink: t("menuCategoryDrink"), menuCategoryFood: t("menuCategoryFood"),
-        menuStockNotice: t("menuStockNotice"), menuListIntro: t("menuListIntro"),
-        menuProductDetails: (name, category) => t("menuProductDetails", { name, category }),
-        noSalesToday: t("noSalesToday"),
-        bestSeller: (name) => t("bestSeller", { name }),
-        leastSeller: (name) => t("leastSeller", { name }),
-        matchedProduct: (name) => t("matchedProduct", { name }),
-        productNotFound: t("productNotFound"),
-        productUnitsUnavailable: t("productUnitsUnavailable"),
-        pricingIntro: t("pricingIntro"),
-        pricingNone: t("pricingNone"),
-        pricingUnavailable: t("insufficient"),
-        pricingCaution: t("pricingCaution"),
-        priceLabel: (name) => t("priceItem", { item: name }),
-        tasks: (needs, handled, watching) => t("tasksSummary", { needs, handled, watching }),
-        staffingTasks: (count) => t("staffSummary", { count }),
-        staffingNone: t("staffNone"),
-        rulesIntro: t("rulesIntro"),
-        rulesNone: t("rulesNone"),
-        ruleItem: (agent, instruction) => t("ruleItem", { agent, instruction }),
-        taskCard: (kind, name) => {
-          const kinds: Record<string, string> = {
-            price_review: t("taskPrice"), staff_coverage: t("taskStaff"),
-            supply_check: t("taskSupply"), money_update: t("taskMoney"),
-            data_quality: t("taskData"),
-          };
-          const label = kinds[kind] ?? t("taskGeneral");
-          return name.trim() ? t("taskCard", { kind: label, name }) : label;
-        },
-        taskGroup: (status, count) => t("taskGroup", {
-          status: status === "needs_you" ? t("needsYou") :
-            status === "handled" ? t("handled") :
-            status === "watching" ? t("watching") : status,
-          count,
-        }),
-        clarifyPeriod: t("clarifyPeriod"),
-        clarifyProduct: t("clarifyProduct"),
-        clarifyQuestion: t("clarifyQuestion"),
-      },
-    });
     const stored = await persistGroundedSupervisorReply(scope, message, reply);
     return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
   } catch (error) {

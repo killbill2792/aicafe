@@ -69,7 +69,7 @@ describe("Phase 4 audited privileged reply writer", () => {
     });
     expect(db?.grounding).toMatchObject({
       ownerMessageId: msg.id, status: "verified",
-      responder: "deterministic-structured-cafe-tools-v1",
+      responder: "bounded-grounded-responses-supervisor-v2",
     });
     expect(await getExistingSupervisorReply(scope, msg)).toEqual(first);
   });

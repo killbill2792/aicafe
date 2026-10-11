@@ -1,7 +1,7 @@
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationScope } from "./contracts";
-import type { SupervisorUsage } from "./planner.server";
+import type { SupervisorUsage } from "./runSupervisorTurn.server";
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
  * A missing rate is NULL, not a fabricated "$0" estimate. No financial business math is touched.
@@ -46,13 +46,14 @@ export async function recordSupervisorUsage(params: {
     process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS,
     process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS);
   const admin = createAdminSupabaseClient();
-  const { error } = await admin.from("ai_usage_events").upsert({
-    business_id: scope.businessId, owner_user_id: scope.ownerUserId,
-    thread_id: threadId, owner_message_id: ownerMessageId,
-    provider: "openai", model: usage.model,
-    input_tokens: usage.inputTokens, output_tokens: usage.outputTokens,
-    estimated_cost_micros: cost,
-  }, { onConflict: "owner_message_id", ignoreDuplicates: true });
+  // Atomic additive write: failed attempt plus Retry never discard previously incurred usage.
+  const { error } = await admin.rpc("record_supervisor_usage_increment", {
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_thread_id:threadId,p_owner_message_id:ownerMessageId,
+    p_model:usage.model,p_input_tokens:usage.inputTokens,p_output_tokens:usage.outputTokens,
+    p_model_call_count:usage.modelCallCount,p_tool_call_count:usage.toolCallCount,
+    p_estimated_cost_micros:cost,
+  });
   if (error) throw error;
 }
 
