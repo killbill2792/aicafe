@@ -174,7 +174,7 @@ export async function runSupervisorTurn(input: {
     "HEADLINE and SUMMARY must contain NO digits, currency signs, monetary values, URLs or precise numeric claims.",
     "Numbers and task cards come ONLY from referenced fact_ids/task_ids, resolved by server.",
     "Summaries must make only claims supported by tool content; concise, owner-friendly.",
-    "A first model response with no function call is invalid."
+    "A first model response with no function call is invalid.",
     "Café local date: " + input.asOf + ", timezone: " + input.timezone + ".",
   ].join("\n");
   const history = input.history.slice(-12).filter(x=>x.text).map(x=>({
