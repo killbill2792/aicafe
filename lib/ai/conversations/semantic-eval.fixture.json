@@ -963,5 +963,229 @@
     ],
     "evidenceClass": "partial_or_verified",
     "responseType": "metric"
+  },
+  {
+    "question": "What are my total costs, what are my staff costs, how many products are in my menu, and are any price revisions needed?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Give me my costs, labor, menu count and anything that needs repricing.",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "How much are we spending, what is payroll costing, how many menu items do we have, and should prices change?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "¿Cuánto cuestan mi negocio y mi personal este mes? ¿Cuántos artículos hay en el menú y hay precios que revisar?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "¿Cuáles son los gastos totales, el costo de personal, cuántos productos ofrecemos y si debo cambiar los precios?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "ما إجمالي تكاليف المقهى وتكلفة الموظفين وكم منتجًا في القائمة وهل تحتاج الأسعار إلى مراجعة؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "كم نصرف هذا الشهر على العمل والموظفين؟ وكم صنفًا في القائمة وهل يجب تعديل الأسعار؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost",
+            "period": "month_to_date"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
   }
 ]

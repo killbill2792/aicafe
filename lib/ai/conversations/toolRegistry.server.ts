@@ -7,11 +7,13 @@ import type { OperatingTask } from "@/lib/operating/tasks";
 import type { EvidenceReference, SupervisorIntent, GroundingStatus, SupervisorReplyBlock } from "./contracts";
 import { compareCompleteValues } from "./periodComparison";
 import { dateSelectionSchema, rangeExpectedDays, resolveCafeDateRange } from "./dateRange";
+import { requestScopeSchema } from "./requestScope";
 
 const agent = z.enum(["all", "alex", "olivia", "maya", "leo"]);
 const status = z.enum(["all", "needs_you", "handled", "watching"]);
 const date = dateSelectionSchema.shape;
 const schemas = {
+  declare_request_scope: requestScopeSchema,
   get_cafe_overview: z.strictObject({ focus: z.enum(["today", "month_to_date"]) }),
   get_sales: z.strictObject({
     metric: z.enum(["net_sales", "orders", "units", "distinct_products"]),
@@ -129,7 +131,7 @@ export function intentForCalls(names: SupervisorToolName[]): SupervisorIntent {
   const unique = [...new Set(names)];
   if (unique.length !== 1) return "cafe_overview";
   const intents: Record<SupervisorToolName, SupervisorIntent> = { get_cafe_overview: "cafe_overview", get_sales: "sales_quantity", get_menu: "menu_catalog",
-    get_financials: "profitability", get_staff: "staff", get_team: "operating_tasks",
+    get_financials: "profitability", get_staff: "staff", get_team: "operating_tasks", declare_request_scope:"unknown",
     get_pricing: "menu_pricing", get_owner_rules: "owner_rules",
     compare_periods:"cafe_overview",conversation_control:"unknown" };
   return intents[unique[0]];
@@ -141,6 +143,8 @@ export function createSupervisorToolRegistry(context: Context) {
   let statePromise: Promise<CafeState> | null = null;
   const state = () => statePromise ??= tools.getCafeSummary();
   return async (call: SupervisorToolCall, index: number): Promise<ToolEvidence> => {
+    // Metadata-only declaration is never a café reader, even if called directly.
+    if(call.name==="declare_request_scope")throw new Error("Scope metadata is not a café read");
     schemas[call.name].parse(call.arguments);
     const prefix = "t" + index + ":";
     if(call.name==="conversation_control") {
@@ -492,7 +496,7 @@ export function createSupervisorToolRegistry(context: Context) {
         return result;
       }
       const candidates = snapshot.products.value.filter(p=>matchName(p.name,a.product_name))
-        .map(p=>({name:p.name,rec:recommendations[p.id]}));
+        .map(p=>({id:p.id,name:p.name,rec:recommendations[p.id]}));
       if (!candidates.length) {
         result.status = "partial";
         result.missingInputs.push("noMatchingPricingProducts");
@@ -502,9 +506,18 @@ export function createSupervisorToolRegistry(context: Context) {
       const reviewReady = candidates.filter(({rec})=>rec &&
         rec.status==="REVIEW_PRICE" && rec.recommendedPriceCents!==null &&
         !rec.dataQuality.missingInputs.length && !rec.dataQuality.staleInputs.length);
-      const blocked = candidates.filter(({rec})=>!rec || rec.status==="PRICE_UNAVAILABLE" ||
-        rec.dataQuality.missingInputs.length>0 || rec.dataQuality.staleInputs.length>0);
-      addFact(result,prefix+"pricingCount","Verified review-ready price changes",reviewReady.length,"count",source);
+      const keepPrice = candidates.filter(({rec})=>rec?.status==="KEEP_CURRENT_PRICE" &&
+        !rec.dataQuality.missingInputs.length && !rec.dataQuality.staleInputs.length);
+      const newPriceReady = candidates.filter(({rec})=>rec?.status==="NEW_PRICE" &&
+        rec.recommendedPriceCents!==null && !rec.dataQuality.missingInputs.length &&
+        !rec.dataQuality.staleInputs.length);
+      const fullyEvaluated = new Set([...keepPrice,...reviewReady,...newPriceReady].map(x=>x.id));
+      const blocked = candidates.filter(x=>!fullyEvaluated.has(x.id));
+      addFact(result,prefix+"pricingCount","Verified price changes",reviewReady.length,"count",source);
+      addFact(result,prefix+"pricingExamined","Products examined for pricing",candidates.length,"count",source);
+      addFact(result,prefix+"pricingEvaluated","Products fully evaluated",fullyEvaluated.size,"count",source);
+      addFact(result,prefix+"pricingKeepCount","Products with no current price change",keepPrice.length,"count",source);
+      addFact(result,prefix+"pricingNewCount","Products with first-price recommendations",newPriceReady.length,"count",source);
       for (const [i,p] of reviewReady.slice(0,a.limit).entries()) {
         const r = ref("price_review:" + p.name + ":" + asOf,asOf,"pricing_engine");
         if (p.rec?.recommendedPriceCents !== null && p.rec?.recommendedPriceCents !== undefined)
@@ -517,7 +530,7 @@ export function createSupervisorToolRegistry(context: Context) {
       if (reviewReady.length) addInsight(result,prefix+"pricingReview",
         "Verified review-ready recommendations are available. Menu prices have not been changed.",source);
       if (blocked.length) {
-        addFact(result,prefix+"pricingBlockedCount","Products blocked by missing pricing inputs",blocked.length,"count",source);
+        addFact(result,prefix+"pricingBlockedCount","Products still needing complete pricing data",blocked.length,"count",source);
         addInsight(result,prefix+"pricingBlocked",
           "Price revisions cannot be verified for products with incomplete cost or pricing inputs.",source);
         result.status="partial";
@@ -531,7 +544,8 @@ export function createSupervisorToolRegistry(context: Context) {
             "Pricing coverage is incomplete, so no definitive no-change conclusion is supported.",source);
         }
       }
-      result.data={reviewReady:reviewReady.length,blocked:blocked.length,examined:candidates.length,reviewOnly:true};
+      result.data={reviewReady:reviewReady.length,blocked:blocked.length,examined:candidates.length,
+        evaluated:fullyEvaluated.size,noChange:keepPrice.length,newPrice:newPriceReady.length,reviewOnly:true};
       return result;
     }
     const a = schemas.get_owner_rules.parse(call.arguments);
