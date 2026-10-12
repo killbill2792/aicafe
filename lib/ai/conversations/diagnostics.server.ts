@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import { GOAL_DOMAINS, type RequestedGoal, type ScopeReconciliationOutcome } from "./requestScope";
 
 /** Only this allow-listed metadata may reach the production log. Never log errors' messages,
  * OpenAI payloads, prompts, café data, employee data or credentials. */
@@ -7,7 +8,7 @@ export type SupervisorStage =
   | "conversation_auth" | "owner_message_persisted" | "cafe_tools_created"
   | "cafe_identity_loaded" | "provider_request" | "provider_response" | "provider_fallback"
   | "tool_call_parse" | "tool_execution" | "final_response_parse"
-  | "final_response_validation" | "reply_persistence";
+  | "final_response_validation" | "scope_reconciliation" | "reply_persistence";
 export type SupervisorErrorCategory =
   | "provider_http" | "provider_timeout" | "provider_incomplete"
   | "provider_invalid_payload" | "invalid_tool_call" | "tool_execution"
@@ -22,17 +23,30 @@ export type SupervisorDiagnostic = {
   round?:number;attempt?:number;advertisedToolCount?:number;
   advertisedToolNames?:string[];modelCallCount?:number;toolCallCount?:number;
   timeout?:boolean;
+  declaredGoalDomains?:RequestedGoal["domain"][];
+  auditedGoalDomains?:RequestedGoal["domain"][];
+  normalizedGoalDomains?:RequestedGoal["domain"][];
+  scopeAuditComplete?:boolean;
+  scopeAuditAmbiguous?:boolean;
+  reconciliationOutcome?:ScopeReconciliationOutcome;
 };
 const stages:readonly SupervisorStage[]=[
   "conversation_auth","owner_message_persisted","cafe_tools_created","cafe_identity_loaded",
   "provider_request","provider_response","provider_fallback","tool_call_parse","tool_execution",
-  "final_response_parse","final_response_validation","reply_persistence",
+  "final_response_parse","final_response_validation","scope_reconciliation","reply_persistence",
 ];
 const categories:readonly SupervisorErrorCategory[]=[
   "provider_http","provider_timeout","provider_incomplete","provider_invalid_payload",
   "invalid_tool_call","tool_execution","final_output_missing","final_output_malformed",
   "final_output_validation","reply_persistence","unexpected",
 ];
+const outcomes:readonly ScopeReconciliationOutcome[]=[
+  "accepted","audit_incomplete","audit_ambiguous","declared_goal_missing","semantic_conflict",
+];
+const validDomains=new Set<string>(GOAL_DOMAINS);
+const safeDomains=(x:unknown):RequestedGoal["domain"][]=>Array.isArray(x)
+  ? x.filter((v):v is RequestedGoal["domain"]=>typeof v==="string"&&validDomains.has(v)).slice(0,10)
+  : [];
 const safeModel=(s?:string)=>typeof s==="string"?s.replace(/[^a-zA-Z0-9_.-]/g,"").slice(0,80):undefined;
 const safeCount=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>=0?n:undefined;
 /** Reject non-identifier strings, never log provider messages or arbitrary properties. */
@@ -115,6 +129,15 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.modelCallCount)!==undefined?{modelCallCount:d.modelCallCount}:{}),
         ...(safeCount(d.toolCallCount)!==undefined?{toolCallCount:d.toolCallCount}:{}),
         ...(d.timeout===true?{timeout:true}:{}),
+        ...(d.stage==="scope_reconciliation"?{
+          declaredGoalDomains:safeDomains(d.declaredGoalDomains),
+          auditedGoalDomains:safeDomains(d.auditedGoalDomains),
+          normalizedGoalDomains:safeDomains(d.normalizedGoalDomains),
+          ...(typeof d.scopeAuditComplete==="boolean"?{scopeAuditComplete:d.scopeAuditComplete}:{}),
+          ...(typeof d.scopeAuditAmbiguous==="boolean"?{scopeAuditAmbiguous:d.scopeAuditAmbiguous}:{}),
+          ...(d.reconciliationOutcome&&outcomes.includes(d.reconciliationOutcome)?
+            {reconciliationOutcome:d.reconciliationOutcome}:{}),
+        }:{}),
       };
       sink(JSON.stringify(data));
     },

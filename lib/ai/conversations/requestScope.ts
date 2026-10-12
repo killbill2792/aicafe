@@ -66,14 +66,46 @@ export function normalizeRequestedGoals(goals:RequestedGoal[]):RequestedGoal[]{
     keys.add(key);return true;
   });
 }
+export type ScopeReconciliationOutcome =
+  "accepted"|"audit_incomplete"|"audit_ambiguous"|"declared_goal_missing"|"semantic_conflict";
+export type ScopeReconciliation = {
+  goals:RequestedGoal[]|null;
+  outcome:ScopeReconciliationOutcome;
+  declaredDomains:RequestedGoal["domain"][];
+  auditedDomains:RequestedGoal["domain"][];
+  normalizedDomains:RequestedGoal["domain"][];
+};
+/** Keep the audit independent and fail closed for genuinely incompatible semantics.
+ * Snapshot/named-period equivalence is established by the existing canonical key;
+ * a Staff coverage FACT, café overview and persisted Team ACTION are never aliased. */
+export function reconcileRequestScopesDetailed(declared:RequestedGoal[],audit:RequestedGoal[],
+  complete:boolean,ambiguous:boolean):ScopeReconciliation {
+  const initial=normalizeRequestedGoals(declared),verified=normalizeRequestedGoals(audit);
+  const metadata={
+    declaredDomains:declared.map(g=>g.domain),
+    auditedDomains:audit.map(g=>g.domain),
+    normalizedDomains:normalizeRequestedGoals([...initial,...verified]).map(g=>g.domain),
+  };
+  const reject=(outcome:Exclude<ScopeReconciliationOutcome,"accepted">):ScopeReconciliation=>
+    ({...metadata,outcome,goals:null});
+  if(ambiguous)return reject("audit_ambiguous");
+  if(!complete)return reject("audit_incomplete");
+  const auditedKeys=new Set(verified.map(semanticGoalKey));
+  const missing=initial.filter(g=>!auditedKeys.has(semanticGoalKey(g)));
+  if(missing.length){
+    // Different period/range for the same goal family, or two competing single
+    // goal families, is a semantic conflict; neither can overwrite the other.
+    const conflict=missing.some(g=>verified.some(v=>v.domain===g.domain))||
+      (initial.length===1&&verified.length===1);
+    return reject(conflict?"semantic_conflict":"declared_goal_missing");
+  }
+  // Audited additional goals are intentionally preserved: 3 planned / 4 audited
+  // must answer ALL FOUR, not silently accept only the first three.
+  return {...metadata,outcome:"accepted",goals:verified};
+}
 export function reconcileRequestScopes(declared:RequestedGoal[],audit:RequestedGoal[],
   complete:boolean,ambiguous:boolean):RequestedGoal[]|null {
-  if(!complete||ambiguous)return null;
-  const initial=normalizeRequestedGoals(declared),verified=normalizeRequestedGoals(audit);
-  const audited=new Set(verified.map(semanticGoalKey));
-  // A scope audit may ADD a missed goal exactly once; it cannot erase/change any
-  // declared goal or silently accept a conflicting period.
-  return initial.every(g=>audited.has(semanticGoalKey(g)))?verified:null;
+  return reconcileRequestScopesDetailed(declared,audit,complete,ambiguous).goals;
 }
 type ReadCall=Pick<SupervisorToolCall,"name"|"arguments">;
 

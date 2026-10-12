@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {coversRequestedGoal,fallbackCallForGoal,requestScopeSchema,normalizeRequestedGoals,reconcileRequestScopes,scopeAuditSchema,
+import {coversRequestedGoal,fallbackCallForGoal,requestScopeSchema,normalizeRequestedGoals,reconcileRequestScopes,reconcileRequestScopesDetailed,scopeAuditSchema,
   unavailableGoalText,goalLabel,type RequestedGoal} from "./requestScope";
 
 const goal=(domain:RequestedGoal["domain"],period:RequestedGoal["period"]="month_to_date"):
@@ -211,5 +211,45 @@ describe("Snapshot domain period identity",()=>{
     expect(reconcileRequestScopes([goal("overview","today")],[goal("overview","month_to_date")],true,false)).toBeNull();
     expect(coversRequestedGoal(goal("overview","today"),{name:"get_cafe_overview",arguments:{focus:"today"}})).toBe(true);
     expect(coversRequestedGoal(goal("overview","today"),{name:"get_cafe_overview",arguments:{focus:"month_to_date"}})).toBe(false);
+  });
+});
+
+describe("Bounded reconciliation outcomes and four-domain completeness",()=>{
+  const g=(domain:RequestedGoal["domain"],period:RequestedGoal["period"]="month_to_date"):RequestedGoal=>({
+    domain,period,from:null,to:null,comparison_period:null,comparison_from:null,comparison_to:null,
+  });
+  it("accepts only canonical equivalents; Team is NOT interchangeable with staff coverage or overview",()=>{
+    expect(reconcileRequestScopesDetailed([g("team","today")],[g("team","month_to_date")],true,false))
+      .toMatchObject({outcome:"accepted",goals:[g("team")],
+        declaredDomains:["team"],auditedDomains:["team"],normalizedDomains:["team"]});
+    for(const domain of ["staff_coverage","overview"] as const){
+      const x=reconcileRequestScopesDetailed([g("team")],[g(domain)],true,false);
+      expect(x).toMatchObject({outcome:"semantic_conflict",goals:null});
+    }
+    expect(reconcileRequestScopesDetailed([g("sales","today")],[g("sales")],true,false))
+      .toMatchObject({outcome:"semantic_conflict",goals:null});
+  });
+  it("never treats genuine audit ambiguity or incompleteness as accepted",()=>{
+    expect(reconcileRequestScopesDetailed([g("team")],[g("team")],false,false).outcome)
+      .toBe("audit_incomplete");
+    expect(reconcileRequestScopesDetailed([g("team")],[g("team")],true,true).outcome)
+      .toBe("audit_ambiguous");
+  });
+  it("repairs the original four-part costs/staff/menu/pricing question, never losing omitted total costs",()=>{
+    const all=[g("total_business_costs"),g("staff_cost"),g("menu_count"),g("pricing_review")];
+    const first=all.slice(1); // planner omitted total business costs
+    const audit=reconcileRequestScopesDetailed(first,all,true,false);
+    expect(audit.outcome).toBe("accepted");
+    expect(audit.goals?.map(x=>x.domain)).toEqual([
+      "total_business_costs","staff_cost","menu_count","pricing_review",
+    ]);
+    expect(reconcileRequestScopesDetailed(all,first,true,false))
+      .toMatchObject({outcome:"declared_goal_missing",goals:null});
+  });
+  it("keeps period-sensitive dates and no extra business selector",()=>{
+    expect(reconcileRequestScopesDetailed([g("staff_cost","today")],[g("staff_cost")],true,false))
+      .toMatchObject({outcome:"semantic_conflict",goals:null});
+    expect(reconcileRequestScopesDetailed([g("staff_coverage")],[g("team")],true,false))
+      .toMatchObject({outcome:"semantic_conflict",goals:null});
   });
 });
