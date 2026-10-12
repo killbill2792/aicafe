@@ -7,6 +7,8 @@ import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
 import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
+import { audioExtensionForMime, parseTranscriptionResponse, voiceMessageForError,
+  VoiceTranscriptionError } from "@/lib/ai/conversations/voiceClient";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
@@ -22,14 +24,13 @@ export type SupervisorChatCopy = {
   retry: string; unavailable: string; more: string; you: string; supervisor: string; source: string; sourceCafe: string; sourcePricing: string; sourceTasks: string; sourceRules: string; sourceVerified: string;
   listening: string; voiceReview: string; voiceUnavailable: string; voiceStop: string;
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
+  voiceServiceUnavailable: string; voiceNetworkError: string; voiceTooLong: string;
   voiceError: string; voiceCanceled: string;
   attachmentSaved: string; attachmentNotice: string; attachmentUpload: string;
   statusDisabled: string; statusDatabase: string; statusWriter: string; statusOwner: string; statusStorage: string;
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
-  usageHeading: string; usageRequests: string; usageTokens: string;
-  usageEstimate: string; usageCostUnknown: string;
   answerFailed: string; retryAnswer: string; todaySummary: string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
@@ -154,10 +155,6 @@ export default function SupervisorChatComposer({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshotExpanded, setSnapshotExpanded] = useState(false);
   const [elapsed, setElapsed] = useState(0);
-  const [usage, setUsage] = useState<{
-    requests: number; inputTokens: number; outputTokens: number;
-    estimatedCostMicros: number | null;
-  } | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
@@ -237,16 +234,6 @@ export default function SupervisorChatComposer({
     node.style.height = "auto";
     node.style.height = Math.min(node.scrollHeight, 160) + "px";
   }, [draft]);
-  useEffect(() => {
-    if (!historyOpen || !enabled) return;
-    const controller = new AbortController();
-    void fetch("/api/ai/usage", { signal: controller.signal, cache: "no-store" })
-      .then((res) => jsonFrom<{ requests: number; inputTokens: number;
-        outputTokens: number; estimatedCostMicros: number | null }>(res))
-      .then((data) => { if (!controller.signal.aborted) setUsage(data); })
-      .catch(() => { if (!controller.signal.aborted) setUsage(null); });
-    return () => controller.abort();
-  }, [enabled, historyOpen]);
   useEffect(() => {
     if (!historyOpen) return;
     const keydown = (event: globalThis.KeyboardEvent) => {
@@ -419,24 +406,25 @@ export default function SupervisorChatComposer({
   }
   async function transcribeAudio(blob: Blob, durationSeconds: number, generation: number) {
     try {
-      const extension = blob.type.startsWith("audio/mp4") ? "mp4" :
-        blob.type.startsWith("audio/ogg") ? "ogg" : "webm";
+      const extension=audioExtensionForMime(blob.type);
+      if(!extension)throw new VoiceTranscriptionError("audio_format_unsupported");
       const body = new FormData();
       body.append("audio", new File([blob], "dictation." + extension, { type: blob.type }));
       body.append("durationSeconds", String(durationSeconds));
-      const response = await jsonFrom<{ text: string }>(await fetch("/api/ai/transcribe", {
+      const response = await parseTranscriptionResponse(await fetch("/api/ai/transcribe", {
         method: "POST", credentials: "same-origin", body,
       }));
       if (recordingGeneration.current !== generation) return;
       const heard = response.text.trim();
-      if (!heard) throw new Error("empty_transcript");
+      if (!heard) throw new VoiceTranscriptionError("audio_no_speech");
       setDraft((current) => ((current.trim() ? current.trimEnd() + " " : "") + heard).slice(0, 4000));
       retryId.current = null;
       dispatchDictation({ type: "result" }); setMediaNotice(copy.voiceReview);
       composer.current?.focus();
-    } catch {
+    } catch (issue) {
       if (recordingGeneration.current === generation) {
-        dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError);
+        const code=issue instanceof VoiceTranscriptionError?issue.code:"transcription_network";
+        dispatchDictation({ type: "error" }); setMediaNotice(voiceMessageForError(code,copy));
       }
     }
   }
@@ -462,10 +450,11 @@ export default function SupervisorChatComposer({
       if (generation !== recordingGeneration.current) {
         stream.getTracks().forEach((track) => track.stop()); return;
       }
-      const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"]
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate));
-      if (!mimeType) throw new Error("unsupported_audio");
-      const active = new MediaRecorder(stream, { mimeType });
+      const mimeType = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg"]
+        .find((candidate) => typeof MediaRecorder.isTypeSupported === "function" && MediaRecorder.isTypeSupported(candidate));
+      // Safari may support a default recording container even when it cannot
+      // advertise an explicit MIME. Let the browser select a valid audio type.
+      const active = mimeType?new MediaRecorder(stream,{mimeType}):new MediaRecorder(stream);
       recorder.current = active; recordingStream.current = stream;
       audioChunks.current = []; recordingStartedAt.current = Date.now(); setElapsed(0);
       active.ondataavailable = (event) => { if (event.data.size) audioChunks.current.push(event.data); };
@@ -473,25 +462,37 @@ export default function SupervisorChatComposer({
       active.onstop = () => {
         if (recorder.current !== active) return;
         const durationSeconds = Math.max(0.1, (Date.now() - recordingStartedAt.current) / 1000);
-        const blob = new Blob(audioChunks.current, { type: active.mimeType.split(";")[0] });
+        const chunks=[...audioChunks.current];
+        const recordedType=(active.mimeType||chunks.find(chunk=>chunk.type)?.type||"")
+          .split(";")[0].trim().toLowerCase();
         recorder.current = null;
         recordingStream.current?.getTracks().forEach((track) => track.stop());
         recordingStream.current = null; audioChunks.current = [];
         if (recordingLimit.current) clearTimeout(recordingLimit.current);
         recordingLimit.current = null;
-        if (blob.size === 0 || blob.size > 8 * 1024 * 1024) {
-          dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceError); return;
+        if (!recordedType || !audioExtensionForMime(recordedType)) {
+          dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceUnavailable); return;
+        }
+        const blob = new Blob(chunks, { type:recordedType });
+        if (blob.size === 0) {
+          dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceNoSpeech); return;
+        }
+        if (blob.size > 8 * 1024 * 1024) {
+          dispatchDictation({ type: "error" }); setMediaNotice(copy.voiceTooLong); return;
         }
         void transcribeAudio(blob, durationSeconds, generation);
       };
       active.start(250);
       dispatchDictation({ type: "start" }); setMediaNotice("");
       recordingLimit.current = setTimeout(() => stopRecording(), 45_000);
-    } catch {
+    } catch (issue) {
       stream?.getTracks().forEach((track) => track.stop());
       if (generation === recordingGeneration.current) {
+        const denied=issue instanceof DOMException &&
+          (issue.name==="NotAllowedError"||issue.name==="SecurityError");
         cleanupRecording();
-        dispatchDictation({ type: "error" }); setMediaNotice(copy.voicePermissionDenied);
+        dispatchDictation({ type: "error" });
+        setMediaNotice(denied?copy.voicePermissionDenied:copy.voiceUnavailable);
       }
     } finally {
       requestingMicrophone.current = false;
@@ -710,15 +711,7 @@ export default function SupervisorChatComposer({
             </span>
           </button>)}
         </div>
-        {usage && <div className="border-t border-[#E1D4C2] p-4 text-[15px] text-ink-muted">
-          <p className="mb-2 font-bold text-ink">{copy.usageHeading}</p>
-          <p>{copy.usageRequests}: {new Intl.NumberFormat(locale).format(usage.requests)}</p>
-          <p>{copy.usageTokens}: {new Intl.NumberFormat(locale).format(usage.inputTokens + usage.outputTokens)}</p>
-          <p>{copy.usageEstimate}: {usage.estimatedCostMicros === null
-            ? copy.usageCostUnknown
-            : new Intl.NumberFormat(locale, { style: "currency", currency: "USD",
-              minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(usage.estimatedCostMicros / 1_000_000)}</p>
-        </div>}
+
       </aside>
     </div>}
   </section>;

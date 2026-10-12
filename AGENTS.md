@@ -33,6 +33,7 @@ See `docs/02-design-system.md` — it is binding.
 6. Encrypt POS tokens at rest. Never log tokens, bank lines, or receipt images.
 7. Accessibility: WCAG AA contrast, 48px touch targets, 17px minimum body text, visible focus, reduced motion respected.
 8. Never add features from the "Don't build" list in `docs/01-product.md`.
+9. **Progressive disclosure on owner screens:** Start with the specific actionable answer and essential context. When details/actions belong to an entity already visible on the screen, select or expand that entity and manage it in place; do not create a new page or CTA by default. New routes are for genuinely independent workflows. Place diagnostics, rule history, and rarely used controls behind an intentional reveal (for example an accessible details section). Never expose internal enum, model, API, token, or cost telemetry in the owner's primary workflows. Keep existing canonical actions discoverable, task links specific, verified zero distinct from unavailable, and all labels localized across en/es/ar.
 
 ## Where things are
 - `docs/01-product.md` — features, priorities, what not to build

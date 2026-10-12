@@ -154,3 +154,86 @@ describe("Metadata-only scope cannot execute as a café tool",()=>{
     expect(reader).not.toHaveBeenCalled();
   });
 });
+
+describe("Persisted Needs You cards and evidence-proven zero facts",()=>{
+  const tasks=[
+    {id:"price:latte:450:525",businessId:"auth-cafe",agentId:"alex",kind:"price_review",
+      status:"needs_owner",payload:{itemName:"Latte"},confidence:"high",evidence:[],
+      createdAt:"2026-10-10T12:00:00Z"},
+    {id:"staff:sam:2026-10-10",businessId:"auth-cafe",agentId:"olivia",kind:"staff_coverage",
+      status:"needs_response",payload:{employeeName:"Sam"},confidence:"high",evidence:[],
+      createdAt:"2026-10-10T12:00:00Z"},
+  ];
+  function local(overrides:Record<string,unknown>={},locale:"en"|"es"|"ar"="en"){
+    return createSupervisorToolRegistry({
+      tools:{...tools,
+        getCafeSummary:async()=>({inventory:known([])}),
+        getTeamTasks:async()=>known(tasks),
+        getSalesTrend:async()=>known([{date:"2026-10-10",netSalesCents:0,ordersCount:0}]),
+        ...overrides,
+      } as unknown as BusinessScopedCafeTools,
+      locale,asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",
+      readRules:async()=>[],
+    });
+  }
+  it("overview returns count AND actual clickable cards for both Needs You statuses",async()=>{
+    const r=await local()({name:"get_cafe_overview",call_id:"ov",
+      arguments:{focus:"today"}},1);
+    expect(r.facts).toContainEqual(expect.objectContaining({label:"AI Team tasks needing owner",value:2}));
+    expect(r.tasks).toHaveLength(2);
+    expect(r.tasks.map(t=>t.status)).toEqual(["needs_owner","needs_response"]);
+    expect(r.tasks[0].href).toContain("/operations?status=needs_you&agent=alex&task=");
+    expect(r.tasks[0].href).toContain(encodeURIComponent(tasks[0].id));
+    expect(r.tasks[0].href.endsWith("#selected-task")).toBe(true);
+    expect(r.tasks[0].source.source).toBe("operating_tasks");
+  });
+  it("Team includes both needs_owner and needs_response, and a grounded zero when empty",async()=>{
+    const arg={status:"needs_you",agent:"all",view:"tasks",limit:10};
+    const r=await local()({name:"get_team",arguments:arg,call_id:"team"},1);
+    expect(r.facts).toContainEqual(expect.objectContaining({label:"Needs you",value:2}));
+    expect(r.tasks).toHaveLength(2);
+    const empty=await local({getTeamTasks:async()=>known([])})({
+      name:"get_team",arguments:arg,call_id:"team"},1);
+    expect(empty.status).toBe("verified");
+    expect(empty.facts).toContainEqual(expect.objectContaining({label:"Needs you",value:0}));
+    expect(empty.tasks).toHaveLength(0);
+    expect(empty.status).not.toBe("unavailable");
+  });
+  it("localized task titles use trusted payload names, not enum identifiers",async()=>{
+    const cases=[["en","Review price: Latte"],["es","Revisar precio: Latte"],
+      ["ar","مراجعة السعر: Latte"]] as const;
+    for(const [locale,title] of cases){
+      const r=await local({},locale)({name:"get_team",arguments:{
+        status:"needs_you",agent:"alex",view:"tasks",limit:3,
+      },call_id:"team"},1);
+      expect(r.tasks[0].title).toBe(title);
+      expect(r.tasks[0].title).not.toContain("price_review");
+    }
+  });
+  it("verified actual zero day yields $0 and zero orders; missing coverage stays unavailable",async()=>{
+    const args=(metric:"net_sales"|"orders")=>({
+      metric,group_by:"total",period:"today",from:null,to:null,
+      category:"all",product_name:null,sort:"highest",limit:10,
+    });
+    const registry=local();
+    const money=await registry({name:"get_sales",arguments:args("net_sales"),call_id:"sales"},1);
+    const count=await registry({name:"get_sales",arguments:args("orders"),call_id:"orders"},2);
+    expect(money.status).toBe("verified");
+    expect(money.facts).toContainEqual(expect.objectContaining({value:0,kind:"metric"}));
+    expect(count.facts).toContainEqual(expect.objectContaining({value:0,kind:"count"}));
+    expect(money.facts[0].label).toContain("so far");
+    const missing=await local({getSalesTrend:async()=>unavailable})({
+      name:"get_sales",arguments:args("net_sales"),call_id:"missing"},3);
+    expect(missing.status).toBe("unavailable");
+    expect(missing.facts).toEqual([]);
+  });
+  it("a staff-only rollup with missing sales coverage is not a verified zero",async()=>{
+    const r=await local({getSalesTrend:async()=>unavailable})({
+      name:"get_sales",arguments:{
+        metric:"orders",group_by:"total",period:"today",from:null,to:null,
+        category:"all",product_name:null,sort:"highest",limit:10,
+      },call_id:"sales"},1);
+    expect(r.status).toBe("unavailable");
+    expect(r.facts).toHaveLength(0);
+  });
+});

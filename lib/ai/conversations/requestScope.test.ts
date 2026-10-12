@@ -182,3 +182,34 @@ describe("Canonical named-period identity without weakening custom-date matching
     }})).toBe(true);
   });
 });
+
+describe("Snapshot domain period identity",()=>{
+  const snap=["team","menu_count","pricing_review","owner_rules","break_even","staff_coverage"] as const;
+  for(const domain of snap)it(domain+" is the same goal regardless of meaningless period metadata",()=>{
+    const today={...goal(domain,"today"),from:"2026-10-12",to:"2026-10-12"};
+    const monthly={...goal(domain,"month_to_date"),from:null,to:null};
+    expect(reconcileRequestScopes([today],[monthly],true,false)).toEqual([monthly]);
+    expect(reconcileRequestScopes([monthly],[today],true,false)).toEqual([monthly]);
+    expect(normalizeRequestedGoals([today,monthly])).toHaveLength(1);
+  });
+  it("Team / today and Team / month-to-date reconcile without false clarification",()=>{
+    expect(reconcileRequestScopes([goal("team","today")],[goal("team","month_to_date")],true,false))
+      .toEqual([goal("team","month_to_date")]);
+    expect(coversRequestedGoal(goal("team","today"),{name:"get_team",arguments:{
+      status:"needs_you",view:"tasks",agent:"all",limit:5,
+    }})).toBe(true);
+  });
+  it("real sales and staff labor remain strictly period-sensitive",()=>{
+    expect(reconcileRequestScopes([goal("sales","today")],[goal("sales","month_to_date")],true,false)).toBeNull();
+    expect(reconcileRequestScopes([goal("staff_cost","today")],[goal("staff_cost","month_to_date")],true,false)).toBeNull();
+    expect(coversRequestedGoal(goal("sales","today"),{name:"get_sales",arguments:{period:"month_to_date"}})).toBe(false);
+    expect(coversRequestedGoal(goal("staff_cost","today"),{name:"get_staff",arguments:{
+      view:"labor_cost",period:"month_to_date",
+    }})).toBe(false);
+  });
+  it("overview genuinely changes between today and month-to-date, unlike persisted Team inbox",()=>{
+    expect(reconcileRequestScopes([goal("overview","today")],[goal("overview","month_to_date")],true,false)).toBeNull();
+    expect(coversRequestedGoal(goal("overview","today"),{name:"get_cafe_overview",arguments:{focus:"today"}})).toBe(true);
+    expect(coversRequestedGoal(goal("overview","today"),{name:"get_cafe_overview",arguments:{focus:"month_to_date"}})).toBe(false);
+  });
+});

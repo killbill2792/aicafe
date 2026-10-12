@@ -103,7 +103,7 @@ const taskCardBlockSchema = z.strictObject({
   agent: z.enum(["alex", "olivia", "maya", "leo"]),
   title: z.string().min(1).max(160),
   status: z.enum(["needs_owner", "needs_response", "watching", "handled", "expired"]),
-  href: z.string().max(160).refine((s) => s.startsWith("/operations") && !s.startsWith("//")),
+  href: z.string().max(800).refine((s) => s.startsWith("/operations?") && !s.startsWith("//")),
   source: evidenceReferenceSchema,
 });
 const taskBlockSchema = z.strictObject({

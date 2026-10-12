@@ -17,6 +17,10 @@ const copy = {
   historyTitle: "Chat history", startNewChat: "New chat", closeHistory: "Close history",
   unavailable: "Chat unavailable", source: "Source", supervisor: "Supervisor",
   sending: "Checking your café...", taskOpen: "Open", voiceStop: "Stop dictation",
+  voiceNoSpeech:"No speech",voiceUnavailable:"Voice unsupported",
+  voiceServiceUnavailable:"Voice temporarily unavailable",voiceNetworkError:"Voice network error",
+  voiceTooLong:"Recording too long",voiceError:"Voice failed",voicePermissionDenied:"Mic blocked",
+  voiceReview:"Review transcript",voiceCanceled:"Canceled",voiceProcessing:"Transcribing",
 } as SupervisorChatCopy;
 
 describe("modern Supervisor conversation shell", () => {
@@ -57,6 +61,10 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain("new MediaRecorder(");
     expect(source).toContain('fetch("/api/ai/transcribe"');
     expect(source).toContain("recordingLimit.current = setTimeout");
+    expect(source).toContain("parseTranscriptionResponse");
+    expect(source).toContain("voiceMessageForError");
+    expect(source).toContain("audioExtensionForMime");
+    expect(source).not.toContain('||"audio/mp4"');
     expect(source).not.toContain("SpeechRecognition");
     expect(source).not.toContain("webkitSpeechRecognition");
     expect(handler).toContain("setDraft(");

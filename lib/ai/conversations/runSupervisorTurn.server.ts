@@ -125,7 +125,7 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
     const suffixByDomain:Partial<Record<RequestedGoal["domain"],string[]>>={
       total_business_costs:[":value"],staff_cost:[":labor"],menu_count:[":active",":count"],
       pricing_review:[":pricingCount"],owner_profit:[":value"],monthly_bills:[":bills"],
-      recorded_spending:[":spent"],distinct_products:[":distinct"],
+      recorded_spending:[":spent"],distinct_products:[":distinct"],team:[":needsYou"],
     };
     const primary=result?.facts.find(f=>(suffixByDomain[goal.domain]??[]).some(s=>f.id.endsWith(s)))
       ?? result?.facts.find(f=>selectedFacts.some(selected=>selected.id===f.id))
@@ -143,6 +143,17 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       chosen.push({...primary,label:primaryLabel});represented.add(primary.id);
     } else if(result.insights.length){
       supplementalTexts.push(goalLabel(goal.domain,locale)+": "+result.insights[0].text);
+    }
+    if(goal.domain==="team"&&result.status!=="unavailable"){
+      const filter=(result.data as {filterStatus?:unknown}|null)?.filterStatus;
+      if((filter==="all"||filter==="needs_you") &&
+        !result.tasks.some(t=>t.status==="needs_owner"||t.status==="needs_response")){
+        supplementalTexts.push({
+          en:"No AI Team tasks currently need your attention.",
+          es:"Actualmente no hay tareas del equipo de IA que requieran tu atención.",
+          ar:"لا توجد حاليًا مهام لفريق الذكاء الاصطناعي تحتاج إلى اهتمامك.",
+        }[locale]);
+      }
     }
     if(goal.domain==="pricing_review"){
       const data=result.data as Record<string,unknown>|null;
@@ -189,7 +200,23 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       ? {type:"metric",label:f.label,valueCents:f.value,source:f.source}
       : {type:"count",label:f.label,value:f.value,source:f.source});
   }
-  blocks.push(...selectedTasks.slice(0,8));
+  // The model cannot suppress trusted persisted task cards from Team or Overview.
+  const deterministicTasks=executed.flatMap((call,i)=>{
+    if(call.name==="get_cafe_overview")return results[i]?.tasks.slice(0,3)??[];
+    if(call.name==="get_team"&&goals.some(g=>coversRequestedGoal(g,call))){
+      const result=results[i],filter=(result?.data as {filterStatus?:unknown}|null)?.filterStatus;
+      return (result?.tasks??[]).filter(t=>filter==="all"||filter==="needs_you"?
+        t.status==="needs_owner"||t.status==="needs_response":true).slice(0,5);
+    }
+    return [];
+  });
+  const shownTasks=[...deterministicTasks,...selectedTasks].filter((t,i,arr)=>
+    arr.findIndex(x=>x.taskId===t.taskId)===i).slice(0,8);
+  for(const task of shownTasks){
+    if(!evidence.some(e=>e.identifier===task.source.identifier&&
+      e.source===task.source.source&&e.asOf===task.source.asOf))evidence.push(task.source);
+  }
+  blocks.push(...shownTasks);
   const pricingGoals=goals.some(g=>g.domain==="pricing_review");
   for(const insight of selectedInsights){
     // Specific pricing statement from canonical counts supersedes generic English
@@ -199,7 +226,7 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   }
   for(const text of supplementalTexts)blocks.push({type:"text",text});
   const hasFacts = blocks.length>0;
-  const trusted = chosen.length>0 || extraFacts.length>0 || selectedTasks.length>0 ||
+  const trusted = chosen.length>0 || extraFacts.length>0 || shownTasks.length>0 ||
     selectedInsights.length>0 || blocks.some(b=>b.type==="text" && !supplementalTexts.includes(b.text));
   const anyPartial=results.some(x=>x.status==="partial");
   const anyEstimated=results.some(x=>x.status==="estimated");

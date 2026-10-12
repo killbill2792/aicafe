@@ -7,6 +7,9 @@
 - Confirm current scope names and endpoints in Square's docs before coding; Square renamed its Labor "Shift" objects to **Timecards** (API version 2025-05-21 or later). Use the Timecard endpoints.
 
 Sync
+
+**Current implementation status (2026-10-12):** the OAuth callback performs the 90-day `syncPosData` backfill. The incremental webhook sync and 10-minute open-hours safety poll described below are not implemented yet, so production data must not be described as continuously live until that work exists.
+
 1. **Backfill** on connect: last 90 days of orders (SearchOrders by location, closed state), payments (for processing fees), catalog (items, variations, modifiers), team members, timecards. Show progress: "Getting your last 3 months… 40%".
 2. **Incremental**: webhooks for order and payment updates and timecard changes → enqueue a sync for that record. Plus a safety poll every 10 minutes during open hours (covers missed webhooks).
 3. After each sync, recompute `daily_rollups` for affected business dates, then alerts.
