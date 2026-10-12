@@ -615,5 +615,353 @@
     ],
     "evidenceClass": "unavailable_or_verified",
     "responseType": "metric"
+  },
+  {
+    "question": "How many products am I selling?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "How many different products sold today?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "How many items do we carry?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos ofrecemos?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "كم صنفًا نقدم في المقهى؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos distintos vendimos hoy?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "Do any prices need revision?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Should we review our menu prices?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "What are my staff costs, how many products do I sell, and do any prices need review?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "¿Cuánto cuesta el personal, cuántos productos ofrecemos y hay precios por revisar?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "how many products am I selling so far?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many products do I currently sell?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many items do we currently offer?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "How many unique items did customers buy this month?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos estoy vendiendo hasta ahora?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos ofrecemos actualmente?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos artículos distintos compraron los clientes este mes?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Necesitamos revisar algún precio?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "هل يمكنك إخباري بعدد المنتجات التي نبيعها حاليًا؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "كم عدد الأصناف التي نقدمها الآن؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "كم منتجًا مختلفًا اشترى الزبائن هذا الشهر؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "هل تحتاج أسعار القائمة إلى مراجعة؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Could any menu prices use a review?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
   }
 ]

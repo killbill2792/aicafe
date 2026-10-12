@@ -72,4 +72,69 @@ describe("Read-only domain registry computes grounded facts and trusted insights
    expect(r.control).toBe("unsupported");
    expect(r.facts).toHaveLength(0);
  });
+ it("counts active menu offerings without item-level sales coverage",async()=>{
+   const catalog=[{id:"a",name:"Latte",active:true,category:"drink",priceCents:550},
+     {id:"b",name:"Mocha",active:false,category:"drink",priceCents:600}];
+   const local=createSupervisorToolRegistry({tools:{...tools,getMenuCatalog:async()=>known(catalog)} as unknown as BusinessScopedCafeTools,
+     asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[]});
+   const r=await local({name:"get_menu",arguments:{view:"active_count",scope:"active",product_name:null,limit:10},call_id:"menu"},1);
+   expect(r.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Active menu products",value:1})]));
+ });
+ it("distinguishes verified-zero reviews from missing-input blocked products",async()=>{
+   const product={id:"a",name:"Latte"};
+   const pricing=(status:string,missingInputs:string[]=[]):Record<string,unknown>=>({
+     status,recommendedPriceCents:status==="REVIEW_PRICE"?650:null,
+     calculationMode:"BENCHMARK",dataQuality:{...q,missingInputs}
+   });
+   const evaluate=async(rec:Record<string,unknown>)=>{
+     const local=createSupervisorToolRegistry({tools:{...tools,getCafeSummary:async()=>({
+       products:known([product]),pricingRecommendations:known({a:rec})
+     })} as unknown as BusinessScopedCafeTools,
+       asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[]});
+     return local({name:"get_pricing",arguments:{product_name:null,limit:10},call_id:"pricing"},1);
+   };
+   const zero=await evaluate(pricing("KEEP_PRICE"));
+   expect(zero.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Verified review-ready price changes",value:0})]));
+   expect(zero.insights.some(i=>i.text.includes("No verified review-ready"))).toBe(true);
+   const blocked=await evaluate(pricing("PRICE_UNAVAILABLE",["ingredientCost"]));
+   expect(blocked.status).toBe("partial");
+   expect(blocked.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Products blocked by missing pricing inputs",value:1})]));
+   expect(blocked.insights.some(i=>i.text.includes("No verified review-ready"))).toBe(false);
+   const review=await evaluate(pricing("REVIEW_PRICE"));
+   expect(review.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Latte recommended price (review only)",value:650})]));
+ });
+
+});
+
+describe("Explicit item-sales coverage and natural staffing notice",()=>{
+  it("fails closed even if rows exist but independent canonical item coverage is unproven",async()=>{
+    const local=createSupervisorToolRegistry({
+      tools:{...tools,
+        getProductSales:async()=>known([{name:"Latte",category:"drink",units:5}]),
+        getItemSalesCoverage:async()=>unavailable,
+      } as unknown as BusinessScopedCafeTools,
+      asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[],
+    });
+    const result=await local({name:"get_sales",arguments:{
+      metric:"distinct_products",group_by:"total",period:"today",from:null,to:null,
+      category:"all",product_name:null,sort:"highest",limit:10,
+    },call_id:"coverage"},1);
+    expect(result.status).toBe("unavailable");
+    expect(result.facts).toEqual([]);
+    expect(result.missingInputs).toContain("itemSalesCoverageNotProven");
+  });
+  it("qualifies staffing only when a person is a schedule prediction",async()=>{
+    const projected=await execute("get_staff",{view:"current_staffing",...dates("today")});
+    expect(projected.insights.some(x=>x.text.includes("based on the schedule rather than a recorded clock-in"))).toBe(true);
+    const local=createSupervisorToolRegistry({tools:{...tools,
+      getCurrentStaff:async()=>known({count:1,people:[{
+        name:"Sam",role:"barista",breakStatus:"ok",isSchedulePrediction:false,
+      }]}),
+    } as unknown as BusinessScopedCafeTools,
+      asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[],
+    });
+    const recorded=await local({name:"get_staff",
+      arguments:{view:"current_staffing",...dates("today")},call_id:"present"},1);
+    expect(recorded.insights.some(x=>x.text.includes("schedule rather than"))).toBe(false);
+  });
 });

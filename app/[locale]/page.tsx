@@ -15,7 +15,6 @@ import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import PeriodSwitch from "@/components/shared/PeriodSwitch";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
-import AddCostFab from "@/components/shared/AddCostFab";
 import CostRecoveryStrip from "@/components/home/CostRecoveryStrip";
 import { todayGlanceCopy } from "@/components/shared/todayGlanceCopy";
 import {
@@ -173,35 +172,23 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const todayPartialSuffix = todayVm.ownerProfitDisplay.kind === "partial" ? ` · ${t("partialPill")}` : "";
 
   return (
-    <PageShell wide className="flex flex-col gap-4 px-4 pb-4 pt-6">
+    <PageShell wide className="flex flex-col gap-3 px-3 pb-4 pt-3 md:px-4 md:pt-4">
       {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
 
       <header className="flex items-center justify-between gap-3 px-1">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="text-sm font-medium text-ink-muted">{snapshot.todayDateStr}</div>
-          <div className="truncate text-[22px] font-bold text-ink">{snapshot.business.name}</div>
+          <div className="text-xs font-medium text-ink-muted">{snapshot.todayDateStr}</div>
+          <div className="truncate text-[20px] font-bold text-ink md:text-[22px]">{snapshot.business.name}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="flex min-h-10 items-center gap-1.5 rounded-2xl bg-good-tint px-2.5 py-1.5 text-[13px] font-bold text-good">
+          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-good">
             <span className="h-2 w-2 rounded-full bg-good" />
             {t("live")}
           </span>
-          <LanguageSwitch href="/" />
+          <LanguageSwitch href="/" compact />
         </div>
       </header>
 
-      {vm.isGettingStarted && (
-        <GettingStartedCard
-          labels={{
-            title: t("gettingStartedTitle"),
-            body: t("gettingStartedBody"),
-            connectRegister: t("gettingStartedConnectRegister"),
-            uploadSales: t("gettingStartedUploadSales"),
-            addBills: t("gettingStartedAddBills"),
-            addStaff: t("gettingStartedAddStaff"),
-          }}
-        />
-      )}
 
       <div className="flex flex-col gap-4">
         <SupervisorHomePanel
@@ -304,6 +291,20 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         />
 
       </div>
+
+      {vm.isGettingStarted && (
+        <GettingStartedCard
+          labels={{
+            title: t("gettingStartedTitle"),
+            body: t("gettingStartedBody"),
+            connectRegister: t("gettingStartedConnectRegister"),
+            uploadSales: t("gettingStartedUploadSales"),
+            addBills: t("gettingStartedAddBills"),
+            addStaff: t("gettingStartedAddStaff"),
+          }}
+        />
+      )}
+
 
       <section className="mt-1 flex flex-col gap-3.5" aria-labelledby="business-overview-title">
         <div className="px-1">
@@ -436,7 +437,6 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </section>
 
       {/* Home keeps the Supervisor composer unobstructed on mobile. Other pages retain the FAB. */}
-      <AddCostFab hideOnMobile />
     </PageShell>
   );
 }

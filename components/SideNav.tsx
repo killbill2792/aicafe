@@ -7,16 +7,15 @@ import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
 /** Desktop/tablet counterpart to TabBar — same 5 destinations, same wording, same icons (shared
  * via NAV_TABS), just laid out as a fixed left column instead of a bottom bar, since a bottom tab
  * bar spread across a 1200px+ screen doesn't read well. Hidden on mobile (TabBar handles that). */
-export default function SideNav() {
+export default function SideNav({ cafeName }: { cafeName: string }) {
   const t = useTranslations("Nav");
-  const tLayout = useTranslations("LocaleLayout");
   const pathname = usePathname();
 
   if (pathname === "/login") return null;
 
   return (
     <nav aria-label={t("ariaLabel")} className="sticky top-0 hidden h-screen w-sidenav shrink-0 flex-col gap-1 border-e border-[#CDBCA7] bg-[#E9DDCE] px-3 py-6 md:flex">
-      <div className="px-2 pb-6 font-headline text-xl font-bold text-ink">{tLayout("title")}</div>
+      <div className="px-2 pb-6 font-headline text-xl font-bold text-ink">{cafeName}</div>
       <ul className="flex flex-col gap-1">
         {NAV_TABS.map(({ href, key, Icon }) => {
           const isActive = isNavTabActive(pathname, href);

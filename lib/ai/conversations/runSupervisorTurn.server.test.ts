@@ -407,3 +407,58 @@ describe("Bounded initial provider model fallback (never mid-conversation)",()=>
     expect(models).toEqual(["gpt-6-luna","gpt-6-luna"]);
   });
 });
+
+
+describe("Verified multi-domain owner response (mock Responses, real registry)", () => {
+  it("keeps staff labor, active menu count and pricing evidence in the same final reply without generic preamble", async () => {
+    const staff=call("get_staff",{view:"labor_cost",period:"today",from:null,to:null},"staff-call");
+    const menu=call("get_menu",{view:"active_count",scope:"active",product_name:null,limit:10},"menu-call");
+    const pricing=call("get_pricing",{product_name:null,limit:10},"pricing-call");
+    const toolsMulti={
+      ...tools,
+      getLaborMetrics:vi.fn(async()=>({available:true,value:[{
+        date:"2026-10-10",wagesCents:9000,staffTaxCents:1000,loadedStaffCostCents:10000,
+      }],quality})),
+      getMenuCatalog:vi.fn(async()=>({available:true,value:[{
+        id:"latte",name:"Latte",active:true,category:"drink",priceCents:550,
+      }],quality})),
+      getCafeSummary:vi.fn(async()=>({
+        products:{available:true,value:[{id:"latte",name:"Latte"}],quality},
+        pricingRecommendations:{available:true,value:{latte:{
+          status:"KEEP_PRICE",recommendedPriceCents:null,
+          calculationMode:"BENCHMARK",dataQuality:quality,
+        }},quality},
+      })),
+    } as unknown as BusinessScopedCafeTools;
+    const requests:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      requests.push(JSON.parse(String(init.body)));
+      return requests.length===1 ? response([staff,menu,pricing]) :
+        response([finish(["t1:labor","t2:active","t3:pricingCount"],["t3:pricingZero"])]);
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"What are my staff costs, how many products am I selling so far, and are price revisions needed?",
+      tools:toolsMulti},transport);
+    expect(result.usage.toolCallCount).toBe(3);
+    expect((requests[1].input as Array<{call_id?:string}>).filter(x=>x.call_id).map(x=>x.call_id))
+      .toEqual(expect.arrayContaining(["staff-call","menu-call","pricing-call"]));
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",label:"Recorded loaded staff cost",valueCents:10000}),
+      expect.objectContaining({type:"count",label:"Active menu products",value:1}),
+      expect.objectContaining({type:"count",label:"Verified review-ready price changes",value:0}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("No verified review-ready price changes")}),
+    ]));
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("Here is what"))).toBe(false);
+    expect(result.reply.status).toBe("verified");
+  });
+  it("rejects evidence-only final responses as insufficient to answer", () => {
+    const source={source:"cafe_state" as const,identifier:"placeholder",asOf:"2026-10-10"};
+    const result=validateSupervisorFinal({headline:"Here is what I found",summary:"",
+      fact_ids:[],task_ids:[],insight_ids:[],evidence_refs:["placeholder"]},[{
+      status:"verified",coverage:{},missingInputs:[],estimatedInputs:[],data:null,
+      facts:[],tasks:[],insights:[],evidence:[source],
+    }],["get_menu"]);
+    expect(result.status).toBe("unavailable");
+    expect(result.blocks.every(b=>b.type!=="text"||!b.text.includes("Here is what"))).toBe(true);
+  });
+});
