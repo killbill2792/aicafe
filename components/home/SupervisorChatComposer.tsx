@@ -12,6 +12,8 @@ import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/rea
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget, responsiveTailSpace } from "./supervisorChatBehavior";
+import FactSummary from "./FactSummary";
+import { groupReplyBlocks } from "./supervisorReplyPresentation";
 
 export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
@@ -62,21 +64,6 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
         </p>
       : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{block.text}</p>;
   }
-  if ((block.type === "metric" || block.type === "count") && typeof block.label === "string" &&
-    typeof (block.type === "metric" ? block.valueCents : block.value) === "number") {
-    const number = block.type === "metric" ? block.valueCents as number : block.value as number;
-    if (!Number.isSafeInteger(number)) return null;
-    const source = record(block.source) ? block.source : null;
-    return <div className="w-fit max-w-full rounded-xl bg-[#F2F8F3] px-3 py-2">
-      <p className="text-[15px] font-semibold text-ink-muted">{block.label}</p>
-      <p className="font-headline text-2xl font-extrabold tracking-tight text-ink">
-        {block.type === "metric" ? formatCents(number) : new Intl.NumberFormat(locale).format(number)}
-      </p>
-      {source && <p className="mt-2 text-[13px] text-ink-muted">
-        {copy.source}: {source.source === "cafe_state" ? copy.sourceCafe : source.source === "pricing_engine" ? copy.sourcePricing : source.source === "operating_tasks" ? copy.sourceTasks : source.source === "owner_rules" ? copy.sourceRules : copy.sourceVerified} · {String(source.asOf ?? "")}
-      </p>}
-    </div>;
-  }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
     block.href.startsWith("/operations") && !block.href.startsWith("//")) {
@@ -102,16 +89,17 @@ function SupervisorMessage({ message, copy, locale }: {
   if (message.role === "owner") return <article className="ms-auto max-w-[88%] rounded-[22px] rounded-ee-md bg-[#EADFCC] px-4 py-3 text-[17px] text-ink shadow-sm">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
-  return <article className="max-w-[94%] space-y-3">
+  return <article className="w-full max-w-[96%] space-y-3">
     <div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted">
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#E7EFE5] text-good">
         <Sparkles size={17} aria-hidden="true" />
       </span>
       {copy.supervisor}
     </div>
-    <div className="space-y-3 ps-1">
-      {(message.blocks ?? []).map((block, i) =>
-        <ReplyBlock key={i} block={block} copy={copy} locale={locale} />)}
+    <div className="w-full space-y-3 ps-1">
+      {groupReplyBlocks(message.blocks ?? []).map((group,i)=>group.kind==="facts"
+        ? <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>
+        : <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>)}
     </div>
   </article>;
 }

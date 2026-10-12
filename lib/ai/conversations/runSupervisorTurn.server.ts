@@ -6,8 +6,12 @@ import type { GroundedSupervisorReply, SupervisorReplyBlock, EvidenceReference }
 import type { ConversationalTurn } from "./context";
 import { createSupervisorToolRegistry, intentForCalls, parseSupervisorCalls,
   SUPERVISOR_FUNCTIONS, type ToolEvidence, type SupervisorToolName } from "./toolRegistry.server";
-import { HEADLINES, SUMMARIES, SUPERVISOR_ENDPOINT, buildSupervisorInstructions, buildSupervisorRequest } from "./supervisorRequest.mjs";
+import { HEADLINES, SUMMARIES, SUPERVISOR_ENDPOINT, buildSupervisorInstructions, buildSupervisorRequest, buildSupervisorScopeAuditRequest } from "./supervisorRequest.mjs";
 import { SupervisorStageError, readSafeProviderError, type SupervisorDiagnostic } from "./diagnostics.server";
+import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcileRequestScopes,
+  coversRequestedGoal, fallbackCallForGoal, goalLabel, unavailableGoalText,
+  type RequestedGoal } from "./requestScope";
+import type { SupervisorToolCall } from "./toolRegistry.server";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
@@ -34,9 +38,11 @@ function textFromResponse(output: unknown): string | null {
   return chunks.length === 1 ? chunks[0] : null;
 }
 export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], names: SupervisorToolName[],
-  locale: "en" | "es" | "ar" = "en"):
+  locale: "en" | "es" | "ar" = "en", goals: RequestedGoal[] = [],
+  executed: SupervisorToolCall[] = []):
     GroundedSupervisorReply {
   const final = FINAL.parse(raw);
+  goals = normalizeRequestedGoals(goals);
   const facts = results.flatMap(r=>r.facts);
   const tasks = results.flatMap(r=>r.tasks);
   const insights = results.flatMap(r=>r.insights);
@@ -74,32 +80,145 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   // Fixed connective phrases remain strictly validated but never lead grounded
   // business answers. Display only facts, task cards and trusted insights.
   const blocks: SupervisorReplyBlock[] = [];
-  for (const f of selectedFacts.slice(0,12)) {
+  const labels = {
+    en:{month_to_date:"month to date",today:"today",yesterday:"yesterday",week_to_date:"week to date",
+      previous_week:"last week",previous_month:"last month",last_7_days:"last 7 days",
+      last_28_days:"last 28 days",custom:"selected period",
+      pricingStart:"Price review",zero:"No price changes are currently verified.",
+      reviews:"products have verified recommendations to review.",
+      kept:"products were fully evaluated and do not currently need a price change.",
+      newPrice:"products have first-price recommendations, not revisions to an existing price.",
+      blocked:"still need complete cost/pricing data before their prices can be verified.",
+      staffCoverage:"Staff time records are incomplete for the selected period.",
+      costCoverage:"Total-cost records are incomplete for the selected period."},
+    es:{month_to_date:"en lo que va del mes",today:"hoy",yesterday:"ayer",week_to_date:"en lo que va de la semana",
+      previous_week:"la semana pasada",previous_month:"el mes pasado",last_7_days:"últimos 7 días",
+      last_28_days:"últimos 28 días",custom:"período seleccionado",
+      pricingStart:"Revisión de precios",zero:"No hay cambios de precio verificados actualmente.",
+      reviews:"productos tienen recomendaciones de precios verificadas para revisar.",
+      kept:"productos se evaluaron por completo y no necesitan cambios de precio por ahora.",
+      newPrice:"productos tienen un precio inicial recomendado, no un cambio de precio existente.",
+      blocked:"aún necesitan datos completos de costos y precios para su verificación.",
+      staffCoverage:"Los registros de horas del personal están incompletos para el período seleccionado.",
+      costCoverage:"Los registros de costos totales están incompletos para el período seleccionado."},
+    ar:{month_to_date:"من بداية الشهر حتى الآن",today:"اليوم",yesterday:"أمس",week_to_date:"من بداية الأسبوع حتى الآن",
+      previous_week:"الأسبوع الماضي",previous_month:"الشهر الماضي",last_7_days:"آخر ٧ أيام",
+      last_28_days:"آخر ٢٨ يومًا",custom:"الفترة المحددة",
+      pricingStart:"مراجعة الأسعار",zero:"لا توجد تغييرات أسعار مثبتة حاليًا.",
+      reviews:"منتجات لديها توصيات أسعار مثبتة للمراجعة.",
+      kept:"منتجات خضعت لتقييم كامل ولا تحتاج إلى تغيير السعر حاليًا.",
+      newPrice:"منتجات لديها توصيات بسعر أولي وليست تغييرات لأسعار موجودة.",
+      blocked:"لا تزال تحتاج إلى بيانات تكاليف وأسعار مكتملة للتحقق من أسعارها.",
+      staffCoverage:"سجلات ساعات الموظفين غير مكتملة للفترة المحددة.",
+      costCoverage:"سجلات التكاليف الإجمالية غير مكتملة للفترة المحددة."},
+  }[locale];
+  // Evidence selection by the model is optional for coverage, but evidence itself is not.
+  // Every semantic request-scope goal produces one trusted fact or a specific unavailable line.
+  const chosen:typeof facts=[];
+  const supplementalTexts:string[]=[];
+  const represented=new Set<string>();
+  let specificWarning=false;
+  let missingGoal=false;
+  for(const goal of goals){
+    const index=executed.findIndex(c=>coversRequestedGoal(goal,c));
+    const result=index>=0 ? results[index] : undefined;
+    const suffixByDomain:Partial<Record<RequestedGoal["domain"],string[]>>={
+      total_business_costs:[":value"],staff_cost:[":labor"],menu_count:[":active",":count"],
+      pricing_review:[":pricingCount"],owner_profit:[":value"],monthly_bills:[":bills"],
+      recorded_spending:[":spent"],distinct_products:[":distinct"],
+    };
+    const primary=result?.facts.find(f=>(suffixByDomain[goal.domain]??[]).some(s=>f.id.endsWith(s)))
+      ?? result?.facts.find(f=>selectedFacts.some(selected=>selected.id===f.id))
+      ?? result?.facts[0];
+    if(!result || (result.status==="unavailable" && !primary) || !primary && !result.insights.length && !result.tasks.length){
+      supplementalTexts.push(unavailableGoalText(goal.domain,locale));
+      specificWarning=true;missingGoal=true;
+      continue;
+    }
+    if(primary){
+      const heading=goalLabel(goal.domain,locale);
+      const suffix=goal.domain==="total_business_costs"||goal.domain==="staff_cost"
+        ? " — "+labels[goal.period] : "";
+      const primaryLabel=suffixByDomain[goal.domain] ? heading+suffix : primary.label;
+      chosen.push({...primary,label:primaryLabel});represented.add(primary.id);
+    } else if(result.insights.length){
+      supplementalTexts.push(goalLabel(goal.domain,locale)+": "+result.insights[0].text);
+    }
+    if(goal.domain==="pricing_review"){
+      const data=result.data as Record<string,unknown>|null;
+      const n=(key:string)=>data && Number.isSafeInteger(data[key]) && (data[key] as number)>=0
+        ? data[key] as number : null;
+      const examined=n("examined"),blocked=n("blocked"),keep=n("noChange"),reviews=n("reviewReady"),
+        newPrice=n("newPrice");
+      if(examined!==null && blocked!==null && keep!==null && reviews!==null){
+        const explanations:string[]=[];
+        if(reviews===0)explanations.push(labels.zero);
+        else explanations.push(reviews+" "+labels.reviews);
+        if(keep>0)explanations.push(keep+" "+labels.kept);
+        if(newPrice!==null && newPrice>0)explanations.push(newPrice+" "+labels.newPrice);
+        if(blocked>0)explanations.push(blocked+" / "+examined+" "+labels.blocked);
+        supplementalTexts.push(labels.pricingStart+": "+explanations.join(" "));
+        if(blocked>0)specificWarning=true;
+      }
+    }
+    if(goal.domain==="staff_cost" && result.status==="partial"){
+      supplementalTexts.push(labels.staffCoverage);specificWarning=true;
+    }
+    if(goal.domain==="total_business_costs" && result.status==="partial"){
+      supplementalTexts.push(labels.costCoverage);specificWarning=true;
+    }
+  }
+  // Single-domain detailed answers retain the model's chosen additional facts. For
+  // multi-domain responses, use one primary fact per goal rather than a nested dashboard.
+  for(const f of chosen){
+    if(!evidence.some(e=>e.identifier===f.source.identifier &&
+      e.source===f.source.source && e.asOf===f.source.asOf))evidence.push(f.source);
+  }
+  const suffixByDomainForMulti=(goalsToCheck:RequestedGoal[],call:SupervisorToolCall)=>
+    goalsToCheck.some(g=>["total_business_costs","staff_cost","menu_count","pricing_review"].includes(g.domain)
+      && coversRequestedGoal(g,call));
+  const allowable=new Set(executed.flatMap((call,i)=>goals.some(g=>coversRequestedGoal(g,call))
+    ? results[i]?.facts.map(f=>f.id)??[] : []));
+  const extraFacts = selectedFacts.filter(f=>!represented.has(f.id) &&
+    (!goals.length || allowable.has(f.id)) &&
+    (goals.length<2 || !executed.some((c,i)=>goals.some(g=>coversRequestedGoal(g,c)) &&
+      suffixByDomainForMulti(goals,c) &&
+      results[i]?.facts.some(x=>x.id===f.id))));
+  for(const f of [...chosen,...extraFacts].slice(0,12)){
     blocks.push(f.kind==="metric"
       ? {type:"metric",label:f.label,valueCents:f.value,source:f.source}
       : {type:"count",label:f.label,value:f.value,source:f.source});
   }
   blocks.push(...selectedTasks.slice(0,8));
-  for(const insight of selectedInsights)blocks.push({type:"text",text:insight.text});
-  const relevant = results;
-  const hasFacts = selectedFacts.length>0 || selectedTasks.length>0 || selectedInsights.length>0;
-  const anyPartial = relevant.some(x=>x.status==="partial");
-  const anyEstimated = relevant.some(x=>x.status==="estimated");
-  const anyMissing = relevant.some(x=>x.status==="unavailable");
-  const status = !hasFacts ? "unavailable" : (anyPartial || anyMissing && hasFacts ? "partial"
-    : anyEstimated ? "estimated" : "verified");
-  const notices = {
-    en: { partial: "Some relevant café records are missing, so these are recorded observations, not complete totals.",
-      estimated: "Some figures rely on estimated inputs.", unavailable: "These café records are unavailable." },
-    es: { partial: "Faltan algunos registros del café; los datos mostrados no son totales completos.",
-      estimated: "Algunas cifras incluyen estimaciones.", unavailable: "Estos datos del café no están disponibles." },
-    ar: { partial: "بعض سجلات المقهى غير مكتملة؛ الأرقام المعروضة ليست إجماليات كاملة.",
-      estimated: "تتضمن بعض الأرقام تقديرات.", unavailable: "هذه السجلات غير متاحة." },
+  const pricingGoals=goals.some(g=>g.domain==="pricing_review");
+  for(const insight of selectedInsights){
+    // Specific pricing statement from canonical counts supersedes generic English
+    // pricing snippets; never duplicate them or leak English into ES/AR.
+    if(pricingGoals && insight.id.includes("pricing"))continue;
+    blocks.push({type:"text",text:insight.text});
+  }
+  for(const text of supplementalTexts)blocks.push({type:"text",text});
+  const hasFacts = blocks.length>0;
+  const trusted = chosen.length>0 || extraFacts.length>0 || selectedTasks.length>0 ||
+    selectedInsights.length>0 || blocks.some(b=>b.type==="text" && !supplementalTexts.includes(b.text));
+  const anyPartial=results.some(x=>x.status==="partial");
+  const anyEstimated=results.some(x=>x.status==="estimated");
+  const anyMissing=results.some(x=>x.status==="unavailable");
+  const status: GroundedSupervisorReply["status"] = !trusted ? "unavailable"
+    : (anyPartial || anyMissing || missingGoal
+      ? "partial" : anyEstimated ? "estimated" : "verified");
+  const notices={
+    en:{partial:"Some relevant café records are missing, so these are recorded observations, not complete totals.",
+      estimated:"Some figures rely on estimated inputs.",unavailable:"These café records are unavailable."},
+    es:{partial:"Faltan algunos registros del café; los datos mostrados no son totales completos.",
+      estimated:"Algunas cifras incluyen estimaciones.",unavailable:"Estos datos del café no están disponibles."},
+    ar:{partial:"بعض سجلات المقهى غير مكتملة؛ الأرقام المعروضة ليست إجماليات كاملة.",
+      estimated:"تتضمن بعض الأرقام تقديرات.",unavailable:"هذه السجلات غير متاحة."},
   };
-  if (status==="partial" || status==="estimated" || status==="unavailable")
+  if((status==="partial" || status==="estimated" || status==="unavailable") && !specificWarning)
     blocks.push({type:"warning",code:status,text:notices[locale][status]});
-  if (blocks.length===0 && !hasFacts)
-    blocks.push({type:"warning",code:"unavailable",text:"No verified café records available for this answer."});
+  if(blocks.length===0)blocks.push({type:"warning",code:"unavailable",
+    text:"No verified café records available for this answer."});
   const control=results.length===1?results[0].control:null;
   if(control){
     const messages={
@@ -146,11 +265,106 @@ export async function runSupervisorTurn(input: {
   const usage: SupervisorUsage = {model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0};
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
+  const executed: SupervisorToolCall[] = [];
+  let requestedGoals: RequestedGoal[] | null = null;
   const instructions=buildSupervisorInstructions({locale:input.locale,asOf:input.asOf,timezone:input.timezone});
   const history = input.history.slice(-12).filter(x=>x.text).map(x=>({
     role: x.role==="owner" ? "user" : "assistant", content:x.text.slice(0,850),
   }));
   const conversation: unknown[] = [...history,{role:"user",content:input.text.slice(0,4000)}];
+  // A separate, bounded read of the original owner utterance using the SAME
+  // configured model. No café tools, prior scope, history or business records are
+  // included. The original tool loop never sees a redeclaration.
+  async function auditFirstScope(declared: RequestedGoal[]): Promise<RequestedGoal[] | null> {
+    // One semantic audit with the same model and at most two transport attempts.
+    // Never fall back here: the first model response has already succeeded.
+    const request=JSON.stringify(buildSupervisorScopeAuditRequest({
+      model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
+    }));
+    for(let attempt=0;attempt<2;attempt++){
+      const attemptNumber=attempt+1,controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),18_000);
+      input.onDiagnostic?.({stage:"provider_request",model,round:1,attempt:attemptNumber,
+        advertisedToolCount:0,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+      try{
+        let response:Response;
+        try{
+          response=await transport(SUPERVISOR_ENDPOINT,{
+            method:"POST",signal:controller.signal,
+            headers:{"content-type":"application/json",authorization:"Bearer "+key},
+            body:request,
+          });
+        }catch(error){
+          const timedOut=controller.signal.aborted||(error instanceof Error&&
+            (error.name==="AbortError"||error.name==="TimeoutError"));
+          throw new SupervisorStageError(timedOut?"provider_timeout":"provider_http",
+            "provider_request",{round:1,attempt:attemptNumber,timeout:timedOut});
+        }
+        if(!response.ok){
+          const safeProviderError=await readSafeProviderError(response);
+          throw new SupervisorStageError("provider_http","provider_response",
+            {round:1,attempt:attemptNumber,httpStatus:response.status,...safeProviderError});
+        }
+        let decoded:unknown;
+        try{decoded=await response.json();}
+        catch{throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {round:1,attempt:attemptNumber,httpStatus:response.status});}
+        if(!decoded||typeof decoded!=="object"||Array.isArray(decoded))
+          throw new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:1,attempt:attemptNumber,httpStatus:response.status});
+        const payload=decoded as Record<string,unknown>;
+        // As in the normal tool loop, count every decoded provider response,
+        // including incomplete results that cause a single bounded retry.
+        usage.modelCallCount++;
+        usage.model=typeof payload.model==="string"?payload.model.slice(0,80):model;
+        const billed=payload.usage as {input_tokens?:unknown;output_tokens?:unknown}|undefined;
+        usage.inputTokens+=integer(billed?.input_tokens);
+        usage.outputTokens+=integer(billed?.output_tokens);
+        input.onUsage?.({...usage});
+        const providerStatus=typeof payload.status==="string"?payload.status:"unknown";
+        input.onDiagnostic?.({stage:"provider_response",model:usage.model,round:1,attempt:attemptNumber,
+          httpStatus:response.status,providerStatus,modelCallCount:usage.modelCallCount,
+          toolCallCount:usage.toolCallCount});
+        if(payload.status==="incomplete")throw new SupervisorStageError("provider_incomplete",
+          "provider_response",{round:1,attempt:attemptNumber,httpStatus:response.status,providerStatus});
+        if(payload.status!=="completed"||!Array.isArray(payload.output))
+          throw new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:1,attempt:attemptNumber,httpStatus:response.status,providerStatus});
+        const text=textFromResponse(payload.output);
+        if(!text)return null;
+        try{
+          const verified=scopeAuditSchema.parse(JSON.parse(text));
+          return reconcileRequestScopes(declared,verified.goals,verified.complete,verified.ambiguous);
+        }catch{return null;}
+      }catch(error){
+        const classified=error instanceof SupervisorStageError?error:
+          new SupervisorStageError("provider_invalid_payload","provider_response",
+            {round:1,attempt:attemptNumber});
+        input.onDiagnostic?.({stage:classified.stage,category:classified.category,
+          model,round:1,attempt:attemptNumber,httpStatus:classified.httpStatus,
+          providerStatus:classified.providerStatus,timeout:classified.timeout,
+          providerErrorType:classified.providerErrorType,providerErrorCode:classified.providerErrorCode,
+          providerRequestId:classified.providerRequestId,modelCallCount:usage.modelCallCount,
+          toolCallCount:usage.toolCallCount});
+        // Same transient classification as the established main transport.
+        // No access fallback here, because the primary model already answered.
+        const retry=classified.category==="provider_timeout"||
+          classified.category==="provider_incomplete"||
+          classified.category==="provider_invalid_payload"||
+          (classified.category==="provider_http"&&
+            (classified.httpStatus===undefined||
+            [408,409,429].includes(classified.httpStatus)||classified.httpStatus>=500));
+        if(!retry||attempt===1)throw classified;
+      }finally{clearTimeout(timeout);}
+    }
+    throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:1});
+  }
+  const clarification={
+    en:"I couldn't reliably identify every part of that question. Please ask the parts separately so nothing is missed.",
+    es:"No pude identificar con seguridad todas las partes de la pregunta. Consulta cada parte por separado para que no falte ninguna.",
+    ar:"لم أتمكن من تحديد جميع أجزاء السؤال بثقة. يُرجى طرح كل جزء على حدة حتى لا يفوتني شيء.",
+  }[input.locale];
+
   for (let round=0;round<MAX_ROUNDS;round++) {
     let payload: Record<string,unknown> | null = null;
     for (let attempt=0;attempt<2;attempt++) {
@@ -256,27 +470,44 @@ export async function runSupervisorTurn(input: {
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     if (round===0 && !calls.length) throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
     if (calls.length) {
-      if(calls.some(x=>x.name==="conversation_control") && calls.length!==1)
+      const declarations=calls.filter(x=>x.name==="declare_request_scope");
+      const reads=calls.filter(x=>x.name!=="declare_request_scope");
+      if(declarations.length>1 || (round!==0 && declarations.length) ||
+        (round===0 && reads.some(x=>x.name!=="conversation_control") && declarations.length!==1) ||
+        (declarations.length>0 && reads.some(x=>x.name==="conversation_control")))
         throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
-      if(round>0 && calls.some(x=>x.name==="conversation_control"))
+      if (reads.some(x=>x.name==="conversation_control") && reads.length!==1)
         throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
-      if (round===MAX_ROUNDS-1 || usage.toolCallCount+calls.length>MAX_TOOLS)
+      if(round>0 && reads.some(x=>x.name==="conversation_control"))
+        throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
+      if (round===MAX_ROUNDS-1 || usage.toolCallCount+reads.length>MAX_TOOLS)
         throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
       const duplicates = new Set<string>();
       for (const call of calls) {
         if (duplicates.has(call.call_id)) throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});
         duplicates.add(call.call_id);
       }
-      // Preserve every Responses output item, including reasoning, and pair each tool output by call_id.
       conversation.push(...(output as unknown[]));
-      for (const call of calls) {
+      if(declarations.length){
+        let firstScope:RequestedGoal[];
+        try{firstScope=requestScopeSchema.parse(declarations[0].arguments).goals;}
+        catch{throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});}
+        const audited=await auditFirstScope(normalizeRequestedGoals(firstScope));
+        if(!audited)return {reply:{intent:"unknown",status:"unavailable",evidence:[],
+          blocks:[{type:"text",text:clarification}]},usage};
+        requestedGoals=audited;
+        conversation.push({type:"function_call_output",call_id:declarations[0].call_id,
+          output:JSON.stringify({accepted:true,goals:requestedGoals.length,
+            note:"Scope verified independently before any café read."})});
+      }
+      for (const call of reads) {
         ++usage.toolCallCount;
         input.onDiagnostic?.({stage:"tool_execution",model,round:round+1,
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         let result:ToolEvidence;
         try {result=await registry(call,usage.toolCallCount);}
         catch {throw new SupervisorStageError("tool_execution","tool_execution",{round:round+1});}
-        called.push(call.name);toolResults.push(result);
+        called.push(call.name);executed.push(call);toolResults.push(result);
         const trimmed = JSON.stringify(result);
         if (trimmed.length>14000) throw new SupervisorStageError("tool_execution","tool_execution",{round:round+1});
         conversation.push({type:"function_call_output",call_id:call.call_id,output:trimmed});
@@ -292,7 +523,27 @@ export async function runSupervisorTurn(input: {
     try { parsed=JSON.parse(text); } catch { throw new SupervisorStageError("final_output_malformed","final_response_parse",{round:round+1}); }
     input.onDiagnostic?.({stage:"final_response_validation",model,round:round+1,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
-    try {return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale),usage};}
+
+    // Bounded deterministic repair of missing declared goals. Never exceed the
+    // established five CAFÉ read-tool calls, and never invent evidence for a goal.
+    if(requestedGoals){
+      for(const goal of requestedGoals){
+        if(executed.some(c=>coversRequestedGoal(goal,c)))continue;
+        if(usage.toolCallCount>=MAX_TOOLS)break;
+        const fallback=fallbackCallForGoal(goal);
+        if(!fallback)continue;
+        const call:SupervisorToolCall={...fallback,call_id:"scope:"+usage.toolCallCount};
+        ++usage.toolCallCount;
+        let result:ToolEvidence;
+        try {result=await registry(call,usage.toolCallCount);}
+        catch {result={status:"unavailable",coverage:{},missingInputs:["readFailed"],
+          estimatedInputs:[],data:null,facts:[],tasks:[],insights:[],evidence:[]};}
+        executed.push(call);called.push(call.name);toolResults.push(result);
+        input.onUsage?.({...usage});
+      }
+    }
+    try {return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale,
+      requestedGoals??[],executed),usage};}
     catch {throw new SupervisorStageError("final_output_validation","final_response_validation",{round:round+1});}
   }
   throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:MAX_ROUNDS});

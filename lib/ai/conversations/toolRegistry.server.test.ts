@@ -93,15 +93,18 @@ describe("Read-only domain registry computes grounded facts and trusted insights
        asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[]});
      return local({name:"get_pricing",arguments:{product_name:null,limit:10},call_id:"pricing"},1);
    };
-   const zero=await evaluate(pricing("KEEP_PRICE"));
-   expect(zero.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Verified review-ready price changes",value:0})]));
+   const zero=await evaluate(pricing("KEEP_CURRENT_PRICE"));
+   expect(zero.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Verified price changes",value:0})]));
    expect(zero.insights.some(i=>i.text.includes("No verified review-ready"))).toBe(true);
    const blocked=await evaluate(pricing("PRICE_UNAVAILABLE",["ingredientCost"]));
    expect(blocked.status).toBe("partial");
-   expect(blocked.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Products blocked by missing pricing inputs",value:1})]));
+   expect(blocked.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Products still needing complete pricing data",value:1})]));
    expect(blocked.insights.some(i=>i.text.includes("No verified review-ready"))).toBe(false);
    const review=await evaluate(pricing("REVIEW_PRICE"));
    expect(review.facts).toEqual(expect.arrayContaining([expect.objectContaining({label:"Latte recommended price (review only)",value:650})]));
+   const first=await evaluate({...pricing("NEW_PRICE"),recommendedPriceCents:700});
+   expect(first.data).toMatchObject({examined:1,evaluated:1,newPrice:1,blocked:0,noChange:0});
+   expect(first.facts).toContainEqual(expect.objectContaining({label:"Products with first-price recommendations",value:1}));
  });
 
 });
@@ -136,5 +139,18 @@ describe("Explicit item-sales coverage and natural staffing notice",()=>{
     const recorded=await local({name:"get_staff",
       arguments:{view:"current_staffing",...dates("today")},call_id:"present"},1);
     expect(recorded.insights.some(x=>x.text.includes("schedule rather than"))).toBe(false);
+  });
+});
+
+describe("Metadata-only scope cannot execute as a café tool",()=>{
+  it("rejects direct invocation without calling any authorized reader",async()=>{
+    const scope={name:"declare_request_scope" as const,call_id:"scope",
+      arguments:{goals:[{domain:"total_business_costs",period:"month_to_date",
+        from:null,to:null,comparison_period:null,comparison_from:null,comparison_to:null}]}};
+    const reader=vi.fn();
+    const scoped=createSupervisorToolRegistry({tools:{...tools,getProfitability:reader} as unknown as BusinessScopedCafeTools,
+      asOf:"2026-10-10",cafeName:"Sample",timezone:"America/Los_Angeles",readRules:async()=>[]});
+    await expect(scoped(scope,1)).rejects.toThrow("metadata");
+    expect(reader).not.toHaveBeenCalled();
   });
 });

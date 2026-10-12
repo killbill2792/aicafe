@@ -1,6 +1,7 @@
 import {beforeAll,afterAll,beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
+import {runSupervisorTurn as actualRunSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
+import type {RequestedGoal} from "./requestScope";
 import {parseSupervisorCalls} from "./toolRegistry.server";
 import {SupervisorStageError,createSupervisorDiagnosticLogger} from "./diagnostics.server";
 import {buildSupervisorInstructions,buildSupervisorRequest} from "./supervisorRequest.mjs";
@@ -15,8 +16,68 @@ const finish=(ids:string[],insightIds:string[]=[])=>({type:"message",content:[{
     summary:"Based on the available café records",fact_ids:ids,task_ids:[],
     insight_ids:insightIds,evidence_refs:[]}),
 }]});
+const withComparison=(goal:Record<string,unknown>)=>({
+  comparison_period:null,comparison_from:null,comparison_to:null,...goal,
+});
+const withDeclaredScope=(raw:unknown[])=>{
+  const output=raw.map(x=>{
+    if(!x||typeof x!=="object"||(x as {name?:string}).name!=="declare_request_scope")return x;
+    const c=x as {arguments:string};
+    const args=JSON.parse(c.arguments);
+    return {...x,arguments:JSON.stringify({...args,goals:args.goals.map(withComparison)})};
+  });
+  const calls=output.filter((x):x is {type:string;name:string;arguments:string}=>Boolean(x)&&
+    typeof x==="object"&&(x as {type?:string}).type==="function_call" &&
+    typeof (x as {name?:string}).name==="string");
+  if(!calls.length||calls.some(c=>c.name==="declare_request_scope"||c.name==="conversation_control"))return output;
+  const domains:Record<string,string>={
+    get_cafe_overview:"overview",get_sales:"sales",get_menu:"menu_count",
+    get_financials:"total_business_costs",get_staff:"staff_cost",
+    get_team:"team",get_pricing:"pricing_review",get_owner_rules:"owner_rules",
+    compare_periods:"comparison",
+  };
+  const goals=calls.flatMap(c=>{
+    const domain=domains[c.name];if(!domain)return [];
+    let args:Record<string,unknown>;
+    try{args=JSON.parse(c.arguments) as Record<string,unknown>;}catch{return [];}
+    const special=c.name==="get_financials"?({
+      monthly_bills:"monthly_bills",owner_profit:"owner_profit",
+      recorded_spending:"recorded_spending",break_even:"break_even",
+    } as Record<string,string>)[String(args.metric)]:undefined;
+    const resolved=c.name==="get_staff"&&args.view!=="labor_cost"?"staffing":
+      c.name==="get_sales"&&args.metric==="distinct_products"?"distinct_products":special??domain;
+    return [{domain:resolved,period:args.period??"month_to_date",from:args.from??null,to:args.to??null}];
+  });
+  if(!goals.length)return output;
+  return [call("declare_request_scope",{goals:goals.slice(0,5).map(withComparison)},"scope-declaration"),...output];
+};
 const response=(output:unknown[])=>new Response(JSON.stringify({status:"completed",model:"gpt-6-luna",
-  usage:{input_tokens:100,output_tokens:40},output}),{status:200});
+  usage:{input_tokens:100,output_tokens:40},output:withDeclaredScope(output)}),{status:200});
+const auditPayload=(goals:RequestedGoal[],complete=true,ambiguous=false,model="gpt-6-luna")=>
+  new Response(JSON.stringify({status:"completed",model,
+    usage:{input_tokens:0,output_tokens:0},
+    output:[{type:"message",content:[{type:"output_text",text:JSON.stringify({
+      complete,ambiguous,goals,
+    })}]}]}),{status:200});
+// Legacy transport fixtures still describe the main provider's two-turn loop.
+// Route the NEW audit through a separate fixture response so existing provider
+// fallback/retry mechanics continue to test the original calls independently.
+const runSupervisorTurn:typeof actualRunSupervisorTurn=(input,transport=fetch)=>{
+  let declared:RequestedGoal[]=[];
+  return actualRunSupervisorTurn(input,async(url,init)=>{
+    const body=JSON.parse(String(init.body)) as {text?:{format?:{name?:string}}};
+    if(body.text?.format?.name==="supervisor_scope_audit")return auditPayload(declared,true,false,(body as {model?:string}).model);
+    const response=await transport(url,init);
+    if(response.ok){
+      try{
+        const payload=await response.clone().json() as {output?:Array<{name?:string;arguments?:string}>};
+        const scope=payload.output?.find(x=>x.name==="declare_request_scope");
+        if(scope?.arguments)declared=(JSON.parse(scope.arguments) as {goals:RequestedGoal[]}).goals;
+      }catch{/* malformed provider output is tested by the normal parser */}
+    }
+    return response;
+  });
+};
 const bills=call("get_financials",{metric:"monthly_bills",period:"month_to_date",from:null,to:null},"c1");
 const team=call("get_team",{status:"handled",agent:"all",view:"tasks",limit:3},"c2");
 const sales=call("get_sales",{metric:"net_sales",group_by:"total",period:"previous_week",from:null,to:null,
@@ -45,7 +106,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     });
     const r=await runSupervisorTurn({...base,history:[{role:"owner",text:"What needs me?"},
       {role:"supervisor",text:"AI Team handled a supply check."}]},transport);
-    expect(r.usage).toMatchObject({modelCallCount:2,toolCallCount:2,inputTokens:200,outputTokens:80});
+    expect(r.usage).toMatchObject({modelCallCount:3,toolCallCount:2,inputTokens:200,outputTokens:80});
     expect(bodies[0].tool_choice).toBe("required");
     expect(bodies[1].tool_choice).toBe("auto");
     expect(bodies[1].input).toEqual(expect.arrayContaining([
@@ -55,7 +116,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     ]));
     expect(JSON.stringify(bodies)).not.toContain("business_id");
   });
-  it("production request exposes the exact ten shared tool schemas, including compare and control",async()=>{
+  it("production request includes ten read/control tools plus bounded semantic scope metadata",async()=>{
     const shared = (await import("./supervisorFunctions.mjs")).SUPERVISOR_FUNCTIONS;
     const bodies:Record<string,unknown>[]=[];
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
@@ -65,9 +126,9 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     });
     await runSupervisorTurn({...base,text:"Hi"},transport);
     const offered=bodies[0].tools as Array<{name:string}>;
-    expect(offered).toHaveLength(10);
+    expect(offered).toHaveLength(11);
     expect(offered.map(x=>x.name)).toEqual(shared.map(x=>x.name));
-    expect(new Set(offered.map(x=>x.name)).size).toBe(10);
+    expect(new Set(offered.map(x=>x.name)).size).toBe(11);
     expect(offered).toEqual(expect.arrayContaining([
       expect.objectContaining({name:"compare_periods"}),
       expect.objectContaining({name:"conversation_control"}),
@@ -110,7 +171,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     const expected=buildSupervisorRequest({model:"gpt-6-luna",instructions,
       input:[{role:"user",content:"Hi"}],round:0});
     expect(bodies[0]).toEqual(expected);
-    expect((bodies[0].tools as unknown[]).length).toBe(10);
+    expect((bodies[0].tools as unknown[]).length).toBe(11);
   });
   it("reports provider non-2xx without swallowing its safe HTTP status",async()=>{
     const stages:string[]=[];
@@ -242,16 +303,18 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     await expect(runSupervisorTurn(base,over)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
   });
   it("maintains max three rounds; third round cannot request another tool",async()=>{
+    const bare=(output:unknown[])=>new Response(JSON.stringify({status:"completed",
+      model:"gpt-6-luna",usage:{input_tokens:100,output_tokens:40},output}),{status:200});
     const transport=vi.fn().mockResolvedValueOnce(response([bills]))
-      .mockResolvedValueOnce(response([team]))
-      .mockResolvedValueOnce(response([bills]));
+      .mockResolvedValueOnce(bare([team]))
+      .mockResolvedValueOnce(bare([bills]));
     await expect(runSupervisorTurn(base,transport)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
     expect(transport).toHaveBeenCalledTimes(3);
   });
 });
 
 const resultFor=(model:string,output:unknown[])=>new Response(JSON.stringify({
-  status:"completed",model,usage:{input_tokens:100,output_tokens:40},output,
+  status:"completed",model,usage:{input_tokens:100,output_tokens:40},output:withDeclaredScope(output),
 }),{status:200});
 const providerFailure=(status:number,code?:string)=>new Response(JSON.stringify({
   error:{type:"invalid_request_error",code,message:"DO NOT LOG provider error.message"},
@@ -299,7 +362,7 @@ describe("Bounded initial provider model fallback (never mid-conversation)",()=>
     expect(requests.every(r=>(r.input as Array<{role?:string}>).filter(x=>x.role==="user").length===1)).toBe(true);
     expect(requests[0].input).toEqual(requests[1].input);
     expect(answer.usage).toMatchObject({model:"gpt-4.1-mini",inputTokens:200,
-      outputTokens:80,modelCallCount:2,toolCallCount:1});
+      outputTokens:80,modelCallCount:3,toolCallCount:1});
     expect(reports.every(u=>u.model==="gpt-4.1-mini")).toBe(true);
     expect(events).toContainEqual(expect.objectContaining({
       stage:"provider_fallback",fromModel:"gpt-6-luna",toModel:"gpt-4.1-mini",
@@ -425,7 +488,7 @@ describe("Verified multi-domain owner response (mock Responses, real registry)",
       getCafeSummary:vi.fn(async()=>({
         products:{available:true,value:[{id:"latte",name:"Latte"}],quality},
         pricingRecommendations:{available:true,value:{latte:{
-          status:"KEEP_PRICE",recommendedPriceCents:null,
+          status:"KEEP_CURRENT_PRICE",recommendedPriceCents:null,
           calculationMode:"BENCHMARK",dataQuality:quality,
         }},quality},
       })),
@@ -443,10 +506,10 @@ describe("Verified multi-domain owner response (mock Responses, real registry)",
     expect((requests[1].input as Array<{call_id?:string}>).filter(x=>x.call_id).map(x=>x.call_id))
       .toEqual(expect.arrayContaining(["staff-call","menu-call","pricing-call"]));
     expect(result.reply.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({type:"metric",label:"Recorded loaded staff cost",valueCents:10000}),
-      expect.objectContaining({type:"count",label:"Active menu products",value:1}),
-      expect.objectContaining({type:"count",label:"Verified review-ready price changes",value:0}),
-      expect.objectContaining({type:"text",text:expect.stringContaining("No verified review-ready price changes")}),
+      expect.objectContaining({type:"metric",label:"Staff cost — today",valueCents:10000}),
+      expect.objectContaining({type:"count",label:"Products on your menu",value:1}),
+      expect.objectContaining({type:"count",label:"Verified price changes",value:0}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("No price changes are currently verified")}),
     ]));
     expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("Here is what"))).toBe(false);
     expect(result.reply.status).toBe("verified");
@@ -460,5 +523,322 @@ describe("Verified multi-domain owner response (mock Responses, real registry)",
     }],["get_menu"]);
     expect(result.status).toBe("unavailable");
     expect(result.blocks.every(b=>b.type!=="text"||!b.text.includes("Here is what"))).toBe(true);
+  });
+});
+
+
+describe("Four-domain semantic request-coverage contract",()=>{
+  const scope=call("declare_request_scope",{goals:[
+    {domain:"total_business_costs",period:"month_to_date",from:null,to:null},
+    {domain:"staff_cost",period:"month_to_date",from:null,to:null},
+    {domain:"menu_count",period:"month_to_date",from:null,to:null},
+    {domain:"pricing_review",period:"month_to_date",from:null,to:null},
+  ]},"scope");
+  const staff=call("get_staff",{view:"labor_cost",period:"month_to_date",from:null,to:null},"staff");
+  const menu=call("get_menu",{view:"count",scope:"all",product_name:null,limit:15},"menu");
+  const pricing=call("get_pricing",{product_name:null,limit:10},"pricing");
+  const q={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
+  const catalog=Array.from({length:14},(_,i)=>({id:"p"+i,name:"Product "+i,active:true,
+    category:"drink" as const,priceCents:500}));
+  const recommendations=Object.fromEntries(catalog.map((p,i)=>[p.id,{
+    status:i<2?"KEEP_CURRENT_PRICE":"PRICE_UNAVAILABLE",recommendedPriceCents:null,
+    calculationMode:"BENCHMARK",
+    dataQuality:{...q,missingInputs:i<2?[]:["ingredientCost"]},
+  }]));
+  function fixture(costAvailable=true){
+    return {...tools,
+      getProfitability:vi.fn(async()=>costAvailable?{
+        available:true,value:{totalCostsCents:950000,ownerProfitCents:250000},quality:q,
+      }:{available:false,value:null,quality:{...q,level:"low",missingInputs:["profitMissing"]}}),
+      getLaborMetrics:vi.fn(async()=>({available:true,value:Array.from({length:12},(_,i)=>({
+        date:"2026-10-"+String(i+1).padStart(2,"0"),loadedStaffCostCents:i===0?372172:0,
+      })),quality:q})),
+      getMenuCatalog:vi.fn(async()=>({available:true,value:catalog,quality:q})),
+      getCafeSummary:vi.fn(async()=>({
+        products:{available:true,value:catalog,quality:q},
+        pricingRecommendations:{available:true,value:recommendations,quality:q},
+      })),
+    } as unknown as BusinessScopedCafeTools;
+  }
+  const messages=[
+    "What are my total costs, what are my staff costs, how many products are in my menu, and are any price revisions needed?",
+    "Give me my costs, labor, menu count and anything that needs repricing.",
+    "How much are we spending, what is payroll costing, how many menu items do we have, and should prices change?",
+  ];
+  for(const question of messages)it("preserves all four owner sub-goals: "+question.slice(0,35),async()=>{
+    const requests:unknown[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      requests.push(JSON.parse(String(init.body)));
+      return requests.length===1?response([scope,staff,menu,pricing]):
+        response([finish(["t1:labor","t2:count","t3:pricingCount"])]);
+    });
+    const result=await runSupervisorTurn({...base,text:question,asOf:"2026-10-12",tools:fixture()},transport);
+    expect(result.usage.toolCallCount).toBe(4);
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",label:"Total business costs — month to date",valueCents:950000}),
+      expect.objectContaining({type:"metric",label:"Staff cost — month to date",valueCents:372172}),
+      expect.objectContaining({type:"count",label:"Products on your menu",value:14}),
+      expect.objectContaining({type:"count",label:"Verified price changes",value:0}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("12 / 14")}),
+    ]));
+    expect(result.reply.blocks.some(x=>x.type==="warning"&&x.text.includes("Some relevant café records"))).toBe(false);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.evidence.length).toBeGreaterThan(0);
+    if(question===messages[0])console.info("FOUR_DOMAIN_REGRESSION",JSON.stringify(result.reply.blocks));
+  });
+  it("explicitly displays an unavailable total-cost clause rather than silently omitting it",async()=>{
+    const transport=vi.fn().mockResolvedValueOnce(response([scope,staff,menu,pricing]))
+      .mockResolvedValueOnce(response([finish(["t1:labor","t2:count","t3:pricingCount"])]));
+    const result=await runSupervisorTurn({...base,text:messages[0],asOf:"2026-10-12",
+      tools:fixture(false)},transport);
+    expect(result.reply.blocks).toContainEqual({type:"text",
+      text:"Total business costs: Unable to verify from the available records."});
+    expect(result.reply.blocks.some(b=>b.type==="count"&&b.label==="Products on your menu")).toBe(true);
+    expect(result.reply.status).toBe("partial");
+  });
+  it("localizes the four-domain labels and notices in Spanish and Arabic",async()=>{
+    for(const locale of ["es","ar"] as const){
+      const transport=vi.fn().mockResolvedValueOnce(response([scope,staff,menu,pricing]))
+        .mockResolvedValueOnce(response([finish([])]));
+      const result=await runSupervisorTurn({...base,locale,text:messages[0],asOf:"2026-10-12",
+        tools:fixture(false)},transport);
+      expect(result.reply.blocks.filter(b=>b.type==="metric"||b.type==="count")).toHaveLength(3);
+      expect(JSON.stringify(result.reply.blocks)).not.toContain("Recorded loaded staff cost");
+      expect(JSON.stringify(result.reply.blocks)).not.toContain("Some relevant café records");
+      expect(JSON.stringify(result.reply.blocks)).toContain(locale==="es"?"Costo del personal":"تكلفة الموظفين");
+      expect(JSON.stringify(result.reply.blocks)).toContain(locale==="es"?"No se puede verificar":"تعذّر التحقق");
+    }
+  });
+
+  const fullGoals=[
+    {domain:"total_business_costs",period:"month_to_date",from:null,to:null},
+    {domain:"staff_cost",period:"month_to_date",from:null,to:null},
+    {domain:"menu_count",period:"month_to_date",from:null,to:null},
+    {domain:"pricing_review",period:"month_to_date",from:null,to:null},
+  ].map(withComparison) as RequestedGoal[];
+  for(const excluded of ["total_business_costs","pricing_review"] as const){
+    it("repairs a three-goal first scope omitting "+excluded+" via ONE independent audit",async()=>{
+      const firstGoals=fullGoals.filter(g=>g.domain!==excluded);
+      const selectedReads=excluded==="total_business_costs"?[staff,menu,pricing]:[
+        call("get_financials",{metric:"total_business_costs",period:"month_to_date",
+          from:null,to:null},"costs"),staff,menu,
+      ];
+      const reads=fixture();
+      const reqs:Array<Record<string,unknown>>=[];
+      const provider=vi.fn(async(_url:string,init:RequestInit)=>{
+        const body=JSON.parse(String(init.body)) as Record<string,unknown>;
+        reqs.push(body);
+        if(body.text && (body.text as {format?:{name?:string}}).format?.name==="supervisor_scope_audit")
+          return auditPayload(fullGoals);
+        if(reqs.length===1)return response([call("declare_request_scope",{goals:firstGoals},"partial-scope"),
+          ...selectedReads]);
+        return response([finish([])]);
+      });
+      const result=await actualRunSupervisorTurn({...base,text:messages[0],
+        asOf:"2026-10-12",tools:reads},provider);
+      expect(result.usage.toolCallCount).toBe(4);
+      expect(result.usage.modelCallCount).toBe(3);
+      expect(reqs).toHaveLength(3);
+      expect((reqs[1].text as {format:{name:string}}).format.name).toBe("supervisor_scope_audit");
+      expect(reqs[1]).not.toHaveProperty("tools");
+      expect(reqs[1]).not.toHaveProperty("tool_choice");
+      expect(JSON.stringify(reqs[1])).not.toContain("business_id");
+      expect(result.reply.blocks.filter(x=>x.type==="metric"||x.type==="count").map(x=>x.label))
+        .toEqual(["Total business costs — month to date","Staff cost — month to date",
+          "Products on your menu","Verified price changes"]);
+      expect(result.reply.blocks.filter(x=>x.type==="warning"||x.type==="text")
+        .some(x=>x.text.includes("12 / 14"))).toBe(true);
+    });
+  }
+  it("fails closed before ANY café read when independent audit conflicts or is ambiguous",async()=>{
+    for(const outcome of [
+      {goals:fullGoals.filter(g=>g.domain!=="pricing_review"),complete:true,ambiguous:false},
+      {goals:fullGoals,complete:false,ambiguous:false},
+      {goals:fullGoals,complete:true,ambiguous:true},
+    ]){
+      const readers=fixture();
+      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+        const body=JSON.parse(String(init.body));
+        if(body.text?.format?.name==="supervisor_scope_audit")
+          return auditPayload(outcome.goals,outcome.complete,outcome.ambiguous);
+        return response([call("declare_request_scope",{goals:fullGoals},"all-four"),staff,menu,pricing]);
+      });
+      const result=await actualRunSupervisorTurn({...base,text:messages[0],
+        asOf:"2026-10-12",tools:readers},transport);
+      expect(result.reply.status).toBe("unavailable");
+      expect(result.reply.blocks).toEqual([{type:"text",
+        text:"I couldn't reliably identify every part of that question. Please ask the parts separately so nothing is missed."}]);
+      expect(result.usage.toolCallCount).toBe(0);
+      expect(vi.mocked(readers.getMenuCatalog)).not.toHaveBeenCalled();
+      expect(vi.mocked(readers.getProfitability)).not.toHaveBeenCalled();
+    }
+  });
+  it("deduplicates repeated goals: four owner facts, four café reads, no duplicate cards",async()=>{
+    const duplicate=[fullGoals[0],fullGoals[1],fullGoals[1],fullGoals[2],fullGoals[3]];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const req=JSON.parse(String(init.body));
+      if(req.text?.format?.name==="supervisor_scope_audit")return auditPayload(fullGoals);
+      if(req.tool_choice==="required")return response([call("declare_request_scope",{goals:duplicate},"duplicate"),
+        staff,menu,pricing]);
+      return response([finish([])]);
+    });
+    const result=await actualRunSupervisorTurn({...base,text:messages[0],asOf:"2026-10-12",
+      tools:fixture()},transport);
+    expect(result.usage.toolCallCount).toBe(4);
+    expect(result.reply.blocks.filter(b=>b.type==="metric"||b.type==="count").map(b=>b.label))
+      .toEqual(["Total business costs — month to date","Staff cost — month to date",
+        "Products on your menu","Verified price changes"]);
+  });
+  it("metadata is non-executable, rejects SQL / business_id, and cannot mix with control or redeclare",async()=>{
+    const {SUPERVISOR_FUNCTIONS}=await import("./supervisorFunctions.mjs");
+    const m=SUPERVISOR_FUNCTIONS.find(x=>x.name==="declare_request_scope");
+    expect(m).toBeDefined();
+    expect(m?.parameters.additionalProperties).toBe(false);
+    expect(JSON.stringify(m?.parameters)).not.toMatch(/business_id|query|sql|writes|UPDATE /);
+    expect(SUPERVISOR_FUNCTIONS.filter(x=>x.name!=="declare_request_scope")).toHaveLength(10);
+    for(const output of [
+      [call("declare_request_scope",{goals:fullGoals,business_id:"foreign"},"scope")],
+      [call("declare_request_scope",{goals:[{...fullGoals[0],sql:"select 1"}]},"scope")],
+      [call("declare_request_scope",{goals:[...fullGoals,fullGoals[0],fullGoals[1]]},"scope")],
+      [call("declare_request_scope",{goals:fullGoals},"scope"),control],
+    ]){
+      const provider=vi.fn().mockResolvedValue(response(output));
+      await expect(actualRunSupervisorTurn({...base,text:messages[0]},provider))
+        .rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
+      expect(provider).toHaveBeenCalledTimes(1);
+    }
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const req=JSON.parse(String(init.body));
+      if(req.text?.format?.name==="supervisor_scope_audit")return auditPayload(fullGoals);
+      if(req.tool_choice==="required")return response([
+        call("declare_request_scope",{goals:fullGoals},"scope"),staff]);
+      return response([call("declare_request_scope",{goals:fullGoals},"again")]);
+    });
+    await expect(actualRunSupervisorTurn({...base,text:messages[0],tools:fixture()},transport))
+      .rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
+  });
+
+});
+
+describe("Mandatory independent scope-audit provider reliability",()=>{
+  const onlyGoal=withComparison({domain:"monthly_bills",period:"month_to_date",
+    from:null,to:null}) as RequestedGoal;
+  const scopeCall=call("declare_request_scope",{goals:[onlyGoal]},"scope-retry");
+  const first=()=>response([scopeCall,bills]);
+  const last=()=>response([finish(["t1:bills"])]);
+  const countedReader=()=>vi.fn(async()=>({
+    available:true,value:{totalCents:730000},quality,
+  }));
+  function harness(auditResults:Array<Response|Error>){
+    const read=countedReader(),requests:Array<Record<string,unknown>>=[],diagnostics:Array<Record<string,unknown>>=[];
+    let cursor=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body)) as Record<string,unknown>;
+      requests.push(request);
+      if(request.tool_choice==="required")return first();
+      if((request.text as {format?:{name?:string}})?.format?.name==="supervisor_scope_audit"){
+        const next=auditResults[cursor++];
+        if(!next)throw new Error("Unexpected extra scope audit request");
+        if(next instanceof Error)throw next;
+        return next;
+      }
+      return last();
+    });
+    const run=()=>actualRunSupervisorTurn({...base,text:"What are my monthly bills?",
+      tools:{...tools,getMonthlyBills:read} as unknown as BusinessScopedCafeTools,
+      onDiagnostic:diagnostic=>diagnostics.push(diagnostic as Record<string,unknown>)},transport);
+    return {run,read,requests,diagnostics,transport,
+      auditRequests:()=>requests.filter(r=>(r.text as {format?:{name?:string}})?.format?.name==="supervisor_scope_audit")};
+  }
+  const errorStatus=(status:number,code="rate_limit_exceeded")=>new Response(JSON.stringify({
+    error:{type:"invalid_request_error",code,message:"PRIVATE provider message must stay private"},
+  }),{status,headers:{"content-type":"application/json","x-request-id":"req_scope-retry_1"}});
+  for(const status of [408,409,429,500,503]){
+    it("transient audit HTTP "+status+" retries once, succeeds, then reads café",async()=>{
+      const h=harness([errorStatus(status),auditPayload([onlyGoal])]);
+      const result=await h.run();
+      expect(result.reply.blocks).toContainEqual(expect.objectContaining({
+        type:"metric",valueCents:730000,
+      }));
+      expect(result.usage).toMatchObject({modelCallCount:3,toolCallCount:1,
+        inputTokens:200,outputTokens:80});
+      expect(h.auditRequests()).toHaveLength(2);
+      expect(h.requests).toHaveLength(4);
+      expect(h.auditRequests()[0].model).toBe(h.auditRequests()[1].model);
+      expect(h.auditRequests()[0].model).toBe("gpt-6-luna");
+      expect(h.auditRequests()[0]).not.toHaveProperty("tools");
+      expect(h.read).toHaveBeenCalledTimes(1);
+      expect(h.diagnostics).toContainEqual(expect.objectContaining({
+        category:"provider_http",httpStatus:status,attempt:1,round:1,
+        providerErrorCode:"rate_limit_exceeded",providerRequestId:"req_scope-retry_1",
+      }));
+    });
+  }
+  it("true AbortError timeout retries once and succeeds (without an extra semantic audit)",async()=>{
+    const timeout=Object.assign(new Error("private aborted transport"),{name:"AbortError"});
+    const h=harness([timeout,auditPayload([onlyGoal])]);
+    const result=await h.run();
+    expect(result.usage).toMatchObject({modelCallCount:3,toolCallCount:1});
+    expect(h.auditRequests()).toHaveLength(2);
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      category:"provider_timeout",stage:"provider_request",timeout:true,attempt:1,
+    }));
+  });
+  it("400 unsupported_parameter terminates without retry and keeps safe provider identifiers",async()=>{
+    const h=harness([errorStatus(400,"unsupported_parameter")]);
+    await expect(h.run()).rejects.toMatchObject({
+      category:"provider_http",stage:"provider_response",httpStatus:400,
+      providerErrorCode:"unsupported_parameter",providerRequestId:"req_scope-retry_1",
+    });
+    expect(h.auditRequests()).toHaveLength(1);
+    expect(h.requests).toHaveLength(2);
+    expect(h.read).not.toHaveBeenCalled();
+    expect(JSON.stringify(h.diagnostics)).not.toContain("PRIVATE provider message");
+  });
+  it("non-timeout transport error remains provider_http after the bounded retry",async()=>{
+    const h=harness([new Error("SECRET ECONNRESET"),new Error("SECRET offline")]);
+    await expect(h.run()).rejects.toMatchObject({
+      category:"provider_http",stage:"provider_request",timeout:false,
+    });
+    expect(h.auditRequests()).toHaveLength(2);
+    expect(h.requests).toHaveLength(3);
+    expect(h.read).not.toHaveBeenCalled();
+    expect(JSON.stringify(h.diagnostics)).not.toContain("SECRET");
+  });
+  it("two transient 429 failures terminate, preserve sanitized identifiers, and read NO café data",async()=>{
+    const h=harness([errorStatus(429),errorStatus(429)]);
+    await expect(h.run()).rejects.toMatchObject({
+      category:"provider_http",stage:"provider_response",httpStatus:429,
+      providerErrorCode:"rate_limit_exceeded",providerRequestId:"req_scope-retry_1",
+      attempt:2,
+    });
+    expect(h.auditRequests()).toHaveLength(2);
+    expect(h.requests).toHaveLength(3);
+    expect(h.read).not.toHaveBeenCalled();
+  });
+  it("two timeouts terminate without a third attempt or a café read",async()=>{
+    const abort=()=>Object.assign(new Error("aborted"),{name:"AbortError"});
+    const h=harness([abort(),abort()]);
+    await expect(h.run()).rejects.toMatchObject({
+      category:"provider_timeout",stage:"provider_request",timeout:true,attempt:2,
+    });
+    expect(h.auditRequests()).toHaveLength(2);
+    expect(h.read).not.toHaveBeenCalled();
+  });
+  it("incomplete decoded audit usage is counted before one retry succeeds",async()=>{
+    const incomplete=new Response(JSON.stringify({
+      status:"incomplete",model:"gpt-6-luna",usage:{input_tokens:17,output_tokens:9},
+      output:[],
+    }),{status:200});
+    const h=harness([incomplete,auditPayload([onlyGoal])]);
+    const result=await h.run();
+    expect(result.usage).toMatchObject({modelCallCount:4,toolCallCount:1,
+      inputTokens:217,outputTokens:89});
+    expect(h.auditRequests()).toHaveLength(2);
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(h.diagnostics).toContainEqual(expect.objectContaining({
+      category:"provider_incomplete",stage:"provider_response",attempt:1,
+    }));
   });
 });
