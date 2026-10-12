@@ -10,6 +10,8 @@ import { nextDictationStage } from "@/lib/ai/conversations/dictationState";
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
+import { beginOptimisticOwner, sendKey, visibleConversationMessages,
+  transcriptScrollTarget, responsiveTailSpace } from "./supervisorChatBehavior";
 
 export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
@@ -187,6 +189,7 @@ export default function SupervisorChatComposer({
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
+  const tailSpacer = useRef<HTMLDivElement | null>(null);
   const previousScrollHeight = useRef<number | null>(null);
   const scrollNewestOnOpen = useRef(true);
   const focusTurnId = useRef<string | null>(null);
@@ -296,30 +299,42 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId]);
-  // Align the new owner turn at the TOP once it exists in the DOM. Never force all
-  // subsequent messages to the bottom; respect manual scrolling and older-page restoration.
+  // Scroll only for an initial history load or a new owner turn, not on every reply.
+  // Tail space is calculated from the transcript viewport and collapses after
+  // response completion, instead of leaving a permanent blank 40dvh block.
   useLayoutEffect(() => {
     const node = transcript.current;
     if (!node) return;
     if (previousScrollHeight.current !== null) {
-      node.scrollTop += node.scrollHeight - previousScrollHeight.current;
+      node.scrollTop = transcriptScrollTarget({
+        scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
+        previousScrollHeight: previousScrollHeight.current,
+        anchorDelta: null, userScrolled: false, openNewest: false,
+      }) ?? node.scrollTop;
       previousScrollHeight.current = null;
       return;
     }
-    if (focusTurnId.current && !ownerManuallyScrolled.current) {
-      const anchor = Array.from(node.querySelectorAll<HTMLElement>("[data-client-message-id]"))
-        .find(el=>el.dataset.clientMessageId===focusTurnId.current);
-      if (anchor) {
-        node.scrollTop += anchor.getBoundingClientRect().top - node.getBoundingClientRect().top - 12;
-        scrollNewestOnOpen.current = false;
-        return;
-      }
+    const anchor = focusTurnId.current ? Array.from(node.querySelectorAll<HTMLElement>("[data-client-message-id]"))
+      .find(el => el.dataset.clientMessageId === focusTurnId.current) : null;
+    const rect = node.getBoundingClientRect();
+    const anchorDelta = anchor ? anchor.getBoundingClientRect().top - rect.top : null;
+    const spacer = tailSpacer.current;
+    if (spacer) {
+      const anchorOffset = anchorDelta === null ? 0 : node.scrollTop + anchorDelta;
+      const below = node.scrollHeight - spacer.offsetHeight - anchorOffset;
+      spacer.style.height = anchor
+        ? responsiveTailSpace(node.clientHeight, below, sending) + "px" : "0px";
     }
-    if (scrollNewestOnOpen.current && messages.length) {
-      node.scrollTop = node.scrollHeight;
-      scrollNewestOnOpen.current = false;
-    }
-  }, [messages, optimisticOwner]);
+    const target = transcriptScrollTarget({
+      scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
+      previousScrollHeight: null, anchorDelta,
+      userScrolled: ownerManuallyScrolled.current,
+      openNewest: scrollNewestOnOpen.current,
+    });
+    if (target !== null) node.scrollTop = target;
+    if (anchorDelta !== null && !ownerManuallyScrolled.current) scrollNewestOnOpen.current = false;
+    else if (scrollNewestOnOpen.current && messages.length) scrollNewestOnOpen.current = false;
+  }, [messages, optimisticOwner, sending]);
 
   async function refreshThreads() {
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
@@ -341,11 +356,11 @@ export default function SupervisorChatComposer({
   async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
-    const clientMessageId = existingKey ?? retryId.current ?? crypto.randomUUID();
+    const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
     retryId.current = clientMessageId;
     if (!existingKey) {
       // Optimistic view only: the server owns persistence and idempotency.
-      setOptimisticOwner({id:"pending:"+clientMessageId,text,clientMessageId});
+      setOptimisticOwner(beginOptimisticOwner(text, clientMessageId));
       setRecentTurnId(clientMessageId);
       focusTurnId.current = clientMessageId;
       ownerManuallyScrolled.current = false;
@@ -520,9 +535,8 @@ export default function SupervisorChatComposer({
 
   // Structured Supervisor messages carry an explicit ownerMessageId. An unanswered
   // owner turn can occur anywhere in history, not only at the end of a thread.
-  const displayedMessages: ConversationMessage[] = optimisticOwner && !messages.some(m=>m.clientMessageId===optimisticOwner.clientMessageId)
-    ? [...messages, { ...optimisticOwner, threadId:threadId ?? "", role:"owner", contentType:"text",
-      blocks:null, grounding:null, createdAt:new Date().toISOString() }] : messages;
+  const displayedMessages: ConversationMessage[] = visibleConversationMessages(
+    messages, optimisticOwner, threadId, new Date().toISOString());
   const answeredOwnerIds = new Set(messages.flatMap((message) =>
     message.role === "supervisor" && typeof message.grounding?.ownerMessageId === "string"
       ? [message.grounding.ownerMessageId] : []));
@@ -617,7 +631,7 @@ export default function SupervisorChatComposer({
         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />
         {copy.sending}
       </div>}
-      {recentTurnId && <div aria-hidden="true" className="pointer-events-none min-h-[40dvh]" />}
+      {recentTurnId && <div ref={tailSpacer} aria-hidden="true" className="pointer-events-none shrink-0" />}
     </div>
     <div className="shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>

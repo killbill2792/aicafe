@@ -71,8 +71,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   if (/[\p{N}$€£¥]|https?:\/\/|\bUSD\b/iu.test(statement)) {
     throw new Error("Supervisor natural-language text included unverified numeric or link content");
   }
+  // Fixed connective phrases remain strictly validated but never lead grounded
+  // business answers. Display only facts, task cards and trusted insights.
   const blocks: SupervisorReplyBlock[] = [];
-  if (statement) blocks.push({type:"text",text:statement});
   for (const f of selectedFacts.slice(0,12)) {
     blocks.push(f.kind==="metric"
       ? {type:"metric",label:f.label,valueCents:f.value,source:f.source}
@@ -81,7 +82,7 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   blocks.push(...selectedTasks.slice(0,8));
   for(const insight of selectedInsights)blocks.push({type:"text",text:insight.text});
   const relevant = results;
-  const hasFacts = selectedFacts.length>0 || selectedTasks.length>0 || selectedInsights.length>0 || evidence.length>0;
+  const hasFacts = selectedFacts.length>0 || selectedTasks.length>0 || selectedInsights.length>0;
   const anyPartial = relevant.some(x=>x.status==="partial");
   const anyEstimated = relevant.some(x=>x.status==="estimated");
   const anyMissing = relevant.some(x=>x.status==="unavailable");
@@ -97,7 +98,8 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   };
   if (status==="partial" || status==="estimated" || status==="unavailable")
     blocks.push({type:"warning",code:status,text:notices[locale][status]});
-  if (blocks.length===0) blocks.push({type:"warning",code:"unavailable",text:"No verified café records available for this answer."});
+  if (blocks.length===0 && !hasFacts)
+    blocks.push({type:"warning",code:"unavailable",text:"No verified café records available for this answer."});
   const control=results.length===1?results[0].control:null;
   if(control){
     const messages={

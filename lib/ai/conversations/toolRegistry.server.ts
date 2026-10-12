@@ -253,6 +253,12 @@ export function createSupervisorToolRegistry(context: Context) {
           coveredFrom:coverage.available ? coverage.value.from : null,
           coveredThrough:coverage.available ? coverage.value.through : null,
         });
+        // Canonical item-line coverage is required independently of a returned
+        // product list. Do not infer coverage from rows, a provider, or a date guess.
+        if (!coverage.available || !coverage.value.covered ||
+          !coverage.value.from || coverage.value.from > range.from ||
+          !coverage.value.through || coverage.value.through < range.to ||
+          !coverage.value.sources.length) return absent("itemSalesCoverageNotProven");
         if (!items.available) return result;
         const rows = items.value.filter(x => (a.category === "all" || x.category === a.category) && matchName(x.name, a.product_name));
         const ordered = [...rows].sort((x,y) => a.sort === "lowest" ? x.units-y.units || x.name.localeCompare(y.name)
@@ -397,12 +403,12 @@ export function createSupervisorToolRegistry(context: Context) {
         if(current.available){
           addFact(result,prefix+"current","People shown on shift by Staff",current.value.count,"count",source);
           if (current.value.people.some(person=>person.isSchedulePrediction))
-            addInsight(result,prefix+"status","Some people shown are scheduled, not confirmed clock-ins.",source);
+            addInsight(result,prefix+"status","Some people shown on shift are based on the schedule rather than a recorded clock-in.",source);
           for(const [i,person] of current.value.people.slice(0,8).entries())
             addInsight(result,prefix+"person"+i,
               person.name+" — "+(person.role??"staff")+
-              " ("+(person.isSchedulePrediction?"scheduled prediction":"recorded timecard")+
-              ", break status: "+person.breakStatus+").",source);
+              " ("+(person.isSchedulePrediction?"scheduled shift":"recorded clock-in")+")"+
+              (person.breakStatus && person.breakStatus!=="ok" ? "; break: "+person.breakStatus : "")+".",source);
         }
         return result;
       }

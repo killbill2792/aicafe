@@ -777,5 +777,191 @@
     ],
     "evidenceClass": "partial_or_verified",
     "responseType": "metric"
+  },
+  {
+    "question": "how many products am I selling so far?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many products do I currently sell?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "how many items do we currently offer?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "How many unique items did customers buy this month?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos estoy vendiendo hasta ahora?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos productos ofrecemos actualmente?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Cuántos artículos distintos compraron los clientes este mes?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "¿Necesitamos revisar algún precio?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "هل يمكنك إخباري بعدد المنتجات التي نبيعها حاليًا؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "كم عدد الأصناف التي نقدمها الآن؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "count"
+  },
+  {
+    "question": "كم منتجًا مختلفًا اشترى الزبائن هذا الشهر؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "distinct_products"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "هل تحتاج أسعار القائمة إلى مراجعة؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Could any menu prices use a review?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
   }
 ]

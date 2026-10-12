@@ -7,7 +7,7 @@ import { notFound } from "next/navigation";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
 import SideNav from "@/components/SideNav";
-import { getCafeProfile } from "@/lib/data/getCafeProfile";
+import { getActiveCafeName } from "@/lib/data/getActiveCafeName";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
 import ScreenViewLogger from "@/components/shared/ScreenViewLogger";
@@ -67,7 +67,7 @@ export default async function LocaleLayout({
 
   const locale = await getLocale();
   const dir = getDirection(locale);
-  const cafeProfile = await getCafeProfile();
+  const activeCafeName = await getActiveCafeName();
 
   return (
     <html
@@ -82,7 +82,7 @@ export default async function LocaleLayout({
           <ExpenseIconDefs />
           <ScreenViewLogger />
           <div className="flex min-h-screen w-full flex-1">
-            <SideNav cafeName={cafeProfile.name} />
+            <SideNav cafeName={activeCafeName} />
             <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
           </div>
           <TabBar />
