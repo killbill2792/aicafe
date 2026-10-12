@@ -42,9 +42,19 @@ export async function recordSupervisorUsage(params: {
   scope: ConversationScope; threadId: string; ownerMessageId: string; usage: SupervisorUsage;
 }): Promise<void> {
   const { scope, threadId, ownerMessageId, usage } = params;
-  const cost = estimateSupervisorCostMicros(usage.inputTokens, usage.outputTokens,
-    process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS,
-    process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS);
+  const primaryModel = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
+  // Token rates are model-specific. Unknown/snapshot-mismatched model identities,
+  // or unconfigured fallback rates, must produce NULL rather than primary pricing.
+  const fallbackUsed = Boolean(fallbackModel && fallbackModel!==primaryModel && usage.model===fallbackModel);
+  const primaryUsed = usage.model===primaryModel;
+  const inputRate = fallbackUsed
+    ? process.env.SUPERVISOR_FALLBACK_INPUT_USD_PER_MILLION_TOKENS
+    : primaryUsed ? process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS : undefined;
+  const outputRate = fallbackUsed
+    ? process.env.SUPERVISOR_FALLBACK_OUTPUT_USD_PER_MILLION_TOKENS
+    : primaryUsed ? process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS : undefined;
+  const cost = estimateSupervisorCostMicros(usage.inputTokens, usage.outputTokens,inputRate,outputRate);
   const admin = createAdminSupabaseClient();
   // Atomic additive write: failed attempt plus Retry never discard previously incurred usage.
   const { error } = await admin.rpc("record_supervisor_usage_increment", {

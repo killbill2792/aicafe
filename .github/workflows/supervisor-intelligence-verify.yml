@@ -32,7 +32,8 @@ jobs:
         run: |
           npx eslint 'lib/ai/supervisorFacts.server.ts' 'lib/ai/supervisorFacts.server.test.ts' \
             'lib/ai/tools.ts' 'lib/ai/tools.test.ts' \
-            'lib/ai/conversations/runSupervisorTurn.server.ts' 'lib/ai/conversations/runSupervisorTurn.server.test.ts' \
+            'lib/ai/conversations/runSupervisorTurn.server.ts' 'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/conversations/supervisorRequest.mjs' 'lib/ai/conversations/supervisorRequest.test.ts' \
+            'lib/ai/conversations/usage.server.ts' 'scripts/supervisor-provider-smoke.mjs' \
             'lib/ai/conversations/diagnostics.server.ts' 'lib/ai/conversations/diagnostics.server.test.ts' \
             'lib/ai/conversations/dictationState.ts' 'lib/ai/conversations/dictationState.test.ts' \
             'lib/ai/conversations/contracts.ts' 'lib/ai/conversations/replyValidation.ts' \

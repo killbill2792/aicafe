@@ -21,7 +21,17 @@ try {
     body:JSON.stringify(request),signal:AbortSignal.timeout(18000),
   });
   if(!response.ok){
+    // As in server diagnostics, inspect only bounded error.type / error.code.
+    let providerErrorType,providerErrorCode;
+    const safeIdentifier=value=>typeof value==="string"&&/^[A-Za-z0-9_.-]+$/.test(value.slice(0,64))
+      ?value.slice(0,64):undefined;
+    try{
+      const payload=await response.json();
+      providerErrorType=safeIdentifier(payload?.error?.type);
+      providerErrorCode=safeIdentifier(payload?.error?.code);
+    }catch{/* Non-JSON HTTP failure: status remains sufficient. */}
     console.error(JSON.stringify({category:"provider_http",model,httpStatus:response.status,
+      providerErrorType,providerErrorCode,
       advertisedToolCount:request.tools.length,
       advertisedToolNames:request.tools.map(x=>x.name)}));
     process.exit(1);

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
  * OpenAI payloads, prompts, café data, employee data or credentials. */
 export type SupervisorStage =
   | "conversation_auth" | "owner_message_persisted" | "cafe_tools_created"
-  | "cafe_identity_loaded" | "provider_request" | "provider_response"
+  | "cafe_identity_loaded" | "provider_request" | "provider_response" | "provider_fallback"
   | "tool_call_parse" | "tool_execution" | "final_response_parse"
   | "final_response_validation" | "reply_persistence";
 export type SupervisorErrorCategory =
@@ -17,13 +17,15 @@ export type SupervisorDiagnostic = {
   stage:SupervisorStage; category?:SupervisorErrorCategory;
   model?:string;httpStatus?:number;providerStatus?:string;
   providerErrorType?:string;providerErrorCode?:string;providerRequestId?:string;
+  fromModel?:string;toModel?:string;triggerHttpStatus?:number;
+  triggerProviderErrorType?:string;triggerProviderErrorCode?:string;
   round?:number;attempt?:number;advertisedToolCount?:number;
   advertisedToolNames?:string[];modelCallCount?:number;toolCallCount?:number;
   timeout?:boolean;
 };
 const stages:readonly SupervisorStage[]=[
   "conversation_auth","owner_message_persisted","cafe_tools_created","cafe_identity_loaded",
-  "provider_request","provider_response","tool_call_parse","tool_execution",
+  "provider_request","provider_response","provider_fallback","tool_call_parse","tool_execution",
   "final_response_parse","final_response_validation","reply_persistence",
 ];
 const categories:readonly SupervisorErrorCategory[]=[
@@ -98,6 +100,13 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeProviderIdentifier(d.providerErrorType)?{providerErrorType:safeProviderIdentifier(d.providerErrorType)}:{}),
         ...(safeProviderIdentifier(d.providerErrorCode)?{providerErrorCode:safeProviderIdentifier(d.providerErrorCode)}:{}),
         ...(safeProviderIdentifier(d.providerRequestId)?{providerRequestId:safeProviderIdentifier(d.providerRequestId)}:{}),
+        ...(safeProviderIdentifier(d.fromModel)?{fromModel:safeProviderIdentifier(d.fromModel)}:{}),
+        ...(safeProviderIdentifier(d.toModel)?{toModel:safeProviderIdentifier(d.toModel)}:{}),
+        ...(safeCount(d.triggerHttpStatus)!==undefined?{triggerHttpStatus:d.triggerHttpStatus}:{}),
+        ...(safeProviderIdentifier(d.triggerProviderErrorType)?
+          {triggerProviderErrorType:safeProviderIdentifier(d.triggerProviderErrorType)}:{}),
+        ...(safeProviderIdentifier(d.triggerProviderErrorCode)?
+          {triggerProviderErrorCode:safeProviderIdentifier(d.triggerProviderErrorCode)}:{}),
         ...(safeCount(d.round)!==undefined?{round:d.round}:{}),
         ...(safeCount(d.attempt)!==undefined?{attempt:d.attempt}:{}),
         ...(safeCount(d.advertisedToolCount)!==undefined?{advertisedToolCount:d.advertisedToolCount}:{}),

@@ -1,4 +1,4 @@
-import {beforeAll,afterAll,describe,expect,it,vi} from "vitest";
+import {beforeAll,afterAll,beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {runSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
 import {parseSupervisorCalls} from "./toolRegistry.server";
@@ -247,5 +247,163 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
       .mockResolvedValueOnce(response([bills]));
     await expect(runSupervisorTurn(base,transport)).rejects.toMatchObject({category:"invalid_tool_call",stage:"tool_call_parse"});
     expect(transport).toHaveBeenCalledTimes(3);
+  });
+});
+
+const resultFor=(model:string,output:unknown[])=>new Response(JSON.stringify({
+  status:"completed",model,usage:{input_tokens:100,output_tokens:40},output,
+}),{status:200});
+const providerFailure=(status:number,code?:string)=>new Response(JSON.stringify({
+  error:{type:"invalid_request_error",code,message:"DO NOT LOG provider error.message"},
+  private:"DO NOT LOG private response",
+}),{status,headers:{"content-type":"application/json"}});
+
+describe("Bounded initial provider model fallback (never mid-conversation)",()=>{
+  let priorPrimary:string|undefined,priorFallback:string|undefined;
+  beforeEach(()=>{
+    priorPrimary=process.env.SUPERVISOR_OPENAI_MODEL;
+    priorFallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL;
+    process.env.SUPERVISOR_OPENAI_MODEL="gpt-6-luna";
+    process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL="gpt-4.1-mini";
+  });
+  afterEach(()=>{
+    if(priorPrimary===undefined)delete process.env.SUPERVISOR_OPENAI_MODEL;
+    else process.env.SUPERVISOR_OPENAI_MODEL=priorPrimary;
+    if(priorFallback===undefined)delete process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL;
+    else process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL=priorFallback;
+  });
+  it("403 Luna -> one Mini fallback -> tool -> final; grounded and accounted as Mini",async()=>{
+    const requests:Record<string,unknown>[]=[];
+    const events:Array<Record<string,unknown>>=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const req=JSON.parse(String(init.body)) as Record<string,unknown>;
+      requests.push(req);
+      if(requests.length===1)return providerFailure(403,"project_not_allowed");
+      if(requests.length===2)return resultFor("gpt-4.1-mini",[bills]);
+      if(requests.length===3)return resultFor("gpt-4.1-mini",[finish(["t1:bills"])]);
+      throw Error("Unexpected extra provider call");
+    });
+    const reports:Array<{model:string;inputTokens:number;outputTokens:number}>=[];
+    const answer=await runSupervisorTurn({...base,text:"What are my monthly bills?",
+      onDiagnostic:d=>events.push(d),onUsage:u=>reports.push({...u})},transport);
+    expect(answer.reply.blocks).toContainEqual(expect.objectContaining({
+      type:"metric",valueCents:730000}));
+    expect(transport).toHaveBeenCalledTimes(3);
+    expect(requests.map(r=>r.model)).toEqual(["gpt-6-luna","gpt-4.1-mini","gpt-4.1-mini"]);
+    expect(requests[0]).toMatchObject({reasoning:{effort:"none"}});
+    expect(requests[1]).not.toHaveProperty("reasoning");
+    expect(requests[2]).not.toHaveProperty("reasoning");
+    expect(requests[1].tools).toEqual(requests[0].tools);
+    expect(requests[1].tool_choice).toBe("required");
+    expect(requests[2].tool_choice).toBe("auto");
+    expect(requests.every(r=>(r.input as Array<{role?:string}>).filter(x=>x.role==="user").length===1)).toBe(true);
+    expect(requests[0].input).toEqual(requests[1].input);
+    expect(answer.usage).toMatchObject({model:"gpt-4.1-mini",inputTokens:200,
+      outputTokens:80,modelCallCount:2,toolCallCount:1});
+    expect(reports.every(u=>u.model==="gpt-4.1-mini")).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({
+      stage:"provider_fallback",fromModel:"gpt-6-luna",toModel:"gpt-4.1-mini",
+      triggerHttpStatus:403,triggerProviderErrorCode:"project_not_allowed",
+      modelCallCount:0,toolCallCount:0}));
+    expect(events).toContainEqual(expect.objectContaining({
+      stage:"provider_response",model:"gpt-4.1-mini",providerStatus:"completed"}));
+    expect(events).toContainEqual(expect.objectContaining({stage:"tool_execution",model:"gpt-4.1-mini"}));
+    expect(JSON.stringify(events)).not.toContain("DO NOT LOG");
+  });
+  it("primary success keeps Luna for later rounds",async()=>{
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));bodies.push(body);
+      return resultFor("gpt-6-luna",bodies.length===1?[control]:[finish([])]);
+    });
+    const result=await runSupervisorTurn({...base,text:"Hi"},transport);
+    expect(result.usage.model).toBe("gpt-6-luna");
+    expect(bodies.map(x=>x.model)).toEqual(["gpt-6-luna","gpt-6-luna"]);
+    expect(bodies.every(x=>Object.hasOwn(x,"reasoning"))).toBe(true);
+  });
+  it("400 unsupported_parameter must not activate fallback",async()=>{
+    const diagnostics:Array<{stage:string}>=[];
+    const transport=vi.fn().mockResolvedValue(providerFailure(400,"unsupported_parameter"));
+    const error=await runSupervisorTurn({...base,onDiagnostic:d=>diagnostics.push(d)},transport)
+      .then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_http",httpStatus:400,
+      providerErrorCode:"unsupported_parameter"});
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(diagnostics.some(d=>d.stage==="provider_fallback")).toBe(false);
+  });
+  it("known model_not_found can trigger bounded fallback",async()=>{
+    const transport=vi.fn().mockResolvedValueOnce(providerFailure(404,"model_not_found"))
+      .mockResolvedValueOnce(resultFor("gpt-4.1-mini",[control]))
+      .mockResolvedValueOnce(resultFor("gpt-4.1-mini",[finish([])]));
+    const r=await runSupervisorTurn({...base,text:"Hi"},transport);
+    expect(r.usage).toMatchObject({model:"gpt-4.1-mini",modelCallCount:2});
+    expect(transport).toHaveBeenCalledTimes(3);
+  });
+  it("fallback failing terminates safely; no third model or loop",async()=>{
+    const models:string[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body));
+      models.push(request.model);
+      return models.length===1?providerFailure(403):providerFailure(401,"invalid_api_key");
+    });
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_http",httpStatus:401});
+    expect(models).toEqual(["gpt-6-luna","gpt-4.1-mini"]);
+  });
+  it("never switches models if a later round fails after a completed Luna response",async()=>{
+    const models:string[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      models.push(JSON.parse(String(init.body)).model);
+      return models.length===1?resultFor("gpt-6-luna",[bills]):providerFailure(403);
+    });
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_http",httpStatus:403,round:2});
+    expect(models).toEqual(["gpt-6-luna","gpt-6-luna"]);
+  });
+  it("never switches on a tool execution failure",async()=>{
+    const broken={...tools,getMonthlyBills:vi.fn(async()=>{throw Error("private café data");})};
+    const transport=vi.fn().mockResolvedValueOnce(resultFor("gpt-6-luna",[bills]));
+    const error=await runSupervisorTurn({...base,tools:broken as unknown as BusinessScopedCafeTools},
+      transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"tool_execution"});
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("no fallback configuration preserves primary 403 failure",async()=>{
+    delete process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL;
+    const transport=vi.fn().mockResolvedValue(providerFailure(403));
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({httpStatus:403,category:"provider_http"});
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("fallback equals primary: no extra calls",async()=>{
+    process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL="gpt-6-luna";
+    const transport=vi.fn().mockResolvedValue(providerFailure(403));
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({httpStatus:403,category:"provider_http"});
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+  it("transient 429 or 5xx preserves existing bounded primary retries without fallback",async()=>{
+    for(const status of [429,500]){
+      const models:string[]=[];
+      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+        models.push(JSON.parse(String(init.body)).model);
+        return providerFailure(status);
+      });
+      const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+      expect(error).toMatchObject({category:"provider_http",httpStatus:status});
+      expect(models).toEqual(["gpt-6-luna","gpt-6-luna"]);
+    }
+  });
+  it("an incomplete billed primary Response never activates fallback",async()=>{
+    const models:string[]=[];
+    const incomplete=new Response(JSON.stringify({status:"incomplete",model:"gpt-6-luna",
+      usage:{input_tokens:100,output_tokens:40},output:[]}),{status:200});
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      models.push(JSON.parse(String(init.body)).model);
+      return models.length===1?incomplete:providerFailure(403);
+    });
+    const error=await runSupervisorTurn(base,transport).then(()=>null,e=>e as SupervisorStageError);
+    expect(error).toMatchObject({category:"provider_http",httpStatus:403});
+    expect(models).toEqual(["gpt-6-luna","gpt-6-luna"]);
   });
 });
