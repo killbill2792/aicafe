@@ -22,6 +22,7 @@ const FINAL = z.strictObject({
   evidence_refs:z.array(z.string().max(160)).max(20),
 });
 const MAX_ROUNDS = 3, MAX_TOOLS = 5;
+const MODEL_ACCESS_CODES = new Set(["model_not_found", "model_access_denied", "model_not_available", "model_not_accessible"]);
 const integer = (x: unknown) => Number.isSafeInteger(x) && (x as number) >= 0 ? x as number : 0;
 
 function textFromResponse(output: unknown): string | null {
@@ -136,7 +137,10 @@ export async function runSupervisorTurn(input: {
 }, transport: Transport = fetch): Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
-  const model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  // No implicit fallback. Only an explicitly configured, different model may be tried.
+  const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
+  let fallbackAttempted = false;
   const usage: SupervisorUsage = {model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0};
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
@@ -210,6 +214,28 @@ export async function runSupervisorTurn(input: {
           providerErrorType:classified.providerErrorType,providerErrorCode:classified.providerErrorCode,
           providerRequestId:classified.providerRequestId,
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+        // Switching is allowed only before any Responses result or tool evidence exists.
+        // 403 indicates model/project access; a known model access code is also eligible.
+        // Invalid requests (including unsupported_parameter) must surface without fallback.
+        const accessFailure = classified.category==="provider_http" && (
+          classified.httpStatus===403 ||
+          ([400,404].includes(classified.httpStatus??0) &&
+            MODEL_ACCESS_CODES.has(classified.providerErrorCode??"")));
+        if (accessFailure && round===0 && usage.modelCallCount===0 &&
+          usage.toolCallCount===0 && toolResults.length===0 &&
+          !fallbackAttempted && fallbackModel && fallbackModel!==model) {
+          fallbackAttempted=true;
+          input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,toModel:fallbackModel,
+            triggerHttpStatus:classified.httpStatus,
+            triggerProviderErrorType:classified.providerErrorType,
+            triggerProviderErrorCode:classified.providerErrorCode,
+            modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+          model=fallbackModel;
+          // The first attempt of the selected fallback starts fresh; its own normal
+          // bounded retry allowance remains in effect. Never try a third model.
+          attempt=-1;
+          continue;
+        }
         const retry=classified.category==="provider_timeout"||
           classified.category==="provider_incomplete"||
           classified.category==="provider_invalid_payload"||

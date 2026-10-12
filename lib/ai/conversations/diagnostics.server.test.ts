@@ -71,6 +71,25 @@ describe("Sanitized Supervisor production diagnostics",()=>{
       providerErrorType:undefined,providerErrorCode:undefined,providerRequestId:"req_valid-1",
     });
   });
+  it("sanitizes fallback transition models and access trigger identifiers",()=>{
+    const written:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>written.push(line));
+    logger.emit({stage:"provider_fallback",fromModel:"gpt-6-luna",toModel:"gpt-4.1-mini",
+      triggerHttpStatus:403,triggerProviderErrorType:"permission_error",
+      triggerProviderErrorCode:"model_not_available"});
+    logger.emit({stage:"provider_fallback",fromModel:"model\\nPRIVATE",toModel:"mini",
+      triggerHttpStatus:403,triggerProviderErrorType:"PRIVATE text and tokens",
+      triggerProviderErrorCode:"PRIVATE raw error.message"});
+    const first=JSON.parse(written[0]),second=JSON.parse(written[1]);
+    expect(first).toMatchObject({stage:"provider_fallback",fromModel:"gpt-6-luna",
+      toModel:"gpt-4.1-mini",triggerHttpStatus:403,
+      triggerProviderErrorType:"permission_error",
+      triggerProviderErrorCode:"model_not_available"});
+    expect(second.fromModel).toBeUndefined();
+    expect(second.triggerProviderErrorType).toBeUndefined();
+    expect(second.triggerProviderErrorCode).toBeUndefined();
+    expect(written.join(" ")).not.toContain("raw error.message");
+  });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",
       {httpStatus:200,providerStatus:"incomplete",round:2,attempt:1});

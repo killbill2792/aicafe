@@ -44,6 +44,45 @@ describe("Retry usage accounting (atomic SQL contract + mocked RPC)",()=>{
       else process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS=oldOut;
     }
   });
+  it("does not apply Luna token rates to fallback or unknown model usage",async()=>{
+    const keys=["SUPERVISOR_OPENAI_MODEL","SUPERVISOR_OPENAI_FALLBACK_MODEL",
+      "SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS","SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS",
+      "SUPERVISOR_FALLBACK_INPUT_USD_PER_MILLION_TOKENS",
+      "SUPERVISOR_FALLBACK_OUTPUT_USD_PER_MILLION_TOKENS"] as const;
+    const previous=keys.map(k=>process.env[k]);
+    try{
+      process.env.SUPERVISOR_OPENAI_MODEL="gpt-6-luna";
+      process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL="gpt-4.1-mini";
+      process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS="100";
+      process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS="200";
+      delete process.env.SUPERVISOR_FALLBACK_INPUT_USD_PER_MILLION_TOKENS;
+      delete process.env.SUPERVISOR_FALLBACK_OUTPUT_USD_PER_MILLION_TOKENS;
+      const params={scope:{businessId:"b",ownerUserId:"o"},threadId:"t"};
+      await recordSupervisorUsage({...params,ownerMessageId:"fallback-no-rates",
+        usage:{model:"gpt-4.1-mini",inputTokens:100,outputTokens:20,modelCallCount:2,toolCallCount:1}});
+      expect(memory.increments.at(-1)).toMatchObject({
+        p_model:"gpt-4.1-mini",p_input_tokens:100,p_output_tokens:20,p_estimated_cost_micros:null,
+      });
+      await recordSupervisorUsage({...params,ownerMessageId:"unknown-snapshot",
+        usage:{model:"gpt-4.1-mini-2025-04-14",inputTokens:100,outputTokens:20,
+          modelCallCount:1,toolCallCount:0}});
+      expect(memory.increments.at(-1)).toMatchObject({p_model:"gpt-4.1-mini-2025-04-14",
+        p_estimated_cost_micros:null});
+      process.env.SUPERVISOR_FALLBACK_INPUT_USD_PER_MILLION_TOKENS="0.5";
+      process.env.SUPERVISOR_FALLBACK_OUTPUT_USD_PER_MILLION_TOKENS="2";
+      await recordSupervisorUsage({...params,ownerMessageId:"fallback-priced",
+        usage:{model:"gpt-4.1-mini",inputTokens:100,outputTokens:20,modelCallCount:2,toolCallCount:1}});
+      expect(memory.increments.at(-1)).toMatchObject({
+        p_model:"gpt-4.1-mini",p_estimated_cost_micros:90,
+      });
+      await recordSupervisorUsage({...params,ownerMessageId:"luna-priced",
+        usage:{model:"gpt-6-luna",inputTokens:100,outputTokens:20,modelCallCount:2,toolCallCount:1}});
+      expect(memory.increments.at(-1)).toMatchObject({p_model:"gpt-6-luna",
+        p_estimated_cost_micros:14000});
+    }finally{
+      keys.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});
+    }
+  });
   it("migration 39 uses atomic conflict increment and service-role authorization only",()=>{
     const sql=readFileSync("supabase/migrations/20261010000039_supervisor_loop_usage.sql","utf8");
     expect(sql).toContain("ON CONFLICT (owner_message_id) DO UPDATE");
