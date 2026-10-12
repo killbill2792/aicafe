@@ -478,6 +478,7 @@ export function createSupervisorToolRegistry(context: Context) {
       const snapshot = await state(), source = ref("pricing_engine:" + asOf,asOf,"pricing_engine");
       const result = quality(snapshot.pricingRecommendations,[source],null);
       if (!snapshot.pricingRecommendations.available) return result;
+      const recommendations = snapshot.pricingRecommendations.value;
       if (!snapshot.products.available) {
         result.status = "partial";
         result.missingInputs.push("pricingProductCatalog");
@@ -485,7 +486,7 @@ export function createSupervisorToolRegistry(context: Context) {
         return result;
       }
       const candidates = snapshot.products.value.filter(p=>matchName(p.name,a.product_name))
-        .map(p=>({name:p.name,rec:snapshot.pricingRecommendations.value[p.id]}));
+        .map(p=>({name:p.name,rec:recommendations[p.id]}));
       if (!candidates.length) {
         result.status = "partial";
         result.missingInputs.push("noMatchingPricingProducts");
