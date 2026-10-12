@@ -131,12 +131,18 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       ?? result?.facts.find(f=>selectedFacts.some(selected=>selected.id===f.id))
       ?? result?.facts[0];
     if(!result || (result.status==="unavailable" && !primary) || !primary && !result.insights.length && !result.tasks.length){
-      supplementalTexts.push(unavailableGoalText(goal.domain,locale));
+      // Canonical business-cost coverage provides a specific, localized cause.
+      const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:null;
+      supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
       specificWarning=true;missingGoal=true;
       continue;
     }
     if(primary){
-      const heading=goalLabel(goal.domain,locale);
+      const costMode=goal.domain==="total_business_costs"
+        ? (result.data as {costCompleteness?:unknown}|null)?.costCompleteness:null;
+      const heading=goal.domain==="total_business_costs"&&costMode==="partial"
+        ? {en:"Known business costs",es:"Costos conocidos del negocio",
+          ar:"تكاليف العمل المعروفة"}[locale] : goalLabel(goal.domain,locale);
       const suffix=goal.domain==="total_business_costs"||goal.domain==="staff_cost"
         ? " — "+labels[goal.period] : "";
       const primaryLabel=suffixByDomain[goal.domain] ? heading+suffix : primary.label;
@@ -176,7 +182,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       supplementalTexts.push(labels.staffCoverage);specificWarning=true;
     }
     if(goal.domain==="total_business_costs" && result.status==="partial"){
-      supplementalTexts.push(labels.costCoverage);specificWarning=true;
+      // Server-only canonical reasons override the old generic partial warning.
+      const reason=result.insights.find(i=>i.id.endsWith(":coverage"))?.text;
+      supplementalTexts.push(reason??labels.costCoverage);specificWarning=true;
     }
   }
   // Single-domain detailed answers retain the model's chosen additional facts. For
@@ -222,6 +230,8 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
     // Specific pricing statement from canonical counts supersedes generic English
     // pricing snippets; never duplicate them or leak English into ES/AR.
     if(pricingGoals && insight.id.includes("pricing"))continue;
+    if(goals.some(g=>g.domain==="total_business_costs") && insight.id.endsWith(":coverage"))
+      continue; // already included once, deterministically, in the goal's limitation
     blocks.push({type:"text",text:insight.text});
   }
   for(const text of supplementalTexts)blocks.push({type:"text",text});

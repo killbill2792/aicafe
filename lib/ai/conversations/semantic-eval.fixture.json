@@ -1187,5 +1187,179 @@
     ],
     "evidenceClass": "partial_or_verified",
     "responseType": "metric"
+  },
+  {
+    "question": "What's the known portion of our operating costs so far this month?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Can you show all our business costs, even if some aren't verified?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "How much has running the café cost us this month?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "What's my take-home profit this month?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "owner_profit"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "unavailable_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Are we covering our fixed bills?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "monthly_bills"
+          }
+        }
+      ],
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "break_even"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "Do we know today's order count?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_sales",
+          "arguments": {
+            "metric": "orders"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "count"
+  },
+  {
+    "question": "Any AI Team items still need me?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_team",
+          "arguments": {
+            "view": "tasks",
+            "status": "needs_you"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "verified",
+    "responseType": "tasks"
+  },
+  {
+    "question": "¿Cuánto suman los costos conocidos del negocio?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "كم تبلغ التكاليف المعروفة للمقهى هذا الشهر؟",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
+  },
+  {
+    "question": "What are our business costs, labor costs, menu count and pricing revisions?",
+    "acceptablePlans": [
+      [
+        {
+          "name": "get_financials",
+          "arguments": {
+            "metric": "total_business_costs"
+          }
+        },
+        {
+          "name": "get_staff",
+          "arguments": {
+            "view": "labor_cost"
+          }
+        },
+        {
+          "name": "get_menu",
+          "arguments": {
+            "view": "active_count"
+          }
+        },
+        {
+          "name": "get_pricing"
+        }
+      ]
+    ],
+    "evidenceClass": "partial_or_verified",
+    "responseType": "metric"
   }
 ]

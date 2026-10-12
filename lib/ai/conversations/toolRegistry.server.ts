@@ -8,6 +8,7 @@ import type { EvidenceReference, SupervisorIntent, GroundingStatus, SupervisorRe
 import { compareCompleteValues } from "./periodComparison";
 import { dateSelectionSchema, rangeExpectedDays, resolveCafeDateRange } from "./dateRange";
 import { requestScopeSchema } from "./requestScope";
+import { businessCostLimitations } from "@/lib/operating/businessCostMessages";
 
 const agent = z.enum(["all", "alex", "olivia", "maya", "leo"]);
 const status = z.enum(["all", "needs_you", "handled", "watching"]);
@@ -391,10 +392,31 @@ export function createSupervisorToolRegistry(context: Context) {
         result.data = { distinction:"Modeled/prorated running costs, not actual cash spending" };
         return result;
       }
+      if(a.metric==="total_business_costs"){
+        const costs=await tools.getBusinessCostSummary(range);
+        const available=costs.completeness!=="unavailable";
+        const result:ToolEvidence={
+          status:costs.completeness==="complete"?
+            (costs.estimatedInputs.length?"estimated":"verified"):costs.completeness,
+          coverage:{from:range.from,to:range.to,
+            salesDays:costs.coverage.salesDays,laborDays:costs.coverage.laborDays,
+            expectedDays:costs.coverage.expectedDays},
+          missingInputs:costs.missingInputs.slice(0,12),
+          estimatedInputs:costs.estimatedInputs.slice(0,12),
+          data:{costCompleteness:costs.completeness,components:costs.components,
+            missingProductCostCount:costs.coverage.missingProductCostCount},
+          facts:[],tasks:[],insights:[],evidence:available?[source]:[],
+        };
+        if(available)addFact(result,prefix+"value",
+          costs.completeness==="complete"?"Total business costs":"Known business costs",
+          costs.knownTotalCents,"metric",source);
+        if(costs.completeness!=="complete")addInsight(result,prefix+"coverage",
+          businessCostLimitations(costs,context.locale??"en"),source);
+        return result;
+      }
       const profit = await tools.getProfitability(range);
       const result = quality(profit,[source],{from:range.from,to:range.to, arithmetic:"canonical-only"});
-      if (profit.available) addFact(result,prefix+"value", a.metric === "owner_profit" ? "Owner profit" : "Total business costs",
-        a.metric === "owner_profit" ? profit.value.ownerProfitCents : profit.value.totalCostsCents, "metric",source);
+      if (profit.available) addFact(result,prefix+"value","Owner profit",profit.value.ownerProfitCents,"metric",source);
       return result;
     }
     if (call.name === "get_staff") {

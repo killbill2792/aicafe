@@ -14,6 +14,7 @@ import { SupabaseDecisionStore } from "@/lib/operating/supabaseDecisionStore";
 import { BusinessScopedCafeTools, StructuredCafeTools } from "./tools";
 import { supervisorFactReaders } from "./supervisorFacts.server";
 import { supervisorHistoricalReaders } from "./supervisorReads.server";
+import { readPeriodItemSales } from "@/lib/data/periodItemSales.server";
 
 /**
  * The future Supervisor backend must call this authenticated server factory.
@@ -46,11 +47,16 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
   let snapshotPromise: ReturnType<typeof getSnapshot> | null = null;
   const currentSnapshot = () => snapshotPromise ??= getSnapshot();
   const states = new SnapshotCafeStateService(
-    async (requested) => {
+    async (requested,period) => {
       assertBusiness(requested);
       const snapshot = await currentSnapshot();
       if (snapshot.business.id !== businessId) throw new Error("Café snapshot business mismatch");
-      return snapshot;
+      if(!period||snapshot.periodItemSales?.period.from===period.from&&
+        snapshot.periodItemSales.period.to===period.to)return snapshot;
+      // Target the exact authorized date range; never reuse a month/28-day
+      // quantity as proof for today or another custom window.
+      const periodItemSales=await readPeriodItemSales(client,businessId,period);
+      return {...snapshot,periodItemSales};
     },
     async (requested) => (await pricingMenu(requested)).map(({ id, pricing }) => ({ id, pricing })),
   );

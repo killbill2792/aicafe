@@ -105,6 +105,8 @@
     "less": "أقل",
     "sales": "المبيعات",
     "totalCosts": "إجمالي التكاليف",
+    "knownCosts": "تكاليف العمل المعروفة",
+    "costsUnavailable": "تكاليف العمل غير متاحة",
     "youKeep": "يبقى لك",
     "ofSales": "{pct}% من المبيعات",
     "missingCostBannerText": "لم تتم إضافة {category} بعد.",

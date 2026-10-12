@@ -2,6 +2,21 @@ import type { BusinessSettings, MenuItemSnapshot, RunningCostLine } from "@/lib/
 import type { Confidence, DailyFacts, DataQuality, PricingResult } from "@/lib/calc";
 
 export type CafeStatePeriod = { from: string; to: string };
+/** One canonical observable subtotal, never a profit claim or a missing-as-zero estimate. */
+export type BusinessCostSummary = {
+  period:CafeStatePeriod;
+  knownTotalCents:number;
+  completeness:"complete"|"partial"|"unavailable";
+  components:{ingredientsCents:number;loadedStaffCents:number;cardFeesCents:number;runningCostsCents:number};
+  observed:{ingredients:boolean;loadedStaff:boolean;cardFees:boolean;runningCosts:boolean};
+  missingInputs:string[];estimatedInputs:string[];
+  coverage:{salesDays:number;laborDays:number;expectedDays:number;missingProductCostCount:number;
+    itemSalesCovered:boolean;soldProductCount:number|null;estimatedProductCostCount:number;
+    historicalIngredientCostsProven:boolean;
+    /** Evidence-only identifiers; never sent to the owner-facing text renderer. */
+    soldProductIds:string[];missingProductCostIds:string[];estimatedProductCostIds:string[];
+    missingFeeDays:number;missingOperatingCategories:Array<{code:string;label:string}>};
+};
 
 /** Period-specific, verified output from the existing deterministic profit functions.
  * Values are cents (not forecast dollars), and remain unavailable if critical data is missing.
@@ -30,6 +45,7 @@ export type CafeState = {
   sales: KnownSlice<DailyFacts[]>;
   expenses: KnownSlice<RunningCostLine[]>;
   profitability: KnownSlice<CafePeriodProfitability>;
+  businessCosts: BusinessCostSummary;
   labor: KnownSlice<CafeLaborDay[]>;
   pricingRecommendations: KnownSlice<Record<string, PricingResult>>;
   inventory: KnownSlice<never>;

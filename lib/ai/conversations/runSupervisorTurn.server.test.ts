@@ -547,6 +547,19 @@ describe("Four-domain semantic request-coverage contract",()=>{
   }]));
   function fixture(costAvailable=true){
     return {...tools,
+      getBusinessCostSummary:vi.fn(async()=>({
+        period:{from:"2026-10-01",to:"2026-10-12"},
+        completeness:costAvailable?"complete":"unavailable",
+        knownTotalCents:costAvailable?950000:0,
+        components:{ingredientsCents:200000,loadedStaffCents:372172,
+          cardFeesCents:27828,runningCostsCents:350000},
+        observed:{ingredients:costAvailable,loadedStaff:costAvailable,
+          cardFees:costAvailable,runningCosts:costAvailable},
+        missingInputs:costAvailable?[]:["costHistoryUnavailable"],estimatedInputs:[],
+        coverage:{salesDays:costAvailable?12:0,laborDays:costAvailable?12:0,
+          expectedDays:12,missingProductCostCount:0,missingFeeDays:0,
+          missingOperatingCategories:[]},
+      })),
       getProfitability:vi.fn(async()=>costAvailable?{
         available:true,value:{totalCostsCents:950000,ownerProfitCents:250000},quality:q,
       }:{available:false,value:null,quality:{...q,level:"low",missingInputs:["profitMissing"]}}),
@@ -592,7 +605,7 @@ describe("Four-domain semantic request-coverage contract",()=>{
     const result=await runSupervisorTurn({...base,text:messages[0],asOf:"2026-10-12",
       tools:fixture(false)},transport);
     expect(result.reply.blocks).toContainEqual({type:"text",
-      text:"Total business costs: Unable to verify from the available records."});
+      text:"Business cost records have not been verified."});
     expect(result.reply.blocks.some(b=>b.type==="count"&&b.label==="Products on your menu")).toBe(true);
     expect(result.reply.status).toBe("partial");
   });
@@ -606,7 +619,7 @@ describe("Four-domain semantic request-coverage contract",()=>{
       expect(JSON.stringify(result.reply.blocks)).not.toContain("Recorded loaded staff cost");
       expect(JSON.stringify(result.reply.blocks)).not.toContain("Some relevant café records");
       expect(JSON.stringify(result.reply.blocks)).toContain(locale==="es"?"Costo del personal":"تكلفة الموظفين");
-      expect(JSON.stringify(result.reply.blocks)).toContain(locale==="es"?"No se puede verificar":"تعذّر التحقق");
+      expect(JSON.stringify(result.reply.blocks)).toContain(locale==="es"?"No se han verificado los registros de costos":"لم يتم التحقق من سجلات تكاليف");
     }
   });
 

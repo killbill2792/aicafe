@@ -1,5 +1,5 @@
 import type { CafeStateService } from "@/lib/operating/cafeState";
-import type { CafeDecision, CafeSignal, CafeStatePeriod, KnownSlice, CafePeriodProfitability, CafeLaborDay } from "@/lib/operating/types";
+import type { CafeDecision, CafeSignal, CafeStatePeriod, KnownSlice, CafePeriodProfitability, CafeLaborDay, BusinessCostSummary } from "@/lib/operating/types";
 import type { DecisionStore } from "@/lib/operating/decisions";
 import type { OperatingTask } from "@/lib/operating/tasks";
 import type { MenuItemSnapshot, RunningCostLine } from "@/lib/data/types";
@@ -12,6 +12,7 @@ import type { MonthlyBills, RecordedExpenses, SoldProduct, ItemSalesCoverage } f
 export interface CafeToolset {
   getCafeSummary(businessId: string): ReturnType<CafeStateService["getCurrentState"]>;
   getProfitability(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafePeriodProfitability>>;
+  getBusinessCostSummary(businessId:string,period:CafeStatePeriod):Promise<BusinessCostSummary>;
   getProductEconomics(businessId: string, productId: string): Promise<KnownSlice<MenuItemSnapshot>>;
   getSalesTrend(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<DailyFacts[]>>;
   getPricingRecommendation(businessId: string, productId: string): Promise<KnownSlice<PricingResult>>;
@@ -78,6 +79,9 @@ export class StructuredCafeTools implements CafeToolset {
   getCafeSummary(businessId: string) { return this.states.getCurrentState(businessId); }
   async getProfitability(businessId: string, period: CafeStatePeriod) {
     return (await this.states.getHistoricalState(businessId, period)).profitability;
+  }
+  async getBusinessCostSummary(businessId:string,period:CafeStatePeriod){
+    return (await this.states.getHistoricalState(businessId,period)).businessCosts;
   }
   async getProductEconomics(businessId: string, productId: string): Promise<KnownSlice<MenuItemSnapshot>> {
     if (!productId) return missing("productId");
@@ -186,6 +190,7 @@ export class BusinessScopedCafeTools {
   }
   getCafeSummary() { return this.tools.getCafeSummary(this.businessId); }
   getProfitability(period: CafeStatePeriod) { return this.tools.getProfitability(this.businessId, period); }
+  getBusinessCostSummary(period:CafeStatePeriod){return this.tools.getBusinessCostSummary(this.businessId,period);}
   getProductEconomics(productId: string) { return this.tools.getProductEconomics(this.businessId, productId); }
   getSalesTrend(period: CafeStatePeriod) { return this.tools.getSalesTrend(this.businessId, period); }
   getPricingRecommendation(productId: string) { return this.tools.getPricingRecommendation(this.businessId, productId); }

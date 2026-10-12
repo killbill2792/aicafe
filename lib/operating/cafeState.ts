@@ -12,6 +12,7 @@ import {
   staffCostCentsForPeriod,
 } from "@/lib/calc";
 import type { CafeState, CafeStatePeriod, KnownSlice } from "./types";
+import { businessCostSummaryFromSnapshot } from "./businessCosts";
 
 export interface CafeStateService {
   getCurrentState(businessId: string): Promise<CafeState>;
@@ -116,12 +117,14 @@ export function cafeStateFromSnapshot(
   const expenseEstimated = snapshot.runningCostLines
     .filter((line) => line.isEstimate && line.amountCents > 0)
     .map((line) => `expense:${line.categoryCode}`);
-  const missingProductCosts = snapshot.menuItems
-    .filter((item) => item.quantitySoldLast28Days > 0 && item.costStatus !== "READY")
-    .map((item) => `productCost:${item.id}`);
-  const estimatedProductCosts = snapshot.menuItems
-    .filter((item) => item.quantitySoldLast28Days > 0 && item.costQuality === "estimated")
-    .map((item) => `productCost:${item.id}`);
+  const businessCosts=businessCostSummaryFromSnapshot(snapshot,period);
+  // Product completeness is an exact-period participation question.
+  // A rolling last-28-days menu quantity is never evidence for this period.
+  const missingProductCosts=businessCosts.missingInputs.filter(input=>
+    input.startsWith("productCost:")||input==="itemSalesCoverage"||
+    input==="historicalIngredientCostCoverage");
+  const estimatedProductCosts=businessCosts.estimatedInputs.filter(input=>
+    input.startsWith("productCost:"));
   const feeMissing = days
     .filter((day) => day.netSalesCents > 0 && day.cardFeesStatus === "missing")
     .map((day) => `cardFees:${day.date}`);
@@ -214,6 +217,7 @@ export function cafeStateFromSnapshot(
     products: known(snapshot.menuItems, quality(missingProductCosts, estimatedProductCosts)),
     sales: !inRange ? unavailable("periodOutsideLoadedMonth") : days.length ? known(days, observedQuality) : unavailable(...basicMissing, "salesHistory"),
     expenses: !inRange ? unavailable("periodOutsideLoadedMonth") : known(periodExpenses, quality(expenseMissing, expenseEstimated)),
+    businessCosts,
     profitability: financialQuality.missingInputs.length || observedDays === 0
       ? { available: false, value: null, quality: financialQuality }
       : known(financials, financialQuality),
