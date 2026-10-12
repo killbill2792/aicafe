@@ -396,9 +396,8 @@ export function createSupervisorToolRegistry(context: Context) {
         const result=quality(current,[source],current.available?current.value:null);
         if(current.available){
           addFact(result,prefix+"current","People shown on shift by Staff",current.value.count,"count",source);
-          addInsight(result,prefix+"status",
-            "Current staffing uses the same on-shift calculation as the Staff screen; scheduled shifts may be predictions.",
-            source);
+          if (current.value.people.some(person=>person.isSchedulePrediction))
+            addInsight(result,prefix+"status","Some people shown are scheduled, not confirmed clock-ins.",source);
           for(const [i,person] of current.value.people.slice(0,8).entries())
             addInsight(result,prefix+"person"+i,
               person.name+" — "+(person.role??"staff")+
@@ -479,23 +478,53 @@ export function createSupervisorToolRegistry(context: Context) {
       const snapshot = await state(), source = ref("pricing_engine:" + asOf,asOf,"pricing_engine");
       const result = quality(snapshot.pricingRecommendations,[source],null);
       if (!snapshot.pricingRecommendations.available) return result;
-      const products = sliceValue(snapshot.products) ?? [];
-      const rows = Object.entries(snapshot.pricingRecommendations.value)
-        .flatMap(([id,r]) => { const p = products.find(p=>p.id===id);
-          return p && matchName(p.name,a.product_name) && r.status === "REVIEW_PRICE" &&
-            r.recommendedPriceCents !== null && !r.dataQuality.missingInputs.length
-            ? [{ name:p.name, rec:r }] : []; }).slice(0,a.limit);
-      for (const [i,p] of rows.entries()) {
+      if (!snapshot.products.available) {
+        result.status = "partial";
+        result.missingInputs.push("pricingProductCatalog");
+        addInsight(result,prefix+"pricingBlocked","Product information is unavailable, so price revisions cannot be verified.",source);
+        return result;
+      }
+      const candidates = snapshot.products.value.filter(p=>matchName(p.name,a.product_name))
+        .map(p=>({name:p.name,rec:snapshot.pricingRecommendations.value[p.id]}));
+      if (!candidates.length) {
+        result.status = "partial";
+        result.missingInputs.push("noMatchingPricingProducts");
+        addInsight(result,prefix+"pricingNotEvaluated","There are no matching products with pricing evidence to evaluate.",source);
+        return result;
+      }
+      const reviewReady = candidates.filter(({rec})=>rec &&
+        rec.status==="REVIEW_PRICE" && rec.recommendedPriceCents!==null &&
+        !rec.dataQuality.missingInputs.length && !rec.dataQuality.staleInputs.length);
+      const blocked = candidates.filter(({rec})=>!rec || rec.status==="PRICE_UNAVAILABLE" ||
+        rec.dataQuality.missingInputs.length>0 || rec.dataQuality.staleInputs.length>0);
+      addFact(result,prefix+"pricingCount","Verified review-ready price changes",reviewReady.length,"count",source);
+      for (const [i,p] of reviewReady.slice(0,a.limit).entries()) {
         const r = ref("price_review:" + p.name + ":" + asOf,asOf,"pricing_engine");
-        if (p.rec.recommendedPriceCents !== null)
+        if (p.rec?.recommendedPriceCents !== null && p.rec?.recommendedPriceCents !== undefined)
           addFact(result,prefix+"price"+i,p.name+" recommended price (review only)",p.rec.recommendedPriceCents,"metric",r);
-        if (p.rec.dataQuality.estimatedInputs.length || p.rec.calculationMode === "BENCHMARK") {
+        if (p.rec?.dataQuality.estimatedInputs.length || p.rec?.calculationMode==="BENCHMARK") {
           result.estimatedInputs.push("pricingBenchmark:" + p.name);
-          result.status=result.status==="partial"?"partial":"estimated";
+          if (result.status==="verified") result.status="estimated";
         }
       }
-      result.data = { recommendations:rows.length, reviewOnly:true };
-      if(rows.length)addInsight(result,prefix+"pricingReview","Pricing engine has review-only recommendations; prices have not been changed.",source);
+      if (reviewReady.length) addInsight(result,prefix+"pricingReview",
+        "Verified review-ready recommendations are available. Menu prices have not been changed.",source);
+      if (blocked.length) {
+        addFact(result,prefix+"pricingBlockedCount","Products blocked by missing pricing inputs",blocked.length,"count",source);
+        addInsight(result,prefix+"pricingBlocked",
+          "Price revisions cannot be verified for products with incomplete cost or pricing inputs.",source);
+        result.status="partial";
+        result.missingInputs.push("incompleteProductPricingInputs");
+      } else if (!reviewReady.length) {
+        if (result.status==="verified" || result.status==="estimated") {
+          addInsight(result,prefix+"pricingZero",
+            "No verified review-ready price changes are currently recommended.",source);
+        } else {
+          addInsight(result,prefix+"pricingIncomplete",
+            "Pricing coverage is incomplete, so no definitive no-change conclusion is supported.",source);
+        }
+      }
+      result.data={reviewReady:reviewReady.length,blocked:blocked.length,examined:candidates.length,reviewOnly:true};
       return result;
     }
     const a = schemas.get_owner_rules.parse(call.arguments);

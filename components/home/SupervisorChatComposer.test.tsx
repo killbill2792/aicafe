@@ -20,7 +20,7 @@ const copy = {
 } as SupervisorChatCopy;
 
 describe("modern Supervisor conversation shell", () => {
-  it("renders an accessible rich empty state and large sticky editable composer", () => {
+  it("renders an accessible compact empty state and responsive editable composer", () => {
     const html = renderToStaticMarkup(createElement(SupervisorChatComposer, {
       enabled: true, unavailableReason: null, locale: "en", copy,
     }));
@@ -46,7 +46,8 @@ describe("modern Supervisor conversation shell", () => {
     }));
     expect(html).toContain("No sales recorded yet");
     expect(html).toContain("Needs you");
-    expect(html).toContain("See all");
+    expect(html).toContain("Today");
+    expect(html).not.toContain("See all");
     expect(html).toContain('aria-label="Dictate"');
     expect(html).not.toContain("Listening… review the transcript before sending");
   });
@@ -70,7 +71,30 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain("answeredOwnerIds");
     expect(source).toContain("pendingOwnerIds.has(message.id)");
     expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
-    expect(source).toContain("retryId.current = existingKey ?? retryId.current ?? crypto.randomUUID()");
+    expect(source).toContain("const clientMessageId = existingKey ?? retryId.current ?? crypto.randomUUID()");
   });
 
+  it("is a single viewport-filling chat, optimistic owner-anchor, and no forced bottom scroll",()=>{
+    const source = readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    const wrapper = readFileSync("components/home/SupervisorHomePanel.tsx","utf8");
+    expect(wrapper).not.toContain("rounded-[28px]");
+    expect(source).toContain("100dvh");
+    expect(source).not.toContain("790px");
+    expect(source).toContain("setOptimisticOwner({id:");
+    expect(source).toContain("data-client-message-id");
+    expect(source).toContain("getBoundingClientRect().top");
+    expect(source).toContain("ownerManuallyScrolled.current");
+    expect(source).toContain("previousScrollHeight.current");
+    expect(source).not.toContain('node.scrollTo({ top: node.scrollHeight');
+    expect(source).toContain('href="/operations"');
+    expect(source).toContain("rows={1}");
+  });
+  it("uses business profile identity in desktop navigation",()=>{
+    const layout=readFileSync("app/[locale]/layout.tsx","utf8");
+    const nav=readFileSync("components/SideNav.tsx","utf8");
+    expect(layout).toContain("getCafeProfile()");
+    expect(layout).toContain("cafeName={cafeProfile.name}");
+    expect(nav).toContain("{cafeName}");
+    expect(nav).not.toContain('tLayout("title")');
+  });
 });
