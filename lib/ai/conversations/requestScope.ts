@@ -20,6 +20,13 @@ export type RequestedGoal=z.infer<typeof goalSchema>;
 export const scopeAuditSchema=z.strictObject({
   complete:z.boolean(),ambiguous:z.boolean(),goals:requestScopeSchema.shape.goals,
 });
+/** Snapshot domains are business-scoped current state, not date-window queries.
+ * In particular, persisted Team inbox tasks have no semantic period. */
+export const SNAPSHOT_GOAL_DOMAINS = [
+  "team","menu_count","pricing_review","owner_rules","break_even","staff_coverage",
+] as const satisfies readonly RequestedGoal["domain"][];
+const isSnapshotGoal=(domain:RequestedGoal["domain"]) =>
+  (SNAPSHOT_GOAL_DOMAINS as readonly string[]).includes(domain);
 /** Named periods are defined by their period enum and café-local as-of date,
  * never by redundant from/to hints. Custom periods retain their exact dates. */
 function canonicalPeriod(period:RequestedGoal["period"],from:string|null,to:string|null){
@@ -28,15 +35,16 @@ function canonicalPeriod(period:RequestedGoal["period"],from:string|null,to:stri
 function canonicalGoal(g:RequestedGoal):RequestedGoal {
   return {
     ...g,
-    from:g.period==="custom"?g.from:null,
-    to:g.period==="custom"?g.to:null,
+    period:isSnapshotGoal(g.domain)?"month_to_date":g.period,
+    from:!isSnapshotGoal(g.domain)&&g.period==="custom"?g.from:null,
+    to:!isSnapshotGoal(g.domain)&&g.period==="custom"?g.to:null,
     comparison_from:g.domain==="comparison"&&g.comparison_period==="custom"?g.comparison_from:null,
     comparison_to:g.domain==="comparison"&&g.comparison_period==="custom"?g.comparison_to:null,
   };
 }
 function semanticGoalKey(g:RequestedGoal):string {
   return JSON.stringify([
-    g.domain,...canonicalPeriod(g.period,g.from,g.to),
+    g.domain,...(isSnapshotGoal(g.domain)?[]:canonicalPeriod(g.period,g.from,g.to)),
     ...(g.domain==="comparison"
       ? g.comparison_period===null ? [null]
         : canonicalPeriod(g.comparison_period,g.comparison_from,g.comparison_to)
@@ -92,10 +100,11 @@ export function coversRequestedGoal(goal:RequestedGoal,call:ReadCall):boolean {
     case "staffing":return call.name==="get_staff" && a.view==="current_staffing" && datesMatch();
     case "staff_attendance":return call.name==="get_staff" && a.view==="attendance" && datesMatch();
     case "staff_schedule":return call.name==="get_staff" && a.view==="schedule" && datesMatch();
-    case "staff_coverage":return call.name==="get_staff" && a.view==="coverage_issues" && datesMatch();
+    case "staff_coverage":return call.name==="get_staff" && a.view==="coverage_issues";
     case "team":return call.name==="get_team";
     case "break_even":return call.name==="get_financials" && a.metric==="break_even";
-    case "overview":return call.name==="get_cafe_overview";
+    case "overview":return call.name==="get_cafe_overview" &&
+      (goal.period==="today"||goal.period==="month_to_date") && a.focus===goal.period;
     case "owner_rules":return call.name==="get_owner_rules";
     case "comparison":return call.name==="compare_periods" && comparisonMatches();
   }
@@ -121,7 +130,8 @@ export function fallbackCallForGoal(goal:RequestedGoal): ReadCall | null {
     case "staff_coverage":return {name:"get_staff",arguments:{view:"coverage_issues",...date}};
     case "team":return {name:"get_team",arguments:{status:"all",agent:"all",view:"tasks",limit:10}};
     case "break_even":return {name:"get_financials",arguments:{metric:"break_even",...date}};
-    case "overview":return {name:"get_cafe_overview",arguments:{focus:"month_to_date"}};
+    case "overview":return goal.period==="today"||goal.period==="month_to_date"
+      ? {name:"get_cafe_overview",arguments:{focus:goal.period}} : null;
     case "owner_rules":return {name:"get_owner_rules",arguments:{agent:"all"}};
     case "comparison":return null; // period pairing needs a semantic comparison, never guess it
   }

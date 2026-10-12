@@ -3,6 +3,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PosAdapter } from "./types";
 import { recomputeDailyRollup } from "./rollup";
+import { squareCoveredSalesDates } from "./squareCoveredDates";
 import { syncCanonicalCatalog } from "./syncCatalog";
 import { connectedActualFactFromOrders, setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "./processingFees";
 
@@ -25,6 +26,12 @@ export async function syncPosData(
     adapter.fetchEmployees(),
     adapter.fetchTimecards({ since, until }),
   ]);
+  // Fetch succeeded across the complete Square pagination before any zero-day proof.
+  // Only a full café-local day (or the covered portion of the CURRENT day
+  // starting at local midnight) can be explicitly marked actual.
+  const actualDates=new Set(squareCoveredSalesDates({provider:adapter.provider,
+    since,until,timezone}));
+  for(const date of actualDates)affectedDates.add(date);
   const { data: menuRows } = await supabase.from("menu_items").select("id, pos_item_id").eq("business_id", businessId);
   const menuItemIdByPos = new Map((menuRows ?? []).filter((item) => item.pos_item_id).map((item) => [item.pos_item_id, item.id]));
 
@@ -43,7 +50,7 @@ export async function syncPosData(
     const businessDate = formatInTimeZone(new Date(order.closedAt), timezone, "yyyy-MM-dd");
     affectedDates.add(businessDate);
 
-    const { data: existing } = await supabase
+    const { data: existing, error: orderError } = await supabase
       .from("orders")
       .upsert(
         {
@@ -67,7 +74,7 @@ export async function syncPosData(
       .select("id")
       .single();
 
-    if (!existing) continue;
+    if (orderError || !existing) throw orderError ?? new Error("POS order persistence failed");
 
     await supabase.from("order_lines").delete().eq("order_id", existing.id);
     if (order.lines.length > 0) {
@@ -228,7 +235,8 @@ export async function syncPosData(
         eligible: false,
       });
     }
-    await recomputeDailyRollup(supabase, businessId, date);
+    await recomputeDailyRollup(supabase,businessId,date,
+      actualDates.has(date)?{salesDataStatus:"actual"}:{});
   }
 
   return { ordersSynced: orders.length, timecardsSynced: timecards.length, affectedDates: [...affectedDates] };

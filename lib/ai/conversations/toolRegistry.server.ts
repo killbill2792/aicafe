@@ -80,7 +80,7 @@ export type ToolEvidence = {
 };
 type Context = {
   tools: BusinessScopedCafeTools; asOf: string;
-  cafeName: string; timezone: string; readRules: () => Promise<TeamRule[]>;
+  cafeName: string; timezone: string; locale?:"en"|"es"|"ar"; readRules: () => Promise<TeamRule[]>;
 };
 const limitText = (s: string, max = 140) => s.slice(0, max);
 function ref(name: string, asOf: string, source: EvidenceReference["source"] = "cafe_state"): EvidenceReference {
@@ -119,13 +119,27 @@ function dateArgs(args: Record<string, unknown>, asOf: string): CafeStatePeriod 
     period: args.period, from: args.from, to: args.to,
   }), asOf);
 }
-function taskCard(task: OperatingTask, asOf: string): ServerTask {
-  const tab = task.status === "handled" ? "handled" : task.status === "watching" ? "watching" : "needs_you";
-  const item = task.payload.itemName ?? task.payload.employeeName ?? task.payload.categoryCode;
-  return { type: "task_card", taskId: task.id.slice(0, 200), agent: task.agentId,
-    title: limitText(task.kind.replaceAll("_", " ") + (typeof item === "string" ? ": " + item : ""), 160),
-    status: task.status, href: "/operations?status=" + tab + "&agent=" + task.agentId,
-    source: ref("task:" + task.id, asOf, "operating_tasks") };
+/** Only authenticated, persisted tasks enter this function. Names come from the task's
+ * own evidence; no inferred person, product, or action is ever inserted. */
+function taskCard(task:OperatingTask,asOf:string,locale:"en"|"es"|"ar"="en"):ServerTask {
+  const tab=task.status==="handled"?"handled":task.status==="watching"?"watching":"needs_you";
+  const label=(name:unknown)=>typeof name==="string"&&name.trim()?name.trim().slice(0,85):null;
+  const item=label(task.payload.itemName),employee=label(task.payload.employeeName);
+  const category=label(task.payload.categoryCode)?.replaceAll("_"," ")??null;
+  const l={
+    en:{price:"Review price",shift:"Review shift",cost:"Add missing cost",supply:"Check supply",money:"Review business costs"},
+    es:{price:"Revisar precio",shift:"Revisar turno",cost:"Añadir costo faltante",supply:"Revisar suministro",money:"Revisar costos del negocio"},
+    ar:{price:"مراجعة السعر",shift:"مراجعة الوردية",cost:"إضافة تكلفة مفقودة",supply:"فحص المخزون",money:"مراجعة تكاليف العمل"},
+  }[locale];
+  const withName=(base:string,detail:string|null)=>limitText(detail?base+": "+detail:base,160);
+  const title=task.kind==="price_review"?withName(l.price,item):
+    task.kind==="staff_coverage"?withName(l.shift,employee):
+    task.kind==="data_quality"?withName(l.cost,category):
+    task.kind==="supply_check"?withName(l.supply,item):l.money;
+  const query=new URLSearchParams({status:tab,agent:task.agentId,task:task.id});
+  return {type:"task_card",taskId:task.id.slice(0,200),agent:task.agentId,
+    title,status:task.status,href:"/operations?"+query.toString()+"#selected-task",
+    source:ref("task:"+task.id,asOf,"operating_tasks")};
 }
 export function intentForCalls(names: SupervisorToolName[]): SupervisorIntent {
   const unique = [...new Set(names)];
@@ -233,9 +247,13 @@ export function createSupervisorToolRegistry(context: Context) {
           result.estimatedInputs.push(...profit.quality.estimatedInputs.slice(0, 5));
         }
       } else result.missingInputs.push(...profit.quality.missingInputs.slice(0, 5));
-      if (tasks.available) addFact(result, prefix + "attention", "AI Team tasks needing owner", tasks.value.filter(t => t.status === "needs_owner" || t.status === "needs_response").length, "count",
-        ref("persisted_team_tasks", asOf, "operating_tasks"));
-      else result.missingInputs.push("teamTasksUnavailable");
+      if(tasks.available){
+        const needsYou=tasks.value.filter(t=>t.status==="needs_owner"||t.status==="needs_response");
+        addFact(result,prefix+"attention","AI Team tasks needing owner",needsYou.length,"count",
+          ref("persisted_team_tasks",asOf,"operating_tasks"));
+        result.tasks=needsYou.slice(0,3).map(t=>taskCard(t,asOf,context.locale));
+        result.evidence.push(...result.tasks.map(t=>t.source));
+      }else result.missingInputs.push("teamTasksUnavailable");
       if (result.facts.length && result.missingInputs.length) result.status = "partial";
       return result;
     }
@@ -294,7 +312,8 @@ export function createSupervisorToolRegistry(context: Context) {
       }
       const field = a.metric === "orders" ? "ordersCount" : "netSalesCents";
       const kind = a.metric === "orders" ? "count" : "metric";
-      const label = a.metric === "orders" ? "Recorded orders" : "Recorded net sales";
+      const label=a.metric==="orders" ? (range.from===asOf&&range.to===asOf?"Today's recorded orders so far":"Recorded orders")
+        : (range.from===asOf&&range.to===asOf?"Today's recorded net sales so far":"Recorded net sales");
       if (a.group_by === "total") addFact(r,prefix+"total",label,observed.reduce((s,x)=>s+x[field],0),kind,source);
       else if (a.group_by === "day") {
         const sorted = [...observed].sort((x,y)=>a.sort === "lowest" ? x[field]-y[field] : y[field]-x[field]);
@@ -423,7 +442,7 @@ export function createSupervisorToolRegistry(context: Context) {
         if (tasks.available) {
           const open = tasks.value.filter(t=>t.kind === "staff_coverage" && ["needs_owner","needs_response","watching"].includes(t.status));
           addFact(result,prefix+"issues","Recorded open staff coverage tasks",open.length,"count",result.evidence[0]);
-          result.tasks = open.slice(0,5).map(t=>taskCard(t,asOf));
+          result.tasks = open.slice(0,5).map(t=>taskCard(t,asOf,context.locale));
           result.evidence.push(...result.tasks.map(t=>t.source));
           if(open.length===0)addInsight(result,prefix+"noCoverage","No open staff coverage tasks are recorded; this does not prove the roster is fully covered.",result.evidence[0]);
         }
@@ -474,13 +493,16 @@ export function createSupervisorToolRegistry(context: Context) {
       if (!tasks.available) return result;
       const rows = tasks.value.filter(t=>(a.agent === "all" || t.agentId === a.agent) &&
         (a.status === "all" || (a.status === "needs_you" ? ["needs_owner","needs_response"].includes(t.status) : t.status === a.status)));
+      const need=rows.filter(t=>t.status==="needs_owner"||t.status==="needs_response");
+      addFact(result,prefix+"needsYou","Needs you",need.length,"count",source);
       for (const s of ["needs_owner","needs_response","handled","watching"]) {
         addFact(result,prefix+s, s.replaceAll("_"," ")+" Team tasks", rows.filter(t=>t.status === s).length,"count",source);
       }
-      result.tasks = rows.slice(0,a.limit).map(t=>taskCard(t,asOf));
+      const shown=a.status==="all"?need:rows;
+      result.tasks=shown.slice(0,a.limit).map(t=>taskCard(t,asOf,context.locale));
       result.evidence.push(...result.tasks.map(t=>t.source));
-      result.data = { note:"Persisted AI Team task inbox, not a staff roster", returned:result.tasks.length };
-      if(!rows.length)addInsight(result,prefix+"noTasks","No matching AI Team tasks are recorded.",source);
+      result.data = { note:"Persisted AI Team task inbox, not a staff roster", returned:result.tasks.length, filterStatus:a.status, view:"tasks" };
+      if(!shown.length)addInsight(result,prefix+"noTasks","No matching AI Team tasks are recorded.",source);
       return result;
     }
     if (call.name === "get_pricing") {

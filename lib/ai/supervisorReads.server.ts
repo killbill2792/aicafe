@@ -28,7 +28,9 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
         .eq("business_id",id).gte("business_date",period.from).lte("business_date",period.to)
         .order("business_date",{ascending:true}).limit(370);
       if (error) throw error;
-      const days = (data ?? []).filter(row=>row.sales_data_status !== "missing").map(rowToDailyFacts);
+      // Only explicit canonical actual coverage proves aggregate sales, including
+      // genuine $0 days. Null/legacy/staff-only statuses must remain unknown.
+      const days=(data??[]).filter(row=>row.sales_data_status==="actual").map(rowToDailyFacts);
       if (!days.length) return missing("noCoveredSalesRows");
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
       return { available:true, value:days, quality:quality(covered < expected ? ["salesCoverage:"+covered+"/"+expected] : []) };

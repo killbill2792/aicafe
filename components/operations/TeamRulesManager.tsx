@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import type { RuleAgent, RuleDecision, RuleEvent, RulesPage, TeamRule } from "@/lib/ai/policies/contracts";
-import { POLICY_AGENTS } from "@/lib/ai/policies/contracts";
 
 export type TeamRulesCopy = {
   agent: string; instruction: string; instructionHint: string;
-  saveDraft: string; rules: string; audit: string; emptyRules: string;
+  saveDraft: string; addRule:string; editAsDraft: string; editNotice:string;
+  rules: string; audit: string; recentChanges:string; emptyRules: string;
   emptyAudit: string; approve: string; reject: string; pause: string;
   resume: string; draft: string; active: string; paused: string; rejected: string;
   warning: string; loading: string; saving: string; error: string; conflict: string;
@@ -26,9 +26,9 @@ const surface = "rounded-2xl border border-[#D8C8B5] bg-card p-4 md:p-5";
 const field = "min-h-12 w-full rounded-xl border border-[#B9A995] bg-white px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const button = "min-h-12 rounded-full px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50";
 
-export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
-  const [agentId, setAgentId] = useState<RuleAgent>("supervisor");
+export default function TeamRulesManager({ copy, selectedAgent }: { copy: TeamRulesCopy; selectedAgent:RuleAgent }) {
   const [instruction, setInstruction] = useState("");
+  const [editingFrom,setEditingFrom]=useState<TeamRule|null>(null);
   const [rules, setRules] = useState<TeamRule[]>([]);
   const [events, setEvents] = useState<RuleEvent[]>([]);
   const [nextRuleOffset, setNextRuleOffset] = useState<number | null>(null);
@@ -47,6 +47,12 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
     setEvents(auditPage.items);
     setNextAuditOffset(auditPage.nextOffset);
   }, []);
+
+  useEffect(()=>{
+    setInstruction("");
+    setEditingFrom(null);
+    setError(null);
+  },[selectedAgent]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -76,9 +82,10 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
     try {
       await readResponse(await fetch("/api/ai/rules", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ agentId, instruction: instruction.trim() }),
+        body: JSON.stringify({ agentId:selectedAgent, instruction: instruction.trim() }),
       }));
       setInstruction("");
+      setEditingFrom(null);
       await load();
     } catch (issue) {
       setError(issue instanceof Error && issue.message === "conflict" ? "conflict" : "error");
@@ -121,61 +128,81 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
 
   const agentName = (agent: RuleAgent) => copy[agent];
   const statusLabel = (rule: TeamRule) => copy[rule.status];
+  const visibleRules=rules.filter(rule=>rule.agentId===selectedAgent);
+  const visibleEvents=events.filter(event=>event.agentId===selectedAgent);
+  const currentRules=visibleRules.filter(rule=>rule.status!=="rejected");
+  const groups=(["active","draft","paused"] as const).map(status=>({
+    status,rules:currentRules.filter(rule=>rule.status===status),
+  })).filter(group=>group.rules.length>0);
+
+  function beginEdit(rule:TeamRule){
+    setInstruction(rule.instruction);
+    setEditingFrom(rule);
+    requestAnimationFrame(()=>document.getElementById("policy-instruction")?.focus());
+  }
+
   return <div className="flex flex-col gap-4">
     <p className="rounded-2xl border border-[#D8C8B5] bg-[#FFF4E0] p-4 text-[17px] leading-relaxed text-ink">{copy.warning}</p>
-    <form onSubmit={(event) => void create(event)} className={surface}>
-      <div className="flex flex-col gap-3">
-        <label htmlFor="policy-agent" className="text-[17px] font-bold text-ink">{copy.agent}</label>
-        <select id="policy-agent" className={field} value={agentId} disabled={busy}
-          onChange={(event) => setAgentId(event.target.value as RuleAgent)}>
-          {POLICY_AGENTS.map((agent) => <option key={agent} value={agent}>{agentName(agent)}</option>)}
-        </select>
-        <label htmlFor="policy-instruction" className="text-[17px] font-bold text-ink">{copy.instruction}</label>
-        <textarea id="policy-instruction" className={field + " min-h-32 py-3"} value={instruction}
-          maxLength={1000} minLength={5} required disabled={busy}
-          placeholder={copy.instructionHint} onChange={(event) => setInstruction(event.target.value)}/>
-        <button type="submit" disabled={busy || instruction.trim().length < 5}
-          className={button + " bg-ink text-paper"}>{busy ? copy.saving : copy.saveDraft}</button>
-      </div>
-    </form>
 
     <section className={surface} aria-labelledby="policy-rules-heading">
       <h2 id="policy-rules-heading" className="font-headline text-2xl font-bold text-ink">{copy.rules}</h2>
       {loading && <p className="mt-3 text-[17px] text-ink-muted">{copy.loading}</p>}
-      {!loading && rules.length === 0 && <p className="mt-3 text-[17px] text-ink-muted">{copy.emptyRules}</p>}
-      <div className="mt-3 flex flex-col gap-3">
-        {rules.map((rule) => <article key={rule.id} className="rounded-2xl border border-[#D8C8B5] bg-paper p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <strong className="text-[17px] text-ink">{agentName(rule.agentId)}</strong>
-            <span className="rounded-full bg-[#E8E0D4] px-3 py-1 text-[15px] font-semibold text-ink">{statusLabel(rule)}</span>
+      {!loading && currentRules.length === 0 && <p className="mt-3 text-[17px] text-ink-muted">{copy.emptyRules}</p>}
+      <div className="mt-3 flex flex-col gap-5">
+        {groups.map(group=><div key={group.status}>
+          <h3 className="text-sm font-extrabold uppercase tracking-wide text-ink-muted">{copy[group.status]}</h3>
+          <div className="mt-2 flex flex-col gap-3">
+            {group.rules.map((rule) => <article key={rule.id} className="rounded-2xl border border-[#D8C8B5] bg-paper p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <strong className="text-[17px] text-ink">{agentName(rule.agentId)}</strong>
+                <span className="rounded-full bg-[#E8E0D4] px-3 py-1 text-[15px] font-semibold text-ink">{statusLabel(rule)}</span>
+              </div>
+              <p className="mt-2 whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{rule.instruction}</p>
+              <p className="mt-2 text-sm text-ink-muted">{copy.created}: {rule.createdAt.slice(0, 10)}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {(rule.status==="active"||rule.status==="paused")&&<button type="button" disabled={busy}
+                  onClick={()=>beginEdit(rule)} className={button + " border border-ink text-ink"}>{copy.editAsDraft}</button>}
+                {rule.status === "draft" && <>
+                  <button type="button" disabled={busy} onClick={() => void review(rule, "approve")}
+                    className={button + " bg-ink text-paper"}>{copy.approve}</button>
+                  <button type="button" disabled={busy} onClick={() => void review(rule, "reject")}
+                    className={button + " border border-ink text-ink"}>{copy.reject}</button>
+                </>}
+                {rule.status === "active" && <button type="button" disabled={busy}
+                  onClick={() => void review(rule, "pause")}
+                  className={button + " border border-ink text-ink"}>{copy.pause}</button>}
+                {rule.status === "paused" && <button type="button" disabled={busy}
+                  onClick={() => void review(rule, "resume")}
+                  className={button + " bg-ink text-paper"}>{copy.resume}</button>}
+              </div>
+            </article>)}
           </div>
-          <p className="mt-2 whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{rule.instruction}</p>
-          <p className="mt-2 text-sm text-ink-muted">{copy.created}: {rule.createdAt.slice(0, 10)}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {rule.status === "draft" && <>
-              <button type="button" disabled={busy} onClick={() => void review(rule, "approve")}
-                className={button + " bg-ink text-paper"}>{copy.approve}</button>
-              <button type="button" disabled={busy} onClick={() => void review(rule, "reject")}
-                className={button + " border border-ink text-ink"}>{copy.reject}</button>
-            </>}
-            {rule.status === "active" && <button type="button" disabled={busy}
-              onClick={() => void review(rule, "pause")}
-              className={button + " border border-ink text-ink"}>{copy.pause}</button>}
-            {rule.status === "paused" && <button type="button" disabled={busy}
-              onClick={() => void review(rule, "resume")}
-              className={button + " bg-ink text-paper"}>{copy.resume}</button>}
-          </div>
-        </article>)}
+        </div>)}
       </div>
       {nextRuleOffset !== null && <button type="button" onClick={() => void loadOlder("rules")}
         disabled={busy} className={button + " mt-4 w-full border border-ink text-ink"}>{copy.loadMore}</button>}
     </section>
 
-    <section className={surface} aria-labelledby="policy-audit-heading">
-      <h2 id="policy-audit-heading" className="font-headline text-2xl font-bold text-ink">{copy.audit}</h2>
-      {!loading && events.length === 0 && <p className="mt-3 text-[17px] text-ink-muted">{copy.emptyAudit}</p>}
+    <form onSubmit={(event) => void create(event)} className={surface}>
+      <h2 className="font-headline text-2xl font-bold text-ink">{copy.addRule} · {agentName(selectedAgent)}</h2>
+      <div className="mt-3 flex flex-col gap-3">
+        <label htmlFor="policy-instruction" className="text-[17px] font-bold text-ink">{copy.instruction}</label>
+        <textarea id="policy-instruction" className={field + " min-h-32 py-3"} value={instruction}
+          maxLength={1000} minLength={5} required disabled={busy}
+          placeholder={copy.instructionHint} onChange={(event) => setInstruction(event.target.value)}/>
+        {editingFrom&&<p className="rounded-xl bg-[#FFF4E0] p-3 text-[15px] font-semibold text-ink">{copy.editNotice}</p>}
+        <button type="submit" disabled={busy || instruction.trim().length < 5}
+          className={button + " bg-ink text-paper"}>{busy ? copy.saving : copy.saveDraft}</button>
+      </div>
+    </form>
+
+    <details className={surface}>
+      <summary className="flex min-h-12 cursor-pointer items-center text-[17px] font-bold text-ink">
+        {copy.recentChanges}
+      </summary>
+      {!loading && visibleEvents.length === 0 && <p className="mt-3 text-[17px] text-ink-muted">{copy.emptyAudit}</p>}
       <ol className="mt-3 flex flex-col gap-3">
-        {events.map((event) => <li key={event.id} className="rounded-xl border border-[#D8C8B5] p-3">
+        {visibleEvents.map((event) => <li key={event.id} className="rounded-xl border border-[#D8C8B5] p-3">
           <strong className="text-[17px] text-ink">{agentName(event.agentId)} · {copy[event.newStatus]}</strong>
           <p className="mt-1 break-words text-[17px] text-ink">{event.instruction}</p>
           <p className="mt-1 text-sm text-ink-muted">
@@ -186,7 +213,8 @@ export default function TeamRulesManager({ copy }: { copy: TeamRulesCopy }) {
       </ol>
       {nextAuditOffset !== null && <button type="button" onClick={() => void loadOlder("audit")}
         disabled={busy} className={button + " mt-4 w-full border border-ink text-ink"}>{copy.loadMore}</button>}
-    </section>
+    </details>
+
     <div role="status" aria-live="polite" className="text-[17px] font-semibold text-ink">
       {error === "conflict" ? copy.conflict : error ? copy.error : ""}
     </div>
