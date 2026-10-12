@@ -8,7 +8,7 @@ import { createSupervisorToolRegistry, intentForCalls, parseSupervisorCalls,
   SUPERVISOR_FUNCTIONS, type ToolEvidence, type SupervisorToolName } from "./toolRegistry.server";
 import { HEADLINES, SUMMARIES, SUPERVISOR_ENDPOINT, buildSupervisorInstructions, buildSupervisorRequest, buildSupervisorScopeAuditRequest } from "./supervisorRequest.mjs";
 import { SupervisorStageError, readSafeProviderError, type SupervisorDiagnostic } from "./diagnostics.server";
-import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcileRequestScopes,
+import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcileRequestScopesDetailed,
   coversRequestedGoal, fallbackCallForGoal, goalLabel, unavailableGoalText,
   type RequestedGoal } from "./requestScope";
 import type { SupervisorToolCall } from "./toolRegistry.server";
@@ -358,11 +358,30 @@ export async function runSupervisorTurn(input: {
           throw new SupervisorStageError("provider_invalid_payload","provider_response",
             {round:1,attempt:attemptNumber,httpStatus:response.status,providerStatus});
         const text=textFromResponse(payload.output);
-        if(!text)return null;
-        try{
-          const verified=scopeAuditSchema.parse(JSON.parse(text));
-          return reconcileRequestScopes(declared,verified.goals,verified.complete,verified.ambiguous);
-        }catch{return null;}
+        let verified:ReturnType<typeof scopeAuditSchema.parse>|null=null;
+        if(text){
+          try{verified=scopeAuditSchema.parse(JSON.parse(text));}
+          catch{/* Invalid scope audit payload is not evidence; never emit raw text. */}
+        }
+        if(!verified){
+          input.onDiagnostic?.({stage:"scope_reconciliation",model,round:1,
+            declaredGoalDomains:declared.map(g=>g.domain),auditedGoalDomains:[],
+            normalizedGoalDomains:declared.map(g=>g.domain),
+            scopeAuditComplete:false,scopeAuditAmbiguous:false,
+            reconciliationOutcome:"audit_incomplete"});
+          return null;
+        }
+        const reconciled=reconcileRequestScopesDetailed(declared,verified.goals,
+          verified.complete,verified.ambiguous);
+        // Only static domain enum values, booleans and a bounded outcome enum.
+        // Never emit the owner utterance, provider output or café/task evidence.
+        input.onDiagnostic?.({stage:"scope_reconciliation",model,round:1,
+          declaredGoalDomains:reconciled.declaredDomains,
+          auditedGoalDomains:reconciled.auditedDomains,
+          normalizedGoalDomains:reconciled.normalizedDomains,
+          scopeAuditComplete:verified.complete,scopeAuditAmbiguous:verified.ambiguous,
+          reconciliationOutcome:reconciled.outcome});
+        return reconciled.goals;
       }catch(error){
         const classified=error instanceof SupervisorStageError?error:
           new SupervisorStageError("provider_invalid_payload","provider_response",

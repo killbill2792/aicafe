@@ -98,3 +98,35 @@ describe("Sanitized Supervisor production diagnostics",()=>{
       providerStatus:"incomplete",round:2,attempt:1});
   });
 });
+
+describe("Scope reconciliation telemetry never logs utterances or task contents",()=>{
+  it("logs only enumerated goal families, typed booleans and a safe outcome",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    logger.emit({stage:"scope_reconciliation",
+      declaredGoalDomains:["team","not_a_domain OWNER SECRET" as never],
+      auditedGoalDomains:["staff_coverage","PRIvATE task text" as never],
+      normalizedGoalDomains:["team","staff_coverage","overview"],
+      scopeAuditComplete:true,scopeAuditAmbiguous:false,reconciliationOutcome:"semantic_conflict",
+      // Runtime injection must not be reflected as arbitrary diagnostic properties.
+      ownerText:"What task needs my attention?"} as never);
+    const result=JSON.parse(lines[0]);
+    expect(result).toMatchObject({stage:"scope_reconciliation",
+      declaredGoalDomains:["team"],auditedGoalDomains:["staff_coverage"],
+      normalizedGoalDomains:["team","staff_coverage","overview"],
+      scopeAuditComplete:true,scopeAuditAmbiguous:false,reconciliationOutcome:"semantic_conflict"});
+    expect(JSON.stringify(result)).not.toMatch(/OWNER SECRET|PRIvATE|What task|ownerText/);
+  });
+  it("drops non-enumerated outcomes and never prints arbitrary café payload",()=>{
+    const lines:string[]=[];
+    createSupervisorDiagnosticLogger(x=>lines.push(x)).emit({
+      stage:"scope_reconciliation",declaredGoalDomains:["team"],
+      auditedGoalDomains:[],normalizedGoalDomains:["team"],
+      reconciliationOutcome:"PRIVATE Task Latte instructions" as never,
+      scopeAuditComplete:false,scopeAuditAmbiguous:false,
+      taskTitle:"secret task title",business_id:"sensitive-id"} as never);
+    const d=JSON.parse(lines[0]);
+    expect(d.reconciliationOutcome).toBeUndefined();
+    expect(JSON.stringify(d)).not.toMatch(/PRIVATE|Latte|secret|sensitive-id|business_id/);
+  });
+});
