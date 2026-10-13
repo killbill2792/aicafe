@@ -646,6 +646,58 @@ SELECT pg_temp.assert_true(NOT has_function_privilege('anon',
  'public.toast_import_confirmed_attendance(uuid,uuid,jsonb)','EXECUTE'),
  'anon cannot import paid timecards');
 
+-- PR66: pending webhook signing secret cannot activate an insecure receiver.
+DO $setup$
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ sub uuid; lease uuid; finished boolean; due record;
+BEGIN
+ INSERT INTO toast_webhook_subscriptions(business_id,signing_secret_enc,enabled)
+ VALUES(b,NULL,false) RETURNING id INTO sub;
+ PERFORM pg_temp.assert_true((SELECT enabled=false AND signing_secret_enc IS NULL
+  FROM toast_webhook_subscriptions WHERE id=sub),
+  'owner can prepare a disabled webhook without a secret');
+ PERFORM pg_temp.must_fail(format(
+  'UPDATE toast_webhook_subscriptions SET enabled=true WHERE id=%L::uuid',sub));
+ UPDATE toast_webhook_subscriptions SET signing_secret_enc='synthetic-encrypted-only'
+ WHERE id=sub AND enabled=false;
+ PERFORM pg_temp.assert_true((SELECT signing_secret_enc IS NOT NULL AND enabled=false
+  FROM toast_webhook_subscriptions WHERE id=sub),
+  'secure secret registration does not activate webhook');
+ PERFORM pg_temp.assert_true(toast_set_sync_preference(b,r,'orders',false,60),
+  'owner config defaults disabled');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_sync_preferences
+  WHERE business_id=b AND restaurant_guid=r AND enabled),
+  'sync is disabled by default');
+ PERFORM pg_temp.assert_true(toast_set_sync_preference(b,r,'orders',true,30),
+  'owner can preconfigure preference without an active scheduler');
+ SELECT * INTO due FROM toast_claim_due_sync();
+ PERFORM pg_temp.assert_true(due.business_id=b AND due.restaurant_guid=r
+  AND due.kind='orders' AND due.lease_nonce IS NOT NULL,
+  'one bounded due capability claimed and nonce fenced');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_claim_due_sync()),
+  'concurrent dispatch cannot claim the same lease');
+ PERFORM pg_temp.assert_true(NOT toast_finish_due_sync(
+  b,r,'orders','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',true,NULL),
+  'stale dispatcher lease may not update preference cursor');
+ SELECT toast_finish_due_sync(b,r,'orders',due.lease_nonce,true,NULL) INTO finished;
+ PERFORM pg_temp.assert_true(finished,'current dispatcher nonce can finish');
+ PERFORM pg_temp.assert_true((SELECT last_success_at IS NOT NULL AND
+  next_run_at>now() AND last_failure_category IS NULL
+  FROM toast_sync_preferences WHERE business_id=b AND restaurant_guid=r
+   AND kind='orders'),'successful dispatch records freshness and interval');
+ PERFORM pg_temp.assert_true(toast_set_sync_preference(b,r,'orders',false,30),
+  'owner can disable dispatch without touching existing Vercel cron');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_claim_due_sync()),
+  'disabled preference is never auto-claimed');
+END $setup$;
+SELECT pg_temp.assert_true(NOT has_function_privilege('authenticated',
+ 'public.toast_claim_due_sync()','EXECUTE'),
+ 'authenticated clients cannot claim scheduler leases');
+SELECT pg_temp.assert_true(NOT has_table_privilege('anon',
+ 'public.toast_webhook_subscriptions','SELECT'),
+ 'webhook signing secrets remain inaccessible to anonymous users');
+
 -- Denied access is exercised as real anonymous / authenticated SQL session roles.
 SET LOCAL ROLE anon;
 DO $$

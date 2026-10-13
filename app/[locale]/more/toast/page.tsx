@@ -6,6 +6,7 @@ import {createServerSupabaseClient} from "@/lib/supabase/server";
 import PageShell from "@/components/shared/PageShell";
 import BackHeader from "@/components/shared/BackHeader";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
+import ToastSetupActions from "@/components/more/ToastSetupActions";
 export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
   const user=await requireOwnBusiness();
@@ -44,6 +45,19 @@ export default async function ToastConnectionPage() {
           errorUnauthorizedLocation:t("errorUnauthorizedLocation"),errorTimeout:t("errorTimeout"),
           errorRateLimited:t("errorRateLimited"),errorUnavailable:t("errorUnavailable"),
           errorInvalidResponse:t("errorInvalidResponse"),
+        }}/>
+      <ToastSetupActions businessId={businessId}
+        restaurantGuids={[]}
+        enabled={process.env.TOAST_SETUP_ENABLED==="true"}
+        labels={{
+          webhookSetup:t("webhookSetup"),createWebhook:t("createWebhook"),
+          webhookUrl:t("webhookUrl"),webhookSecret:t("webhookSecret"),
+          saveWebhookSecret:t("saveWebhookSecret"),webhookInactive:t("webhookInactive"),
+          syncPreferences:t("syncPreferences"),syncKind:t("syncKind"),
+          everyMinutes:t("everyMinutes"),enablePolling:t("enablePolling"),
+          disablePolling:t("disablePolling"),pendingActivation:t("pendingActivation"),
+          corrections:t("corrections"),recovery:t("recovery"),
+          pending:t("pending"),error:t("error"),success:t("success")
         }}/>
     </PageShell>
   );
