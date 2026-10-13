@@ -1,64 +1,49 @@
 "use client";
 import {useEffect,useState} from "react";
+import {loadToastOwnerSetupState,type ToastOwnerSetupStatus,type ToastWebhookSubscription}
+ from "./toastSetupState";
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
  everyMinutes:string;enablePolling:string;disablePolling:string;pendingActivation:string;
  corrections:string;recovery:string;pending:string;error:string;success:string
 };
-type Subscription={id:string;enabled:boolean;webhookUrl?:string};
-type Preferences={
- preferences:{kind:string;restaurant_guid:string;enabled:boolean;interval_minutes:number;last_failure_category:string|null}[];
- recovery:{restaurant_guid:string;state:string;kind:string}[];
- unresolvedCorrections:{restaurant_guid:string;business_date:string}[];
- schedulerActive?:boolean
-};
 export default function ToastSetupActions({businessId,restaurantGuids,enabled,labels}:{
  businessId:string;restaurantGuids:string[];enabled:boolean;labels:Labels
 }){
- const [subscriptions,setSubscriptions]=useState<Subscription[]>([]);
+ const [subscriptions,setSubscriptions]=useState<ToastWebhookSubscription[]>([]);
  const [selection,setSelection]=useState("");
  const [verifiedRestaurants,setVerifiedRestaurants]=useState<string[]>(restaurantGuids);
  const [restaurant,setRestaurant]=useState("");
  const [secret,setSecret]=useState("");
- const [status,setStatus]=useState<Preferences|null>(null);
+ const [status,setStatus]=useState<ToastOwnerSetupStatus|null>(null);
  const [kind,setKind]=useState("orders");
  const [minutes,setMinutes]=useState(60);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState("");
  async function reload(){
-  const [a,b,c]=await Promise.all([
-   fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"}),
-   fetch("/api/pos/toast/webhook/subscriptions?businessId="+encodeURIComponent(businessId),
-     {cache:"no-store"}),
-   fetch("/api/pos/toast/sync-preferences?businessId="+encodeURIComponent(businessId),
-     {cache:"no-store"}),
-   fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"})
-  ]);
-  if(c.ok){
-    const data=await c.json() as {locations:{restaurant_guid:string;verified_at:string|null}[]};
-    setVerifiedRestaurants((data.locations??[]).filter(x=>Boolean(x.verified_at)).map(x=>x.restaurant_guid));
+  try{
+   const snapshot=await loadToastOwnerSetupState(businessId);
+   setVerifiedRestaurants(snapshot.restaurantGuids);
+   setSubscriptions(snapshot.subscriptions);
+   setStatus(snapshot.status);
+   return true;
+  }catch{
+   // No old verification/disabled flag may survive a failed status refresh.
+   setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);
+   return false;
   }
-  if(a.ok){
-   const next=await a.json() as {subscriptions:Subscription[]};
-   setSubscriptions(next.subscriptions??[]);
-  }
-  if(b.ok)setStatus(await b.json() as Preferences);
  }
  useEffect(()=>{
   let cancelled=false;
-  Promise.all([
-   fetch("/api/pos/toast?businessId="+encodeURIComponent(businessId),{cache:"no-store"}),
-   fetch("/api/pos/toast/webhook/subscriptions?businessId="+encodeURIComponent(businessId),{cache:"no-store"}),
-   fetch("/api/pos/toast/sync-preferences?businessId="+encodeURIComponent(businessId),{cache:"no-store"})
-  ]).then(async([connection,a,b])=>{
-   if(connection.ok){
-    const info=await connection.json() as {locations:{restaurant_guid:string;verified_at:string|null}[]};
-    if(!cancelled)setVerifiedRestaurants((info.locations??[]).filter(l=>Boolean(l.verified_at)).map(l=>l.restaurant_guid));
-   }
-   if(cancelled)return;
-   if(a.ok)setSubscriptions((await a.json() as {subscriptions:Subscription[]}).subscriptions??[]);
-   if(b.ok)setStatus(await b.json() as Preferences);
-  }).catch(()=>{});
+  loadToastOwnerSetupState(businessId).then(snapshot=>{
+    if(cancelled)return;
+    setVerifiedRestaurants(snapshot.restaurantGuids);
+    setSubscriptions(snapshot.subscriptions);
+    setStatus(snapshot.status);
+  }).catch(()=>{
+    if(cancelled)return;
+    setVerifiedRestaurants([]);setSubscriptions([]);setStatus(null);
+  });
   return ()=>{cancelled=true;};
  },[businessId]);
  async function post(url:string,payload:unknown){
@@ -70,7 +55,8 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,la
    const result=await response.json() as {error?:string;subscriptionId?:string};
    if(!response.ok){setMessage(labels.error+": "+(result.error??"unavailable"));return;}
    if(result.subscriptionId)setSelection(result.subscriptionId);
-   setSecret("");setMessage(labels.success);await reload();
+   setSecret("");const loaded=await reload();
+   setMessage(loaded?labels.success:labels.error+": status unavailable");
   }catch{setMessage(labels.error);}
   finally{setBusy(false);}
  }
