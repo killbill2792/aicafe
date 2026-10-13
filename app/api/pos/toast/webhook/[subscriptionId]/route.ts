@@ -29,6 +29,8 @@ export async function POST(request:Request,context:{params:Promise<{subscription
       decryptToken(subscription.signing_secret_enc)))return response(401,{error:"invalid_signature"});
   if(!["order_updated","channel_order_updated"].includes(event.eventType))
     return response(202,{accepted:false});
+  const orderGuid=event.details.order?.guid;
+  if(!GUID.safeParse(orderGuid).success)return response(400,{error:"invalid_event"});
   const {data:mapping,error:mapError}=await db.from("toast_location_mappings")
     .select("verified_at").eq("business_id",subscription.business_id)
     .eq("restaurant_guid",event.details.restaurantGuid).maybeSingle();
@@ -36,7 +38,8 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   // Durable event ID dedupe; never store order details containing guest or payment data.
   const {error:insertError}=await db.from("toast_order_events").insert({
     business_id:subscription.business_id,event_guid:event.guid,
-    restaurant_guid:event.details.restaurantGuid,event_time:event.timestamp,state:"pending"
+    restaurant_guid:event.details.restaurantGuid,order_guid:orderGuid,
+    event_time:event.timestamp,state:"pending"
   });
   if(insertError?.code==="23505")return response(202,{accepted:true,duplicate:true});
   if(insertError)return response(503,{error:"queue_unavailable"});

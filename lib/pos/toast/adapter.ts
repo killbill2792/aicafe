@@ -115,6 +115,7 @@ export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:s
 export type ToastAdapter=PosAdapter&{
   fetchModifiedOrders(range:Range):Promise<PosOrder[]>;
   fetchBusinessDayOrders(day:string):Promise<PosOrder[]>;
+  fetchOrderByGuid(orderGuid:string):Promise<PosOrder|null>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
   fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
@@ -151,6 +152,12 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     fetchBusinessDayOrders:(day)=>{
       if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
       return allOrders("businessDate="+day);
+    },
+    async fetchOrderByGuid(orderGuid) {
+      if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
+      const row=await request("/orders/v2/orders/"+orderGuid,ordersSchema.element);
+      if(row.guid.toLowerCase()!==orderGuid.toLowerCase())throw new ToastApiError("invalid_response");
+      return normalizeToastOrder(row,restaurantGuid);
     },
     // Incremental changes only, never verified-zero coverage.
     fetchOrders:(range)=>allOrders(query(range)),
