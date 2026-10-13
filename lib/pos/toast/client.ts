@@ -59,7 +59,7 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
     const refresh=(async()=>{
       for(let attempt=0;attempt<20;attempt++){
         const current=await row();
-        if(!force&&current.bearer_token_enc&&current.bearer_expires_at&&
+        if((!force||attempt>0)&&current.bearer_token_enc&&current.bearer_expires_at&&
            Date.parse(current.bearer_expires_at)>Date.now()+MIN_VALIDITY_MS)
           return decryptToken(current.bearer_token_enc);
         const {data:claimed,error:claimError}=await db.rpc("toast_claim_auth_lease",{p_business_id:businessId});

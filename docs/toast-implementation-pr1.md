@@ -20,7 +20,7 @@ Required server environment:
 - SUPABASE_SERVICE_ROLE_KEY (existing, server-only).
 - TOAST_ALLOWED_API_HOSTS: comma-separated *exact* Toast HTTPS hostnames authorized by Toast; hostnames must end in \`.toasttab.com\`. No trailing slash. Verify against the actual API Access URL.
 
-No automatic sync or backfill flags are introduced or enabled. Nothing in this PR uses Vercel cron; the existing Team alerts cron is preserved.
+TOAST_SETUP_ENABLED defaults to false; explicitly set it to true only after staging authorization and security review. Automatic sync, webhook and backfill remain absent and disabled. Nothing in this PR uses Vercel cron; the existing Team alerts cron is preserved.
 
 Owner checklist when test is explicitly authorized: eligible Essentials+ subscription, permission 8.4 Manage Integrations, Standard API credentials from Toast Web → Integrations → Toast API access → Manage credentials; scopes \`restaurants:read\`, \`menus:read\`, \`orders:read\`, \`labor:read\`, \`labor.employees:read\`; explicit restaurant GUID(s) mapped to AI CAFE location IDs. The secret must be entered only over the protected HTTPS setup route, never sent in chat.
 

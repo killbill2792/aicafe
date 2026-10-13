@@ -1,5 +1,4 @@
 import {NextResponse} from "next/server";
-import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {encryptToken} from "@/lib/security/tokenCrypto";
 import {authorizeToastOwner,setupSchema} from "@/lib/pos/toast/ownerAccess";
 import {GUID,trustedToastOrigin,ToastApiError} from "@/lib/pos/toast/client";
@@ -24,6 +23,7 @@ export async function GET(request:Request) {
 export async function POST(request:Request){
   if(request.headers.get("content-type")?.split(";")[0]!=="application/json")
     return reply(415,{error:"invalid_request"});
+  if(process.env.TOAST_SETUP_ENABLED!=="true")return reply(503,{error:"setup_disabled"});
   const body=await request.json().catch(()=>null);
   const parsed=setupSchema.safeParse(body);
   if(!parsed.success)return reply(400,{error:"invalid_request"});

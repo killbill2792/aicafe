@@ -1,3 +1,11 @@
+## Toast Standard API — secure connector foundation (draft, 2026-10-12)
+
+1. Add service-role-only encrypted Toast credentials, tenant-safe location mappings, atomic mapping updates, per-business token refresh lease and narrow owner-only JSON setup/test routes.
+2. Add a host-allowlisted, read-only bearer client and deterministic token-reuse/host validation tests; no canonical ingestion and no polling or webhooks yet.
+3. Gate credential writes and verification behind TOAST_SETUP_ENABLED=false by default; run CI on the first draft PR, then build verified order/labor canonical mapping in dependent PRs.
+
+Status: foundation code proposed for draft review only. Migration 40 not applied, no real Toast access, no claim of production readiness. No new npm dependencies; Toast credential foundation must remain disabled until explicit approval and staged reconciliation. Details: docs/toast-implementation-pr1.md.
+
 # Progress
 
 ## Supervisor Experience: Responses API & full chat — 2026-10-10

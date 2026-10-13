@@ -7,6 +7,7 @@ export const dynamic="force-dynamic";
 const json=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 const expected=z.object({businessId:GUID}).strict();
 export async function POST(request:Request){
+  if(process.env.TOAST_SETUP_ENABLED!=="true")return json(503,{error:"setup_disabled"});
   const body=expected.safeParse(await request.json().catch(()=>null));
   if(!body.success)return json(400,{error:"invalid_request"});
   const businessId=body.data.businessId;

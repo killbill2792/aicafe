@@ -1,0 +1,28 @@
+name: Toast foundation verification
+on:
+  pull_request:
+    paths:
+      - 'lib/pos/toast/**'
+      - 'app/api/pos/toast/**'
+      - 'supabase/migrations/20261012000040_toast_secure_access.sql'
+      - 'docs/toast-implementation-pr1.md'
+      - '.github/workflows/toast-foundation-verify.yml'
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
