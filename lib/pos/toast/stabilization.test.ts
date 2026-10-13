@@ -19,7 +19,7 @@ describe("Toast P0 state and cursor correctness",()=>{
     [{checks:[{...base.checks[0],paymentStatus:"OPEN"}]},"reopened"],
     [{voided:true},"voided"],[{deleted:true},"deleted"],
     [{checks:[{...base.checks[0],selections:[{...base.checks[0].selections[0],refundDetails:{refundAmount:2}}]}]},"refunded"],
-  ] as const) {
+  ] as [Record<string,unknown>,string][]) {
    const changed=classifyToastOrder({...base,...change},restaurant);
    expect(changed.state).toBe(state);
    expect(changed.normalizedOrder).toBeNull();
