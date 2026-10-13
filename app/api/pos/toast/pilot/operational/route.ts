@@ -24,17 +24,32 @@ export async function GET(request:Request){
  if(!GUID.safeParse(restaurantGuid).success)return reply(400,{error:"invalid_location"});
  const db=await authorizeToastOwner(businessId);
  if(!db)return reply(403,{error:"not_authorized"});
- const [staff,catalog,attendance]=await Promise.all([
+ const [staff,catalog,attendance,employees,items,modifiers]=await Promise.all([
   db.from("toast_employee_directory").select("employee_guid,display_name,deleted,linked_employee_id")
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).limit(300),
   db.from("toast_catalog_facts").select("kind,provider_guid,name,category,price_cents,linked_menu_item_id,linked_modifier_recipe_id")
    .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).limit(500),
   db.from("toast_attendance_review").select("external_time_entry_id,reconciliation_status,wage_status")
-   .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).limit(300)
+   .eq("business_id",businessId).eq("restaurant_guid",restaurantGuid).limit(300),
+  db.from("employees").select("id,display_name,role,active").eq("business_id",businessId)
+   .order("display_name",{ascending:true}).limit(501),
+  db.from("menu_items").select("id,name,size_label,price_cents,is_active").eq("business_id",businessId)
+   .order("name",{ascending:true}).limit(501),
+  db.from("modifier_recipes").select("id,name").eq("business_id",businessId)
+   .order("name",{ascending:true}).limit(501)
  ]);
- if(staff.error||catalog.error||attendance.error)return reply(503,{error:"unavailable"});
+ if(staff.error||catalog.error||attendance.error||employees.error||items.error||modifiers.error)
+  return reply(503,{error:"unavailable"});
+ // Never offer a partial canonical candidate list as if it were complete.
+ if((employees.data??[]).length>500||(items.data??[]).length>500||
+  (modifiers.data??[]).length>500)
+  return reply(409,{error:"mapping_candidates_need_pagination"});
  return reply(200,{roster:staff.data,catalog:catalog.data,attendance:attendance.data,
-  wageUnknownIsNotZero:true,scheduledShiftsAreNotPaidHours:true});
+  canonicalEmployees:employees.data??[],canonicalItems:items.data??[],
+  canonicalModifiers:modifiers.data??[],
+  wageUnknownIsNotZero:true,scheduledShiftsAreNotPaidHours:true,
+  mappingRequiresExplicitConfirmation:true,ownerCorrectionsPreserved:true,
+  providerPricesNotWrittenToCanonical:true});
 }
 export async function POST(request:Request){
  if(process.env.TOAST_PILOT_IMPORT_ENABLED!=="true")return reply(503,{error:"pilot_disabled"});
