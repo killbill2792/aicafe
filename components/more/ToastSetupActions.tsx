@@ -2,7 +2,7 @@
 import {useEffect,useState} from "react";
 import {loadToastOwnerSetupState,type ToastOwnerSetupStatus,type ToastWebhookSubscription}
  from "./toastSetupState";
-import ToastOperationalReview,type {ToastReviewLabels} from "./ToastOperationalReview";
+import ToastOperationalReview, {type ToastReviewLabels} from "./ToastOperationalReview";
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
