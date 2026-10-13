@@ -2,14 +2,16 @@
 import {useEffect,useState} from "react";
 import {loadToastOwnerSetupState,type ToastOwnerSetupStatus,type ToastWebhookSubscription}
  from "./toastSetupState";
+import ToastOperationalReview,type {ToastReviewLabels} from "./ToastOperationalReview";
 type Labels={
  webhookSetup:string;createWebhook:string;webhookUrl:string;webhookSecret:string;
  saveWebhookSecret:string;webhookInactive:string;syncPreferences:string;syncKind:string;
  everyMinutes:string;enablePolling:string;disablePolling:string;pendingActivation:string;
  corrections:string;recovery:string;pending:string;error:string;success:string
 };
-export default function ToastSetupActions({businessId,restaurantGuids,enabled,labels}:{
- businessId:string;restaurantGuids:string[];enabled:boolean;labels:Labels
+export default function ToastSetupActions({businessId,restaurantGuids,enabled,pilotEnabled,labels,reviewLabels}:{
+ businessId:string;restaurantGuids:string[];enabled:boolean;pilotEnabled:boolean;
+ labels:Labels;reviewLabels:ToastReviewLabels
 }){
  const [subscriptions,setSubscriptions]=useState<ToastWebhookSubscription[]>([]);
  const [selection,setSelection]=useState("");
@@ -114,6 +116,8 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,la
     <p>{labels.recovery}: {status.recovery.length}</p>
     <p>{labels.corrections}: {status.unresolvedCorrections.length}</p>
   </div>}
+  {selected&&<ToastOperationalReview businessId={businessId} restaurantGuid={selected}
+    enabled={pilotEnabled} labels={reviewLabels}/>}
   {busy&&<p role="status">{labels.pending}</p>}
   {message&&<p role="status" className="text-sm text-ink">{message}</p>}
  </section>;

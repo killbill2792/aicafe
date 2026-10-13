@@ -30,6 +30,21 @@ export default async function ToastConnectionPage() {
         businessId={businessId}
         locations={locations??[]}
         enabled={process.env.TOAST_SETUP_ENABLED==="true"}
+        pilotEnabled={process.env.TOAST_SETUP_ENABLED==="true" &&
+          process.env.TOAST_PILOT_IMPORT_ENABLED==="true"}
+        reviewLabels={{
+          title:t("reviewTitle"),sourceRoster:t("sourceRoster"),sourceMenu:t("sourceMenu"),
+          refreshStaff:t("refreshStaff"),refreshMenu:t("refreshMenu"),
+          ownerEmployee:t("ownerEmployee"),ownerProduct:t("ownerProduct"),
+          ownerModifier:t("ownerModifier"),unmatched:t("unmatched"),
+          mapped:t("mapped"),approval:t("approval"),mappingWarning:t("mappingWarning"),
+          approve:t("approveMapping"),archived:t("archived"),
+          missingWage:t("missingWage"),attendanceReview:t("attendanceReview"),
+          noRecords:t("noRecords"),emptyChoice:t("emptyChoice"),
+          unknownPrice:t("unknownPrice"),priceCents:t("priceCents"),
+          unverified:t("unverified"),pending:t("pending"),error:t("error"),
+          success:t("success"),disabled:t("notEnabled")
+        }}
         labels={{
           notEnabled:t("notEnabled"),notConnected:t("notConnected"),configured:t("configured"),
           verified:t("verified"),missingPermissions:t("missingPermissions"),
