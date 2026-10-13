@@ -5,6 +5,8 @@ import {createToastAdapter} from "./adapter";
 import {syncToastLaborReadOnly} from "./laborSync";
 import {GUID,ToastApiError} from "./client";
 import {orderEventRetryAt} from "./orderQueue";
+import {formatInTimeZone,fromZonedTime} from "date-fns-tz";
+import {addDays,parseISO} from "date-fns";
 export type ToastPollKind="orders"|"attendance"|"schedules";
 export type ToastPollParams={businessId:string;locationId:string;restaurantGuid:string;kind:ToastPollKind};
 const weekdays=["sun","mon","tue","wed","thu","fri","sat"] as const;
@@ -37,14 +39,35 @@ export function isCafeCurrentlyOpen(openHours:OpenHours|null,timezone:string,at:
  }
  return false;
 }
-function windowFrom(cursor:string|null,now:Date) {
- const untilMs=now.getTime()-120000;
- const requestedSince=cursor?Date.parse(cursor)-120000:untilMs-30*60000;
- const sinceMs=Math.max(Number.isFinite(requestedSince)?requestedSince:untilMs-30*60000,
-   untilMs-30*86400000);
- if(sinceMs>=untilMs) return null;
- // One bounded 30-minute chunk; the cursor advances only on a fully successful read.
- return {since:new Date(sinceMs),until:new Date(Math.min(untilMs,sinceMs+30*60000))};
+export type PollFreshness="current"|"behind"|"recoverable_backlog"|"requires_historical_backfill";
+export function planModifiedWindow(cursor:string|null,now:Date):{
+ status:PollFreshness;range:{since:Date;until:Date}|null
+} {
+ const upper=now.getTime()-120000;
+ if(!Number.isFinite(upper))throw new ToastApiError("invalid_response");
+ if(cursor&&(!Number.isFinite(Date.parse(cursor))))throw new ToastApiError("invalid_response");
+ const last=cursor?Date.parse(cursor):upper-5*60000;
+ const behind=upper-last;
+ if(behind>30*86400000)return {status:"requires_historical_backfill",range:null};
+ if(behind<=0)return {status:"current",range:null};
+ const since=Math.max(last-120000,upper-30*86400000);
+ // Five-minute bounded chunks with a two-minute replay overlap.
+ const until=Math.min(upper,Math.max(last, since)+5*60000);
+ if(until<=since)return {status:"current",range:null};
+ return {status:behind>60*60000?"recoverable_backlog":"behind",
+   range:{since:new Date(since),until:new Date(until)}};
+}
+export function scheduleRefreshWindow(now:Date,timezone:string,horizonDays:number):{
+ since:Date;until:Date
+} {
+ const horizon=Math.min(21,Math.max(1,Math.trunc(horizonDays)));
+ const day=formatInTimeZone(now,timezone,"yyyy-MM-dd");
+ const start=parseISO(day);
+ // Includes recent corrections, today and configurable future schedule.
+ const since=fromZonedTime(addDays(start,-3).toISOString().slice(0,10)+"T00:00:00",timezone);
+ const until=fromZonedTime(addDays(start,horizon+2).toISOString().slice(0,10)+"T00:00:00",timezone);
+ if(until.getTime()-since.getTime()>30*86400000)throw new ToastApiError("invalid_response");
+ return {since,until};
 }
 export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=new Date()) {
  if(!GUID.safeParse(p.businessId).success||!GUID.safeParse(p.locationId).success||
@@ -57,7 +80,9 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
  ]);
  if(locError||busError||!location||!business||business.is_demo)
     throw new ToastApiError("unauthorized_location");
- if(!isCafeCurrentlyOpen(location.open_hours,business.timezone,now))
+ // Future shifts have to be refreshed BEFORE opening time. Labor/order polling
+ // remains subject to the explicit configured open-hours policy.
+ if(p.kind!=="schedules"&&!isCafeCurrentlyOpen(location.open_hours,business.timezone,now))
     return {skipped:"outside_configured_hours",fetched:0};
  const {data:lease,error:leaseError}=await db.rpc("toast_claim_poll",{
   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_kind:p.kind
@@ -65,36 +90,48 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
  if(leaseError)throw new ToastApiError("unavailable");
  if(!lease)return {skipped:"leased_or_not_verified",fetched:0};
  let failure:string|null=null,retryAt:string|null=null,until:string|null=null,fetched=0;
+ let freshness:PollFreshness="current";
  try {
   const {data:health,error:healthError}=await db.from("toast_sync_health")
     .select("last_order_poll_at,last_time_entry_poll_at,last_schedule_poll_at")
     .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid).maybeSingle();
   if(healthError)throw new ToastApiError("unavailable");
-  const cursor=p.kind==="orders"?health?.last_order_poll_at:
-    p.kind==="attendance"?health?.last_time_entry_poll_at:health?.last_schedule_poll_at;
-  const range=windowFrom(cursor??null,now);
-  if(!range)return {skipped:"already_current",fetched:0};
-  until=range.until.toISOString();
-  if(p.kind==="orders"){
-   const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
-   const orders=await adapter.fetchModifiedOrders(range);
-   const rows=orders.map(order=>{
-     const orderGuid=order.posOrderId.split(":").at(-1)??"";
-     if(!GUID.safeParse(orderGuid).success)throw new ToastApiError("invalid_response");
-     return {business_id:p.businessId,restaurant_guid:p.restaurantGuid,order_guid:orderGuid,
-       normalized_order:order,state:"completed",last_checked_at:new Date().toISOString()};
-   });
-   // Bound Supabase round trips independently of order count.
-   for(let offset=0;offset<rows.length;offset+=100) {
-     const {error:saveError}=await db.from("toast_modified_orders_staging")
-       .upsert(rows.slice(offset,offset+100),
-         {onConflict:"business_id,restaurant_guid,order_guid"});
-     if(saveError)throw new ToastApiError("unavailable");
-   }
-   fetched=orders.length;
+  if(p.kind==="schedules"){
+    const configured=Number(process.env.TOAST_SCHEDULE_HORIZON_DAYS??"14");
+    const range=scheduleRefreshWindow(now,business.timezone,Number.isFinite(configured)?configured:14);
+    const result=await syncToastLaborReadOnly(db,p,range,"schedules");
+    fetched=result.staged;
+    until=now.toISOString(); // freshness timestamp, not a future schedule boundary
   }else{
-   const result=await syncToastLaborReadOnly(db,p,range,p.kind);
-   fetched=result.staged;
+    const cursor=p.kind==="orders"?health?.last_order_poll_at:health?.last_time_entry_poll_at;
+    const planned=planModifiedWindow(cursor??null,now);
+    freshness=planned.status;
+    if(planned.range){
+      const range=planned.range;
+      if(p.kind==="orders"){
+        const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
+        const facts=await adapter.fetchModifiedOrderStates(range);
+        // Prevent a hot function with thousands of sequential database writes.
+        // Do not advance a cursor when work cannot be staged in this invocation.
+        if(facts.length>50)throw new ToastApiError("invalid_response");
+        for(const fact of facts){
+          const {error:save}=await db.rpc("toast_store_order_fact",{
+            p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+            p_order_guid:fact.orderGuid,p_modified_at:fact.modifiedAt,
+            p_state:fact.state,p_normalized_order:fact.normalizedOrder,
+            p_event_guid:null
+          });
+          if(save)throw new ToastApiError("unavailable");
+        }
+        fetched=facts.length;
+      }else{
+        // Modified-time query covers corrections to older clock-ins and archived entries.
+        const result=await syncToastLaborReadOnly(db,p,range,"attendance","modified");
+        fetched=result.staged;
+      }
+      // Cursor advances only after all pages and every staging batch has succeeded.
+      until=range.until.toISOString();
+    }
   }
  }catch(error){
    failure=error instanceof ToastApiError?error.category:"unavailable";
@@ -108,5 +145,7 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
    if(finishError||!finished)throw new ToastApiError("unavailable");
  }
  if(failure)throw new ToastApiError(failure as ToastApiError["category"],undefined,retryAt??undefined);
- return {fetched,staged_only:true,nextCursor:until};
+ return {fetched,staged_only:true,freshness,
+   ...(freshness==="requires_historical_backfill"?{requiresHistoricalBackfill:true}:{}),
+   nextCursor:until};
 }
