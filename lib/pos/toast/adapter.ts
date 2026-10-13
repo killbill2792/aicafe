@@ -111,7 +111,7 @@ export type ToastScheduledShift={externalShiftId:string;externalEmployeeId:strin
   scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast"};
 export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:string;
   externalLocationId:string;clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
-  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt:string|null;sourceProvider:"toast"};
+  breaks:PosTimecard["breaks"];deleted:boolean;modifiedAt?:string|null;sourceProvider:"toast"};
 export type ToastOrderState="completed"|"open"|"reopened"|"voided"|"deleted"|"refunded"|"ambiguous";
 export type ToastOrderFact={orderGuid:string;restaurantGuid:string;modifiedAt:string;state:ToastOrderState;normalizedOrder:PosOrder|null};
 export function classifyToastOrder(order:Order,restaurantGuid:string):ToastOrderFact {

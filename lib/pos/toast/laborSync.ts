@@ -17,7 +17,7 @@ export function mapToastLaborEntry(p:LocationParams,f:ToastAttendanceFact) {
    external_employee_id:f.externalEmployeeId,clock_in:f.clockIn,
    clock_out:f.clockOut,hourly_wage_cents:f.hourlyWageCents,
    wage_status:f.hourlyWageCents===null?"missing":"verified",
-   breaks:f.breaks,deleted:f.deleted,provider_modified_at:f.modifiedAt,
+   breaks:f.breaks,deleted:f.deleted,provider_modified_at:f.modifiedAt??null,
    fetched_at:new Date().toISOString(),
  };
 }
