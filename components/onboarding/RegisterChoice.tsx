@@ -31,9 +31,9 @@ export default function RegisterChoice({
       {!squareConfigured && <p className="px-2 text-sm text-warn">{labels.squareNotConfigured}</p>}
 
       <div className="grid grid-cols-3 gap-2">
-        <RegisterTile Icon={Store} label={labels.useToast} />
-        <RegisterTile Icon={Coffee} label={labels.useClover} />
-        <RegisterTile Icon={FileSpreadsheet} label={labels.useOther} />
+        <RegisterTile Icon={Store} label={labels.useToast} href="/more/toast" />
+        <RegisterTile Icon={Coffee} label={labels.useClover} href="/more/uploads" />
+        <RegisterTile Icon={FileSpreadsheet} label={labels.useOther} href="/more/uploads" />
       </div>
       <p className="px-2 text-sm text-ink-muted">{labels.csvHint}</p>
 
@@ -44,9 +44,11 @@ export default function RegisterChoice({
   );
 }
 
-function RegisterTile({ Icon, label }: { Icon: typeof Store; label: string }) {
+function RegisterTile({ Icon, label, href }: {
+  Icon: typeof Store; label: string; href: "/more/toast" | "/more/uploads";
+}) {
   return (
-    <Link href="/more/uploads" className="flex flex-col items-center gap-2 rounded-2xl bg-card p-4 text-center text-ink no-underline">
+    <Link href={href} className="flex flex-col items-center gap-2 rounded-2xl bg-card p-4 text-center text-ink no-underline">
       <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-good-tint text-good">
         <Icon aria-hidden="true" size={20} />
       </span>
