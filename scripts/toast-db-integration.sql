@@ -365,6 +365,88 @@ BEGIN
    'empty modification windows do not invent verified-zero days');
 END $check$;
 
+-- Promotion freezes an immutable business-fact baseline. Neither a new
+-- provider timestamp nor nonfinancial API metadata is a canonical correction.
+DO $baseline$
+DECLARE
+ b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ v_guid uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019';
+ original jsonb; changing jsonb; prior_hash text;
+BEGIN
+ SELECT normalized_order,promoted_snapshot_sha256 INTO original,prior_hash
+ FROM toast_promotion_order_baselines
+ WHERE business_id=b AND restaurant_guid=r AND order_guid=v_guid;
+ PERFORM pg_temp.assert_true(original IS NOT NULL AND prior_hash='synthetic-checksum',
+  'promoted order baseline frozen in same transaction');
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM toast_promotion_order_baselines
+  WHERE business_id=b AND restaurant_guid=r),'unique baseline for promoted order');
+ PERFORM pg_temp.assert_true((SELECT verification_status='promoted_pending_live_reconciliation'
+   AND fully_verified_for_owner_reporting=false AND pending_corrections=0
+   FROM toast_financial_reporting_status
+   WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
+   'promoted day is not automatically fully verified by reporting boundary');
+
+ PERFORM pg_temp.assert_true(toast_store_order_fact(b,r,v_guid,
+  '2026-10-10T18:00:00Z','completed',original,NULL),
+  'first poll after promotion accepted without false correction');
+ PERFORM pg_temp.assert_true(toast_store_order_fact(b,r,v_guid,
+  '2026-10-10T18:10:00Z','completed',original,NULL),
+  'identical completed order with newer version accepted without false correction');
+ PERFORM pg_temp.assert_true(toast_store_order_fact(b,r,v_guid,
+  '2026-10-10T18:20:00Z','completed',
+  original||'{"transportMetadata":"sync run changed"}'::jsonb,NULL),
+  'nonfinancial transport metadata change does not alter financial baseline');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_canonical_corrections
+  WHERE business_id=b AND restaurant_guid=r AND order_guid=v_guid),
+  'identical newer completed order never creates review row');
+ PERFORM pg_temp.assert_true((SELECT state='promoted' FROM toast_pilot_days
+  WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
+  'identical refreshed order preserves promoted day');
+
+ -- Financial difference (not timestamp) creates exactly one review record.
+ changing:=jsonb_set(original,'{netSalesCents}','1200'::jsonb);
+ PERFORM pg_temp.assert_true(toast_store_order_fact(b,r,v_guid,
+  '2026-10-10T19:00:00Z','completed',changing,NULL),
+  'changed completed net sale staged for review');
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM toast_canonical_corrections
+  WHERE business_id=b AND restaurant_guid=r AND order_guid=v_guid
+    AND latest_provider_state='completed'),
+  'true completed-order accounting change opens single review');
+ PERFORM pg_temp.assert_true((SELECT state='needs_review' FROM toast_pilot_days
+  WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
+  'true accounting change invalidates promoted-day status');
+ PERFORM pg_temp.assert_true((SELECT verification_status='review_required'
+   AND fully_verified_for_owner_reporting=false AND pending_corrections=1
+   FROM toast_financial_reporting_status
+   WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
+   'report provenance does not silently show changed day verified');
+ PERFORM pg_temp.assert_true(NOT has_table_privilege('anon',
+  'public.toast_financial_reporting_status','SELECT'),
+  'anonymous user cannot read private report provenance');
+ PERFORM pg_temp.assert_true(NOT has_table_privilege('authenticated',
+  'public.toast_promotion_order_baselines','SELECT'),
+  'authenticated client cannot read baseline');
+ PERFORM pg_temp.assert_true(has_table_privilege('service_role',
+  'public.toast_financial_reporting_status','SELECT'),
+  'service role can surface tenant-scoped financial freshness');
+ PERFORM pg_temp.assert_true(NOT has_function_privilege('service_role',
+  'public.toast_promote_reconciled_day_pre_baseline(uuid,uuid,uuid,date,text)','EXECUTE'),
+  'obsolete promotion wrapper is not accessible to service-role callers');
+
+ -- A stale prior provider version may neither overwrite new state nor
+ -- produce another change record.
+ PERFORM pg_temp.assert_true(NOT toast_store_order_fact(b,r,v_guid,
+  '2026-10-10T18:15:00Z','completed',original,NULL),
+  'older provider version rejected despite matching the original baseline');
+ PERFORM pg_temp.assert_true((SELECT latest_provider_modified_at='2026-10-10T19:00:00Z'
+  FROM toast_canonical_corrections WHERE business_id=b AND restaurant_guid=r
+   AND order_guid=v_guid),'stale version does not regress the correction marker');
+ PERFORM pg_temp.assert_true((SELECT normalized_order=changing FROM
+  toast_modified_orders_staging WHERE business_id=b AND restaurant_guid=r
+  AND order_guid=v_guid),'stale payload did not replace newer completed accounting');
+END $baseline$;
+
 -- Already-promoted Toast sales: newer refund/void/reopen/delete -> ONE review record.
 DO $check$
 DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -410,6 +492,10 @@ SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
 SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
  'public.toast_promote_reconciled_day_pre_correction(uuid,uuid,uuid,date,text)','EXECUTE'),
  'service role cannot bypass latest canonical correction gate');
+SELECT pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND pos_order_id='toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019'),
+ 'historical revenue preserved after repeat, modified, refund, void, reopened and delete');
 SELECT pg_temp.assert_true(NOT has_table_privilege('anon','public.toast_poll_recovery','SELECT'),
  'no anonymous visibility into backfill journal');
 SELECT pg_temp.assert_true(NOT has_table_privilege('authenticated','public.toast_canonical_corrections','UPDATE'),
