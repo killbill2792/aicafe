@@ -1,0 +1,7 @@
+# Toast poll coordinator — disabled production-readiness slice
+
+Separate read-only, scheduler-callable POST /api/pos/toast/jobs/poll with mandatory server-only TOAST_JOB_SECRET and TOAST_POLLING_ENABLED=true flag; unset by default. No Vercel cron additions or changes to Team alerts. The scheduler must supply business/location/restaurant GUID and kind (orders, attendance or schedules) from the approved location mapping. DB lease RPCs serialize each restaurant+kind and prevent stale workers advancing the cursor. Each successful window is at most 30 minutes with a 2-minute overlap and 2-minute freshness delay; failures preserve the cursor, and Retry-After stops retries until appropriate time.
+
+Polling is skipped when configured location opening hours show the café is closed or are missing/unknown. Local timezone and overnight/DST intervals are handled. Orders are staged in a sanitized per-order staging table, not canonical orders. Attendance with nullable wages and provider schedules use the already guarded staging paths. No blank-success zero-sales assumption. These do not yet meet the full historical-refund accounting, CSV overlap or multi-location verified-zero requirements.
+
+Migration 50 is additive and requires all prior new Toast migrations. Prior to enabling any scheduler, verify Vercel plan limits, per-café hours, authorized Toast locations, and one full day of Toast reconciliation with owner approval. No live API use has been performed.
