@@ -30,7 +30,7 @@ export default async function MoneyPage({
   const period: Period = isPeriod(periodParam) ? periodParam : "month";
   const view = viewParam === "profit" ? "profit" : "recovery";
 
-  const snapshot = await getSnapshot();
+  const snapshot = await getSnapshot(period);
   const t = await getTranslations("Money");
   // Never past the current calendar month — "previous months" navigation only goes backward.
   const calMonthKey = isValidMonthKey(calMonthParam) && calMonthParam <= snapshot.monthKey ? calMonthParam : snapshot.monthKey;

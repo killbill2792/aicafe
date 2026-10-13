@@ -148,6 +148,14 @@ export function getFixtureSnapshot(): BusinessSnapshot {
     runningCostLines,
     recoveryOrder: FIXTURE_A_BUCKETS.map((b) => b.code),
     menuItems: MENU_ITEMS,
+    // Fixture-only, explicit sales participation for the fixture's covered MTD
+    // period. Not derived from the rolling 28-day menu quantities.
+    periodItemSales:{period:{from:"2026-09-01",to:todayDateStr},covered:true,
+      soldItems:MENU_ITEMS.map(item=>({id:item.id,units:1})),
+      // Deterministic fixture explicitly models previously RECOMPUTED daily
+      // ingredient evidence. This is NOT inferred for a live café from current recipes.
+      historicalIngredientCostProof:{source:"historical_recomputation",
+        days:monthActualDays.map(day=>({date:day.date,ingredientsCents:day.ingredientsCents}))}},
     alerts: { count: 0, leakingCents: 0 },
     staffShiftsToday: STAFF_SHIFTS_TODAY,
     staffNowIso: STAFF_NOW_ISO,

@@ -8,11 +8,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } from "./types";
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
 import { normalizeOpenHours } from "@/lib/business/openHours";
+import { readPeriodItemSales } from "./periodItemSales.server";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
   supabase: SupabaseClient,
   businessId: string,
+  costPeriod: "today"|"week"|"month"="month",
 ): Promise<BusinessSnapshot> {
   const { data: businessRow, error: businessError } = await supabase
     .from("businesses")
@@ -61,9 +63,10 @@ export async function getBusinessSnapshotFromDb(
 
   const allDays = (rollupRows ?? []).map(rowToDailyFacts);
   const { monthRecordedDays, monthActualDays, last7Days, last28Days, todayDay, todayHasData } = buildDayWindows(allDays, todayDateStr, monthKey);
-  const previousMonthDays = allDays.filter(
-    (d) => d.date >= prevMonthStart && d.date <= prevMonthEnd && d.salesDataStatus !== "missing",
-  );
+  const previousMonthRecordedDays=allDays.filter(d=>
+    d.date>=prevMonthStart&&d.date<=prevMonthEnd);
+  const previousMonthDays=previousMonthRecordedDays.filter(d=>
+    d.salesDataStatus!=="missing");
 
   const [recurringResult, expensesResult, priorExpenseResult, recoveryOrderResult] = await Promise.all([
     supabase
@@ -130,6 +133,11 @@ export async function getBusinessSnapshotFromDb(
     });
 
   const allMenuItemSnapshots = await getMenuItemSnapshots(supabase, businessId, todayDateStr, last28Days.map((d) => d.date));
+  // Requested window, not last28Days and not the currently active menu.
+  const minusSix=new Date(Date.parse(todayDateStr+"T12:00:00Z")-6*86_400_000).toISOString().slice(0,10);
+  const periodFrom=costPeriod==="today"?todayDateStr:costPeriod==="week"?minusSix:monthStart;
+  const periodItemSales=await readPeriodItemSales(supabase,businessId,
+    {from:periodFrom,to:todayDateStr});
   const menuItems = allMenuItemSnapshots.filter((item) => item.active !== false);
   const breakEvenProductCosts = allMenuItemSnapshots.filter((item) => item.quantitySoldLast28Days > 0);
   const staffShiftsToday = await getStaffShiftsToday(supabase, businessId, timezone, todayDateStr);
@@ -166,9 +174,12 @@ export async function getBusinessSnapshotFromDb(
     todayDay,
     todayHasData,
     previousMonthDays,
+    previousMonthRecordedDays,
     runningCostLines,
     recoveryOrder: orderedCodes,
     menuItems,
+    allCostProducts:allMenuItemSnapshots,
+    periodItemSales,
     breakEvenProductCosts,
     alerts: { count: alertsCount ?? 0, leakingCents },
     staffShiftsToday,

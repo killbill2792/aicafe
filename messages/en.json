@@ -105,6 +105,8 @@
     "less": "less",
     "sales": "Sales",
     "totalCosts": "Total costs",
+    "knownCosts": "Known business costs",
+    "costsUnavailable": "Business costs unavailable",
     "youKeep": "You keep",
     "ofSales": "{pct}% of sales",
     "missingCostBannerText": "{category} not added yet.",

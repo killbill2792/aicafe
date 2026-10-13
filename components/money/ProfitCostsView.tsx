@@ -1,5 +1,5 @@
 import { TrendingDown, TrendingUp } from "lucide-react";
-import { getTranslations } from "next-intl/server";
+import { getTranslations, getLocale } from "next-intl/server";
 import Money from "@/components/shared/Money";
 import EstimatePill from "@/components/shared/EstimatePill";
 import { Link } from "@/i18n/navigation";
@@ -7,6 +7,7 @@ import type { HealthBand } from "@/lib/calc";
 import type { BusinessSnapshot } from "@/lib/data/types";
 import type { Period } from "@/lib/viewmodels/period";
 import { buildProfitAndCostsViewModel } from "@/lib/viewmodels/moneyViewModel";
+import { businessCostLimitations } from "@/lib/operating/businessCostMessages";
 import { flowBarWidthPct, profitToneTextClass } from "@/lib/viewmodels/profitTone";
 
 const BAND_COLOR: Record<HealthBand, string> = { healthy: "text-good", watch: "text-warn", high: "text-warn" };
@@ -63,6 +64,9 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
   const tCommon = await getTranslations("Common");
   const bandLabel: Record<HealthBand, string> = { healthy: t("bandHealthy"), watch: t("bandWatch"), high: t("bandHigh") };
   const vm = buildProfitAndCostsViewModel(snapshot, period);
+  const currentLocale=await getLocale();
+  const costLocale=currentLocale==="es"||currentLocale==="ar"?currentLocale:"en";
+  const costLimitation=businessCostLimitations(vm.businessCosts,costLocale);
   const coverageNote =
     vm.coverage.actualDays < vm.coverage.expectedDays
       ? period === "today"
@@ -104,7 +108,10 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
             widthPct={pct(vm.totalCostsCents - vm.ingredientsCents - vm.wagesCents - vm.staffTaxCents)}
             color="bg-running"
           />
-          <StepBar label={t("youKeep")} cents={vm.ownerProfitCents} widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)} color="bg-good" tone={tone} />
+          {vm.ownerProfitDisplay.kind!=="unavailable" &&
+            <StepBar label={t("youKeep")} cents={vm.ownerProfitCents}
+              widthPct={flowBarWidthPct(vm.ownerProfitCents, vm.salesCents)}
+              color="bg-good" tone={tone} />}
         </div>
       </section>
 
@@ -144,11 +151,15 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
         </RowGroup>
 
         <div className="flex items-center justify-between py-3.5">
-          <span className="text-base font-extrabold">{t("totalCosts")}</span>
+          <span className="text-base font-extrabold">{vm.businessCosts.completeness==="partial"
+            ? t("knownCosts") : vm.businessCosts.completeness==="unavailable"
+              ? t("costsUnavailable") : t("totalCosts")}</span>
           <span className="text-lg font-extrabold text-warn">
-            <Money cents={vm.totalCostsCents} />
+            {vm.businessCosts.completeness!=="unavailable"
+              ? <Money cents={vm.totalCostsCents} /> : "—"}
           </span>
         </div>
+        {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
         <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-[#F1EAE0]"}`}>
           <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>
             {t("ownerProfit")}

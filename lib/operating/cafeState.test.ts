@@ -24,7 +24,12 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
   });
 
   it("prorates monthly bills to one day and preserves known cents", () => {
-    const state = cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-09" });
+    const today={...fixture,periodItemSales:{period:{from:"2026-09-09",to:"2026-09-09"},
+      covered:true,soldItems:fixture.menuItems.map(item=>({id:item.id,units:1})),
+      historicalIngredientCostProof:{source:"historical_recomputation" as const,
+        days:[{date:"2026-09-09",
+          ingredientsCents:fixture.monthActualDays[fixture.monthActualDays.length-1].ingredientsCents}]}}};
+    const state = cafeStateFromSnapshot(today, { from: "2026-09-09", to: "2026-09-09" });
     expect(state.profitability.available).toBe(true);
     if (state.profitability.available) {
       expect(state.profitability.value.netSalesCents).toBe(240_000);
@@ -34,7 +39,12 @@ describe("Phase 2 snapshot-to-CafeState truth boundary", () => {
   });
 
   it("reconciles prorated expense lines to the exact running-cost aggregate", () => {
-    const state = cafeStateFromSnapshot(fixture, { from: "2026-09-09", to: "2026-09-09" });
+    const today={...fixture,periodItemSales:{period:{from:"2026-09-09",to:"2026-09-09"},
+      covered:true,soldItems:fixture.menuItems.map(item=>({id:item.id,units:1})),
+      historicalIngredientCostProof:{source:"historical_recomputation" as const,
+        days:[{date:"2026-09-09",
+          ingredientsCents:fixture.monthActualDays[fixture.monthActualDays.length-1].ingredientsCents}]}}};
+    const state = cafeStateFromSnapshot(today, { from: "2026-09-09", to: "2026-09-09" });
     expect(state.expenses.available).toBe(true);
     if (state.expenses.available) {
       const sum = state.expenses.value.reduce((total, line) => total + line.amountCents, 0);

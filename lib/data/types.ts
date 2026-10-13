@@ -59,6 +59,20 @@ export type StaffShift = {
  * Everything the money screens need for one business, assembled once per request. Pure data —
  * no formulas here (see lib/calc); screens build their numbers via lib/viewmodels/*.
  */
+/** Provider-supported, period-exact canonical item participation, never a rolling window. */
+export type PeriodItemSalesEvidence = {
+  period:{from:string;to:string};
+  covered:boolean;
+  soldItems:Array<{id:string;units:number}>;
+  /** Only explicit historical rollup/recipe/price reconciliation, never today's
+   * costStatus, can attest that prior-date ingredient costs were complete.
+   * The current schema has no persisted recipe revisions or proof marker; live
+   * readers must leave this absent until genuine historical proof exists. */
+  historicalIngredientCostProof?: {
+    source:"historical_recomputation";
+    days:Array<{date:string;ingredientsCents:number}>;
+  };
+};
 export type BusinessSnapshot = {
   business: BusinessSettings;
   todayDateStr: string; // YYYY-MM-DD, business timezone
@@ -81,10 +95,19 @@ export type BusinessSnapshot = {
   todayHasData: boolean;
   /** Full previous calendar month, for "vs last period" comparisons. */
   previousMonthDays: DailyFacts[];
+  /** Prior-month rollups including labor-only days, for cross-month Money Week. */
+  previousMonthRecordedDays?: DailyFacts[];
   /** This month's running-cost categories, in recovery_order, including $0/missing ones. */
   runningCostLines: RunningCostLine[];
   recoveryOrder: string[];
   menuItems: MenuItemSnapshot[];
+  /** Catalog cost records including archived/inactive items (not shown in active menu). */
+  allCostProducts?: MenuItemSnapshot[];
+  /** Explicit period-exact item-level evidence; absent means unknown, not zero. */
+  periodItemSales?: PeriodItemSalesEvidence;
+  /** Optional independently proven sales/cost participation for Money's comparison period.
+   * Never assume current-period item evidence proves a different period. */
+  comparisonPeriodItemSales?: PeriodItemSalesEvidence;
   /** Every menu item sold in the current 28-day break-even window, including archived items. */
   breakEvenProductCosts?: MenuItemSnapshot[];
   /** M7 wires real alert generation; both snapshot sources report zero until then. */
