@@ -22,6 +22,7 @@ export default async function MorePage() {
     { href: "/more/try-scenario", Icon: FlaskConical, label: t("tryScenario") },
     { href: "/more/alerts", Icon: AlertTriangle, label: t("alerts") },
     { href: "/onboarding", Icon: CreditCard, label: t("connectRegister") },
+    { href: "/more/toast", Icon: CreditCard, label: t("toastConnect") },
   ];
 
   const accountLinks = [

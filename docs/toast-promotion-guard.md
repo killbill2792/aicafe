@@ -1,0 +1,9 @@
+# Toast canonical promotion — guarded pilot endpoint, not production-ready
+
+After an authorized Toast pilot imports one fully paginated business date, an owner supplies reference Toast report totals. Only when the staged checksum is unchanged and the report comparison is matched does the manually invoked, owner-authorized \`POST /api/pos/toast/pilot/promote\` become eligible — and only when \`TOAST_CANONICAL_PROMOTION_ENABLED=true\` (DEFAULT FALSE). The request must include an exact SHA256 checksum and \`confirmPromotion:true\`.
+
+Migration 46 introduces a strictly service-role-only SQL promotion function running one transaction. It locks the snapshot, validates tenant/location/ID provenance, REFUSES any ambiguous CSV/Square/manual sales overlap for the same location/day, REFUSES disappearing historical Toast orders, and inserts/upserts sanitized Toast orders and order_lines into the existing canonical tables. No recipes or ingredient costs are overwritten. Merchant processing fees are always missing, never actual. Existing \`recomputeDailyRollup\` is invoked after the DB transaction; if that fails, the state records rollup_unavailable for explicit retry. A Toast zero day is not automatically promoted to verified zero by an owner-entered report alone.
+
+**Important limits:** Database transaction/RLS and Toast sales-report reconciliation have NOT been tested against a live pilot. The SQL path is unverified in real Supabase and remains disabled. Cross-business tenant SQL checks, closeout dates, failed page recovery, CSV overlaps, refunds and late historical corrections require real staging exercises and reviewed fixtures before any activation.
+
+Deployment: Apply migrations 40–46 individually only after comparing staging history; never run all historical migrations on production. Feature flags must remain OFF until explicit authorization. Rollback by leaving flags disabled; never delete historical canonical tables or rewrite migrations.
