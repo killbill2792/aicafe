@@ -1,4 +1,33 @@
 {
+  "ToastConnect": {
+    "title": "Conectar Toast",
+    "subtitle": "Acceso seguro de solo lectura a tu restaurante",
+    "notEnabled": "La configuración de Toast aún no está habilitada para esta cafetería.",
+    "notConnected": "No conectado",
+    "configured": "Guardado, sin verificar",
+    "verified": "Conectado y verificado",
+    "missingPermissions": "Faltan permisos de Toast",
+    "needsReconnect": "Hay que actualizar las credenciales",
+    "lastSyncFailed": "Falló la última sincronización",
+    "stale": "Hay que actualizar los datos",
+    "url": "URL de acceso a la API de Toast",
+    "clientId": "ID del cliente",
+    "clientSecret": "Secreto del cliente",
+    "locations": "Locales autorizados",
+    "restaurantGuid": "GUID del restaurante Toast",
+    "save": "Guardar de forma segura",
+    "test": "Probar conexión",
+    "disconnect": "Desconectar",
+    "lastVerified": "Última verificación",
+    "error": "Problema de conexión",
+    "saved": "Credenciales guardadas. Prueba la conexión para verificarlas.",
+    "success": "Acción completada",
+    "pending": "Procesando…",
+    "disconnectConfirm": "¿Desconectar Toast? Se conservarán los datos históricos.",
+    "noLocations": "Configura primero un local.",
+    "instructions": "Usa credenciales Standard API de Toast Web. No introduzcas tu contraseña de Toast.",
+    "retryAfter": "Volver a intentar después de"
+  },
   "LocaleLayout": {
     "title": "Café Profit"
   },
@@ -609,6 +638,7 @@
     "now": "Ahora"
   },
   "More": {
+    "toastConnect": "Conectar Toast",
     "title": "Más",
     "placeholder": "Aquí verás ajustes, idioma y cuenta.",
     "cafeNameLabel": "Nombre del café",
