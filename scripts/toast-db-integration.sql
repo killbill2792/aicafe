@@ -535,6 +535,117 @@ SELECT pg_temp.assert_true(NOT has_function_privilege('authenticated',
  'public.toast_stage_payment_day_events(uuid,uuid,date,text,jsonb)','EXECUTE'),
  'only service role can stage payment-date events');
 
+-- PR65: owner-approved staff link, non-overwriting clock facts, menu/recipe isolation.
+DO $ops$
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ worker uuid; menu uuid; modifier uuid; ingredient uuid; n integer;
+BEGIN
+ INSERT INTO employees(business_id,display_name,default_hourly_wage_cents)
+ VALUES(b,'Synthetic existing owner worker',1800) RETURNING id INTO worker;
+ PERFORM pg_temp.assert_true(toast_stage_employee_roster(b,r,
+ '[{"employee_guid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0014",
+ "display_name":"Synthetic worker from Toast","deleted":false}]'::jsonb)=1,
+ 'Toast roster staged separate from canonical employees');
+ PERFORM pg_temp.must_fail(format(
+  'SELECT toast_link_employee(%L::uuid,%L::uuid,%L::uuid,%L::uuid)',
+  b,r,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0014',
+  'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001'));
+ PERFORM pg_temp.assert_true(toast_link_employee(b,r,
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0014',worker),'manual approved employee mapping');
+ PERFORM pg_temp.assert_true((SELECT display_name='Synthetic existing owner worker'
+  FROM employees WHERE id=worker),'Toast roster must not rename owner record');
+ -- Existing old staged entry has MISSING hourly wage; no silent zero/payroll.
+ PERFORM pg_temp.must_fail(format(
+  'SELECT toast_import_confirmed_attendance(%L::uuid,%L::uuid,%L::jsonb)',
+  b,r,'["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013"]'));
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM timecards WHERE
+  business_id=b AND pos_timecard_id LIKE 'toast:%'),'missing wage never imported');
+ PERFORM toast_stage_labor_entries(b,r,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ jsonb_build_array(jsonb_build_object(
+ 'external_time_entry_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013',
+ 'external_employee_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0014',
+ 'clock_in','2026-09-01T10:00:00Z','clock_out','2026-09-01T18:00:00Z',
+ 'hourly_wage_cents',1550,'wage_status','verified','breaks','[]'::jsonb,
+ 'deleted',false,'provider_modified_at','2026-10-12T00:00:00Z')));
+ -- Conflicting manual shift must not be overwritten or doubled.
+ INSERT INTO timecards(business_id,employee_id,clock_in,clock_out,hourly_wage_cents,
+  source_type,source_provider)
+ VALUES(b,worker,'2026-09-01T11:00:00Z','2026-09-01T17:00:00Z',2000,'owner_manual','Owner');
+ PERFORM pg_temp.must_fail(format(
+  'SELECT toast_import_confirmed_attendance(%L::uuid,%L::uuid,%L::jsonb)',
+  b,r,'["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013"]'));
+ DELETE FROM timecards WHERE business_id=b AND employee_id=worker
+  AND source_type='owner_manual';
+ SELECT toast_import_confirmed_attendance(b,r,
+  '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013"]'::jsonb) INTO n;
+ PERFORM pg_temp.assert_true(n=1,'owner-approved verified wage attendance imported');
+ SELECT toast_import_confirmed_attendance(b,r,
+  '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013"]'::jsonb) INTO n;
+ PERFORM pg_temp.assert_true(n=0,'duplicate Toast timecard import is idempotent');
+ PERFORM pg_temp.assert_true((SELECT hourly_wage_cents=1550 AND
+  source_type='connected_pos' AND source_provider='Toast'
+  FROM timecards WHERE employee_id=worker AND business_id=b),
+  'hourly wage from Toast snapshot, without employee master wage overwrite');
+ PERFORM toast_stage_labor_entries(b,r,'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ jsonb_build_array(jsonb_build_object(
+ 'external_time_entry_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013',
+ 'external_employee_id','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0014',
+ 'clock_in','2026-09-01T10:00:00Z','clock_out','2026-09-01T19:00:00Z',
+ 'hourly_wage_cents',1550,'wage_status','verified','breaks','[]'::jsonb,
+ 'deleted',false,'provider_modified_at','2026-10-12T01:00:00Z')));
+ PERFORM pg_temp.assert_true((SELECT reconciliation_status='review_canonical_owner_correction'
+  FROM toast_attendance_review WHERE business_id=b AND restaurant_guid=r
+  AND external_time_entry_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0013'),
+  'later modified Toast clock-out surfaces review, not payroll rewrite');
+ PERFORM pg_temp.assert_true((SELECT clock_out='2026-09-01T18:00:00Z'
+  FROM timecards WHERE employee_id=worker AND business_id=b),
+  'earlier canonical timecard remains unchanged after provider modification');
+ INSERT INTO ingredients(business_id,name,base_unit)
+ VALUES(b,'Synthetic espresso beans','g') RETURNING id INTO ingredient;
+ INSERT INTO menu_items(business_id,name,base_name,price_cents)
+ VALUES(b,'Owner recipe coffee','Owner recipe coffee',500) RETURNING id INTO menu;
+ INSERT INTO recipe_lines(menu_item_id,ingredient_id,quantity)
+ VALUES(menu,ingredient,18);
+ INSERT INTO modifier_recipes(business_id,name,quantity_delta)
+ VALUES(b,'Owner oat milk',5) RETURNING id INTO modifier;
+ PERFORM pg_temp.assert_true(toast_stage_catalog(b,r,
+ '[{"kind":"item","provider_guid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0030",
+ "name":"Toast coffee","category":"Drinks","price_cents":550,
+ "pricing_strategy":"BASE_PRICE","modifier_group_guids":[]},
+ {"kind":"modifier","provider_guid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0031",
+ "name":"Oat milk","category":null,"price_cents":null,
+ "pricing_strategy":"OPEN_PRICE","modifier_group_guids":[]}]'::jsonb)=2,
+ 'both Toast menu item and modifier staged');
+ PERFORM pg_temp.assert_true(toast_link_catalog(b,r,'item',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0030',menu),
+  'reviewed Toast item linked without recipe rewrite');
+ PERFORM pg_temp.assert_true(toast_link_catalog(b,r,'modifier',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0031',modifier),
+  'reviewed Toast modifier linked without ingredient rewrite');
+ PERFORM pg_temp.assert_true(toast_stage_catalog(b,r,
+ '[{"kind":"item","provider_guid":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0030",
+ "name":"Toast coffee","category":"Drinks","price_cents":600,
+ "pricing_strategy":"BASE_PRICE","modifier_group_guids":[]}]'::jsonb)=1,
+ 'later Toast price staged');
+ PERFORM pg_temp.assert_true((SELECT count(*)=2 FROM toast_catalog_price_versions
+  WHERE business_id=b AND restaurant_guid=r AND kind='item'
+   AND provider_guid='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0030'),
+  'old/new Toast price versions both preserved');
+ PERFORM pg_temp.assert_true((SELECT price_cents=500 AND name='Owner recipe coffee'
+  FROM menu_items WHERE id=menu),'owner menu name/price unchanged');
+ PERFORM pg_temp.assert_true((SELECT quantity=18 FROM recipe_lines
+  WHERE menu_item_id=menu AND ingredient_id=ingredient),
+  'ingredient recipe unchanged');
+ PERFORM pg_temp.assert_true((SELECT quantity_delta=5 FROM modifier_recipes WHERE id=modifier),
+  'modifier recipe quantities unchanged');
+END $ops$;
+SELECT pg_temp.assert_true(NOT has_table_privilege('authenticated',
+ 'public.toast_catalog_facts','UPDATE'),'provider catalog cannot be edited by ordinary members');
+SELECT pg_temp.assert_true(NOT has_function_privilege('anon',
+ 'public.toast_import_confirmed_attendance(uuid,uuid,jsonb)','EXECUTE'),
+ 'anon cannot import paid timecards');
+
 -- Denied access is exercised as real anonymous / authenticated SQL session roles.
 SET LOCAL ROLE anon;
 DO $$

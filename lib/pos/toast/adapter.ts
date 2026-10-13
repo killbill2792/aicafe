@@ -41,12 +41,21 @@ const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:
   jobReference:z.object({guid:GUID}).nullish(),inDate:z.string(),outDate:z.string(),
   deleted:z.boolean().nullish()}));
 const itemSchema=z.object({guid:GUID,name:z.string().min(1),price:z.number().nullish(),
-  pricingStrategy:z.string().nullish(),salesCategory:z.object({name:z.string()}).nullish()});
+  pricingStrategy:z.string().nullish(),salesCategory:z.object({name:z.string()}).nullish(),
+  modifierGroupReferences:z.array(z.number()).nullish()});
 type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:MenuGroup[]};
 const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({
   name:z.string(),menuItems:z.array(itemSchema).default([]),menuGroups:z.array(groupSchema).default([])}));
 const menusSchema=z.object({restaurantGuid:GUID,menus:z.array(
-  z.object({menuGroups:z.array(groupSchema).default([])}))});
+  z.object({menuGroups:z.array(groupSchema).default([])})),
+  modifierGroupReferences:z.record(z.string(),z.object({
+    guid:GUID,modifierOptionReferences:z.array(z.number()).default([])
+  })).default({}),
+  modifierOptionReferences:z.record(z.string(),z.object({
+    guid:GUID,name:z.string().min(1),price:z.number().nullish(),
+    pricingStrategy:z.string().nullish()
+  })).default({})
+});
 const metadataSchema=z.object({restaurantGuid:GUID,lastUpdated:z.string().min(1)});
 function validRange(range:Range) {
   if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
@@ -138,6 +147,10 @@ export function parseToastOrderFact(payload:unknown,restaurantGuid:string):Toast
  if(!parsed.success)throw new ToastApiError("invalid_response");
  return classifyToastOrder(parsed.data,restaurantGuid);
 }
+export type ToastCatalogFact={kind:"item"|"modifier";provider_guid:string;name:string;
+  category:string|null;price_cents:number|null;pricing_strategy:string|null;
+  modifier_group_guids:string[]};
+export type ToastEmployeeRosterFact={employee_guid:string;display_name:string;deleted:boolean};
 export type ToastAdapter=PosAdapter&{
   fetchModifiedOrders(range:Range):Promise<PosOrder[]>;
   fetchBusinessDayOrders(day:string):Promise<PosOrder[]>;
@@ -146,6 +159,8 @@ export type ToastAdapter=PosAdapter&{
   fetchModifiedOrderStates(range:Range):Promise<ToastOrderFact[]>;
   fetchModifiedOrderStatesPage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
+  fetchCatalogFacts():Promise<ToastCatalogFact[]>;
+  fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
   fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
   fetchAttendanceChanges(range:Range):Promise<ToastAttendanceFact[]>;
@@ -251,6 +266,52 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }
       for(const menu of data.menus)for(const group of menu.menuGroups)visit(group);
       return [...items.values()];
+    },
+    async fetchCatalogFacts():Promise<ToastCatalogFact[]> {
+      const data=await request("/menus/v2/menus",menusSchema);
+      if(data.restaurantGuid.toLowerCase()!==restaurantGuid.toLowerCase())
+        throw new ToastApiError("unauthorized_location");
+      const seen=new Map<string,ToastCatalogFact>();
+      const groups=data.modifierGroupReferences;
+      const options=data.modifierOptionReferences;
+      function add(group:MenuGroup){
+        for(const item of group.menuItems){
+          const referenced=(item.modifierGroupReferences??[]).map(id=>groups[String(id)]?.guid)
+            .filter((guid):guid is string=>Boolean(guid));
+          const knownPrice=item.price==null?null:(
+            item.pricingStrategy==="BASE_PRICE"||item.pricingStrategy==="MENU_SPECIFIC_PRICE")
+            ?cents(item.price):null;
+          const fact:ToastCatalogFact={kind:"item",provider_guid:item.guid,
+            name:item.name,category:item.salesCategory?.name??group.name,
+            price_cents:knownPrice,pricing_strategy:item.pricingStrategy??null,
+            modifier_group_guids:referenced};
+          const prior=seen.get("item:"+item.guid);
+          if(prior&&prior.price_cents!==fact.price_cents)
+            fact.price_cents=null; // Variable menu-specific pricing needs review.
+          seen.set("item:"+item.guid,fact);
+        }
+        for(const next of group.menuGroups)add(next);
+      }
+      for(const menu of data.menus)for(const group of menu.menuGroups)add(group);
+      for(const option of Object.values(options)){
+        const knownPrice=option.price!=null&&(option.pricingStrategy==="BASE_PRICE"||
+          option.pricingStrategy==="MENU_SPECIFIC_PRICE")
+          ?cents(option.price):null;
+        seen.set("modifier:"+option.guid,{kind:"modifier",provider_guid:option.guid,
+          name:option.name,category:null,price_cents:knownPrice,
+          pricing_strategy:option.pricingStrategy??null,modifier_group_guids:[]});
+      }
+      if(seen.size>5000)throw new ToastApiError("invalid_response");
+      return [...seen.values()];
+    },
+    async fetchEmployeeRosterFacts():Promise<ToastEmployeeRosterFact[]> {
+      const rows=await request("/labor/v1/employees",employeesSchema);
+      return rows.map(r=>({
+        employee_guid:r.guid,
+        display_name:([r.chosenName||r.firstName,r.lastName].filter(Boolean).join(" ").trim()||
+          "Toast employee "+r.guid.slice(0,8)),
+        deleted:Boolean(r.deleted)
+      }));
     },
     async fetchEmployees():Promise<PosEmployee[]> {
       const rows=await request("/labor/v1/employees",employeesSchema);
