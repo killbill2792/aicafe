@@ -3,7 +3,8 @@ import {createHmac,timingSafeEqual} from "node:crypto";
 import {z} from "zod";
 export const toastEventSchema=z.object({
   guid:z.uuid(),timestamp:z.iso.datetime({offset:true}),eventCategory:z.string(),
-  eventType:z.string(),details:z.object({restaurantGuid:z.uuid()}).passthrough(),
+  eventType:z.string(),details:z.object({restaurantGuid:z.uuid(),
+    order:z.object({guid:z.uuid()}).optional()}).passthrough(),
 });
 export function validToastWebhookSignature(
   rawBody:string,timestamp:string,provided:string|null,secret:string,now=Date.now()
