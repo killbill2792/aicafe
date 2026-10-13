@@ -183,6 +183,17 @@ VALUES(
  'netSalesCents',1100,'voided',false,'voidedBy',NULL,'modifiers','[]'::jsonb)))),
  1,1100,1100,0,0,0,0,'{}'::jsonb,'synthetic-checksum',
  'matched_owner_report',now(),now());
+-- Owner-entered report totals alone must not be accepted as independently verified.
+SELECT pg_temp.must_fail($q$
+ SELECT toast_promote_reconciled_day('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ '2025-01-10','synthetic-checksum')
+$q$);
+INSERT INTO toast_verified_report_evidence(
+ business_id,restaurant_guid,business_date,staged_sha256,verification_source,evidence_reference)
+ VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2025-01-10','synthetic-checksum',
+ 'independently_checked_toast_report','synthetic-db-test-only');
 INSERT INTO orders(business_id,location_id,pos_order_id,closed_at,business_date,
  gross_sales_cents,net_sales_cents) VALUES(
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',

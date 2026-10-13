@@ -10,7 +10,7 @@ type Selection={displayName?:string|null;item?:{guid:string}|null;quantity:numbe
   voided?:boolean|null;modifiers?:{displayName?:string|null;item?:{guid:string}|null}[]|null;
   refundDetails?:{refundAmount?:number|null}|null;appliedDiscounts?:Discount[]|null};
 type Check={amount:number;taxAmount:number;paymentStatus:string;closedDate?:string|null;
-  appliedDiscounts?:Discount[]|null;selections:Selection[];
+  appliedDiscounts?:Discount[]|null;appliedServiceCharges?:unknown[]|null;selections:Selection[];
   payments:{tipAmount?:number|null;refundStatus?:string|null;
     refund?:{refundAmount?:number|null;tipRefundAmount?:number|null}|null}[]};
 type Order={guid:string;closedDate?:string|null;createdInTestMode?:boolean|null;
@@ -23,6 +23,7 @@ const selection=z.object({displayName:z.string().nullish(),item:z.object({guid:G
   appliedDiscounts:z.array(discount).nullish()});
 const check=z.object({amount:z.number(),taxAmount:z.number(),paymentStatus:z.string(),
   closedDate:z.string().nullish(),appliedDiscounts:z.array(discount).nullish(),
+  appliedServiceCharges:z.array(z.unknown()).nullish(),
   selections:z.array(selection),payments:z.array(z.object({
     tipAmount:z.number().nullish(),refundStatus:z.string().nullish(),
     refund:z.object({refundAmount:z.number().nullish(),tipRefundAmount:z.number().nullish()}).nullish()}))});
@@ -75,6 +76,8 @@ function appliedDiscounts(ds:Discount[]|null|undefined) {
 export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|null {
   if(order.createdInTestMode||order.deleted||order.voided)return null;
   if(order.checks.some(c=>c.paymentStatus!=="CLOSED"||!c.closedDate))return null;
+  if(order.checks.some(c=>(c.appliedServiceCharges?.length??0)>0||
+     c.selections.some(s=>s.voided)))throw new ToastApiError("invalid_response");
   if(!order.closedDate)throw new ToastApiError("invalid_response");
   let netBeforeRefunds=0,discounts=0,refunds=0,tax=0,tips=0;
   const lines:PosOrder["lines"]=[];
@@ -117,10 +120,12 @@ export type ToastOrderFact={orderGuid:string;restaurantGuid:string;modifiedAt:st
 export function classifyToastOrder(order:Order,restaurantGuid:string):ToastOrderFact {
  if(!order.modifiedDate)throw new ToastApiError("invalid_response");
  const modifiedAt=timestamp(order.modifiedDate);
+ const complex=order.checks.some(c=>(c.appliedServiceCharges?.length??0)>0||
+   c.selections.some(s=>s.voided));
  const refunded=order.checks.some(c=>c.selections.some(s=>(s.refundDetails?.refundAmount??0)>0)||
    c.payments.some(p=>p.refundStatus&&p.refundStatus!=="NONE"));
  const state:ToastOrderState=order.deleted?"deleted":order.voided?"voided":
-   refunded?"refunded":order.checks.length===0?"ambiguous":
+   refunded?"refunded":complex||order.checks.length===0?"ambiguous":
    order.checks.some(c=>c.paymentStatus!=="CLOSED"||!c.closedDate)
     ?(order.closedDate?"reopened":"open"):
    !order.closedDate||order.createdInTestMode?"ambiguous":"completed";

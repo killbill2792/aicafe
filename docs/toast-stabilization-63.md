@@ -26,3 +26,6 @@ Unset/false: TOAST_SETUP_ENABLED, TOAST_WEBHOOKS_ENABLED, TOAST_PILOT_IMPORT_ENA
 Stage a disposable Supabase database with the full existing migrations and seed required auth/business fixtures. Apply original migrations 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50 **in numeric order**, then 51. Run the SQL integration suite, npm test, Toast-scoped lint, tsc, build; fix any failure before discussing production. Never execute automatically on production or rewrite already applied migration files.
 
 Unresolved: independently verified Toast daily reports incl. payment refund dates, safe legacy CSV overlap exceptions, accounting corrections and validated provenance-driven promotion to canonical wages/menu catalog and verified zero. No authorized live Toast reconciliation has occurred.
+
+## Independent source verification boundary
+Migration 52 requires a separate service-role-only independent Toast report attestation bound to the exact staged checksum. Owner-entered comparison by itself cannot promote sales. No attestation UI/action exists, so production promotion stays OFF. Service charges and selection voids remain ambiguous and cannot count as verified completed sales.
