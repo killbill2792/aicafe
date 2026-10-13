@@ -24,7 +24,8 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   const {data:subscription,error}=await db.from("toast_webhook_subscriptions")
     .select("business_id,signing_secret_enc,enabled")
     .eq("id",subscriptionId).maybeSingle();
-  if(error||!subscription?.enabled)return response(404,{error:"not_found"});
+  if(error||!subscription?.enabled||!subscription.signing_secret_enc)
+    return response(404,{error:"not_found"});
   if(!validToastWebhookSignature(raw,event.timestamp,request.headers.get("toast-signature"),
       decryptToken(subscription.signing_secret_enc)))return response(401,{error:"invalid_signature"});
   const attempt=Number(request.headers.get("toast-attempt-number")??"1");

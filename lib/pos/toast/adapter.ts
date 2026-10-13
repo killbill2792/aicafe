@@ -41,7 +41,7 @@ const shiftsSchema=z.array(z.object({guid:GUID,employeeReference:z.object({guid:
   jobReference:z.object({guid:GUID}).nullish(),inDate:z.string(),outDate:z.string(),
   deleted:z.boolean().nullish()}));
 const itemSchema=z.object({guid:GUID,name:z.string().min(1),price:z.number().nullish(),
-  pricingStrategy:z.string().nullish(),salesCategory:z.object({name:z.string()}).nullish(),
+  pricingStrategy:z.string().nullish(),salesCategory:z.object({name:z.string().nullish()}).nullish(),
   modifierGroupReferences:z.array(z.number()).nullish()});
 type MenuGroup={name:string;menuItems:z.infer<typeof itemSchema>[];menuGroups:MenuGroup[]};
 const groupSchema:z.ZodType<MenuGroup>=z.lazy(()=>z.object({

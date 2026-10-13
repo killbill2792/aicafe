@@ -28,5 +28,7 @@ export async function stageToastPaymentDateReview(db:SupabaseClient,
    results.push({kind,count:rows.length});
  }
  return {date:p.businessDate,results,verifiedZero:false,
-   independentReportVerified:false,requiresReview:results.some(r=>r.count>0)};
+   refundAmountsVerified:false,settlementAmountsVerified:false,
+   financialReportingVerified:false,independentReportVerified:false,
+   requiresReview:results.some(r=>r.count>0)};
 }
