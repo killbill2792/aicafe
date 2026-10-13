@@ -26,7 +26,15 @@
     "disconnectConfirm": "Disconnect Toast? Historical records will remain.",
     "noLocations": "Set up a café location first.",
     "instructions": "Use Standard API credentials from Toast Web. Do not enter your Toast password.",
-    "retryAfter": "Try again after"
+    "retryAfter": "Try again after",
+    "lastSync": "Last successful data fetch",
+    "errorAuthentication": "Toast rejected these credentials",
+    "errorMissingPermissions": "Required Toast permissions are missing",
+    "errorUnauthorizedLocation": "This restaurant has not authorized access",
+    "errorTimeout": "Toast did not respond in time",
+    "errorRateLimited": "Toast asked us to try again later",
+    "errorUnavailable": "Toast is temporarily unavailable",
+    "errorInvalidResponse": "Toast returned data we could not verify"
   },
   "LocaleLayout": {
     "title": "Café Profit"

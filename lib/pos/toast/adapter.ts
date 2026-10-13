@@ -109,11 +109,15 @@ export function normalizeToastOrder(order:Order,restaurantGuid:string):PosOrder|
 }
 export type ToastScheduledShift={externalShiftId:string;externalEmployeeId:string;externalLocationId:string;
   scheduledStart:string;scheduledEnd:string;externalJobId:string|null;deleted:boolean;sourceProvider:"toast"};
+export type ToastAttendanceFact={externalTimeEntryId:string;externalEmployeeId:string;
+  externalLocationId:string;clockIn:string;clockOut:string|null;hourlyWageCents:number|null;
+  breaks:PosTimecard["breaks"];deleted:boolean;sourceProvider:"toast"};
 export type ToastAdapter=PosAdapter&{
   fetchModifiedOrders(range:Range):Promise<PosOrder[]>;
   fetchBusinessDayOrders(day:string):Promise<PosOrder[]>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
+  fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
 };
 /** Read-only adapter. DO NOT use its modified-order scan as proof of closed-date coverage.
  * Automatic canonical import stays disabled until CSV overlap/reconciliation is solved. */
@@ -125,7 +129,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema);
   async function allOrders(query:string):Promise<PosOrder[]> {
     const result=new Map<string,PosOrder>();
-    for(let page=1;page<=1000;page++) {
+    for(let page=1;page<=20;page++) {
       const rows=await request("/orders/v2/ordersBulk?"+query+"&pageSize=100&page="+page,ordersSchema);
       for(const row of rows) {
         const normalized=normalizeToastOrder(row,restaurantGuid);
@@ -133,7 +137,8 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
       }
       if(rows.length<100)return [...result.values()];
     }
-    throw new ToastApiError("invalid_response"); // Exhaustive pagination required.
+    // More than 2,000 orders requires resumable pagination, not an unbounded Vercel request.
+    throw new ToastApiError("invalid_response"); // No partial success.
   }
   const query=(range:Range)=>{
     validRange(range);
@@ -175,16 +180,26 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
         return {posTeamMemberId:"toast:"+restaurantGuid+":"+r.guid,displayName,role:null};
       });
     },
-    async fetchTimecards(range):Promise<PosTimecard[]> {
+    async fetchAttendanceFacts(range):Promise<ToastAttendanceFact[]> {
       const rows=await request("/labor/v1/timeEntries?"+query(range),timeEntriesSchema);
+      return rows.map(r=>({
+        externalTimeEntryId:r.guid,externalEmployeeId:r.employeeReference.guid,
+        externalLocationId:restaurantGuid,clockIn:timestamp(r.inDate),
+        clockOut:r.outDate?timestamp(r.outDate):null,
+        hourlyWageCents:r.hourlyWage==null?null:cents(r.hourlyWage),
+        deleted:Boolean(r.deleted),sourceProvider:"toast" as const,
+        breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
+          .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true})),
+      }));
+    },
+    async fetchTimecards(range):Promise<PosTimecard[]> {
+      const rows=await result.fetchAttendanceFacts(range);
       return rows.filter(r=>!r.deleted).map(r=>{
-        if(r.hourlyWage==null)throw new ToastApiError("invalid_response");
-        return {posTimecardId:"toast:"+restaurantGuid+":"+r.guid,
-          posTeamMemberId:"toast:"+restaurantGuid+":"+r.employeeReference.guid,
-          clockIn:timestamp(r.inDate),clockOut:r.outDate?timestamp(r.outDate):null,
-          hourlyWageCents:cents(r.hourlyWage),
-          breaks:(r.breaks??[]).filter(b=>b.missed===false&&b.inDate&&b.outDate)
-            .map(b=>({start:timestamp(b.inDate!),end:timestamp(b.outDate!),paid:b.paid===true}))};
+        if(r.hourlyWageCents==null)throw new ToastApiError("invalid_response");
+        return {posTimecardId:"toast:"+restaurantGuid+":"+r.externalTimeEntryId,
+          posTeamMemberId:"toast:"+restaurantGuid+":"+r.externalEmployeeId,
+          clockIn:r.clockIn,clockOut:r.clockOut,hourlyWageCents:r.hourlyWageCents,
+          breaks:r.breaks};
       });
     },
     async fetchScheduledShifts(range):Promise<ToastScheduledShift[]> {
