@@ -7,7 +7,7 @@ import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
 /** Desktop/tablet counterpart to TabBar — same 5 destinations, same wording, same icons (shared
  * via NAV_TABS), just laid out as a fixed left column instead of a bottom bar, since a bottom tab
  * bar spread across a 1200px+ screen doesn't read well. Hidden on mobile (TabBar handles that). */
-export default function SideNav({ cafeName }: { cafeName: string }) {
+export default function SideNav({ cafeName, languageSwitch }: { cafeName: string; languageSwitch?: React.ReactNode }) {
   const t = useTranslations("Nav");
   const pathname = usePathname();
 
@@ -33,6 +33,9 @@ export default function SideNav({ cafeName }: { cafeName: string }) {
           );
         })}
       </ul>
+      <div className="mt-auto border-t border-[#CDBCA7] px-2 pt-4">
+        {languageSwitch}
+      </div>
     </nav>
   );
 }

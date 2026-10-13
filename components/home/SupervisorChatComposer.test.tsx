@@ -82,27 +82,40 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain("const clientMessageId = existingKey ?? retryId.current ?? crypto.randomUUID()");
   });
 
-  it("is a single viewport-filling chat, optimistic owner-anchor, and no forced bottom scroll",()=>{
-    const source = readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
-    const wrapper = readFileSync("components/home/SupervisorHomePanel.tsx","utf8");
+  it("keeps a top-aligned message scroller and bottom-pinned composer",()=>{
+    const source=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    const wrapper=readFileSync("components/home/SupervisorHomePanel.tsx","utf8");
     expect(wrapper).not.toContain("rounded-[28px]");
     expect(source).toContain("100dvh");
-    expect(source).not.toContain("790px");
-    expect(source).toContain("setOptimisticOwner({id:");
-    expect(source).toContain("data-client-message-id");
-    expect(source).toContain("getBoundingClientRect().top");
-    expect(source).toContain("ownerManuallyScrolled.current");
+    expect(source).toContain("min-h-0 flex-1 flex-col items-stretch justify-start");
+    expect(source).toContain("overflow-y-auto overscroll-contain");
+    expect(source).toContain("mt-auto shrink-0 border-t");
+    expect(source).toContain("openAtTop.current = true");
+    expect(source).toContain("followLatestSend.current = true");
     expect(source).toContain("previousScrollHeight.current");
-    expect(source).not.toContain('node.scrollTo({ top: node.scrollHeight');
+    expect(source).toContain("displayedMessages.length === 0");
+    expect(source).not.toContain("displayedMessages.length > 0 && snapshot");
+    expect(source).not.toContain("responsiveTailSpace");
+    expect(source).not.toContain("tailSpacer");
+    expect(source).not.toContain("focusTurnId.current");
+    expect(source).not.toContain("scrollNewestOnOpen");
     expect(source).toContain('href="/operations"');
     expect(source).toContain("rows={1}");
   });
-  it("uses business profile identity in desktop navigation",()=>{
+  it("shows café identity once in desktop sidebar and moves language to sidebar footer",()=>{
     const layout=readFileSync("app/[locale]/layout.tsx","utf8");
     const nav=readFileSync("components/SideNav.tsx","utf8");
-    expect(layout).toContain("getCafeProfile()");
-    expect(layout).toContain("cafeName={cafeProfile.name}");
+    const home=readFileSync("app/[locale]/page.tsx","utf8");
+    const chat=readFileSync("components/home/SupervisorChatComposer.tsx","utf8");
+    expect(layout).toContain("getActiveCafeName()");
+    expect(layout).toContain('languageSwitch={<LanguageSwitch href="/" compact />}');
     expect(nav).toContain("{cafeName}");
-    expect(nav).not.toContain('tLayout("title")');
+    expect(nav).toContain('className="mt-auto border-t');
+    expect(nav).toContain("{languageSwitch}");
+    expect(home).not.toContain("{snapshot.business.name}");
+    expect(home).toContain("languageSwitch={<LanguageSwitch");
+    expect(chat).toContain("md:hidden");
+    expect(chat).toContain("{languageSwitch}");
+    expect(home).not.toContain('<header className="flex items-center justify-between gap-3 px-1">');
   });
 });

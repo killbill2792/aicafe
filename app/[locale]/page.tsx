@@ -175,24 +175,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <PageShell wide className="flex flex-col gap-3 px-3 pb-4 pt-3 md:px-4 md:pt-4">
       {posStatus && posStatus.status !== "active" && <ReconnectBanner />}
 
-      <header className="flex items-center justify-between gap-3 px-1">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <div className="text-xs font-medium text-ink-muted">{snapshot.todayDateStr}</div>
-          <div className="truncate text-[20px] font-bold text-ink md:text-[22px]">{snapshot.business.name}</div>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-good">
-            <span className="h-2 w-2 rounded-full bg-good" />
-            {t("live")}
-          </span>
-          <LanguageSwitch href="/" compact />
-        </div>
-      </header>
-
-
       <div className="flex flex-col gap-4">
         <SupervisorHomePanel
           locale={locale}
+          languageSwitch={<LanguageSwitch href="/" compact />}
           chatEnabled={chatReadiness.enabled}
           chatUnavailableReason={chatReadiness.reason}
           snapshot={{

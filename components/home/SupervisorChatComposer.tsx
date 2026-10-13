@@ -13,7 +13,7 @@ import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { beginOptimisticOwner, sendKey, visibleConversationMessages,
-  transcriptScrollTarget, responsiveTailSpace } from "./supervisorChatBehavior";
+  transcriptScrollTarget } from "./supervisorChatBehavior";
 import FactSummary from "./FactSummary";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
 
@@ -140,17 +140,17 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
 }
 
 export default function SupervisorChatComposer({
-  enabled, locale, copy, snapshot, onActivityChange,
+  enabled, locale, copy, snapshot, languageSwitch, onActivityChange,
 }: {
   enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
+  languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
 }) {
   const [threads, setThreads] = useState<ConversationThread[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
-  const [recentTurnId, setRecentTurnId] = useState<string | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [snapshotExpanded, setSnapshotExpanded] = useState(false);
@@ -174,11 +174,9 @@ export default function SupervisorChatComposer({
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
-  const tailSpacer = useRef<HTMLDivElement | null>(null);
   const previousScrollHeight = useRef<number | null>(null);
-  const scrollNewestOnOpen = useRef(true);
-  const focusTurnId = useRef<string | null>(null);
-  const ownerManuallyScrolled = useRef(false);
+  const openAtTop = useRef(true);
+  const followLatestSend = useRef(false);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
@@ -274,41 +272,24 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId]);
-  // Scroll only for an initial history load or a new owner turn, not on every reply.
-  // Tail space is calculated from the transcript viewport and collapses after
-  // response completion, instead of leaving a permanent blank 40dvh block.
+  // Existing conversations open from the top; a newly sent turn follows the
+  // latest messages. Prepending older history preserves the reading position.
   useLayoutEffect(() => {
     const node = transcript.current;
     if (!node) return;
-    if (previousScrollHeight.current !== null) {
-      node.scrollTop = transcriptScrollTarget({
-        scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
-        previousScrollHeight: previousScrollHeight.current,
-        anchorDelta: null, userScrolled: false, openNewest: false,
-      }) ?? node.scrollTop;
-      previousScrollHeight.current = null;
-      return;
-    }
-    const anchor = focusTurnId.current ? Array.from(node.querySelectorAll<HTMLElement>("[data-client-message-id]"))
-      .find(el => el.dataset.clientMessageId === focusTurnId.current) : null;
-    const rect = node.getBoundingClientRect();
-    const anchorDelta = anchor ? anchor.getBoundingClientRect().top - rect.top : null;
-    const spacer = tailSpacer.current;
-    if (spacer) {
-      const anchorOffset = anchorDelta === null ? 0 : node.scrollTop + anchorDelta;
-      const below = node.scrollHeight - spacer.offsetHeight - anchorOffset;
-      spacer.style.height = anchor
-        ? responsiveTailSpace(node.clientHeight, below, sending) + "px" : "0px";
-    }
+    if (!messages.length && !optimisticOwner && !sending) return;
     const target = transcriptScrollTarget({
       scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
-      previousScrollHeight: null, anchorDelta,
-      userScrolled: ownerManuallyScrolled.current,
-      openNewest: scrollNewestOnOpen.current,
+      previousScrollHeight: previousScrollHeight.current,
+      openAtTop: openAtTop.current && !followLatestSend.current,
+      followLatest: followLatestSend.current,
     });
+    previousScrollHeight.current = null;
     if (target !== null) node.scrollTop = target;
-    if (anchorDelta !== null && !ownerManuallyScrolled.current) scrollNewestOnOpen.current = false;
-    else if (scrollNewestOnOpen.current && messages.length) scrollNewestOnOpen.current = false;
+    if (messages.length) openAtTop.current = false;
+    if (followLatestSend.current && !sending && !optimisticOwner) {
+      followLatestSend.current = false;
+    }
   }, [messages, optimisticOwner, sending]);
 
   async function refreshThreads() {
@@ -336,10 +317,8 @@ export default function SupervisorChatComposer({
     if (!existingKey) {
       // Optimistic view only: the server owns persistence and idempotency.
       setOptimisticOwner(beginOptimisticOwner(text, clientMessageId));
-      setRecentTurnId(clientMessageId);
-      focusTurnId.current = clientMessageId;
-      ownerManuallyScrolled.current = false;
-      scrollNewestOnOpen.current = false;
+      followLatestSend.current = true;
+      openAtTop.current = false;
       setDraft("");
     }
     setSending(true); setError(false);
@@ -396,8 +375,9 @@ export default function SupervisorChatComposer({
     if (sending) return;
     cleanupRecording(); dispatchDictation({ type: "reset" });
     setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
-    setOptimisticOwner(null); setRecentTurnId(null);
-    scrollNewestOnOpen.current = true; focusTurnId.current = null; ownerManuallyScrolled.current = false;
+    setOptimisticOwner(null);
+    openAtTop.current = true; followLatestSend.current = false;
+    if (transcript.current) transcript.current.scrollTop = 0;
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
     setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
@@ -556,9 +536,7 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
-    <div ref={transcript} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 md:px-6 md:py-5"
-      onWheel={() => { ownerManuallyScrolled.current = true; }}
-      onTouchStart={() => { ownerManuallyScrolled.current = true; }}
+    <div ref={transcript} className="flex min-h-0 flex-1 flex-col items-stretch justify-start gap-4 overflow-y-auto overscroll-contain px-3 py-4 md:px-6 md:py-5"
       role="log" aria-live="polite" aria-label={copy.threads}>
       {displayedMessages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-2 py-3 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#E9F1E8] text-good">
@@ -593,16 +571,6 @@ export default function SupervisorChatComposer({
         </div>
         {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
-      {displayedMessages.length > 0 && snapshot && <section className="mb-4 rounded-xl border border-[#E2D3BF] bg-[#F6F0E7] p-2">
-        <button type="button" onClick={() => setSnapshotExpanded((v) => !v)}
-          aria-expanded={snapshotExpanded}
-          aria-label={snapshotExpanded ? copy.snapshotCollapse : copy.snapshotExpand}
-          className="flex min-h-10 w-full items-center justify-between gap-2 px-2 text-start text-sm font-semibold text-ink">
-          <span>{copy.todaySummary} · {snapshot.stats[0]?.value} · {snapshot.sections[0]?.count ?? 0} {copy.needsYou}</span>
-          <ChevronDown size={18} className={snapshotExpanded ? "rotate-180" : ""} aria-hidden="true" />
-        </button>
-        {snapshotExpanded && <div className="p-2"><HomeSnapshot snapshot={snapshot} /></div>}
-      </section>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
         className="mx-auto flex min-h-12 items-center gap-2 rounded-xl px-4 text-[15px] font-semibold text-ink underline hover:bg-[#F4EBDD]">
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
@@ -620,9 +588,8 @@ export default function SupervisorChatComposer({
         <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />
         {copy.sending}
       </div>}
-      {recentTurnId && <div ref={tailSpacer} aria-hidden="true" className="pointer-events-none shrink-0" />}
     </div>
-    <div className="shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
+    <div className="mt-auto shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
           href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}
@@ -711,7 +678,9 @@ export default function SupervisorChatComposer({
             </span>
           </button>)}
         </div>
-
+        {languageSwitch && <div className="shrink-0 border-t border-[#E1D4C2] px-5 py-3 md:hidden">
+          {languageSwitch}
+        </div>}
       </aside>
     </div>}
   </section>;
