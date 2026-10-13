@@ -1,4 +1,4 @@
-import {describe,it,expect,vi} from "vitest";
+import {describe,it,expect,vi,afterEach} from "vitest";
 vi.mock("server-only",()=>({}));
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {supervisorHistoricalReaders} from "./supervisorReads.server";
@@ -40,4 +40,60 @@ describe("Canonical sales status strictly distinguishes verified zero and missin
   it("rejects cross-café reads before querying data",async()=>{
     await expect(reader([row("actual")]).salesTrend("other-cafe",period)).rejects.toThrow("scope");
   });
+});
+
+
+afterEach(()=>vi.unstubAllEnvs());
+function pilotReader(rows:Row[],rpcDates:string[],canonicalToastDates:string[],broken=false){
+ const rollup={select:()=>rollup,eq:()=>rollup,gte:()=>rollup,lte:()=>rollup,
+  order:()=>rollup,limit:async()=>({data:rows,error:null})};
+ const orders={select:()=>orders,eq:()=>orders,like:()=>orders,in:()=>orders,
+  limit:async()=>broken?{data:null,error:{message:"connection failed"}}:
+   {data:canonicalToastDates.map(business_date=>({business_date})),error:null}};
+ const rpc=vi.fn().mockResolvedValue({data:rpcDates.map(business_date=>({business_date})),error:null});
+ return supervisorHistoricalReaders({
+  from:(table:string)=>table==="orders"?orders:rollup,rpc
+ } as unknown as SupabaseClient,"my-cafe");
+}
+describe("Toast source-scoped Supervisor coverage without changing aggregate formulas",()=>{
+ it("preserves independently verified Square/CSV revenue on a Toast pilot-only day",async()=>{
+  vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("actual",4820,12,day)],
+   [day],[]).salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(true);
+  if(trend.available)expect(trend.value).toMatchObject([{date:day,netSalesCents:4820,ordersCount:12}]);
+ });
+ it("does not report a mixed unverified Toast+Square daily aggregate as independently verified",async()=>{
+  vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("actual",5800,13,day)],
+   [day],[day]).salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(false);
+  expect(trend.quality.missingInputs).toContain("toastSalesAwaitingIndependentReview");
+ });
+ it("preserves other independently verified Square/CSV days in a partly mixed period",async()=>{
+  vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+  const trend=await pilotReader([
+   row("actual",4800,12,"2026-10-11"),
+   row("actual",5800,13,"2026-10-12")
+  ],["2026-10-12"],["2026-10-12"])
+   .salesTrend("my-cafe",{from:"2026-10-11",to:"2026-10-12"});
+  expect(trend.available).toBe(true);
+  if(trend.available){
+   expect(trend.value).toMatchObject([{date:"2026-10-11",netSalesCents:4800}]);
+   expect(trend.quality.missingInputs).toContain("toastSalesAwaitingIndependentReview");
+  }
+ });
+ it("fails closed if source-scoped canonical order read fails",async()=>{
+  vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("actual",2500,2,day)],
+   [day],[],true).salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(false);
+  expect(trend.quality.missingInputs).toContain("toastSalesVerificationUnavailable");
+ });
+ it("never turns a staff-only or Toast-modified-empty day into verified zero",async()=>{
+  vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+  const day="2026-10-12",trend=await pilotReader([row("missing",0,0,day)],
+   [day],[]).salesTrend("my-cafe",{from:day,to:day});
+  expect(trend.available).toBe(false);
+ });
 });

@@ -16,9 +16,13 @@ export async function GET(request:Request) {
   const {data:locations,error:locError}=await db.from("toast_location_mappings")
     .select("location_id,restaurant_guid,verified_at").eq("business_id",id);
   if(locError)return reply(503,{error:"temporarily_unavailable"});
+  const {data:health,error:healthError}=await db.from("toast_sync_health")
+    .select("restaurant_guid,last_order_fetch_at,last_time_entry_fetch_at,last_schedule_fetch_at,last_menu_fetch_at,last_failure_category")
+    .eq("business_id",id);
+  if(healthError)return reply(503,{error:"temporarily_unavailable"});
   return reply(200,{state:c?.state??"not_connected",apiOrigin:c?.api_origin??null,
     lastVerifiedAt:c?.last_verified_at??null,lastErrorCategory:c?.last_error_category??null,
-    retryAfter:c?.retry_after??null,locations:locations??[]});
+    retryAfter:c?.retry_after??null,locations:locations??[],syncLocations:health??[]});
 }
 export async function POST(request:Request){
   if(process.env.TOAST_SETUP_ENABLED!=="true")return reply(503,{error:"setup_disabled"});
