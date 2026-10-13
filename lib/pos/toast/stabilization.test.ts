@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {classifyToastOrder} from "./adapter";
-import {planModifiedWindow,scheduleRefreshWindow} from "./poll";
+import {classifyToastOrder,parseToastOrderFact} from "./adapter";
+import {planModifiedWindow,scheduleRefreshWindow,planRecoveryWindow} from "./poll";
 const restaurant="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const orderId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const base={
@@ -11,6 +11,30 @@ const base={
  payments:[{tipAmount:0,refundStatus:"NONE"}]}]
 };
 describe("Toast P0 state and cursor correctness",()=>{
+ it("accepts zero-check and deleted provider orders as non-sales, rejects malformed payloads",()=>{
+   const empty=parseToastOrderFact({...base,checks:[]},restaurant);
+   expect(empty.state).toBe("ambiguous");
+   expect(empty.normalizedOrder).toBeNull();
+   const deleted=parseToastOrderFact({...base,checks:[],deleted:true},restaurant);
+   expect(deleted.state).toBe("deleted");
+   expect(deleted.normalizedOrder).toBeNull();
+   const voided=parseToastOrderFact({...base,checks:[],voided:true},restaurant);
+   expect(voided.state).toBe("voided");
+   expect(voided.normalizedOrder).toBeNull();
+   expect(()=>parseToastOrderFact({...base,checks:"invalid"},restaurant)).toThrow();
+   expect(()=>parseToastOrderFact({...base,guid:"not-guid"},restaurant)).toThrow();
+ });
+ it("never plans a backfill window past its exact missing boundary",()=>{
+   const period=planRecoveryWindow({next_since:"2026-08-01T00:00:00Z",
+     missing_until:"2026-08-10T00:00:00Z"},"orders");
+   expect(period.since.toISOString()).toBe("2026-08-01T00:00:00.000Z");
+   expect(period.until.toISOString()).toBe("2026-08-01T03:00:00.000Z");
+   const tail=planRecoveryWindow({next_since:"2026-08-09T23:00:00Z",
+     missing_until:"2026-08-10T00:00:00Z"},"orders");
+   expect(tail.until.toISOString()).toBe("2026-08-10T00:00:00.000Z");
+   expect(()=>planRecoveryWindow({next_since:"2026-08-10T00:00:00Z",
+     missing_until:"2026-08-10T00:00:00Z"},"orders")).toThrow();
+ });
  it("completed -> reopened -> voided -> deleted cannot leave an active completed record",()=>{
   const completed=classifyToastOrder(base,restaurant);
   expect(completed.state).toBe("completed");

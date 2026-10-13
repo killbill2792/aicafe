@@ -114,7 +114,7 @@ BEGIN
       RAISE EXCEPTION 'out-of-window order response'; END IF;
    PERFORM toast_store_order_fact(
     p_business_id,p_restaurant_guid,(rec->>'orderGuid')::uuid,
-    (rec->>'modifiedAt')::timestamptz,rec->>'state',rec->'normalizedOrder',NULL);
+    (rec->>'modifiedAt')::timestamptz,rec->>'state',NULLIF(rec->'normalizedOrder','null'::jsonb),NULL);
  END LOOP;
  IF p_has_more THEN
    UPDATE toast_order_poll_progress SET next_page=p_page+1,updated_at=now()

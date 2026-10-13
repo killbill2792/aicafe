@@ -132,6 +132,12 @@ export function classifyToastOrder(order:Order,restaurantGuid:string):ToastOrder
  return {orderGuid:order.guid,restaurantGuid,modifiedAt,state,
    normalizedOrder:state==="completed"?normalizeToastOrder(order,restaurantGuid):null};
 }
+/** Parse untrusted Toast payloads consistently, including a valid empty checks array. */
+export function parseToastOrderFact(payload:unknown,restaurantGuid:string):ToastOrderFact {
+ const parsed=ordersSchema.element.safeParse(payload);
+ if(!parsed.success)throw new ToastApiError("invalid_response");
+ return classifyToastOrder(parsed.data,restaurantGuid);
+}
 export type ToastAdapter=PosAdapter&{
   fetchModifiedOrders(range:Range):Promise<PosOrder[]>;
   fetchBusinessDayOrders(day:string):Promise<PosOrder[]>;
