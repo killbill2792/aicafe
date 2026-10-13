@@ -39,6 +39,8 @@ export function toastRetryAt(response:Response,now=Date.now()):string {
   const reset=response.headers.get("x-toast-ratelimit-reset");
   if(reset&&/^\d+(?:\.\d+)?$/.test(reset))ms=Math.max(ms||0,Number(reset)*1000);
   if(!Number.isFinite(ms)||ms<now)ms=now+1500;
+  // Invalid enormous reset dates must not crash Date.toISOString or cause an early retry.
+  if(ms>8640000000000000)throw new ToastApiError("invalid_response",429);
   return new Date(ms).toISOString();
 }
 type Credential={api_origin:string;client_id:string;client_secret_enc:string;
@@ -61,8 +63,11 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       ?decryptToken(current.bearer_token_enc):null;
   }
   async function token():Promise<string> {
-    const cached=validCached(await row());
+    const initial=await row();
+    const cached=validCached(initial);
     if(cached)return cached;
+    if(initial.retry_after&&Date.parse(initial.retry_after)>Date.now())
+      throw new ToastApiError("rate_limited",429,initial.retry_after);
     const existing=inflight.get(businessId);
     if(existing)return existing;
     const refresh=(async()=>{
@@ -70,6 +75,8 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
         const current=await row();
         const reuse=validCached(current);
         if(reuse)return reuse;
+        if(current.retry_after&&Date.parse(current.retry_after)>Date.now())
+          throw new ToastApiError("rate_limited",429,current.retry_after);
         const {data:claimed,error:claimError}=await db.rpc("toast_claim_auth_lease",{p_business_id:businessId});
         if(claimError)throw new ToastApiError("unavailable");
         if(!claimed){await wait(400);continue;}
@@ -89,7 +96,13 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
             });
           }catch {throw new ToastApiError("timeout");}
           if(!res.ok){
-            if(res.status===429)throw new ToastApiError("rate_limited",429,toastRetryAt(res));
+            if(res.status===429){
+              const retryAt=toastRetryAt(res);
+              const {error:saveError}=await db.from("toast_api_credentials")
+                .update({retry_after:retryAt}).eq("business_id",businessId);
+              if(saveError)throw new ToastApiError("unavailable");
+              throw new ToastApiError("rate_limited",429,retryAt);
+            }
             throw failure(res.status,"authentication");
           }
           const parsed=tokenSchema.safeParse(await res.json().catch(()=>null));
@@ -151,8 +164,9 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       }
       if(res.status===429) {
         const retryAt=toastRetryAt(res);
-        await db.from("toast_api_credentials").update({retry_after:retryAt})
-          .eq("business_id",businessId);
+        const {error:saveError}=await db.from("toast_api_credentials")
+          .update({retry_after:retryAt}).eq("business_id",businessId);
+        if(saveError)throw new ToastApiError("unavailable");
         // Never sleep past an externally instructed reset then retry early.
         // Jobs can safely resume after retryAt; no lengthy blocking serverless function.
         throw new ToastApiError("rate_limited",429,retryAt);
