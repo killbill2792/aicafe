@@ -504,6 +504,37 @@ SELECT pg_temp.assert_true(NOT has_table_privilege('anon','public.toast_poll_rec
 SELECT pg_temp.assert_true(NOT has_table_privilege('authenticated','public.toast_canonical_corrections','UPDATE'),
  'authenticated users cannot clear canonical review');
 
+-- Source refund/void business-date events: no amount inferred and no canonical rewrite.
+SELECT pg_temp.assert_true(
+ toast_stage_payment_day_events('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2025-01-10','refunded',
+  '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0029"]'::jsonb)=1,
+ 'one independently identified refund business-date review event');
+SELECT pg_temp.assert_true(
+ toast_stage_payment_day_events('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','2025-01-10','refunded',
+  '["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0029"]'::jsonb)=0,
+ 'duplicate refund event is idempotent');
+SELECT pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),
+ 'refund-date evidence must not rewrite original canonical sales');
+SELECT pg_temp.must_fail($q$
+ SELECT toast_promote_reconciled_day('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ '2025-01-10','synthetic-checksum')
+$q$);
+SELECT pg_temp.must_fail($q$
+ SELECT toast_stage_payment_day_events('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbff01','2025-01-10','refunded','[]'::jsonb)
+$q$);
+SELECT pg_temp.assert_true(NOT has_function_privilege('anon',
+ 'public.toast_unverified_sales_dates(uuid,date,date)','EXECUTE'),
+ 'anonymous clients cannot claim verified source date coverage');
+SELECT pg_temp.assert_true(NOT has_function_privilege('authenticated',
+ 'public.toast_stage_payment_day_events(uuid,uuid,date,text,jsonb)','EXECUTE'),
+ 'only service role can stage payment-date events');
+
 -- Denied access is exercised as real anonymous / authenticated SQL session roles.
 SET LOCAL ROLE anon;
 DO $$
