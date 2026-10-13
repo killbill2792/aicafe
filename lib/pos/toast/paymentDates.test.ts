@@ -19,6 +19,16 @@ describe("Toast refund-date evidence",()=>{
   expect(rpc.mock.calls[0][1].p_guids).toEqual([id]);
   expect(result).toMatchObject({requiresReview:true,verifiedZero:false,independentReportVerified:false});
  });
+ it("does not interpret an empty provider GUID response as independently verified zero or settlement",async()=>{
+  h.get.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+  const rpc=vi.fn().mockResolvedValue({error:null});
+  const result=await stageToastPaymentDateReview({rpc} as unknown as SupabaseClient,request);
+  expect(result).toMatchObject({
+    requiresReview:false,verifiedZero:false,refundAmountsVerified:false,
+    settlementAmountsVerified:false,financialReportingVerified:false,
+    independentReportVerified:false
+  });
+ });
  it("never stages voids if refund request failed",async()=>{
   h.get.mockReset().mockRejectedValueOnce(new Error("rate limited"));
   const rpc=vi.fn();

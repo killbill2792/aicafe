@@ -63,7 +63,7 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
   finally{setBusy(false);}
  }
  const web= subscriptions.find(s=>s.id===selection)??subscriptions[0];
- const selected=restaurant||verifiedRestaurants[0]||"";
+ const selected=verifiedRestaurants.includes(restaurant)?restaurant:verifiedRestaurants[0]??"";
  const preference=status?.preferences.find(p=>p.restaurant_guid===selected&&p.kind===kind);
  return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-4">
   <h2 className="text-lg font-bold text-ink">{labels.webhookSetup}</h2>
