@@ -135,11 +135,12 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
       }catch {if(attempt<2){await wait(300*2**attempt);continue;}throw new ToastApiError("timeout");}
       if(res.status===401&&attempt===0){
         const latest=await row();
-        if(latest.bearer_token_enc&&decryptToken(latest.bearer_token_enc)!==bearer &&
-           validCached(latest)) {
-          bearer=decryptToken(latest.bearer_token_enc);
+        if(latest.bearer_token_enc&&decryptToken(latest.bearer_token_enc)!==bearer) {
+          // Another instance replaced the token. Never invalidate that replacement,
+          // including when the replacement is itself near expiry.
+          bearer=await token();
         } else {
-          // CAS prevents an older HTTP 401 from deleting a newly issued token.
+          // Invalidate ONLY the token actually rejected by Toast.
           const {error}=await db.rpc("toast_invalidate_token_if_match",{
             p_business_id:businessId,p_expected_ciphertext:latest.bearer_token_enc,
           });
