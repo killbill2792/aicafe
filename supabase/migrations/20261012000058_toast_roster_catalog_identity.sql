@@ -145,6 +145,18 @@ BEGIN
  NOT EXISTS(SELECT 1 FROM toast_location_mappings WHERE business_id=p_business_id
  AND restaurant_guid=p_restaurant_guid AND verified_at IS NOT NULL)
  THEN RAISE EXCEPTION 'invalid import request'; END IF;
+ -- A requested GUID without a source row or an explicitly approved employee
+ -- link is not a successful no-op. Reject the whole batch before any payroll write.
+ IF EXISTS (
+   SELECT 1 FROM jsonb_array_elements_text(p_guids) x
+   LEFT JOIN toast_labor_entries l ON l.business_id=p_business_id
+     AND l.restaurant_guid=p_restaurant_guid AND
+       l.external_time_entry_id=x.value::uuid
+   LEFT JOIN toast_employee_directory e ON e.business_id=p_business_id
+     AND e.restaurant_guid=p_restaurant_guid AND
+       e.employee_guid=l.external_employee_id
+   WHERE l.external_time_entry_id IS NULL OR e.linked_employee_id IS NULL
+ ) THEN RAISE EXCEPTION 'unmatched attendance requires explicit owner mapping'; END IF;
  FOR rec IN SELECT l.*,e.linked_employee_id
  FROM toast_labor_entries l JOIN toast_employee_directory e
  ON e.business_id=l.business_id AND e.restaurant_guid=l.restaurant_guid

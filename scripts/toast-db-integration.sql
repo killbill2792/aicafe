@@ -603,8 +603,8 @@ BEGIN
   'earlier canonical timecard remains unchanged after provider modification');
  INSERT INTO ingredients(business_id,name,base_unit)
  VALUES(b,'Synthetic espresso beans','g') RETURNING id INTO ingredient;
- INSERT INTO menu_items(business_id,name,price_cents)
- VALUES(b,'Owner recipe coffee',500) RETURNING id INTO menu;
+ INSERT INTO menu_items(business_id,name,base_name,price_cents)
+ VALUES(b,'Owner recipe coffee','Owner recipe coffee',500) RETURNING id INTO menu;
  INSERT INTO recipe_lines(menu_item_id,ingredient_id,quantity)
  VALUES(menu,ingredient,18);
  INSERT INTO modifier_recipes(business_id,name,quantity_delta)
