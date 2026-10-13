@@ -369,34 +369,34 @@ END $check$;
 DO $check$
 DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
  r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
- id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019';
+ v_guid uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019';
  kind text; counter integer:=0; changed boolean;
 BEGIN
  FOREACH kind IN ARRAY ARRAY['refunded','voided','reopened','deleted'] LOOP
    counter:=counter+1;
-   SELECT toast_store_order_fact(b,r,id,
+   SELECT toast_store_order_fact(b,r,v_guid,
     '2026-10-11T00:00:00Z'::timestamptz+(counter||' hours')::interval,
     kind,NULL,NULL) INTO changed;
    PERFORM pg_temp.assert_true(changed,'newer provider state accepted');
    PERFORM pg_temp.assert_true((SELECT state=kind AND normalized_order IS NULL
     FROM toast_modified_orders_staging WHERE business_id=b AND restaurant_guid=r
-     AND order_guid=id),'newer nonfinal provider state preserved');
+     AND order_guid=v_guid),'newer nonfinal provider state preserved');
    PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM toast_canonical_corrections
-    WHERE business_id=b AND restaurant_guid=r AND order_guid=id),
+    WHERE business_id=b AND restaurant_guid=r AND order_guid=v_guid),
     'one correction record, never duplicate');
  END LOOP;
  PERFORM pg_temp.assert_true((SELECT latest_provider_state='deleted' AND
    status='review_required' FROM toast_canonical_corrections
-   WHERE business_id=b AND restaurant_guid=r AND order_guid=id),
+   WHERE business_id=b AND restaurant_guid=r AND order_guid=v_guid),
    'latest post-promotion correction requires review');
  PERFORM pg_temp.assert_true((SELECT state='needs_review' FROM toast_pilot_days
     WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
     'affected promoted business date no longer marked verified');
  PERFORM pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
-   WHERE business_id=b AND pos_order_id='toast:'||r::text||':'||id::text),
+   WHERE business_id=b AND pos_order_id='toast:'||r::text||':'||v_guid::text),
    'historical canonical financial cents preserved pending review');
  PERFORM pg_temp.assert_true(NOT toast_store_order_fact(
-   b,r,id,'2026-10-10T00:00:00Z','completed',
+   b,r,v_guid,'2026-10-10T00:00:00Z','completed',
    '{"posOrderId":"stale"}'::jsonb,NULL),'stale version rejected');
 END $check$;
 SELECT pg_temp.must_fail($q$
