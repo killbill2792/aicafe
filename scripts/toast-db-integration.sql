@@ -225,6 +225,196 @@ SELECT pg_temp.assert_true((SELECT count(*)=1 FROM orders WHERE
  business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
  AND pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),'canonical stable order identity');
 
+
+-- PR #63 final: 50 / 100 / 250 facts, one page per job and exact cursor fencing.
+DO $
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ n integer; page_num integer; total_pages integer; copied integer;
+ from_ts timestamptz; to_ts timestamptz; before_cursor timestamptz;
+ batch jsonb; result jsonb; nonce uuid; failed boolean;
+BEGIN
+ FOREACH n IN ARRAY ARRAY[50,100,250] LOOP
+  from_ts:='2026-10-10T02:00:00Z'::timestamptz+(n||' minutes')::interval;
+  to_ts:=from_ts+interval '1 hour';
+  SELECT last_order_poll_at INTO before_cursor FROM toast_sync_health
+   WHERE business_id=b AND restaurant_guid=r;
+  total_pages:=ceil(n/100.0)::integer;
+  IF mod(n,100)=0 THEN total_pages:=total_pages+1; END IF;
+  FOR page_num IN 1..total_pages LOOP
+   SELECT COALESCE(jsonb_agg(jsonb_build_object(
+    'orderGuid',(md5('poll-fixture-'||n||'-'||i))::uuid,
+    'restaurantGuid',r::text,'modifiedAt',(from_ts+interval '5 minutes')::text,
+    'state','open','normalizedOrder',NULL)),'[]'::jsonb) INTO batch
+    FROM generate_series((page_num-1)*100+1,LEAST(page_num*100,n)) AS i;
+   SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+   PERFORM pg_temp.assert_true(nonce IS NOT NULL,'page claim required');
+   IF n=250 AND page_num=2 THEN
+     failed:=false;
+     BEGIN
+      PERFORM toast_stage_order_poll_page(b,r,nonce,from_ts,to_ts,page_num,
+       jsonb_build_array(jsonb_build_object('orderGuid',gen_random_uuid(),
+        'modifiedAt',(from_ts+interval '5 minutes')::text,
+        'state','not_a_provider_state','normalizedOrder',NULL)),false,false);
+     EXCEPTION WHEN OTHERS THEN failed:=true; END;
+     PERFORM pg_temp.assert_true(failed,'malformed page must fail atomically');
+     PERFORM pg_temp.assert_true((SELECT next_page=2 FROM toast_order_poll_progress
+       WHERE business_id=b AND restaurant_guid=r),'page checkpoint survives failed SQL');
+     PERFORM pg_temp.assert_true((SELECT last_order_poll_at IS NOT DISTINCT FROM before_cursor
+       FROM toast_sync_health WHERE business_id=b AND restaurant_guid=r),
+       'no partial cursor advancement after page failure');
+     -- Interruption: release nonce and reacquire another. The page checkpoint persists.
+     PERFORM pg_temp.assert_true(toast_finish_poll(b,r,'orders',nonce,NULL,true,NULL,NULL),
+       'lease release after interrupted page');
+     SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+     PERFORM pg_temp.assert_true(nonce IS NOT NULL,'resume acquires a new nonce');
+   END IF;
+   SELECT toast_stage_order_poll_page(
+      b,r,nonce,from_ts,to_ts,page_num,batch,page_num<total_pages,false)
+    INTO result;
+   PERFORM pg_temp.assert_true((result->>'staged')::integer=jsonb_array_length(batch),
+     'one complete bounded page staged');
+   IF page_num<total_pages THEN
+     PERFORM pg_temp.assert_true((SELECT last_order_poll_at IS NOT DISTINCT FROM before_cursor
+      FROM toast_sync_health WHERE business_id=b AND restaurant_guid=r),
+      'page without terminal marker cannot advance cursor');
+     PERFORM pg_temp.assert_true((SELECT next_page=page_num+1
+      FROM toast_order_poll_progress WHERE business_id=b AND restaurant_guid=r),
+      'durable next-page checkpoint');
+   ELSE
+     PERFORM pg_temp.assert_true((SELECT last_order_poll_at=to_ts
+      FROM toast_sync_health WHERE business_id=b AND restaurant_guid=r),
+      'cursor advances only on final page');
+   END IF;
+  END LOOP;
+  SELECT count(*) INTO copied FROM toast_modified_orders_staging
+   WHERE business_id=b AND restaurant_guid=r AND state='open'
+   AND order_guid IN (SELECT md5('poll-fixture-'||n||'-'||i)::uuid
+    FROM generate_series(1,n) AS i);
+  PERFORM pg_temp.assert_true(copied=n,'all 50/100/250 unique order ids persisted');
+  PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_order_poll_progress
+    WHERE business_id=b AND restaurant_guid=r),'completed window clears checkpoint');
+ END LOOP;
+END $;
+
+-- Durable >30 day backfill: exact missing bounds, page interruption and complete restoration.
+DO $
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ nonce uuid; from_ts timestamptz; to_ts timestamptz;
+ rec toast_poll_recovery%ROWTYPE; saved timestamptz;
+BEGIN
+ UPDATE toast_sync_health SET last_order_poll_at='2026-07-01T00:00:00Z'
+ WHERE business_id=b AND restaurant_guid=r;
+ SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+ PERFORM pg_temp.assert_true(toast_begin_poll_recovery(
+   b,r,'orders',nonce,'2026-10-10T00:00:00Z'),'backfill initialized');
+ SELECT * INTO rec FROM toast_poll_recovery WHERE business_id=b AND restaurant_guid=r
+  AND kind='orders';
+ PERFORM pg_temp.assert_true(rec.state='requires_historical_backfill' AND
+  rec.missing_since='2026-07-01T00:00:00Z' AND
+  rec.missing_until='2026-10-10T00:00:00Z' AND
+  rec.next_since=rec.missing_since,'exact persisted missing-period boundaries');
+ PERFORM pg_temp.assert_true(toast_finish_poll(b,r,'orders',nonce,NULL,true,NULL,NULL),
+   'recovery initialization leaves cursor unchanged');
+ from_ts:=rec.next_since;to_ts:=from_ts+interval '3 hours';
+ SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+ -- One exact 100-row page followed by an empty terminal page.
+ PERFORM toast_stage_order_poll_page(b,r,nonce,from_ts,to_ts,1,
+   (SELECT jsonb_agg(jsonb_build_object(
+    'orderGuid',(md5('recovery-fixture-'||i))::uuid,
+    'modifiedAt',(from_ts+interval '1 hour')::text,
+    'state','open','normalizedOrder',NULL))
+    FROM generate_series(1,100) i),true,true);
+ PERFORM pg_temp.assert_true((SELECT next_since=from_ts FROM toast_poll_recovery
+  WHERE business_id=b AND restaurant_guid=r AND kind='orders'),
+  'backfill cursor held while next page pending');
+ SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+ PERFORM pg_temp.must_fail(format(
+  'SELECT toast_stage_order_poll_page(%L::uuid,%L::uuid,%L::uuid,%L::timestamptz,%L::timestamptz,3,%L::jsonb,false,true)',
+  b,r,nonce,from_ts,to_ts,'[]'));
+ PERFORM pg_temp.assert_true((SELECT next_page=2 FROM toast_order_poll_progress
+  WHERE business_id=b AND restaurant_guid=r),'recovery page mismatch not silently skipped');
+ PERFORM toast_stage_order_poll_page(b,r,nonce,from_ts,to_ts,2,'[]'::jsonb,false,true);
+ PERFORM pg_temp.assert_true((SELECT next_since=to_ts AND state='backfilling'
+  FROM toast_poll_recovery WHERE business_id=b AND restaurant_guid=r AND kind='orders'),
+  'finished window advances backfill exactly once');
+ LOOP
+  SELECT * INTO rec FROM toast_poll_recovery WHERE business_id=b AND restaurant_guid=r
+    AND kind='orders';
+  EXIT WHEN rec.state='complete';
+  from_ts:=rec.next_since;
+  to_ts:=LEAST(from_ts+interval '20 days',rec.missing_until);
+  SELECT toast_claim_poll(b,r,'orders') INTO nonce;
+  PERFORM pg_temp.assert_true(nonce IS NOT NULL,'next historical window lease');
+  PERFORM toast_stage_order_poll_page(b,r,nonce,from_ts,to_ts,1,'[]'::jsonb,false,true);
+ END LOOP;
+ PERFORM pg_temp.assert_true((SELECT state='complete' AND next_since=missing_until AND
+  completed_at IS NOT NULL FROM toast_poll_recovery
+  WHERE business_id=b AND restaurant_guid=r AND kind='orders'),
+  'resumable backfill finished without skipping boundaries');
+ PERFORM pg_temp.assert_true((SELECT last_order_poll_at='2026-10-10T00:00:00Z'
+  FROM toast_sync_health WHERE business_id=b AND restaurant_guid=r),
+  'normal order cursor restored at exact historical upper bound');
+ PERFORM pg_temp.assert_true((SELECT count(*)=100 FROM toast_modified_orders_staging
+  WHERE business_id=b AND restaurant_guid=r AND order_guid IN (
+   SELECT md5('recovery-fixture-'||i)::uuid FROM generate_series(1,100) i)),
+  'backfill staged all records with stable ids');
+ PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_pilot_days
+   WHERE business_id=b AND business_date BETWEEN '2026-07-01' AND '2026-10-10'),
+   'empty modification windows do not invent verified-zero days');
+END $;
+
+-- Already-promoted Toast sales: newer refund/void/reopen/delete -> ONE review record.
+DO $
+DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+ r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
+ id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019';
+ kind text; counter integer:=0; changed boolean;
+BEGIN
+ FOREACH kind IN ARRAY ARRAY['refunded','voided','reopened','deleted'] LOOP
+   counter:=counter+1;
+   SELECT toast_store_order_fact(b,r,id,
+    '2026-10-11T00:00:00Z'::timestamptz+(counter||' hours')::interval,
+    kind,NULL,NULL) INTO changed;
+   PERFORM pg_temp.assert_true(changed,'newer provider state accepted');
+   PERFORM pg_temp.assert_true((SELECT state=kind AND normalized_order IS NULL
+    FROM toast_modified_orders_staging WHERE business_id=b AND restaurant_guid=r
+     AND order_guid=id),'newer nonfinal provider state preserved');
+   PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM toast_canonical_corrections
+    WHERE business_id=b AND restaurant_guid=r AND order_guid=id),
+    'one correction record, never duplicate');
+ END LOOP;
+ PERFORM pg_temp.assert_true((SELECT latest_provider_state='deleted' AND
+   status='review_required' FROM toast_canonical_corrections
+   WHERE business_id=b AND restaurant_guid=r AND order_guid=id),
+   'latest post-promotion correction requires review');
+ PERFORM pg_temp.assert_true((SELECT state='needs_review' FROM toast_pilot_days
+    WHERE business_id=b AND restaurant_guid=r AND business_date='2025-01-10'),
+    'affected promoted business date no longer marked verified');
+ PERFORM pg_temp.assert_true((SELECT net_sales_cents=1100 FROM orders
+   WHERE business_id=b AND pos_order_id='toast:'||r::text||':'||id::text),
+   'historical canonical financial cents preserved pending review');
+ PERFORM pg_temp.assert_true(NOT toast_store_order_fact(
+   b,r,id,'2026-10-10T00:00:00Z','completed',
+   '{"posOrderId":"stale"}'::jsonb,NULL),'stale version rejected');
+END $;
+SELECT pg_temp.must_fail($q$
+ SELECT toast_promote_reconciled_day('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ '2025-01-10','synthetic-checksum')
+$q$);
+SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
+ 'public.toast_store_order_fact_pre_correction(uuid,uuid,uuid,timestamptz,text,jsonb,uuid)','EXECUTE'),
+ 'service role cannot bypass post-promotion review via old staging RPC');
+SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
+ 'public.toast_promote_reconciled_day_pre_correction(uuid,uuid,uuid,date,text)','EXECUTE'),
+ 'service role cannot bypass latest canonical correction gate');
+SELECT pg_temp.assert_true(NOT has_table_privilege('anon','public.toast_poll_recovery','SELECT'),
+ 'no anonymous visibility into backfill journal');
+SELECT pg_temp.assert_true(NOT has_table_privilege('authenticated','public.toast_canonical_corrections','UPDATE'),
+ 'authenticated users cannot clear canonical review');
+
 -- Denied access is exercised as real anonymous / authenticated SQL session roles.
 SET LOCAL ROLE anon;
 DO $$
