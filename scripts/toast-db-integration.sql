@@ -227,7 +227,7 @@ SELECT pg_temp.assert_true((SELECT count(*)=1 FROM orders WHERE
 
 
 -- PR #63 final: 50 / 100 / 250 facts, one page per job and exact cursor fencing.
-DO $
+DO $check$
 DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
  r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
  n integer; page_num integer; total_pages integer; copied integer;
@@ -295,10 +295,10 @@ BEGIN
   PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_order_poll_progress
     WHERE business_id=b AND restaurant_guid=r),'completed window clears checkpoint');
  END LOOP;
-END $;
+END $check$;
 
 -- Durable >30 day backfill: exact missing bounds, page interruption and complete restoration.
-DO $
+DO $check$
 DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
  r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
  nonce uuid; from_ts timestamptz; to_ts timestamptz;
@@ -363,10 +363,10 @@ BEGIN
  PERFORM pg_temp.assert_true(NOT EXISTS(SELECT 1 FROM toast_pilot_days
    WHERE business_id=b AND business_date BETWEEN '2026-07-01' AND '2026-10-10'),
    'empty modification windows do not invent verified-zero days');
-END $;
+END $check$;
 
 -- Already-promoted Toast sales: newer refund/void/reopen/delete -> ONE review record.
-DO $
+DO $check$
 DECLARE b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
  r uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01';
  id uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019';
@@ -398,7 +398,7 @@ BEGIN
  PERFORM pg_temp.assert_true(NOT toast_store_order_fact(
    b,r,id,'2026-10-10T00:00:00Z','completed',
    '{"posOrderId":"stale"}'::jsonb,NULL),'stale version rejected');
-END $;
+END $check$;
 SELECT pg_temp.must_fail($q$
  SELECT toast_promote_reconciled_day('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
