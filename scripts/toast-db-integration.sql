@@ -135,4 +135,93 @@ SELECT toast_apply_schedule_window('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
 SELECT toast_apply_schedule_window('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
  '2026-10-01T00:00:00Z','2026-10-10T00:00:00Z','[]'::jsonb);
+
+SELECT pg_temp.assert_true(
+ (SELECT deleted FROM pos_scheduled_shifts
+ WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND external_shift_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0015'),
+ 'complete schedule window retires missing provider shift');
+SELECT pg_temp.must_fail($q$
+ SELECT toast_apply_schedule_window('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001',
+ '2026-10-01T00:00:00Z','2026-10-10T00:00:00Z','[]'::jsonb)
+$q$);
+DO $$
+DECLARE nonce uuid;
+BEGIN
+ SELECT toast_claim_poll('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','attendance') INTO nonce;
+ PERFORM pg_temp.assert_true(nonce IS NOT NULL,'poll lease claim');
+ PERFORM pg_temp.assert_true(toast_claim_poll('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+   'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','attendance') IS NULL,'concurrent poll lease');
+ PERFORM pg_temp.assert_true(NOT toast_finish_poll(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01',
+  'attendance','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',now(),true,NULL,NULL),
+  'stale poll nonce rejected');
+ PERFORM pg_temp.assert_true(toast_finish_poll(
+  'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01',
+  'attendance',nonce,'2026-10-10T18:00:00Z',true,NULL,NULL),
+  'real poll lease completion');
+END $$;
+SELECT pg_temp.assert_true((SELECT last_time_entry_poll_at='2026-10-10T18:00:00Z'
+ FROM toast_sync_health WHERE business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),
+ 'cursor advances through owned successful poll');
+-- A matched owner report is still guarded by CSV overlap and by one transaction.
+INSERT INTO toast_pilot_days(
+ business_id,restaurant_guid,location_id,business_date,orders_snapshot,order_count,
+ gross_sales_cents,net_sales_cents,discounts_cents,refunds_cents,tax_cents,tip_cents,
+ product_quantities,snapshot_sha256,state,report_checked_at,fetched_at)
+VALUES(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','2025-01-10',
+ jsonb_build_array(jsonb_build_object(
+ 'posOrderId','toast:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0019',
+ 'closedAt','2025-01-10T18:00:00Z','grossSalesCents',1100,'netSalesCents',1100,
+ 'discountsCents',0,'refundsCents',0,'taxCents',0,'tipCents',0,
+ 'processingFeeStatus','missing','processingFeeCents',0,'lines',
+ jsonb_build_array(jsonb_build_object('posItemId',NULL,'name','Coffee','quantity',1,
+ 'netSalesCents',1100,'voided',false,'voidedBy',NULL,'modifiers','[]'::jsonb)))),
+ 1,1100,1100,0,0,0,0,'{}'::jsonb,'synthetic-checksum',
+ 'matched_owner_report',now(),now());
+INSERT INTO orders(business_id,location_id,pos_order_id,closed_at,business_date,
+ gross_sales_cents,net_sales_cents) VALUES(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ 'csv:old-upload','2025-01-10T18:00:00Z','2025-01-10',100,100);
+SELECT pg_temp.must_fail($q$
+ SELECT toast_promote_reconciled_day('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001',
+ '2025-01-10','synthetic-checksum')
+$q$);
+SELECT pg_temp.assert_true(NOT EXISTS(
+ SELECT 1 FROM orders WHERE pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),
+ 'CSV overlap failure atomic/no partially promoted orders');
+DELETE FROM orders WHERE pos_order_id='csv:old-upload'
+ AND business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+SELECT pg_temp.assert_true(toast_promote_reconciled_day(
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaff01',
+ 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001','2025-01-10','synthetic-checksum')=1,
+ 'matched guarded promotion committed once');
+SELECT pg_temp.assert_true((SELECT count(*)=1 FROM orders WHERE
+ business_id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+ AND pos_order_id LIKE 'toast:aaaaaaaa-aaaa-4aaa%'),'canonical stable order identity');
+
+-- Denied access is exercised as real anonymous / authenticated SQL session roles.
+SET LOCAL ROLE anon;
+DO $$
+BEGIN
+ BEGIN
+   PERFORM count(*) FROM toast_api_credentials;
+   RAISE EXCEPTION 'anonymous read incorrectly allowed';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
+SET LOCAL ROLE authenticated;
+DO $$
+BEGIN
+ BEGIN
+   PERFORM count(*) FROM toast_location_mappings;
+   RAISE EXCEPTION 'authenticated read incorrectly allowed';
+ EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+END $$;
+RESET ROLE;
 ROLLBACK;
