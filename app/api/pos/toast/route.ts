@@ -10,7 +10,7 @@ export async function GET(request:Request) {
   const db=await authorizeToastOwner(id);
   if(!db)return reply(403,{error:"not_authorized"});
   const {data:c,error}=await db.from("toast_api_credentials")
-    .select("api_origin,state,last_verified_at,last_error_category,updated_at")
+    .select("api_origin,state,last_verified_at,last_error_category,updated_at,retry_after")
     .eq("business_id",id).maybeSingle();
   if(error)return reply(503,{error:"temporarily_unavailable"});
   const {data:locations,error:locError}=await db.from("toast_location_mappings")
@@ -18,12 +18,12 @@ export async function GET(request:Request) {
   if(locError)return reply(503,{error:"temporarily_unavailable"});
   return reply(200,{state:c?.state??"not_connected",apiOrigin:c?.api_origin??null,
     lastVerifiedAt:c?.last_verified_at??null,lastErrorCategory:c?.last_error_category??null,
-    locations:locations??[]});
+    retryAfter:c?.retry_after??null,locations:locations??[]});
 }
 export async function POST(request:Request){
+  if(process.env.TOAST_SETUP_ENABLED!=="true")return reply(503,{error:"setup_disabled"});
   if(request.headers.get("content-type")?.split(";")[0]!=="application/json")
     return reply(415,{error:"invalid_request"});
-  if(process.env.TOAST_SETUP_ENABLED!=="true")return reply(503,{error:"setup_disabled"});
   const body=await request.json().catch(()=>null);
   const parsed=setupSchema.safeParse(body);
   if(!parsed.success)return reply(400,{error:"invalid_request"});
@@ -41,17 +41,12 @@ export async function POST(request:Request){
     .eq("business_id",payload.businessId).in("id",payload.locations.map(l=>l.location_id));
   if(locError)return reply(503,{error:"temporarily_unavailable"});
   if((owned??[]).length!==payload.locations.length)return reply(400,{error:"invalid_location"});
-  const {error:saveError}=await db.from("toast_api_credentials").upsert({
-    business_id:payload.businessId,api_origin:origin,client_id:payload.clientId,
-    client_secret_enc:encryptToken(payload.clientSecret),
-    bearer_token_enc:null,bearer_expires_at:null,auth_lease_until:null,auth_lease_nonce:null,
-    state:"configured",last_verified_at:null,last_error_category:null,updated_at:new Date().toISOString()
-  },{onConflict:"business_id"});
-  if(saveError)return reply(503,{error:"temporarily_unavailable"});
-  const {error:mapError}=await db.rpc("toast_replace_location_mappings",{
-    p_business_id:payload.businessId,p_mappings:payload.locations,
+  // SQL handles mapping and credential changes in one transaction; any error rolls back both.
+  const {error:saveError}=await db.rpc("toast_save_configuration",{
+    p_business_id:payload.businessId,p_origin:origin,p_client_id:payload.clientId,
+    p_secret_enc:encryptToken(payload.clientSecret),p_mappings:payload.locations,
   });
-  if(mapError)return reply(503,{error:"location_setup_failed"});
+  if(saveError)return reply(422,{error:"configuration_not_saved"});
   return reply(200,{state:"configured",locationsConfigured:payload.locations.length});
 }
 export async function DELETE(request:Request){
@@ -59,7 +54,6 @@ export async function DELETE(request:Request){
   if(!parsed.success)return reply(400,{error:"invalid_request"});
   const db=await authorizeToastOwner(parsed.data);
   if(!db)return reply(403,{error:"not_authorized"});
-  // Remove future local access. Canonical sales/labor/history are never deleted.
   const {error}=await db.from("toast_api_credentials").delete().eq("business_id",parsed.data);
   if(error)return reply(503,{error:"temporarily_unavailable"});
   return reply(200,{state:"disconnected"});

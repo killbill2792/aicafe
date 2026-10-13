@@ -5,16 +5,17 @@ import {decryptToken,encryptToken} from "@/lib/security/tokenCrypto";
 
 export type ToastFailure = "invalid_host"|"authentication"|"missing_permissions"|"unauthorized_location"|"rate_limited"|"timeout"|"unavailable"|"invalid_response"|"not_configured";
 export class ToastApiError extends Error {
-  constructor(public readonly category:ToastFailure, public readonly status?:number) {
+  constructor(public readonly category:ToastFailure, public readonly status?:number, public readonly retryAt?:string) {
     super("Toast request failed: "+category);
     this.name="ToastApiError";
   }
 }
-export const GUID = z.uuid();
+// Toast identifiers are RFC-4122-formatted UUIDs of more than one version.
+export const GUID=z.uuid();
 const tokenSchema=z.object({token:z.object({accessToken:z.string().min(1),expiresIn:z.number().positive()})});
 const wait=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 
-/** Enforce HTTPS, no credentials/query/path, Toast ownership, and operator-controlled exact host list. */
+/** HTTPS, explicit operator-controlled hostnames, no redirects or arbitrary server-side URLs. */
 export function trustedToastOrigin(input:string,allowed=process.env.TOAST_ALLOWED_API_HOSTS??""):string {
   let u:URL;
   try {u=new URL(input.includes("://")?input:"https://"+input);}catch {throw new ToastApiError("invalid_host");}
@@ -24,60 +25,73 @@ export function trustedToastOrigin(input:string,allowed=process.env.TOAST_ALLOWE
     throw new ToastApiError("invalid_host");
   return u.origin;
 }
-function failure(status:number):ToastApiError {
+function failure(status:number,context:"authentication"|"restaurant"|"resource"="resource"):ToastApiError {
   if(status===401)return new ToastApiError("authentication",status);
-  if(status===403)return new ToastApiError("missing_permissions",status);
-  if(status===404)return new ToastApiError("unauthorized_location",status);
+  if(status===403)return new ToastApiError(context==="restaurant"?"unauthorized_location":"missing_permissions",status);
   if(status===429)return new ToastApiError("rate_limited",status);
   return new ToastApiError("unavailable",status);
 }
-function retryMs(response:Response,attempt:number) {
-  const header=response.headers.get("retry-after");
-  const seconds=header&&/^\d+$/.test(header)?Number(header):null;
-  return Math.min(10000,seconds===null?300*2**attempt:seconds*1000);
+export function toastRetryAt(response:Response,now=Date.now()):string {
+  const raw=response.headers.get("retry-after");
+  let ms=Number.NaN;
+  if(raw&&/^\d+(?:\.\d+)?$/.test(raw))ms=now+Number(raw)*1000;
+  else if(raw)ms=Date.parse(raw);
+  const reset=response.headers.get("x-toast-ratelimit-reset");
+  if(reset&&/^\d+(?:\.\d+)?$/.test(reset))ms=Math.max(ms||0,Number(reset)*1000);
+  if(!Number.isFinite(ms)||ms<now)ms=now+1500;
+  return new Date(ms).toISOString();
 }
-type Credential={api_origin:string;client_id:string;client_secret_enc:string;bearer_token_enc:string|null;bearer_expires_at:string|null};
+type Credential={api_origin:string;client_id:string;client_secret_enc:string;
+  bearer_token_enc:string|null;bearer_expires_at:string|null;retry_after:string|null};
 const MIN_VALIDITY_MS=120000;
 const inflight=new Map<string,Promise<string>>();
-/** Uses encrypted persisted bearer tokens and an atomic DB lease across Vercel instances. */
+/** Persisted encrypted tokens + a nonce lease across isolated Vercel invocations. */
 export function createToastClient(db:SupabaseClient,businessId:string) {
   async function row():Promise<Credential> {
     const {data,error}=await db.from("toast_api_credentials")
-      .select("api_origin,client_id,client_secret_enc,bearer_token_enc,bearer_expires_at")
+      .select("api_origin,client_id,client_secret_enc,bearer_token_enc,bearer_expires_at,retry_after")
       .eq("business_id",businessId).neq("state","disconnected").maybeSingle();
     if(error||!data)throw new ToastApiError("not_configured");
     trustedToastOrigin(data.api_origin);
     return data as Credential;
   }
-  async function token(force=false):Promise<string> {
-    const initial=await row();
-    if(!force&&initial.bearer_token_enc&&initial.bearer_expires_at&&
-       Date.parse(initial.bearer_expires_at)>Date.now()+MIN_VALIDITY_MS)
-      return decryptToken(initial.bearer_token_enc);
+  function validCached(current:Credential):string|null {
+    return current.bearer_token_enc&&current.bearer_expires_at&&
+      Date.parse(current.bearer_expires_at)>Date.now()+MIN_VALIDITY_MS
+      ?decryptToken(current.bearer_token_enc):null;
+  }
+  async function token():Promise<string> {
+    const cached=validCached(await row());
+    if(cached)return cached;
     const existing=inflight.get(businessId);
     if(existing)return existing;
     const refresh=(async()=>{
-      for(let attempt=0;attempt<20;attempt++){
+      for(let attempt=0;attempt<22;attempt++){
         const current=await row();
-        if((!force||attempt>0)&&current.bearer_token_enc&&current.bearer_expires_at&&
-           Date.parse(current.bearer_expires_at)>Date.now()+MIN_VALIDITY_MS)
-          return decryptToken(current.bearer_token_enc);
+        const reuse=validCached(current);
+        if(reuse)return reuse;
         const {data:claimed,error:claimError}=await db.rpc("toast_claim_auth_lease",{p_business_id:businessId});
         if(claimError)throw new ToastApiError("unavailable");
-        if(!claimed){await wait(450);continue;}
+        if(!claimed){await wait(400);continue;}
         try{
-          const origin=trustedToastOrigin(current.api_origin);
+          // A token may have been refreshed while this worker claimed its lease.
+          const latest=await row(),already=validCached(latest);
+          if(already)return already;
+          const origin=trustedToastOrigin(latest.api_origin);
           let res:Response;
           try {
             res=await fetch(origin+"/authentication/v1/authentication/login",{
               method:"POST",redirect:"error",signal:AbortSignal.timeout(10000),
               headers:{"Content-Type":"application/json"},
-              body:JSON.stringify({clientId:current.client_id,
-                clientSecret:decryptToken(current.client_secret_enc),
+              body:JSON.stringify({clientId:latest.client_id,
+                clientSecret:decryptToken(latest.client_secret_enc),
                 userAccessType:"TOAST_MACHINE_CLIENT"}),
             });
           }catch {throw new ToastApiError("timeout");}
-          if(!res.ok)throw failure(res.status);
+          if(!res.ok){
+            if(res.status===429)throw new ToastApiError("rate_limited",429,toastRetryAt(res));
+            throw failure(res.status,"authentication");
+          }
           const parsed=tokenSchema.safeParse(await res.json().catch(()=>null));
           if(!parsed.success)throw new ToastApiError("invalid_response");
           const {accessToken,expiresIn}=parsed.data.token;
@@ -86,10 +100,10 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
             p_ciphertext:encryptToken(accessToken),
             p_expires_at:new Date(Date.now()+expiresIn*1000).toISOString(),
           });
-          if(saveError||!committed)throw new ToastApiError("unavailable");
+          if(saveError)throw new ToastApiError("unavailable");
+          if(!committed)continue; // Lease expired or credential rotated. Never use stale token.
           return accessToken;
         } finally {
-          // Clear the lease after failed logins too; a later attempt may retry.
           await db.rpc("toast_release_auth_lease",{p_business_id:businessId,p_lease_nonce:claimed});
         }
       }
@@ -101,13 +115,16 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
   async function request<T>(path:string,restaurantGuid:string,schema:z.ZodType<T>,
      opts:{allowUnverified?:boolean}={}):Promise<T> {
     const guid=GUID.safeParse(restaurantGuid);
-    if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://"))
+    if(!guid.success||!path.startsWith("/")||path.startsWith("//")||path.includes("..")||path.includes("://")||
+      path.includes("#")||path.includes("\\"))
       throw new ToastApiError("unauthorized_location");
     const {data:mapping,error:mapError}=await db.from("toast_location_mappings")
       .select("verified_at").eq("business_id",businessId).eq("restaurant_guid",guid.data).maybeSingle();
     if(mapError||!mapping||(!opts.allowUnverified&&!mapping.verified_at))
       throw new ToastApiError("unauthorized_location");
-    const origin=trustedToastOrigin((await row()).api_origin);
+    const credentials=await row(),origin=trustedToastOrigin(credentials.api_origin);
+    if(credentials.retry_after&&Date.parse(credentials.retry_after)>Date.now())
+      throw new ToastApiError("rate_limited",429,credentials.retry_after);
     let bearer=await token();
     for(let attempt=0;attempt<4;attempt++) {
       let res:Response;
@@ -117,11 +134,30 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
             "Accept":"application/json"}});
       }catch {if(attempt<2){await wait(300*2**attempt);continue;}throw new ToastApiError("timeout");}
       if(res.status===401&&attempt===0){
-        await db.from("toast_api_credentials").update({bearer_token_enc:null,bearer_expires_at:null}).eq("business_id",businessId);
-        bearer=await token(true);continue;
+        const latest=await row();
+        if(latest.bearer_token_enc&&decryptToken(latest.bearer_token_enc)!==bearer &&
+           validCached(latest)) {
+          bearer=decryptToken(latest.bearer_token_enc);
+        } else {
+          // CAS prevents an older HTTP 401 from deleting a newly issued token.
+          const {error}=await db.rpc("toast_invalidate_token_if_match",{
+            p_business_id:businessId,p_expected_ciphertext:latest.bearer_token_enc,
+          });
+          if(error)throw new ToastApiError("unavailable");
+          bearer=await token();
+        }
+        continue;
       }
-      if((res.status===429||res.status>=500)&&attempt<3){await wait(retryMs(res,attempt));continue;}
-      if(!res.ok)throw failure(res.status);
+      if(res.status===429) {
+        const retryAt=toastRetryAt(res);
+        await db.from("toast_api_credentials").update({retry_after:retryAt})
+          .eq("business_id",businessId);
+        // Never sleep past an externally instructed reset then retry early.
+        // Jobs can safely resume after retryAt; no lengthy blocking serverless function.
+        throw new ToastApiError("rate_limited",429,retryAt);
+      }
+      if(res.status>=500&&attempt<3){await wait(300*2**attempt);continue;}
+      if(!res.ok)throw failure(res.status,path.startsWith("/restaurants/v1/")?"restaurant":"resource");
       const raw=await res.json().catch(()=>{throw new ToastApiError("invalid_response");});
       const parsed=schema.safeParse(raw);
       if(!parsed.success)throw new ToastApiError("invalid_response");

@@ -6,6 +6,14 @@ export const runtime="nodejs";
 export const dynamic="force-dynamic";
 const json=(status:number,data:unknown)=>NextResponse.json(data,{status,headers:{"Cache-Control":"no-store"}});
 const expected=z.object({businessId:GUID}).strict();
+export function verificationFailure(previousVerified:boolean,category:string) {
+  // A temporary outage, rate-limit or timeout does not revoke access or erase past verification.
+  const transient=["unavailable","timeout","rate_limited","invalid_response"].includes(category);
+  return {state:transient?(previousVerified?"verified":"configured"):
+    category==="missing_permissions"?"missing_permissions":
+    category==="unauthorized_location"?"configured":"needs_reconnect",
+    preserveVerification:transient};
+}
 export async function POST(request:Request){
   if(process.env.TOAST_SETUP_ENABLED!=="true")return json(503,{error:"setup_disabled"});
   const body=expected.safeParse(await request.json().catch(()=>null));
@@ -14,13 +22,14 @@ export async function POST(request:Request){
   const db=await authorizeToastOwner(businessId);
   if(!db)return json(403,{error:"not_authorized"});
   const {data:mappings,error}=await db.from("toast_location_mappings")
-    .select("restaurant_guid").eq("business_id",businessId);
+    .select("restaurant_guid,verified_at").eq("business_id",businessId);
   if(error||!mappings?.length)return json(400,{error:"no_locations"});
+  const {data:current}=await db.from("toast_api_credentials").select("state").eq("business_id",businessId).maybeSingle();
+  const previouslyVerified=current?.state==="verified"&&mappings.every(l=>l.verified_at);
   const client=createToastClient(db,businessId);
   const start=new Date(Date.now()-60000).toISOString(),end=new Date().toISOString();
   const query=(p:string)=>p+"?startDate="+encodeURIComponent(start)+"&endDate="+encodeURIComponent(end);
   try {
-    // Verify *each* mapped location and the requested feature families. No ingestion, no writes to Toast.
     for(const mapping of mappings) {
       const guid=mapping.restaurant_guid;
       const info=await client.request("/restaurants/v1/restaurants/"+guid,guid,
@@ -45,11 +54,15 @@ export async function POST(request:Request){
     return json(200,{state:"verified",locationsVerified:mappings.length});
   } catch(err){
     const category=err instanceof ToastApiError?err.category:"unavailable";
-    await db.from("toast_location_mappings").update({verified_at:null}).eq("business_id",businessId);
+    const outcome=verificationFailure(Boolean(previouslyVerified),category);
+    if(!outcome.preserveVerification)
+      await db.from("toast_location_mappings").update({verified_at:null}).eq("business_id",businessId);
     await db.from("toast_api_credentials").update({
-      state:category==="missing_permissions"?"missing_permissions":"needs_reconnect",
-      last_error_category:category,last_verified_at:null
+      state:outcome.state,last_error_category:category,
+      ...(!outcome.preserveVerification?{last_verified_at:null}:{}),
     }).eq("business_id",businessId);
-    return json(422,{state:"not_verified",error:category});
+    return json(category==="rate_limited"?429:422,{
+      state:outcome.state,verified:outcome.preserveVerification&&Boolean(previouslyVerified),
+      error:category,retryAfter:err instanceof ToastApiError?err.retryAt:undefined});
   }
 }
