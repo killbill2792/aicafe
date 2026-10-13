@@ -17,7 +17,8 @@ export function mapToastLaborEntry(p:LocationParams,f:ToastAttendanceFact) {
    external_employee_id:f.externalEmployeeId,clock_in:f.clockIn,
    clock_out:f.clockOut,hourly_wage_cents:f.hourlyWageCents,
    wage_status:f.hourlyWageCents===null?"missing":"verified",
-   breaks:f.breaks,deleted:f.deleted,fetched_at:new Date().toISOString(),
+   breaks:f.breaks,deleted:f.deleted,provider_modified_at:f.modifiedAt??null,
+   fetched_at:new Date().toISOString(),
  };
 }
 export function mapToastScheduledShift(p:LocationParams,s:ToastScheduledShift) {
@@ -32,7 +33,7 @@ export function mapToastScheduledShift(p:LocationParams,s:ToastScheduledShift) {
  };
 }
 export async function syncToastLaborReadOnly(db:SupabaseClient,p:LocationParams,
- range:Range,kind:"attendance"|"schedules") {
+ range:Range,kind:"attendance"|"schedules",mode:"historical"|"modified"="historical") {
  checkedRange(range);
  const {data:mapping,error}=await db.from("toast_location_mappings")
  .select("verified_at,location_id").eq("business_id",p.businessId)
@@ -41,13 +42,16 @@ export async function syncToastLaborReadOnly(db:SupabaseClient,p:LocationParams,
    throw new ToastApiError("unauthorized_location");
  const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
  if(kind==="attendance"){
-   const rows=await adapter.fetchAttendanceFacts(range);
+   const rows=mode==="modified"?await adapter.fetchAttendanceChanges(range):
+     await adapter.fetchAttendanceFacts(range);
    if(rows.length>5000)throw new ToastApiError("invalid_response");
    const normalized=rows.map(f=>mapToastLaborEntry(p,f));
    // No old records are erased on missing API responses; deletion must be explicit from Toast.
    for(let offset=0;offset<normalized.length;offset+=100){
-     const {error:save}=await db.from("toast_labor_entries").upsert(normalized.slice(offset,offset+100),
-       {onConflict:"business_id,restaurant_guid,external_time_entry_id"});
+     const {error:save}=await db.rpc("toast_stage_labor_entries",{
+       p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+       p_location_id:p.locationId,p_rows:normalized.slice(offset,offset+100),
+     });
      if(save)throw new ToastApiError("unavailable");
    }
    const {error:health}=await db.from("toast_sync_health").upsert({
@@ -61,11 +65,13 @@ export async function syncToastLaborReadOnly(db:SupabaseClient,p:LocationParams,
  const rows=await adapter.fetchScheduledShifts(range);
  if(rows.length>5000)throw new ToastApiError("invalid_response");
  const normalized=rows.map(s=>mapToastScheduledShift(p,s));
- for(let offset=0;offset<normalized.length;offset+=100) {
-   const {error:save}=await db.from("pos_scheduled_shifts").upsert(normalized.slice(offset,offset+100),
-     {onConflict:"business_id,provider,external_shift_id"});
-   if(save)throw new ToastApiError("unavailable");
- }
+ // A complete window is applied in one SQL transaction; never delete on partial API success.
+ const {error:save}=await db.rpc("toast_apply_schedule_window",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+   p_location_id:p.locationId,p_since:range.since.toISOString(),p_until:range.until.toISOString(),
+   p_rows:normalized,
+ });
+ if(save)throw new ToastApiError("unavailable");
  const {error:health}=await db.from("toast_sync_health").upsert({
    business_id:p.businessId,restaurant_guid:p.restaurantGuid,
    last_attempt_at:new Date().toISOString(),last_schedule_fetch_at:new Date().toISOString(),

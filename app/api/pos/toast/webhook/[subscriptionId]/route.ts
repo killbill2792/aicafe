@@ -27,6 +27,8 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   if(error||!subscription?.enabled)return response(404,{error:"not_found"});
   if(!validToastWebhookSignature(raw,event.timestamp,request.headers.get("toast-signature"),
       decryptToken(subscription.signing_secret_enc)))return response(401,{error:"invalid_signature"});
+  const attempt=Number(request.headers.get("toast-attempt-number")??"1");
+  if(!Number.isInteger(attempt)||attempt<1||attempt>3)return response(400,{error:"invalid_attempt"});
   if(!["order_updated","channel_order_updated"].includes(event.eventType))
     return response(202,{accepted:false});
   const orderGuid=event.details.order?.guid;

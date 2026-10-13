@@ -21,13 +21,13 @@ export async function stageQueuedToastOrder(db:SupabaseClient,event:Claimed) {
  const adapter=createToastAdapter({
   db,businessId:event.business_id,restaurantGuid:event.restaurant_guid
  });
- const normalized=await adapter.fetchOrderByGuid(event.order_guid);
- const {error:writeError}=await db.from("toast_modified_orders_staging").upsert({
-   business_id:event.business_id,restaurant_guid:event.restaurant_guid,
-   order_guid:event.order_guid,source_event_guid:event.event_guid,
-   last_checked_at:new Date().toISOString(),
-   state:normalized?"completed":"review_required",normalized_order:normalized,
- },{onConflict:"business_id,restaurant_guid,order_guid"});
+ const fact=await adapter.fetchOrderStateByGuid(event.order_guid);
+ const {error:writeError}=await db.rpc("toast_store_order_fact",{
+   p_business_id:event.business_id,p_restaurant_guid:event.restaurant_guid,
+   p_order_guid:fact.orderGuid,p_modified_at:fact.modifiedAt,
+   p_state:fact.state,p_normalized_order:fact.normalizedOrder,
+   p_event_guid:event.event_guid,
+ });
  if(writeError)throw new ToastApiError("unavailable");
  const {error:healthError}=await db.from("toast_sync_health").upsert({
   business_id:event.business_id,restaurant_guid:event.restaurant_guid,
@@ -35,7 +35,7 @@ export async function stageQueuedToastOrder(db:SupabaseClient,event:Claimed) {
   last_failure_category:null
  },{onConflict:"business_id,restaurant_guid"});
  if(healthError)throw new ToastApiError("unavailable");
- return normalized?"completed":"review_required";
+ return fact.state==="completed"?"completed":"review_required";
 }
 export async function runToastOrderQueue(db:SupabaseClient) {
  const {data:claimed,error:claimError}=await db.rpc("toast_claim_order_events",{p_limit:2});
