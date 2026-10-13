@@ -26,7 +26,15 @@
     "disconnectConfirm": "هل تريد قطع اتصال Toast؟ ستبقى البيانات السابقة.",
     "noLocations": "أضف موقع المقهى أولاً.",
     "instructions": "استخدم بيانات اعتماد Standard API من Toast Web. لا تدخل كلمة مرور حسابك.",
-    "retryAfter": "أعد المحاولة بعد"
+    "retryAfter": "أعد المحاولة بعد",
+    "lastSync": "آخر جلب ناجح للبيانات",
+    "errorAuthentication": "رفض Toast بيانات الاعتماد",
+    "errorMissingPermissions": "أذونات Toast المطلوبة غير متوفرة",
+    "errorUnauthorizedLocation": "هذا المطعم لم يسمح بالوصول",
+    "errorTimeout": "لم يستجب Toast في الوقت المطلوب",
+    "errorRateLimited": "طلب Toast إعادة المحاولة لاحقًا",
+    "errorUnavailable": "خدمة Toast غير متاحة مؤقتًا",
+    "errorInvalidResponse": "أعاد Toast بيانات لم نتمكن من التحقق منها"
   },
   "LocaleLayout": {
     "title": "Café Profit"

@@ -26,7 +26,15 @@
     "disconnectConfirm": "¿Desconectar Toast? Se conservarán los datos históricos.",
     "noLocations": "Configura primero un local.",
     "instructions": "Usa credenciales Standard API de Toast Web. No introduzcas tu contraseña de Toast.",
-    "retryAfter": "Volver a intentar después de"
+    "retryAfter": "Volver a intentar después de",
+    "lastSync": "Última consulta de datos correcta",
+    "errorAuthentication": "Toast rechazó estas credenciales",
+    "errorMissingPermissions": "Faltan permisos necesarios de Toast",
+    "errorUnauthorizedLocation": "Este restaurante no autorizó el acceso",
+    "errorTimeout": "Toast no respondió a tiempo",
+    "errorRateLimited": "Toast pidió reintentar más tarde",
+    "errorUnavailable": "Toast no está disponible temporalmente",
+    "errorInvalidResponse": "Toast devolvió datos que no pudimos verificar"
   },
   "LocaleLayout": {
     "title": "Café Profit"

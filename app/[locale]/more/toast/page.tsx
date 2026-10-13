@@ -39,7 +39,11 @@ export default async function ToastConnectionPage() {
           error:t("error"),saved:t("saved"),success:t("success"),
           pending:t("pending"),disconnectConfirm:t("disconnectConfirm"),
           noLocations:t("noLocations"),instructions:t("instructions"),
-          retryAfter:t("retryAfter"),
+          retryAfter:t("retryAfter"),lastSync:t("lastSync"),
+          errorAuthentication:t("errorAuthentication"),errorMissingPermissions:t("errorMissingPermissions"),
+          errorUnauthorizedLocation:t("errorUnauthorizedLocation"),errorTimeout:t("errorTimeout"),
+          errorRateLimited:t("errorRateLimited"),errorUnavailable:t("errorUnavailable"),
+          errorInvalidResponse:t("errorInvalidResponse"),
         }}/>
     </PageShell>
   );

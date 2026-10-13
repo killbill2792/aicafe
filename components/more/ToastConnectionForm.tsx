@@ -5,6 +5,8 @@ type State={
   state:string;apiOrigin:string|null;lastVerifiedAt:string|null;
   lastErrorCategory:string|null;retryAfter?:string|null;
   locations:{location_id:string;restaurant_guid:string;verified_at:string|null}[];
+  syncLocations?:{restaurant_guid:string;last_order_fetch_at:string|null;last_time_entry_fetch_at:string|null;
+   last_schedule_fetch_at:string|null;last_menu_fetch_at:string|null;last_failure_category:string|null}[];
 };
 type Labels={
  notEnabled:string;notConnected:string;configured:string;verified:string;
@@ -12,7 +14,9 @@ type Labels={
  url:string;clientId:string;clientSecret:string;locations:string;
  restaurantGuid:string;save:string;test:string;disconnect:string;
  lastVerified:string;error:string;saved:string;success:string;pending:string;
- disconnectConfirm:string;noLocations:string;instructions:string;retryAfter:string;
+ disconnectConfirm:string;noLocations:string;instructions:string;retryAfter:string;lastSync:string;
+ errorAuthentication:string;errorMissingPermissions:string;errorUnauthorizedLocation:string;
+ errorTimeout:string;errorRateLimited:string;errorUnavailable:string;errorInvalidResponse:string;
 };
 export default function ToastConnectionForm({businessId,locations,enabled,labels}:{
  businessId:string;locations:Location[];enabled:boolean;labels:Labels;
@@ -43,6 +47,12 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
     }).catch(()=>{});
    return ()=>{cancelled=true;};
  },[businessId]);
+ const errorText:Record<string,string>={
+  authentication:labels.errorAuthentication,missing_permissions:labels.errorMissingPermissions,
+  unauthorized_location:labels.errorUnauthorizedLocation,timeout:labels.errorTimeout,
+  rate_limited:labels.errorRateLimited,unavailable:labels.errorUnavailable,
+  invalid_response:labels.errorInvalidResponse
+ };
  const stateText:Record<string,string>={
    not_connected:labels.notConnected,configured:labels.configured,
    verified:labels.verified,missing_permissions:labels.missingPermissions,
@@ -92,8 +102,15 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
      {labels.retryAfter}: {new Date(connection.retryAfter).toLocaleString()}
    </p>}
    {connection?.lastErrorCategory&&<p role="status" className="text-sm text-warn">
-     {labels.error}: {connection.lastErrorCategory}
+     {labels.error}: {errorText[connection.lastErrorCategory]??labels.error}
    </p>}
+   {connection?.syncLocations?.map(h=>{
+     const synced=[h.last_order_fetch_at,h.last_time_entry_fetch_at,h.last_schedule_fetch_at,h.last_menu_fetch_at]
+       .filter((value):value is string=>Boolean(value)).sort().at(-1);
+     return <p key={h.restaurant_guid} className="text-sm text-ink-muted">
+       {labels.lastSync} ({h.restaurant_guid.slice(0,8)}): {synced?new Date(synced).toLocaleString():labels.notConnected}
+     </p>;
+   })}
    {!enabled&&<p role="status" className="rounded-xl bg-paper p-3 text-ink">
      {labels.notEnabled}
    </p>}

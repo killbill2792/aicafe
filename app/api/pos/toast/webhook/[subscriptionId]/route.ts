@@ -20,8 +20,6 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   const parsed=toastEventSchema.safeParse(payload);
   if(!parsed.success)return response(400,{error:"invalid_event"});
   const event=parsed.data;
-  if(!["order_updated","channel_order_updated"].includes(event.eventType))
-    return response(202,{accepted:false});
   const db=createAdminSupabaseClient();
   const {data:subscription,error}=await db.from("toast_webhook_subscriptions")
     .select("business_id,signing_secret_enc,enabled")
@@ -29,6 +27,8 @@ export async function POST(request:Request,context:{params:Promise<{subscription
   if(error||!subscription?.enabled)return response(404,{error:"not_found"});
   if(!validToastWebhookSignature(raw,event.timestamp,request.headers.get("toast-signature"),
       decryptToken(subscription.signing_secret_enc)))return response(401,{error:"invalid_signature"});
+  if(!["order_updated","channel_order_updated"].includes(event.eventType))
+    return response(202,{accepted:false});
   const {data:mapping,error:mapError}=await db.from("toast_location_mappings")
     .select("verified_at").eq("business_id",subscription.business_id)
     .eq("restaurant_guid",event.details.restaurantGuid).maybeSingle();
