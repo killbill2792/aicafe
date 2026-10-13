@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS toast_api_credentials (
   bearer_token_enc text,
   bearer_expires_at timestamptz,
   auth_lease_until timestamptz,
+  auth_lease_nonce uuid,
   state text NOT NULL DEFAULT 'configured'
     CHECK (state IN ('configured','verified','missing_permissions','needs_reconnect','sync_failed','stale','disconnected')),
   last_verified_at timestamptz,
@@ -34,18 +35,40 @@ ALTER TABLE toast_location_mappings ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON toast_api_credentials FROM anon, authenticated;
 REVOKE ALL ON toast_location_mappings FROM anon, authenticated;
 
--- Atomic distributed lease across independent Vercel workers prevents login storms.
+-- Leases are identified by a random nonce so a stalled worker cannot release/replace
+-- a later worker's token. These functions are callable only with the server service role.
 CREATE OR REPLACE FUNCTION toast_claim_auth_lease(p_business_id uuid)
-RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE token uuid;
 BEGIN
  UPDATE toast_api_credentials
- SET auth_lease_until = now() + interval '15 seconds'
+ SET auth_lease_until=now()+interval '30 seconds', auth_lease_nonce=gen_random_uuid()
  WHERE business_id=p_business_id
-   AND (auth_lease_until IS NULL OR auth_lease_until < now());
+   AND (auth_lease_until IS NULL OR auth_lease_until<now())
+ RETURNING auth_lease_nonce INTO token;
+ RETURN token;
+END $$;
+CREATE OR REPLACE FUNCTION toast_commit_auth_token(
+  p_business_id uuid,p_lease_nonce uuid,p_ciphertext text,p_expires_at timestamptz)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ UPDATE toast_api_credentials SET bearer_token_enc=p_ciphertext,
+ bearer_expires_at=p_expires_at,auth_lease_until=NULL,auth_lease_nonce=NULL
+ WHERE business_id=p_business_id AND auth_lease_nonce=p_lease_nonce;
  RETURN FOUND;
 END $$;
+CREATE OR REPLACE FUNCTION toast_release_auth_lease(p_business_id uuid,p_lease_nonce uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ UPDATE toast_api_credentials SET auth_lease_until=NULL,auth_lease_nonce=NULL
+ WHERE business_id=p_business_id AND auth_lease_nonce=p_lease_nonce;
+END $$;
 REVOKE ALL ON FUNCTION toast_claim_auth_lease(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION toast_commit_auth_token(uuid,uuid,text,timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION toast_release_auth_lease(uuid,uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION toast_claim_auth_lease(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION toast_commit_auth_token(uuid,uuid,text,timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION toast_release_auth_lease(uuid,uuid) TO service_role;
 
 -- One atomic replacement of explicitly selected mappings, rejecting invalid or cross-tenant IDs.
 CREATE OR REPLACE FUNCTION toast_replace_location_mappings(p_business_id uuid,p_mappings jsonb)

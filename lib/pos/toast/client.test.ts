@@ -25,7 +25,15 @@ function fakeDB(){
       select:()=>({eq:()=>({neq:()=>thenable(row),eq:()=>thenable({verified_at:"2026-10-12T00:00:00Z"})})}),
       update:(value:Record<string,unknown>)=>({eq:async()=>{if(table==="toast_api_credentials")Object.assign(row,value);return {error:null};}}),
     }),
-    rpc:async()=>({data:true,error:null}),
+    rpc:async(name:string,args:Record<string,unknown>)=>{
+      if(name==="toast_claim_auth_lease")return {data:"00000000-0000-4000-8000-000000000004",error:null};
+      if(name==="toast_commit_auth_token"){
+        row.bearer_token_enc=args.p_ciphertext as string;
+        row.bearer_expires_at=args.p_expires_at as string;
+        return {data:true,error:null};
+      }
+      return {data:null,error:null};
+    },
   } as unknown as SupabaseClient;
   vi.stubGlobal("fetch",vi.fn(async(url:string)=>{
     if(url.includes("/authentication/")){logins++;return new Response(JSON.stringify({token:{accessToken:"access",expiresIn:3600}}),{status:200});}

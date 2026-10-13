@@ -81,16 +81,16 @@ export function createToastClient(db:SupabaseClient,businessId:string) {
           const parsed=tokenSchema.safeParse(await res.json().catch(()=>null));
           if(!parsed.success)throw new ToastApiError("invalid_response");
           const {accessToken,expiresIn}=parsed.data.token;
-          const {error:saveError}=await db.from("toast_api_credentials").update({
-            bearer_token_enc:encryptToken(accessToken),
-            bearer_expires_at:new Date(Date.now()+expiresIn*1000).toISOString(),
-            auth_lease_until:null,
-          }).eq("business_id",businessId);
-          if(saveError)throw new ToastApiError("unavailable");
+          const {data:committed,error:saveError}=await db.rpc("toast_commit_auth_token",{
+            p_business_id:businessId,p_lease_nonce:claimed,
+            p_ciphertext:encryptToken(accessToken),
+            p_expires_at:new Date(Date.now()+expiresIn*1000).toISOString(),
+          });
+          if(saveError||!committed)throw new ToastApiError("unavailable");
           return accessToken;
         } finally {
           // Clear the lease after failed logins too; a later attempt may retry.
-          await db.from("toast_api_credentials").update({auth_lease_until:null}).eq("business_id",businessId);
+          await db.rpc("toast_release_auth_lease",{p_business_id:businessId,p_lease_nonce:claimed});
         }
       }
       throw new ToastApiError("unavailable");

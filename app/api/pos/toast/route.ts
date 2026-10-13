@@ -44,7 +44,7 @@ export async function POST(request:Request){
   const {error:saveError}=await db.from("toast_api_credentials").upsert({
     business_id:payload.businessId,api_origin:origin,client_id:payload.clientId,
     client_secret_enc:encryptToken(payload.clientSecret),
-    bearer_token_enc:null,bearer_expires_at:null,auth_lease_until:null,
+    bearer_token_enc:null,bearer_expires_at:null,auth_lease_until:null,auth_lease_nonce:null,
     state:"configured",last_verified_at:null,last_error_category:null,updated_at:new Date().toISOString()
   },{onConflict:"business_id"});
   if(saveError)return reply(503,{error:"temporarily_unavailable"});
