@@ -1,4 +1,5 @@
 import "server-only";
+import {unverifiedToastSalesDates} from "@/lib/pos/toast/reportingCoverage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fromZonedTime } from "date-fns-tz";
 import { rowToDailyFacts } from "@/lib/data/runningCostCatalog";
@@ -30,10 +31,23 @@ export function supervisorHistoricalReaders(client: SupabaseClient, businessId: 
       if (error) throw error;
       // Only explicit canonical actual coverage proves aggregate sales, including
       // genuine $0 days. Null/legacy/staff-only statuses must remain unknown.
-      const days=(data??[]).filter(row=>row.sales_data_status==="actual").map(rowToDailyFacts);
-      if (!days.length) return missing("noCoveredSalesRows");
+      // Do not call Toast-source days confirmed on the strength of canonical
+      // rollups alone. This guard is only enabled in an explicitly authorized pilot.
+      // A missing/failed coverage check fails CLOSED; unrelated Square-only
+      // operation retains the exact original path when the pilot flag is unset.
+      let blocked=new Set<string>();
+      if(process.env.TOAST_PILOT_IMPORT_ENABLED==="true"){
+        try {blocked=await unverifiedToastSalesDates(client,id,period.from,period.to);}
+        catch {return missing("toastSalesVerificationUnavailable");}
+      }
+      const days=(data??[]).filter(row=>row.sales_data_status==="actual"&&
+        !blocked.has(row.business_date)).map(rowToDailyFacts);
+      if (!days.length) return missing(blocked.size?"toastSalesAwaitingIndependentReview":"noCoveredSalesRows");
       const expected = rangeExpectedDays(period), covered = new Set(days.map(d=>d.date)).size;
-      return { available:true, value:days, quality:quality(covered < expected ? ["salesCoverage:"+covered+"/"+expected] : []) };
+      return { available:true, value:days, quality:quality([
+        ...(covered < expected ? ["salesCoverage:"+covered+"/"+expected] : []),
+        ...(blocked.size ? ["toastSalesAwaitingIndependentReview"] : [])
+      ]) };
     },
     async menuCatalog(id: string): Promise<KnownSlice<MenuCatalogProduct[]>> {
       assertScope(id);
