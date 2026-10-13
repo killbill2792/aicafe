@@ -29,7 +29,7 @@ const check=z.object({amount:z.number(),taxAmount:z.number(),paymentStatus:z.str
     refund:z.object({refundAmount:z.number().nullish(),tipRefundAmount:z.number().nullish()}).nullish()}))});
 const ordersSchema=z.array(z.object({guid:GUID,closedDate:z.string().nullish(),
   createdInTestMode:z.boolean().nullish(),deleted:z.boolean().nullish(),voided:z.boolean().nullish(),modifiedDate:z.string().nullish(),
-  checks:z.array(check).min(1)}));
+  checks:z.array(check)}));
 const employeesSchema=z.array(z.object({guid:GUID,firstName:z.string().nullish(),
   chosenName:z.string().nullish(),lastName:z.string().nullish(),deleted:z.boolean().nullish()}));
 const timeEntriesSchema=z.array(z.object({guid:GUID,modifiedDate:z.string().nullish(),employeeReference:z.object({guid:GUID}),
@@ -138,6 +138,7 @@ export type ToastAdapter=PosAdapter&{
   fetchOrderByGuid(orderGuid:string):Promise<PosOrder|null>;
   fetchOrderStateByGuid(orderGuid:string):Promise<ToastOrderFact>;
   fetchModifiedOrderStates(range:Range):Promise<ToastOrderFact[]>;
+  fetchModifiedOrderStatesPage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}>;
   fetchMenuMetadata():Promise<{restaurantGuid:string;lastUpdated:string}>;
   fetchScheduledShifts(range:Range):Promise<ToastScheduledShift[]>;
   fetchAttendanceFacts(range:Range):Promise<ToastAttendanceFact[]>;
@@ -151,6 +152,14 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
   if(!GUID.safeParse(restaurantGuid).success)throw new ToastApiError("unauthorized_location");
   const client=createToastClient(db,businessId);
   const request=<T>(path:string,schema:z.ZodType<T>)=>client.request(path,restaurantGuid,schema);
+  async function statePage(range:Range,page:number):Promise<{facts:ToastOrderFact[];hasMore:boolean}> {
+    if(!Number.isSafeInteger(page)||page<1||page>1000)throw new ToastApiError("invalid_response");
+    const search=query(range);
+    const rows=await request("/orders/v2/ordersBulk?"+search+"&pageSize=100&page="+page,ordersSchema);
+    // One page per invocation. The final short/empty page is authoritative only for
+    // this complete modified-time window; never infer a verified zero-sales day.
+    return {facts:rows.map(row=>classifyToastOrder(row,restaurantGuid)),hasMore:rows.length===100};
+  }
   async function allStateOrders(search:string):Promise<ToastOrderFact[]> {
     const found=new Map<string,ToastOrderFact>();
     for(let page=1;page<=20;page++){
@@ -203,6 +212,7 @@ export function createToastAdapter(params?:{db:SupabaseClient;businessId:string;
     provider:"toast",
     fetchModifiedOrders:(range)=>allOrders(query(range)),
     fetchModifiedOrderStates:(range)=>allStateOrders(query(range)),
+    fetchModifiedOrderStatesPage:statePage,
     fetchBusinessDayOrders:(day)=>{
       if(!/^\d{8}$/.test(day))throw new ToastApiError("invalid_response");
       return allOrders("businessDate="+day);
