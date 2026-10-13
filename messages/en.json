@@ -1,4 +1,33 @@
 {
+  "ToastConnect": {
+    "title": "Connect Toast",
+    "subtitle": "Secure read-only access to your restaurant",
+    "notEnabled": "Toast setup has not been enabled for this café pilot.",
+    "notConnected": "Not connected",
+    "configured": "Saved, not yet verified",
+    "verified": "Connected and verified",
+    "missingPermissions": "Toast permissions missing",
+    "needsReconnect": "Credentials need updating",
+    "lastSyncFailed": "Last sync failed",
+    "stale": "Data needs refreshing",
+    "url": "Toast API access URL",
+    "clientId": "Client ID",
+    "clientSecret": "Client Secret",
+    "locations": "Authorized locations",
+    "restaurantGuid": "Toast restaurant GUID",
+    "save": "Save securely",
+    "test": "Test connection",
+    "disconnect": "Disconnect",
+    "lastVerified": "Last verified",
+    "error": "Connection issue",
+    "saved": "Credentials securely saved. Test the connection to verify it.",
+    "success": "Action completed",
+    "pending": "Working…",
+    "disconnectConfirm": "Disconnect Toast? Historical records will remain.",
+    "noLocations": "Set up a café location first.",
+    "instructions": "Use Standard API credentials from Toast Web. Do not enter your Toast password.",
+    "retryAfter": "Try again after"
+  },
   "LocaleLayout": {
     "title": "Café Profit"
   },
@@ -609,6 +638,7 @@
     "now": "Now"
   },
   "More": {
+    "toastConnect": "Connect Toast",
     "title": "More",
     "placeholder": "Settings, language, and account will show up here.",
     "cafeNameLabel": "Café name",

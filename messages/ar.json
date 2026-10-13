@@ -1,4 +1,33 @@
 {
+  "ToastConnect": {
+    "title": "ربط Toast",
+    "subtitle": "وصول آمن للقراءة فقط إلى بيانات المطعم",
+    "notEnabled": "إعداد Toast غير مفعّل بعد لهذه التجربة.",
+    "notConnected": "غير متصل",
+    "configured": "تم الحفظ، لم يتم التحقق",
+    "verified": "متصل وتم التحقق",
+    "missingPermissions": "أذونات Toast ناقصة",
+    "needsReconnect": "يجب تحديث بيانات الاعتماد",
+    "lastSyncFailed": "فشلت آخر مزامنة",
+    "stale": "يجب تحديث البيانات",
+    "url": "عنوان واجهة Toast",
+    "clientId": "معرّف العميل",
+    "clientSecret": "سرّ العميل",
+    "locations": "المواقع المصرّح بها",
+    "restaurantGuid": "معرّف مطعم Toast",
+    "save": "حفظ آمن",
+    "test": "اختبار الاتصال",
+    "disconnect": "قطع الاتصال",
+    "lastVerified": "آخر تحقق",
+    "error": "مشكلة في الاتصال",
+    "saved": "تم حفظ بيانات الاعتماد بأمان. اختبر الاتصال للتحقق منها.",
+    "success": "اكتمل الإجراء",
+    "pending": "جارٍ التنفيذ…",
+    "disconnectConfirm": "هل تريد قطع اتصال Toast؟ ستبقى البيانات السابقة.",
+    "noLocations": "أضف موقع المقهى أولاً.",
+    "instructions": "استخدم بيانات اعتماد Standard API من Toast Web. لا تدخل كلمة مرور حسابك.",
+    "retryAfter": "أعد المحاولة بعد"
+  },
   "LocaleLayout": {
     "title": "Café Profit"
   },
@@ -609,6 +638,7 @@
     "now": "الآن"
   },
   "More": {
+    "toastConnect": "ربط Toast",
     "title": "المزيد",
     "placeholder": "ستظهر هنا الإعدادات واللغة والحساب.",
     "cafeNameLabel": "اسم المقهى",
