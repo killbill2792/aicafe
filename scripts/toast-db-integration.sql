@@ -16,6 +16,15 @@ SELECT pg_temp.assert_true(NOT has_function_privilege('anon','public.toast_save_
 SELECT pg_temp.assert_true(NOT has_function_privilege('authenticated','public.toast_store_order_fact(uuid,uuid,uuid,timestamptz,text,jsonb,uuid)','EXECUTE'),'authenticated order staging RPC');
 SELECT pg_temp.assert_true(has_function_privilege('service_role','public.toast_save_configuration(uuid,text,text,text,jsonb)','EXECUTE'),'service role config RPC');
 SELECT pg_temp.assert_true(has_function_privilege('service_role','public.toast_claim_poll(uuid,uuid,text)','EXECUTE'),'service role lease');
+SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
+ 'public.toast_promote_reconciled_day_legacy(uuid,uuid,uuid,date,text)','EXECUTE'),
+ 'old unguarded promotion not executable by service_role');
+SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
+ 'public.toast_promote_reconciled_day_pre_independent_verification(uuid,uuid,uuid,date,text)','EXECUTE'),
+ 'prior gated promotion not callable by service_role');
+SELECT pg_temp.assert_true(NOT has_function_privilege('service_role',
+ 'public.toast_replace_location_mappings(uuid,jsonb)','EXECUTE'),
+ 'old delete-and-reinsert location RPC not callable');
 
 INSERT INTO businesses(id,name,is_demo) VALUES
  ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','Test café A',false),

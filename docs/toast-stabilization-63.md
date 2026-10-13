@@ -29,3 +29,6 @@ Unresolved: independently verified Toast daily reports incl. payment refund date
 
 ## Independent source verification boundary
 Migration 52 requires a separate service-role-only independent Toast report attestation bound to the exact staged checksum. Owner-entered comparison by itself cannot promote sales. No attestation UI/action exists, so production promotion stays OFF. Service charges and selection voids remain ambiguous and cannot count as verified completed sales.
+
+## Legacy RPC lockdown
+Migration 53 revokes direct service-role EXECUTE on two obsolete canonical promotion implementations and on the former delete/recreate location-mapping RPC. Only the latest guarded promotion entrypoint remains callable, with the independent-report evidence gate. It grants service-role access to the evidence table while keeping anon/authenticated access denied. Tests verify these privileges on live disposable PostgreSQL.
