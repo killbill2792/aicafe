@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { routing, getDirection } from "@/i18n/routing";
 import TabBar from "@/components/TabBar";
 import SideNav from "@/components/SideNav";
+import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import { getActiveCafeName } from "@/lib/data/getActiveCafeName";
 import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import ExpenseIconDefs from "@/components/icons/ExpenseIconDefs";
@@ -82,7 +83,7 @@ export default async function LocaleLayout({
           <ExpenseIconDefs />
           <ScreenViewLogger />
           <div className="flex min-h-screen w-full flex-1">
-            <SideNav cafeName={activeCafeName} />
+            <SideNav cafeName={activeCafeName} languageSwitch={<LanguageSwitch href="/" compact />} />
             <div className="w-full min-w-0 flex-1 pb-24 md:pb-10">{children}</div>
           </div>
           <TabBar />

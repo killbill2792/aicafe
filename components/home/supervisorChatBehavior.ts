@@ -23,22 +23,15 @@ export function visibleConversationMessages(
   }];
 }
 
-/** A scroll decision, independently testable without simulating browser layout. */
+/** Viewport-only scroll policy: new conversations start at the beginning,
+ * outgoing turns follow the latest message, and older history keeps its anchor. */
 export function transcriptScrollTarget({
-  scrollTop, scrollHeight, previousScrollHeight, anchorDelta, userScrolled, openNewest,
+  scrollTop, scrollHeight, previousScrollHeight, openAtTop, followLatest,
 }: {
   scrollTop: number; scrollHeight: number; previousScrollHeight: number | null;
-  anchorDelta: number | null; userScrolled: boolean; openNewest: boolean;
+  openAtTop: boolean; followLatest: boolean;
 }): number | null {
   if (previousScrollHeight !== null) return scrollTop + scrollHeight - previousScrollHeight;
-  if (!userScrolled && anchorDelta !== null) return Math.max(0, scrollTop + anchorDelta - 12);
-  return openNewest ? scrollHeight : null;
-}
-
-/** Space needed only during the transition; after a reply, cap the tail to a
- * small portion of the actual transcript viewport rather than permanent 40dvh. */
-export function responsiveTailSpace(viewport: number, contentBelowAnchor: number,
-  sending: boolean): number {
-  const needed = Math.max(0, viewport - contentBelowAnchor - 12);
-  return Math.ceil(Math.min(needed, viewport * (sending ? 1 : 0.12)));
+  if (openAtTop) return 0;
+  return followLatest ? scrollHeight : null;
 }
