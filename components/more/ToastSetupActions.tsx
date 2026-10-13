@@ -116,7 +116,8 @@ export default function ToastSetupActions({businessId,restaurantGuids,enabled,pi
     <p>{labels.recovery}: {status.recovery.length}</p>
     <p>{labels.corrections}: {status.unresolvedCorrections.length}</p>
   </div>}
-  {selected&&<ToastOperationalReview businessId={businessId} restaurantGuid={selected}
+  {selected&&<ToastOperationalReview key={businessId+":"+selected}
+    businessId={businessId} restaurantGuid={selected}
     enabled={pilotEnabled} labels={reviewLabels}/>}
   {busy&&<p role="status">{labels.pending}</p>}
   {message&&<p role="status" className="text-sm text-ink">{message}</p>}

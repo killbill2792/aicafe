@@ -30,7 +30,6 @@ export default function ToastOperationalReview({
  const [notice,setNotice]=useState("");
  useEffect(()=>{
   let cancelled=false;
-  setReview(null);setChosen({});setError("");
   if(!restaurantGuid)return;
   fetch("/api/pos/toast/pilot/operational?businessId="+encodeURIComponent(businessId)+
    "&restaurantGuid="+encodeURIComponent(restaurantGuid),{cache:"no-store"})

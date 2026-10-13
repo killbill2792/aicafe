@@ -2,7 +2,6 @@ import {describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import type {SupabaseClient} from "@supabase/supabase-js";
 import {unverifiedToastSalesDates} from "./reportingCoverage";
-type Staged={business_date:string};
 function reader(rpcDays:string[],canonicalDays:string[],failure?:string){
  const rpc=vi.fn().mockResolvedValue(failure==="rpc"
   ?{data:null,error:{message:"down"}}
