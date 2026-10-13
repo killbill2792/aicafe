@@ -21,8 +21,13 @@ jobs:
       - run: npm ci
       - run: npm run test
       - run: npm run lint
+      - name: Lint Toast changed files
+        if: always()
+        run: npx eslint lib/pos/toast/client.ts lib/pos/toast/client.test.ts lib/pos/toast/ownerAccess.ts app/api/pos/toast/route.ts app/api/pos/toast/test/route.ts
       - run: npx tsc --noEmit
+        if: always()
       - run: npm run build
+        if: always()
         env:
           NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
