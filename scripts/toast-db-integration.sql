@@ -427,6 +427,9 @@ BEGIN
  PERFORM pg_temp.assert_true(NOT has_table_privilege('authenticated',
   'public.toast_promotion_order_baselines','SELECT'),
   'authenticated client cannot read baseline');
+ PERFORM pg_temp.assert_true(NOT has_table_privilege('service_role',
+  'public.toast_promotion_order_baselines','INSERT'),
+  'application service role cannot forge baseline evidence');
  PERFORM pg_temp.assert_true(has_table_privilege('service_role',
   'public.toast_financial_reporting_status','SELECT'),
   'service role can surface tenant-scoped financial freshness');

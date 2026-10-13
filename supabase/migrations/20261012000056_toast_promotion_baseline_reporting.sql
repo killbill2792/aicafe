@@ -39,18 +39,18 @@ RETURNS jsonb LANGUAGE sql IMMUTABLE SET search_path=public AS $$
       (SELECT coalesce(jsonb_agg(x.projection ORDER BY x.projection::text),'[]'::jsonb)
        FROM (
         SELECT jsonb_build_object(
-         'posItemId',l->'posItemId',
-         'name',l->'name',
-         'quantity',l->'quantity',
-         'netSalesCents',l->'netSalesCents',
-         'voided',l->'voided',
-         'voidedBy',l->'voidedBy',
-         'modifiers',CASE WHEN jsonb_typeof(l->'modifiers')='array' THEN
-          (SELECT coalesce(jsonb_agg(m ORDER BY m::text),'[]'::jsonb)
-           FROM jsonb_array_elements(l->'modifiers') m)
-          ELSE l->'modifiers' END
+         'posItemId',e.line->'posItemId',
+         'name',e.line->'name',
+         'quantity',e.line->'quantity',
+         'netSalesCents',e.line->'netSalesCents',
+         'voided',e.line->'voided',
+         'voidedBy',e.line->'voidedBy',
+         'modifiers',CASE WHEN jsonb_typeof(e.line->'modifiers')='array' THEN
+          (SELECT coalesce(jsonb_agg(v.modifier ORDER BY v.modifier::text),'[]'::jsonb)
+           FROM jsonb_array_elements(e.line->'modifiers') AS v(modifier))
+          ELSE e.line->'modifiers' END
         ) AS projection
-        FROM jsonb_array_elements(p_order->'lines') l
+        FROM jsonb_array_elements(p_order->'lines') AS e(line)
        ) x)
      ELSE p_order->'lines' END
   ) END
