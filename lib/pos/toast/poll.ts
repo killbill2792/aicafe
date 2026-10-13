@@ -39,7 +39,7 @@ export function isCafeCurrentlyOpen(openHours:OpenHours|null,timezone:string,at:
  }
  return false;
 }
-export type PollFreshness="current"|"behind"|"recoverable_backlog"|"requires_historical_backfill";
+export type PollFreshness="current"|"behind"|"recoverable_backlog"|"requires_historical_backfill"|"backfilling"|"failed"|"rate_limited";
 export function planModifiedWindow(cursor:string|null,now:Date):{
  status:PollFreshness;range:{since:Date;until:Date}|null
 } {
@@ -69,6 +69,50 @@ export function scheduleRefreshWindow(now:Date,timezone:string,horizonDays:numbe
  if(until.getTime()-since.getTime()>30*86400000)throw new ToastApiError("invalid_response");
  return {since,until};
 }
+
+type Range={since:Date;until:Date};
+type RecoveryRow={
+ state:"requires_historical_backfill"|"backfilling"|"failed"|"complete";
+ missing_since:string;missing_until:string;next_since:string;last_failure_category:string|null
+};
+type PageProgress={window_since:string;window_until:string;next_page:number;is_recovery:boolean};
+export function planRecoveryWindow(
+ recovery:Pick<RecoveryRow,"next_since"|"missing_until">,kind:"orders"|"attendance"
+):Range {
+ const start=Date.parse(recovery.next_since),end=Date.parse(recovery.missing_until);
+ if(!Number.isFinite(start)||!Number.isFinite(end)||start>=end)
+   throw new ToastApiError("invalid_response");
+ // Each invocation is bounded to one page or one attendance window.
+ // These intervals are far shorter than Toast's maximum 30-day range.
+ const length=kind==="orders"?3*3600000:3600000;
+ return {since:new Date(start),until:new Date(Math.min(end,start+length))};
+}
+function checkedProgress(row:PageProgress):{range:Range;page:number;recovery:boolean} {
+ const range={since:new Date(row.window_since),until:new Date(row.window_until)};
+ if(!Number.isFinite(range.since.getTime())||!Number.isFinite(range.until.getTime())||
+   range.until<=range.since||row.next_page<1||row.next_page>1000)
+   throw new ToastApiError("invalid_response");
+ return {range,page:row.next_page,recovery:row.is_recovery};
+}
+/** Every OrdersBulk page and its durable checkpoint commit atomically in SQL.
+ * One invocation = <=100 provider facts, one provider request, one database RPC. */
+export async function stageToastOrderPollPage(db:SupabaseClient,p:ToastPollParams,
+ nonce:string,range:Range,page:number,isRecovery:boolean) {
+ const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
+ const response=await adapter.fetchModifiedOrderStatesPage(range,page);
+ if(response.facts.length>100||(response.hasMore&&response.facts.length!==100))
+   throw new ToastApiError("invalid_response");
+ const {data,error}=await db.rpc("toast_stage_order_poll_page",{
+   p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,p_nonce:nonce,
+   p_since:range.since.toISOString(),p_until:range.until.toISOString(),
+   p_page:page,p_facts:response.facts,p_has_more:response.hasMore,
+   p_is_recovery:isRecovery,
+ });
+ if(error||!data||typeof data.complete!=="boolean")throw new ToastApiError("unavailable");
+ return {fetched:response.facts.length,complete:data.complete as boolean,
+   nextCursor:data.complete?range.until.toISOString():null,
+   nextPage:response.hasMore?page+1:null};
+}
 export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=new Date()) {
  if(!GUID.safeParse(p.businessId).success||!GUID.safeParse(p.locationId).success||
     !GUID.safeParse(p.restaurantGuid).success)
@@ -80,8 +124,6 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
  ]);
  if(locError||busError||!location||!business||business.is_demo)
     throw new ToastApiError("unauthorized_location");
- // Future shifts have to be refreshed BEFORE opening time. Labor/order polling
- // remains subject to the explicit configured open-hours policy.
  if(p.kind!=="schedules"&&!isCafeCurrentlyOpen(location.open_hours,business.timezone,now))
     return {skipped:"outside_configured_hours",fetched:0};
  const {data:lease,error:leaseError}=await db.rpc("toast_claim_poll",{
@@ -90,7 +132,9 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
  if(leaseError)throw new ToastApiError("unavailable");
  if(!lease)return {skipped:"leased_or_not_verified",fetched:0};
  let failure:string|null=null,retryAt:string|null=null,until:string|null=null,fetched=0;
- let freshness:PollFreshness="current";
+ let freshness:PollFreshness="current",leaseFinished=false;
+ let isRecovering=false,completedWindow=false,nextPage:number|null=null;
+ let missingPeriod:{since:string;until:string}|null=null;
  try {
   const {data:health,error:healthError}=await db.from("toast_sync_health")
     .select("last_order_poll_at,last_time_entry_poll_at,last_schedule_poll_at")
@@ -101,51 +145,95 @@ export async function pollToastLocation(db:SupabaseClient,p:ToastPollParams,now=
     const range=scheduleRefreshWindow(now,business.timezone,Number.isFinite(configured)?configured:14);
     const result=await syncToastLaborReadOnly(db,p,range,"schedules");
     fetched=result.staged;
-    until=now.toISOString(); // freshness timestamp, not a future schedule boundary
+    until=now.toISOString();
   }else{
     const cursor=p.kind==="orders"?health?.last_order_poll_at:health?.last_time_entry_poll_at;
-    const planned=planModifiedWindow(cursor??null,now);
-    freshness=planned.status;
-    if(planned.range){
-      const range=planned.range;
-      if(p.kind==="orders"){
-        const adapter=createToastAdapter({db,businessId:p.businessId,restaurantGuid:p.restaurantGuid});
-        const facts=await adapter.fetchModifiedOrderStates(range);
-        // Prevent a hot function with thousands of sequential database writes.
-        // Do not advance a cursor when work cannot be staged in this invocation.
-        if(facts.length>50)throw new ToastApiError("invalid_response");
-        for(const fact of facts){
-          const {error:save}=await db.rpc("toast_store_order_fact",{
-            p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
-            p_order_guid:fact.orderGuid,p_modified_at:fact.modifiedAt,
-            p_state:fact.state,p_normalized_order:fact.normalizedOrder,
-            p_event_guid:null
-          });
-          if(save)throw new ToastApiError("unavailable");
-        }
-        fetched=facts.length;
+    const recoveryQuery=await db.from("toast_poll_recovery")
+      .select("state,missing_since,missing_until,next_since,last_failure_category")
+      .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+      .eq("kind",p.kind).maybeSingle();
+    if(recoveryQuery.error)throw new ToastApiError("unavailable");
+    let recovery=recoveryQuery.data as RecoveryRow|null;
+    const progressQuery=p.kind==="orders"?await db.from("toast_order_poll_progress")
+      .select("window_since,window_until,next_page,is_recovery")
+      .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+      .maybeSingle():null;
+    if(progressQuery?.error)throw new ToastApiError("unavailable");
+    const progress=progressQuery?.data as PageProgress|null|undefined;
+    let range:Range|null=null,page=1;
+    if(progress){
+      ({range,page,recovery:isRecovering}=checkedProgress(progress));
+      freshness=isRecovering?"backfilling":"recoverable_backlog";
+    }else if(recovery&&recovery.state!=="complete"){
+      isRecovering=true;
+      freshness=recovery.state==="failed"?"failed":recovery.state==="requires_historical_backfill"
+        ?"requires_historical_backfill":"backfilling";
+      range=planRecoveryWindow(recovery,p.kind);
+    }else{
+      const planned=planModifiedWindow(cursor??null,now);
+      freshness=planned.status;
+      if(planned.status==="requires_historical_backfill"){
+        const upper=new Date(now.getTime()-120000).toISOString();
+        const {data:created,error}=await db.rpc("toast_begin_poll_recovery",{
+          p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+          p_kind:p.kind,p_nonce:lease,p_until:upper,
+        });
+        if(error||!created)throw new ToastApiError("unavailable");
+        const after=await db.from("toast_poll_recovery")
+          .select("state,missing_since,missing_until,next_since,last_failure_category")
+          .eq("business_id",p.businessId).eq("restaurant_guid",p.restaurantGuid)
+          .eq("kind",p.kind).single();
+        if(after.error||!after.data)throw new ToastApiError("unavailable");
+        recovery=after.data as RecoveryRow;
+        isRecovering=true;
+        range=planRecoveryWindow(recovery,p.kind);
       }else{
-        // Modified-time query covers corrections to older clock-ins and archived entries.
+        range=planned.range;
+      }
+    }
+    if(isRecovering&&recovery)missingPeriod={
+      since:recovery.missing_since,until:recovery.missing_until};
+    if(range){
+      if(p.kind==="orders"){
+        const result=await stageToastOrderPollPage(db,p,lease,range,page,isRecovering);
+        fetched=result.fetched;until=result.nextCursor;nextPage=result.nextPage;
+        completedWindow=result.complete;leaseFinished=true; // RPC includes nonce-fenced finish.
+      }else{
         const result=await syncToastLaborReadOnly(db,p,range,"attendance","modified");
         fetched=result.staged;
+        if(isRecovering){
+          const {data:finished,error}=await db.rpc("toast_complete_attendance_recovery",{
+           p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+           p_nonce:lease,p_since:range.since.toISOString(),p_until:range.until.toISOString(),
+          });
+          if(error||!finished)throw new ToastApiError("unavailable");
+          leaseFinished=true;
+        }
+        completedWindow=true;until=range.until.toISOString();
       }
-      // Cursor advances only after all pages and every staging batch has succeeded.
-      until=range.until.toISOString();
     }
   }
  }catch(error){
    failure=error instanceof ToastApiError?error.category:"unavailable";
    retryAt=orderEventRetryAt(error,2);
+   if(isRecovering&&!leaseFinished){
+     const {error:markError}=await db.rpc("toast_mark_poll_recovery_failure",{
+       p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+       p_kind:p.kind,p_nonce:lease,p_failure:failure,
+     });
+     if(markError)throw new ToastApiError("unavailable");
+   }
  }finally{
-   const {data:finished,error:finishError}=await db.rpc("toast_finish_poll",{
-    p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
-    p_kind:p.kind,p_nonce:lease,p_cursor_at:until,
-    p_success:failure===null,p_retry_after:retryAt,p_failure:failure
-   });
-   if(finishError||!finished)throw new ToastApiError("unavailable");
+   if(!leaseFinished){
+     const {data:finished,error:finishError}=await db.rpc("toast_finish_poll",{
+       p_business_id:p.businessId,p_restaurant_guid:p.restaurantGuid,
+       p_kind:p.kind,p_nonce:lease,p_cursor_at:failure?null:until,
+       p_success:failure===null,p_retry_after:retryAt,p_failure:failure
+     });
+     if(finishError||!finished)throw new ToastApiError("unavailable");
+   }
  }
  if(failure)throw new ToastApiError(failure as ToastApiError["category"],undefined,retryAt??undefined);
- return {fetched,staged_only:true,freshness,
-   ...(freshness==="requires_historical_backfill"?{requiresHistoricalBackfill:true}:{}),
-   nextCursor:until};
+ return {fetched,staged_only:true,freshness,completedWindow,nextPage,
+   ...(missingPeriod?{missingPeriod}:{}),nextCursor:until};
 }
