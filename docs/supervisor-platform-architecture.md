@@ -422,6 +422,11 @@ type AnalysisSourceRequirements =
       minimumOverallCoverage:"not_applicable";};
 // Both schema refs are the SAME typed schemas as bound capability K; runtime
 // requires the SAME immutable contract id/version AND exact schema fingerprints.
+type AnalysisInvocation<K extends AnalysisCapabilityKey,P extends string> = {
+  analysisId:string; analysisVersion:1;
+  boundCapabilityKey:K; selectedPurpose:P; // strict server-validated discriminator
+  input:z.infer<AnalysisCapability<K>["inputSchema"]>;
+}; // server-issued, tenant/actor resolved separately; no LLM authority
 type AnalysisDefinition<K extends AnalysisCapabilityKey,P extends string> = {
   kind:"analysis"; id:string; version:1;
   domainOwner:AgentId; titleKey:string; descriptionKey:string;
@@ -431,7 +436,10 @@ type AnalysisDefinition<K extends AnalysisCapabilityKey,P extends string> = {
   schemaContract:AnalysisCapability<K>["schemaContract"];
   inputSchema:AnalysisCapability<K>["inputSchema"];
   outputSchema:AnalysisCapability<K>["outputSchema"];
-  allowedPurposes:readonly P[]; // explicit, nonempty strict union, no duplicates
+  allowedPurposes:readonly [P,...P[]]; // nonempty strict literal union; no duplicates
+  invocationSchema:ZodSchema<AnalysisInvocation<K,P>>;
+  // selectedPurpose is in EVERY invocation; strict schema validates against
+  // this literal allowedPurposes set, key/version and bound input schema.
   sourceRequirementsByPurpose:Readonly<Record<P,AnalysisSourceRequirements>>;
   authorization:{
     policyKey:string; requiredRole:"owner"; sensitivity:"normal"|"staff"|"financial";
@@ -453,7 +461,7 @@ type AnalysisDefinition<K extends AnalysisCapabilityKey,P extends string> = {
 
 **Analysis registration and dispatch (mandatory P1/P2 gate):** Every analysis is a checked-in `AnalysisDefinition<K,P>`, where `K` is a **literal, concrete key** of the compiled capability registry and its input, output, mode and schema-contract identity are **derived from that exact entry**. Only registered read/simulate/evaluate keys are allowed; no independent generic `I/O`, string-only IDs or schema adapters can assert compatibility. The bound capability and analysis must reference the **same reviewed input/output schemas** by exact `schemaContract.id`, version and deterministic input/output fingerprints (and concrete registered schema references), not merely shapes that appear similar. At build/startup compare registry key/version/mode, schema identity and canonical schema fingerprints; reject absent keys, retired versions, mismatched or unverifiable fingerprints, incompatible types and extra/unknown keys; do not silently substitute another handler or accept inferred subtype casts. Changing a schema meaning requires a new contract version and reviewed registry export.
 
-**Exhaustive per-purpose source policy:** `allowedPurposes` must be nonempty, unique and an explicit literal purpose union; `sourceRequirementsByPurpose` must have **exactly one own-key entry per allowed purpose**, no missing or extra keys, validated both with strict registration-time Zod and checked-in compile-time `satisfies`/exact-key tests. Each `registered_sources` entry requires a nonempty typed source list with registered metric/entity prerequisites, canonical reader/selector/version, source purpose/precedence policy/version, permitted actuality and minimum coverage; all must be tenant/role scoped and provenance-audited before executing or publishing results. `no_external_sources` is a separate explicit, validated, **empty** source-list case for a calculation based **only** on fully validated input arguments; it may not claim verified café facts or backfill absent data. Reject undeclared source reads, missing or extra purposes, unsupported reader versions, incomplete required coverage, incorrect actuality or unknown provenance; a source-free contract cannot implicitly depend on external data. Authorize business/location/owner-private scope and resource budgets per analysis and purpose before the matched typed capability is invoked. Validate strict mode/result evidence after execution, including any prerequisite metric's output; return an appropriately sanitized unavailable/partial result for unsupported/no-POS/denied/conflicting inputs. Read/simulate/evaluate analyses cannot create proposals, tasks or domain effects; recommendations require the existing separate propose/approve/commit gates. Adding Olivia, Alex, Maya, Leo or a fifth specialist changes only its reviewed registry/catalog module, not central routing.
+**Selected-purpose execution and exhaustive per-purpose source policy:** The dispatcher MUST parse a concrete `AnalysisInvocation<K,P>` with the registered **strict `invocationSchema` before calling any prerequisite**, validating `analysisId/version`, literal `boundCapabilityKey`, **`selectedPurpose:P`** and bound `inputSchema`. It obtains the **single** `sourceRequirementsByPurpose[parsed.selectedPurpose]` and authorizes its matching reader, actuality, selector version, source policy, coverage requirements and budgets; immutable selected purpose and normalized arguments enter the evidence/context request fingerprint and analysis result audit. No other purpose's policy can be used as a fallback, and the classifier's free text, request URL or goal label is not a trusted selector. If purpose is missing/unknown, contradicts bound parameters/source coverage, or changes between validation and dispatch, fail closed before the reader with sanitized unavailable/clarification. A source-free purpose still requires a validated selectedPurpose and its explicit `no_external_sources` branch. `allowedPurposes` must be nonempty, unique and an explicit literal purpose union; `sourceRequirementsByPurpose` must have **exactly one own-key entry per allowed purpose**, no missing or extra keys, validated both with strict registration-time Zod and checked-in compile-time `satisfies`/exact-key tests. Each `registered_sources` entry requires a nonempty typed source list with registered metric/entity prerequisites, canonical reader/selector/version, source purpose/precedence policy/version, permitted actuality and minimum coverage; all must be tenant/role scoped and provenance-audited before executing or publishing results. `no_external_sources` is a separate explicit, validated, **empty** source-list case for a calculation based **only** on fully validated input arguments; it may not claim verified café facts or backfill absent data. Reject undeclared source reads, missing or extra purposes, unsupported reader versions, incomplete required coverage, incorrect actuality or unknown provenance; a source-free contract cannot implicitly depend on external data. Authorize business/location/owner-private scope and resource budgets per analysis and purpose before the matched typed capability is invoked. Validate strict mode/result evidence after execution, including any prerequisite metric's output; return an appropriately sanitized unavailable/partial result for unsupported/no-POS/denied/conflicting inputs. Read/simulate/evaluate analyses cannot create proposals, tasks or domain effects; recommendations require the existing separate propose/approve/commit gates. Adding Olivia, Alex, Maya, Leo or a fifth specialist changes only its reviewed registry/catalog module, not central routing.
 
 **Extensibility examples (contracted, not active features):** Alex price review/recipe margin comparison registers a read analysis backed by canonical pricing and `lib/calc/`; Olivia coverage-vs-cost what-if is a `simulate` analysis after domain readiness; Maya unit-normalized supplier-quote comparison is a read analysis with explicitly unverified quote provenance; Leo matched-period profit-cost comparison is a read analysis with complete numerator/denominator coverage, not a bank-feed assumption. A synthetic **fifth** specialist registers the same analysis and bound capability exports, tests and localization only, **without a central Supervisor analysis switch, metric exception or LLM SQL**. Unsupported/no-POS/denied/conflicting/stale inputs return a typed `unavailable`/`partial`/`insufficient_evidence` result with missingInputs/assumptions and no invented output; derived money remains `lib/calc/` canonical. Entity-read handlers likewise bind café/user/location/purpose, validate filters and resource caps, apply RLS and allowlist fields and relationships. Never expose a generic SQL editor, unrestricted SELECT, arbitrary joins, free-form table names, schema exploration or all-employees/all-records dumping. Record permissions do **not** follow automatically from metric permission; e.g., labor total does not authorize every staff wage. Restricted surfaces remain explicit in the coverage manifest.
 
@@ -739,15 +747,55 @@ type ApprovalTransitionResult =
   | ApprovedTransition
   | UnsuccessfulApprovalTransition; // strict Zod discriminatedUnion("state", ...)
 
-type VerifiedActionOutcome = {
+// Commit evidence is trusted server-side persisted postcondition proof.
+// A retry receipt, HTTP 200 or successful LLM completion is never this proof.
+type PostconditionProof = {
+  kind:"canonical_reread"|"verified_provider_receipt";
+  proofId:string; // immutable tenant-scoped reference into audited proof ledger
+  checkedAt:string; observedEffectHash:string; observedTargetRevision:string;
+  sourceRevisions:readonly [CanonicalSourceRevisionRef,...CanonicalSourceRevisionRef[]];
+  verificationPolicyId:string; verificationPolicyRevision:number;
+}; // source may prove a selected revision OR confirmed absence; no null gaps
+type AppliedActionOutcome = {
+  status:"applied";
   actionId:string; workflowId:string; actionType:string;
-  status:"applied"|"rejected"|"conflict"|"failed"|"pending_reconciliation";
-  effectId:string|null; persistedRevision:string|null; verifiedAt:string|null;
-  verifiedEvidence:SourceRef[]; ownerActorId:string|null; auditEventId:string|null;
+  effectId:string; persistedRevision:string; verifiedAt:string;
+  verifiedEvidence:readonly [CanonicalSourceRevisionRef,...CanonicalSourceRevisionRef[]];
+  postconditionProof:PostconditionProof; postconditionAuditEventId:string;
+  // No nullable evidence/proof; all IDs are server-issued and tenant-scoped.
+  reasonCode?:never; ownerActorId?:never;
 };
+type InFlightActionOutcome = {
+  status:"executing"|"pending_reconciliation";
+  trackingId:string; reasonCode:"executing"|"awaiting_postcondition"|
+    "external_receipt_unknown";
+  // A safe opaque tracking handle is not evidence of effect or receipt.
+  actionId?:never; workflowId?:never; actionType?:never; effectId?:never;
+  persistedRevision?:never; verifiedAt?:never; verifiedEvidence?:never;
+  postconditionProof?:never; postconditionAuditEventId?:never;
+  ownerActorId?:never;
+};
+type UnsuccessfulActionOutcome = {
+  status:"rejected"|"conflict"|"failed";
+  requestId:string; reasonCode:string; // safe allowlisted error only
+  // Private grant/actor/audit IDs, target/actual state, source revisions,
+  // executable parameters and proof are preserved ONLY in server audit.
+  actionId?:never; workflowId?:never; actionType?:never; effectId?:never;
+  persistedRevision?:never; verifiedAt?:never; verifiedEvidence?:never;
+  postconditionProof?:never; postconditionAuditEventId?:never;
+  ownerActorId?:never;
+};
+type VerifiedActionOutcome =
+  | AppliedActionOutcome | InFlightActionOutcome | UnsuccessfulActionOutcome;
+// Strict Zod status discriminatedUnion with cross-field proof validation.
+// Applied requires durable postcondition proof persisted and reread
+// against the exact approved effect hash and authorized target revision.
+// Otherwise return executing/pending_reconciliation, never applied.
 ~~~
 
 **Mode result status and privacy invariants:** The server compiles **strict Zod discriminated unions by `status` and `mode`**, with no passthrough/unknown fields and no implicit numeric coercion. For `read`, `simulate`, `evaluate` and any bound analysis, only `verified`, `estimated` or `partial` may contain a **non-null, schema-validated payload**; verified requires complete applicable source coverage, no unresolved material conflicts, no missing prerequisites and authorized provenance, partial requires explicitly partial coverage. Estimated requires declared assumptions and no false actual/verified claim. `unavailable`, `failed`, `conflict`, `insufficient_evidence` or `requires_approval` **require `payload:null`** and expose only a safe error/required-input *code allowlist*, not raw refs, private source data, model fragments, preview, proposal, actor IDs or input fingerprints. The domain's actual result value must be validated against the **exact capability-bound output schema plus mode/status-specific runtime refinements** before caching, analysis composition, grounded replies or owner-visible cards; a malformed `verified + null`, `failed + payload`, `partial + complete`, `simulated failure + scenario fingerprint`, or `evaluated failure + findings` is rejected and safely converted to a sanitized unavailable result by the trusted boundary (with private audit of the validation error). Runtime schemas do not `strip` forbidden extra fields: **reject** them and never leak untrusted objects. No arbitrary fallback to a success or a fabricated zero. An analysis takes this same `ReadResult`/`SimulationResult`/`EvaluationResult` schema **from its exact bound capability registry key**, so it cannot use a weaker result envelope. `propose` keeps an inert draft **only on a valid successful proposal transition**; failed creation has no proposal or effect. `approve` already uses its separate success/failure privacy union and `commit` remains the only effect gateway.
+
+**Commit proof and output validation:** The trusted commit gateway's `CommitResult.outcome` must use the exact `VerifiedActionOutcome` **strict Zod discriminated-by-status** schema, not a nullable effect metadata bag. `applied` requires a **durably persisted postcondition proof** linked to the original tenant/proposal/effect identity and a **fresh authorized canonical reread (including confirmed absence when relevant) or independently verified provider receipt**. Recompute effect/target revision and verification policy; require nonempty immutable source revision proof, nonempty `effectId`, `persistedRevision`, `verifiedAt` and append-only proof/audit reference, and verify `checkedAt` and receipt semantics. A successful DB write, reservation, HTTP 200, provider timeout, queued outbox, optimistic action card or owner approval is NOT applied. `executing` and `pending_reconciliation` expose only an opaque tracking handle/safe state and do not claim success; `failed`/`rejected`/`conflict` expose only a safe request ID/reason and cannot serialize effect IDs, actor or audit IDs, source manifests, payloads or sensitive targets. Detailed failure and retry/receipt records stay on the tenant-scoped private ledger. **Validate output before cache, notifications, operating tasks or grounded reply**; reject unknown keys, empty/unverifiable proof, wrong effect/target, fabricated successful branch or partial evidence with a safe pending/error state, never turn unsupported proof into success. Concurrency and retries recover the same consumed proposal; no second effect or invented receipt.
 
 **Action-state separation:** current facts (`read`, `ReadResult` with `proposal:null`) → transient deterministic comparison (`simulate`, `SimulationResult` with `proposal:null`) → separately requested persisted inert draft (`propose`, a `ProposalResult` with **exact immutable `canonicalEffectPayload`**, derived preview/hash and complete `sourceRefs`) → **typed, auditable, no-effect approval** (`approve`, `ApproveResult` copies `proposedEffectHash` into identical `approvedEffectHash`, and exactly copies `sourceRefs` into `approvedSourceRefs`) → **one-time approval/proposal consumption and authorized domain operation** (`commit`, `CommitResult` alone may invoke verified effects) → separately verified postcondition. `evaluate` returns only `EvaluationResult` findings and never a proposal or executable command. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
 
