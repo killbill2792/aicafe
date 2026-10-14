@@ -91,6 +91,23 @@ describe("scheduling foundation input boundary", () => {
     }).success).toBe(false);
   });
 
+  it("requires a stable UUID retry key for creates and forbids it for edits", () => {
+    const requestKey = "00000000-0000-4000-8000-000000000009";
+    expect(foundationCommandSchema.safeParse({
+      kind: "availability_rule", action: "create", data: validWindow,
+    }).success).toBe(false);
+    expect(foundationCommandSchema.safeParse({
+      kind: "availability_rule", action: "create", requestKey, data: validWindow,
+    }).success).toBe(true);
+    expect(foundationCommandSchema.safeParse({
+      kind: "availability_rule", action: "create", requestKey: "bad", data: validWindow,
+    }).success).toBe(false);
+    expect(foundationCommandSchema.safeParse({
+      kind: "availability_rule", action: "update", id: validWindow.employee_id,
+      expectedRevision: 1, requestKey, data: validWindow,
+    }).success).toBe(false);
+  });
+
   it("accepts only explicit wage provenance (never an inferred zero)", () => {
     expect(parseFoundationRecord("compensation", {
       employee_id: validWindow.employee_id, cash_cost_state: "unknown",
