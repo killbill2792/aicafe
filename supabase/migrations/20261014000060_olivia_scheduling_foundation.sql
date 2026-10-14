@@ -6,8 +6,12 @@
 -- does not prove authenticated worker consent/acceptance.
 CREATE OR REPLACE FUNCTION public.scheduling_is_owner(p_business_id uuid)
 RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
-  SELECT EXISTS (SELECT 1 FROM public.memberships
-    WHERE business_id=p_business_id AND user_id=auth.uid() AND role='owner');
+  -- The shared demo café has a fixed identity seeded by the existing
+  -- demo-access migration. Its mutable businesses.is_demo flag is not an
+  -- authorization root: a demo member can change it to false.
+  SELECT p_business_id IS DISTINCT FROM '11111111-1111-1111-1111-111111111111'::uuid
+    AND EXISTS (SELECT 1 FROM public.memberships
+      WHERE business_id=p_business_id AND user_id=auth.uid() AND role='owner');
 $$;
 REVOKE ALL ON FUNCTION public.scheduling_is_owner(uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.scheduling_is_owner(uuid) TO authenticated;
@@ -176,15 +180,20 @@ CREATE TABLE public.staff_scheduling_compensation (
  CHECK (cash_cost_state='known_eligible_zero' OR
     (eligibility_reference IS NULL AND eligibility_verified_by IS NULL AND eligibility_verified_at IS NULL))
 );
+-- PostgreSQL TIME accepts 24:00:00; exclude it explicitly because our
+-- pure HH:mm scheduling model accepts only local hours 00..23.
 -- Scheduling calculations are minute-resolution. Reject nonzero seconds
 -- in PostgreSQL itself, not only Zod/read normalization: authorized owners
 -- can call the RPC directly and can UPDATE via owner RLS.
 -- Nullable exception times stay nullable; all non-null times must be exact minutes.
 ALTER TABLE public.staff_availability_rules ADD CONSTRAINT staff_availability_rule_minute_precision
- CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
 ALTER TABLE public.staff_availability_exceptions ADD CONSTRAINT staff_availability_exception_minute_precision
- CHECK ((start_local IS NULL OR EXTRACT(SECOND FROM start_local)=0)
-    AND (end_local IS NULL OR EXTRACT(SECOND FROM end_local)=0));
+ CHECK ((start_local IS NULL OR (EXTRACT(SECOND FROM start_local)=0
+                                 AND start_local < TIME '24:00:00'))
+    AND (end_local IS NULL OR (EXTRACT(SECOND FROM end_local)=0
+                               AND end_local < TIME '24:00:00')));
 ALTER TABLE public.staff_preference_windows ADD CONSTRAINT staff_preference_window_minute_precision
  CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
 ALTER TABLE public.scheduling_coverage_requirements ADD CONSTRAINT scheduling_coverage_minute_precision
@@ -451,6 +460,7 @@ DECLARE
  v_revision integer;
 BEGIN
  IF auth.uid() IS NULL OR NOT public.scheduling_is_owner(p_business_id)
+    OR p_business_id = '11111111-1111-1111-1111-111111111111'::uuid
     OR NOT EXISTS (SELECT 1 FROM public.businesses
       WHERE id=p_business_id AND is_demo=false) THEN
     RAISE EXCEPTION 'scheduling owner authorization required' USING ERRCODE='42501';
