@@ -135,11 +135,10 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
       records[kinds[i]] = results[i].data ?? [];
     }
 
-    // A compensation attestation is not authoritative without a current
-    // canonical employee wage snapshot. The employees UPDATE trigger revokes
-    // stale zero attestations; this read guard also fails closed if a legacy
-    // import/race ever leaves an inconsistent row. Never expose stale
-    // eligibility evidence to a later scheduling planner.
+    // Every compensation label must agree with the current canonical wage
+    // record. Database triggers revoke stale states during wage edits; read
+    // validation fails closed if stale data nevertheless exist after a race,
+    // legacy import or other unexpected writer.
     type CompensationRow = {
       employee_id: string;
       cash_cost_state: CompensationProvenance;
@@ -152,7 +151,7 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
       const employeeIds = [...new Set(compensation.map((row) => row.employee_id))];
       const { data: employees, error: wageError } = await context.supabase
         .from("employees")
-        .select("id,wage_amount_cents,default_hourly_wage_cents")
+        .select("id,wage_period,wage_amount_cents,default_hourly_wage_cents")
         .eq("business_id", context.businessId)
         .in("id", employeeIds);
       if (wageError) return { ok: false, error: "storage_unavailable" };
