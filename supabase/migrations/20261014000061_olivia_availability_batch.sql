@@ -65,8 +65,8 @@ CREATE TABLE public.scheduling_availability_batch_receipts (
  result jsonb,
  created_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY(business_id,request_key),
- FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id),
- FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id)
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id) ON DELETE CASCADE
 );
 ALTER TABLE public.scheduling_availability_batch_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.scheduling_availability_batch_receipts FROM PUBLIC,anon,authenticated;
