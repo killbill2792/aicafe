@@ -8,12 +8,13 @@ const mocks = vi.hoisted(() => ({
   readQueries: [] as Array<{ table: string; cursor: string | null; size: number }>,
   apiMaxRows: null as number | null,
   rpc: vi.fn(),
+  activeBusinessId: "10000000-0000-4000-8000-000000000001",
 }));
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase/client", () => ({ isSupabaseConfigured: () => true }));
 vi.mock("@/lib/data/getActiveBusinessId", () => ({
-  getActiveBusinessId: async () => "10000000-0000-4000-8000-000000000001",
+  getActiveBusinessId: async () => mocks.activeBusinessId,
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createServerSupabaseClient: async () => ({
@@ -77,6 +78,7 @@ describe("scheduling foundation compensation read is fail closed", () => {
     mocks.readQueries = [];
     mocks.apiMaxRows = null;
     mocks.rpc.mockReset();
+    mocks.activeBusinessId = "10000000-0000-4000-8000-000000000001";
     process.env.SCHEDULING_FOUNDATION_ENABLED = "true";
   });
 
@@ -152,6 +154,18 @@ describe("scheduling foundation compensation read is fail closed", () => {
     expect((result.records.compensation as Array<{ cash_cost_state: string }>)
       .map((row) => row.cash_cost_state))
       .toEqual(["unknown", "unknown", "unknown"]);
+  });
+
+  it("rejects immutable shared demo tenant even if its mutable is_demo flag is false", async () => {
+    mocks.activeBusinessId = "11111111-1111-1111-1111-111111111111";
+    expect(await readSchedulingFoundation()).toEqual({ ok: false, error: "unauthorized" });
+    const data = { employee_id: id(1), day_of_week: 3,
+      start_local: "07:00", end_local: "11:00", overnight: false,
+      effective_from: "2026-10-14", source: "owner_direct", confirmation: "owner_confirmed" };
+    expect(await executeFoundationCommand({
+      kind: "availability_rule", action: "create", requestKey: id(400), data,
+    })).toEqual({ ok: false, error: "unauthorized" });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it("loads all 1,205 tenant rows across three stable pages with no omission", async () => {
