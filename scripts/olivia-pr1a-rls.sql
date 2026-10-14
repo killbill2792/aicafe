@@ -369,5 +369,128 @@ BEGIN
  END;
 END $$;
 
+-- Negative wage import/privileged edit regression. The canonical employee
+-- amount columns may contain legacy invalid values; keep them untouched and
+-- fail closed in this additive scheduling foundation only. These edits run as
+-- a real authenticated owner under RLS, like the existing Staff wage UPDATE.
+UPDATE employees SET wage_period='hour',wage_amount_cents=NULL,default_hourly_wage_cents=NULL
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+UPDATE staff_scheduling_compensation SET
+ cash_cost_state='known_eligible_zero',
+ eligibility_reference='Owner reviewed zero wage evidence for null fields'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='known_eligible_zero') THEN
+   RAISE EXCEPTION 'NULL_WAGES_NOT_ATTESTABLE';
+ END IF;
+END $$;
+UPDATE employees SET wage_amount_cents=-1
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='unknown' AND eligibility_reference IS NULL
+   AND eligibility_verified_by IS NULL AND eligibility_verified_at IS NULL) THEN
+   RAISE EXCEPTION 'NEGATIVE_WAGE_AMOUNT_LEFT_VERIFIED_ZERO';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM scheduling_foundation_audit_events
+   WHERE table_name='staff_scheduling_compensation'
+   AND record_id=(SELECT id FROM staff_scheduling_compensation
+     WHERE employee_id=current_setting('test.employee_b')::uuid)
+   AND before_value->>'cash_cost_state'='known_eligible_zero'
+   AND after_value->>'cash_cost_state'='unknown') THEN
+   RAISE EXCEPTION 'NEGATIVE_WAGE_INVALIDATION_NOT_AUDITED';
+ END IF;
+ BEGIN
+  UPDATE staff_scheduling_compensation SET
+   cash_cost_state='known_eligible_zero',
+   eligibility_reference='Do not allow reattestation with negative wages'
+   WHERE employee_id=current_setting('test.employee_b')::uuid;
+  RAISE EXCEPTION 'NEGATIVE_WAGE_REATTESTATION_ACCEPTED';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM='NEGATIVE_WAGE_REATTESTATION_ACCEPTED' THEN RAISE; END IF;
+ END;
+END $$;
+
+-- A negative cached hourly rate also revokes verified zero after a wage edit.
+UPDATE employees SET wage_amount_cents=0,default_hourly_wage_cents=0
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+UPDATE staff_scheduling_compensation SET
+ cash_cost_state='known_eligible_zero',
+ eligibility_reference='Owner reviewed exact zero wage evidence for both fields'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+UPDATE employees SET default_hourly_wage_cents=-1
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='unknown' AND eligibility_verified_at IS NULL) THEN
+   RAISE EXCEPTION 'NEGATIVE_CACHED_HOURLY_LEFT_VERIFIED_ZERO';
+ END IF;
+END $$;
+
+-- The same negative guard rejects other known states, not just verified zero.
+UPDATE employees SET wage_period='month',wage_amount_cents=200000,
+ default_hourly_wage_cents=0 WHERE business_id=:'biz_b' AND id=:'employee_b';
+UPDATE staff_scheduling_compensation SET cash_cost_state='salary_conversion_pending'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+UPDATE employees SET default_hourly_wage_cents=-3
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='unknown') THEN
+  RAISE EXCEPTION 'NEGATIVE_SALARY_CACHE_STILL_PENDING';
+ END IF;
+END $$;
+UPDATE employees SET wage_period='hour',wage_amount_cents=1850,
+ default_hourly_wage_cents=1850 WHERE business_id=:'biz_b' AND id=:'employee_b';
+UPDATE staff_scheduling_compensation SET cash_cost_state='known_paid'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+UPDATE employees SET default_hourly_wage_cents=-5
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='unknown') THEN
+   RAISE EXCEPTION 'NEGATIVE_PAID_CACHE_LEFT_KNOWN_PAID';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM timecards
+   WHERE employee_id=current_setting('test.employee_c')::uuid
+   AND hourly_wage_cents=1100) THEN
+   RAISE EXCEPTION 'HISTORIC_WAGE_CHANGED_BY_NEGATIVE_GUARD';
+ END IF;
+END $$;
+
+-- SQL predicate must never validate malformed status/period evidence.
+-- The original canonical wage-period check remains unchanged.
+RESET ROLE;
+DO $$
+BEGIN
+ IF public.scheduling_compensation_matches_wages('known_eligible_zero','hour',-1,0)
+   OR public.scheduling_compensation_matches_wages('known_eligible_zero','hour',0,-1)
+   OR public.scheduling_compensation_matches_wages('known_paid','hour',1800,-1)
+   OR public.scheduling_compensation_matches_wages('salary_conversion_pending','month',200000,-1)
+   OR public.scheduling_compensation_matches_wages('known_eligible_zero','invalid-period',0,0)
+   OR public.scheduling_compensation_matches_wages('known_eligible_zero',NULL,0,0)
+   OR public.scheduling_compensation_matches_wages('not-a-state','hour',0,0) THEN
+   RAISE EXCEPTION 'MALFORMED_WAGE_PREDICATE_ACCEPTED';
+ END IF;
+ IF NOT public.scheduling_compensation_matches_wages('known_eligible_zero','hour',NULL,NULL)
+    OR NOT public.scheduling_compensation_matches_wages('known_eligible_zero','hour',0,0)
+    OR NOT public.scheduling_compensation_matches_wages('salary_conversion_pending','month',200000,0)
+    OR NOT public.scheduling_compensation_matches_wages('known_paid','hour',1850,1850)
+    OR NOT public.scheduling_compensation_matches_wages('unknown','hour',-1,-1) THEN
+   RAISE EXCEPTION 'VALID_WAGE_PREDICATE_REJECTED';
+ END IF;
+END $$;
+
 ROLLBACK;
 \echo Olivia PR 1A RLS/composite tenant/attestation/audit tests passed (rolled back)
