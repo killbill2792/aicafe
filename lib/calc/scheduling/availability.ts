@@ -140,7 +140,7 @@ export type EmployeeWageSnapshot = {
  * Fail-closed compensation provenance for scheduling projections. Even when a
  * stale attestation was written by an older importer or raced a wage change,
  * an employee with ANY recorded positive wage cannot be treated as zero cost.
- * Missing wage evidence is unknown, never a verified zero. The DB trigger
+ * Missing employee identity is unknown; missing wage rates require an explicit verified-zero attestation. The DB trigger
  * separately invalidates and audits the stored attestation transactionally.
  *
  * This is metadata validation, not a new payroll/wage calculation.
@@ -151,8 +151,10 @@ export function compensationProvenance(
 ): CompensationProvenance {
   if (!recorded) return "unknown";
   if (recorded.cash_cost_state === "known_eligible_zero") {
+    // An explicit owner-attested zero is distinct from unknown wages: nullable
+    // wage fields are allowed, but a missing employee snapshot or any positive
+    // recorded amount invalidates using that attestation for planning.
     if (!employee ||
-        (employee.wage_amount_cents == null && employee.default_hourly_wage_cents == null) ||
         (employee.wage_amount_cents ?? 0) > 0 ||
         (employee.default_hourly_wage_cents ?? 0) > 0) {
       return "unknown";
