@@ -171,11 +171,31 @@ BEGIN
   RAISE EXCEPTION 'verified-zero provenance not captured';
  END IF;
 END $$;
-RESET ROLE;
-UPDATE employees SET wage_period='month',wage_amount_cents=200000,
- default_hourly_wage_cents=0 WHERE id=:'employee_b';
-SET LOCAL ROLE authenticated;
-SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
+-- Mimics the EXACT canonical employee field update used by
+-- lib/actions/staff.ts updateEmployee(): a signed-in owner updates employees,
+-- not the compensation record. The employees AFTER UPDATE trigger must
+-- invalidate the prior zero attestation before this UPDATE returns.
+UPDATE employees SET display_name='Alex B salary',role='barista',
+ wage_period='month',wage_amount_cents=200000,default_hourly_wage_cents=0
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+   WHERE employee_id=current_setting('test.employee_b')::uuid
+   AND cash_cost_state='unknown'
+   AND eligibility_reference IS NULL AND eligibility_verified_at IS NULL
+   AND eligibility_verified_by IS NULL AND revision=2) THEN
+   RAISE EXCEPTION 'STAFF_SALARY_EDIT_LEFT_STALE_ZERO';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM scheduling_foundation_audit_events
+    WHERE business_id=current_setting('test.biz_b')::uuid
+    AND table_name='staff_scheduling_compensation'
+    AND operation='UPDATE'
+    AND before_value->>'cash_cost_state'='known_eligible_zero'
+    AND after_value->>'cash_cost_state'='unknown') THEN
+   RAISE EXCEPTION 'WAGE_INVALIDATION_NOT_AUDITED';
+ END IF;
+END $$;
 UPDATE staff_scheduling_compensation
  SET cash_cost_state='salary_conversion_pending',eligibility_reference=NULL
  WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
@@ -188,6 +208,76 @@ BEGIN
      AND eligibility_verified_at IS NULL) THEN
   RAISE EXCEPTION 'salary-pending incorrectly kept verified-zero';
  END IF;
+END $$;
+
+-- Also exercise the hourly version of updateEmployee() against a real
+-- signed-in owner's authenticated RLS session. A past timecard is intentionally
+-- present to ensure the scheduling trigger never mutates payroll history.
+RESET ROLE;
+SELECT gen_random_uuid() AS employee_c \gset
+INSERT INTO employees(id,business_id,display_name,active,
+ wage_period,wage_amount_cents,default_hourly_wage_cents)
+VALUES (:'employee_c',:'biz_b','Hourly attestation test',true,'hour',0,0);
+INSERT INTO timecards(business_id,employee_id,clock_in,clock_out,hourly_wage_cents)
+VALUES (:'biz_b',:'employee_c',
+ '2026-09-20T09:00:00Z','2026-09-20T12:00:00Z',1100);
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
+INSERT INTO staff_scheduling_compensation
+ (business_id,employee_id,cash_cost_state,eligibility_reference)
+VALUES (:'biz_b',:'employee_c','known_eligible_zero',
+ 'Owner-reviewed specific zero-cost eligibility attestation');
+-- Changing a name alone must not revoke a still-consistent attestation.
+UPDATE employees SET display_name='Hourly employee renamed'
+ WHERE business_id=:'biz_b' AND id=:'employee_c';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=:'employee_c' AND cash_cost_state='known_eligible_zero'
+    AND revision=1) THEN
+   RAISE EXCEPTION 'NON_WAGE_STAFF_EDIT_REVOKED_ZERO';
+ END IF;
+END $$;
+-- Existing Staff wage-update field set, performed as the employee's owner.
+UPDATE employees SET display_name='Hourly employee paid',role='cashier',
+ wage_period='hour',wage_amount_cents=1800,default_hourly_wage_cents=1800
+ WHERE business_id=:'biz_b' AND id=:'employee_c';
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
+    WHERE business_id=current_setting('test.biz_b')::uuid
+    AND employee_id=:'employee_c'
+    AND cash_cost_state='unknown'
+    AND revision=2
+    AND eligibility_reference IS NULL
+    AND eligibility_verified_by IS NULL
+    AND eligibility_verified_at IS NULL) THEN
+   RAISE EXCEPTION 'STAFF_HOURLY_EDIT_LEFT_STALE_ZERO';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM employees
+    WHERE id=:'employee_c' AND wage_amount_cents=1800
+      AND default_hourly_wage_cents=1800 AND display_name='Hourly employee paid') THEN
+   RAISE EXCEPTION 'STAFF_EMPLOYEE_WAGE_EDIT_NOT_PRESERVED';
+ END IF;
+ IF NOT EXISTS (SELECT 1 FROM timecards
+    WHERE employee_id=:'employee_c' AND hourly_wage_cents=1100
+      AND clock_in='2026-09-20T09:00:00Z'
+      AND clock_out='2026-09-20T12:00:00Z') THEN
+   RAISE EXCEPTION 'HISTORIC_TIMECARD_CHANGED';
+ END IF;
+END $$;
+-- Once a positive wage exists, a user cannot reattest the person as zero.
+DO $$
+BEGIN
+ BEGIN
+  UPDATE staff_scheduling_compensation
+    SET cash_cost_state='known_eligible_zero',
+        eligibility_reference='Retried after positive hourly wage'
+    WHERE employee_id=:'employee_c';
+  RAISE EXCEPTION 'STALE_ZERO_REATTESTATION_ACCEPTED';
+ EXCEPTION WHEN raise_exception THEN
+   IF SQLERRM='STALE_ZERO_REATTESTATION_ACCEPTED' THEN RAISE; END IF;
+ END;
 END $$;
 
 ROLLBACK;
