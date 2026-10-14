@@ -741,10 +741,12 @@ BEGIN
     current_setting('test.original_receipt')::jsonb->>'id' THEN
    RAISE EXCEPTION 'CROSS_TENANT_SHARED_KEY_COLLISION';
  END IF;
- IF EXISTS (SELECT 1 FROM public.scheduling_foundation_create_receipts
-    WHERE business_id=current_setting('test.biz_a')::uuid) THEN
-   RAISE EXCEPTION 'FOREIGN_OWNER_READ_RECEIPTS';
- END IF;
+ BEGIN
+  PERFORM 1 FROM public.scheduling_foundation_create_receipts
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'FOREIGN_OWNER_READ_RECEIPTS';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
 END $$;
 -- Neither public/anon nor an unauthenticated JWT may reach the privileged RPC.
 SET LOCAL ROLE anon;
