@@ -101,7 +101,7 @@ BEGIN
  END IF;
  IF p_kind='availability_rule' THEN
    v_table:='staff_availability_rules';
-   IF (p_scope ? 'effective_from') IS NOT TRUE OR
+   IF (p_scope.value ? 'effective_from') IS NOT TRUE OR
       EXISTS(SELECT 1 FROM jsonb_object_keys(p_scope) AS k(x)
              WHERE k.x NOT IN('effective_from','effective_to')) THEN
      RAISE EXCEPTION 'invalid recurring scope' USING ERRCODE='22023';
@@ -110,7 +110,7 @@ BEGIN
      'overnight','effective_from','effective_to','source','confirmation'];
  ELSEIF p_kind='availability_exception' THEN
    v_table:='staff_availability_exceptions';
-   IF (SELECT count(*) FROM jsonb_object_keys(p_scope))<>1 OR NOT (p_scope ? 'local_date') THEN
+   IF (SELECT count(*) FROM jsonb_object_keys(p_scope))<>1 OR NOT (p_scope.value ? 'local_date') THEN
      RAISE EXCEPTION 'invalid exception scope' USING ERRCODE='22023';
    END IF;
    v_keys:=ARRAY['employee_id','location_id','local_date','exception_type',
@@ -152,28 +152,28 @@ BEGIN
 
  -- Verify exact scope contents, including phantom additions/deletions, BEFORE
  -- any change. Sorting canonicalizes expected record ordering.
- IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_expected) e
-           WHERE jsonb_typeof(e)<>'object' OR NOT (e ? 'id') OR NOT (e ? 'revision')) THEN
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_expected) AS e(value)
+           WHERE jsonb_typeof(e.value)<>'object' OR NOT (e.value ? 'id') OR NOT (e.value ? 'revision')) THEN
    RAISE EXCEPTION 'invalid expected manifest' USING ERRCODE='22023';
  END IF;
  SELECT coalesce(jsonb_agg(jsonb_build_object(
-   'id', e->>'id', 'revision',(e->>'revision')::integer) ORDER BY e->>'id'),'[]'::jsonb)
- INTO v_expected FROM jsonb_array_elements(p_expected) e;
+   'id', e.value->>'id', 'revision',(e.value->>'revision')::integer) ORDER BY e.value->>'id'),'[]'::jsonb)
+ INTO v_expected FROM jsonb_array_elements(p_expected) AS e(value);
  IF p_kind='availability_rule' THEN
    SELECT coalesce(jsonb_agg(jsonb_build_object('id',id::text,'revision',revision)
        ORDER BY id::text),'[]'::jsonb)
    INTO v_actual FROM public.staff_availability_rules
    WHERE business_id=p_business_id AND employee_id=p_employee_id
      AND location_id IS NOT DISTINCT FROM p_location_id
-     AND effective_from=(p_scope->>'effective_from')::date
-     AND effective_to IS NOT DISTINCT FROM (p_scope->>'effective_to')::date;
+     AND effective_from=(p_scope.value->>'effective_from')::date
+     AND effective_to IS NOT DISTINCT FROM (p_scope.value->>'effective_to')::date;
  ELSE
    SELECT coalesce(jsonb_agg(jsonb_build_object('id',id::text,'revision',revision)
        ORDER BY id::text),'[]'::jsonb)
    INTO v_actual FROM public.staff_availability_exceptions
    WHERE business_id=p_business_id AND employee_id=p_employee_id
      AND location_id IS NOT DISTINCT FROM p_location_id
-     AND local_date=(p_scope->>'local_date')::date;
+     AND local_date=(p_scope.value->>'local_date')::date;
  END IF;
  IF v_actual<>v_expected THEN
    RETURN jsonb_build_object('conflict',true);
@@ -181,11 +181,11 @@ BEGIN
 
  -- Every desired item is {id?:existingId,data:completeRecord}. Existing IDs
  -- must appear exactly once in current manifest; creates may not supply IDs.
- IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_desired) e
-   WHERE jsonb_typeof(e)<>'object' OR jsonb_typeof(e->'data')<>'object'
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_desired) AS e(value)
+   WHERE jsonb_typeof(e.value)<>'object' OR jsonb_typeof(e.value->'data')<>'object'
      OR EXISTS(SELECT 1 FROM jsonb_object_keys(e) k(x) WHERE k.x NOT IN ('id','data')))
-   OR (SELECT count(*) FROM jsonb_array_elements(p_desired) e WHERE e ? 'id')
-     <> (SELECT count(DISTINCT e->>'id') FROM jsonb_array_elements(p_desired) e WHERE e ? 'id') THEN
+   OR (SELECT count(*) FROM jsonb_array_elements(p_desired) AS e(value) WHERE e.value ? 'id')
+     <> (SELECT count(DISTINCT e.value->>'id') FROM jsonb_array_elements(p_desired) AS e(value) WHERE e.value ? 'id') THEN
    RAISE EXCEPTION 'invalid desired record list' USING ERRCODE='22023';
  END IF;
  FOR v_item IN SELECT value FROM jsonb_array_elements(p_desired) LOOP
@@ -202,16 +202,16 @@ BEGIN
      RAISE EXCEPTION 'batch employee/location mismatch' USING ERRCODE='22023';
    END IF;
    IF (p_kind='availability_rule' AND (
-        v_record->>'effective_from' IS DISTINCT FROM p_scope->>'effective_from' OR
-        coalesce(v_record->>'effective_to','') IS DISTINCT FROM coalesce(p_scope->>'effective_to','')))
+        v_record->>'effective_from' IS DISTINCT FROM p_scope.value->>'effective_from' OR
+        coalesce(v_record->>'effective_to','') IS DISTINCT FROM coalesce(p_scope.value->>'effective_to','')))
      OR (p_kind='availability_exception' AND
-        v_record->>'local_date' IS DISTINCT FROM p_scope->>'local_date') THEN
+        v_record->>'local_date' IS DISTINCT FROM p_scope.value->>'local_date') THEN
      RAISE EXCEPTION 'batch date scope mismatch' USING ERRCODE='22023';
    END IF;
    IF v_item ? 'id' THEN
      v_id:=(v_item->>'id')::uuid;
-     IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_expected) e
-                   WHERE e->>'id'=v_id::text) THEN
+     IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_expected) AS e(value)
+                   WHERE e.value->>'id'=v_id::text) THEN
        RAISE EXCEPTION 'record outside expected scope' USING ERRCODE='22023';
      END IF;
      SELECT string_agg(format('%I = r.%I',k,k),', ' ORDER BY k)
@@ -228,11 +228,11 @@ BEGIN
      -- Existing RPC validates allowlist, FK, audit, owner, confirmed stamping.
      SELECT public.scheduling_create_foundation(
        p_business_id,p_kind,gen_random_uuid(),v_record) INTO v_response;
-     IF v_response->>'id' IS NULL THEN
+     IF v_response.value->>'id' IS NULL THEN
        RAISE EXCEPTION 'batch create failed' USING ERRCODE='22023';
      END IF;
-     v_id:=(v_response->>'id')::uuid;
-     v_rev:=(v_response->>'revision')::int;
+     v_id:=(v_response.value->>'id')::uuid;
+     v_rev:=(v_response.value->>'revision')::int;
    END IF;
    v_result:=v_result||jsonb_build_array(jsonb_build_object('id',v_id,'revision',v_rev));
  END LOOP;
@@ -240,8 +240,8 @@ BEGIN
  -- Delete only expected records excluded from desired; verified scope and
  -- employee lock ensure no stale/foreign deletion, preserve per-row audit.
  FOR v_old IN SELECT value FROM jsonb_array_elements(p_expected) LOOP
-   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_desired) e
-                 WHERE e->>'id'=v_old->>'id') THEN
+   IF NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p_desired) AS e(value)
+                 WHERE e.value->>'id'=v_old->>'id') THEN
      EXECUTE format('DELETE FROM public.%I WHERE business_id=$1 AND id=$2',v_table)
        USING p_business_id,(v_old->>'id')::uuid;
    END IF;
