@@ -8,6 +8,7 @@ export type SchedulingWindow = {
 };
 
 export type RecurringAvailability = SchedulingWindow & {
+  location_id?: string | null;
   day_of_week: number;
   effective_from: string;
   effective_to?: string | null;
@@ -15,6 +16,7 @@ export type RecurringAvailability = SchedulingWindow & {
 };
 
 export type AvailabilityException = {
+  location_id?: string | null;
   local_date: string;
   exception_type: "unavailable" | "approved_leave" | "replace_day" | "add_available" | "hours_cap";
   start_local?: string | null;
@@ -228,6 +230,48 @@ export function effectiveAvailabilityForDate(input: {
     dailyHourCaps,
     precedence: replacements.length ? "replaced" : "recurring",
   };
+}
+
+/**
+ * One-location candidate availability for future Olivia planning. Employee-wide
+ * leave, unavailability and caps are global hard restrictions, never discarded
+ * by a location override. An explicit location rule/date override replaces
+ * the general *positive* candidate windows instead of unioning with them.
+ * Work across locations still needs PR2 feasibility/overlap enforcement.
+ */
+export function effectiveAvailabilityForLocation(input: {
+  date: string;
+  locationId: string | null;
+  recurring: RecurringAvailability[];
+  exceptions: AvailabilityException[];
+  restrictions?: PreferenceWindow[];
+}): ReturnType<typeof effectiveAvailabilityForDate> & {
+  basis: "general" | "location";
+} {
+  const { date, locationId, recurring, exceptions, restrictions } = input;
+  const day = new Date(date + "T00:00:00Z");
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) ||
+      Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== date) {
+    throw new Error("Invalid local date");
+  }
+  const specific = locationId !== null && (
+    recurring.some(r => r.location_id === locationId && r.confirmation === "owner_confirmed" &&
+      r.day_of_week === day.getUTCDay() && activeOnDate(date, r)) ||
+    exceptions.some(r => r.location_id === locationId &&
+      r.confirmation === "owner_confirmed" && r.local_date === date &&
+      (r.exception_type === "replace_day" || r.exception_type === "add_available" ||
+       r.exception_type === "unavailable" || r.exception_type === "approved_leave"))
+  );
+  const chosenRules = recurring.filter(r => specific
+    ? r.location_id === locationId : r.location_id == null);
+  const chosenExceptions = exceptions.filter(r => r.location_id === locationId ||
+    (r.location_id == null &&
+      (!specific || r.exception_type === "unavailable" ||
+       r.exception_type === "approved_leave" || r.exception_type === "hours_cap")));
+  const projection = effectiveAvailabilityForDate({
+    date, recurring: chosenRules, exceptions: chosenExceptions, restrictions,
+  });
+  return { ...projection, basis: specific ? "location" : "general" };
 }
 
 export type CompensationProvenance = "unknown" | "known_paid" | "salary_conversion_pending" | "known_eligible_zero";
