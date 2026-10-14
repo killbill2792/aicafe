@@ -131,9 +131,30 @@ export function effectiveAvailabilityForDate(input: {
 
 export type CompensationProvenance = "unknown" | "known_paid" | "salary_conversion_pending" | "known_eligible_zero";
 
-/** Never infer zero-cost from a null row or legacy salary's cached zero. */
+export type EmployeeWageSnapshot = {
+  wage_amount_cents: number | null;
+  default_hourly_wage_cents: number | null;
+};
+
+/**
+ * Fail-closed compensation provenance for scheduling projections. Even when a
+ * stale attestation was written by an older importer or raced a wage change,
+ * an employee with ANY recorded positive wage cannot be treated as zero cost.
+ * Missing wage evidence is unknown, never a verified zero. The DB trigger
+ * separately invalidates and audits the stored attestation transactionally.
+ *
+ * This is metadata validation, not a new payroll/wage calculation.
+ */
 export function compensationProvenance(
   recorded: { cash_cost_state: CompensationProvenance } | null,
+  employee: EmployeeWageSnapshot | null,
 ): CompensationProvenance {
-  return recorded?.cash_cost_state ?? "unknown";
+  if (!recorded) return "unknown";
+  if (recorded.cash_cost_state === "known_eligible_zero" &&
+      (!employee || employee.wage_amount_cents == null && employee.default_hourly_wage_cents == null ||
+       (employee.wage_amount_cents ?? 0) > 0 ||
+       (employee.default_hourly_wage_cents ?? 0) > 0)) {
+    return "unknown";
+  }
+  return recorded.cash_cost_state;
 }
