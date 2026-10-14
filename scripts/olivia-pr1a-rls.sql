@@ -170,7 +170,7 @@ BEGIN
      AND eligibility_verified_at IS NOT NULL) THEN
   RAISE EXCEPTION 'verified-zero provenance not captured';
  END IF;
-END $;
+END $$;
 RESET ROLE;
 UPDATE employees SET wage_period='month',wage_amount_cents=200000,
  default_hourly_wage_cents=0 WHERE id=:'employee_b';
@@ -188,7 +188,7 @@ BEGIN
      AND eligibility_verified_at IS NULL) THEN
   RAISE EXCEPTION 'salary-pending incorrectly kept verified-zero';
  END IF;
-END $;
+END $$;
 
 ROLLBACK;
 \echo Olivia PR 1A RLS/composite tenant/attestation/audit tests passed (rolled back)
