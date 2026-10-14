@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
@@ -44,7 +44,7 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
   const [effectiveFrom, setEffectiveFrom] = useState(effectiveScopes[0] ?? today);
   const [effectiveTo, setEffectiveTo] = useState("");
   const [locationId, setLocationId] = useState("");
-  const [draft, setDraft] = useState<DraftWindow[]>([]);
+  const [draftOverride, setDraftOverride] = useState<DraftWindow[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -58,17 +58,15 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
     (row.effective_to ?? null) === (effectiveTo || null)
   ), [rows, employeeId, locationId, effectiveFrom, effectiveTo]);
 
-  useEffect(() => {
-    if (!dirty) setDraft(scoped.map(windowFromRecord));
-  }, [scoped, dirty]);
+  const draft = draftOverride ?? scoped.map(windowFromRecord);
 
   function change(updater: (previous: DraftWindow[]) => DraftWindow[]) {
-    setDraft(updater); setDirty(true); setSaved(false); setError(null);
+    setDraftOverride((previous) => updater(previous ?? scoped.map(windowFromRecord))); setDirty(true); setSaved(false); setError(null);
     requestKey.current = null;
   }
   function switchScope(setter: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDirty(false); setError(null); setSaved(false);
+    setDraftOverride(null); setDirty(false); setError(null); setSaved(false);
     requestKey.current = null; setter(value);
   }
   function save() {
@@ -97,7 +95,7 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
         setError(result.error === "conflict" ? t("conflict") : t("saveFailed"));
         return;
       }
-      requestKey.current = null; setDirty(false); setSaved(true);
+      requestKey.current = null; setDraftOverride(null); setDirty(false); setSaved(true);
       router.refresh();
     });
   }
