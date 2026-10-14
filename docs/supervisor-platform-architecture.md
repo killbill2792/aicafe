@@ -107,9 +107,14 @@ type AuthorizedContext = {
 }; // trusted server construction ONLY
 
 // This is a non-executable shared metadata base; it has NO execute callback.
+type CapabilitySchemaContract = {
+  id:string; version:number;
+  inputSchemaFingerprint:string; outputSchemaFingerprint:string;
+}; // exact reviewed schema identity, stable across serialization
 type CapabilityMetadata<I,R> = {
   id:CapabilityId; version:1; agent:AgentId; descriptionKey:string;
   inputSchema:ZodSchema<I>; outputSchema:ZodSchema<R>;
+  schemaContract:CapabilitySchemaContract; // versioned I/O schema identity
   discoverableGoals:readonly string[]; producesMetrics:readonly string[];
   requiresMetrics:readonly string[]; dependsOn?:readonly CapabilityId[];
   requiredRole:"owner"; sensitivity:"normal"|"staff"|"financial";
@@ -376,34 +381,55 @@ type EntityReadResult<T> = {
   evidence: readonly SourceRef[]; missingInputs: readonly string[];
 };
 
-// Analysis is cataloged as its OWN public surface, but its execution is
-// strictly bound to an existing NON-EFFECTFUL capability mode (§4).
+// Analyses are distinct catalog surfaces, but their I/O types come from a
+// CONCRETE LITERAL KEY of the compiled, server-reviewed capability registry.
+// No independent I/O generics or arbitrary string ID may widen the binding.
 type AnalysisMode = "read"|"simulate"|"evaluate";
-type AnalysisResult<M extends AnalysisMode,O> =
-  M extends "simulate" ? SimulationResult<O> :
-  M extends "evaluate" ? EvaluationResult<O> : ReadResult<O>;
-type AnalysisBoundCapability<I,O,M extends AnalysisMode> =
-  M extends "simulate" ? SimulateCapability<I,O> :
-  M extends "evaluate" ? EvaluateCapability<I,O> : ReadCapability<I,O>;
-type AnalysisDefinition<I,O,M extends AnalysisMode> = {
+type CapabilityRegistry = typeof compiledCapabilityRegistry;
+type AnalysisCapabilityKey = {
+  [K in keyof CapabilityRegistry]:
+    CapabilityRegistry[K]["mode"] extends AnalysisMode ? K : never
+}[keyof CapabilityRegistry];
+type AnalysisCapability<K extends AnalysisCapabilityKey> = CapabilityRegistry[K];
+type AnalysisResult<K extends AnalysisCapabilityKey> =
+  z.infer<AnalysisCapability<K>["outputSchema"]>;
+// A purpose either has explicit, versioned real-source dependencies, OR
+// explicitly certifies that all inputs are self-contained validated arguments.
+type AnalysisSourceInput = {
+  metricIds:readonly string[]; entityReadIds:readonly string[];
+  readerId:string; readerVersion:number;
+  selectorId:string; selectorVersion:number;
+  precedencePolicyId:string; precedencePolicyRevision:number;
+  sourcePurpose:string;
+  minimumCoverage:"complete"|"partial_explicit";
+  allowedActualities:readonly ("actual"|"estimated"|"forecast"|"planned")[];
+};
+type AnalysisSourceRequirements =
+  | {kind:"registered_sources";
+      inputs:readonly [AnalysisSourceInput,...AnalysisSourceInput[]];
+      minimumOverallCoverage:"complete"|"partial_explicit";}
+  | {kind:"no_external_sources";
+      inputs:readonly [];
+      justification:"pure_validated_input_only";
+      minimumOverallCoverage:"not_applicable";};
+// Both schema refs are the SAME typed schemas as bound capability K; runtime
+// requires the SAME immutable contract id/version AND exact schema fingerprints.
+type AnalysisDefinition<K extends AnalysisCapabilityKey,P extends string> = {
   kind:"analysis"; id:string; version:1;
   domainOwner:AgentId; titleKey:string; descriptionKey:string;
-  boundCapability:Pick<AnalysisBoundCapability<I,O,M>,"id"|"version"|"mode">;
-  inputSchema:ZodSchema<I>; // strict, typed params and purpose allowlist
-  outputSchema:ZodSchema<AnalysisResult<M,O>>; // strict mode result, no proposal
-  allowedPurposes:readonly string[];
+  boundCapabilityKey:K; // literal registered key, never a free string
+  boundCapabilityVersion:AnalysisCapability<K>["version"];
+  boundCapabilityMode:AnalysisCapability<K>["mode"];
+  schemaContract:AnalysisCapability<K>["schemaContract"];
+  inputSchema:AnalysisCapability<K>["inputSchema"];
+  outputSchema:AnalysisCapability<K>["outputSchema"];
+  allowedPurposes:readonly P[]; // explicit, nonempty strict union, no duplicates
+  sourceRequirementsByPurpose:Readonly<Record<P,AnalysisSourceRequirements>>;
   authorization:{
     policyKey:string; requiredRole:"owner"; sensitivity:"normal"|"staff"|"financial";
     scope:"business"|"permitted_locations"|"owner_private";
     allowedFields:readonly string[]; allowedEntityTypes:readonly string[];
   };
-  requiredInputs:readonly {
-    purpose:string; metricIds:readonly string[]; entityReadIds:readonly string[];
-    readerId:string; readerVersion:number;
-    selectorId:string; selectorVersion:number;
-    minimumCoverage:"complete"|"partial_explicit";
-    allowedActualities:readonly ("actual"|"estimated"|"forecast"|"planned")[];
-  }[];
   sourcePolicyKey:string; // provenance precedence, snapshot/time coherence
   requiresContextVersion:1; // authorized BusinessContext projection
   resourceLimits:{
@@ -411,12 +437,13 @@ type AnalysisDefinition<I,O,M extends AnalysisMode> = {
     maxSeriesPoints:number; maxOperations:number;
     timeoutMs:number; maxResultBytes:number;
   };
-  // NO direct execute or domain writer: dispatcher resolves bound capability
-  // by server-registered id/version/mode and validates exact I/O contract.
+  // No independent execute function: generic dispatcher invokes only K.
 };
 ~~~
 
-**Analysis registration and dispatch (mandatory P1/P2 gate):** Each public analytical read/scenario/diagnostic is a checked-in, **versioned `AnalysisDefinition<I,O,M>` catalog entry** with strict input and full output Zod schemas, role/tenant/location/owner-private authorization, explicit purposes and field/record sensitivity, registered prerequisite metric/entity readers, **versioned canonical source-selector contracts**, provenance/actuality/coverage requirements, versioned BusinessContext and finite execution/result budgets. On registry startup, resolve its `boundCapability.id + version + mode` and verify it matches the **exact typed `ReadCapability`, `SimulateCapability` or `EvaluateCapability` input/output contracts** and that every required metric/entity/source is registered; missing/mismatched/orphan bindings fail CI/startup and appear unavailable, not executable. The generic dispatcher authenticates scope, validates strict analysis arguments/purpose, authorization and resource budgets **before** any prerequisite reader, and uses the same mode-specific runtime Zod output validator after execution; independently verify result provenance/source revisions, period, quality/completeness, sensitivity and numeric fields (including the metric output constraints of §5.1) **before** assembling any owner-visible analysis. Read/simulate/evaluate analysis results have `proposal:null`, never apply or persist business changes and cannot call the commit gateway. An actionable recommendation becomes an actual proposal **only through a separately registered `propose` capability** with exact canonical effect payload and separate approval/commit gates; never turn a price scenario or staffing recommendation directly into a mutation.
+**Analysis registration and dispatch (mandatory P1/P2 gate):** Every analysis is a checked-in `AnalysisDefinition<K,P>`, where `K` is a **literal, concrete key** of the compiled capability registry and its input, output, mode and schema-contract identity are **derived from that exact entry**. Only registered read/simulate/evaluate keys are allowed; no independent generic `I/O`, string-only IDs or schema adapters can assert compatibility. The bound capability and analysis must reference the **same reviewed input/output schemas** by exact `schemaContract.id`, version and deterministic input/output fingerprints (and concrete registered schema references), not merely shapes that appear similar. At build/startup compare registry key/version/mode, schema identity and canonical schema fingerprints; reject absent keys, retired versions, mismatched or unverifiable fingerprints, incompatible types and extra/unknown keys; do not silently substitute another handler or accept inferred subtype casts. Changing a schema meaning requires a new contract version and reviewed registry export.
+
+**Exhaustive per-purpose source policy:** `allowedPurposes` must be nonempty, unique and an explicit literal purpose union; `sourceRequirementsByPurpose` must have **exactly one own-key entry per allowed purpose**, no missing or extra keys, validated both with strict registration-time Zod and checked-in compile-time `satisfies`/exact-key tests. Each `registered_sources` entry requires a nonempty typed source list with registered metric/entity prerequisites, canonical reader/selector/version, source purpose/precedence policy/version, permitted actuality and minimum coverage; all must be tenant/role scoped and provenance-audited before executing or publishing results. `no_external_sources` is a separate explicit, validated, **empty** source-list case for a calculation based **only** on fully validated input arguments; it may not claim verified café facts or backfill absent data. Reject undeclared source reads, missing or extra purposes, unsupported reader versions, incomplete required coverage, incorrect actuality or unknown provenance; a source-free contract cannot implicitly depend on external data. Authorize business/location/owner-private scope and resource budgets per analysis and purpose before the matched typed capability is invoked. Validate strict mode/result evidence after execution, including any prerequisite metric's output; return an appropriately sanitized unavailable/partial result for unsupported/no-POS/denied/conflicting inputs. Read/simulate/evaluate analyses cannot create proposals, tasks or domain effects; recommendations require the existing separate propose/approve/commit gates. Adding Olivia, Alex, Maya, Leo or a fifth specialist changes only its reviewed registry/catalog module, not central routing.
 
 **Extensibility examples (contracted, not active features):** Alex price review/recipe margin comparison registers a read analysis backed by canonical pricing and `lib/calc/`; Olivia coverage-vs-cost what-if is a `simulate` analysis after domain readiness; Maya unit-normalized supplier-quote comparison is a read analysis with explicitly unverified quote provenance; Leo matched-period profit-cost comparison is a read analysis with complete numerator/denominator coverage, not a bank-feed assumption. A synthetic **fifth** specialist registers the same analysis and bound capability exports, tests and localization only, **without a central Supervisor analysis switch, metric exception or LLM SQL**. Unsupported/no-POS/denied/conflicting/stale inputs return a typed `unavailable`/`partial`/`insufficient_evidence` result with missingInputs/assumptions and no invented output; derived money remains `lib/calc/` canonical. Entity-read handlers likewise bind café/user/location/purpose, validate filters and resource caps, apply RLS and allowlist fields and relationships. Never expose a generic SQL editor, unrestricted SELECT, arbitrary joins, free-form table names, schema exploration or all-employees/all-records dumping. Record permissions do **not** follow automatically from metric permission; e.g., labor total does not authorize every staff wage. Restricted surfaces remain explicit in the coverage manifest.
 
