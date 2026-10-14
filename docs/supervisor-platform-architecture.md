@@ -109,7 +109,7 @@ type AuthorizedContext = {
 type CapabilityDescriptor<I, O> = {
   id: CapabilityId; version: 1; agent: AgentId;
   descriptionKey: string; inputSchema: ZodSchema<I>; outputSchema: ZodSchema<O>;
-  mode: Mode;
+  mode: Exclude<Mode,"approve"|"commit">; // safe/read-or-proposal handlers ONLY
   discoverableGoals: readonly string[]; producesMetrics: readonly string[];
   requiresMetrics: readonly string[]; dependsOn?: readonly CapabilityId[];
   requiredRole: "owner"; sensitivity: "normal" | "staff" | "financial";
@@ -119,6 +119,28 @@ type CapabilityDescriptor<I, O> = {
   enabledFor: (ctx: AuthorizedContext) => Promise<boolean>;
   execute: (ctx: AuthorizedContext, input: I) => Promise<VerifiedCapabilityResult<O>>;
 };
+// Explicit discriminated registry variants: neither approve nor commit fits the
+// safe/propose `execute` slot. Illustration references §7 typed envelopes.
+type ApprovalCapabilityDescriptor =
+  Omit<CapabilityDescriptor<ApprovalTransitionInput,ApprovalTransitionResult>,
+       "mode"|"execute"|"approvalPolicyKey"> & {
+    mode:"approve"; approvalPolicyKey:string;
+    transitionApproval:(ctx:AuthorizedContext,input:ApprovalTransitionInput)
+      =>Promise<ApprovalTransitionResult>;
+    execute?:never;
+  };
+type CommitCapabilityDescriptor =
+  Omit<CapabilityDescriptor<ApprovedEffectInput,VerifiedActionOutcome>,
+       "mode"|"execute"|"approvalPolicyKey"> & {
+    mode:"commit"; approvalPolicyKey:string;
+    executeApproved:(ctx:AuthorizedContext,input:ApprovedEffectInput)
+      =>Promise<VerifiedActionOutcome>;
+    execute?:never;
+  };
+type ApprovedEffectInput = {approvalId:string; proposalId:string;
+  proposalRevision:number; approvedEffectHash:string};
+// Registry dispatch accepts the discriminated union; runtime Zod and policy
+// checks also enforce mode, scope, immutable proposal and effect permissions.
 ~~~
 
 **Non-effectful operation invariant:** `read` returns canonical facts and `simulate` runs a **transient, read-only, deterministic what-if** using pinned source inputs and `lib/calc/`. Neither creates a scheduling draft, proposed price, approval request, task, outside message or business-domain write. Protected usage/audit telemetry is permitted but cannot imply domain mutation. Simulations state baseline, changed assumptions, feasibility/limitations and source revision; they return `proposal: null`. `propose` is a **separate explicit transition** that may persist an inert versioned draft after the owner requests it. **`approve` is a first-class typed, server-only transition** that validates an immutable proposal and records a scoped approval artifact; it does **not** invoke a domain write. **`commit` is a separate policy-gated executable capability** that must consume that approval exactly once (or use a specifically validated standing grant, if a later reviewed effect supports delegation). `evaluate` is a bounded evidence check, and any task persistence goes through its separately authorized reconciler. Dispatcher and acceptance tests must prove these distinctions even if the model requests a more powerful action.
@@ -309,6 +331,36 @@ type BusinessContextV1 = {
 
 Each usable preference ID has a **code-reviewed definition in a small build-time registry**: `id` (stable namespaced key), `schemaVersion`, per-key `zod` value schema (strict bounds/enums, no arbitrary object/string fallback), `scope` (`owner_private` or `cafe_shared`), `sensitivity`, allowed consuming domains, effective-date semantics, defaults/absence rules and migration policy. Illustrative *future*, not implemented settings: `supervisor.digest_cadence.v1: z.enum(["daily","weekly","off"])` and `olivia.owner_preferred_weekly_minutes.v1: z.number().int().min(0).max(10080)`. A typed record is a discriminated mapping `ConfirmedPreference<K extends RegisteredPreferenceKey> = { key:K; schemaVersion:RegisteredDefinition<K>["schemaVersion"]; recordRevision:number; value:z.infer<RegisteredDefinition<K>["schema"]>; scope; confirmedBy; confirmedAt; effectiveUntil; source }`; the `BusinessContextV1.preferences` array holds **only** successfully validated known-key records. Any value loaded from persisted JSON starts as **untrusted unknown input**, must pass exact key+schema version validation and role/sensitivity projection before use, and is `unavailable/needs_review` rather than forwarded when unknown, invalid or needing migration. Do not silently coerce legacy free text into a typed enum/number, silently use defaults as owner confirmation, or downgrade incompatible schema versions. Registry extensions add a definition/test in the domain, not a Supervisor-core branch.
 
+Illustrative strict **per-key registry** declaration (proposed contract, not deployed code):
+
+~~~ts
+const preferenceDefinitions = {
+  "supervisor.digest_cadence.v1": {
+    schemaVersion: 1,
+    scope: "owner_private", sensitivity: "normal",
+    allowedDomains: ["supervisor"],
+    valueSchema: z.enum(["daily","weekly","off"]),
+  },
+  "olivia.owner_preferred_weekly_minutes.v1": {
+    schemaVersion: 1,
+    scope: "owner_private", sensitivity: "staff",
+    allowedDomains: ["olivia"],
+    valueSchema: z.number().int().min(0).max(10080),
+  },
+} as const;
+// `key + schemaVersion` selects the only valid type; no general text/value field.
+type PreferenceKey = keyof typeof preferenceDefinitions;
+type PreferenceFor<K extends PreferenceKey> = {
+  key:K; schemaVersion:(typeof preferenceDefinitions)[K]["schemaVersion"];
+  recordRevision:number;
+  value:z.infer<(typeof preferenceDefinitions)[K]["valueSchema"]>;
+  confirmedBy:string; confirmedAt:string; effectiveUntil:string|null;
+  source:SourceRef;
+};
+type ConfirmedPreference =
+  { [K in PreferenceKey]:PreferenceFor<K> }[PreferenceKey];
+~~~
+
 **Intentional free-text owner/AI Team instructions are `untrusted_guidance`**, stored/retrieved separately from typed preferences, clearly labeled source and owner, bounded/sanitized and treated as *data* with prompt-injection defenses. They cannot change priority of canonical records, approval gates, permissions, workflow checks or the type registry. Owner confirmation establishes provenance, **not safety of arbitrary prose**. Strictly typed objectives also require reviewed metric/target/unit/period validation and revisions; unknown targets remain unsupported, not operator commands.
 
 **Fingerprint semantics:** `snapshot.fingerprint` hashes only canonical source-data snapshot/revisions used by the query; the separate `contextFingerprint` hashes the **canonical ordered, scope-bound material projection actually used for the proposed effect** (business, location, relevant owner scope, each referenced preference ID+definition version+record revision+validated value hash or explicit absence/revocation, objective revision/value hash, guidance rule ID/version+content hash, workflow ID/revision/decision state, and all applied policy/delegation IDs+revisions/expiry/constraints). Include a complete `contextRevisionRefs` manifest of *material* inputs used so additions/revocations/changed defaults cannot evade stale checks; if complete dependency tracking cannot be proved, conservatively fingerprint the full authorized active projection for that action. Context and policy fingerprints are **server-generated from trusted stores** with deterministic canonical serialization, not LLM text, and never expose sensitive raw values in logs/owner-visible tokens. Persist the exact fingerprint and references with every proposal/approval. At approval and immediately before commit, rebuild and validate both the source snapshot and the context/policy projection; **any material changed, missing, revoked, expired or schema-invalid revision means conflict/repropose/reapprove**, not silent refresh or stale execution. Irrelevant context changes can be excluded only with an auditable dependency manifest verified by the domain. Revoked authority always blocks effect.
@@ -425,7 +477,7 @@ Olivia **approve** and **publish** remain distinct milestones according to docs/
 
 ## 9. Durable, idempotent execution and workflow state
 
-Use a **small, additive tenant-scoped workflow ledger only when the first effectful capability is approved**; no migration in this documentation PR. Logical records: workflow (business, owner, originating conversation/message, goals/plan hash, state, version, created/expiry); steps (capability+version, input hash, dependency IDs, attempt count, lease, state, immutable result refs); **proposals** (businessId, proposalId, immutable proposalRevision, approvedEffectHash, target/baseRevision, sourceSnapshotHash, contextFingerprint, material context+policy revision references, expiry, single-effect or explicitly reviewed atomic bundle definition); **approvals** (business/proposal ID+revision, approver, decision, exact effect/source/context/policy hashes+revision refs, policy/grant revision, expiry); **proposal consumptions** (unique tenant/proposal/revision; deterministic effect key; workflow/effect outcome state); effects (unique business/actionType/idempotency key *and* canonical proposal/effect identity, requested payload hash, domain outcome); append-only audit events; transactional outbox where needed.
+Use a **small, additive tenant-scoped workflow ledger only when the first effectful capability is approved**; no migration in this documentation PR. Logical records: workflow (business, owner, originating conversation/message, goals/plan hash, state, version, created/expiry); steps (capability+version, input hash, dependency IDs, attempt count, lease, state, immutable result refs); **proposals** (businessId, proposalId, immutable proposalRevision, proposedEffectHash, target/baseRevision, sourceSnapshotHash, contextFingerprint, material context+policy revision references, expiry, single-effect or explicitly reviewed atomic bundle definition); **approvals** (business/proposal ID+revision, approver, decision, exact effect/source/context/policy hashes+revision refs, policy/grant revision, expiry); **proposal consumptions** (unique tenant/proposal/revision; deterministic effect key; workflow/effect outcome state); effects (unique business/actionType/idempotency key *and* canonical proposal/effect identity, requested payload hash, domain outcome); append-only audit events; transactional outbox where needed.
 
 States: requested → planned → awaiting_approval → approved → **consumed/executing** → applied / pending_reconciliation / failed / rejected / canceled / superseded. Each transition uses tenant-scoped compare-and-swap and full audit. The proposal has an **immutable one-effect identity** (`businessId, proposalId, proposalRevision, approvedEffectHash`). A proposal permitting multiple external/domain operations must instead be represented as **individually approved single-effect proposals**, or a separately reviewed atomic bundle with every effect fixed in its hash; one approved revision can never be retargeted or consumed for an extra effect.
 
