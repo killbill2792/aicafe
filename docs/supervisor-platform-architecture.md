@@ -229,29 +229,45 @@ The required checked-in machine-readable inventory entry has `id`, `kind: metric
 Each metric is a first-class server-owned definition; metric IDs are stable and versioned independently of display names. Exact fields:
 
 ~~~ts
-type MetricDefinition = {
-  id: string; version: 1;
-  owner: "money" | "sales" | "staff" | "pricing" | "supplies" | string;
-  localizedLabelKey: string; descriptionKey: string;
-  valueKind: "money_cents" | "integer" | "decimal_ratio" | "duration_minutes" | "boolean" | "series";
-  unit: "USD_cents" | "count" | "ratio" | "minutes" | "unit_count" | string;
-  allowedDimensions: readonly string[]; // e.g. location, item, channel, employee
-  allowedGranularities: readonly ("instant" | "hour" | "day" | "week" | "month")[];
-  supportedPeriods: "instant" | "bounded_date_range" | "all_time";
-  temporalBasis: "business_local" | "location_local" | "utc_instant";
-  availabilityRequires: readonly string[]; // provenance, coverage or provider prerequisites
-  sensitivity: "normal" | "staff" | "financial";
-  accessPolicy: string; sourcePurpose: string; canonicalReader: string;
-  sourceSelectionPolicy: string; maxRangeDays: number | null;
-  expectedFreshnessSeconds: number | null;
-  aggregationPolicy: "from_canonical_calc" | "sum_validated_parts" | "not_aggregatable";
+type MetricQuery<F,P extends string> = {
+  metricId:string; period?:{from:string;to:string};
+  granularity:"instant"|"hour"|"day"|"week"|"month";
+  dimensions:Readonly<Record<string,readonly string[]>>; // validated allowlist
+  filters:F; purpose:P; // strict registered per-metric purpose/filter types
 };
-type MetricQuery = {
-  metricId: string; period?: {from: string; to: string};
-  granularity: "instant" | "hour" | "day" | "week" | "month";
-  dimensions: Record<string, string[]>; // validated against catalog, entity authorization
-  filters: Record<string, unknown>;     // metric-specific bounded schema
-  purpose: string; // e.g. payroll_actual, schedule_forecast, price_review
+type MetricDefinition<F,P extends string> = {
+  id:string; version:1;
+  owner:"money"|"sales"|"staff"|"pricing"|"supplies"|string;
+  localizedLabelKey:string; descriptionKey:string;
+  valueKind:"money_cents"|"integer"|"decimal_ratio"|"duration_minutes"|"boolean"|"series";
+  unit:"USD_cents"|"count"|"ratio"|"minutes"|"unit_count"|string;
+  querySchema:ZodSchema<MetricQuery<F,P>>; // strict full request schema
+  filterSchema:ZodSchema<F>; // strict per metric; rejects unknown keys and values
+  dimensionSchema:ZodSchema<MetricQuery<F,P>["dimensions"]>; // fields + values
+  allowedPurposes:readonly P[]; // explicit purpose-specific authorized reads
+  allowedDimensions:readonly string[]; // only faithfully available dimensions
+  allowedGranularities:readonly MetricQuery<F,P>["granularity"][];
+  supportedPeriods:"instant"|"bounded_date_range"|"all_time";
+  temporalBasis:"business_local"|"location_local"|"utc_instant";
+  availabilityRequires:readonly string[]; // evidence/provider/coverage prerequisites
+  sourceSelectionRequirements:{
+    canonicalReaderId:string; readerContractVersion:number;
+    selectorContractId:string; selectorContractVersion:number;
+    sourcePurposeByQueryPurpose:Readonly<Record<P,string>>;
+    precedencePolicyId:string; precedencePolicyRevision:number;
+    minCoverage:"complete"|"partial_explicit"; // quality and purpose bound
+    requiredSourceStatuses:readonly SourceRef["status"][];
+  };
+  sensitivity:"normal"|"staff"|"financial";
+  accessPolicy:string; // tenant+role+location+purpose+field policy, default deny
+  queryLimits:{
+    maxRangeDays:number|null; maxRows:number; maxSeriesPoints:number;
+    maxDimensionCount:number; maxValuesPerDimension:number;
+    maxFilterDepth:number; timeoutMs:number; maxReadCalls:number;
+  };
+  expectedFreshnessSeconds:number|null;
+  aggregationPolicy:"from_canonical_calc"|"sum_validated_parts"|"not_aggregatable";
+  canonicalReader:string; // server-owned registered handler, no model SQL
 };
 type MetricResult = {
   metricId: string; definitionVersion: 1; query: MetricQuery;
@@ -268,7 +284,9 @@ type MetricResult = {
 
 Use **explicit result variants** in production (e.g. a discriminated union requiring null for unavailable and requiring a valid typed value/unit for available) rather than interpreting this abbreviated sample's nullable value at the UI. Currency and every money total use safe integer cents. Ratios cannot be averaged naively across groups or time; recompute from canonical numerators and denominators in lib/calc/. Do not sum overlapping sources or treat a calculated derived metric as a raw imported fact. Timezone, DST, inclusive café dates, source effective range and location scope are part of the query fingerprint.
 
-Catalog discovery is two operations: **list permitted definitions** (small metadata only) and **query selected metric IDs with bounded arguments**. The server builds the catalog from reviewed modules; owner can learn what is available while missing integrations return explicit unavailable. No schema exploration, free-form table names, REST endpoint composition or SQL issued by an LLM. Apply authenticated café selection, source RLS, row/column sensitivity, bounded pagination and server-enforced dimension filters **before** data is exposed. Where staff detail is sensitive, provide only an authorized aggregate unless a separate named-person read is justified by role and purpose.
+Catalog discovery is two operations: **list permitted definitions** (small metadata only) and **query selected metric IDs with bounded arguments**. Before **any** canonical reader or source selector runs, the dispatcher must (1) resolve the authenticated business/actor/locations server-side, (2) find that exact registered metric ID+version or deny, (3) validate the *entire* query via its metric-owned **strict Zod `querySchema`, `filterSchema` and `dimensionSchema`**, (4) enforce its `allowedPurposes`, dimensions, granularity, unit/period/temporal basis, allowlisted source statuses and source-selection contract/version for that purpose, (5) enforce tenant/role/sensitivity authorization and all **range, row, cardinality, series, depth, timeout and read-call limits**, and **only then** call the trusted reader with typed parsed input. Unrecognized or extra filters, arbitrary purposes, unsupported hourly/dimension requests, unknown metric versions and privilege-sensitive dimensions are rejected, not forwarded as unknown values. The server builds the catalog from domain registration exports and tests per-metric source purpose+selector mappings; neither the dispatcher nor central goal/router requires specialist-specific conditional branches or a generic catch-all filter parser. The owner may learn which definitions are allowed while missing integrations return explicit unavailable. No schema exploration, free-form table names, REST endpoint composition, unrestricted SQL/GraphQL or raw arbitrary values from an LLM. Preserve source RLS, row/column sensitivity and bounded pagination; staff aggregates do **not** authorize named-person wage reads.
+
+**Metric registration and source-selection invariants (future P1 gate):** a metric's input contract is not just a display label or generic `Record<string, unknown>`: a strict, domain-exported query schema must parse **purpose, filters, dimension values, granularity, dates and bounds** together. The domain module owns schema, allowed purpose/source-selection table and canonical reader mapping; registry startup/CI rejects missing, unreachable, inconsistent or unbounded definitions. One metric can have a narrow purpose such as `payroll_actual` yet reject `schedule_forecast`; a second purpose must declare its source-selection and temporal/quality rules explicitly. Purpose cannot be obtained by reinterpreting an arbitrary model string. Selector versions are pinned to the returned `CanonicalSourceRevisionRef` manifest (§7). Query normalization and caching must bind metric version, validated arguments, authorized tenant/location, period/timezone and selected purpose to avoid cross-purpose or cross-tenant leakage. Every unsupported dimensionality/purpose returns a typed denial/unavailable result, never inferred data or a zero. Validate 5th-domain registration without platform core changes and exercise negative security limits in P1 CI.
 
 ### 5.2 Canonical starter catalog / ownership
 
