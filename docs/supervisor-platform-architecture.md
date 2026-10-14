@@ -593,32 +593,66 @@ type CanonicalSourceRevisionRef =
   | {kind:"confirmed_absent"; businessId:string; selection:CanonicalSourceSelection;
      source:null; completeCoverageRevision:string}; // verified absence, not unknown
 type SourceConflict = { code:string; left:SourceRef; right:SourceRef; affectedMetrics:string[] };
-// Shared EVIDENCE envelope. Not an effect, draft or grant.
-type VerifiedCapabilityResult<T> = {
-  capabilityId:string; contractVersion:1; status:ResultStatus;
-  payload:T|null; evidence:SourceRef[]; metricIds:string[];
+// Evidence success and failure have DIFFERENT data boundaries.
+// Status is the discriminator, not a decorative label. Typed output schemas
+// must be strict Zod discriminated unions with cross-field refinements.
+type CapabilitySuccessBase<T> = {
+  capabilityId:string; contractVersion:1;
+  payload:NonNullable<T>; // never null/undefined on ANY successful status
+  evidence:readonly SourceRef[]; metricIds:readonly string[];
   period:{from:string;to:string;timezone:string}|null;
-  completeness:"complete"|"partial"|"unknown";
-  warnings:string[]; missingInputs:string[];
-  assumptions:string[]; conflicts:SourceConflict[];
+  warnings:readonly string[]; missingInputs:readonly string[];
+  assumptions:readonly string[]; conflicts:readonly SourceConflict[];
   producedAt:string; inputFingerprint:string;
+  reasonCode?:never;
 };
+type SuccessfulCapabilityResult<T> =
+  | (CapabilitySuccessBase<T> & {status:"verified";
+      completeness:"complete"; conflicts:readonly []; missingInputs:readonly []})
+  | (CapabilitySuccessBase<T> & {status:"estimated";
+      completeness:"complete"|"partial"})
+  | (CapabilitySuccessBase<T> & {status:"partial";
+      completeness:"partial"});
+type UnsuccessfulCapabilityResult = {
+  capabilityId:string; contractVersion:1;
+  status:"unavailable"|"failed"|"conflict"|
+    "insufficient_evidence"|"requires_approval";
+  payload:null; reasonCode:string; // safe, registered localization code
+  missingInputs:readonly string[]; // public allowlisted KEY CODES only
+  producedAt:string;
+  // No evidence/source IDs, raw conflicts, periods, context, private input
+  // fingerprints, internal exceptions or executable data on any failure.
+  evidence?:never; metricIds?:never; period?:never;
+  completeness?:never; warnings?:never; assumptions?:never;
+  conflicts?:never; inputFingerprint?:never;
+};
+type VerifiedCapabilityResult<T> =
+  | SuccessfulCapabilityResult<T> | UnsuccessfulCapabilityResult;
 type ReadResult<T> = VerifiedCapabilityResult<T> & {
   mode:"read"; proposal:null; effect?:never; approval?:never;
 };
-type SimulationResult<T> = VerifiedCapabilityResult<T> & {
-  mode:"simulate"; proposal:null; effect?:never; approval?:never;
-  baselineFingerprint:string; scenarioAssumptions:readonly string[];
-}; // transient lib/calc/ result; never a persisted proposal
+type SimulationResult<T> =
+  | (SuccessfulCapabilityResult<T> & {
+      mode:"simulate"; proposal:null; effect?:never; approval?:never;
+      baselineFingerprint:string; scenarioAssumptions:readonly string[]})
+  | (UnsuccessfulCapabilityResult & {
+      mode:"simulate"; proposal:null; effect?:never; approval?:never;
+      baselineFingerprint?:never; scenarioAssumptions?:never});
 type ProposalResult<T> =
-  | (VerifiedCapabilityResult<T> & {mode:"propose"; state:"persisted_inert";
-      proposal:ActionProposal; effect?:never; approval?:never})
-  | (VerifiedCapabilityResult<T> & {mode:"propose"; state:"not_created";
-      proposal:null; effect?:never; approval?:never});
-type EvaluationResult<T> = VerifiedCapabilityResult<T> & {
-  mode:"evaluate"; findings:readonly T[]; proposal:null;
-  effect?:never; approval?:never;
-}; // separate authorized reconciler handles task persistence
+  | (SuccessfulCapabilityResult<T> & {
+      mode:"propose"; state:"persisted_inert"; proposal:ActionProposal;
+      effect?:never; approval?:never})
+  | (UnsuccessfulCapabilityResult & {
+      mode:"propose"; state:"not_created"; proposal:null;
+      effect?:never; approval?:never});
+type EvaluationResult<T> =
+  | (SuccessfulCapabilityResult<readonly T[]> & {
+      mode:"evaluate"; proposal:null; effect?:never; approval?:never})
+  | (UnsuccessfulCapabilityResult & {
+      mode:"evaluate"; proposal:null; effect?:never; approval?:never});
+// Successful evaluator payload = strictly typed readonly findings;
+// a failure contains NO findings, proposal or other executable content.
+// Task creation remains a separate authorized reconciler, never evaluate.
 type ApproveResult = {mode:"approve"; transition:ApprovalTransitionResult;
   proposal?:never; effect?:never};
 type CommitResult = {mode:"commit"; outcome:VerifiedActionOutcome;
@@ -702,6 +736,8 @@ type VerifiedActionOutcome = {
   verifiedEvidence:SourceRef[]; ownerActorId:string|null; auditEventId:string|null;
 };
 ~~~
+
+**Mode result status and privacy invariants:** The server compiles **strict Zod discriminated unions by `status` and `mode`**, with no passthrough/unknown fields and no implicit numeric coercion. For `read`, `simulate`, `evaluate` and any bound analysis, only `verified`, `estimated` or `partial` may contain a **non-null, schema-validated payload**; verified requires complete applicable source coverage, no unresolved material conflicts, no missing prerequisites and authorized provenance, partial requires explicitly partial coverage. Estimated requires declared assumptions and no false actual/verified claim. `unavailable`, `failed`, `conflict`, `insufficient_evidence` or `requires_approval` **require `payload:null`** and expose only a safe error/required-input *code allowlist*, not raw refs, private source data, model fragments, preview, proposal, actor IDs or input fingerprints. The domain's actual result value must be validated against the **exact capability-bound output schema plus mode/status-specific runtime refinements** before caching, analysis composition, grounded replies or owner-visible cards; a malformed `verified + null`, `failed + payload`, `partial + complete`, `simulated failure + scenario fingerprint`, or `evaluated failure + findings` is rejected and safely converted to a sanitized unavailable result by the trusted boundary (with private audit of the validation error). Runtime schemas do not `strip` forbidden extra fields: **reject** them and never leak untrusted objects. No arbitrary fallback to a success or a fabricated zero. An analysis takes this same `ReadResult`/`SimulationResult`/`EvaluationResult` schema **from its exact bound capability registry key**, so it cannot use a weaker result envelope. `propose` keeps an inert draft **only on a valid successful proposal transition**; failed creation has no proposal or effect. `approve` already uses its separate success/failure privacy union and `commit` remains the only effect gateway.
 
 **Action-state separation:** current facts (`read`, `ReadResult` with `proposal:null`) → transient deterministic comparison (`simulate`, `SimulationResult` with `proposal:null`) → separately requested persisted inert draft (`propose`, a `ProposalResult` with **exact immutable `canonicalEffectPayload`**, derived preview/hash and complete `sourceRefs`) → **typed, auditable, no-effect approval** (`approve`, `ApproveResult` copies `proposedEffectHash` into identical `approvedEffectHash`, and exactly copies `sourceRefs` into `approvedSourceRefs`) → **one-time approval/proposal consumption and authorized domain operation** (`commit`, `CommitResult` alone may invoke verified effects) → separately verified postcondition. `evaluate` returns only `EvaluationResult` findings and never a proposal or executable command. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
 
