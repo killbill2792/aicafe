@@ -559,6 +559,8 @@ END $$;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 SELECT gen_random_uuid() AS same_key, gen_random_uuid() AS distinct_key \gset
+SELECT set_config('test.same_key',:'same_key',true),
+       set_config('test.distinct_key',:'distinct_key',true);
 SELECT public.scheduling_create_foundation(
  :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
  jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
@@ -764,7 +766,9 @@ RESET ROLE;
 DO $$
 BEGIN
  IF (SELECT count(*) FROM public.scheduling_foundation_create_receipts
-   WHERE business_id=current_setting('test.biz_a')::uuid)<>2 THEN
+   WHERE business_id=current_setting('test.biz_a')::uuid
+     AND request_key IN (current_setting('test.same_key')::uuid,
+                         current_setting('test.distinct_key')::uuid))<>2 THEN
    RAISE EXCEPTION 'IDEMPOTENCY_RECEIPT_COUNT_MISMATCH';
  END IF;
  IF (SELECT count(*) FROM public.scheduling_foundation_audit_events
