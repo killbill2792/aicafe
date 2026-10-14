@@ -310,7 +310,8 @@ type BusinessContextV1 = {
   version: 1;
   scope: {businessId:string; ownerUserId:string; role:"owner";
     locale:"en"|"es"|"ar"; timezone:string; locationIds:readonly string[]};
-  snapshot: {asOf:string; fingerprint:string; sourceRefs:readonly SourceRef[]};
+  snapshot: {asOf:string; fingerprint:string;
+    sourceRefs:readonly CanonicalSourceRevisionRef[]}; // full canonical source selection set
   contextFingerprint: string; // separate from snapshot.fingerprint; server-canonical hash
   contextRevisionRefs: readonly {kind:"preference"|"objective"|"guidance"|"workflow";
     id:string; revision:number; scope:string; state:"present"|"absent"|"revoked"}[];
@@ -363,7 +364,7 @@ type ConfirmedPreference =
 
 **Intentional free-text owner/AI Team instructions are `untrusted_guidance`**, stored/retrieved separately from typed preferences, clearly labeled source and owner, bounded/sanitized and treated as *data* with prompt-injection defenses. They cannot change priority of canonical records, approval gates, permissions, workflow checks or the type registry. Owner confirmation establishes provenance, **not safety of arbitrary prose**. Strictly typed objectives also require reviewed metric/target/unit/period validation and revisions; unknown targets remain unsupported, not operator commands.
 
-**Fingerprint semantics:** `snapshot.fingerprint` hashes only canonical source-data snapshot/revisions used by the query; the separate `contextFingerprint` hashes the **canonical ordered, scope-bound material projection actually used for the proposed effect** (business, location, relevant owner scope, each referenced preference ID+definition version+record revision+validated value hash or explicit absence/revocation, objective revision/value hash, guidance rule ID/version+content hash, workflow ID/revision/decision state, and all applied policy/delegation IDs+revisions/expiry/constraints). Include a complete `contextRevisionRefs` manifest of *material* inputs used so additions/revocations/changed defaults cannot evade stale checks; if complete dependency tracking cannot be proved, conservatively fingerprint the full authorized active projection for that action. Context and policy fingerprints are **server-generated from trusted stores** with deterministic canonical serialization, not LLM text, and never expose sensitive raw values in logs/owner-visible tokens. Persist the exact fingerprint and references with every proposal/approval. At approval and immediately before commit, rebuild and validate both the source snapshot and the context/policy projection; **any material changed, missing, revoked, expired or schema-invalid revision means conflict/repropose/reapprove**, not silent refresh or stale execution. Irrelevant context changes can be excluded only with an auditable dependency manifest verified by the domain. Revoked authority always blocks effect.
+**Fingerprint semantics:** `snapshot.fingerprint` is a deterministic, tenant-scoped hash of the **complete canonical `snapshot.sourceRefs` source-selection/revision manifest** (including selected and proven-absent dependencies), not a substitute for storing that manifest. The exact material `sourceRefs` must also be persisted in each immutable `ActionProposal` and **copied unchanged into every successful typed approval** (§7). The separate `contextFingerprint` hashes the **canonical ordered, scope-bound material projection actually used for the proposed effect** (business, location, relevant owner scope, each referenced preference ID+definition version+record revision+validated value hash or explicit absence/revocation, objective revision/value hash, guidance rule ID/version+content hash, workflow ID/revision/decision state, and all applied policy/delegation IDs+revisions/expiry/constraints). Include a complete `contextRevisionRefs` manifest of *material* inputs used so additions/revocations/changed defaults cannot evade stale checks; if complete dependency tracking cannot be proved, conservatively fingerprint the full authorized active projection for that action. Context and policy fingerprints are **server-generated from trusted stores** with deterministic canonical serialization, not LLM text, and never expose sensitive raw values in logs/owner-visible tokens. Persist **both** the exact source revision manifest and source hash, plus the context fingerprint and material context/policy references, with every proposal/approved artifact. At approval and immediately before commit, rerun the same registered canonical source selectors with the original selection policies/time windows and revalidate **every** original source ID/revision and the full selected set (including additions, deletions, superseded sources, precedence swaps and confirmed absences), as well as the context/policy projection; **any material changed, missing, revoked, expired or schema-invalid revision means conflict/repropose/reapprove**, not silent refresh or stale execution. Irrelevant context changes can be excluded only with an auditable dependency manifest verified by the domain. Revoked authority always blocks effect.
 
 Owner-confirmed personal working preferences, business operating objectives and active approved rules have **distinct provenance and authority**. Confirm/update/revoke owner preferences and business objectives explicitly with actor/version/effective dates; unconfirmed chat or inferred “memory” cannot silently become a fact. Keep an individual's private preferences and threads inaccessible to co-owners, while café-shared objectives require their separately reviewed update/override semantics. Approved Team guidance is *quoted data*, **never** business-effect consent, an authorization rule or precedence over actual evidence. Domain adapters request only the least context needed. Resolve conflicting values through source-purpose rules and targeted confirmation; pin source and context revisions to proposals, revalidate before execution, and reject stale authority. Do not persist broad raw model transcripts, sensitive employee records or third-party tokens in shared context.
 
@@ -396,6 +397,19 @@ type SourceRef = {
   capturedAt: string | null; effectiveFrom: string | null; effectiveTo: string | null;
   status: "actual"|"estimated"|"reported"|"planned"|"unverified";
 };
+// Typed source manifest: precise canonical source selection, not hash-only proof.
+// The selector identifies the authorized canonical reader/precedence rule,
+// business-local period and location used to choose the original evidence.
+type CanonicalSourceSelection = {
+  purpose:string; selectionKey:string; canonicalReaderId:string;
+  precedencePolicyId:string; precedencePolicyRevision:number;
+  locationId:string|null; from:string|null; to:string|null;
+};
+type CanonicalSourceRevisionRef =
+  | {kind:"selected"; businessId:string; selection:CanonicalSourceSelection;
+     source:SourceRef & {sourceRevision:string}}
+  | {kind:"confirmed_absent"; businessId:string; selection:CanonicalSourceSelection;
+     source:null; completeCoverageRevision:string}; // verified absence, not unknown
 type SourceConflict = { code:string; left:SourceRef; right:SourceRef; affectedMetrics:string[] };
 type VerifiedCapabilityResult<T> = {
   capabilityId:string; contractVersion:1; status:ResultStatus;
@@ -411,7 +425,8 @@ type ActionProposal = {
   businessId:string; proposalId:string; proposalRevision:number; // immutable revision
   actionType:string; capabilityId:string; capabilityVersion:number;
   tenantScopedTargetId:string; baseRevision:string;
-  sourceSnapshotHash:string; // canonical BUSINESS DATA revisions only
+  sourceSnapshotHash:string; // hash of entire canonical source revision manifest
+  sourceRefs:readonly CanonicalSourceRevisionRef[]; // immutable complete material set
   businessContextVersion:1; contextFingerprint:string; // typed context projection
   contextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
   policyRevisionRefs:BusinessContextV1["activePolicyRefs"]; // authority != rule text
@@ -428,7 +443,9 @@ type ApprovalTransitionResult = {
   approvalId:string; proposalId:string; proposalRevision:number;
   state:"approved"|"rejected"|"conflict"|"expired"|"unauthorized";
   actorUserId:string; decisionAt:string; approvedEffectHash:string|null;
-  approvedSourceSnapshotHash:string|null; approvedContextFingerprint:string|null;
+  approvedSourceSnapshotHash:string|null;
+  approvedSourceRefs:readonly CanonicalSourceRevisionRef[]|null;
+  approvedContextFingerprint:string|null;
   approvedContextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
   approvedPolicyRevisionRefs:BusinessContextV1["activePolicyRefs"];
   expiresAt:string|null; auditEventId:string;
@@ -441,9 +458,13 @@ type VerifiedActionOutcome = {
 };
 ~~~
 
-**Action-state separation:** current facts (`read`) → transient deterministic comparison (`simulate`, no proposal/effect) → separately requested persisted draft (`propose`) → **typed, auditable, no-effect approval** (`approve` result referencing exact immutable revision/hash) → **one-time approval/proposal consumption and authorized domain operation** (`commit`) → separately verified postcondition. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
+**Action-state separation:** current facts (`read`) → transient deterministic comparison (`simulate`, no proposal/effect) → separately requested persisted draft (`propose`, with `proposedEffectHash` and complete `sourceRefs`) → **typed, auditable, no-effect approval** (`approve` **copies** `proposedEffectHash` into an identical `approvedEffectHash`, and exactly copies `sourceRefs` into `approvedSourceRefs`) → **one-time approval/proposal consumption and authorized domain operation** (`commit`) → separately verified postcondition. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
 
 A proposal is neither permission nor an applied outcome. Owner-visible statuses map distinctly: **Suggested / Needs approval / Working or awaiting verification / Applied / Cannot complete / No data**. Show the exact employee/product/location, local schedule times, modeled costs/units, expected effects, uncertainty and proposed next action before committing. A completed badge requires durable postcondition evidence from the domain source; merely receiving an HTTP 200, an LLM completion, an external send attempt or a worker contact draft is not proof.
+
+**Source-manifest and effect-hash invariants:** The `ActionProposal.sourceRefs` array contains the **complete, immutable and tenant-scoped canonical source revision manifest used to generate its proposed effect**, not merely the refs convenient for UI citation. A `selected` entry must have a stable source ID and non-null canonical revision; `confirmed_absent` is permitted **only with a complete authorized query and a versioned absence/coverage proof**, never for missing/unknown evidence. Each entry fixes the canonical reader, source purpose, source-precedence policy/version, selection identity and bounded location/time window. Normalize/deduplicate/sort the complete manifest deterministically, validate that it is consistent with `sourceSnapshotHash`, and persist both atomically with the immutable proposal; **reject effectful proposals if material sources cannot be versioned or validated**. A proposal that uses multiple domains must include **all** material inputs and selectors from every participating domain, including derived-metric lineage; source selection cannot silently change when a referenced record is deleted, backfilled, superseded or replaced.
+
+A successful `approve` operation **copies the original source array unchanged** into `ApprovalTransitionResult.approvedSourceRefs` and `sourceSnapshotHash` unchanged into `approvedSourceSnapshotHash`. It must also copy `ActionProposal.proposedEffectHash` exactly into `approvedEffectHash`: **`approvedEffectHash === proposedEffectHash`**. Neither approval nor commit may silently recalculate and substitute fresh refs, a different effect, or a new context; any mismatch is `conflict` requiring a new proposal. For rejected/unauthorized/conflict transitions, nullable `approved*` fields stay null; no approved artifact is produced and private source manifests are not disclosed to an unauthorized actor. Server-side approval/audit storage retains the original proposal reference as permitted. Immediately before commit, reload the immutable proposal and approved manifest and reselect canonical sources with the original selector/precedence policies; compare the **full ordered manifest** and its hash to both durable copies, separately recheck `contextFingerprint` and policy/grant revisions, and fail closed if a source changed, disappeared, became newly authoritative, or an originally complete absence ceased to be true. A hash with no stored manifest is **not auditable proof**. Persist only bounded provenance pointers/revision metadata, not sensitive full source payloads or raw model text.
 
 Preserve legacy GroundedSupervisorReply/blocks and evidenceReferenceSchema as the final write gate. Add a **separate, versioned trusted action-card renderer contract**, backed by server-issued opaque IDs and canonical internal routes; avoid relaxing the current numeric/text/link whitelist or allowing model-supplied action URLs. A detailed schedule grid or supplier/price compare can be a new typed block only after the same evidence validation, privacy, localization and backward-compatibility tests.
 
