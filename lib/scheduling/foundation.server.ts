@@ -80,7 +80,7 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
     // separate owner. Database RLS and composite FKs enforce scope again.
     if (command.data.action === "update") {
       const { data, error } = await supabase.from(table)
-        .update(record)
+        .update(record ?? {})
         .eq("business_id", businessId)
         .eq("id", id as string)
         .eq("revision", expectedRevision as number)
