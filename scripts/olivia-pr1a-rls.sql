@@ -26,6 +26,7 @@ INSERT INTO locations(id,business_id,name) VALUES
  (:'loc_a',:'biz_a','A'),(:'loc_b',:'biz_b','B');
 INSERT INTO employees(id,business_id,display_name,active) VALUES
  (:'employee_a',:'biz_a','Alex A',true),(:'employee_b',:'biz_b','Alex B',true);
+SELECT set_config('test.owner_id',:'owner_id',true);
 SELECT set_config('test.biz_a',:'biz_a',true),set_config('test.biz_b',:'biz_b',true),
        set_config('test.employee_a',:'employee_a',true),
        set_config('test.employee_b',:'employee_b',true),
@@ -109,6 +110,119 @@ BEGIN
    RAISE EXCEPTION 'owner confirmation attribution failed';
  END IF;
 END $$;
+
+-- SQL boundary must reject sub-minute times even when callers bypass Zod
+-- through the owner-only CREATE RPC or owner-authorized UPDATE. Every table
+-- with a scheduling wall-time column is protected at the database layer.
+DO $
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'day_of_week',3,'start_local','09:00:20','end_local','12:00',
+    'overnight',false,'effective_from','2026-10-14',
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'RULE_SECONDS_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_exception',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'local_date','2026-10-15','exception_type','unavailable',
+    'start_local','09:00','end_local','10:00:01','overnight',false,
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'EXCEPTION_SECONDS_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'preference_window',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'day_of_week',3,'start_local','09:00:01','end_local','12:00',
+    'overnight',false,'effective_from','2026-10-14',
+    'preference','avoid','strength','hard','source','owner_direct',
+    'confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'PREFERENCE_SECONDS_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'coverage',gen_random_uuid(),
+   jsonb_build_object('location_id',current_setting('test.loc_a'),
+    'day_of_week',3,'effective_from','2026-10-14','start_local','09:00',
+    'end_local','12:00:10','overnight',false,'min_headcount',1,
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'COVERAGE_SECONDS_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+END $;
+-- A valid preference record proves the time-column UPDATE check is exercised.
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'preference_window',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','09:00','end_local','12:00','overnight',false,
+  'effective_from','2026-10-14','preference','avoid','strength','hard',
+  'source','owner_direct','confirmation','owner_confirmed'));
+DO $
+BEGIN
+ BEGIN
+  UPDATE public.staff_availability_rules SET start_local='07:00:01'
+   WHERE business_id=current_setting('test.biz_a')::uuid AND start_local='07:00';
+  RAISE EXCEPTION 'RULE_SECONDS_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.staff_availability_exceptions SET start_local='09:00',
+   end_local='10:00:01',overnight=false
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'EXCEPTION_SECONDS_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.staff_preference_windows SET end_local='12:00:01'
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'PREFERENCE_SECONDS_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.scheduling_coverage_requirements SET start_local='07:00:10'
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'COVERAGE_SECONDS_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+END $;
+
+-- Provenance: a co-owner metadata-only edit must retain BOTH original
+-- confirmation actor and time; a substantive availability edit must refresh
+-- BOTH together. Neither should invent a confirmation by the wrong owner.
+SELECT set_config('test.seed_confirmed_at',
+ (SELECT confirmed_at::text FROM public.staff_availability_rules
+  WHERE business_id=:'biz_a' AND start_local='16:00'),true);
+SELECT set_config('request.jwt.claim.sub',:'co_owner_id',true);
+UPDATE public.staff_availability_rules SET source=source
+ WHERE business_id=:'biz_a' AND start_local='16:00';
+DO $
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=current_setting('test.biz_a')::uuid
+    AND start_local='16:00'
+    AND confirmed_by=current_setting('test.owner_id')::uuid
+    AND confirmed_at=current_setting('test.seed_confirmed_at')::timestamptz)
+ THEN RAISE EXCEPTION 'METADATA_EDIT_REATTRIBUTED_CONFIRMATION'; END IF;
+END $;
+UPDATE public.staff_availability_rules SET start_local='16:30'
+ WHERE business_id=:'biz_a' AND start_local='16:00';
+DO $
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=current_setting('test.biz_a')::uuid
+    AND start_local='16:30' AND confirmed_by=auth.uid()
+    AND confirmed_at>current_setting('test.seed_confirmed_at')::timestamptz)
+ THEN RAISE EXCEPTION 'COOWNER_FACT_EDIT_MIXED_CONFIRMATION_ACTOR_AND_TIME'; END IF;
+END $;
+SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 
 -- Composite FK rejects employee and location IDs from another business, even
 -- when an otherwise privileged owner supplies them.
