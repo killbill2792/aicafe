@@ -350,11 +350,13 @@ BEGIN
     FOR EACH ROW EXECUTE FUNCTION public.scheduling_log_foundation()',t);
   EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
   EXECUTE format('CREATE POLICY "owner reads" ON public.%I FOR SELECT USING (public.scheduling_is_owner(business_id))',t);
-  EXECUTE format('CREATE POLICY "owner inserts" ON public.%I FOR INSERT WITH CHECK (public.scheduling_is_owner(business_id))',t);
   EXECUTE format('CREATE POLICY "owner updates" ON public.%I FOR UPDATE USING (public.scheduling_is_owner(business_id)) WITH CHECK (public.scheduling_is_owner(business_id))',t);
   EXECUTE format('CREATE POLICY "owner deletes" ON public.%I FOR DELETE USING (public.scheduling_is_owner(business_id))',t);
   EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC, anon, authenticated',t);
-  EXECUTE format('GRANT SELECT,INSERT,UPDATE,DELETE ON public.%I TO authenticated',t);
+  -- No INSERT grant OR INSERT policy for API roles: even an authenticated
+  -- owner must create through scheduling_create_foundation with a receipt.
+  -- SELECT/UPDATE/DELETE retain their owner-only RLS policies.
+  EXECUTE format('GRANT SELECT,UPDATE,DELETE ON public.%I TO authenticated',t);
  END LOOP;
 END $$;
 -- Only owner may see the private append-only audit; no direct user writes.
@@ -401,6 +403,9 @@ CREATE TABLE public.scheduling_foundation_create_receipts (
 ALTER TABLE public.scheduling_foundation_create_receipts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.scheduling_foundation_create_receipts FROM PUBLIC,anon,authenticated;
 
+-- Function ownership supplies INSERT authority inside this SECURITY DEFINER
+-- RPC only; direct authenticated/PostgREST INSERTs have neither table INSERT
+-- grant nor an owner INSERT policy. Do not regrant INSERT in later migrations.
 -- Single transaction/unique-claim protocol. Concurrent same-key requests
 -- serialize on the unique receipt, then return the immutable original result.
 -- Explicit table/key allowlists prevent forged IDs, actor attribution, RLS
