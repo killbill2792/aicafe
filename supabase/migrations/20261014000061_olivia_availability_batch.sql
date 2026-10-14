@@ -37,9 +37,12 @@ BEGIN
    PERFORM 1 FROM public.employees WHERE business_id=v_business
      AND id=coalesce(v_old,v_new) FOR UPDATE;
  END IF;
- IF NOT FOUND THEN
+ IF NOT FOUND AND TG_OP<>'DELETE' THEN
    RAISE EXCEPTION 'unknown availability employee' USING ERRCODE='23503';
  END IF;
+ -- ON DELETE CASCADE can run after the parent employee has been removed
+ -- inside its existing transaction. That legitimate cleanup must survive;
+ -- direct RLS DELETE remains scoped and audited as before.
  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END $$;
 CREATE TRIGGER scheduling_lock_employee
