@@ -2470,3 +2470,20 @@ Verified repair outcomes:
 - [x] All **534 Vitest tests (77 files)**, TypeScript, changed-file ESLint, Next.js production build, and diff check pass on branch CI run `38072892356`. Tests include five server readiness scenarios. No new npm packages or SQL migrations.
 - [ ] Vercel environment values are not readable from the GitHub-only connection: actual Production and Preview `SUPABASE_SERVICE_ROLE_KEY` and `SUPERVISOR_CHAT_ENABLED` values must be confirmed in Vercel Settings and redeployed if changed.
 - [ ] Preview/prod sign-in test still required: owner opens Home, taps a suggestion, observes persisted Supervisor reply, tries another thread, and checks non-owner denial.
+
+## Seiyun Cafe Toast connection — production prep A/B/C (2026-10-14, BLOCKED on credentials)
+
+Owner approved: A) apply migrations 40–59, B) create location "Seiyun Cafe" for business 0200c26e-b971-4236-ac6b-56dd191ec59b, C) set Vercel Production `TOAST_SETUP_ENABLED=true` + one redeploy.
+- [ ] A/B/C NOT executed: the cloud session had no Supabase DB URL/service key and no Vercel token. Nothing in production was changed or verified.
+- [x] Pre-flight review of migrations 40–59: they apply in filename order. Every `DELETE` sits inside a function body scoped to one business/order. The only migration-time `DROP`s are `DROP CONSTRAINT IF EXISTS` on Toast staging tables (046, 051). No migration-time data deletion.
+- B, duplicate-safe (run in one transaction):
+  `insert into locations (business_id,name) select '0200c26e-b971-4236-ac6b-56dd191ec59b','Seiyun Cafe' where not exists (select 1 from locations where business_id='0200c26e-b971-4236-ac6b-56dd191ec59b');`
+- C: `/more/toast` needs `TOAST_SETUP_ENABLED=true` **and** a non-empty `TOAST_ALLOWED_API_HOSTS`. Owner role, a non-demo business and at least one location are also required. Save (`POST /api/pos/toast`) and Connect-and-verify (`/test`) are gated only by `TOAST_SETUP_ENABLED`.
+
+Toast → Supervisor trace (code as of bd730e0):
+- Connect/verify works once A/B/C are done: credentials are stored encrypted (`toast_api_credentials`), restaurants are mapped (`toast_location_mappings`), and verification makes a read-only Toast call.
+- Retrieval: polling (`TOAST_POLLING_ENABLED`, `TOAST_JOB_SECRET`) and the pilot day import (`TOAST_PILOT_IMPORT_ENABLED`) write only to `toast_*` staging tables. All of these are off.
+- Promotion into canonical `orders`/`daily_rollups` requires `TOAST_CANONICAL_PROMOTION_ENABLED`. Labor promotion requires `TOAST_LABOR_CANONICAL_ENABLED`. Both are off.
+- Supervisor reads only canonical tables (`daily_rollups` with `sales_data_status='actual'`, `menu_items`, `timecards`, `recurring_costs`, `expenses`) and `pos_connections`. It never reads `toast_*` tables. Toast credentials do not create a `pos_connections` row, so item-sales coverage stays "not proven".
+- Result: with only setup enabled, Supervisor answers with no Toast numbers and honestly reports missing sales coverage. It will not invent figures.
+- [ ] Smallest safe path to sourced answers: (1) run the read-only pilot import for a few verified days; (2) have the owner reconcile the staged totals against the Toast end-of-day report; (3) EITHER approve promotion for the reconciled days only, OR add a read-only Supervisor reader over reconciled staging that is labeled "Toast, staged, not yet in profit math" (new code + tests; no change to calc).
