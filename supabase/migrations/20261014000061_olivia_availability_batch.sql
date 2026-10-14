@@ -76,13 +76,13 @@ CREATE FUNCTION public.scheduling_save_availability_batch(
  p_scope jsonb, p_expected jsonb, p_desired jsonb, p_request_key uuid
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE
- v_table text; v_where text; v_keys text[];
+ v_table text; v_keys text[];
  v_affected int; v_receipt public.scheduling_availability_batch_receipts%ROWTYPE;
  v_actual jsonb; v_expected jsonb; v_result jsonb:='[]'::jsonb;
- v_item jsonb; v_record jsonb; v_old jsonb; v_new jsonb;
+ v_item jsonb; v_record jsonb; v_old jsonb;
  v_id uuid; v_rev integer; v_response jsonb;
- v_count int; v_column_names text; v_set_clause text;
- v_existing_id uuid;
+ v_set_clause text;
+
 BEGIN
  IF p_business_id IS NULL OR auth.uid() IS NULL
    OR NOT public.scheduling_is_owner(p_business_id)
@@ -103,15 +103,13 @@ BEGIN
              WHERE k.x NOT IN('effective_from','effective_to')) THEN
      RAISE EXCEPTION 'invalid recurring scope' USING ERRCODE='22023';
    END IF;
-   v_where:='effective_from=$4::date AND effective_to IS NOT DISTINCT FROM $5::date';
    v_keys:=ARRAY['employee_id','location_id','day_of_week','start_local','end_local',
      'overnight','effective_from','effective_to','source','confirmation'];
  ELSEIF p_kind='availability_exception' THEN
    v_table:='staff_availability_exceptions';
-   IF jsonb_object_length(p_scope)<>1 OR NOT (p_scope ? 'local_date') THEN
+   IF (SELECT count(*) FROM jsonb_object_keys(p_scope))<>1 OR NOT (p_scope ? 'local_date') THEN
      RAISE EXCEPTION 'invalid exception scope' USING ERRCODE='22023';
    END IF;
-   v_where:='local_date=$4::date';
    v_keys:=ARRAY['employee_id','location_id','local_date','exception_type',
      'start_local','end_local','overnight','max_minutes','source','confirmation'];
  ELSE
