@@ -114,11 +114,31 @@ describe("Olivia PR 1A: pure effective availability", () => {
   });
 
   it("never treats unknown or salary-pending wages as eligible zero", () => {
-    expect(compensationProvenance(null)).toBe("unknown");
-    expect(compensationProvenance({ cash_cost_state: "unknown" })).toBe("unknown");
-    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" }))
-      .toBe("salary_conversion_pending");
-    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }))
-      .toBe("known_eligible_zero");
+    const noWage = { wage_amount_cents: null, default_hourly_wage_cents: null };
+    expect(compensationProvenance(null, noWage)).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "unknown" }, noWage)).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" }, {
+      wage_amount_cents: 200000, default_hourly_wage_cents: 0,
+    })).toBe("salary_conversion_pending");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, {
+      wage_amount_cents: 0, default_hourly_wage_cents: 0,
+    })).toBe("known_eligible_zero");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, null)).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, noWage)).toBe("unknown");
+  });
+
+  it("fails closed after a zero-cost attestation if the Staff wage-update path records a positive wage", () => {
+    const attestedZero = { cash_cost_state: "known_eligible_zero" } as const;
+    const beforeStaffEdit = { wage_amount_cents: 0, default_hourly_wage_cents: 0 };
+    const afterStaffHourlyEdit = { wage_amount_cents: 1800, default_hourly_wage_cents: 1800 };
+    const afterStaffSalaryEdit = { wage_amount_cents: 200000, default_hourly_wage_cents: 0 };
+    expect(compensationProvenance(attestedZero, beforeStaffEdit)).toBe("known_eligible_zero");
+    expect(compensationProvenance(attestedZero, afterStaffHourlyEdit)).toBe("unknown");
+    expect(compensationProvenance(attestedZero, afterStaffSalaryEdit)).toBe("unknown");
+    // Checking the cached hourly amount is also required if the wage amount
+    // is missing in a legacy employee row.
+    expect(compensationProvenance(attestedZero, {
+      wage_amount_cents: null, default_hourly_wage_cents: 1800,
+    })).toBe("unknown");
   });
 });
