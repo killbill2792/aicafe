@@ -3,7 +3,9 @@ import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
-import { compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
+import {
+  compensationProvenance, normalizeSchedulingWallTime, type CompensationProvenance,
+} from "@/lib/calc/scheduling/availability";
 import {
   foundationCommandSchema, foundationTables, parseFoundationRecord,
   type FoundationKind,
@@ -70,11 +72,22 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
 
   try {
     if (command.data.action === "create") {
-      const { data, error } = await supabase.from(table)
-        .insert({ ...record, business_id: businessId })
-        .select("id,revision").single();
+      // The database owns the atomic durable request receipt and insert.
+      // Plain INSERT would duplicate records/audit on retries or timeouts.
+      const { data, error } = await supabase.rpc("scheduling_create_foundation", {
+        p_business_id: businessId,
+        p_kind: kind,
+        p_request_key: command.data.requestKey,
+        p_record: record,
+      });
       if (error || !data) return { ok: false, error: "storage_unavailable" };
-      return { ok: true, id: data.id as string, revision: data.revision as number };
+      const result = data as { id?: unknown; revision?: unknown; conflict?: boolean };
+      if (result.conflict === true) return { ok: false, error: "conflict_or_missing" };
+      if (typeof result.id !== "string" || !Number.isSafeInteger(result.revision) ||
+          (result.revision as number) < 1) {
+        return { ok: false, error: "storage_unavailable" };
+      }
+      return { ok: true, id: result.id, revision: result.revision as number };
     }
     const { id, expectedRevision } = command.data;
     // Revision CAS prevents lost edits, including a stale delete racing a
@@ -105,6 +118,55 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
   }
 }
 
+const READ_PAGE_SIZE = 500;
+// Never silently return a partial business dataset. If this explicit safety
+// budget is exceeded, fail the WHOLE read rather than treating omitted
+// availability, qualifications or constraints as nonexistent.
+const MAX_ROWS_PER_TABLE = 100_000;
+
+/** UUID keyset paging avoids offset shifts when prior rows are removed. Every
+ * page has stable primary-key ordering and is independently tenant filtered.
+ * A multi-request read is not a transactional snapshot; later planner phases
+ * must still bind versions/snapshots when publishing.
+ */
+async function readAllTenantRows(
+  supabase: Client, table: string, businessId: string,
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let lastId: string | null = null;
+  for (;;) {
+    const page = supabase.from(table).select("*")
+      .eq("business_id", businessId)
+      .order("id", { ascending: true })
+      .limit(READ_PAGE_SIZE);
+    const { data, error } = await (lastId ? page.gt("id", lastId) : page);
+    if (error || !data || data.length > READ_PAGE_SIZE) throw new Error("incomplete foundation read");
+    for (const row of data) {
+      if (typeof row.id !== "string" || (lastId !== null && row.id <= lastId)) {
+        throw new Error("unstable scheduling pagination");
+      }
+      lastId = row.id;
+      rows.push(row);
+      if (rows.length > MAX_ROWS_PER_TABLE) throw new Error("foundation read capacity exceeded");
+    }
+    if (data.length < READ_PAGE_SIZE) return rows;
+  }
+}
+
+const timedKinds: FoundationKind[] = [
+  "availability_rule", "availability_exception", "preference_window", "coverage",
+];
+function normalizeReadTimes(kind: FoundationKind, rows: Record<string, unknown>[]) {
+  if (!timedKinds.includes(kind)) return rows;
+  return rows.map((row) => ({
+    ...row,
+    start_local: typeof row.start_local === "string"
+      ? normalizeSchedulingWallTime(row.start_local) : row.start_local,
+    end_local: typeof row.end_local === "string"
+      ? normalizeSchedulingWallTime(row.end_local) : row.end_local,
+  }));
+}
+
 export type FoundationReadResult =
   | { ok: true; records: Record<FoundationKind, unknown[]>; audit: unknown[] }
   | { ok: false; error: "disabled" | "unauthorized" | "storage_unavailable" };
@@ -119,20 +181,20 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
   const kinds = Object.keys(foundationTables) as FoundationKind[];
   try {
     const results = await Promise.all(kinds.map((kind) =>
-      context.supabase.from(foundationTables[kind]).select("*").eq("business_id", context.businessId),
+      readAllTenantRows(context.supabase, foundationTables[kind], context.businessId),
     ));
-    const { data: audit, error: auditError } = await context.supabase
-      .from("scheduling_foundation_audit_events")
-      .select("table_name,record_id,operation,actor_user_id,recorded_at")
-      .eq("business_id", context.businessId)
-      .order("recorded_at", { ascending: false })
-      .limit(200);
-    if (auditError || results.some((result) => result.error)) {
-      return { ok: false, error: "storage_unavailable" };
-    }
+    // Audits are also complete; a 200-row latest-only limit must not silently
+    // imply it is the entire revision history. Stable id keyset paging first.
+    const audit = await readAllTenantRows(
+      context.supabase, "scheduling_foundation_audit_events", context.businessId,
+    );
+    audit.sort((a, b) =>
+      String(b.recorded_at).localeCompare(String(a.recorded_at)) ||
+      String(b.id).localeCompare(String(a.id)),
+    );
     const records = {} as Record<FoundationKind, unknown[]>;
     for (let i = 0; i < kinds.length; i += 1) {
-      records[kinds[i]] = results[i].data ?? [];
+      records[kinds[i]] = normalizeReadTimes(kinds[i], results[i]);
     }
 
     // Every compensation label must agree with the current canonical wage
@@ -149,13 +211,30 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
     const compensation = records.compensation as CompensationRow[];
     if (compensation.length > 0) {
       const employeeIds = [...new Set(compensation.map((row) => row.employee_id))];
-      const { data: employees, error: wageError } = await context.supabase
-        .from("employees")
-        .select("id,wage_period,wage_amount_cents,default_hourly_wage_cents")
-        .eq("business_id", context.businessId)
-        .in("id", employeeIds);
-      if (wageError) return { ok: false, error: "storage_unavailable" };
-      const wages = new Map((employees ?? []).map((row) => [row.id, row]));
+      // Bound each IN query by 100 unique employee IDs, safely below the
+      // PostgREST page limit; absent wage rows remain UNKNOWN.
+      const wages = new Map<string, {
+        wage_period: string | null;
+        wage_amount_cents: number | null;
+        default_hourly_wage_cents: number | null;
+      }>();
+      for (let i = 0; i < employeeIds.length; i += 100) {
+        const chunk = employeeIds.slice(i, i + 100);
+        const { data: employees, error: wageError } = await context.supabase
+          .from("employees")
+          .select("id,wage_period,wage_amount_cents,default_hourly_wage_cents")
+          .eq("business_id", context.businessId)
+          .in("id", chunk);
+        if (wageError || !employees || employees.length > chunk.length) {
+          return { ok: false, error: "storage_unavailable" };
+        }
+        for (const employee of employees) {
+          if (!chunk.includes(employee.id) || wages.has(employee.id)) {
+            return { ok: false, error: "storage_unavailable" };
+          }
+          wages.set(employee.id, employee);
+        }
+      }
       records.compensation = compensation.map((row) => {
         const safeState = compensationProvenance(row, wages.get(row.employee_id) ?? null);
         return safeState === row.cash_cost_state ? row : {
@@ -168,7 +247,7 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
       });
     }
 
-    return { ok: true, records, audit: audit ?? [] };
+    return { ok: true, records, audit };
   } catch {
     return { ok: false, error: "storage_unavailable" };
   }
