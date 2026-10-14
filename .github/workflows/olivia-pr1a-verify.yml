@@ -1,0 +1,53 @@
+name: Olivia PR 1A Scheduling Foundation Verification
+on:
+  pull_request:
+    paths:
+      - "docs/01-product.md"
+      - "lib/scheduling/foundation*"
+      - "lib/calc/scheduling/**"
+      - "lib/actions/schedulingFoundation.ts"
+      - "supabase/migrations/20261014000060_olivia_scheduling_foundation.sql"
+      - "scripts/olivia-pr1a-rls.sql"
+      - ".github/workflows/olivia-pr1a-verify.yml"
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Vitest suite
+        run: npm run test
+      - name: TypeScript strict
+        run: npx tsc --noEmit
+      - name: ESLint
+        run: npm run lint
+      - name: Build
+        run: npm run build
+      - name: Diff whitespace
+        run: git diff --check origin/main...HEAD
+  disposable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Start disposable local Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Apply ALL migrations to disposable database
+        run: supabase db reset --local --yes
+      - name: Verify real RLS, composite FKs, audit and zero-cost constraints
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/olivia-pr1a-rls.sql
+      - name: Stop local database
+        if: always()
+        run: supabase stop --no-backup
