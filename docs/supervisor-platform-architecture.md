@@ -400,8 +400,15 @@ type SourceRef = {
 // Typed source manifest: precise canonical source selection, not hash-only proof.
 // The selector identifies the authorized canonical reader/precedence rule,
 // business-local period and location used to choose the original evidence.
+type NormalizedSelectorArgs = Readonly<Record<
+  string, string|number|boolean|null|readonly string[]|readonly number[]
+>>; // only fields allowed by this selector's strict, registered Zod schema
 type CanonicalSourceSelection = {
   purpose:string; selectionKey:string; canonicalReaderId:string;
+  readerContractVersion:number; // version of canonical reader's selection semantics
+  selectorContractId:string; selectorContractVersion:number;
+  normalizedSelectorArgs:NormalizedSelectorArgs; // validated, bounded, deterministic
+  selectorArgsHash:string; // canonical serialization hash of normalizedSelectorArgs
   precedencePolicyId:string; precedencePolicyRevision:number;
   locationId:string|null; from:string|null; to:string|null;
 };
@@ -439,17 +446,31 @@ type ApprovalTransitionInput = {
   proposalId:string; proposalRevision:number; decision:"approve"|"reject";
   displayedEffectHash:string; // must match trusted persisted proposal preview
 };
-type ApprovalTransitionResult = {
+type ApprovedTransition = {
+  state:"approved";
   approvalId:string; proposalId:string; proposalRevision:number;
-  state:"approved"|"rejected"|"conflict"|"expired"|"unauthorized";
-  actorUserId:string; decisionAt:string; approvedEffectHash:string|null;
-  approvedSourceSnapshotHash:string|null;
-  approvedSourceRefs:readonly CanonicalSourceRevisionRef[]|null;
-  approvedContextFingerprint:string|null;
+  actorUserId:string; decisionAt:string; approvedEffectHash:string;
+  approvedSourceSnapshotHash:string;
+  approvedSourceRefs:readonly CanonicalSourceRevisionRef[];
+  approvedContextFingerprint:string;
   approvedContextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
   approvedPolicyRevisionRefs:BusinessContextV1["activePolicyRefs"];
-  expiresAt:string|null; auditEventId:string;
+  expiresAt:string; auditEventId:string;
 };
+type UnsuccessfulApprovalTransition = {
+  state:"rejected"|"conflict"|"expired"|"unauthorized";
+  requestId:string; reasonCode:string; decidedAt:string;
+  // These fields MUST NOT exist, including as null or empty arrays.
+  approvalId?:never; proposalId?:never; proposalRevision?:never;
+  approvedEffectHash?:never; approvedSourceSnapshotHash?:never;
+  approvedSourceRefs?:never; approvedContextFingerprint?:never;
+  approvedContextRevisionRefs?:never; approvedPolicyRevisionRefs?:never;
+  actorUserId?:never; expiresAt?:never; auditEventId?:never;
+};
+type ApprovalTransitionResult =
+  | ApprovedTransition
+  | UnsuccessfulApprovalTransition; // strict Zod discriminatedUnion("state", ...)
+
 type VerifiedActionOutcome = {
   actionId:string; workflowId:string; actionType:string;
   status:"applied"|"rejected"|"conflict"|"failed"|"pending_reconciliation";
@@ -462,9 +483,9 @@ type VerifiedActionOutcome = {
 
 A proposal is neither permission nor an applied outcome. Owner-visible statuses map distinctly: **Suggested / Needs approval / Working or awaiting verification / Applied / Cannot complete / No data**. Show the exact employee/product/location, local schedule times, modeled costs/units, expected effects, uncertainty and proposed next action before committing. A completed badge requires durable postcondition evidence from the domain source; merely receiving an HTTP 200, an LLM completion, an external send attempt or a worker contact draft is not proof.
 
-**Source-manifest and effect-hash invariants:** The `ActionProposal.sourceRefs` array contains the **complete, immutable and tenant-scoped canonical source revision manifest used to generate its proposed effect**, not merely the refs convenient for UI citation. A `selected` entry must have a stable source ID and non-null canonical revision; `confirmed_absent` is permitted **only with a complete authorized query and a versioned absence/coverage proof**, never for missing/unknown evidence. Each entry fixes the canonical reader, source purpose, source-precedence policy/version, selection identity and bounded location/time window. Normalize/deduplicate/sort the complete manifest deterministically, validate that it is consistent with `sourceSnapshotHash`, and persist both atomically with the immutable proposal; **reject effectful proposals if material sources cannot be versioned or validated**. A proposal that uses multiple domains must include **all** material inputs and selectors from every participating domain, including derived-metric lineage; source selection cannot silently change when a referenced record is deleted, backfilled, superseded or replaced.
+**Source-manifest and effect-hash invariants:** The `ActionProposal.sourceRefs` array contains the **complete, immutable and tenant-scoped canonical source revision manifest used to generate its proposed effect**, not merely the refs convenient for UI citation. A `selected` entry must have a stable source ID and non-null canonical revision; `confirmed_absent` is permitted **only with a complete authorized query and a versioned absence/coverage proof**, never for missing/unknown evidence. Each entry fixes the canonical reader **ID and semantic contract version**, registered selector **ID and semantic contract version**, complete **normalized, schema-validated selector arguments and their canonical hash**, source purpose, source-precedence policy/version, selection identity and bounded location/time window. A `selectionKey` alone or a precedence version alone is **not** a source-selection contract; the source manifest must preserve replayable filter meaning even when an old record has disappeared. Normalize/deduplicate/sort the complete manifest deterministically, validate that it is consistent with `sourceSnapshotHash`, and persist both atomically with the immutable proposal; **reject effectful proposals if material sources or selection semantics cannot be versioned, persisted or validated**. A proposal that uses multiple domains must include **all** material inputs and selectors from every participating domain, including derived-metric lineage; source selection cannot silently change when a referenced record is deleted, backfilled, superseded or replaced.
 
-A successful `approve` operation **copies the original source array unchanged** into `ApprovalTransitionResult.approvedSourceRefs` and `sourceSnapshotHash` unchanged into `approvedSourceSnapshotHash`. It must also copy `ActionProposal.proposedEffectHash` exactly into `approvedEffectHash`: **`approvedEffectHash === proposedEffectHash`**. Neither approval nor commit may silently recalculate and substitute fresh refs, a different effect, or a new context; any mismatch is `conflict` requiring a new proposal. For rejected/unauthorized/conflict transitions, nullable `approved*` fields stay null; no approved artifact is produced and private source manifests are not disclosed to an unauthorized actor. Server-side approval/audit storage retains the original proposal reference as permitted. Immediately before commit, reload the immutable proposal and approved manifest and reselect canonical sources with the original selector/precedence policies; compare the **full ordered manifest** and its hash to both durable copies, separately recheck `contextFingerprint` and policy/grant revisions, and fail closed if a source changed, disappeared, became newly authoritative, or an originally complete absence ceased to be true. A hash with no stored manifest is **not auditable proof**. Persist only bounded provenance pointers/revision metadata, not sensitive full source payloads or raw model text.
+Only the **`ApprovedTransition` success variant** copies the original source array unchanged into `approvedSourceRefs` and `sourceSnapshotHash` unchanged into `approvedSourceSnapshotHash`. It must also copy `ActionProposal.proposedEffectHash` exactly into `approvedEffectHash`: **`approvedEffectHash === proposedEffectHash`**. Neither approval nor commit may silently recalculate and substitute fresh refs, a different effect, or a new context; any mismatch is `conflict` requiring a new proposal. **The `UnsuccessfulApprovalTransition` branch never contains `approved*` bindings (not even null/empty values), approval IDs, proposal IDs/revisions, actor IDs or internal audit details.** Return only a request correlation ID and safe, non-enumerating error reason; store sensitive rejection/audit details solely in the authorized server ledger. The actual runtime Zod discriminated union must use **strict object schemas** (with unknown keys rejected), and server serializers must whitelist branch fields, so an unauthorized caller cannot discover private source, context or policy revision identifiers. An unsuccessful transition never creates an approved artifact. Server-side approval/audit storage retains the original proposal reference as permitted. Immediately before commit, reload the immutable proposal and approved manifest and reselect canonical sources with the original selector/precedence policies; compare the **full ordered manifest** and its hash to both durable copies, separately recheck `contextFingerprint` and policy/grant revisions, and fail closed if a source changed, disappeared, became newly authoritative, or an originally complete absence ceased to be true. A hash with no stored manifest is **not auditable proof**. Persist only bounded provenance pointers/revision metadata, not sensitive full source payloads or raw model text.
 
 Preserve legacy GroundedSupervisorReply/blocks and evidenceReferenceSchema as the final write gate. Add a **separate, versioned trusted action-card renderer contract**, backed by server-issued opaque IDs and canonical internal routes; avoid relaxing the current numeric/text/link whitelist or allowing model-supplied action URLs. A detailed schedule grid or supplier/price compare can be a new typed block only after the same evidence validation, privacy, localization and backward-compatibility tests.
 
