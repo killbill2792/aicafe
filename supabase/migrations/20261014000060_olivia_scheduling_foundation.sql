@@ -243,7 +243,7 @@ FOR EACH ROW EXECUTE FUNCTION public.scheduling_check_compensation();
 -- The compensation stamp/audit triggers below record the invalidation with a
 -- fresh revision, remove eligibility evidence, and keep the wage update atomic.
 CREATE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
  IF coalesce(NEW.wage_amount_cents,0)>0
     OR coalesce(NEW.default_hourly_wage_cents,0)>0 THEN
