@@ -29,26 +29,39 @@ SELECT set_config('test.biz_a',:'biz_a',true),set_config('test.biz_b',:'biz_b',t
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 
--- Owner can record multiple separately attributed windows without worker IDs.
-INSERT INTO staff_availability_rules
- (business_id,employee_id,day_of_week,start_local,end_local,effective_from,source,confirmation)
-VALUES
- (:'biz_a',:'employee_a',3,'07:00','11:00','2026-10-14','worker_reported_by_owner','owner_confirmed'),
- (:'biz_a',:'employee_a',3,'16:00','20:00','2026-10-14','worker_reported_by_owner','owner_confirmed');
-INSERT INTO staff_availability_exceptions
- (business_id,employee_id,local_date,exception_type,source,confirmation)
-VALUES (:'biz_a',:'employee_a','2026-10-15','unavailable','owner_direct','owner_confirmed');
-INSERT INTO staff_scheduling_preferences
- (business_id,employee_id,effective_from,min_weekly_minutes,desired_weekly_minutes,max_weekly_minutes,source,confirmation)
-VALUES (:'biz_a',:'employee_a','2026-10-14',120,240,480,'owner_direct','owner_confirmed');
-INSERT INTO scheduling_qualification_types(business_id,code,display_name)
-VALUES (:'biz_a','opener','Opening qualified');
-INSERT INTO staff_qualifications
- (business_id,employee_id,qualification_code,valid_from,source,confirmation)
-VALUES (:'biz_a',:'employee_a','opener','2026-10-14','owner_direct','owner_confirmed');
-INSERT INTO scheduling_coverage_requirements
- (business_id,location_id,day_of_week,effective_from,start_local,end_local,min_headcount,qualification_code,source,confirmation)
-VALUES (:'biz_a',:'loc_a',3,'2026-10-14','07:00','11:00',1,'opener','owner_direct','owner_confirmed');
+-- Owner creates through RPC only; distinct split windows retain their identity.
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+ 'start_local','07:00','end_local','11:00','overnight',false,
+ 'effective_from','2026-10-14','source','worker_reported_by_owner','confirmation','owner_confirmed'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+ 'start_local','16:00','end_local','20:00','overnight',false,
+ 'effective_from','2026-10-14','source','worker_reported_by_owner','confirmation','owner_confirmed'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_exception',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','local_date','2026-10-15',
+ 'exception_type','unavailable','source','owner_direct','confirmation','owner_confirmed'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'preferences',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','effective_from','2026-10-14',
+ 'min_weekly_minutes',120,'desired_weekly_minutes',240,'max_weekly_minutes',480,
+ 'source','owner_direct','confirmation','owner_confirmed'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'qualification_type',gen_random_uuid(),
+ jsonb_build_object('code','opener','display_name','Opening qualified'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'qualification',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_a','qualification_code','opener',
+ 'valid_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed'));
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'coverage',gen_random_uuid(),
+ jsonb_build_object('location_id',:'loc_a','day_of_week',3,'effective_from','2026-10-14',
+ 'start_local','07:00','end_local','11:00','overnight',false,
+ 'min_headcount',1,'qualification_code','opener','source','owner_direct',
+ 'confirmation','owner_confirmed'));
 DO $$
 BEGIN
  IF (SELECT count(*) FROM staff_availability_rules
@@ -70,18 +83,21 @@ END $$;
 DO $$
 BEGIN
  BEGIN
-  INSERT INTO staff_availability_rules
-    (business_id,employee_id,day_of_week,start_local,end_local,effective_from,source)
-  VALUES (current_setting('test.biz_a')::uuid,current_setting('test.employee_b')::uuid,
-    3,'09:00','17:00','2026-10-14','owner_direct');
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.employee_b'),
+   'day_of_week',3,'start_local','09:00','end_local','17:00','overnight',false,
+   'effective_from','2026-10-14','source','owner_direct','confirmation','unconfirmed'));
   RAISE EXCEPTION 'CROSS_TENANT_EMPLOYEE_ACCEPTED';
  EXCEPTION WHEN foreign_key_violation THEN NULL;
  END;
  BEGIN
-  INSERT INTO scheduling_coverage_requirements
-    (business_id,location_id,day_of_week,effective_from,start_local,end_local,min_headcount,source)
-  VALUES (current_setting('test.biz_a')::uuid,current_setting('test.loc_b')::uuid,
-    3,'2026-10-14','09:00','17:00',1,'owner_direct');
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'coverage',gen_random_uuid(),
+   jsonb_build_object('location_id',current_setting('test.loc_b'),
+   'day_of_week',3,'effective_from','2026-10-14','start_local','09:00',
+   'end_local','17:00','overnight',false,'min_headcount',1,
+   'source','owner_direct','confirmation','unconfirmed'));
   RAISE EXCEPTION 'CROSS_TENANT_LOCATION_ACCEPTED';
  EXCEPTION WHEN foreign_key_violation THEN NULL;
  END;
@@ -136,10 +152,11 @@ SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 DO $$
 BEGIN
  BEGIN
-  INSERT INTO staff_scheduling_compensation
-    (business_id,employee_id,cash_cost_state,eligibility_reference)
-  VALUES (current_setting('test.biz_a')::uuid,current_setting('test.employee_a')::uuid,
-   'known_eligible_zero','Owner reviewed classification and legal basis');
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'compensation',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.employee_a'),
+   'cash_cost_state','known_eligible_zero','eligibility_reference',
+   'Owner reviewed classification and legal basis'));
   RAISE EXCEPTION 'PAID_EMPLOYEE_MARKED_FREE';
  EXCEPTION WHEN raise_exception THEN
    IF SQLERRM='PAID_EMPLOYEE_MARKED_FREE' THEN RAISE; END IF;
@@ -157,10 +174,10 @@ BEGIN
 END $$;
 -- An owner can attest true zero cost ONLY with recorded evidence; that
 -- record remains explicitly distinct from a future converted salary.
-INSERT INTO staff_scheduling_compensation
- (business_id,employee_id,cash_cost_state,eligibility_reference)
-VALUES (:'biz_b',:'employee_b','known_eligible_zero',
- 'Owner reviewed and recorded statutory eligibility evidence');
+SELECT public.scheduling_create_foundation(
+ :'biz_b'::uuid,'compensation',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_b','cash_cost_state','known_eligible_zero',
+ 'eligibility_reference','Owner reviewed and recorded statutory eligibility evidence'));
 DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
@@ -224,10 +241,10 @@ VALUES (:'biz_b',:'employee_c',
  '2026-09-20T09:00:00Z','2026-09-20T12:00:00Z',1100);
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
-INSERT INTO staff_scheduling_compensation
- (business_id,employee_id,cash_cost_state,eligibility_reference)
-VALUES (:'biz_b',:'employee_c','known_eligible_zero',
- 'Owner-reviewed specific zero-cost eligibility attestation');
+SELECT public.scheduling_create_foundation(
+ :'biz_b'::uuid,'compensation',gen_random_uuid(),
+ jsonb_build_object('employee_id',:'employee_c','cash_cost_state','known_eligible_zero',
+ 'eligibility_reference','Owner-reviewed specific zero-cost eligibility attestation'));
 -- Changing a name alone must not revoke a still-consistent attestation.
 UPDATE employees SET display_name='Hourly employee renamed'
  WHERE business_id=:'biz_b' AND id=current_setting('test.employee_c')::uuid;
