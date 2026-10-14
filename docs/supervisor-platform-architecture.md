@@ -248,24 +248,35 @@ type MetricCoverage = {
   observed:number|null; expected:number|null; // finite safe nonnegative counts
   missingKeys:readonly string[]; truncated:boolean;
 };
-type MetricSeriesPoint<S> = {
+type MetricSeriesPointBase = {
   bucket:{from:string;to:string;timezone:string};
   dimensions:Readonly<Record<string,string>>;
-  status:"verified"|"estimated"|"partial"|"unavailable";
-  value:S|null; // null ONLY for unavailable point, never a disguised zero
   completeness:MetricCoverage;
   provenance:readonly SourceRef[];
 };
-type MetricValueContract<V> = {
-  valueKind:"money_cents"|"integer"|"decimal_ratio"|
-    "duration_minutes"|"boolean"|"series";
-  unit:string; // exact registered unit, no dynamically supplied replacement
-  valueSchema:ZodSchema<V>; // strict, created using trusted scalar/series builders
-  seriesPointKind?:"money_cents"|"integer"|"decimal_ratio"|
-    "duration_minutes"|"boolean"; // mandatory iff valueKind="series"
-  // Server validates the above discriminant and unit against the actual
-  // Zod schema constructor, not a self-declared string from a specialist.
-};
+type MetricSeriesPoint<S> = MetricSeriesPointBase & (
+  | {status:"verified"|"estimated"|"partial";value:S}
+  | {status:"unavailable";value:null}
+); // null ONLY when unavailable, never a disguised zero
+type MetricValueContract<V> =
+  | {valueKind:"money_cents"; unit:"USD_cents";
+     valueSchema:ZodSchema<V>; seriesPointKind?:never}
+  | {valueKind:"integer"; unit:"count"|"unit_count";
+     valueSchema:ZodSchema<V>; seriesPointKind?:never}
+  | {valueKind:"decimal_ratio"; unit:"ratio";
+     valueSchema:ZodSchema<V>; seriesPointKind?:never}
+  | {valueKind:"duration_minutes"; unit:"minutes";
+     valueSchema:ZodSchema<V>; seriesPointKind?:never}
+  | {valueKind:"boolean"; unit:"boolean";
+     valueSchema:ZodSchema<V>; seriesPointKind?:never}
+  | {valueKind:"series"; unit:"USD_cents"|"count"|"unit_count"|
+        "ratio"|"minutes"|"boolean";
+     seriesPointKind:"money_cents"|"integer"|"decimal_ratio"|
+        "duration_minutes"|"boolean";
+     pointSchema:ZodSchema<MetricSeriesPoint<number|boolean>>;
+     valueSchema:ZodSchema<V>};
+// Each constructor additionally checks runtime scalar kind, point kind,
+// exact unit agreement and audited safe numeric validation (no coercion).
 type MetricResultBase<F,P extends string> = {
   metricId:string; definitionVersion:1; query:MetricQuery<F,P>;
   unit:string; actuality:"actual"|"estimated"|"forecast"|"planned"|"unknown";
@@ -322,7 +333,7 @@ type MetricDefinition<F,P extends string,V> = {
 
 **Strict metric output boundary (P1 implementation gate):** Every metric's code-reviewed `valueContract` and `outputSchema` are mandatory and **validated server-side on the actual canonical reader return, before caching, result aggregation, cross-domain analysis or the grounded Supervisor writer**. The trusted registry validator cross-checks metric ID/version, original *validated* query, exact registered unit/value kind, status/actuality, period/timezone/dimensions, source purpose and source manifest, provenance references/tenant, conflicts, freshness, completeness and bounded size; rejects unknown result keys and incompatible numeric/series types. All money points and totals use `Number.isSafeInteger` integer **USD cents**, not floats or dollar-formatted strings; counts/duration use finite safe nonnegative integers where appropriate; other numeric results must satisfy `Number.isFinite`, domain-specific bounds and unit checks. For ratios never average percentages across groups/time: compute with canonical `lib/calc/` numerators and denominators. `NaN`, `Infinity`, unsafe integers, fractional cents, boolean/number swaps, unauthorized dimensions, wrong or mixed units, stale/invalid source refs, malformed ISO times or unbounded series are validation failures, **not** partial successful numbers.
 
-**Strict series semantics:** `valueKind:"series"` declares exactly one audited `seriesPointKind`, stable unit and strict `valueSchema` composed from verified per-point scalar and coverage schemas. Each bucket has bounded, ordered, non-overlapping and correctly time-zoned dates at the **registered granularity**, finite/typed values, authorized dimensions, coverage, actual-vs-planned status and attributable source refs; duplicate bucket+dimension identities or mixed-units fail. Per-point `null` is legal **only** for explicitly unavailable points, not treated as zero. An empty complete series is verified zero/empty **only** with complete-window evidence; no source or incomplete coverage returns unavailable/partial, never fabricated empty success. Enforce max points/dimensions/bytes plus row/range/cost limits.
+**Strict series semantics:** `valueKind:"series"` declares exactly one audited `seriesPointKind`, stable compatible unit, a strict `pointSchema` and a strict full-array `valueSchema` composed from verified per-point scalar and coverage schemas; trusted schema builders reject contradictory point kind/unit combinations. Each bucket has bounded, ordered, non-overlapping and correctly time-zoned dates at the **registered granularity**, finite/typed values, authorized dimensions, coverage, actual-vs-planned status and attributable source refs; duplicate bucket+dimension identities or mixed-units fail. Per-point `null` is legal **only** for explicitly unavailable points, not treated as zero. An empty complete series is verified zero/empty **only** with complete-window evidence; no source or incomplete coverage returns unavailable/partial, never fabricated empty success. Enforce max points/dimensions/bytes plus row/range/cost limits.
 
 **Status/provenance invariants:** `verified` requires complete applicable coverage with no material source conflict, real support for the claimed value and provenance (including verified complete-zero/absence proof); `estimated`/`planned` remain explicitly labeled in actuality and assumption fields; a `partial` numeric/series result can expose **only** the observed, proven subtotal and exact missing coverage; `unavailable`, denied, conflict, insufficient-evidence, failed and requires-approval states require `value:null` and a safe reason code. Missing provenance, unknown freshness or incomplete denominator never becomes verified by arithmetic. A reader failure or malformed output is **quarantined as a typed unavailable/invalid-result error without returning the bad value**, separately audited server-side; no fallback coercion to zero, numeric rounding, schema stripping or model repair. Authorized role/source restrictions also apply on output. TypeScript contracts and **runtime strict Zod tests** must enforce this for every registered metric and synthetic fifth domain; this documentation does not execute those tests.
 
