@@ -195,6 +195,26 @@ CREATE INDEX staff_qualifications_lookup_idx ON public.staff_qualifications(busi
 CREATE INDEX coverage_requirements_lookup_idx ON public.scheduling_coverage_requirements(business_id,location_id,local_date,day_of_week);
 CREATE INDEX scheduling_foundation_audit_idx ON public.scheduling_foundation_audit_events(business_id,table_name,record_id,recorded_at DESC);
 
+-- One canonical DB predicate for the four scheduling cost-evidence states.
+-- Unknown is always safe; all other labels must agree with current wages.
+-- A missing compensation record is also unknown (no payroll backfill).
+CREATE FUNCTION public.scheduling_compensation_matches_wages(
+ p_state text, p_period text, p_amount bigint, p_hourly bigint)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path=public AS $$
+ SELECT CASE p_state
+  WHEN 'unknown' THEN true
+  WHEN 'known_eligible_zero' THEN
+    coalesce(p_amount,0)<=0 AND coalesce(p_hourly,0)<=0
+  WHEN 'salary_conversion_pending' THEN
+    coalesce(p_period,'hour') IN ('month','year')
+    AND coalesce(p_amount,0)>0 AND coalesce(p_hourly,0)<=0
+  WHEN 'known_paid' THEN
+    coalesce(p_amount,0)>0 AND
+    (coalesce(p_period,'hour') NOT IN ('month','year') OR coalesce(p_hourly,0)>0)
+  ELSE false
+ END;
+$$;
+
 -- Attestation status cannot silently override a real positive wage or mistake
 -- an unconverted salary for free labor. No legacy salary/wage rows are changed.
 CREATE FUNCTION public.scheduling_check_compensation() RETURNS trigger
@@ -208,25 +228,14 @@ BEGIN
  INTO e FROM public.employees
  WHERE business_id=NEW.business_id AND id=NEW.employee_id FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION 'employee not in business'; END IF;
+ IF NOT public.scheduling_compensation_matches_wages(
+    NEW.cash_cost_state,e.wage_period,e.wage_amount_cents,e.default_hourly_wage_cents) THEN
+   RAISE EXCEPTION 'scheduling compensation state disagrees with canonical wages';
+ END IF;
  IF NEW.cash_cost_state='known_eligible_zero' THEN
-   IF coalesce(e.wage_amount_cents,0)>0 OR coalesce(e.default_hourly_wage_cents,0)>0 THEN
-     RAISE EXCEPTION 'positive recorded wage cannot be marked zero';
-   END IF;
    NEW.eligibility_verified_by := auth.uid();
    NEW.eligibility_verified_at := now();
    IF NEW.eligibility_verified_by IS NULL THEN RAISE EXCEPTION 'owner attestation required'; END IF;
- ELSIF NEW.cash_cost_state='salary_conversion_pending' THEN
-   IF e.wage_period NOT IN ('month','year') OR coalesce(e.wage_amount_cents,0)<=0
-       OR coalesce(e.default_hourly_wage_cents,0)>0 THEN
-     RAISE EXCEPTION 'salary conversion status disagrees with employee wage fields';
-   END IF;
-   NEW.eligibility_reference:=NULL; NEW.eligibility_verified_by:=NULL; NEW.eligibility_verified_at:=NULL;
- ELSIF NEW.cash_cost_state='known_paid' THEN
-   IF coalesce(e.wage_amount_cents,0)<=0 OR
-       (e.wage_period IN ('month','year') AND coalesce(e.default_hourly_wage_cents,0)<=0) THEN
-     RAISE EXCEPTION 'paid wage is missing or salary conversion pending';
-   END IF;
-   NEW.eligibility_reference:=NULL; NEW.eligibility_verified_by:=NULL; NEW.eligibility_verified_at:=NULL;
  ELSE
    NEW.eligibility_reference:=NULL; NEW.eligibility_verified_by:=NULL; NEW.eligibility_verified_at:=NULL;
  END IF;
@@ -235,25 +244,22 @@ END $$;
 CREATE TRIGGER scheduling_validate_compensation BEFORE INSERT OR UPDATE ON public.staff_scheduling_compensation
 FOR EACH ROW EXECUTE FUNCTION public.scheduling_check_compensation();
 
--- Every change to canonical employee wage fields (including the existing
--- Manage Staff updateEmployee() action, legacy importers and direct tenant-scoped
--- writes) invalidates a previously attested zero cash cost once a positive wage
--- is recorded. Do NOT change employee wages, timecards, assigned shifts, or
--- existing financial calculations here. Changing only the name/role is inert.
--- The compensation stamp/audit triggers below record the invalidation with a
--- fresh revision, remove eligibility evidence, and keep the wage update atomic.
+-- Every canonical employee wage update (including Staff.updateEmployee()
+-- and existing other wage writers) revokes any compensation state whose evidence
+-- is inconsistent with the new wage record. Never infer a verified state from a
+-- wage amount alone: the conservative replacement is 'unknown' until reviewed.
+-- Valid existing states remain unchanged. The compensation trigger clears
+-- eligibility evidence, increments revision and writes the audit in this same
+-- employee UPDATE transaction. No wage, timecard or financial formula change.
 CREATE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
- IF coalesce(NEW.wage_amount_cents,0)>0
-    OR coalesce(NEW.default_hourly_wage_cents,0)>0 THEN
-   UPDATE public.staff_scheduling_compensation
-      SET cash_cost_state='unknown',
-          eligibility_reference=NULL, eligibility_verified_by=NULL,
-          eligibility_verified_at=NULL
-    WHERE business_id=NEW.business_id AND employee_id=NEW.id
-      AND cash_cost_state='known_eligible_zero';
- END IF;
+ UPDATE public.staff_scheduling_compensation
+    SET cash_cost_state='unknown', eligibility_reference=NULL,
+        eligibility_verified_by=NULL, eligibility_verified_at=NULL
+  WHERE business_id=NEW.business_id AND employee_id=NEW.id
+    AND NOT public.scheduling_compensation_matches_wages(
+      cash_cost_state,NEW.wage_period,NEW.wage_amount_cents,NEW.default_hourly_wage_cents);
  RETURN NEW;
 END $$;
 CREATE TRIGGER scheduling_invalidate_zero_on_employee_wage_change
@@ -264,6 +270,8 @@ WHEN (OLD.wage_period IS DISTINCT FROM NEW.wage_period
    OR OLD.default_hourly_wage_cents IS DISTINCT FROM NEW.default_hourly_wage_cents)
 EXECUTE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change();
 REVOKE ALL ON FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
+FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_compensation_matches_wages(text,text,bigint,bigint)
 FROM PUBLIC,anon,authenticated;
 
 -- Consistent provenance and immutable identity, incrementing revision on change.
