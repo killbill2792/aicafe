@@ -293,13 +293,18 @@ type MetricResultBase<F,P extends string> = {
 type MetricResult<F,P extends string,V> =
   | (MetricResultBase<F,P> & {
       status:"verified"|"estimated"|"partial";
-      value:V; unavailableReason:null;
+      value:NonNullable<V>; unavailableReason:null;
     })
-  | (MetricResultBase<F,P> & {
+  | {
+      metricId:string; definitionVersion:1;
       status:"unavailable"|"insufficient_evidence"|"conflict"|
         "failed"|"requires_approval";
-      value:null; unavailableReason:string;
-    }); // strict state-discriminated runtime schema
+      value:null; unavailableReason:string; // safe error code
+      // No private source refs, query, period, unit, exact coverage or amounts
+      query?:never; unit?:never; actuality?:never; completeness?:never;
+      freshness?:never; provenance?:never; assumptions?:never;
+      conflicts?:never;
+    }; // strict state-discriminated runtime schema
 type MetricDefinition<F,P extends string,V> = {
   id:string; version:1;
   owner:"money"|"sales"|"staff"|"pricing"|"supplies"|string;
@@ -340,7 +345,7 @@ type MetricDefinition<F,P extends string,V> = {
 
 **Strict series semantics:** `valueKind:"series"` declares exactly one audited `seriesPointKind`, stable compatible unit, a strict `pointSchema` and a strict full-array `valueSchema` composed from verified per-point scalar and coverage schemas; trusted schema builders reject contradictory point kind/unit combinations. Each bucket has bounded, ordered, non-overlapping and correctly time-zoned dates at the **registered granularity**, finite/typed values, authorized dimensions, coverage, actual-vs-planned status and attributable source refs; duplicate bucket+dimension identities or mixed-units fail. Per-point `null` is legal **only** for explicitly unavailable points, not treated as zero. An empty complete series is verified zero/empty **only** with complete-window evidence; no source or incomplete coverage returns unavailable/partial, never fabricated empty success. Enforce max points/dimensions/bytes plus row/range/cost limits.
 
-**Status/provenance invariants:** `verified` requires complete applicable coverage with no material source conflict, real support for the claimed value and provenance (including verified complete-zero/absence proof); `estimated`/`planned` remain explicitly labeled in actuality and assumption fields; a `partial` numeric/series result can expose **only** the observed, proven subtotal and exact missing coverage; `unavailable`, denied, conflict, insufficient-evidence, failed and requires-approval states require `value:null` and a safe reason code. Missing provenance, unknown freshness or incomplete denominator never becomes verified by arithmetic. A reader failure or malformed output is **quarantined as a typed unavailable/invalid-result error without returning the bad value**, separately audited server-side; no fallback coercion to zero, numeric rounding, schema stripping or model repair. Authorized role/source restrictions also apply on output. TypeScript contracts and **runtime strict Zod tests** must enforce this for every registered metric and synthetic fifth domain; this documentation does not execute those tests.
+**Status/provenance invariants:** `verified` requires complete applicable coverage with no material source conflict, real support for the claimed value and provenance (including verified complete-zero/absence proof); `estimated`/`planned` remain explicitly labeled in actuality and assumption fields; a `partial` numeric/series result can expose **only** the observed, proven subtotal and exact missing coverage; `unavailable`, denied, conflict, insufficient-evidence, failed and requires-approval states require `value:null` and a safe reason code. Missing provenance, unknown freshness or incomplete denominator never becomes verified by arithmetic. A reader failure or malformed output is **quarantined as a typed unavailable/invalid-result error without returning the bad value, private provenance, query selectors or sensitive records**, separately audited server-side; no fallback coercion to zero, numeric rounding, schema stripping or model repair. Authorized role/source restrictions also apply on output. TypeScript contracts and **runtime strict Zod tests** must enforce this for every registered metric and synthetic fifth domain; this documentation does not execute those tests.
 
 Catalog discovery is two operations: **list permitted definitions** (small metadata only) and **query selected metric IDs with bounded arguments**. The dispatcher enforces **two mandatory independent validation gates**: before any reader, strict per-metric request validation; **after** a reader, strict per-metric `outputSchema` and `valueContract` validation before any owner-visible, cached, analytical or merged result. Before **any** canonical reader or source selector runs, the dispatcher must (1) resolve the authenticated business/actor/locations server-side, (2) find that exact registered metric ID+version or deny, (3) validate the *entire* query via its metric-owned **strict Zod `querySchema`, `filterSchema` and `dimensionSchema`**, (4) enforce its `allowedPurposes`, dimensions, granularity, unit/period/temporal basis, allowlisted source statuses and source-selection contract/version for that purpose, (5) enforce tenant/role/sensitivity authorization and all **range, row, cardinality, series, depth, timeout and read-call limits**, and **only then** call the trusted reader with typed parsed input. Unrecognized or extra filters, arbitrary purposes, unsupported hourly/dimension requests, unknown metric versions and privilege-sensitive dimensions are rejected, not forwarded as unknown values. The server builds the catalog from domain registration exports and tests per-metric source purpose+selector mappings; neither the dispatcher nor central goal/router requires specialist-specific conditional branches or a generic catch-all filter parser. The owner may learn which definitions are allowed while missing integrations return explicit unavailable. No schema exploration, free-form table names, REST endpoint composition, unrestricted SQL/GraphQL or raw arbitrary values from an LLM. Preserve source RLS, row/column sensitivity and bounded pagination; staff aggregates do **not** authorize named-person wage reads. On return, recheck exact result `metricId`/definition version, accepted query fingerprint, output status/provenance/coverage/period, trusted **metric-specific unit/value-kind schema** and bounded series; fail closed as an explicit invalid-result/unavailable answer instead of forwarding malformed money, totals or staff measurements.
 
@@ -375,11 +380,14 @@ type EntityReadDefinition<TInput,TOutput> = {
   allowedFields: readonly string[]; allowedRelations: readonly string[];
   maxRows: number; maxDepth: number; purpose: string; handlerId: string;
 };
-type EntityReadResult<T> = {
-  status: "verified"|"partial"|"unavailable"|"insufficient_evidence";
-  records: readonly T[]; truncated: boolean; nextCursor: string|null;
-  evidence: readonly SourceRef[]; missingInputs: readonly string[];
-};
+type EntityReadResult<T> =
+  | {status:"verified"|"partial";
+      records:readonly T[]; truncated:boolean; nextCursor:string|null;
+      evidence:readonly SourceRef[]; missingInputs:readonly string[]}
+  | {status:"unavailable"|"insufficient_evidence";
+      reasonCode:string; missingInputs:readonly string[];
+      records?:never; evidence?:never; nextCursor?:never; truncated?:never};
+// Strict Zod runtime union: unsuccessful reads expose NO record or source data.
 
 // Analyses are distinct catalog surfaces, but their I/O types come from a
 // CONCRETE LITERAL KEY of the compiled, server-reviewed capability registry.
@@ -440,6 +448,8 @@ type AnalysisDefinition<K extends AnalysisCapabilityKey,P extends string> = {
   // No independent execute function: generic dispatcher invokes only K.
 };
 ~~~
+
+**Concrete analysis binding example (future P2 fixture, not executable in this PR):** A compiled `alex.pricing.review.v1` registration supplies a **literal registry key**, exact `inputSchema`, `outputSchema` and `schemaContract` fingerprint pair; its analysis entry may use only that key and those exact schema references. An Olivia `simulate` key, an Alex `read` key with a different `I/O` pair, or a different version/fingerprint **must fail**, even when IDs/modes look plausible. The reviewed build-time `defineAnalysis<K,P>()` factory derives input/output/mode schema types from `compiledCapabilityRegistry[K]`; runtime startup independently compares registered key, version and schema-contract fingerprints and rejects changes to semantic refinements under the same contract version. For example, a purpose union declared `as const` requires `sourceRequirementsByPurpose` to `satisfies Record<(typeof allowedPurposes)[number],AnalysisSourceRequirements>` and startup enforces **exact** object keys and a nonempty purpose set; this does not silently widen `P` to `string`.
 
 **Analysis registration and dispatch (mandatory P1/P2 gate):** Every analysis is a checked-in `AnalysisDefinition<K,P>`, where `K` is a **literal, concrete key** of the compiled capability registry and its input, output, mode and schema-contract identity are **derived from that exact entry**. Only registered read/simulate/evaluate keys are allowed; no independent generic `I/O`, string-only IDs or schema adapters can assert compatibility. The bound capability and analysis must reference the **same reviewed input/output schemas** by exact `schemaContract.id`, version and deterministic input/output fingerprints (and concrete registered schema references), not merely shapes that appear similar. At build/startup compare registry key/version/mode, schema identity and canonical schema fingerprints; reject absent keys, retired versions, mismatched or unverifiable fingerprints, incompatible types and extra/unknown keys; do not silently substitute another handler or accept inferred subtype casts. Changing a schema meaning requires a new contract version and reviewed registry export.
 
