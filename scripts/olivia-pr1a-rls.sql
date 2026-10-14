@@ -114,7 +114,7 @@ END $$;
 -- SQL boundary must reject sub-minute times even when callers bypass Zod
 -- through the owner-only CREATE RPC or owner-authorized UPDATE. Every table
 -- with a scheduling wall-time column is protected at the database layer.
-DO $
+DO $$
 BEGIN
  BEGIN
   PERFORM public.scheduling_create_foundation(
@@ -157,7 +157,7 @@ BEGIN
   RAISE EXCEPTION 'COVERAGE_SECONDS_CREATE_ACCEPTED';
  EXCEPTION WHEN check_violation THEN NULL;
  END;
-END $;
+END $$;
 -- A valid preference record proves the time-column UPDATE check is exercised.
 SELECT public.scheduling_create_foundation(
  :'biz_a'::uuid,'preference_window',gen_random_uuid(),
@@ -165,7 +165,7 @@ SELECT public.scheduling_create_foundation(
   'start_local','09:00','end_local','12:00','overnight',false,
   'effective_from','2026-10-14','preference','avoid','strength','hard',
   'source','owner_direct','confirmation','owner_confirmed'));
-DO $
+DO $$
 BEGIN
  BEGIN
   UPDATE public.staff_availability_rules SET start_local='07:00:01'
@@ -192,7 +192,7 @@ BEGIN
   RAISE EXCEPTION 'COVERAGE_SECONDS_UPDATE_ACCEPTED';
  EXCEPTION WHEN check_violation THEN NULL;
  END;
-END $;
+END $$;
 
 -- Provenance: a co-owner metadata-only edit must retain BOTH original
 -- confirmation actor and time; a substantive availability edit must refresh
@@ -203,7 +203,7 @@ SELECT set_config('test.seed_confirmed_at',
 SELECT set_config('request.jwt.claim.sub',:'co_owner_id',true);
 UPDATE public.staff_availability_rules SET source=source
  WHERE business_id=:'biz_a' AND start_local='16:00';
-DO $
+DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM public.staff_availability_rules
    WHERE business_id=current_setting('test.biz_a')::uuid
@@ -211,17 +211,17 @@ BEGIN
     AND confirmed_by=current_setting('test.owner_id')::uuid
     AND confirmed_at=current_setting('test.seed_confirmed_at')::timestamptz)
  THEN RAISE EXCEPTION 'METADATA_EDIT_REATTRIBUTED_CONFIRMATION'; END IF;
-END $;
+END $$;
 UPDATE public.staff_availability_rules SET start_local='16:30'
  WHERE business_id=:'biz_a' AND start_local='16:00';
-DO $
+DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM public.staff_availability_rules
    WHERE business_id=current_setting('test.biz_a')::uuid
     AND start_local='16:30' AND confirmed_by=auth.uid()
     AND confirmed_at>current_setting('test.seed_confirmed_at')::timestamptz)
  THEN RAISE EXCEPTION 'COOWNER_FACT_EDIT_MIXED_CONFIRMATION_ACTOR_AND_TIME'; END IF;
-END $;
+END $$;
 SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 
 -- Composite FK rejects employee and location IDs from another business, even
