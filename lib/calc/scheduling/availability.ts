@@ -63,9 +63,18 @@ export function satisfiesLocalDayHoursCaps(
   );
 }
 
+/** Accept minute-precision UI times and PostgreSQL time serialization.
+ * Never discard nonzero seconds/fractions: the scheduling model is strictly
+ * minute-resolution and truncating a real sub-minute time would be unsafe.
+ */
+export function normalizeSchedulingWallTime(value: string): string {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)(?::00(?:\.0+)?)?$/.exec(value);
+  if (!match) throw new Error("Invalid scheduling wall time");
+  return `${match[1]}:${match[2]}`;
+}
+
 function minutes(value: string): number {
-  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error("Invalid HH:mm");
-  const [hour, minute] = value.split(":").map(Number);
+  const [hour, minute] = normalizeSchedulingWallTime(value).split(":").map(Number);
   return hour * 60 + minute;
 }
 
