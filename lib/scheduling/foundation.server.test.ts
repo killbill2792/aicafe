@@ -45,9 +45,9 @@ vi.mock("@/lib/supabase/server", () => ({
               .slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
             const getPage = (cursor: string | null) => {
               mocks.readQueries.push({ table, cursor, size });
+              const remaining = all.filter((row) => cursor === null || String(row.id) > cursor);
               return Promise.resolve({
-                data: all.filter((row) => cursor === null || String(row.id) > cursor).slice(0, size),
-                error: null,
+                data: remaining.slice(0, size), error: null, count: remaining.length,
               });
             };
             return {
@@ -169,6 +169,17 @@ describe("scheduling foundation compensation read is fail closed", () => {
         { table: "staff_availability_rules", cursor: id(500), size: 500 },
         { table: "staff_availability_rules", cursor: id(1000), size: 500 },
       ]);
+  });
+
+  it("fails closed if the backend silently caps a requested 500-row page", async () => {
+    mocks.tables.staff_availability_rules = Array.from({ length: 510 }, (_, i) => ({
+      id: id(i + 1), start_local: "09:00:00", end_local: "17:00:00",
+    }));
+    // Server pagination must use count:exact and return all 510 rows.
+    const result = await readSchedulingFoundation();
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw Error("read failed");
+    expect(result.records.availability_rule).toHaveLength(510);
   });
 
   it("normalizes TIME columns in all scheduling tables, preserving overnight", async () => {
