@@ -241,9 +241,21 @@ export function compensationProvenance(
 ): CompensationProvenance {
   if (!recorded || !employee) return "unknown";
 
-  const period = employee.wage_period ?? "hour";
-  const positiveAmount = (employee.wage_amount_cents ?? 0) > 0;
-  const positiveHourly = (employee.default_hourly_wage_cents ?? 0) > 0;
+  // Legacy rows may have NULL amounts. Only NULL and exact nonnegative
+  // integer cents are structurally valid; negative, fractional, non-finite,
+  // unsafe, or malformed runtime values cannot substantiate ANY known state.
+  // Preserve unknown as unknown even if the employee data are malformed.
+  if (recorded.cash_cost_state === "unknown") return "unknown";
+  const period = employee.wage_period;
+  const amount = employee.wage_amount_cents;
+  const hourly = employee.default_hourly_wage_cents;
+  const validCents = (value: unknown): value is number | null =>
+    value === null || (typeof value === "number" && Number.isSafeInteger(value) && value >= 0);
+  if ((period !== "hour" && period !== "month" && period !== "year") ||
+      !validCents(amount) || !validCents(hourly)) return "unknown";
+
+  const positiveAmount = (amount ?? 0) > 0;
+  const positiveHourly = (hourly ?? 0) > 0;
   const salary = period === "month" || period === "year";
 
   switch (recorded.cash_cost_state) {
