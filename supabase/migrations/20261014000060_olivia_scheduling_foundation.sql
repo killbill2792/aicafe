@@ -201,16 +201,23 @@ CREATE INDEX scheduling_foundation_audit_idx ON public.scheduling_foundation_aud
 CREATE FUNCTION public.scheduling_compensation_matches_wages(
  p_state text, p_period text, p_amount bigint, p_hourly bigint)
 RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path=public AS $$
- SELECT CASE p_state
-  WHEN 'unknown' THEN true
-  WHEN 'known_eligible_zero' THEN
-    coalesce(p_amount,0)<=0 AND coalesce(p_hourly,0)<=0
-  WHEN 'salary_conversion_pending' THEN
-    coalesce(p_period,'hour') IN ('month','year')
-    AND coalesce(p_amount,0)>0 AND coalesce(p_hourly,0)<=0
-  WHEN 'known_paid' THEN
+ -- An invalid or negative canonical wage field MUST NOT substantiate an
+ -- attested cost state (especially verified zero). Do not add retroactive
+ -- constraints or rewrite legacy employee/timecard values: fail closed to
+ -- UNKNOWN in the scheduling projection, and on subsequent wage changes.
+ -- Both amount fields may legitimately be NULL when no wage was entered.
+ SELECT CASE
+  WHEN p_state = 'unknown' THEN true
+  WHEN p_period IS NULL OR p_period NOT IN ('hour','month','year')
+       OR coalesce(p_amount,0)<0 OR coalesce(p_hourly,0)<0 THEN false
+  WHEN p_state = 'known_eligible_zero' THEN
+    coalesce(p_amount,0)=0 AND coalesce(p_hourly,0)=0
+  WHEN p_state = 'salary_conversion_pending' THEN
+    p_period IN ('month','year')
+    AND coalesce(p_amount,0)>0 AND coalesce(p_hourly,0)=0
+  WHEN p_state = 'known_paid' THEN
     coalesce(p_amount,0)>0 AND
-    (coalesce(p_period,'hour') NOT IN ('month','year') OR coalesce(p_hourly,0)>0)
+    (p_period = 'hour' OR coalesce(p_hourly,0)>0)
   ELSE false
  END;
 $$;
