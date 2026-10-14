@@ -472,6 +472,7 @@ type CanonicalSourceRevisionRef =
   | {kind:"confirmed_absent"; businessId:string; selection:CanonicalSourceSelection;
      source:null; completeCoverageRevision:string}; // verified absence, not unknown
 type SourceConflict = { code:string; left:SourceRef; right:SourceRef; affectedMetrics:string[] };
+// Shared EVIDENCE envelope. Not an effect, draft or grant.
 type VerifiedCapabilityResult<T> = {
   capabilityId:string; contractVersion:1; status:ResultStatus;
   payload:T|null; evidence:SourceRef[]; metricIds:string[];
@@ -480,20 +481,65 @@ type VerifiedCapabilityResult<T> = {
   warnings:string[]; missingInputs:string[];
   assumptions:string[]; conflicts:SourceConflict[];
   producedAt:string; inputFingerprint:string;
-  proposal:ActionProposal|null; // never effect confirmation itself
+};
+type ReadResult<T> = VerifiedCapabilityResult<T> & {
+  mode:"read"; proposal:null; effect?:never; approval?:never;
+};
+type SimulationResult<T> = VerifiedCapabilityResult<T> & {
+  mode:"simulate"; proposal:null; effect?:never; approval?:never;
+  baselineFingerprint:string; scenarioAssumptions:readonly string[];
+}; // transient lib/calc/ result; never a persisted proposal
+type ProposalResult<T> =
+  | (VerifiedCapabilityResult<T> & {mode:"propose"; state:"persisted_inert";
+      proposal:ActionProposal; effect?:never; approval?:never})
+  | (VerifiedCapabilityResult<T> & {mode:"propose"; state:"not_created";
+      proposal:null; effect?:never; approval?:never});
+type EvaluationResult<T> = VerifiedCapabilityResult<T> & {
+  mode:"evaluate"; findings:readonly T[]; proposal:null;
+  effect?:never; approval?:never;
+}; // separate authorized reconciler handles task persistence
+type ApproveResult = {mode:"approve"; transition:ApprovalTransitionResult;
+  proposal?:never; effect?:never};
+type CommitResult = {mode:"commit"; outcome:VerifiedActionOutcome;
+  proposal?:never; approval?:never};
+
+// The build-time typed effect registry is composed from reviewed domain exports.
+// Keyed registration ties each discriminator/version to one STRICT Zod schema.
+type RegisteredEffectRegistry = typeof compiledEffectRegistry; // future manifest
+type EffectContractKey = keyof RegisteredEffectRegistry;
+type CanonicalEffectPayload<K extends EffectContractKey> = {
+  effectContractKey:K;
+  effectContractVersion:RegisteredEffectRegistry[K]["version"];
+  businessId:string; capabilityId:string; capabilityVersion:number;
+  actionType:string; tenantScopedTargetId:string; baseRevision:string;
+  parameters:z.infer<RegisteredEffectRegistry[K]["parametersSchema"]>;
+};
+type AnyCanonicalEffectPayload =
+  { [K in EffectContractKey]:CanonicalEffectPayload<K> }[EffectContractKey];
+// Example *future only*: Alex price set has a product ID, exact new USD cents,
+// effective timestamp and expected product revision validated by its domain
+// Zod schema; Olivia schedule publish has the exact immutable assignments or
+// a content-addressed, verified immutable assignment blob + policy version.
+// Neither example grants any product, POS or worker write today.
+type SafeEffectPreview = {
+  summaryKey:string; localizedArgKeys:readonly string[];
+  displayedEffectHash:string; // trusted renderer from canonical payload bytes
+  expectedImpact:string|null; // grounded, typed and evidence-backed
 };
 type ActionProposal = {
-  businessId:string; proposalId:string; proposalRevision:number; // immutable revision
+  businessId:string; proposalId:string; proposalRevision:number; // immutable
   actionType:string; capabilityId:string; capabilityVersion:number;
   tenantScopedTargetId:string; baseRevision:string;
-  sourceSnapshotHash:string; // hash of entire canonical source revision manifest
-  sourceRefs:readonly CanonicalSourceRevisionRef[]; // immutable complete material set
-  businessContextVersion:1; contextFingerprint:string; // typed context projection
+  canonicalEffectPayload:AnyCanonicalEffectPayload; // immutable exact operation
+  proposedEffectHash:string; // hash of canonical payload, NOT preview
+  sourceSnapshotHash:string; // entire canonical source revision manifest
+  sourceRefs:readonly CanonicalSourceRevisionRef[]; // complete material inputs
+  businessContextVersion:1; contextFingerprint:string;
   contextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
-  policyRevisionRefs:BusinessContextV1["activePolicyRefs"]; // authority != rule text
-  proposedEffectHash:string; // canonical exact target+action+parameters+effect version
-  summaryKey:string; effectPreview:unknown; missingPreconditions:string[];
+  policyRevisionRefs:BusinessContextV1["activePolicyRefs"];
+  effectPreview:SafeEffectPreview; // derived from canonical payload, NEVER input
   expiresAt:string; approvalPolicyKey:string; riskClass:"low"|"medium"|"high";
+  missingPreconditions:string[];
 };
 // Approval is a typed transition, never a side effect and never LLM-provided consent.
 type ApprovalTransitionInput = {
@@ -533,9 +579,13 @@ type VerifiedActionOutcome = {
 };
 ~~~
 
-**Action-state separation:** current facts (`read`) → transient deterministic comparison (`simulate`, no proposal/effect) → separately requested persisted draft (`propose`, with `proposedEffectHash` and complete `sourceRefs`) → **typed, auditable, no-effect approval** (`approve` **copies** `proposedEffectHash` into an identical `approvedEffectHash`, and exactly copies `sourceRefs` into `approvedSourceRefs`) → **one-time approval/proposal consumption and authorized domain operation** (`commit`) → separately verified postcondition. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
+**Action-state separation:** current facts (`read`, `ReadResult` with `proposal:null`) → transient deterministic comparison (`simulate`, `SimulationResult` with `proposal:null`) → separately requested persisted inert draft (`propose`, a `ProposalResult` with **exact immutable `canonicalEffectPayload`**, derived preview/hash and complete `sourceRefs`) → **typed, auditable, no-effect approval** (`approve`, `ApproveResult` copies `proposedEffectHash` into identical `approvedEffectHash`, and exactly copies `sourceRefs` into `approvedSourceRefs`) → **one-time approval/proposal consumption and authorized domain operation** (`commit`, `CommitResult` alone may invoke verified effects) → separately verified postcondition. `evaluate` returns only `EvaluationResult` findings and never a proposal or executable command. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
 
 A proposal is neither permission nor an applied outcome. Owner-visible statuses map distinctly: **Suggested / Needs approval / Working or awaiting verification / Applied / Cannot complete / No data**. Show the exact employee/product/location, local schedule times, modeled costs/units, expected effects, uncertainty and proposed next action before committing. A completed badge requires durable postcondition evidence from the domain source; merely receiving an HTTP 200, an LLM completion, an external send attempt or a worker contact draft is not proof.
+
+**Canonical effect payload — exact owner-to-domain instruction:** Every persisted `ActionProposal` must store a **schema-validated canonical `canonicalEffectPayload`** containing the *entire immutable intended operation*, its capability/effect discriminator and semantic schema version, business/target/base revision, and all domain-specific values (e.g., price in integer cents, currency, timing, location, schedule assignment set). A compiled **per-domain effect registry** exports its strict Zod payload-parameter schema, canonical serialization/hash rule, deterministic safe owner-preview renderer, required evidence/approval policy, and **commit-only** allowlisted domain handler. Adding a 5th specialist registers its own contract; no central action switch or generic `Record<string,unknown>` as executable parameters. An effect whose runtime arguments depend on a mutable draft, updated menu price, unversioned remote object or missing parameter is **unproposable** until immutable values (or content-addressed immutable payload bytes with verified hash) can be persisted.
+
+The proposal's exact **canonical, stable serialized effect payload** is the **single source of truth** for the owner-visible typed preview, `proposedEffectHash`, approval and later domain execution. Bind the hash to the effect type+schema version and tenant/target/expected revision as well as parameters; never hash a prose summary or LLM preview. A `SafeEffectPreview` is computed by a trusted renderer from the validated payload (plus pinned *display-only* evidence) and is non-executable. At `approve` **reload the persisted payload**, re-run the originally registered effect schema and canonical serializer, recompute hash and preview, check the displayed hash and approved target/revision, source selection, BusinessContext and policy. At `commit` **reload and validate those exact immutable payload bytes again** against the original schema/version, original hash, successful `approvedEffectHash`, stored source/context/policy refs and target revision; then pass **that typed payload, never IDs-only guessed parameters**, to the authorized effect handler. If an old effect schema/renderer/executor is unavailable, revalidation fails closed and the owner must create/reapprove a new version. A parameter mismatch, payload alteration, preview/hash mismatch or unsafe scope yields a conflict with zero domain effect. A typed approval artifact **never allows altering the payload**: `approvedEffectHash === proposedEffectHash` and canonical bytes remain identical. The domain may verify current preconditions but **must not replace approved parameters with newly computed live-state values**. Source, context and policy manifests are separately persisted/rechecked as specified; payload validation is an additional mandatory gate.
 
 **Source-manifest and effect-hash invariants:** The `ActionProposal.sourceRefs` array contains the **complete, immutable and tenant-scoped canonical source revision manifest used to generate its proposed effect**, not merely the refs convenient for UI citation. A `selected` entry must have a stable source ID and non-null canonical revision; `confirmed_absent` is permitted **only with a complete authorized query and a versioned absence/coverage proof**, never for missing/unknown evidence. Each entry fixes the canonical reader **ID and semantic contract version**, registered selector **ID and semantic contract version**, complete **normalized, schema-validated selector arguments and their canonical hash**, source purpose, source-precedence policy/version, selection identity and bounded location/time window. A `selectionKey` alone or a precedence version alone is **not** a source-selection contract; the source manifest must preserve replayable filter meaning even when an old record has disappeared. Normalize/deduplicate/sort the complete manifest deterministically, validate that it is consistent with `sourceSnapshotHash`, and persist both atomically with the immutable proposal; **reject effectful proposals if material sources or selection semantics cannot be versioned, persisted or validated**. A proposal that uses multiple domains must include **all** material inputs and selectors from every participating domain, including derived-metric lineage; source selection cannot silently change when a referenced record is deleted, backfilled, superseded or replaced.
 
