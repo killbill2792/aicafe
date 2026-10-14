@@ -72,6 +72,7 @@ export const foundationCommandSchema = z.object({
   action: z.enum(["create", "update", "delete"]),
   id: id.optional(),
   expectedRevision: z.number().int().positive().optional(),
+  requestKey: id.optional(),
   data: z.unknown().optional(),
 }).strict().superRefine((command, ctx) => {
   if (command.action !== "create" && (!command.id || !command.expectedRevision)) {
@@ -79,6 +80,12 @@ export const foundationCommandSchema = z.object({
   }
   if (command.action === "create" && (command.id || command.expectedRevision)) {
     ctx.addIssue({ code: "custom", message: "New records cannot supply IDs or revisions." });
+  }
+  if (command.action === "create" && !command.requestKey) {
+    ctx.addIssue({ code: "custom", message: "Create requires a stable client-generated request key." });
+  }
+  if (command.action !== "create" && command.requestKey) {
+    ctx.addIssue({ code: "custom", message: "Request keys are only allowed for create." });
   }
   if (command.action !== "delete" && command.data === undefined) {
     ctx.addIssue({ code: "custom", message: "Record data are required." });
