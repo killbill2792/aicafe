@@ -195,9 +195,11 @@ ALTER TABLE public.staff_availability_exceptions ADD CONSTRAINT staff_availabili
     AND (end_local IS NULL OR (EXTRACT(SECOND FROM end_local)=0
                                AND end_local < TIME '24:00:00')));
 ALTER TABLE public.staff_preference_windows ADD CONSTRAINT staff_preference_window_minute_precision
- CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
 ALTER TABLE public.scheduling_coverage_requirements ADD CONSTRAINT scheduling_coverage_minute_precision
- CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
 
 -- No backfill: an absent row means UNKNOWN, even if legacy cached wages = 0.
 -- 'known_eligible_zero' means documented OWNER attestation, NOT legal adjudication.
