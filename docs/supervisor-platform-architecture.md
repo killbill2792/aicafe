@@ -106,48 +106,84 @@ type AuthorizedContext = {
   requestId: string; traceId: string;
 }; // trusted server construction ONLY
 
-type CapabilityDescriptor<I, O> = {
-  id: CapabilityId; version: 1; agent: AgentId;
-  descriptionKey: string; inputSchema: ZodSchema<I>; outputSchema: ZodSchema<O>;
-  mode: Exclude<Mode,"approve"|"commit">; // safe/read-or-proposal handlers ONLY
-  discoverableGoals: readonly string[]; producesMetrics: readonly string[];
-  requiresMetrics: readonly string[]; dependsOn?: readonly CapabilityId[];
-  requiredRole: "owner"; sensitivity: "normal" | "staff" | "financial";
-  approvalPolicyKey: string | null; // per-action server-defined policy
-  budgetClass: "cheap_read" | "bounded_read" | "planning" | "external";
-  preconditions: readonly string[];
-  enabledFor: (ctx: AuthorizedContext) => Promise<boolean>;
-  execute: (ctx: AuthorizedContext, input: I) => Promise<VerifiedCapabilityResult<O>>;
+// This is a non-executable shared metadata base; it has NO execute callback.
+type CapabilityMetadata<I,R> = {
+  id:CapabilityId; version:1; agent:AgentId; descriptionKey:string;
+  inputSchema:ZodSchema<I>; outputSchema:ZodSchema<R>;
+  discoverableGoals:readonly string[]; producesMetrics:readonly string[];
+  requiresMetrics:readonly string[]; dependsOn?:readonly CapabilityId[];
+  requiredRole:"owner"; sensitivity:"normal"|"staff"|"financial";
+  approvalPolicyKey:string|null;
+  budgetClass:"cheap_read"|"bounded_read"|"planning"|"external";
+  preconditions:readonly string[];
+  enabledFor:(ctx:AuthorizedContext)=>Promise<boolean>;
 };
-// Explicit discriminated registry variants: neither approve nor commit fits the
-// safe/propose `execute` slot. Illustration references §7 typed envelopes.
-type ApprovalCapabilityDescriptor =
-  Omit<CapabilityDescriptor<ApprovalTransitionInput,ApprovalTransitionResult>,
-       "mode"|"execute"|"approvalPolicyKey"> & {
+type ReadCapability<I,O> =
+  CapabilityMetadata<I,ReadResult<O>> & {
+    mode:"read"; approvalPolicyKey:null;
+    read:(ctx:AuthorizedContext,input:I)=>Promise<ReadResult<O>>;
+    simulate?:never; propose?:never; evaluate?:never;
+    approve?:never; commit?:never;
+  };
+type SimulateCapability<I,O> =
+  CapabilityMetadata<I,SimulationResult<O>> & {
+    mode:"simulate"; approvalPolicyKey:null;
+    simulate:(ctx:AuthorizedContext,input:I)=>Promise<SimulationResult<O>>;
+    read?:never; propose?:never; evaluate?:never;
+    approve?:never; commit?:never;
+  };
+type ProposeCapability<I,O> =
+  CapabilityMetadata<I,ProposalResult<O>> & {
+    mode:"propose"; approvalPolicyKey:string; // may persist INERT draft only
+    effectContractKey:EffectContractKey;
+    propose:(ctx:AuthorizedContext,input:I)=>Promise<ProposalResult<O>>;
+    read?:never; simulate?:never; evaluate?:never;
+    approve?:never; commit?:never;
+  };
+type EvaluateCapability<I,O> =
+  CapabilityMetadata<I,EvaluationResult<O>> & {
+    mode:"evaluate"; approvalPolicyKey:null;
+    evaluate:(ctx:AuthorizedContext,input:I)=>Promise<EvaluationResult<O>>;
+    read?:never; simulate?:never; propose?:never;
+    approve?:never; commit?:never;
+  };
+type ApprovalCapability =
+  CapabilityMetadata<ApprovalTransitionInput,ApproveResult> & {
     mode:"approve"; approvalPolicyKey:string;
-    transitionApproval:(ctx:AuthorizedContext,input:ApprovalTransitionInput)
-      =>Promise<ApprovalTransitionResult>;
-    execute?:never;
+    approve:(ctx:AuthorizedContext,input:ApprovalTransitionInput)
+      =>Promise<ApproveResult>; // never invokes a domain effect
+    read?:never; simulate?:never; propose?:never;
+    evaluate?:never; commit?:never;
   };
-type CommitCapabilityDescriptor =
-  Omit<CapabilityDescriptor<ApprovedEffectInput,VerifiedActionOutcome>,
-       "mode"|"execute"|"approvalPolicyKey"> & {
+type CommitCapability =
+  CapabilityMetadata<ApprovedEffectInput,CommitResult> & {
     mode:"commit"; approvalPolicyKey:string;
-    executeApproved:(ctx:AuthorizedContext,input:ApprovedEffectInput)
-      =>Promise<VerifiedActionOutcome>;
-    execute?:never;
+    effectContractKey:EffectContractKey;
+    commit:(ctx:AuthorizedContext,input:ApprovedEffectInput)
+      =>Promise<CommitResult>; // ONLY registered effectful entry point
+    read?:never; simulate?:never; propose?:never;
+    evaluate?:never; approve?:never;
   };
+type RegisteredCapability =
+  | ReadCapability<any,any> | SimulateCapability<any,any>
+  | ProposeCapability<any,any> | EvaluateCapability<any,any>
+  | ApprovalCapability | CommitCapability;
+// The "any" above is ONLY for heterogeneous registry storage; concrete
+// registration APIs infer I/O via Zod and forbid weakening schemas or mode.
 type ApprovedEffectInput = {approvalId:string; proposalId:string;
   proposalRevision:number; approvedEffectHash:string};
-// Registry dispatch accepts the discriminated union; runtime Zod and policy
-// checks also enforce mode, scope, immutable proposal and effect permissions.
+// The input is an opaque lookup/replay reference, NOT effect parameters.
+// Commit reloads exact canonicalEffectPayload from immutable trusted storage,
+// validates it and never infers parameters from these IDs, preview or live state.
+// Dispatch switches on descriptor.mode, validates input/output strictly and
+// never exposes the commit executor to read/simulate/propose/evaluate handlers.
 ~~~
 
 **Non-effectful operation invariant:** `read` returns canonical facts and `simulate` runs a **transient, read-only, deterministic what-if** using pinned source inputs and `lib/calc/`. Neither creates a scheduling draft, proposed price, approval request, task, outside message or business-domain write. Protected usage/audit telemetry is permitted but cannot imply domain mutation. Simulations state baseline, changed assumptions, feasibility/limitations and source revision; they return `proposal: null`. `propose` is a **separate explicit transition** that may persist an inert versioned draft after the owner requests it. **`approve` is a first-class typed, server-only transition** that validates an immutable proposal and records a scoped approval artifact; it does **not** invoke a domain write. **`commit` is a separate policy-gated executable capability** that must consume that approval exactly once (or use a specifically validated standing grant, if a later reviewed effect supports delegation). `evaluate` is a bounded evidence check, and any task persistence goes through its separately authorized reconciler. Dispatcher and acceptance tests must prove these distinctions even if the model requests a more powerful action.
 
-The executable contract must separate read, simulate, propose, **approve** and commit handler types. An approval handler **accepts only a server-issued proposal ID/revision and authenticated actor decision**, produces an auditable typed ApprovalTransitionResult and never calls domain effect handlers; a commit handler accepts only a verified approved record/effect identity from the server, **never a model-issued approval flag**. Approval is a shared, registry-governed server-side action transition, not an Olivia-specific supervisor intent or a variant of `propose`/`commit`. The `mode: "approve"` descriptor has a registered authorization policy, typed input/output and a server-only transition handler; it must not be callable as a read/simulation or unvalidated free-form LLM tool. Production code should use zod generics/inferred types (the illustration omits implementation-specific TS imports). An effectful capability also declares a separately implemented **preview**, deterministic **effect type**, approval requirements, idempotency class, compensation/rollback semantics, and postcondition verifier; no effectful operation is admitted without them.
+The executable contract separates **all six modes** as type-discriminated descriptors with distinct callbacks and runtime-validated, mode-tagged result variants (§7). `read` and `simulate` return `proposal: null` by type and strict result schema, and may never call a draft or effect repository. `evaluate` returns only bounded findings; creating or changing an Operations task requires a distinct registered reconciler and policy, not an evaluator side effect. `propose` may persist only an inert, versioned proposal with an immutable, schema-validated canonical effect payload; it has no commit callback or authority. `approve` accepts an authenticated actor's exact server-issued proposal reference/decision, returns an approved/failed transition, and cannot invoke a domain effect. **Only** the `commit` mode's authorized server gateway may call the allowlisted effect executor after tenant, approval, payload, context/source/policy and idempotency checks; it accepts no model-issued consent or executable parameters. Registering a new domain supplies its own typed schemas, mode handlers and canonical effect contract without editing the central router. Startup, dispatcher, strict Zod output and negative tests must enforce these fences (not just prompt instructions). Implementations use Zod-inferred generics; the example is a specification, not application code. Every effect contract also supplies a safe preview renderer, authorization policy, compensation/rollback classification, deterministic idempotency key and postcondition verifier.
 
-Registry startup checks: unique ID+major version; valid schema bounds; no orphan dependencies, cycles or conflicting owners of the same canonical effect; registered metric names exist; policy key exists and is default-deny; budget classification is present; effect handler is allowlisted; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
+Registry startup checks: unique ID+major version; one of **six** legal descriptor/result discriminants, no cross-mode callbacks or executable proposal in read/simulate/evaluate outputs; valid strict bounded input/output Zod schemas; no orphan dependencies, cycles or conflicting owners of a canonical effect; registered metric names exist and their query schemas validate; every propose/commit effect contract resolves a known strict canonical payload schema, preview renderer and executor; approval/commit policy key exists and is default-deny; budget class is present; effect handler is allowlisted **only for commit**; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
 
 Example future registration:
 
