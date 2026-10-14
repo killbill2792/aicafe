@@ -34,12 +34,13 @@ export async function getSchedulingLocationOptions() {
   const owner = await requireSchedulingOwner();
   if (!owner) return { ok: false as const, error: "unauthorized" as const };
   const [locations, business] = await Promise.all([
-    owner.supabase.from("locations").select("id,name,timezone")
+    owner.supabase.from("locations").select("id,name,timezone", { count: "exact" })
       .eq("business_id", owner.businessId).order("name").limit(500),
     owner.supabase.from("businesses").select("timezone")
       .eq("id", owner.businessId).single(),
   ]);
-  if (locations.error || business.error || !locations.data || !business.data)
+  if (locations.error || business.error || !locations.data || !business.data ||
+      locations.count === null || locations.count > locations.data.length)
     return { ok: false as const, error: "storage_unavailable" as const };
   return { ok: true as const, locations: locations.data,
     businessTimezone: business.data.timezone as string };
