@@ -161,7 +161,7 @@ INSERT INTO staff_scheduling_compensation
  (business_id,employee_id,cash_cost_state,eligibility_reference)
 VALUES (:'biz_b',:'employee_b','known_eligible_zero',
  'Owner reviewed and recorded statutory eligibility evidence');
-DO $
+DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
      WHERE employee_id=current_setting('test.employee_b')::uuid
@@ -179,7 +179,7 @@ SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
 UPDATE staff_scheduling_compensation
  SET cash_cost_state='salary_conversion_pending',eligibility_reference=NULL
  WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
-DO $
+DO $$
 BEGIN
  IF NOT EXISTS (SELECT 1 FROM staff_scheduling_compensation
      WHERE employee_id=current_setting('test.employee_b')::uuid
