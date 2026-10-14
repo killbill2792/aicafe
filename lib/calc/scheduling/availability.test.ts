@@ -391,4 +391,80 @@ describe("Olivia PR 1A: pure effective availability", () => {
     expect(compensationProvenance({ cash_cost_state: "known_paid" }, null)).toBe("unknown");
     expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" }, null)).toBe("unknown");
   });
+
+
+  it("accepts null or zero recorded cents only with explicit known-eligible-zero evidence", () => {
+    for (const [amount, hourly] of [
+      [null, null], [0, 0], [null, 0], [0, null],
+    ] as const) {
+      expect(compensationProvenance(
+        { cash_cost_state: "known_eligible_zero" }, wages("hour", amount, hourly),
+      )).toBe("known_eligible_zero");
+      expect(compensationProvenance(null, wages("hour", amount, hourly))).toBe("unknown");
+      expect(compensationProvenance(
+        { cash_cost_state: "known_paid" }, wages("hour", amount, hourly),
+      )).toBe("unknown");
+    }
+  });
+
+  it("fails closed when EITHER wage column becomes negative (including Staff import updates)", () => {
+    for (const [amount, hourly] of [
+      [-1, 0], [0, -1], [-100, null], [null, -100],
+      [-1, -1], [-100, 1800], [1800, -100],
+    ] as const) {
+      for (const state of [
+        "known_eligible_zero", "known_paid", "salary_conversion_pending",
+      ] as const) {
+        expect(compensationProvenance(
+          { cash_cost_state: state }, wages("hour", amount, hourly),
+        )).toBe("unknown");
+      }
+    }
+    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" },
+      wages("month", 210000, -1))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "known_paid" },
+      wages("year", 2300000, -1))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "unknown" },
+      wages("hour", -1, -1))).toBe("unknown");
+  });
+
+  it("rejects malformed runtime wages rather than coercing them into paid or verified-zero", () => {
+    const invalidCents: unknown[] = [Number.NaN, Infinity, -Infinity, 0.5,
+      1.5, Number.MAX_SAFE_INTEGER + 1, "0", "2000", undefined, {}, []];
+    for (const bad of invalidCents) {
+      const malformed = bad as number;
+      expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" },
+        wages("hour", malformed, 0))).toBe("unknown");
+      expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" },
+        wages("hour", 0, malformed))).toBe("unknown");
+      expect(compensationProvenance({ cash_cost_state: "known_paid" },
+        wages("hour", 1800, malformed))).toBe("unknown");
+      expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" },
+        wages("month", 200000, malformed))).toBe("unknown");
+    }
+    for (const period of [null, "weekly", "", "Hour", "DAY"]) {
+      expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" },
+        wages(period, 0, 0))).toBe("unknown");
+      expect(compensationProvenance({ cash_cost_state: "known_paid" },
+        wages(period, 1800, 1800))).toBe("unknown");
+    }
+    expect(compensationProvenance(
+      { cash_cost_state: "invalid-state" as "known_paid" }, wages("hour", 1800, 1800),
+    )).toBe("unknown");
+  });
+
+  it("keeps valid salary-pending, paid and unknown states separate", () => {
+    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" },
+      wages("month", 200000, null))).toBe("salary_conversion_pending");
+    expect(compensationProvenance({ cash_cost_state: "known_paid" },
+      wages("hour", 1800, 0))).toBe("known_paid");
+    expect(compensationProvenance({ cash_cost_state: "known_paid" },
+      wages("year", 2400000, 2500))).toBe("known_paid");
+    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" },
+      wages("year", 2400000, 2500))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" },
+      wages("month", 200000, null))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "unknown" },
+      wages("hour", 1800, 1800))).toBe("unknown");
+  });
 });
