@@ -16,7 +16,7 @@ export type FoundationWriteResult =
   | { ok: true; id: string; revision: number }
   | { ok: false; error: "unauthorized" | "disabled" | "invalid_input" | "conflict_or_missing" | "storage_unavailable" };
 
-async function requireSchedulingOwner(): Promise<
+export async function requireSchedulingOwner(): Promise<
   { supabase: Client; businessId: string } | null
 > {
   if (!isSupabaseConfigured()) return null;
