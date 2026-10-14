@@ -263,7 +263,7 @@ BEGIN
  RETURN NEW;
 END $$;
 CREATE FUNCTION public.scheduling_log_foundation() RETURNS trigger
-LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
  -- Parent-business cascades must not attempt to resurrect an audit FK row.
  IF TG_OP='DELETE' AND NOT EXISTS
