@@ -1,0 +1,123 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
+import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { type SchedulingRow, type SchedulingLocation,
+ schedulingFieldClass as field, schedulingButtonClass as secondary,
+ schedulingPrimaryClass as primary } from "./AvailabilityEditor";
+
+export default function StaffQualificationsEditor({ employeeId, types, assignments, locations, today }: {
+  employeeId: string; types: SchedulingRow[]; assignments: SchedulingRow[];
+  locations: SchedulingLocation[]; today: string;
+}) {
+  const t=useTranslations("SchedulingAvailability"),router=useRouter();
+  const [newCode,setNewCode]=useState(""),[newName,setNewName]=useState("");
+  const [code,setCode]=useState(""),[locationId,setLocationId]=useState("");
+  const [from,setFrom]=useState(today),[to,setTo]=useState("");
+  const [source,setSource]=useState<"owner_direct"|"worker_reported_by_owner">("owner_direct");
+  const [confirmation,setConfirmation]=useState<"unconfirmed"|"owner_confirmed">("unconfirmed");
+  const [error,setError]=useState(""),[saved,setSaved]=useState(false);
+  const [pending,startTransition]=useTransition();
+  const mine=assignments.filter(r=>r.employee_id===employeeId);
+  function issue(errorCode:string) {setError(errorCode);setSaved(false);}
+  function addType() {
+    startTransition(async()=>{
+      const result=await saveSchedulingFoundationRecord({
+        kind:"qualification_type",action:"create",requestKey:crypto.randomUUID(),
+        data:{code:newCode.trim().toLowerCase(),display_name:newName.trim(),active:true},
+      });
+      if(!result.ok){issue(t("saveFailed"));return;}
+      setError("");setSaved(true);setCode(newCode.trim().toLowerCase());
+      setNewCode("");setNewName("");router.refresh();
+    });
+  }
+  function assign() {
+    if (!code){issue(t("chooseQualification"));return;}
+    startTransition(async()=>{
+      const result=await saveSchedulingFoundationRecord({
+        kind:"qualification",action:"create",requestKey:crypto.randomUUID(),
+        data:{employee_id:employeeId,location_id:locationId||null,qualification_code:code,
+          valid_from:from,valid_to:to||null,source,confirmation},
+      });
+      if(!result.ok){issue(t("saveFailed"));return;}
+      setError("");setSaved(true);router.refresh();
+    });
+  }
+  function revoke(r:SchedulingRow) {
+    if (!window.confirm(t("confirmRemove")))return;
+    startTransition(async()=>{
+      const result=await saveSchedulingFoundationRecord({
+        kind:"qualification",action:"delete",id:r.id,expectedRevision:r.revision,
+      });
+      if(!result.ok){issue(t("conflict"));return;}
+      setError("");router.refresh();
+    });
+  }
+  const findName=(qualCode:string)=>String(types.find(r=>r.code===qualCode)?.display_name??qualCode);
+  return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
+    <h4 className="text-base font-bold">{t("qualifications")}</h4>
+    <p className="text-sm text-ink-muted">{t("roleNotQualification")}</p>
+    {mine.length===0&&<p className="text-sm text-ink-muted">{t("noQualifications")}</p>}
+    {mine.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
+      <div className="min-w-0">
+        <p className="font-semibold">{findName(String(r.qualification_code))}</p>
+        <p className="text-sm text-ink-muted">{String(r.valid_from)}
+          {r.valid_to?` – ${String(r.valid_to)}`:""}{" · "}
+          {r.confirmation==="owner_confirmed"?t("ownerConfirmed"):t("unconfirmed")}
+        </p>
+      </div>
+      <button type="button" className={secondary} onClick={()=>revoke(r)} disabled={pending}>{t("remove")}</button>
+    </div>)}
+    <label className="flex flex-col gap-1 text-sm">{t("qualification")}
+      <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
+        <option value="">{t("chooseQualification")}</option>
+        {types.filter(r=>r.active!==false).map(r=><option key={r.id} value={String(r.code)}>{String(r.display_name)}</option>)}
+      </select>
+    </label>
+    <label className="flex flex-col gap-1 text-sm">{t("location")}
+      <select className={field} value={locationId} onChange={e=>setLocationId(e.target.value)}>
+        <option value="">{t("allLocations")}</option>
+        {locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
+      </select>
+    </label>
+    <div className="grid grid-cols-2 gap-2">
+      <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
+        <input type="date" className={field} value={from} onChange={e=>setFrom(e.target.value)}/>
+      </label>
+      <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
+        <input type="date" className={field} value={to} onChange={e=>setTo(e.target.value)}/>
+      </label>
+    </div>
+    <label className="flex flex-col gap-1 text-sm">{t("source")}
+      <select className={field} value={source}
+        onChange={e=>setSource(e.target.value as typeof source)}>
+        <option value="owner_direct">{t("ownerDirect")}</option>
+        <option value="worker_reported_by_owner">{t("workerReported")}</option>
+      </select>
+    </label>
+    <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+      <select className={field} value={confirmation}
+        onChange={e=>setConfirmation(e.target.value as typeof confirmation)}>
+        <option value="unconfirmed">{t("unconfirmed")}</option>
+        <option value="owner_confirmed">{t("ownerConfirmed")}</option>
+      </select>
+    </label>
+    <button type="button" className={primary} disabled={pending||!code} onClick={assign}>{t("assignQualification")}</button>
+    <details className="rounded-xl border border-line p-3">
+      <summary className="min-h-12 cursor-pointer font-semibold">{t("createQualification")}</summary>
+      <div className="mt-2 flex flex-col gap-2">
+        <label className="flex flex-col gap-1 text-sm">{t("qualificationCode")}
+          <input className={field} value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="opening"/>
+        </label>
+        <label className="flex flex-col gap-1 text-sm">{t("qualificationName")}
+          <input className={field} value={newName} onChange={e=>setNewName(e.target.value)}/>
+        </label>
+        <button type="button" className={secondary} disabled={pending||!newCode||!newName} onClick={addType}>{t("createQualification")}</button>
+      </div>
+    </details>
+    {error&&<p role="alert" className="text-sm text-warn">{error}</p>}
+    {saved&&<p role="status" className="text-sm text-good">{t("saved")}</p>}
+  </section>;
+}
