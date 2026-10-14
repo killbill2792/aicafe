@@ -281,5 +281,93 @@ BEGIN
  END;
 END $$;
 
+-- A salaried employee marked salary_conversion_pending becomes hourly
+-- through the same employee fields updated by Staff.updateEmployee().
+-- Do not retain a stale salary-pending status when the conversion is irrelevant.
+UPDATE employees SET display_name='Alex B now hourly',role='barista',
+ wage_period='hour',wage_amount_cents=1850,default_hourly_wage_cents=1850
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=current_setting('test.employee_b')::uuid
+    AND cash_cost_state='unknown' AND eligibility_reference IS NULL)
+ THEN RAISE EXCEPTION 'STAFF_SALARY_PENDING_TO_HOURLY_STALE'; END IF;
+END $$;
+-- Explicitly review an hourly known_paid state, then keep it on a raise
+-- because that state remains consistent with canonical positive wages.
+UPDATE staff_scheduling_compensation SET cash_cost_state='known_paid'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+UPDATE employees SET display_name='Alex B raised',role='barista',
+ wage_period='hour',wage_amount_cents=1950,default_hourly_wage_cents=1950
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=current_setting('test.employee_b')::uuid
+    AND cash_cost_state='known_paid') THEN
+   RAISE EXCEPTION 'VALID_KNOWN_PAID_INVALIDATED_ON_RAISE';
+ END IF;
+END $$;
+-- Positive hourly -> salary not yet converted must revoke known_paid.
+UPDATE employees SET display_name='Alex B salaried',role='barista',
+ wage_period='month',wage_amount_cents=210000,default_hourly_wage_cents=0
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=current_setting('test.employee_b')::uuid
+    AND cash_cost_state='unknown') THEN
+   RAISE EXCEPTION 'PAID_TO_UNCONVERTED_SALARY_STALE';
+ END IF;
+END $$;
+UPDATE staff_scheduling_compensation SET cash_cost_state='salary_conversion_pending'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+-- Salary conversion through Staff setWeeklySchedule updates the existing
+-- cached hourly field; it must revoke the pending classification.
+UPDATE employees SET default_hourly_wage_cents=2300
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=current_setting('test.employee_b')::uuid
+    AND cash_cost_state='unknown') THEN
+   RAISE EXCEPTION 'CONVERTED_SALARY_STILL_PENDING';
+ END IF;
+END $$;
+UPDATE staff_scheduling_compensation SET cash_cost_state='known_paid'
+ WHERE business_id=:'biz_b' AND employee_id=:'employee_b';
+-- A zero/missing wage may also be written by existing imports/other paths.
+-- It must not leave a previously paid employee classified known_paid.
+UPDATE employees SET wage_period='hour',wage_amount_cents=0,default_hourly_wage_cents=0
+ WHERE business_id=:'biz_b' AND id=:'employee_b';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM staff_scheduling_compensation
+    WHERE employee_id=current_setting('test.employee_b')::uuid
+    AND cash_cost_state='unknown') THEN
+   RAISE EXCEPTION 'KNOWN_PAID_WITHOUT_WAGE_STALE';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM scheduling_foundation_audit_events
+    WHERE business_id=current_setting('test.biz_b')::uuid
+    AND operation='UPDATE' AND table_name='staff_scheduling_compensation'
+    AND before_value->>'cash_cost_state'='known_paid'
+    AND after_value->>'cash_cost_state'='unknown') THEN
+   RAISE EXCEPTION 'PAID_STATE_INVALIDATION_NOT_AUDITED';
+ END IF;
+END $$;
+-- Invalid state writes remain rejected against the same wage predicate.
+DO $$
+BEGIN
+ BEGIN
+  UPDATE staff_scheduling_compensation SET cash_cost_state='known_paid'
+   WHERE business_id=current_setting('test.biz_b')::uuid
+     AND employee_id=current_setting('test.employee_b')::uuid;
+  RAISE EXCEPTION 'PAID_WITH_ZERO_WAGE_ACCEPTED';
+ EXCEPTION WHEN raise_exception THEN
+  IF SQLERRM='PAID_WITH_ZERO_WAGE_ACCEPTED' THEN RAISE; END IF;
+ END;
+END $$;
+
 ROLLBACK;
 \echo Olivia PR 1A RLS/composite tenant/attestation/audit tests passed (rolled back)
