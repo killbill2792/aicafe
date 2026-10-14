@@ -1,0 +1,446 @@
+# AI CAFE — Universal Supervisor Platform Architecture
+
+**Status:** Proposed architecture contract only; review required before implementation. **No runtime behavior, migrations, feature flags, deployments or permissions change in this PR.**  
+**Repository baseline inspected:** killbill2792/aicafe, main at commit 2d69b49f844fd9d91815fb39ab4d8280b251435c (2026-10-14). PR #72 remains separate and open.  
+**Owner-facing product:** ONE Supervisor conversation, ONE operating-task inbox; Olivia (scheduling), Alex (pricing), Maya (supplies/waste), Leo (money/operations) are domain specialists, not separate owner chats.  
+**Source-review limitation:** The separately named “Universal Supervisor Independent Architecture Review” was not present among the accessible conversation attachments or repository files when this proposal was authored. The available project handoff, AGENTS.md, docs/09-ai-native-operating-system.md, docs/scheduling-architecture.md, Phase 3–8 Supervisor documents and implementation paths listed below were inspected. **Comparison and sign-off against the missing independent review is a blocking review item, not a completed verification.**
+
+## 1. Product decision and non-negotiable boundaries
+
+The Supervisor is the stable owner interaction, goal decomposition, authorization and verification surface. Specialists own domain capabilities, source adapters, domain decisions and deterministic calculation calls. Registering the next specialist should require a new capability/metric module and optional presentation, **not** adding new intent branches to a central Supervisor router, tool schema, planner, approval gate or event loop.
+
+The owner should be able to ask about every **supported canonical business metric** with explicit provenance, freshness, units and data-quality status. “Can access every metric” means every registered **authorized and supported** metric can be discovered, resolved and queried through typed server-side interfaces; it does **not** mean bypassing RLS, reading arbitrary tables, exposing other tenants, declaring nonexistent fields supported or making the model a SQL interpreter. A supported metric can validly return unavailable.
+
+Keep the deterministic business architecture in docs/09-ai-native-operating-system.md:
+
+1. Authorized operational records and imported evidence.
+2. Pure, tested calculations in lib/calc/.
+3. Source-aware state/metric projections.
+4. Signals and explicit decisions.
+5. Specialist capabilities and shared orchestration.
+6. Verified, localized owner explanations.
+7. Separately authorized owner actions and durable outcome tracking.
+
+**Hard invariants:** money is integer cents; no invented sales, wages, worker acceptance, inventory, notifications or integrations; actual versus estimated never implicit; zero is distinct from absent; never count a planned shift as worked attendance; POS is read-only; no duplicated labor/profit/pricing calculations outside lib/calc/; no second task inbox; no cross-tenant access; no arbitrary autonomous writes; owner-written AI Team rules are guidance, **not** execution consent. Preserve existing financial history, Staff records, tenant RLS, private conversations, auth flow and owner-visible EN/ES/AR behavior.
+
+### Intended architecture (logical modules, not mandatory new services)
+
+~~~text
+Owner → existing Supervisor thread / voice-as-editable-text / action cards
+      → authenticated OwnerContext (owner + selected café + roles + locale + timezone)
+      → goal decomposition & capability discovery (bounded model or safe fallback)
+      → typed, authorized, budgeted multi-domain plan
+      → capability dispatcher ─┬─ metric catalog → canonical server readers → lib/calc/
+                              ├─ Olivia scheduling adapters → lib/scheduling/ → lib/calc/scheduling/
+                              ├─ Alex pricing adapters → canonical pricing engine in lib/calc/
+                              ├─ Maya supply/evidence adapters → existing audited records
+                              └─ Leo money/operations adapters → canonical financial readers
+      → verified result/evidence merger → existing grounded reply writer → owner
+                              └─ proposed action → approval policy/owner confirmation
+                                   → durable workflow + domain executor + audit/outbox
+                                   → actual domain effect + reread → verified completion
+Events / scheduled evaluator → same capability contracts → existing operating_tasks
+                             → opt-in, rate-limited owner notification delivery
+~~~
+
+The diagram names conceptual seams. Start **in-process, in the existing Next.js app**. Do not invent agent microservices, agent-to-agent free-form chats, generalized autonomous loops or separate per-agent databases.
+
+## 2. Verified current architecture and concrete limits
+
+This table distinguishes observed repository behavior from desired future behavior; production deployment state was **not** verified.
+
+| Existing paths / contracts | What exists on main | Limit / safe extension |
+| --- | --- | --- |
+| lib/ai/conversations/supervisorRequest.mjs, supervisorFunctions.mjs, requestScope.ts | One semantic scope taxonomy, hard-coded goal domains/function schemas and bounded Responses API requests; can seek multiple read goals | Each new intent/metric currently tends to change shared enumerations, prompts, tool schemas or mapping. Replace incrementally with capability-provided descriptors while retaining legacy semantics |
+| lib/ai/conversations/toolRegistry.server.ts | Strict zod tool argument validation, per-tool read implementations, source refs, status/coverage and safe task projections | A central read switch / finite schemas, **not** a universal extension registry; avoid injecting arbitrary model-created tool names |
+| lib/ai/conversations/runSupervisorTurn.server.ts | Read-only multi-tool flow, grounding and goal-completeness checks, limited to MAX_ROUNDS=3 and MAX_TOOLS=5; final model chooses only server-issued fact/task/insight IDs | Existing multi-read composition is a useful baseline, **not** durable multi-specialist workflow execution; budget exhaustion must become explicit per-goal unavailable/partial, never silent omission |
+| lib/ai/conversations/contracts.ts, replyValidation.ts, replyWriter.server.ts | GroundedSupervisorReply with verified/estimated/partial/unavailable/insufficient_evidence, exact evidence references, restricted metric/task blocks and idempotent reply ID from owner message | Extend via versioned adapters and separately trusted action cards; never loosen current validation, model numeric claims or links |
+| lib/ai/conversations/auth.server.ts, service.ts, app/api/ai/threads/* | Owner + active café selected by trusted server; private owner-scoped threads; same-origin validation, immutable messages, retry keys | No user-supplied business/owner identity and no direct model database access; preserve co-owner conversation privacy |
+| lib/ai/cafeTools.server.ts, lib/ai/tools.ts, lib/operating/cafeState.ts | Authenticated business-scoped allowlisted read facade and CafeState/KnownSlice projections, no raw Supabase client exposed to model | Valuable metric adapters exist, but no discoverable metric catalog with stable dimension/period/granularity/lineage contract |
+| lib/ai/conversations/domainProjections.ts, lib/ai/supervisorReads.server.ts, lib/ai/supervisorFacts.server.ts | Staff now/schedule, break-even and period-sensitive sales/menu/bills/expenses evidence; recurring staff schedule is **not** accepted shift/actual attendance | Preserve menu versus purchased-item and day versus hour distinctions, current schedule truncation, timecard provenance and historical completeness checks |
+| lib/calc/*, docs/05-calculations.md | Pure financial, pricing, labor and cost functions, fixtures and tests | Sole authority for deterministic cents/math. Metric adapters supply inputs/outputs, not duplicate formulas |
+| lib/ai/policies/contracts.ts, docs/supervisor-phase5-owner-rules.md | Read allowlist and default deny for all generic business writes; versioned owner-approved natural language team rules with audit | A rule approval **never** authorizes a schedule publish, price change, purchase, POS write or staff contact |
+| lib/operating/tasks.ts, reconcileTasks.ts, lib/data/operatingTasks.ts | Persisted Needs You/Handled/Watching task system, agent attribution (Alex/Olivia/Maya/Leo), owner responses and reconciliation | Not a generic durable executor; existing page reconciliation is not a reliable background scheduler. Extend this inbox instead of creating another |
+| lib/operating/events.ts, docs/09-ai-native-operating-system.md | In-process publish/subscribe event abstraction, typed operating signals and decisions | In-process notifications are not a durable job queue or at-least-once post-commit delivery |
+| lib/ai/conversations/usage.server.ts | Persistent token/call counts and nullable model-price cost estimates | Basis for shared limits, not evidence that every domain has latency/tool/scan limits |
+| app/api/cron/team-alerts/route.ts, lib/ai/notifications/whatsapp.server.ts | Opted-in, provider-dependent owner WhatsApp category alert; pre-send reservation / deduped delivery attempt, currently UTC-day behavior | Not a universal event evaluator, business-local quiet-hour scheduler or employee messaging service |
+| docs/supervisor-phase6-voice-attachments.md | Editable voice transcription and private PDF/image/text storage, unanalysed | Upload does **not** prove extracted employee availability, inventory counts or sales; currently no trusted CSV intake through Supervisor |
+| docs/supervisor-phase8-supplier-intelligence.md | Owner-reported supplier quotations and optional unverified public search snippets | Supplier quote != inventory, verified stock, invoice payment or supplier order |
+| docs/scheduling-architecture.md and **open PR #72** | Scheduling design and a separate proposed, default-off manual foundation for availability/preferences/qualifications/coverage/compensation provenance | Not a published roster, feasibility optimizer, worker identity verification, staffing cost certainty or Supervisor action interface. Do not modify #72 here |
+
+**Verification scope:** repository code/docs and PR metadata, not production DB migrations, live Toast/Square credentials, WhatsApp provider activation, import completeness, real worker communications or production end-to-end results. Existing statements in older architecture docs can describe planned or historical phases; current code and released capabilities must be checked at integration time.
+
+## 3. Stable module boundaries and ownership
+
+Proposed logical layout (names are recommendations; do not create empty scaffolding during this PR):
+
+| Owner | Contract / proposed location | Owns | Must not own |
+| --- | --- | --- | --- |
+| Platform | lib/ai/supervisor/platform/{contracts,registry,planner,dispatcher,verifier,policy,budgets}.ts | Registries, typed protocol, auth context, dependency plan, policy, budget, verified result aggregation, one reply surface | Any pricing, payroll, labor-optimization, inventory or profit formula |
+| Metrics platform | lib/metrics/{catalog,query,quality,precedence}.ts | Discovery, authorization, period/dimension/granularity validation, read lifecycle, quality/lineage normalization | Raw SQL from model or a new parallel finance ledger |
+| Specialist adapter | lib/supervisor/capabilities/{olivia,alex,maya,leo}/* (or local domain registration exports) | Capability metadata, schemas, source adapters, previews and effect handler delegation | Direct generic service-role SQL or duplicated approval engine |
+| Domain services | Existing lib/scheduling/, pricing/menu, supplier and finance/data services | Versioned domain reads/commands, domain transaction invariants and persistence | New global Supervisor intents or provider-specific prompt orchestration |
+| Calculation | Existing lib/calc/; scheduling in lib/calc/scheduling/ | All deterministic feasibility, forecasting/what-if, pricing, cost and profit math with independent tests | Model prompting, DB writes, tenant authorization |
+| Execution and events | Small audited domain command adapter + shared durable workflow state; existing operating_tasks and notification transport | Transactional effects, dedupe, reconciliation and verified outcomes | Unbounded background agents, unreviewed third-party sends |
+| Presentation | Existing Supervisor component/chat and Staff/Operations screens | Grounded text/cards with appropriate localized follow-ups | Financial math or authority decisions |
+
+The platform controls **who may ask, plan, approve and observe**; each specialist controls **what a bounded domain operation means**. Domain functions remain callable without an LLM and must be independently testable. Register data/commands as module exports at build time; use a server-owned, reviewed manifest, not plugins dynamically supplied by owners or prompts. Version each public capability and result contract; reject unknown major versions.
+
+## 4. Universal typed capability registry
+
+Define a typed, server-owned registry whose descriptors are safe to expose as discoverable metadata, while implementations remain server-only. Example of a design target, **not code in this PR**:
+
+~~~ts
+type CapabilityId = string;            // e.g. "olivia.schedule.preview.v1"
+type AgentId = "olivia" | "alex" | "maya" | "leo" | (string & {});
+type Mode = "read" | "propose" | "commit" | "evaluate";
+type ResultStatus =
+  | "verified" | "estimated" | "partial" | "unavailable"
+  | "insufficient_evidence" | "requires_approval"
+  | "conflict" | "failed";
+type AuthorizedContext = {
+  businessId: string; ownerUserId: string; role: "owner";
+  timezone: string; locale: "en" | "es" | "ar";
+  requestId: string; traceId: string;
+}; // trusted server construction ONLY
+
+type CapabilityDescriptor<I, O> = {
+  id: CapabilityId; version: 1; agent: AgentId;
+  descriptionKey: string; inputSchema: ZodSchema<I>; outputSchema: ZodSchema<O>;
+  mode: Mode;
+  discoverableGoals: readonly string[]; producesMetrics: readonly string[];
+  requiresMetrics: readonly string[]; dependsOn?: readonly CapabilityId[];
+  requiredRole: "owner"; sensitivity: "normal" | "staff" | "financial";
+  approvalPolicyKey: string | null; // per-action server-defined policy
+  budgetClass: "cheap_read" | "bounded_read" | "planning" | "external";
+  preconditions: readonly string[];
+  enabledFor: (ctx: AuthorizedContext) => Promise<boolean>;
+  execute: (ctx: AuthorizedContext, input: I) => Promise<VerifiedCapabilityResult<O>>;
+};
+~~~
+
+The executable contract must separate read and write types so a "commit" executor cannot run through a read dispatcher. Production code should use zod generics/inferred types (the illustration omits implementation-specific TS imports). An effectful capability also declares a separately implemented **preview**, deterministic **effect type**, approval requirements, idempotency class, compensation/rollback semantics, and postcondition verifier; no effectful operation is admitted without them.
+
+Registry startup checks: unique ID+major version; valid schema bounds; no orphan dependencies, cycles or conflicting owners of the same canonical effect; registered metric names exist; policy key exists and is default-deny; budget classification is present; effect handler is allowlisted; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
+
+Example future registration:
+
+| Domain owner | Example capability IDs | Inputs from | Result/action semantics |
+| --- | --- | --- | --- |
+| Olivia | olivia.availability.read.v1; olivia.schedule.preview.v1; later olivia.schedule.publish.v1 | Staff canonicals + #72 availability/coverage, location, law/time and cost metadata | Feasibility/gaps and source-aware proposed revision; publish requires separately authorized, versioned owner approval |
+| Alex | alex.pricing.review.v1; later alex.pricing.propose.v1 | Canonical pricing engine, recipe costs, product/menu and reliable sales | Review/KEEP/recommendation with evidence; no price write/POS mutation by default |
+| Maya | maya.supplies.quote_compare.v1; later maya.inventory.read.v1 **only if integration exists** | Owner-reported quotes, recipe/ingredient input; optional explicitly supported inventory provider | Unit-matched quote comparison; inventory unavailable without actual inventory data |
+| Leo | leo.money.profit.v1; leo.money.costs.v1 | Canonical period profitability, bills, labor and fee data | Verified/estimated/partial profit or cost explanation; no invented bank feed/payment action |
+
+**Registration proof:** A new capability/goal from an existing or fifth specialist changes only its domain registry module, optional metric definitions, localization/presentation and its own tests. Platform discovery/planning/authorization/result aggregation code remains unchanged **for an existing contract version**. An explicit protocol-breaking contract version upgrade is permitted through a separately reviewed platform PR; do not promise literally zero future platform work.
+
+## 5. Universal business metric catalog and secure access
+
+### 5.1 Catalog contract
+
+Each metric is a first-class server-owned definition; metric IDs are stable and versioned independently of display names. Exact fields:
+
+~~~ts
+type MetricDefinition = {
+  id: string; version: 1;
+  owner: "money" | "sales" | "staff" | "pricing" | "supplies" | string;
+  localizedLabelKey: string; descriptionKey: string;
+  valueKind: "money_cents" | "integer" | "decimal_ratio" | "duration_minutes" | "boolean" | "series";
+  unit: "USD_cents" | "count" | "ratio" | "minutes" | "unit_count" | string;
+  allowedDimensions: readonly string[]; // e.g. location, item, channel, employee
+  allowedGranularities: readonly ("instant" | "hour" | "day" | "week" | "month")[];
+  supportedPeriods: "instant" | "bounded_date_range" | "all_time";
+  temporalBasis: "business_local" | "location_local" | "utc_instant";
+  availabilityRequires: readonly string[]; // provenance, coverage or provider prerequisites
+  sensitivity: "normal" | "staff" | "financial";
+  accessPolicy: string; sourcePurpose: string; canonicalReader: string;
+  sourceSelectionPolicy: string; maxRangeDays: number | null;
+  expectedFreshnessSeconds: number | null;
+  aggregationPolicy: "from_canonical_calc" | "sum_validated_parts" | "not_aggregatable";
+};
+type MetricQuery = {
+  metricId: string; period?: {from: string; to: string};
+  granularity: "instant" | "hour" | "day" | "week" | "month";
+  dimensions: Record<string, string[]>; // validated against catalog, entity authorization
+  filters: Record<string, unknown>;     // metric-specific bounded schema
+  purpose: string; // e.g. payroll_actual, schedule_forecast, price_review
+};
+type MetricResult = {
+  metricId: string; definitionVersion: 1; query: MetricQuery;
+  status: ResultStatus;
+  value: number | boolean | null | readonly unknown[]; // null NEVER means zero
+  unit: string; actuality: "actual" | "estimated" | "forecast" | "planned" | "unknown";
+  completeness: {state:"complete"|"partial"|"unknown"; observed:number|null; expected:number|null;
+    missingKeys: string[]; truncated:boolean};
+  freshness: {asOf:string|null; capturedAt:string|null; stale:boolean|null};
+  provenance: readonly SourceRef[]; assumptions: readonly string[];
+  conflicts: readonly SourceConflict[]; unavailableReason: string|null;
+};
+~~~
+
+Use **explicit result variants** in production (e.g. a discriminated union requiring null for unavailable and requiring a valid typed value/unit for available) rather than interpreting this abbreviated sample's nullable value at the UI. Currency and every money total use safe integer cents. Ratios cannot be averaged naively across groups or time; recompute from canonical numerators and denominators in lib/calc/. Do not sum overlapping sources or treat a calculated derived metric as a raw imported fact. Timezone, DST, inclusive café dates, source effective range and location scope are part of the query fingerprint.
+
+Catalog discovery is two operations: **list permitted definitions** (small metadata only) and **query selected metric IDs with bounded arguments**. The server builds the catalog from reviewed modules; owner can learn what is available while missing integrations return explicit unavailable. No schema exploration, free-form table names, REST endpoint composition or SQL issued by an LLM. Apply authenticated café selection, source RLS, row/column sensitivity, bounded pagination and server-enforced dimension filters **before** data is exposed. Where staff detail is sensitive, provide only an authorized aggregate unless a separate named-person read is justified by role and purpose.
+
+### 5.2 Canonical starter catalog / ownership
+
+The first catalog is an **adapter over existing functions**, not a new set of financial equations.
+
+| Metric family / illustrative IDs | Canonical source & calculation | Evidence / caveat |
+| --- | --- | --- |
+| money.owner_profit_cents; money.total_business_costs_cents | Existing getProfitability / getBusinessCostSummary and lib/calc/profit.ts | Same period and modeled components; complete net sales/ingredients/labor/fees/bills needed for a verified total |
+| money.recurring_monthly_bills_cents; money.recorded_spending_cents | Existing monthly bills/recorded-expense readers and lib/calc/runningCosts.ts | Never substitute recurring bill obligation for all spending or all operating costs |
+| sales.net_sales_cents; sales.orders_count; sales.item_units | getSalesTrend, verified order facts, period item sales and existing item-sales coverage | Daily totals do not imply hourly granularity; distinct menu products != distinct actually purchased products |
+| staff.loaded_labor_cost_cents; staff.actual_minutes | Existing labor, timecards, provenance-aware Staff readers and lib/calc/staff.ts | Actual attendance distinct from owner_schedule prediction; partial days, wages and tax assumptions must be labeled |
+| staff.scheduled_coverage; staff.proposed_labor_cost_cents (future) | Olivia versioned planner in lib/calc/scheduling/ after reviewed stages | Planned/forecast, not worked labor; absent wage or known eligible zero requires provenance; no calculation before supporting implementation |
+| menu.active_products; pricing.review_count | Existing menu control center / canonical pricing results | Verification of an empty review set requires complete evaluated coverage; missing prices not "all clear" |
+| supplies.supplier_quoted_unit_cost_cents | Reviewed quotation records + lib/calc/supplierQuotes.ts | Owner-reported quote is not invoice/purchase/verified supplier stock |
+| inventory.stock_on_hand (future only) | No current canonical inventory integration | Return unavailable; registering a name never manufactures inventory |
+
+Business dimensions are **allowed only if canonical readers can faithfully produce them**. For example, no hourly sales if only daily rollups; no item-level totals without covered order lines; no employee cost split if cached predicted/actual overlap cannot be reconciled. Derived ratios and period comparisons require matched source coverage, identical business/location boundaries and the shared pure engine; otherwise return partial/unavailable, not a convenient estimate disguised as actual.
+
+### 5.3 Source precedence is by purpose, not by provider rank
+
+**Purpose-specific authority matrix (proposal to implement with regression tests):**
+
+| Purpose | Primary | Secondary / conditional | Never silently substitute |
+| --- | --- | --- | --- |
+| Observed sale/order | Validated canonical POS transactions, deduplicated provider identity | Explicitly confirmed owner import for its covered period | Menu listing, rollup from another period, incomplete daily ingest |
+| Actual staff attendance/payroll | Verified observed timecard with source/period precedence in existing canonical pipeline | Explicitly owner-confirmed manual actual time, subject to reconciliation | Draft/published shifts, external planned Toast shift, predicted timecard as actual |
+| Future scheduling commitment | Current owner-approved/published local plan revision after explicit opt-in | Reviewed external schedule as a **discrepancy/advisory input** | AI proposal or worker-reported intent as published acceptance |
+| Worker availability | Verified worker submission (when available) or owner-confirmed reported availability with attribution, date and revision | Tentative report only as labeled unconfirmed | Recurring assigned shift as availability |
+| Wage/cash cost | Canonical recorded positive paid wage/contract and effective-period provenance | Explicit permitted zero-cost attestation only if consistent; salary conversion with verified denominator | Unknown/null as zero, stale zero attestation after positive wage update |
+| Menu selling price | Canonical product price/revision | Reviewed snapshot or historical POS price where relevant | AI recommended price as applied |
+| Ingredient price | Canonical dated verified/entered ingredient costs with source status | Owner quote as a separately labeled scenario | Search snippet or unit-incomparable quote as realized cost |
+| Supplier inventory | Supported authorized inventory system after integration | Owner-confirmed stock count if explicitly modeled | Supplier quote, menu item existence or recipe quantity |
+| Banking/payments | Only consented, supported provider records if actually connected | Owner-recorded entry labeled with status | Assuming QuickBooks/Toast/CSV equals a live bank connection |
+
+Implement selection as a **registered policy per metric/purpose and temporal window**. Resolve duplicate identities, overlapping dates and measurement definitions before aggregation. Source conflicts retain both references and a conflict code; disagreements affecting material accuracy block verified answers/actions until reconciliation. A higher-priority source with missing coverage is not magically complete; lower-priority supporting evidence may fill a gap only where the policy explicitly permits it and disjointness can be proven. All source merges must preserve stable evidence identities, source status, capture/effective times, revision and the authority decision. No global "Toast beats owner" or "newest wins" switch.
+
+### 5.4 Unknown, zero, freshness and quality lattice
+
+- **Verified zero** requires a complete, applicable evidence window and a canonical explicit result of zero (e.g. zero reviewed price changes among **all** eligible products).
+- **Unknown/unavailable** arises from missing provider, absent data, unsupported dimension or required granular evidence, denied scope, inconsistent wage, pending salary conversion, incomplete period or failed trusted reader. Never format null as $0 / 0 workers.
+- **Partial** yields only observed subtotals, known numerator/denominator coverage and missing components; it cannot claim complete café profit or safe scheduling publication.
+- **Estimated/forecast/planned** are distinct time/status axes. A source can be actual but stale or actual but partial. Never flatten these to "verified" by picking the highest confidence input.
+- **Freshness** is metric/source-specific. Unknown refresh timestamp is not fresh; stale data can support a historical statement but not an unqualified "right now" action.
+- Empty provider data, temporary provider outage and access denied produce different internal reason codes, owner-safe localized outcomes, and the same no-invention policy.
+
+## 6. Stable Supervisor orchestration and multi-domain planning
+
+The Supervisor is a **bounded coordinator**, not the universal owner of every domain calculation or intent parser.
+
+1. **Resolve trusted scope:** existing authenticated owner + selected café, locale, timezone; never read the business ID, user role, approver or allowed capabilities from model arguments.
+2. **Capture goals:** semantically parse one or more requested outcomes (read, compare, simulate, propose, commit), preserve all independent clauses and dates. Preserve existing Phase 4–later semantic request goals through a compatibility adapter. Reject unsupported commands rather than hallucinate a tool.
+3. **Discover and match:** select only enabled, role-allowed capability descriptors and metric definitions. Source availability is evaluated at execution; a known capability may still be unavailable. Return explicit unhandled goals for every unsupported clause.
+4. **Build a constrained DAG:** prerequisites from registry, max depth, fanout and duplicate canonical reads. Plan two-domain requests using stable dependency IDs. Never let a specialist directly invoke an unregistered sibling, mutate another domain or change shared Supervisor instructions.
+5. **Run read/preview steps:** bounded parallel read-only operations, caching only within the authorized request/snapshot. Domain read failures are isolated; budget oversubscription produces per-goal budget-exhausted/unavailable outcomes, not silent dropped intents.
+6. **Aggregate verified results:** the server validates each capability schema, source coverage, value provenance, period and consistency; any cross-domain conclusion must call a reviewed deterministic function or offer separate facts without claiming a calculated causal relationship.
+7. **Choose action path:** present a no-effect preview first. Mutations require the distinct authority/execution pipeline (§8); NEVER execute a mutation by selecting an LLM tool.
+8. **Present:** adapt verified results to existing strict grounded reply blocks. Preserve current finance/sales/staff/pricing semantics and stable task links, and show attributed Olivia/Alex/Maya/Leo content inside the **same** Supervisor conversation.
+
+**Snapshot coherence:** Cross-domain what-if comparisons use a referenced immutable input set or captured source revisions/as-of times. If one teammate sees a changed price/wage/schedule revision mid-plan, show a conflict/recompute instead of mixing stale numbers. Dependencies may degrade independently: "labor unavailable; observed sales available" is better than a false combined profit answer.
+
+**Model trust boundary:** prompts and owner rules are untrusted interpretation hints, never data readers or grants. Any free-form attachment/search snippet/supplier quote may contain prompt injection; sanitize display and ignore embedded instructions. Parse model tool arguments through strict schemas; resolve entity IDs server-side with ambiguity checks. The model selects among server-issued IDs/approved phrases; it does not author business math, arbitrary URLs or final proof of completion. Provider absence, timeout or malformed JSON triggers deterministic safe fallback where available.
+
+**Migration strategy:** keep the current supervisorRequest / supervisorFunctions / requestScope / toolRegistry / runSupervisorTurn path as a legacy adapter first. Feature-flag new discovery **in shadow mode for tests only**, compare supported intents/answers and budgets, then switch read routing behind a reviewed tenant-level rollout. Do **not** replace the existing read router in one PR. Existing MAX_TOOLS=5/MAX_ROUNDS=3 are baseline constraints to preserve initially; expansion must be bounded, cost-reviewed and explicitly tested.
+
+## 7. Universal verified result and owner-facing action contract
+
+Every specialist result must be machine-readable and server-validated; a textual explanation is derivative.
+
+~~~ts
+type SourceRef = {
+  sourceType: string; sourceId: string; sourceRevision: string | null;
+  capturedAt: string | null; effectiveFrom: string | null; effectiveTo: string | null;
+  status: "actual"|"estimated"|"reported"|"planned"|"unverified";
+};
+type SourceConflict = { code:string; left:SourceRef; right:SourceRef; affectedMetrics:string[] };
+type VerifiedCapabilityResult<T> = {
+  capabilityId:string; contractVersion:1; status:ResultStatus;
+  payload:T|null; evidence:SourceRef[]; metricIds:string[];
+  period:{from:string;to:string;timezone:string}|null;
+  completeness:"complete"|"partial"|"unknown";
+  warnings:string[]; missingInputs:string[];
+  assumptions:string[]; conflicts:SourceConflict[];
+  producedAt:string; inputFingerprint:string;
+  proposal:ActionProposal|null; // never effect confirmation itself
+};
+type ActionProposal = {
+  actionType:string; capabilityId:string; proposalId:string;
+  tenantScopedTargetId:string; baseRevision:string;
+  snapshotHash:string; summaryKey:string; effectPreview:unknown;
+  missingPreconditions:string[]; expiresAt:string;
+  approvalPolicyKey:string; riskClass:"low"|"medium"|"high";
+};
+type VerifiedActionOutcome = {
+  actionId:string; workflowId:string; actionType:string;
+  status:"applied"|"rejected"|"conflict"|"failed"|"pending_reconciliation";
+  effectId:string|null; persistedRevision:string|null; verifiedAt:string|null;
+  verifiedEvidence:SourceRef[]; ownerActorId:string|null; auditEventId:string|null;
+};
+~~~
+
+A proposal is neither permission nor an applied outcome. Owner-visible statuses map distinctly: **Suggested / Needs approval / Working or awaiting verification / Applied / Cannot complete / No data**. Show the exact employee/product/location, local schedule times, modeled costs/units, expected effects, uncertainty and proposed next action before committing. A completed badge requires durable postcondition evidence from the domain source; merely receiving an HTTP 200, an LLM completion, an external send attempt or a worker contact draft is not proof.
+
+Preserve legacy GroundedSupervisorReply/blocks and evidenceReferenceSchema as the final write gate. Add a **separate, versioned trusted action-card renderer contract**, backed by server-issued opaque IDs and canonical internal routes; avoid relaxing the current numeric/text/link whitelist or allowing model-supplied action URLs. A detailed schedule grid or supplier/price compare can be a new typed block only after the same evidence validation, privacy, localization and backward-compatibility tests.
+
+## 8. Capability-level authority, approval and delegated operation
+
+### 8.1 Explicit policy dimensions
+
+**Deny by default for every effect.** Evaluate authorization on discovery, preview, approval and execution, and again before an external call. Policy must bind: active café + authenticated actor + current role; registered capability ID/version/effect; target entity and location; sensitivity/risk class; canonical evidence freshness; business state/revision; confirmed owner choice; provider and transport availability; explicit enabled feature; and unexpired delegated grant when applicable.
+
+| Tier | Example | Default behavior |
+| --- | --- | --- |
+| R0 — bounded read | Profit, menu products, scheduling inputs, Team tasks | Owner-scope checks; no side effects |
+| P1 — propose | Review suggested price; preview next week's schedule | Can persist an inert reviewed proposal if explicitly in scope; **not** apply |
+| A2 — one-shot approved action | Publish specific Olivia plan revision; owner chooses pricing in canonical app | Fresh per-action, version-bound owner confirmation; transactional checks; receipt |
+| D3 — tightly delegated action (future) | Repeated **allowlisted** low-risk internal action within owner-set guardrails | Separate opt-in per capability/target/limits, TTL/revocation, spend/time caps, anomaly stop, audit and owner visibility; do not turn on in baseline |
+| X — forbidden/no provider | POS writes, payroll posting, staff texting without consent/transport, supplier purchasing without provider | No execution capability even if owner asks or a rule says so |
+
+Owner guidance in ai_team_rules, a chat phrase ("always do this"), a model opinion, or prior approval of a different revision is never an authority grant. There is no universal Supervisor "full access" switch that authorizes writes. The permission to **read all supported metrics** must not imply ability to modify any record.
+
+A future delegated grant should be persisted as tenant-scoped, capability/effect/version-scoped record with allowed targets, maximum per-run/count/spend/period, permitted hours, approval actor/time, expiry, revocation version and provenance; revocation must apply before new executions. High-risk/irreversible effects (payroll, price propagation to POS, outbound purchases, worker contact, external finance) remain forbidden absent their own security/privacy/legal review even with generic delegation. Provide owner-readable revocation, audit history and default off in every tenant.
+
+### 8.2 Server-side approval workflow
+
+Untrusted parse → entity resolution → deterministic preview → capability-specific feasibility and permissions → immutable proposal with source fingerprint → **specific owner approval** (authenticated, CSRF/same-origin, server-stored target/effect, optimistic version) → recheck state, tenant and permissions → durable execution → postcondition reread → audited verified outcome. If data changed or grant expired, produce conflict and require reapproval; no "best effort" substitution of a different schedule, staff member, product or price.
+
+Olivia **approve** and **publish** remain distinct milestones according to docs/scheduling-architecture.md until an explicit later UX/security review authorizes combining them. Publishing is not worker acceptance, delivery or clock-in. Keep existing owner task response APIs separate from universal action grant policy.
+
+## 9. Durable, idempotent execution and workflow state
+
+Use a **small, additive tenant-scoped workflow ledger only when the first effectful capability is approved**; no migration in this documentation PR. Logical records: workflow (business, owner, originating conversation/message, goals/plan hash, state, version, created/expiry); steps (capability+version, input hash, dependency IDs, attempt count, lease, state, immutable result refs); approvals (proposal ID/hash/revision, actor, decision, policy/grant revision, expiry); effects (unique business/actionType/idempotency key, target/effect ID, requested payload hash, domain outcome); append-only audit events; transactional outbox where needed.
+
+States: requested → planned → awaiting_approval → approved → executing → applied / pending_reconciliation / failed / rejected / canceled / superseded. Each state transition is compare-and-swap with authorized actor and full audit. A retry with the **same idempotency key and identical payload fingerprint** returns the prior result; reuse with a different payload returns conflict. Uniqueness must be enforced in the database, not only in process memory. Resume skips committed steps and revalidates current data/authority for uncommitted ones. Concurrent owner sessions cannot publish the same shift twice or approve different effects under the same proposal ID.
+
+**Effect ownership:** Let each canonical domain repository own its atomic transaction and overlap/version constraints (e.g. Olivia published plan and shifts). Where an outbox/event must be emitted, write it **in the same transaction** as the domain change; then retry dispatch with lease + unique consumer key. Avoid distributed transactions and fake exactly-once external messaging. For a provider with uncertain timeout, mark pending_reconciliation and query its receipt/remote idempotency status rather than blindly replay a potentially charged or delivered action. Irreversible effects require explicit compensating **new action**, never history deletion.
+
+Store minimal sanitized context, immutable input hashes and source IDs, not copied full conversations, bank statements, private uploads or bearer tokens in audit/job payloads. Provider secrets stay server-side encrypted. Support safe cancellation/expiry, administrator kill switch, and per-tenant quota without losing already-persisted records.
+
+## 10. Shared business events, proactive evaluation and notifications
+
+Adopt typed versioned **business events** with businessId, domain/entity ID, revision, event type, occurredAt, source reference, correlation/causation IDs and idempotency key. Keep the existing lib/operating/events.ts as an optional in-process notification adapter, **not** the durable transport. Start the durable transactional outbox and a small cron/in-process lease consumer **only for real approved use cases**, rather than a speculative event bus.
+
+Registered domain evaluators subscribe to a **bounded allowlist** (e.g. confirmed availability changed, approved schedule version published, canonical price cost changed, invoice due status supported) and to time-based café-local checks. Evaluator produces a typed finding fingerprint (tenant + capability + entity + source revision + period + rule version), evidence, severity, lifecycle and proposed owner action. Before creating a new task it atomically upserts/reconciles with existing **operating_tasks** statuses. Reevaluate/reopen when material evidence changes, do not recreate on page view or mark gaps "handled" until proven resolved. Existing Alex/Maya/Leo tasks and owner snoozes/resolutions must not be overwritten by a new general reconciler.
+
+Notification routing is downstream of verified persisted tasks/events: owner opted in, channel configured, confirmed destination, role still authorized, frequency/quiet hours checked in **business-local time**, privacy-safe template, rate cap, per-task and per-owner dedupe, actual provider receipt and audit. Current WhatsApp cron is UTC-day and is not yet a general event router; it must remain unchanged until a separately approved PR. Never notify employees or claim their acceptance via the existing owner WhatsApp path. Provider absent → in-app task, outbound result unavailable; "remind me tomorrow" requires a real persisted approved job, not just chat text.
+
+## 11. Shared cost, latency, quality and failure controls
+
+Each capability declares resource class, max input size/range/row count, expected source reads and permissible external calls. A **per-turn controller** enforces limits for model calls, tool calls, unique canonical reads, dependency fanout, wall-clock deadline, concurrency, response size, tenant quota and external spend. Keep the existing MAX_ROUNDS=3/MAX_TOOLS=5 budget during compatibility migration; no unbounded chain of specialist prompts. Deduplicate the same underlying metric read across Alex/Leo/Olivia and cache only inside the authorized scope/time snapshot; do not leak caches across business/owner/privacy boundaries.
+
+Priority: execute safety/authorization and required evidence reads first, then cheap deterministic metrics; expensive optional enrichments last. A partially completed composite request returns each goal's exact status and asks only for material missing inputs. Timeout/provider down returns a safe structured failure, never a fabricated last-known success. Currency estimates of **LLM inference cost** live separately from café financial calculations and remain unknown if token rates are missing. Keep token/call/cost metrics server-only, not in the owner's business facts.
+
+Mandatory observability without secrets: trace/request/workflow IDs, capability version, tenant pseudonymous correlation, per-step status/latency/read counts/budget consumption, failure category, evidence IDs, approval/audit chain and provider receipt status. No raw bank lines, tokens, user message bodies, uploaded staff documents or private employee details in logs. Audit storage/access retention is a separate privacy review.
+
+## 12. Tenant security, provenance and error containment
+
+- Authenticate at every server entry; owner/café resolved from selected business and session. For staff-sensitive data restrict columns, aggregates and location as authorized. Never trust model/client-supplied role, businessId, staffId ownership or capability name.
+- Enforce **both** RLS/composite tenant foreign keys and server-side checks for every read and effect. Generic privileged admin/service-role clients are forbidden as a shortcut to permissions; any narrow internal privileged writer must have validated owner/message provenance and scoped selectors like existing replyWriter.server.ts.
+- Apply zod strict input/output schemas; reject extra keys, oversized payloads, invalid dates, DST ambiguity, URL injection and unknown metric dimensions. Canonical entity resolution detects duplicate employee names, inaccessible IDs, stale revisions and confused owner identity.
+- Permission policy is a mandatory server gate immediately before executing the domain effect, not merely a UI-disabled button. Separate evidence-read credentials from effect-writing credentials.
+- Model-generated text, approved Team rules, source search snippets, imported POS payloads and uploaded files are **data**, not instructions with higher privileges. No arbitrary SQL, SSRF via user-supplied URLs, external action dispatch from prompts or dynamic code loading.
+- Append-only audit with consistent actor/capability/revision/source identity; redact owner display without deleting historical accountability. Supabase owner A, co-owner B, manager, outsider and other-café tests required.
+- Failure categories: unsupported, unavailable source, insufficient evidence, stale/conflicting evidence, denied, invalid request, provider unavailable, timeout, budget exhausted, domain conflict, indeterminate external effect. Map each to localized, non-sensitive owner guidance. Disallow cross-domain success when one step failed a required postcondition.
+
+## 13. Exact Olivia scheduling relationship and PR #72 isolation
+
+**No changes to #72 in this PR.** Its proposed owner-only, default-off availability/preferences/qualifications/coverage/compensation source records are a **domain data foundation**. Its server action and input schemas remain under lib/scheduling/, while pure availability/precedence helpers and all future optimizer/feasibility/cost calculations belong solely under lib/calc/scheduling/ as prescribed by docs/scheduling-architecture.md. This Supervisor platform is a **consumer and policy wrapper**, not a replacement.
+
+Binding integration points:
+
+1. **Read adapters:** olivia.availability.read.v1 and future coverage/cost metrics call a reviewed owner-scoped scheduling read service. Register after #72's migration/activation is separately verified; otherwise return unavailable. The platform never reads the scheduling tables via raw model SQL.
+2. **Preview adapter:** olivia.schedule.preview.v1 accepts only resolved employees/locations, business-local calendar horizon and verified input revision. It delegates entirely to the pure domain planner and exposes feasible assignments, exact uncovered intervals, constraints, wage provenance/quality and owner-hour costs. No POS needed: owner-entered coverage is valid input. **No claim of a working optimizer until a later implementation PR passes tests.**
+3. **Action adapter:** olivia.schedule.approve.v1 / publish.v1 arrive only when the later versioned domain plan/revision/transaction exists; approval and publication are policy-gated, idempotent and recheck DST/legal/rest/wage/qualification/snapshot. Platform stores action workflow links; the domain owns immutable assignments and publishing effects. A Supervisor "yes" without bound plan revision is not publication.
+4. **Tasks/events:** future Olivia evaluator creates/reconciles existing staff_coverage operating_tasks based on verified gaps, and optional owner alerts through shared routing after consent/quiet-hour review. Current #72 has neither optimizer nor notifier and must not be described as one.
+5. **Timecards and compatibility:** legacy staff_schedules and materializeSchedule.ts can create source-marked predicted timecards (including historical recalculation risks); new draft/published assignments **must not** become actual timecards. Keep an explicitly reviewed, opt-in bridge to avoid double labor counts, preserving existing staff/payroll/history and external Toast planned shifts as advisory. Required tests cover single/multiple shifts, overnight/DST, co-owner races, read precedence and recovery.
+6. **Compensation invariant:** recorded **positive** wage always defeats a stale known_eligible_zero attestation; unknown is not free, salary conversion pending is not zero, owner opportunity costs are separate. The ongoing #72 review concerns this precise invariant; Supervisor action/metric confidence must fail closed until the domain behavior is corrected and verified on that PR.
+7. **Conversations:** "Ahmed can't Friday" must resolve the employee or clarify duplicate names, create a reviewed proposed change, and display actual/possible uncovered coverage. No unverified worker message, confirmed acceptance, published plan or loaded savings. Preserve all existing ordinary finance/Team/pricing/sales response paths unchanged.
+
+Scheduling's earlier phase numbering is a **domain delivery sequence**, not a reason to implement a bespoke central Supervisor scheduling router first. Platform PRs can be independently staged while #72 continues; the actual Olivia adapter cannot be activated before domain prerequisites and explicit owner authority pass their gates.
+
+## 14. Minimal ordered implementation PRs (AFTER architecture approval)
+
+This PR is **P0 — architecture only**: create this documentation, review design and the missing Independent Review attachment; no application code, migration, test fixture or environment change. Do not merge automatically.
+
+| Order / prerequisite | Minimal PR and targeted files | Acceptance / stop gate |
+| --- | --- | --- |
+| **P1 — metric contracts and legacy read adapters** | Add lib/metrics/* catalog, quality/source model and focused registry/metrics unit tests; adapt existing lib/ai/tools.ts and canonical reads without changing current query flows | Catalog enumerates supported/missing metrics and dimensions, source quality and time granularity. Existing money/sales/staff/menu/pricing results bit-for-bit semantically compatible; no new finance math; no SQL from model |
+| **P2 — capability protocol + shadow registry** | Add small lib/ai/supervisor/platform contracts/registry/dispatcher with reviewed existing read capability descriptors for Leo, Alex, Maya and read-only Olivia; run shadow adapter harness alongside current toolRegistry.server.ts | New test-only fifth capability is registered **without changing core planner/router**; strict input/output validation, deny-by-default, no existing Owner UI change |
+| **P3 — bounded multi-domain read orchestration** | Refactor selected requestScope/supervisorRequest/toolRegistry/runSupervisorTurn paths behind compatibility flag; reuse existing reply validation; add multi-goal planning, budgets, canonical read dedupe and per-goal unavailable status | Existing semantic fixture + EN/ES/AR, reply evidence and money/Staff/menu/Team behavior remain equivalent; Alex+Leo read request and Olivia+Leo availability/profit question safely coordinate; rollback flag works |
+| **P4 — audited proposal/approval/execution primitive** | First targeted additive workflow/approval/idempotency/audit migration and server-only domain action gateway; **no generic action enabled** by default | RLS/co-owner/race/retry/crash tests; one reversible test effect with exact approval/version and reverified outcome; unapproved/revoked/unknown capability cannot execute |
+| **P5 — Olivia scheduling adapter when domain ready** | Separate PR integrating reviewed lib/scheduling/ preview/publish domain services with platform registry, trusted grounded schedule card and Staff link, plus flags/localizations/tests | No change to #72 or activation by this docs PR; no POS required, no fake timecard/payroll, hard constraint and missing-data gates, specific plan owner approval and idempotent publish |
+| **P6 — real evaluators/events and owner routing, only once needed** | Add transactional outbox/lease runner, evaluator adapters and operating_tasks reconcile, then extend notification path after local-time/consent review | Overlapping runs, retries and stale evidence cannot create duplicate tasks or sends; delivered only on provider receipt; all existing snoozes remain |
+| **Domain follow-ons (parallel where safe)** | Alex pricing capability, Maya evidenced supply/optional inventory, Leo money actions only after supported integration; each domain supplies contracts/tests, not new central intents | One or two new module registrations, no new Supervisor core branching or LLM SQL; unsupported integrations visibly unavailable |
+
+P1 and P2 may be divided by test and migration risks; P4 and P6 must remain default off until separately approved. **No broad "agent framework first" rewrite.** PR #72/Olivia domain PRs continue on their own branch/sequence and must not be rebased into this architecture PR merely to satisfy the platform plan. Every application PR requires diff review, unit and DB integration tests where relevant, npx tsc --noEmit, npm run test, npm run lint, npm run build, git diff --check, and pilot/staging verification before production activation. Report actual results/skips; no implicit auto-merge or production migration.
+
+### Required executable acceptance tests (architecture specification)
+
+These are **future tests**, not tests executed by this documentation change.
+
+| Test ID | Fixture / operation | Must prove |
+| --- | --- | --- |
+| EXT-01 | Register Olivia read/preview implementation with domain descriptors; ask about staffing | No changes to core planner, tool schema enum, permission engine or global intent switch; one validated, attributable result |
+| EXT-02 | Register Alex pricing review+proposal using same contract | No Olivia-specific exception in core; canonical lib/calc pricing engine and evidence, no POS price write |
+| EXT-03 | Register Maya supply quote read and Leo period cost read | No new central intent-specific branches; proper source estimates, matching units, distinct canonical domain ownership |
+| EXT-04 | Register hypothetical fifth domain / new metric fixture | Only registry export, metadata/adapter, localized display and tests change; existing core source diff stays empty |
+| MULTI-01 | "Plan next week and show what it would cost vs this month's profit" with no POS | Olivia planned labor/coverage if domain ready; Leo period profit explicitly unavailable when unsupported; never add incompatible periods or forecast to actual profit |
+| MULTI-02 | "Which drinks need a pricing review and how much did we sell yesterday?" | Alex+sales scopes independently fulfilled; missing item sales produces partial/unavailable while verified pricing remains valid |
+| MULTI-03 | Conflicting source versions or a changed wage after read plan | Shared snapshot fingerprint mismatch → conflict/replan, not mixed-period math or stale zero wages |
+| BACK-01 | Exact current semantic request fixtures, ordinary finance/sales/staff/pricing/Team, EN/ES/AR | Stable canonical numbers, period meaning, task links, evidence blocks, currently supported goal coverage and safe unknown responses |
+| BACK-02 | No POS, no bank, no inventory, no sales history, provider offline | Explicit unavailable with missing inputs; zero only if verified; no invented hourly demand or external connection |
+| BACK-03 | Unknown dimension, unsupported hour/day rollup or unauthorized person | Reject/return unavailable with correct reason; never extrapolate daily sales to hourly |
+| SEC-01 | Owner A, second owner same café, manager, outsider, other business, tampered business/employee/plan IDs | Server auth + RLS + composite FKs enforced; private owner conversations isolated; no cross-tenant leak, including from cache or tool output |
+| AUTH-01 | LLM attempts commit/read->write escalation, approved natural-language Team rule, forged confirmation | No effect; rules are not grants; action must be registered, policy-allowed, exact proposal approved |
+| AUTH-02 | Approved plan revision then change source/wage/revoke grant/expire proposal | Execution blocked, conflict or reapproval; no stale change applied |
+| IDEMP-01 | Same request ID/action key 10 retries and 2 concurrent owners | One resulting domain effect and one provenance chain; mismatched payload key conflicts |
+| IDEMP-02 | Process crashes after effect commit, before reply or after provider timeout | Resume reconciles durable state; does not reapply effect/send again blindly |
+| EVENT-01 | Replay event and cron simultaneously; change/reopen source evidence | One task lifecycle per fingerprint; meaningful new evidence reopens; previous resolved/snoozed tasks not resurrected spuriously |
+| NOTIF-01 | Opt-out, quiet hours, no provider, uncertain provider receipt | No message delivered or claimed; only provider-confirmed sends count; provider absent keeps in-app task |
+| MONEY-01 | Verified zero vs absent wage; 0/unknown/estimated sales, duplicate imported order/timecard, DST shift | Exact integer cents and coverage, no double labor counts; positive wage invalidates stale zero provenance |
+| QUALITY-01 | Fresh/partial/stale, conflicting purpose-specific sources, estimated burden | Accurate status lattice and provenance, no misleading verified totals |
+| COST-01 | 5 tools/3 model rounds baseline, slow third-party adapter, budget exhausted, model down | Deadline/fanout enforced; each owner goal receives verified result or explicit safe failure; no runaway expense |
+
+Additional integration cases: unsupported attachment as evidence, worker acceptance absent, scheduling legal profile unknown, report/snapshot replay, two same-name employees, location and timezone/DST mismatches, idempotent action card review, price/schedule simultaneous requests, source conflicts that require owner confirmation, transaction audit failure, notification consent revocation between reservation and send. Use synthetic tenant fixtures, no production customer/worker PII.
+
+## 15. Risk register, tradeoffs and avoided overengineering
+
+**R1 — Missing independent review attachment (open/blocking for architecture sign-off):** compare this contract line-by-line with the named Universal Supervisor Independent Architecture Review once supplied. Record conflicts and resolve before P1. Do not imply that document was examined.
+
+**R2 — Regressions from replacing today's central router:** keep legacy read adapter and strict grounded final writer, test existing semantic fixtures first, shadow run before switching. Do not replace all existing tools in one commit.
+
+**R3 — Catalog gives illusion of data coverage:** metric metadata is not data. Implement quality, coverage and unsupported granularity as first-class result states; "every metric" must mean every **supported** metric, never database-wide universal facts. No POS/bank/inventory assumption.
+
+**R4 — Approval and rules conflated:** natural-language owner rules remain text. Specific, expiring, version-bound approval and later separately reviewed delegation are mandatory for effects.
+
+**R5 — Scheduling provenance/payroll double counts:** #72 stale zero attestation, legacy materialized predicted timecards, external planned shifts and legal rules are separate hard gates. No planner publication without source/role/time/wage tests and explicit owner action.
+
+**R6 — Durable workflows increase schema/operational complexity:** do not add a job store until first approved effect or proactive evaluator needs it; keep atomic domain transactions and minimal outbox, not distributed workers.
+
+**R7 — Cost/latency explosion from multi-agent prompting:** one Supervisor reasoning boundary with shared deterministic tools; specialist is a typed responsibility, not four sequential expensive LLM conversations.
+
+**R8 — "universal" routing becomes lowest-common-denominator domain logic:** registry protocol stays narrow; domain validation, solvers, financial formulas and source precedence remain specialist-owned/canonical.
+
+**R9 — Notifications and legal/privacy:** WhatsApp owner messages are opt-in and current UTC cron; avoid reusing as employee messaging or asserting location quiet hours without additional tests. Staging / counsel or compliance review as appropriate.
+
+**R10 — Source freshness, legal and data reliability:** unsupported worker opt-in, hourly sales, tax/benefits and supplier quantities must not be generated by a model. Unknown data preserves unknown consequences.
+
+**Do not build:** unrestricted SQL/GraphQL model query, autonomous four-agent chat room, generalized distributed microservices, arbitrary plugin execution, all-purpose rules DSL, customer-facing agent marketplace, duplicated business data lake, new finance/payout formulas, second owner task inbox, a fake "0 data" fallback, automatic external POS writes, or speculative vendor connectors. Choose small in-process interfaces, canonical read adapters and meaningful verifiable domain tests instead.
+
+## 16. Proposed targeted documentation alignment AFTER approval
+
+Do **not** edit these in this architecture PR. Once the platform contract and missing independent review are reconciled:
+
+1. **docs/09-ai-native-operating-system.md:** add an explicit link to this platform contract and replace any now-obsolete "no shared structured tool surface" state with historical context; retain lib/calc/ and source-aware state as binding.
+2. **docs/scheduling-architecture.md:** insert a brief "universal Supervisor capability adapter" integration cross-reference; keep domain constraints, Olivia PR sequence, split timecard/worker semantics and no-POS guarantee unchanged. Note that its old PR 4 scheduling-specific Supervisor router should instead register into the common platform after P1–P3 and reviewed domain readiness.
+3. **docs/supervisor-phase4-grounded-chat.md / phase5-owner-rules.md:** explain that legacy read-only tools are compatibility adapters and owner rule approval still cannot grant action authority. Do not rewrite their history.
+4. **docs/01-product.md / 03-screens.md:** maintain the explicit owner-approved *Olivia* scheduling exception (already proposed in #72) and single Supervisor/Staff/Operations journey, rather than introducing separate specialist chat screens.
+5. **docs/04-data-model.md, 06-integrations.md and 07-build-plan.md:** add only reviewed workflow/outbox/metric provenance dependencies and opt-in rollout steps **when** matching implementation PRs exist, not speculative tables at P0.
+6. **AGENTS.md / PROGRESS.md:** minimal pointers to the newly approved architecture and per-PR implementation plan only after the contract is accepted; no Next.js rules or financial invariant edits.
+
+### P0 verification and exit criteria
+
+Before merging this **documentation-only** PR, check: (a) its sole changed file is docs/supervisor-platform-architecture.md; (b) base/main revision and PR #72 are unchanged; (c) independent architecture review was actually supplied and compared, or owner explicitly accepts that documented gap; (d) architecture reviewers approve the metric/source/approval/trust contracts, P1–P3 backwards-compatibility proof and Olivia gates; and (e) no production DB migration, POS connection, env flag, Vercel change or deployment was made. P0 is a design contract, **not** test-passing application code or a claim that future integrations already exist.
