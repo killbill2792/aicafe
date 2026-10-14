@@ -7,6 +7,7 @@ import PageShell from "@/components/shared/PageShell";
 import BackHeader from "@/components/shared/BackHeader";
 import ToastConnectionForm from "@/components/more/ToastConnectionForm";
 import ToastSetupActions from "@/components/more/ToastSetupActions";
+import {trustedToastOrigin} from "@/lib/pos/toast/client";
 export const dynamic="force-dynamic";
 export default async function ToastConnectionPage() {
   const user=await requireOwnBusiness();
@@ -20,6 +21,19 @@ export default async function ToastConnectionPage() {
   const {data:locations,error}=await db.from("locations")
     .select("id,name").eq("business_id",businessId).order("name");
   if(error)throw error;
+  // This list is trusted server configuration, never an owner-supplied outbound URL.
+  const allowedHostValue=process.env.TOAST_ALLOWED_API_HOSTS??"";
+  const approvedOrigins=[...new Set(allowedHostValue.split(",").map(host=>{
+    try{return trustedToastOrigin("https://"+host.trim(),allowedHostValue);}
+    catch{return null;}
+  }).filter((origin):origin is string=>Boolean(origin)))];
+  let defaultApiOrigin="";
+  try{
+    if(process.env.TOAST_DEFAULT_API_ORIGIN)
+      defaultApiOrigin=trustedToastOrigin(process.env.TOAST_DEFAULT_API_ORIGIN,allowedHostValue);
+  }catch{defaultApiOrigin="";}
+  if(!defaultApiOrigin&&approvedOrigins.length===1)defaultApiOrigin=approvedOrigins[0];
+  const setupReady=process.env.TOAST_SETUP_ENABLED==="true"&&approvedOrigins.length>0;
   const t=await getTranslations("ToastConnect");
   const common=await getTranslations("Common");
   return (
@@ -29,7 +43,9 @@ export default async function ToastConnectionPage() {
       <ToastConnectionForm
         businessId={businessId}
         locations={locations??[]}
-        enabled={process.env.TOAST_SETUP_ENABLED==="true"}
+        approvedOrigins={approvedOrigins}
+        defaultApiOrigin={defaultApiOrigin}
+        enabled={setupReady}
         labels={{
           notEnabled:t("notEnabled"),notConnected:t("notConnected"),configured:t("configured"),
           verified:t("verified"),missingPermissions:t("missingPermissions"),
@@ -48,8 +64,8 @@ export default async function ToastConnectionPage() {
         }}/>
       <ToastSetupActions businessId={businessId}
         restaurantGuids={[]}
-        enabled={process.env.TOAST_SETUP_ENABLED==="true"}
-        pilotEnabled={process.env.TOAST_SETUP_ENABLED==="true" &&
+        enabled={setupReady}
+        pilotEnabled={setupReady &&
           process.env.TOAST_PILOT_IMPORT_ENABLED==="true"}
         reviewLabels={{
           title:t("reviewTitle"),sourceRoster:t("sourceRoster"),sourceMenu:t("sourceMenu"),

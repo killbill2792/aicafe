@@ -82,7 +82,8 @@ describe("Register choice navigation across mobile locales",()=>{
 describe("Toast setup destination states",()=>{
  const locations=[{id:"location-1",name:"Main café"}];
  const page=(enabled:boolean)=>renderToStaticMarkup(createElement(ToastConnectionForm,{
-  businessId:"business-1",locations,enabled,labels:connectionLabels
+  businessId:"business-1",locations,enabled,labels:connectionLabels,
+  approvedOrigins:["https://approved.toasttab.com"],defaultApiOrigin:"https://approved.toasttab.com"
  }));
  it("shows clear unavailability with connection status, without an uploads redirect",()=>{
   const html=page(false);
@@ -93,13 +94,23 @@ describe("Toast setup destination states",()=>{
  });
  it("shows every requested field and action only when setup is authorized",()=>{
   const html=page(true);
-  for(const label of ["API URL","Client ID","Client Secret",
+  for(const label of ["Client ID","Client Secret",
    "Restaurant GUID","Save","Test Connection"])
     expect(html).toContain(label);
   expect(html).toContain('type="password"');
   expect(html).toContain("Not connected");
+  expect(html).not.toContain("Toast API access URL");
   expect(html).not.toContain("Toast setup is currently unavailable");
   // Test Connection is present but disabled until a configuration exists.
   expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Test Connection<\/button>/);
+ });
+ it("shows a dropdown with only approved hosts when there are multiple",()=>{
+  const html=renderToStaticMarkup(createElement(ToastConnectionForm,{
+   businessId:"business-1",locations,enabled:true,labels:connectionLabels,
+   approvedOrigins:["https://one.toasttab.com","https://two.toasttab.com"],defaultApiOrigin:""
+  }));
+  expect(html).toContain("Toast API access URL");
+  expect(html).toContain('value="https://one.toasttab.com"');
+  expect(html).toContain('value="https://two.toasttab.com"');
  });
 });

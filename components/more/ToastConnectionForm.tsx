@@ -1,5 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
+import {saveThenVerifyToastConnection} from "./toastConnectFlow";
 type Location={id:string;name:string};
 type State={
   state:string;apiOrigin:string|null;lastVerifiedAt:string|null;
@@ -18,10 +19,11 @@ type Labels={
  errorAuthentication:string;errorMissingPermissions:string;errorUnauthorizedLocation:string;
  errorTimeout:string;errorRateLimited:string;errorUnavailable:string;errorInvalidResponse:string;
 };
-export default function ToastConnectionForm({businessId,locations,enabled,labels}:{
- businessId:string;locations:Location[];enabled:boolean;labels:Labels;
+export default function ToastConnectionForm({businessId,locations,enabled,approvedOrigins,defaultApiOrigin,labels}:{
+ businessId:string;locations:Location[];enabled:boolean;
+ approvedOrigins:string[];defaultApiOrigin:string;labels:Labels;
 }) {
- const [apiUrl,setApiUrl]=useState("");
+ const [apiUrl,setApiUrl]=useState(defaultApiOrigin);
  const [clientId,setClientId]=useState("");
  const [secret,setSecret]=useState("");
  const [mapping,setMapping]=useState<Record<string,string>>({});
@@ -33,7 +35,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
    if(!result.ok)return;
    const data=await result.json() as State;
    setConnection(data);
-   setApiUrl(data.apiOrigin??"");
+   setApiUrl(data.apiOrigin&&approvedOrigins.includes(data.apiOrigin)?data.apiOrigin:defaultApiOrigin);
    setMapping(Object.fromEntries((data.locations??[]).map(m=>[m.location_id,m.restaurant_guid])));
  }
  useEffect(()=>{
@@ -42,11 +44,11 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
     .then(r=>r.ok?r.json():null).then((data:State|null)=>{
       if(cancelled||!data)return;
       setConnection(data);
-      setApiUrl(data.apiOrigin??"");
+      setApiUrl(data.apiOrigin&&approvedOrigins.includes(data.apiOrigin)?data.apiOrigin:defaultApiOrigin);
       setMapping(Object.fromEntries((data.locations??[]).map(m=>[m.location_id,m.restaurant_guid])));
     }).catch(()=>{});
    return ()=>{cancelled=true;};
- },[businessId]);
+ },[businessId,approvedOrigins,defaultApiOrigin]);
  const errorText:Record<string,string>={
   authentication:labels.errorAuthentication,missing_permissions:labels.errorMissingPermissions,
   unauthorized_location:labels.errorUnauthorizedLocation,timeout:labels.errorTimeout,
@@ -63,21 +65,32 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
    if(action==="disconnect"&&!window.confirm(labels.disconnectConfirm))return;
    setPending(true);setMessage("");
    try {
-     const rows=locations.map(location=>({location_id:location.id,
-       restaurant_guid:(mapping[location.id]??"").trim()})).filter(row=>row.restaurant_guid);
-     const response=await fetch(action==="test"?"/api/pos/toast/test":"/api/pos/toast"+
-       (action==="disconnect"?"?businessId="+encodeURIComponent(businessId):""),{
+     if(action==="save"){
+       const rows=locations.map(location=>({location_id:location.id,
+         restaurant_guid:(mapping[location.id]??"").trim()})).filter(row=>row.restaurant_guid);
+       const outcome=await saveThenVerifyToastConnection({
+         businessId,apiUrl,clientId,clientSecret:secret,locations:rows
+       });
+       if(outcome.saved)setSecret("");
+       await load();
+       const reason=errorText[outcome.error??""]??outcome.error??labels.errorUnavailable;
+       setMessage(outcome.verified?labels.verified:
+         outcome.saved?labels.saved+" "+labels.error+": "+reason:labels.error+": "+reason);
+       return;
+     }
+     const response=await fetch(action==="test"?"/api/pos/toast/test":
+       "/api/pos/toast?businessId="+encodeURIComponent(businessId),{
        method:action==="disconnect"?"DELETE":"POST",
        headers:{"Content-Type":"application/json"},
-       body:action==="disconnect"?undefined:JSON.stringify(action==="test"
-         ?{businessId}
-         :{businessId,apiUrl,clientId,clientSecret:secret,locations:rows})
+       body:action==="test"?JSON.stringify({businessId}):undefined
      });
-     const result=await response.json() as {error?:string};
-     if(!response.ok){setMessage(labels.error+": "+(result.error??"unknown"));return;}
-     if(action==="save")setSecret("");
-     setMessage(action==="save"?labels.saved:labels.success);
+     const result=await response.json() as {error?:string;state?:string};
+     if(!response.ok){
+       setMessage(labels.error+": "+(errorText[result.error??""]??result.error??labels.errorUnavailable));
+       await load();return;
+     }
      await load();
+     setMessage(action==="test"&&result.state==="verified"?labels.verified:labels.success);
    }catch {setMessage(labels.error);}
    finally {setPending(false);}
  }
@@ -115,12 +128,14 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
      {labels.notEnabled}
    </p>}
    {enabled&&<>
-     <label className="flex flex-col gap-1 text-base font-semibold text-ink">
+     {approvedOrigins.length>1&&<label className="flex flex-col gap-1 text-base font-semibold text-ink">
        <span>{labels.url}</span>
-       <input className="min-h-12 rounded-xl border border-line bg-white px-3"
-         value={apiUrl} onChange={e=>setApiUrl(e.target.value)}
-         autoComplete="off" inputMode="url"/>
-     </label>
+       <select className="min-h-12 rounded-xl border border-line bg-white px-3"
+         value={apiUrl} onChange={e=>setApiUrl(e.target.value)}>
+         <option value="">{labels.url}</option>
+         {approvedOrigins.map(origin=><option key={origin} value={origin}>{origin}</option>)}
+       </select>
+     </label>}
      <label className="flex flex-col gap-1 text-base font-semibold text-ink">
        <span>{labels.clientId}</span>
        <input className="min-h-12 rounded-xl border border-line bg-white px-3"
@@ -133,7 +148,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,labels
      </label>
      <h2 className="text-lg font-bold text-ink">{labels.locations}</h2>
      {entries.length?entries:<p>{labels.noLocations}</p>}
-     <button disabled={pending||!secret||!apiUrl||!clientId||!Object.values(mapping).some(Boolean)}
+     <button disabled={pending||!secret||!approvedOrigins.includes(apiUrl)||!clientId||!Object.values(mapping).some(Boolean)}
        onClick={()=>void perform("save")} type="button"
        className="min-h-12 rounded-full bg-ink p-3 font-semibold text-paper disabled:opacity-40">
        {pending?labels.pending:labels.save}
