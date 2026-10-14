@@ -36,7 +36,9 @@ Owner → existing Supervisor thread / voice-as-editable-text / action cards
                               ├─ Maya supply/evidence adapters → existing audited records
                               └─ Leo money/operations adapters → canonical financial readers
       → verified result/evidence merger → existing grounded reply writer → owner
-                              └─ proposed action → approval policy/owner confirmation
+                              └─ inert proposal bound to source + context + policy revisions
+                                   → typed approve transition (server-validated actor/revision)
+                                   → one-time proposal consumption + effect-specific policy recheck
                                    → durable workflow + domain executor + audit/outbox
                                    → actual domain effect + reread → verified completion
 Events / scheduled evaluator → same capability contracts → existing operating_tasks
@@ -93,7 +95,7 @@ Define a typed, server-owned registry whose descriptors are safe to expose as di
 ~~~ts
 type CapabilityId = string;            // e.g. "olivia.schedule.preview.v1"
 type AgentId = "olivia" | "alex" | "maya" | "leo" | (string & {});
-type Mode = "read" | "simulate" | "propose" | "commit" | "evaluate";
+type Mode = "read" | "simulate" | "propose" | "approve" | "commit" | "evaluate";
 type ResultStatus =
   | "verified" | "estimated" | "partial" | "unavailable"
   | "insufficient_evidence" | "requires_approval"
@@ -119,9 +121,9 @@ type CapabilityDescriptor<I, O> = {
 };
 ~~~
 
-**Non-effectful operation invariant:** `read` returns canonical facts and `simulate` runs a **transient, read-only, deterministic what-if** using pinned source inputs and `lib/calc/`. Neither creates a scheduling draft, proposed price, approval request, task, outside message or business-domain write. Protected usage/audit telemetry is permitted but cannot imply domain mutation. Simulations state baseline, changed assumptions, feasibility/limitations and source revision; they return `proposal: null`. `propose` is a **separate explicit transition** that may persist an inert versioned draft after the owner requests it; `approve` binds only a specified revision; `commit` alone performs authorized domain effects. `evaluate` is a bounded evidence check, and any task persistence goes through its separately authorized reconciler. Dispatcher and acceptance tests must prove these distinctions even if the model requests a more powerful action.
+**Non-effectful operation invariant:** `read` returns canonical facts and `simulate` runs a **transient, read-only, deterministic what-if** using pinned source inputs and `lib/calc/`. Neither creates a scheduling draft, proposed price, approval request, task, outside message or business-domain write. Protected usage/audit telemetry is permitted but cannot imply domain mutation. Simulations state baseline, changed assumptions, feasibility/limitations and source revision; they return `proposal: null`. `propose` is a **separate explicit transition** that may persist an inert versioned draft after the owner requests it. **`approve` is a first-class typed, server-only transition** that validates an immutable proposal and records a scoped approval artifact; it does **not** invoke a domain write. **`commit` is a separate policy-gated executable capability** that must consume that approval exactly once (or use a specifically validated standing grant, if a later reviewed effect supports delegation). `evaluate` is a bounded evidence check, and any task persistence goes through its separately authorized reconciler. Dispatcher and acceptance tests must prove these distinctions even if the model requests a more powerful action.
 
-The executable contract must separate read and write types so a "commit" executor cannot run through a read dispatcher. Production code should use zod generics/inferred types (the illustration omits implementation-specific TS imports). An effectful capability also declares a separately implemented **preview**, deterministic **effect type**, approval requirements, idempotency class, compensation/rollback semantics, and postcondition verifier; no effectful operation is admitted without them.
+The executable contract must separate read, simulate, propose, **approve** and commit handler types. An approval handler **accepts only a server-issued proposal ID/revision and authenticated actor decision**, produces an auditable typed ApprovalTransitionResult and never calls domain effect handlers; a commit handler accepts only a verified approved record/effect identity from the server, **never a model-issued approval flag**. Approval is a shared, registry-governed server-side action transition, not an Olivia-specific supervisor intent or a variant of `propose`/`commit`. The `mode: "approve"` descriptor has a registered authorization policy, typed input/output and a server-only transition handler; it must not be callable as a read/simulation or unvalidated free-form LLM tool. Production code should use zod generics/inferred types (the illustration omits implementation-specific TS imports). An effectful capability also declares a separately implemented **preview**, deterministic **effect type**, approval requirements, idempotency class, compensation/rollback semantics, and postcondition verifier; no effectful operation is admitted without them.
 
 Registry startup checks: unique ID+major version; valid schema bounds; no orphan dependencies, cycles or conflicting owners of the same canonical effect; registered metric names exist; policy key exists and is default-deny; budget classification is present; effect handler is allowlisted; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
 
@@ -129,7 +131,7 @@ Example future registration:
 
 | Domain owner | Example capability IDs | Inputs from | Result/action semantics |
 | --- | --- | --- | --- |
-| Olivia | olivia.availability.read.v1; olivia.schedule.preview.v1; later olivia.schedule.publish.v1 | Staff canonicals + #72 availability/coverage, location, law/time and cost metadata | Feasibility/gaps and source-aware proposed revision; publish requires separately authorized, versioned owner approval |
+| Olivia | olivia.availability.read.v1; olivia.schedule.preview.v1; later olivia.schedule.propose.v1, olivia.schedule.approve.v1, olivia.schedule.publish.v1 | Staff canonicals + #72 availability/coverage, location, law/time and cost metadata | Feasibility/gaps; separate immutable proposal, typed approval, one-time consumed commit; publish is not worker acceptance |
 | Alex | alex.pricing.review.v1; later alex.pricing.propose.v1 | Canonical pricing engine, recipe costs, product/menu and reliable sales | Review/KEEP/recommendation with evidence; no price write/POS mutation by default |
 | Maya | maya.supplies.quote_compare.v1; later maya.inventory.read.v1 **only if integration exists** | Owner-reported quotes, recipe/ingredient input; optional explicitly supported inventory provider | Unit-matched quote comparison; inventory unavailable without actual inventory data |
 | Leo | leo.money.profit.v1; leo.money.costs.v1 | Canonical period profitability, bills, labor and fee data | Verified/estimated/partial profit or cost explanation; no invented bank feed/payment action |
@@ -287,18 +289,29 @@ type BusinessContextV1 = {
   scope: {businessId:string; ownerUserId:string; role:"owner";
     locale:"en"|"es"|"ar"; timezone:string; locationIds:readonly string[]};
   snapshot: {asOf:string; fingerprint:string; sourceRefs:readonly SourceRef[]};
-  preferences: readonly {id:string; revision:number; scope:"owner_private"|"cafe_shared";
-    key:string; typedValue:unknown; confirmedBy:string; confirmedAt:string;
-    effectiveUntil:string|null; source:SourceRef}[];
+  contextFingerprint: string; // separate from snapshot.fingerprint; server-canonical hash
+  contextRevisionRefs: readonly {kind:"preference"|"objective"|"guidance"|"workflow";
+    id:string; revision:number; scope:string; state:"present"|"absent"|"revoked"}[];
+  preferences: readonly ConfirmedPreference[]; // validated per registered key/version
   objectives: readonly {id:string; revision:number; target:string; unit:string;
     period:string; priority:number; confirmedBy:string; source:SourceRef}[];
   activeGuidance: readonly {ruleId:string; version:number; agentId:string;
     approvedBy:string; instructionAsUntrustedText:string}[];
-  workflow: {id:string|null; completedStepIds:readonly string[];
+  workflow: {id:string|null; revision:number; completedStepIds:readonly string[];
     pendingDecisionIds:readonly string[]; policyVersions:readonly string[];
     evidenceRefs:readonly SourceRef[]; expiresAt:string|null};
+  activePolicyRefs: readonly {policyId:string; policyRevision:number;
+    grantId:string|null; grantRevision:number|null}[]; // policy authority is NOT context guidance
 };
 ~~~
+
+#### Registered, per-key typed preferences (P2 contract; implementation later)
+
+Each usable preference ID has a **code-reviewed definition in a small build-time registry**: `id` (stable namespaced key), `schemaVersion`, per-key `zod` value schema (strict bounds/enums, no arbitrary object/string fallback), `scope` (`owner_private` or `cafe_shared`), `sensitivity`, allowed consuming domains, effective-date semantics, defaults/absence rules and migration policy. Illustrative *future*, not implemented settings: `supervisor.digest_cadence.v1: z.enum(["daily","weekly","off"])` and `olivia.owner_preferred_weekly_minutes.v1: z.number().int().min(0).max(10080)`. A typed record is a discriminated mapping `ConfirmedPreference<K extends RegisteredPreferenceKey> = { key:K; schemaVersion:RegisteredDefinition<K>["schemaVersion"]; recordRevision:number; value:z.infer<RegisteredDefinition<K>["schema"]>; scope; confirmedBy; confirmedAt; effectiveUntil; source }`; the `BusinessContextV1.preferences` array holds **only** successfully validated known-key records. Any value loaded from persisted JSON starts as **untrusted unknown input**, must pass exact key+schema version validation and role/sensitivity projection before use, and is `unavailable/needs_review` rather than forwarded when unknown, invalid or needing migration. Do not silently coerce legacy free text into a typed enum/number, silently use defaults as owner confirmation, or downgrade incompatible schema versions. Registry extensions add a definition/test in the domain, not a Supervisor-core branch.
+
+**Intentional free-text owner/AI Team instructions are `untrusted_guidance`**, stored/retrieved separately from typed preferences, clearly labeled source and owner, bounded/sanitized and treated as *data* with prompt-injection defenses. They cannot change priority of canonical records, approval gates, permissions, workflow checks or the type registry. Owner confirmation establishes provenance, **not safety of arbitrary prose**. Strictly typed objectives also require reviewed metric/target/unit/period validation and revisions; unknown targets remain unsupported, not operator commands.
+
+**Fingerprint semantics:** `snapshot.fingerprint` hashes only canonical source-data snapshot/revisions used by the query; the separate `contextFingerprint` hashes the **canonical ordered, scope-bound material projection actually used for the proposed effect** (business, location, relevant owner scope, each referenced preference ID+definition version+record revision+validated value hash or explicit absence/revocation, objective revision/value hash, guidance rule ID/version+content hash, workflow ID/revision/decision state, and all applied policy/delegation IDs+revisions/expiry/constraints). Include a complete `contextRevisionRefs` manifest of *material* inputs used so additions/revocations/changed defaults cannot evade stale checks; if complete dependency tracking cannot be proved, conservatively fingerprint the full authorized active projection for that action. Context and policy fingerprints are **server-generated from trusted stores** with deterministic canonical serialization, not LLM text, and never expose sensitive raw values in logs/owner-visible tokens. Persist the exact fingerprint and references with every proposal/approval. At approval and immediately before commit, rebuild and validate both the source snapshot and the context/policy projection; **any material changed, missing, revoked, expired or schema-invalid revision means conflict/repropose/reapprove**, not silent refresh or stale execution. Irrelevant context changes can be excluded only with an auditable dependency manifest verified by the domain. Revoked authority always blocks effect.
 
 Owner-confirmed personal working preferences, business operating objectives and active approved rules have **distinct provenance and authority**. Confirm/update/revoke owner preferences and business objectives explicitly with actor/version/effective dates; unconfirmed chat or inferred “memory” cannot silently become a fact. Keep an individual's private preferences and threads inaccessible to co-owners, while café-shared objectives require their separately reviewed update/override semantics. Approved Team guidance is *quoted data*, **never** business-effect consent, an authorization rule or precedence over actual evidence. Domain adapters request only the least context needed. Resolve conflicting values through source-purpose rules and targeted confirmation; pin source and context revisions to proposals, revalidate before execution, and reject stale authority. Do not persist broad raw model transcripts, sensitive employee records or third-party tokens in shared context.
 
@@ -307,12 +320,12 @@ Owner-confirmed personal working preferences, business operating objectives and 
 The Supervisor is a **bounded coordinator**, not the universal owner of every domain calculation or intent parser.
 
 1. **Resolve trusted scope:** existing authenticated owner + selected café, locale, timezone; never read the business ID, user role, approver or allowed capabilities from model arguments.
-2. **Capture goals:** semantically parse one or more requested outcomes (read, compare, simulate, propose, commit), preserve all independent clauses and dates. Preserve existing Phase 4–later semantic request goals through a compatibility adapter. Reject unsupported commands rather than hallucinate a tool.
+2. **Capture goals:** semantically parse one or more requested outcomes (read, compare, simulate, propose, approve, commit); approve must resolve a **previously persisted exact server-side proposal**, not an LLM-created generic goal. Preserve all independent clauses and dates. Preserve existing Phase 4–later semantic request goals through a compatibility adapter. Reject unsupported commands rather than hallucinate a tool.
 3. **Discover and match:** select only enabled, role-allowed capability descriptors and metric definitions. Source availability is evaluated at execution; a known capability may still be unavailable. Return explicit unhandled goals for every unsupported clause.
 4. **Build a constrained DAG:** prerequisites from registry, max depth, fanout and duplicate canonical reads. Plan two-domain requests using stable dependency IDs. Never let a specialist directly invoke an unregistered sibling, mutate another domain or change shared Supervisor instructions.
 5. **Run read/preview steps:** bounded parallel read-only operations, caching only within the authorized request/snapshot. Domain read failures are isolated; budget oversubscription produces per-goal budget-exhausted/unavailable outcomes, not silent dropped intents.
 6. **Aggregate verified results:** the server validates each capability schema, source coverage, value provenance, period and consistency; any cross-domain conclusion must call a reviewed deterministic function or offer separate facts without claiming a calculated causal relationship.
-7. **Choose action path:** `read` and `simulate` supply no-effect facts/what-ifs; simulation is **not** a draft or approval. Persist an inert `propose` artifact only on explicit request; `approve` authorizes a specific revision, and `commit` alone can invoke the distinct execution pipeline (§8). NEVER execute a mutation by selecting an LLM tool.
+7. **Choose action path:** `read` and `simulate` supply no-effect facts/what-ifs; simulation is **not** a draft or approval. Persist an inert `propose` artifact only on explicit request, binding source+BusinessContext+policy revisions; a separate **typed `approve` transition** checks authenticated actor, immutable exact proposal/effect/context/policy revisions and produces a durable approval record **without executing**. The `commit` path atomically consumes that approval/proposal once and invokes the distinct authorized domain executor (§§8–9). NEVER execute a mutation by selecting an LLM tool.
 8. **Present:** adapt verified results to existing strict grounded reply blocks. Preserve current finance/sales/staff/pricing semantics and stable task links, and show attributed Olivia/Alex/Maya/Leo content inside the **same** Supervisor conversation.
 
 **Snapshot coherence:** Cross-domain what-if comparisons use a referenced immutable input set or captured source revisions/as-of times. If one teammate sees a changed price/wage/schedule revision mid-plan, show a conflict/recompute instead of mixing stale numbers. Dependencies may degrade independently: "labor unavailable; observed sales available" is better than a false combined profit answer.
@@ -343,11 +356,30 @@ type VerifiedCapabilityResult<T> = {
   proposal:ActionProposal|null; // never effect confirmation itself
 };
 type ActionProposal = {
-  actionType:string; capabilityId:string; proposalId:string;
+  businessId:string; proposalId:string; proposalRevision:number; // immutable revision
+  actionType:string; capabilityId:string; capabilityVersion:number;
   tenantScopedTargetId:string; baseRevision:string;
-  snapshotHash:string; summaryKey:string; effectPreview:unknown;
-  missingPreconditions:string[]; expiresAt:string;
-  approvalPolicyKey:string; riskClass:"low"|"medium"|"high";
+  sourceSnapshotHash:string; // canonical BUSINESS DATA revisions only
+  businessContextVersion:1; contextFingerprint:string; // typed context projection
+  contextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
+  policyRevisionRefs:BusinessContextV1["activePolicyRefs"]; // authority != rule text
+  proposedEffectHash:string; // canonical exact target+action+parameters+effect version
+  summaryKey:string; effectPreview:unknown; missingPreconditions:string[];
+  expiresAt:string; approvalPolicyKey:string; riskClass:"low"|"medium"|"high";
+};
+// Approval is a typed transition, never a side effect and never LLM-provided consent.
+type ApprovalTransitionInput = {
+  proposalId:string; proposalRevision:number; decision:"approve"|"reject";
+  displayedEffectHash:string; // must match trusted persisted proposal preview
+};
+type ApprovalTransitionResult = {
+  approvalId:string; proposalId:string; proposalRevision:number;
+  state:"approved"|"rejected"|"conflict"|"expired"|"unauthorized";
+  actorUserId:string; decisionAt:string; approvedEffectHash:string|null;
+  approvedSourceSnapshotHash:string|null; approvedContextFingerprint:string|null;
+  approvedContextRevisionRefs:BusinessContextV1["contextRevisionRefs"];
+  approvedPolicyRevisionRefs:BusinessContextV1["activePolicyRefs"];
+  expiresAt:string|null; auditEventId:string;
 };
 type VerifiedActionOutcome = {
   actionId:string; workflowId:string; actionType:string;
@@ -357,7 +389,7 @@ type VerifiedActionOutcome = {
 };
 ~~~
 
-**Action-state separation:** current facts (`read`) → transient deterministic comparison (`simulate`, no proposal/effect) → separately requested persisted draft (`propose`) → actor-confirmed exact-revision approval (`approve`) → authenticated effect (`commit`) → separately verified postcondition. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation.
+**Action-state separation:** current facts (`read`) → transient deterministic comparison (`simulate`, no proposal/effect) → separately requested persisted draft (`propose`) → **typed, auditable, no-effect approval** (`approve` result referencing exact immutable revision/hash) → **one-time approval/proposal consumption and authorized domain operation** (`commit`) → separately verified postcondition. “What if we schedule Sarah for fewer hours?” or “What if the drink price rises?” must stop at simulation unless the owner explicitly asks to propose a change. The server, not a model phrase, controls transitions. Tests verify no database/business side effects from simulation or approval, and that a valid approval is not proof of completion.
 
 A proposal is neither permission nor an applied outcome. Owner-visible statuses map distinctly: **Suggested / Needs approval / Working or awaiting verification / Applied / Cannot complete / No data**. Show the exact employee/product/location, local schedule times, modeled costs/units, expected effects, uncertainty and proposed next action before committing. A completed badge requires durable postcondition evidence from the domain source; merely receiving an HTTP 200, an LLM completion, an external send attempt or a worker contact draft is not proof.
 
