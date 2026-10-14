@@ -122,6 +122,51 @@ export function effectiveAvailabilityForDate(input: {
         row.strength === "hard" && row.preference === "avoid" &&
         row.day_of_week === dayOfWeek && activeOnDate(input.date, row)) masks.push(asWindow(row));
   }
+
+  // This projection uses the STARTING local date as its minute origin.
+  // Overnight windows may reach 2880 (the following midnight). Apply hard
+  // constraints for the *actual next calendar date* to the spillover too:
+  // Wednesday 22:00–Thursday 02:00 minus Thursday 00:00–01:00 must not
+  // advertise the unavailable hour. Local-date increment uses UTC calendar
+  // arithmetic, NOT timezone instants (DST resolution stays for PR 2).
+  const nextDay = new Date(day.getTime() + 86_400_000);
+  const nextDate = nextDay.toISOString().slice(0, 10);
+  const following = input.exceptions.filter(
+    (row) => row.confirmation === "owner_confirmed" && row.local_date === nextDate,
+  );
+  const followingIsClosed = following.some(
+    (row) => row.exception_type === "approved_leave" ||
+      (row.exception_type === "unavailable" && row.start_local == null) ||
+      (row.exception_type === "hours_cap" && row.max_minutes === 0),
+  );
+  if (followingIsClosed) {
+    masks.push({ start: 1440, end: 2880 });
+  } else {
+    // A next-day replace_day is the complete approved date-specific set.
+    // Its complement blocks inherited overnight spillovers on that date.
+    const nextReplacements = following.filter((row) => row.exception_type === "replace_day");
+    if (nextReplacements.length > 0) {
+      const allowed = nextReplacements.map((row) => asWindow(row as SchedulingWindow))
+        .map((window) => ({ start: window.start, end: Math.min(window.end, 1440) }))
+        .filter((window) => window.start < window.end);
+      masks.push(...subtractWindows([{ start: 0, end: 1440 }], allowed)
+        .map((window) => ({ start: window.start + 1440, end: window.end + 1440 })));
+    }
+    masks.push(...following.filter(
+      (row) => row.exception_type === "unavailable" && row.start_local != null,
+    ).map((row) => {
+      const window = asWindow(row as SchedulingWindow);
+      return { start: window.start + 1440, end: window.end + 1440 };
+    }));
+  }
+  for (const row of input.restrictions ?? []) {
+    if (row.confirmation === "owner_confirmed" && row.strength === "hard" &&
+        row.preference === "avoid" && row.day_of_week === nextDay.getUTCDay() &&
+        activeOnDate(nextDate, row)) {
+      const window = asWindow(row);
+      masks.push({ start: window.start + 1440, end: window.end + 1440 });
+    }
+  }
   return {
     windows: subtractWindows([...base, ...adds], masks),
     maxMinutes,
