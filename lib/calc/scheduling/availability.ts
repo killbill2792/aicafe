@@ -35,6 +35,34 @@ export type PreferenceWindow = SchedulingWindow & {
 
 export type MinuteWindow = { start: number; end: number };
 
+/** Hard total scheduled-minutes restriction for the specified LOCAL calendar day.
+ * This is not an availability window: a positive cap must NEVER decide which
+ * otherwise-available minutes are eligible. The planner must aggregate every
+ * assigned shift portion on this date, including overnight spillovers.
+ */
+export type LocalDayHoursCap = { localDate: string; maxMinutes: number };
+
+/**
+ * Pure planner-facing hard cap check. Call with ALL scheduled shift portions
+ * grouped by the calendar date where each minute is actually worked, not by
+ * shift start date. Split shifts and overnight portions count toward the same
+ * day cap. This does not select, trim or optimize scheduling windows.
+ */
+export function satisfiesLocalDayHoursCaps(
+  portions: readonly { localDate: string; minutes: number }[],
+  caps: readonly LocalDayHoursCap[],
+): boolean {
+  const totals = new Map<string, number>();
+  for (const portion of portions) {
+    if (!Number.isSafeInteger(portion.minutes) || portion.minutes < 0) return false;
+    totals.set(portion.localDate, (totals.get(portion.localDate) ?? 0) + portion.minutes);
+  }
+  return caps.every(
+    (cap) => Number.isSafeInteger(cap.maxMinutes) && cap.maxMinutes >= 0 &&
+      (totals.get(cap.localDate) ?? 0) <= cap.maxMinutes,
+  );
+}
+
 function minutes(value: string): number {
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) throw new Error("Invalid HH:mm");
   const [hour, minute] = value.split(":").map(Number);
@@ -85,24 +113,45 @@ export function effectiveAvailabilityForDate(input: {
   recurring: RecurringAvailability[];
   exceptions: AvailabilityException[];
   restrictions?: PreferenceWindow[];
-}): { windows: MinuteWindow[]; maxMinutes: number | null; precedence: "closed" | "replaced" | "recurring" } {
+}): {
+  windows: MinuteWindow[];
+  /** Starting date's hard cap, retained for existing callers. */
+  maxMinutes: number | null;
+  /** Explicit per-local-day limits for this day AND overnight spillover date. */
+  dailyHourCaps: LocalDayHoursCap[];
+  precedence: "closed" | "replaced" | "recurring";
+} {
   const day = new Date(input.date + "T00:00:00Z");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date) ||
       Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== input.date) {
     throw new Error("Invalid local date");
   }
-  const dayOfWeek = day.getUTCDay();
-  const exceptions = input.exceptions.filter(
-    (row) => row.confirmation === "owner_confirmed" && row.local_date === input.date,
+  // Compute NEXT LOCAL CALENDAR DATE rather than advancing any business
+  // timezone instant. DST instants are explicitly deferred to PR 2.
+  const nextDay = new Date(day.getTime() + 86_400_000);
+  const nextDate = nextDay.toISOString().slice(0, 10);
+  const confirmedFor = (localDate: string) => input.exceptions.filter(
+    (row) => row.confirmation === "owner_confirmed" && row.local_date === localDate,
   );
-  const caps = exceptions.filter((row) => row.exception_type === "hours_cap" && row.max_minutes != null)
-    .map((row) => row.max_minutes as number);
-  const maxMinutes = caps.length ? Math.min(...caps) : null;
+  const hardCapFor = (rows: AvailabilityException[]): number | null => {
+    const caps = rows.filter((row) => row.exception_type === "hours_cap" && row.max_minutes != null)
+      .map((row) => row.max_minutes as number);
+    return caps.length ? Math.min(...caps) : null;
+  };
+  const dayOfWeek = day.getUTCDay();
+  const exceptions = confirmedFor(input.date);
+  const following = confirmedFor(nextDate);
+  const maxMinutes = hardCapFor(exceptions);
+  const nextDayMaxMinutes = hardCapFor(following);
+  const dailyHourCaps: LocalDayHoursCap[] = [
+    ...(maxMinutes === null ? [] : [{ localDate: input.date, maxMinutes }]),
+    ...(nextDayMaxMinutes === null ? [] : [{ localDate: nextDate, maxMinutes: nextDayMaxMinutes }]),
+  ];
   const fullUnavailable = exceptions.some(
     (row) => (row.exception_type === "unavailable" && row.start_local == null) ||
       row.exception_type === "approved_leave",
   );
-  if (fullUnavailable) return { windows: [], maxMinutes, precedence: "closed" };
+  if (fullUnavailable) return { windows: [], maxMinutes, dailyHourCaps, precedence: "closed" };
 
   const replacements = exceptions.filter((row) => row.exception_type === "replace_day");
   const base = replacements.length
@@ -124,20 +173,14 @@ export function effectiveAvailabilityForDate(input: {
   }
 
   // This projection uses the STARTING local date as its minute origin.
-  // Overnight windows may reach 2880 (the following midnight). Apply hard
-  // constraints for the *actual next calendar date* to the spillover too:
-  // Wednesday 22:00–Thursday 02:00 minus Thursday 00:00–01:00 must not
-  // advertise the unavailable hour. Local-date increment uses UTC calendar
-  // arithmetic, NOT timezone instants (DST resolution stays for PR 2).
-  const nextDay = new Date(day.getTime() + 86_400_000);
-  const nextDate = nextDay.toISOString().slice(0, 10);
-  const following = input.exceptions.filter(
-    (row) => row.confirmation === "owner_confirmed" && row.local_date === nextDate,
-  );
+  // Overnight windows may reach 2880 (the following midnight). Next-date
+  // closures and partial unavailability mask the spillover, while positive
+  // hours caps are preserved ONLY as constraints in dailyHourCaps. A positive
+  // cap cannot choose which available minutes the planner may assign.
   const followingIsClosed = following.some(
     (row) => row.exception_type === "approved_leave" ||
       (row.exception_type === "unavailable" && row.start_local == null) ||
-      (row.exception_type === "hours_cap" && row.max_minutes === 0),
+      (row.exception_type === "hours_cap" && nextDayMaxMinutes === 0),
   );
   if (followingIsClosed) {
     masks.push({ start: 1440, end: 2880 });
@@ -167,9 +210,13 @@ export function effectiveAvailabilityForDate(input: {
       masks.push({ start: window.start + 1440, end: window.end + 1440 });
     }
   }
+  // A zero-minute cap is the only cap that directly rules out all work on
+  // a local date; it does not arbitrarily trim positive-cap availability.
+  if (maxMinutes === 0) masks.push({ start: 0, end: 1440 });
   return {
     windows: subtractWindows([...base, ...adds], masks),
     maxMinutes,
+    dailyHourCaps,
     precedence: replacements.length ? "replaced" : "recurring",
   };
 }
