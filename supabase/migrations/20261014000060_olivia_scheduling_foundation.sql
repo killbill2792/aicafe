@@ -201,8 +201,12 @@ CREATE FUNCTION public.scheduling_check_compensation() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE e record;
 BEGIN
+ -- Lock the employee while validating an attestation. Without this lock a
+ -- concurrent employee wage UPDATE could finish before the attestation commits,
+ -- leaving a zero-cost row that escaped the wage-change trigger.
  SELECT wage_period,wage_amount_cents,default_hourly_wage_cents
- INTO e FROM public.employees WHERE business_id=NEW.business_id AND id=NEW.employee_id;
+ INTO e FROM public.employees
+ WHERE business_id=NEW.business_id AND id=NEW.employee_id FOR SHARE;
  IF NOT FOUND THEN RAISE EXCEPTION 'employee not in business'; END IF;
  IF NEW.cash_cost_state='known_eligible_zero' THEN
    IF coalesce(e.wage_amount_cents,0)>0 OR coalesce(e.default_hourly_wage_cents,0)>0 THEN
@@ -230,6 +234,37 @@ BEGIN
 END $$;
 CREATE TRIGGER scheduling_validate_compensation BEFORE INSERT OR UPDATE ON public.staff_scheduling_compensation
 FOR EACH ROW EXECUTE FUNCTION public.scheduling_check_compensation();
+
+-- Every change to canonical employee wage fields (including the existing
+-- Manage Staff updateEmployee() action, legacy importers and direct tenant-scoped
+-- writes) invalidates a previously attested zero cash cost once a positive wage
+-- is recorded. Do NOT change employee wages, timecards, assigned shifts, or
+-- existing financial calculations here. Changing only the name/role is inert.
+-- The compensation stamp/audit triggers below record the invalidation with a
+-- fresh revision, remove eligibility evidence, and keep the wage update atomic.
+CREATE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+BEGIN
+ IF coalesce(NEW.wage_amount_cents,0)>0
+    OR coalesce(NEW.default_hourly_wage_cents,0)>0 THEN
+   UPDATE public.staff_scheduling_compensation
+      SET cash_cost_state='unknown',
+          eligibility_reference=NULL, eligibility_verified_by=NULL,
+          eligibility_verified_at=NULL
+    WHERE business_id=NEW.business_id AND employee_id=NEW.id
+      AND cash_cost_state='known_eligible_zero';
+ END IF;
+ RETURN NEW;
+END $;
+CREATE TRIGGER scheduling_invalidate_zero_on_employee_wage_change
+AFTER UPDATE OF wage_period, wage_amount_cents, default_hourly_wage_cents
+ON public.employees FOR EACH ROW
+WHEN (OLD.wage_period IS DISTINCT FROM NEW.wage_period
+   OR OLD.wage_amount_cents IS DISTINCT FROM NEW.wage_amount_cents
+   OR OLD.default_hourly_wage_cents IS DISTINCT FROM NEW.default_hourly_wage_cents)
+EXECUTE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change();
+REVOKE ALL ON FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
+FROM PUBLIC,anon,authenticated;
 
 -- Consistent provenance and immutable identity, incrementing revision on change.
 CREATE FUNCTION public.scheduling_stamp_foundation() RETURNS trigger
