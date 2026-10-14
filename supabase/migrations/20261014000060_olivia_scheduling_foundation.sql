@@ -1,0 +1,558 @@
+-- Olivia PR 1A: additive, manual-first scheduling inputs only. Do not modify
+-- staff_schedules (assigned shifts), timecards, employee wage values or POS facts.
+-- Apply to disposable/staging DB only after migration-ledger review.
+--
+-- Authority: an owner may confirm information REPORTED by a worker, but that
+-- does not prove authenticated worker consent/acceptance.
+CREATE OR REPLACE FUNCTION public.scheduling_is_owner(p_business_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=public AS $$
+  -- The shared demo café has a fixed identity seeded by the existing
+  -- demo-access migration. Its mutable businesses.is_demo flag is not an
+  -- authorization root: a demo member can change it to false.
+  SELECT p_business_id IS DISTINCT FROM '11111111-1111-1111-1111-111111111111'::uuid
+    AND EXISTS (SELECT 1 FROM public.memberships
+      WHERE business_id=p_business_id AND user_id=auth.uid() AND role='owner');
+$$;
+REVOKE ALL ON FUNCTION public.scheduling_is_owner(uuid) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.scheduling_is_owner(uuid) TO authenticated;
+
+CREATE TABLE public.staff_availability_rules (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL, location_id uuid,
+ day_of_week smallint NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),
+ start_local time NOT NULL, end_local time NOT NULL,
+ overnight boolean NOT NULL DEFAULT false,
+ effective_from date NOT NULL, effective_to date,
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision > 0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id) ON DELETE RESTRICT,
+ CHECK (effective_to IS NULL OR effective_to >= effective_from),
+ CHECK (start_local <> end_local AND (overnight = (end_local < start_local))),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+
+CREATE TABLE public.staff_availability_exceptions (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL, location_id uuid,
+ local_date date NOT NULL,
+ exception_type text NOT NULL CHECK (exception_type IN ('unavailable','approved_leave','replace_day','add_available','hours_cap')),
+ start_local time, end_local time, overnight boolean NOT NULL DEFAULT false,
+ max_minutes int CHECK (max_minutes BETWEEN 0 AND 1440),
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id) ON DELETE RESTRICT,
+ CHECK (
+   (exception_type='hours_cap' AND max_minutes IS NOT NULL AND start_local IS NULL AND end_local IS NULL)
+   OR (exception_type='approved_leave' AND max_minutes IS NULL AND start_local IS NULL AND end_local IS NULL)
+   OR (exception_type='unavailable' AND max_minutes IS NULL AND ((start_local IS NULL AND end_local IS NULL) OR (start_local IS NOT NULL AND end_local IS NOT NULL)))
+   OR (exception_type IN ('replace_day','add_available') AND max_minutes IS NULL AND start_local IS NOT NULL AND end_local IS NOT NULL)
+ ),
+ CHECK (start_local IS NULL OR (start_local <> end_local AND (overnight=(end_local < start_local)))),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+-- A date's confirmed replace_day rows form its complete replacement set;
+-- a full-day unavailable / approved_leave takes priority over ALL windows.
+
+CREATE TABLE public.staff_scheduling_preferences (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL,
+ effective_from date NOT NULL, effective_to date,
+ min_weekly_minutes int NOT NULL DEFAULT 0 CHECK (min_weekly_minutes BETWEEN 0 AND 10080),
+ desired_weekly_minutes int CHECK (desired_weekly_minutes BETWEEN 0 AND 10080),
+ max_weekly_minutes int CHECK (max_weekly_minutes BETWEEN 0 AND 10080),
+ max_daily_minutes int CHECK (max_daily_minutes BETWEEN 0 AND 1440),
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ CHECK (effective_to IS NULL OR effective_to >= effective_from),
+ CHECK (max_weekly_minutes IS NULL OR max_weekly_minutes >= min_weekly_minutes),
+ CHECK (desired_weekly_minutes IS NULL OR desired_weekly_minutes >= min_weekly_minutes),
+ CHECK (desired_weekly_minutes IS NULL OR max_weekly_minutes IS NULL OR desired_weekly_minutes <= max_weekly_minutes),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+
+CREATE TABLE public.staff_preference_windows (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL, day_of_week smallint NOT NULL CHECK(day_of_week BETWEEN 0 AND 6),
+ start_local time NOT NULL, end_local time NOT NULL, overnight boolean NOT NULL DEFAULT false,
+ preference text NOT NULL CHECK (preference IN ('prefer','avoid')),
+ strength text NOT NULL CHECK (strength IN ('soft','hard')),
+ effective_from date NOT NULL, effective_to date,
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ CHECK (strength='soft' OR preference='avoid'),
+ CHECK (effective_to IS NULL OR effective_to >= effective_from),
+ CHECK (start_local <> end_local AND (overnight = (end_local < start_local))),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+
+CREATE TABLE public.scheduling_qualification_types (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ code text NOT NULL CHECK (code ~ '^[a-z][a-z0-9_]{0,39}$'),
+ display_name text NOT NULL CHECK (length(btrim(display_name)) BETWEEN 1 AND 80),
+ active boolean NOT NULL DEFAULT true,
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE (business_id,code)
+);
+
+CREATE TABLE public.staff_qualifications (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL, location_id uuid,
+ qualification_code text NOT NULL,
+ valid_from date NOT NULL, valid_to date,
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id) ON DELETE RESTRICT,
+ FOREIGN KEY (business_id,qualification_code) REFERENCES public.scheduling_qualification_types(business_id,code) ON DELETE RESTRICT,
+ CHECK (valid_to IS NULL OR valid_to >= valid_from),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+
+CREATE TABLE public.scheduling_coverage_requirements (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ location_id uuid NOT NULL,
+ day_of_week smallint CHECK(day_of_week BETWEEN 0 AND 6),
+ local_date date,
+ effective_from date, effective_to date,
+ start_local time NOT NULL, end_local time NOT NULL, overnight boolean NOT NULL DEFAULT false,
+ min_headcount smallint NOT NULL CHECK (min_headcount BETWEEN 0 AND 50),
+ qualification_code text, min_overlap_minutes int NOT NULL DEFAULT 0 CHECK (min_overlap_minutes BETWEEN 0 AND 1440),
+ priority text NOT NULL DEFAULT 'required' CHECK (priority IN ('required','advisory')),
+ source text NOT NULL CHECK (source IN ('owner_direct','worker_reported_by_owner')),
+ confirmation text NOT NULL DEFAULT 'unconfirmed' CHECK (confirmation IN ('unconfirmed','owner_confirmed')),
+ confirmed_at timestamptz, confirmed_by uuid REFERENCES auth.users(id),
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ FOREIGN KEY (business_id,location_id) REFERENCES public.locations(business_id,id) ON DELETE RESTRICT,
+ FOREIGN KEY (business_id,qualification_code) REFERENCES public.scheduling_qualification_types(business_id,code) ON DELETE RESTRICT,
+ CHECK ((day_of_week IS NULL) <> (local_date IS NULL)),
+ CHECK (local_date IS NOT NULL OR effective_from IS NOT NULL),
+ CHECK (effective_to IS NULL OR (effective_from IS NOT NULL AND effective_to>=effective_from)),
+ CHECK (start_local <> end_local AND (overnight = (end_local < start_local))),
+ CHECK ((confirmation='unconfirmed' AND confirmed_at IS NULL AND confirmed_by IS NULL)
+     OR (confirmation='owner_confirmed' AND confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL))
+);
+
+CREATE TABLE public.staff_scheduling_compensation (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ employee_id uuid NOT NULL,
+ cash_cost_state text NOT NULL CHECK (cash_cost_state IN ('unknown','known_paid','salary_conversion_pending','known_eligible_zero')),
+ eligibility_reference text, eligibility_verified_by uuid REFERENCES auth.users(id), eligibility_verified_at timestamptz,
+ revision int NOT NULL DEFAULT 1 CHECK (revision>0),
+ created_by uuid, updated_by uuid, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE (business_id,employee_id),
+ FOREIGN KEY (business_id,employee_id) REFERENCES public.employees(business_id,id) ON DELETE CASCADE,
+ CHECK (cash_cost_state <> 'known_eligible_zero' OR
+    (length(btrim(coalesce(eligibility_reference,''))) BETWEEN 8 AND 240 AND eligibility_verified_by IS NOT NULL AND eligibility_verified_at IS NOT NULL)),
+ CHECK (cash_cost_state='known_eligible_zero' OR
+    (eligibility_reference IS NULL AND eligibility_verified_by IS NULL AND eligibility_verified_at IS NULL))
+);
+-- PostgreSQL TIME accepts 24:00:00; exclude it explicitly because our
+-- pure HH:mm scheduling model accepts only local hours 00..23.
+-- Scheduling calculations are minute-resolution. Reject nonzero seconds
+-- in PostgreSQL itself, not only Zod/read normalization: authorized owners
+-- can call the RPC directly and can UPDATE via owner RLS.
+-- Nullable exception times stay nullable; all non-null times must be exact minutes.
+ALTER TABLE public.staff_availability_rules ADD CONSTRAINT staff_availability_rule_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
+ALTER TABLE public.staff_availability_exceptions ADD CONSTRAINT staff_availability_exception_minute_precision
+ CHECK ((start_local IS NULL OR (EXTRACT(SECOND FROM start_local)=0
+                                 AND start_local < TIME '24:00:00'))
+    AND (end_local IS NULL OR (EXTRACT(SECOND FROM end_local)=0
+                               AND end_local < TIME '24:00:00')));
+ALTER TABLE public.staff_preference_windows ADD CONSTRAINT staff_preference_window_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
+ALTER TABLE public.scheduling_coverage_requirements ADD CONSTRAINT scheduling_coverage_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0
+    AND start_local < TIME '24:00:00' AND end_local < TIME '24:00:00');
+
+-- No backfill: an absent row means UNKNOWN, even if legacy cached wages = 0.
+-- 'known_eligible_zero' means documented OWNER attestation, NOT legal adjudication.
+
+CREATE TABLE public.scheduling_foundation_audit_events (
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ table_name text NOT NULL, record_id uuid NOT NULL,
+ operation text NOT NULL CHECK(operation IN ('INSERT','UPDATE','DELETE')),
+ actor_user_id uuid, before_value jsonb, after_value jsonb,
+ recorded_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX staff_availability_rules_lookup_idx ON public.staff_availability_rules(business_id,employee_id,day_of_week,effective_from);
+CREATE INDEX staff_availability_exceptions_lookup_idx ON public.staff_availability_exceptions(business_id,employee_id,local_date);
+CREATE INDEX staff_preferences_lookup_idx ON public.staff_scheduling_preferences(business_id,employee_id,effective_from);
+CREATE INDEX staff_preference_windows_lookup_idx ON public.staff_preference_windows(business_id,employee_id,day_of_week);
+CREATE INDEX staff_qualifications_lookup_idx ON public.staff_qualifications(business_id,employee_id,qualification_code);
+CREATE INDEX coverage_requirements_lookup_idx ON public.scheduling_coverage_requirements(business_id,location_id,local_date,day_of_week);
+CREATE INDEX scheduling_foundation_audit_idx ON public.scheduling_foundation_audit_events(business_id,table_name,record_id,recorded_at DESC);
+
+-- One canonical DB predicate for the four scheduling cost-evidence states.
+-- Unknown is always safe; all other labels must agree with current wages.
+-- A missing compensation record is also unknown (no payroll backfill).
+CREATE FUNCTION public.scheduling_compensation_matches_wages(
+ p_state text, p_period text, p_amount bigint, p_hourly bigint)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path=public AS $$
+ -- An invalid or negative canonical wage field MUST NOT substantiate an
+ -- attested cost state (especially verified zero). Do not add retroactive
+ -- constraints or rewrite legacy employee/timecard values: fail closed to
+ -- UNKNOWN in the scheduling projection, and on subsequent wage changes.
+ -- Both amount fields may legitimately be NULL when no wage was entered.
+ SELECT CASE
+  WHEN p_state = 'unknown' THEN true
+  WHEN p_period IS NULL OR p_period NOT IN ('hour','month','year')
+       OR coalesce(p_amount,0)<0 OR coalesce(p_hourly,0)<0 THEN false
+  WHEN p_state = 'known_eligible_zero' THEN
+    coalesce(p_amount,0)=0 AND coalesce(p_hourly,0)=0
+  WHEN p_state = 'salary_conversion_pending' THEN
+    p_period IN ('month','year')
+    AND coalesce(p_amount,0)>0 AND coalesce(p_hourly,0)=0
+  WHEN p_state = 'known_paid' THEN
+    coalesce(p_amount,0)>0 AND
+    (p_period = 'hour' OR coalesce(p_hourly,0)>0)
+  ELSE false
+ END;
+$$;
+
+-- Attestation status cannot silently override a real positive wage or mistake
+-- an unconverted salary for free labor. No legacy salary/wage rows are changed.
+CREATE FUNCTION public.scheduling_check_compensation() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE e record;
+BEGIN
+ -- Lock the employee while validating an attestation. Without this lock a
+ -- concurrent employee wage UPDATE could finish before the attestation commits,
+ -- leaving a zero-cost row that escaped the wage-change trigger.
+ SELECT wage_period,wage_amount_cents,default_hourly_wage_cents
+ INTO e FROM public.employees
+ WHERE business_id=NEW.business_id AND id=NEW.employee_id FOR SHARE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'employee not in business'; END IF;
+ IF NOT public.scheduling_compensation_matches_wages(
+    NEW.cash_cost_state,e.wage_period,e.wage_amount_cents,e.default_hourly_wage_cents) THEN
+   RAISE EXCEPTION 'scheduling compensation state disagrees with canonical wages';
+ END IF;
+ IF NEW.cash_cost_state='known_eligible_zero' THEN
+   NEW.eligibility_verified_by := auth.uid();
+   NEW.eligibility_verified_at := now();
+   IF NEW.eligibility_verified_by IS NULL THEN RAISE EXCEPTION 'owner attestation required'; END IF;
+ ELSE
+   NEW.eligibility_reference:=NULL; NEW.eligibility_verified_by:=NULL; NEW.eligibility_verified_at:=NULL;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER scheduling_validate_compensation BEFORE INSERT OR UPDATE ON public.staff_scheduling_compensation
+FOR EACH ROW EXECUTE FUNCTION public.scheduling_check_compensation();
+
+-- Every canonical employee wage update (including Staff.updateEmployee()
+-- and existing other wage writers) revokes any compensation state whose evidence
+-- is inconsistent with the new wage record. Never infer a verified state from a
+-- wage amount alone: the conservative replacement is 'unknown' until reviewed.
+-- Valid existing states remain unchanged. The compensation trigger clears
+-- eligibility evidence, increments revision and writes the audit in this same
+-- employee UPDATE transaction. No wage, timecard or financial formula change.
+CREATE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ UPDATE public.staff_scheduling_compensation
+    SET cash_cost_state='unknown', eligibility_reference=NULL,
+        eligibility_verified_by=NULL, eligibility_verified_at=NULL
+  WHERE business_id=NEW.business_id AND employee_id=NEW.id
+    AND NOT public.scheduling_compensation_matches_wages(
+      cash_cost_state,NEW.wage_period,NEW.wage_amount_cents,NEW.default_hourly_wage_cents);
+ RETURN NEW;
+END $$;
+CREATE TRIGGER scheduling_invalidate_zero_on_employee_wage_change
+AFTER UPDATE OF wage_period, wage_amount_cents, default_hourly_wage_cents
+ON public.employees FOR EACH ROW
+WHEN (OLD.wage_period IS DISTINCT FROM NEW.wage_period
+   OR OLD.wage_amount_cents IS DISTINCT FROM NEW.wage_amount_cents
+   OR OLD.default_hourly_wage_cents IS DISTINCT FROM NEW.default_hourly_wage_cents)
+EXECUTE FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change();
+REVOKE ALL ON FUNCTION public.scheduling_invalidate_zero_on_employee_wage_change()
+FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_compensation_matches_wages(text,text,bigint,bigint)
+FROM PUBLIC,anon,authenticated;
+
+-- Consistent provenance and immutable identity, incrementing revision on change.
+CREATE FUNCTION public.scheduling_stamp_foundation() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ IF TG_OP='INSERT' THEN
+   NEW.created_by := auth.uid(); NEW.updated_by := auth.uid();
+   NEW.revision := 1; NEW.created_at := now(); NEW.updated_at := now();
+ ELSE
+   IF NEW.business_id IS DISTINCT FROM OLD.business_id OR NEW.id IS DISTINCT FROM OLD.id THEN
+     RAISE EXCEPTION 'cannot change scheduling record identity';
+   END IF;
+   NEW.created_by := OLD.created_by; NEW.created_at := OLD.created_at;
+   NEW.updated_by := auth.uid(); NEW.updated_at := now(); NEW.revision := OLD.revision+1;
+ END IF;
+
+ RETURN NEW;
+END $$;
+-- Use a separate trigger for confirmation-bearing rows because PostgreSQL
+-- records have table-specific fields; qualification types/compensation lack them.
+CREATE FUNCTION public.scheduling_stamp_confirmation() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ IF NEW.confirmation='owner_confirmed' THEN
+   IF TG_OP='UPDATE' AND OLD.confirmation='owner_confirmed'
+      AND (to_jsonb(NEW) - ARRAY['revision','updated_by','updated_at',
+        'created_by','created_at','confirmed_by','confirmed_at'])
+        IS NOT DISTINCT FROM
+          (to_jsonb(OLD) - ARRAY['revision','updated_by','updated_at',
+            'created_by','created_at','confirmed_by','confirmed_at']) THEN
+      -- Revision/metadata-only edit: retain the original attestation pair.
+      NEW.confirmed_by := OLD.confirmed_by;
+      NEW.confirmed_at := OLD.confirmed_at;
+   ELSE
+      -- Any changed business facts or fresh unconfirmed->confirmed
+      -- transition require BOTH actor and time from the current attestation.
+      NEW.confirmed_by := auth.uid();
+      NEW.confirmed_at := clock_timestamp();
+   END IF;
+ ELSE
+   NEW.confirmed_by := NULL; NEW.confirmed_at := NULL;
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE FUNCTION public.scheduling_log_foundation() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ -- Parent-business cascades must not attempt to resurrect an audit FK row.
+ IF TG_OP='DELETE' AND NOT EXISTS
+   (SELECT 1 FROM public.businesses WHERE id=OLD.business_id) THEN
+   RETURN NULL;
+ END IF;
+ IF TG_OP='INSERT' THEN
+   INSERT INTO public.scheduling_foundation_audit_events
+   (business_id,table_name,record_id,operation,actor_user_id,after_value)
+   VALUES (NEW.business_id,TG_TABLE_NAME,NEW.id,TG_OP,auth.uid(),to_jsonb(NEW));
+ ELSIF TG_OP='UPDATE' THEN
+   INSERT INTO public.scheduling_foundation_audit_events
+   (business_id,table_name,record_id,operation,actor_user_id,before_value,after_value)
+   VALUES (NEW.business_id,TG_TABLE_NAME,NEW.id,TG_OP,auth.uid(),to_jsonb(OLD),to_jsonb(NEW));
+ ELSE
+   INSERT INTO public.scheduling_foundation_audit_events
+   (business_id,table_name,record_id,operation,actor_user_id,before_value)
+   VALUES (OLD.business_id,TG_TABLE_NAME,OLD.id,TG_OP,auth.uid(),to_jsonb(OLD));
+ END IF;
+ RETURN NULL;
+END $$;
+DO $$
+DECLARE t text;
+BEGIN
+ FOREACH t IN ARRAY ARRAY[
+  'staff_availability_rules','staff_availability_exceptions',
+  'staff_scheduling_preferences','staff_preference_windows',
+  'scheduling_qualification_types','staff_qualifications',
+  'scheduling_coverage_requirements','staff_scheduling_compensation'
+ ] LOOP
+  EXECUTE format('CREATE TRIGGER scheduling_stamp BEFORE INSERT OR UPDATE ON public.%I
+    FOR EACH ROW EXECUTE FUNCTION public.scheduling_stamp_foundation()',t);
+  EXECUTE format('CREATE TRIGGER scheduling_audit AFTER INSERT OR UPDATE OR DELETE ON public.%I
+    FOR EACH ROW EXECUTE FUNCTION public.scheduling_log_foundation()',t);
+  EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY',t);
+  EXECUTE format('CREATE POLICY "owner reads" ON public.%I FOR SELECT USING (public.scheduling_is_owner(business_id))',t);
+  EXECUTE format('CREATE POLICY "owner updates" ON public.%I FOR UPDATE USING (public.scheduling_is_owner(business_id)) WITH CHECK (public.scheduling_is_owner(business_id))',t);
+  EXECUTE format('CREATE POLICY "owner deletes" ON public.%I FOR DELETE USING (public.scheduling_is_owner(business_id))',t);
+  EXECUTE format('REVOKE ALL ON public.%I FROM PUBLIC, anon, authenticated',t);
+  -- No INSERT grant OR INSERT policy for API roles: even an authenticated
+  -- owner must create through scheduling_create_foundation with a receipt.
+  -- SELECT/UPDATE/DELETE retain their owner-only RLS policies.
+  EXECUTE format('GRANT SELECT,UPDATE,DELETE ON public.%I TO authenticated',t);
+ END LOOP;
+END $$;
+-- Only owner may see the private append-only audit; no direct user writes.
+ALTER TABLE public.scheduling_foundation_audit_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "owner reads" ON public.scheduling_foundation_audit_events
+ FOR SELECT USING (public.scheduling_is_owner(business_id));
+REVOKE ALL ON public.scheduling_foundation_audit_events FROM PUBLIC,anon,authenticated;
+GRANT SELECT ON public.scheduling_foundation_audit_events TO authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_check_compensation() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_stamp_foundation() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_stamp_confirmation() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.scheduling_log_foundation() FROM PUBLIC,anon,authenticated;
+-- Confirmation stamping AFTER generic revision stamping (trigger alphabetical order).
+DO $$
+DECLARE t text;
+BEGIN
+ FOREACH t IN ARRAY ARRAY[
+  'staff_availability_rules','staff_availability_exceptions',
+  'staff_scheduling_preferences','staff_preference_windows',
+  'staff_qualifications','scheduling_coverage_requirements'
+ ] LOOP
+  EXECUTE format('CREATE TRIGGER scheduling_stamp_confirmation BEFORE INSERT OR UPDATE ON public.%I
+    FOR EACH ROW EXECUTE FUNCTION public.scheduling_stamp_confirmation()',t);
+ END LOOP;
+END $$;
+
+
+-- Durable, tenant-scoped create receipts. A retry must not generate another
+-- authoritative row or audit event, even after the original is edited/deleted.
+-- Different request keys (including identical window payloads) are distinct.
+-- No direct role permissions: only the audited owner-checked RPC may write.
+CREATE TABLE public.scheduling_foundation_create_receipts (
+ business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
+ request_key uuid NOT NULL,
+ kind text NOT NULL,
+ request_payload jsonb NOT NULL,
+ record_id uuid,
+ record_revision int,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY (business_id,request_key),
+ CHECK ((record_id IS NULL) = (record_revision IS NULL)),
+ CHECK (record_revision IS NULL OR record_revision > 0)
+);
+ALTER TABLE public.scheduling_foundation_create_receipts ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.scheduling_foundation_create_receipts FROM PUBLIC,anon,authenticated;
+
+-- Function ownership supplies INSERT authority inside this SECURITY DEFINER
+-- RPC only; direct authenticated/PostgREST INSERTs have neither table INSERT
+-- grant nor an owner INSERT policy. Do not regrant INSERT in later migrations.
+-- Single transaction/unique-claim protocol. Concurrent same-key requests
+-- serialize on the unique receipt, then return the immutable original result.
+-- Explicit table/key allowlists prevent forged IDs, actor attribution, RLS
+-- bypass, or arbitrary SQL/columns even when a caller invokes RPC directly.
+CREATE FUNCTION public.scheduling_create_foundation(
+ p_business_id uuid, p_kind text, p_request_key uuid, p_record jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+ v_table text;
+ v_allowed text[];
+ v_columns text;
+ v_values text;
+ v_claim_count integer;
+ v_kind text;
+ v_payload jsonb;
+ v_id uuid;
+ v_revision integer;
+BEGIN
+ IF auth.uid() IS NULL OR NOT public.scheduling_is_owner(p_business_id)
+    OR p_business_id = '11111111-1111-1111-1111-111111111111'::uuid
+    OR NOT EXISTS (SELECT 1 FROM public.businesses
+      WHERE id=p_business_id AND is_demo=false) THEN
+    RAISE EXCEPTION 'scheduling owner authorization required' USING ERRCODE='42501';
+ END IF;
+ IF p_request_key IS NULL OR jsonb_typeof(p_record) IS DISTINCT FROM 'object'
+    OR p_record='{}'::jsonb THEN
+   RAISE EXCEPTION 'invalid create request' USING ERRCODE='22023';
+ END IF;
+
+ CASE p_kind
+  WHEN 'availability_rule' THEN
+   v_table:='staff_availability_rules';
+   v_allowed:=ARRAY['employee_id','location_id','day_of_week','start_local','end_local',
+    'overnight','effective_from','effective_to','source','confirmation'];
+  WHEN 'availability_exception' THEN
+   v_table:='staff_availability_exceptions';
+   v_allowed:=ARRAY['employee_id','location_id','local_date','exception_type',
+    'start_local','end_local','overnight','max_minutes','source','confirmation'];
+  WHEN 'preferences' THEN
+   v_table:='staff_scheduling_preferences';
+   v_allowed:=ARRAY['employee_id','effective_from','effective_to','min_weekly_minutes',
+    'desired_weekly_minutes','max_weekly_minutes','max_daily_minutes','source','confirmation'];
+  WHEN 'preference_window' THEN
+   v_table:='staff_preference_windows';
+   v_allowed:=ARRAY['employee_id','day_of_week','start_local','end_local','overnight',
+    'preference','strength','effective_from','effective_to','source','confirmation'];
+  WHEN 'qualification_type' THEN
+   v_table:='scheduling_qualification_types';
+   v_allowed:=ARRAY['code','display_name','active'];
+  WHEN 'qualification' THEN
+   v_table:='staff_qualifications';
+   v_allowed:=ARRAY['employee_id','location_id','qualification_code','valid_from','valid_to',
+    'source','confirmation'];
+  WHEN 'coverage' THEN
+   v_table:='scheduling_coverage_requirements';
+   v_allowed:=ARRAY['location_id','day_of_week','local_date','effective_from','effective_to',
+    'start_local','end_local','overnight','min_headcount','qualification_code',
+    'min_overlap_minutes','priority','source','confirmation'];
+  WHEN 'compensation' THEN
+   v_table:='staff_scheduling_compensation';
+   v_allowed:=ARRAY['employee_id','cash_cost_state','eligibility_reference'];
+  ELSE
+   RAISE EXCEPTION 'invalid scheduling record kind' USING ERRCODE='22023';
+ END CASE;
+ IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_record) AS k(field)
+     WHERE NOT (k.field = ANY(v_allowed))) THEN
+   RAISE EXCEPTION 'forbidden scheduling create column' USING ERRCODE='22023';
+ END IF;
+
+ -- The primary key (business_id, request_key) is independent of payload and
+ -- kind: reusing a key for different work returns a typed conflict instead.
+ -- PostgreSQL ON CONFLICT waits for the concurrent winner to commit/abort.
+ INSERT INTO public.scheduling_foundation_create_receipts
+  (business_id,request_key,kind,request_payload)
+ VALUES(p_business_id,p_request_key,p_kind,p_record)
+ ON CONFLICT DO NOTHING;
+ GET DIAGNOSTICS v_claim_count=ROW_COUNT;
+ SELECT kind,request_payload,record_id,record_revision
+ INTO v_kind,v_payload,v_id,v_revision
+ FROM public.scheduling_foundation_create_receipts
+ WHERE business_id=p_business_id AND request_key=p_request_key FOR UPDATE;
+ IF v_claim_count=0 THEN
+   IF v_kind IS DISTINCT FROM p_kind OR v_payload IS DISTINCT FROM p_record THEN
+     RETURN jsonb_build_object('conflict',true);
+   END IF;
+   IF v_id IS NULL OR v_revision IS NULL THEN
+     RAISE EXCEPTION 'unfinished scheduling create receipt' USING ERRCODE='40001';
+   END IF;
+   RETURN jsonb_build_object('id',v_id,'revision',v_revision,'replayed',true);
+ END IF;
+
+ SELECT string_agg(format('%I',field),',' ORDER BY field),
+        string_agg(format('r.%I',field),',' ORDER BY field)
+ INTO v_columns,v_values
+ FROM jsonb_object_keys(p_record) AS k(field);
+
+ -- The original source keys are whitelisted; populate the target row type to
+ -- enforce Postgres casting and all original FK/check/stamp/audit triggers.
+ EXECUTE format(
+   'INSERT INTO public.%I (business_id,%s) SELECT $1,%s
+      FROM jsonb_populate_record(NULL::public.%I,$2) AS r
+      RETURNING id,revision',
+    v_table,v_columns,v_values,v_table)
+ USING p_business_id,p_record INTO v_id,v_revision;
+ UPDATE public.scheduling_foundation_create_receipts
+ SET record_id=v_id,record_revision=v_revision
+ WHERE business_id=p_business_id AND request_key=p_request_key;
+ RETURN jsonb_build_object('id',v_id,'revision',v_revision,'replayed',false);
+END $$;
+REVOKE ALL ON FUNCTION public.scheduling_create_foundation(uuid,text,uuid,jsonb)
+ FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.scheduling_create_foundation(uuid,text,uuid,jsonb)
+ TO authenticated;
