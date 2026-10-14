@@ -176,6 +176,20 @@ CREATE TABLE public.staff_scheduling_compensation (
  CHECK (cash_cost_state='known_eligible_zero' OR
     (eligibility_reference IS NULL AND eligibility_verified_by IS NULL AND eligibility_verified_at IS NULL))
 );
+-- Scheduling calculations are minute-resolution. Reject nonzero seconds
+-- in PostgreSQL itself, not only Zod/read normalization: authorized owners
+-- can call the RPC directly and can UPDATE via owner RLS.
+-- Nullable exception times stay nullable; all non-null times must be exact minutes.
+ALTER TABLE public.staff_availability_rules ADD CONSTRAINT staff_availability_rule_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+ALTER TABLE public.staff_availability_exceptions ADD CONSTRAINT staff_availability_exception_minute_precision
+ CHECK ((start_local IS NULL OR EXTRACT(SECOND FROM start_local)=0)
+    AND (end_local IS NULL OR EXTRACT(SECOND FROM end_local)=0));
+ALTER TABLE public.staff_preference_windows ADD CONSTRAINT staff_preference_window_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+ALTER TABLE public.scheduling_coverage_requirements ADD CONSTRAINT scheduling_coverage_minute_precision
+ CHECK (EXTRACT(SECOND FROM start_local)=0 AND EXTRACT(SECOND FROM end_local)=0);
+
 -- No backfill: an absent row means UNKNOWN, even if legacy cached wages = 0.
 -- 'known_eligible_zero' means documented OWNER attestation, NOT legal adjudication.
 
@@ -304,9 +318,21 @@ CREATE FUNCTION public.scheduling_stamp_confirmation() RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
  IF NEW.confirmation='owner_confirmed' THEN
-   NEW.confirmed_by := auth.uid();
-   NEW.confirmed_at := CASE WHEN TG_OP='UPDATE' AND OLD.confirmation='owner_confirmed'
-     THEN OLD.confirmed_at ELSE now() END;
+   IF TG_OP='UPDATE' AND OLD.confirmation='owner_confirmed'
+      AND (to_jsonb(NEW) - ARRAY['revision','updated_by','updated_at',
+        'created_by','created_at','confirmed_by','confirmed_at'])
+        IS NOT DISTINCT FROM
+          (to_jsonb(OLD) - ARRAY['revision','updated_by','updated_at',
+            'created_by','created_at','confirmed_by','confirmed_at']) THEN
+      -- Revision/metadata-only edit: retain the original attestation pair.
+      NEW.confirmed_by := OLD.confirmed_by;
+      NEW.confirmed_at := OLD.confirmed_at;
+   ELSE
+      -- Any changed business facts or fresh unconfirmed->confirmed
+      -- transition require BOTH actor and time from the current attestation.
+      NEW.confirmed_by := auth.uid();
+      NEW.confirmed_at := clock_timestamp();
+   END IF;
  ELSE
    NEW.confirmed_by := NULL; NEW.confirmed_at := NULL;
  END IF;
