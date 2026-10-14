@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   requestedWages: vi.fn(),
   tables: {} as Record<string, Array<Record<string, unknown>>>,
   readQueries: [] as Array<{ table: string; cursor: string | null; size: number }>,
+  apiMaxRows: null as number | null,
   rpc: vi.fn(),
 }));
 
@@ -47,7 +48,8 @@ vi.mock("@/lib/supabase/server", () => ({
               mocks.readQueries.push({ table, cursor, size });
               const remaining = all.filter((row) => cursor === null || String(row.id) > cursor);
               return Promise.resolve({
-                data: remaining.slice(0, size), error: null, count: remaining.length,
+                data: remaining.slice(0, Math.min(size, mocks.apiMaxRows ?? size)),
+                error: null, count: remaining.length,
               });
             };
             return {
@@ -73,6 +75,7 @@ describe("scheduling foundation compensation read is fail closed", () => {
     mocks.requestedWages.mockClear();
     mocks.tables = {};
     mocks.readQueries = [];
+    mocks.apiMaxRows = null;
     mocks.rpc.mockReset();
     process.env.SCHEDULING_FOUNDATION_ENABLED = "true";
   });
@@ -180,6 +183,16 @@ describe("scheduling foundation compensation read is fail closed", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw Error("read failed");
     expect(result.records.availability_rule).toHaveLength(510);
+  });
+
+  it("returns storage_unavailable rather than silently truncating at a lower API row cap", async () => {
+    mocks.apiMaxRows = 100;
+    mocks.tables.staff_availability_rules = Array.from({ length: 220 }, (_, i) => ({
+      id: id(i + 1), start_local: "09:00:00", end_local: "17:00:00",
+    }));
+    expect(await readSchedulingFoundation()).toMatchObject({
+      ok: false, error: "storage_unavailable",
+    });
   });
 
   it("normalizes TIME columns in all scheduling tables, preserving overnight", async () => {
