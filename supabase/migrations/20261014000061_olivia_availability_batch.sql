@@ -254,3 +254,29 @@ REVOKE ALL ON FUNCTION public.scheduling_save_availability_batch(
  uuid,uuid,uuid,text,jsonb,jsonb,jsonb,uuid) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.scheduling_save_availability_batch(
  uuid,uuid,uuid,text,jsonb,jsonb,jsonb,uuid) TO authenticated;
+
+
+-- A worker must not have two simultaneously effective hour-limit policies.
+-- Enforce on every owner INSERT/UPDATE (including legacy per-record actions).
+-- Locking employee serializes checks by concurrent co-owners.
+CREATE FUNCTION public.scheduling_validate_preference_dates()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+ PERFORM 1 FROM public.employees
+  WHERE business_id=NEW.business_id AND id=NEW.employee_id FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'unknown employee preference' USING ERRCODE='23503'; END IF;
+ IF EXISTS(
+  SELECT 1 FROM public.staff_scheduling_preferences p
+  WHERE p.business_id=NEW.business_id AND p.employee_id=NEW.employee_id
+    AND p.id<>NEW.id
+    AND daterange(p.effective_from,p.effective_to,'[]') &&
+        daterange(NEW.effective_from,NEW.effective_to,'[]')
+ ) THEN
+   RAISE EXCEPTION 'overlapping employee hour-limit periods' USING ERRCODE='23505';
+ END IF;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER scheduling_validate_preference_dates
+ BEFORE INSERT OR UPDATE ON public.staff_scheduling_preferences
+ FOR EACH ROW EXECUTE FUNCTION public.scheduling_validate_preference_dates();
+REVOKE ALL ON FUNCTION public.scheduling_validate_preference_dates() FROM PUBLIC,anon,authenticated;
