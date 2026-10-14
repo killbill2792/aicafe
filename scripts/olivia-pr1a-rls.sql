@@ -492,5 +492,158 @@ BEGIN
  END IF;
 END $$;
 
+-- Native PostgreSQL time columns serialize minute-precision values as
+-- HH:mm:ss. The scheduling read boundary normalizes this without truncating
+-- nonzero seconds, and the pure calculator also accepts exact-zero seconds.
+DO $$
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=current_setting('test.biz_a')::uuid
+     AND start_local::text='07:00:00' AND end_local::text='11:00:00') THEN
+   RAISE EXCEPTION 'POSTGRES_TIME_ROUNDTRIP_NOT_PRESENT';
+ END IF;
+END $$;
+
+-- Atomic idempotent create RPC: owner can retry, a different key creates a
+-- DISTINCT genuine window even if its payload is identical. No direct receipt
+-- table access is exposed, and the original outcome survives edit/delete.
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
+SELECT gen_random_uuid() AS same_key, gen_random_uuid() AS distinct_key \gset
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','22:00','end_local','02:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS original_result \gset
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','22:00','end_local','02:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS replay_result \gset
+DO $$
+DECLARE a jsonb := current_setting('test.original_receipt',true)::jsonb;
+BEGIN
+ -- Saved below with a SESSION-LOCAL custom setting to keep this test isolated.
+ NULL;
+END $$;
+SELECT set_config('test.original_receipt',:'original_result',true);
+SELECT set_config('test.replay_receipt',:'replay_result',true);
+DO $$
+DECLARE a jsonb:=current_setting('test.original_receipt')::jsonb;
+        b jsonb:=current_setting('test.replay_receipt')::jsonb;
+BEGIN
+ IF a->>'id' IS NULL OR a->>'revision'<>'1'
+    OR b->>'id' IS DISTINCT FROM a->>'id'
+    OR b->>'revision'<>'1'
+    OR b->>'replayed'<>'true' OR a->>'replayed'<>'false' THEN
+   RAISE EXCEPTION 'IDEMPOTENT_CREATE_REPLAY_CHANGED_ID_OR_REVISION';
+ END IF;
+ IF (SELECT count(*) FROM public.staff_availability_rules
+   WHERE id=(a->>'id')::uuid)<>1 THEN
+   RAISE EXCEPTION 'DUPLICATE_RECORD_CREATED_ON_RETRY';
+ END IF;
+END $$;
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'distinct_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','22:00','end_local','02:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS distinct_result \gset
+SELECT set_config('test.distinct_receipt',:'distinct_result',true);
+DO $$
+BEGIN
+ IF current_setting('test.distinct_receipt')::jsonb->>'id' =
+    current_setting('test.original_receipt')::jsonb->>'id' THEN
+   RAISE EXCEPTION 'DISTINCT_CREATE_KEY_SUPPRESSED';
+ END IF;
+END $$;
+
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','23:00','end_local','01:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS mismatch_result \gset
+DO $$
+BEGIN
+ IF current_setting('test.mismatch_receipt',true) IS NOT NULL THEN NULL; END IF;
+END $$;
+SELECT set_config('test.mismatch_receipt',:'mismatch_result',true);
+DO $$
+BEGIN
+ IF current_setting('test.mismatch_receipt')::jsonb->>'conflict'<>'true' THEN
+   RAISE EXCEPTION 'REUSED_KEY_WITH_DIFFERENT_PAYLOAD_NOT_REJECTED';
+ END IF;
+END $$;
+-- The receipt survives even when the original row is later updated/deleted.
+UPDATE public.staff_availability_rules SET start_local='21:00',end_local='02:00'
+ WHERE id=(current_setting('test.original_receipt')::jsonb->>'id')::uuid;
+DELETE FROM public.staff_availability_rules
+ WHERE id=(current_setting('test.original_receipt')::jsonb->>'id')::uuid;
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','22:00','end_local','02:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS deleted_replay \gset
+SELECT set_config('test.deleted_replay',:'deleted_replay',true);
+DO $$
+BEGIN
+ IF current_setting('test.deleted_replay')::jsonb->>'id' IS DISTINCT FROM
+    current_setting('test.original_receipt')::jsonb->>'id' THEN
+   RAISE EXCEPTION 'DELETED_RECORD_WAS_RESURRECTED_OR_REPLAY_CHANGED';
+ END IF;
+ IF EXISTS (SELECT 1 FROM public.staff_availability_rules
+   WHERE id=(current_setting('test.original_receipt')::jsonb->>'id')::uuid) THEN
+   RAISE EXCEPTION 'RETRY_RESURRECTED_DELETED_RECORD';
+ END IF;
+END $$;
+
+-- An owner of a different café and a manager must not invoke the RPC against
+-- this business, and neither can read the private receipt table directly.
+SELECT set_config('request.jwt.claim.sub',:'manager_id',true);
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+   '{"day_of_week":3}'::jsonb);
+  RAISE EXCEPTION 'MANAGER_RPC_AUTHORIZED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ BEGIN
+  PERFORM count(*) FROM public.scheduling_foundation_create_receipts;
+  RAISE EXCEPTION 'RECEIPT_TABLE_PUBLICLY_READABLE';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+   '{"day_of_week":3}'::jsonb);
+  RAISE EXCEPTION 'FOREIGN_OWNER_RPC_AUTHORIZED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+RESET ROLE;
+DO $$
+BEGIN
+ IF (SELECT count(*) FROM public.scheduling_foundation_create_receipts
+   WHERE business_id=current_setting('test.biz_a')::uuid)<>2 THEN
+   RAISE EXCEPTION 'IDEMPOTENCY_RECEIPT_COUNT_MISMATCH';
+ END IF;
+ IF (SELECT count(*) FROM public.scheduling_foundation_audit_events
+   WHERE operation='INSERT' AND record_id IN
+    ((current_setting('test.original_receipt')::jsonb->>'id')::uuid,
+     (current_setting('test.distinct_receipt')::jsonb->>'id')::uuid))<>2 THEN
+   RAISE EXCEPTION 'RETRY_CREATED_ADDITIONAL_AUDIT_EVENT';
+ END IF;
+END $$;
+
 ROLLBACK;
 \echo Olivia PR 1A RLS/composite tenant/attestation/audit tests passed (rolled back)
