@@ -5,6 +5,8 @@ import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
+import { getSchedulingFoundationRecords, getSchedulingLocationOptions } from "@/lib/actions/schedulingFoundation";
+import { emptySchedulingRecords, type SchedulingClientRecords } from "@/components/staff/SchedulingInputsPanel";
 import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -16,6 +18,21 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
   const tCommon = await getTranslations("Common");
 
   const [{ employee, date }, employees, schedules, snapshot] = await Promise.all([searchParams, getEmployees(), getStaffSchedules(), getSnapshot()]);
+  // Scheduling remains separately default-off until owner-applied migrations
+  // and explicitly authorized rollout. Legacy Staff stays usable when disabled.
+  const enabled = process.env.SCHEDULING_FOUNDATION_ENABLED === "true" &&
+    process.env.SCHEDULING_AVAILABILITY_UI_ENABLED === "true";
+  const [foundation, locationResult] = enabled
+    ? await Promise.all([getSchedulingFoundationRecords(), getSchedulingLocationOptions()])
+    : [null, null];
+  const schedulingStatus = foundation?.ok && locationResult?.ok ? "ready" as const : "unavailable" as const;
+  const schedulingRecords: SchedulingClientRecords = foundation?.ok
+    ? foundation.records as unknown as SchedulingClientRecords
+    : emptySchedulingRecords;
+  const schedulingLocations = locationResult?.ok ? locationResult.locations : [];
+  const schedulingBusinessTimezone = locationResult?.ok
+    ? locationResult.businessTimezone : "America/Los_Angeles";
+
   const focusEmployeeId = employees.some((candidate) => candidate.id === employee) ? employee ?? null : null;
   const focusDate = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ? date! : null;
 
@@ -28,6 +45,10 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
         todayDateStr={snapshot.todayDateStr}
         focusEmployeeId={focusEmployeeId}
         focusDate={focusDate}
+        schedulingStatus={schedulingStatus}
+        schedulingRecords={schedulingRecords}
+        schedulingLocations={schedulingLocations}
+        schedulingBusinessTimezone={schedulingBusinessTimezone}
         labels={{
           addStaff: t("addStaff"),
           nameLabel: t("nameLabel"),
@@ -77,6 +98,7 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
           reactivate: t("reactivate"),
           inactiveTag: t("inactiveTag"),
           wageSummary: t("wageSummary"),
+          wageUnknown: t("wageUnknown"),
           daysSummary: t("daysSummary"),
           variedTimes: t("variedTimes"),
           variedBreaks: t("variedBreaks"),
