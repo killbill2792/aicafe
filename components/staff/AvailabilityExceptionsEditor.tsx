@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
@@ -30,7 +30,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const t = useTranslations("SchedulingAvailability"), router = useRouter();
   const [date,setDate] = useState(today);
   const [locationId,setLocationId] = useState("");
-  const [draft,setDraft] = useState<ExceptionDraft[]>([]);
+  const [draftOverride,setDraftOverride] = useState<ExceptionDraft[] | null>(null);
   const [dirty,setDirty] = useState(false);
   const [pending,startTransition] = useTransition();
   const [status,setStatus] = useState<"idle"|"saved"|"error"|"conflict">("idle");
@@ -38,13 +38,13 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const scoped = useMemo(() => rows.filter(r => r.employee_id===employeeId &&
     r.local_date===date && (r.location_id??null)===(locationId||null)
   ),[rows,employeeId,date,locationId]);
-  useEffect(() => { if (!dirty) setDraft(scoped.map(fromRow)); },[scoped,dirty]);
+  const draft = draftOverride ?? scoped.map(fromRow);
   function touch(next: ExceptionDraft[]) {
-    setDraft(next); setDirty(true); setStatus("idle"); key.current=null;
+    setDraftOverride(next); setDirty(true); setStatus("idle"); key.current=null;
   }
   function changeScope(fn: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDirty(false); setStatus("idle"); key.current=null; fn(value);
+    setDraftOverride(null); setDirty(false); setStatus("idle"); key.current=null; fn(value);
   }
   function update(i:number, patch:Partial<ExceptionDraft>) {
     touch(draft.map((r,j) => j===i ? {...r,...patch} : r));
@@ -72,7 +72,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
         desired,requestKey:key.current,
       });
       if (!result.ok) {setStatus(result.error==="conflict"?"conflict":"error");return;}
-      key.current=null;setDirty(false);setStatus("saved");router.refresh();
+      key.current=null;setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
     });
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
