@@ -4,6 +4,7 @@
 BEGIN;
 SELECT gen_random_uuid() AS owner_id, gen_random_uuid() AS manager_id,
        gen_random_uuid() AS foreign_owner_id,
+       gen_random_uuid() AS co_owner_id, gen_random_uuid() AS stranger_id,
        gen_random_uuid() AS biz_a, gen_random_uuid() AS biz_b,
        gen_random_uuid() AS employee_a, gen_random_uuid() AS employee_b,
        gen_random_uuid() AS loc_a, gen_random_uuid() AS loc_b
@@ -12,11 +13,14 @@ INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_
 VALUES
  (:'owner_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-owner@example.invalid','',now(),now()),
  (:'manager_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-manager@example.invalid','',now(),now()),
- (:'foreign_owner_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-other@example.invalid','',now(),now());
+ (:'foreign_owner_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-other@example.invalid','',now(),now()),
+ (:'co_owner_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-co-owner@example.invalid','',now(),now()),
+ (:'stranger_id','00000000-0000-0000-0000-000000000000','authenticated','authenticated','olivia-pr1a-stranger@example.invalid','',now(),now());
 INSERT INTO businesses(id,name,is_demo) VALUES
  (:'biz_a','Olivia Test A',false),(:'biz_b','Olivia Test B',false);
 INSERT INTO memberships(business_id,user_id,role) VALUES
  (:'biz_a',:'owner_id','owner'),(:'biz_a',:'manager_id','manager'),
+ (:'biz_a',:'co_owner_id','owner'),
  (:'biz_b',:'foreign_owner_id','owner');
 INSERT INTO locations(id,business_id,name) VALUES
  (:'loc_a',:'biz_a','A'),(:'loc_b',:'biz_b','B');
@@ -28,6 +32,34 @@ SELECT set_config('test.biz_a',:'biz_a',true),set_config('test.biz_b',:'biz_b',t
        set_config('test.loc_a',:'loc_a',true),set_config('test.loc_b',:'loc_b',true);
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
+
+-- Defense in depth: PostgREST authenticated owners MUST NOT directly
+-- INSERT into any of the eight authoritative foundation tables. Check both
+-- SQL permissions and absence of permissive INSERT policies; exercise direct
+-- SQL as an authenticated owner (including qualification/compensation).
+DO $$
+DECLARE t text;
+BEGIN
+ FOREACH t IN ARRAY ARRAY[
+  'staff_availability_rules','staff_availability_exceptions',
+  'staff_scheduling_preferences','staff_preference_windows',
+  'scheduling_qualification_types','staff_qualifications',
+  'scheduling_coverage_requirements','staff_scheduling_compensation'
+ ] LOOP
+  IF has_table_privilege('authenticated',format('public.%I',t),'INSERT') THEN
+   RAISE EXCEPTION 'DIRECT_INSERT_GRANT_REMAINS: %',t;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_policies
+    WHERE schemaname='public' AND tablename=t AND cmd IN ('INSERT','ALL')) THEN
+   RAISE EXCEPTION 'DIRECT_INSERT_POLICY_REMAINS: %',t;
+  END IF;
+  BEGIN
+   EXECUTE format('INSERT INTO public.%I DEFAULT VALUES',t);
+   RAISE EXCEPTION 'AUTHENTICATED_OWNER_DIRECT_INSERT_ACCEPTED: %',t;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+ END LOOP;
+END $$;
 
 -- Owner creates through RPC only; distinct split windows retain their identity.
 SELECT public.scheduling_create_foundation(
@@ -562,6 +594,35 @@ BEGIN
    RAISE EXCEPTION 'DUPLICATE_RECORD_CREATED_ON_RETRY';
  END IF;
 END $$;
+-- Co-owner shares the same tenant-scoped key/receipt: a second authorized
+-- caller must replay, not duplicate. Authenticated co-owners still cannot INSERT
+-- directly and may edit/delete using the existing owner RLS policies.
+SELECT set_config('request.jwt.claim.sub',:'co_owner_id',true);
+DO $$
+BEGIN
+ BEGIN
+  INSERT INTO public.staff_availability_rules DEFAULT VALUES;
+  RAISE EXCEPTION 'CO_OWNER_DIRECT_INSERT_ACCEPTED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+SELECT public.scheduling_create_foundation(
+ :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
+  'start_local','22:00','end_local','02:00','overnight',true,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS co_owner_replay \gset
+SELECT set_config('test.co_owner_replay',:'co_owner_replay',true);
+DO $$
+BEGIN
+ IF current_setting('test.co_owner_replay')::jsonb->>'id' IS DISTINCT FROM
+    current_setting('test.original_receipt')::jsonb->>'id' OR
+    current_setting('test.co_owner_replay')::jsonb->>'replayed'<>'true' THEN
+   RAISE EXCEPTION 'CO_OWNER_DID_NOT_REPLAY_SAME_RECEIPT';
+ END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
+
 SELECT public.scheduling_create_foundation(
  :'biz_a'::uuid,'availability_rule',:'distinct_key'::uuid,
  jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
@@ -595,10 +656,14 @@ BEGIN
  END IF;
 END $$;
 -- The receipt survives even when the original row is later updated/deleted.
+-- Have the SECOND co-owner perform authorized UPDATE/DELETE, retaining
+-- existing revision/audit/RLS semantics without any direct INSERT privilege.
+SELECT set_config('request.jwt.claim.sub',:'co_owner_id',true);
 UPDATE public.staff_availability_rules SET start_local='21:00',end_local='02:00'
  WHERE id=(current_setting('test.original_receipt')::jsonb->>'id')::uuid;
 DELETE FROM public.staff_availability_rules
  WHERE id=(current_setting('test.original_receipt')::jsonb->>'id')::uuid;
+SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 SELECT public.scheduling_create_foundation(
  :'biz_a'::uuid,'availability_rule',:'same_key'::uuid,
  jsonb_build_object('employee_id',:'employee_a','day_of_week',3,
@@ -644,6 +709,52 @@ BEGIN
    current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
    '{"day_of_week":3}'::jsonb);
   RAISE EXCEPTION 'FOREIGN_OWNER_RPC_AUTHORIZED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+-- Authenticated user without any café membership is not authorized.
+SELECT set_config('request.jwt.claim.sub',:'stranger_id',true);
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+   '{"day_of_week":3}'::jsonb);
+  RAISE EXCEPTION 'NON_MEMBER_RPC_AUTHORIZED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+-- A valid owner of business B may use the SAME request UUID on its OWN tenant.
+-- Receipt uniqueness must be tenant-scoped and must not expose business A.
+SELECT set_config('request.jwt.claim.sub',:'foreign_owner_id',true);
+SELECT public.scheduling_create_foundation(
+ :'biz_b'::uuid,'availability_rule',:'same_key'::uuid,
+ jsonb_build_object('employee_id',:'employee_b','day_of_week',3,
+  'start_local','09:00','end_local','11:00','overnight',false,
+  'effective_from','2026-10-14','source','owner_direct','confirmation','owner_confirmed')
+ ) AS other_business_result \gset
+SELECT set_config('test.other_business_result',:'other_business_result',true);
+DO $$
+BEGIN
+ IF current_setting('test.other_business_result')::jsonb->>'id' IS NULL OR
+    current_setting('test.other_business_result')::jsonb->>'id' =
+    current_setting('test.original_receipt')::jsonb->>'id' THEN
+   RAISE EXCEPTION 'CROSS_TENANT_SHARED_KEY_COLLISION';
+ END IF;
+ IF EXISTS (SELECT 1 FROM public.scheduling_foundation_create_receipts
+    WHERE business_id=current_setting('test.biz_a')::uuid) THEN
+   RAISE EXCEPTION 'FOREIGN_OWNER_READ_RECEIPTS';
+ END IF;
+END $$;
+-- Neither public/anon nor an unauthenticated JWT may reach the privileged RPC.
+SET LOCAL ROLE anon;
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+    '{"day_of_week":3}'::jsonb);
+  RAISE EXCEPTION 'ANON_RPC_AUTHORIZED';
  EXCEPTION WHEN insufficient_privilege THEN NULL;
  END;
 END $$;
