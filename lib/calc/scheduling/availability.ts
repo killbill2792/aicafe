@@ -132,33 +132,36 @@ export function effectiveAvailabilityForDate(input: {
 export type CompensationProvenance = "unknown" | "known_paid" | "salary_conversion_pending" | "known_eligible_zero";
 
 export type EmployeeWageSnapshot = {
+  wage_period: string | null;
   wage_amount_cents: number | null;
   default_hourly_wage_cents: number | null;
 };
 
 /**
- * Fail-closed compensation provenance for scheduling projections. Even when a
- * stale attestation was written by an older importer or raced a wage change,
- * an employee with ANY recorded positive wage cannot be treated as zero cost.
- * Missing employee identity is unknown; missing wage rates require an explicit verified-zero attestation. The DB trigger
- * separately invalidates and audits the stored attestation transactionally.
- *
- * This is metadata validation, not a new payroll/wage calculation.
+ * Validate every persisted compensation label against current employee wages.
+ * Return 'unknown' rather than inferring a new attested state, or trusting
+ * stale paid/salary/zero classifications. This mirrors the DB integrity
+ * predicate, while keeping deterministic scheduling logic pure.
  */
 export function compensationProvenance(
   recorded: { cash_cost_state: CompensationProvenance } | null,
   employee: EmployeeWageSnapshot | null,
 ): CompensationProvenance {
-  if (!recorded) return "unknown";
-  if (recorded.cash_cost_state === "known_eligible_zero") {
-    // An explicit owner-attested zero is distinct from unknown wages: nullable
-    // wage fields are allowed, but a missing employee snapshot or any positive
-    // recorded amount invalidates using that attestation for planning.
-    if (!employee ||
-        (employee.wage_amount_cents ?? 0) > 0 ||
-        (employee.default_hourly_wage_cents ?? 0) > 0) {
+  if (!recorded || !employee) return "unknown";
+
+  const period = employee.wage_period ?? "hour";
+  const positiveAmount = (employee.wage_amount_cents ?? 0) > 0;
+  const positiveHourly = (employee.default_hourly_wage_cents ?? 0) > 0;
+  const salary = period === "month" || period === "year";
+
+  switch (recorded.cash_cost_state) {
+    case "known_eligible_zero":
+      return !positiveAmount && !positiveHourly ? "known_eligible_zero" : "unknown";
+    case "salary_conversion_pending":
+      return salary && positiveAmount && !positiveHourly ? "salary_conversion_pending" : "unknown";
+    case "known_paid":
+      return positiveAmount && (!salary || positiveHourly) ? "known_paid" : "unknown";
+    default:
       return "unknown";
-    }
   }
-  return recorded.cash_cost_state;
 }
