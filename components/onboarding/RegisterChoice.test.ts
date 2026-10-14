@@ -99,7 +99,7 @@ describe("Toast setup destination states",()=>{
     expect(html).toContain(label);
   expect(html).toContain('type="password"');
   expect(html).toContain("Not connected");
-  expect(html).not.toContain("Toast API access URL");
+  expect(html).not.toContain("<span>API URL</span>");
   expect(html).not.toContain("Toast setup is currently unavailable");
   // Test Connection is present but disabled until a configuration exists.
   expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Test Connection<\/button>/);
@@ -109,7 +109,7 @@ describe("Toast setup destination states",()=>{
    businessId:"business-1",locations,enabled:true,labels:connectionLabels,
    approvedOrigins:["https://one.toasttab.com","https://two.toasttab.com"],defaultApiOrigin:""
   }));
-  expect(html).toContain("Toast API access URL");
+  expect(html).toContain("<span>API URL</span>");
   expect(html).toContain('value="https://one.toasttab.com"');
   expect(html).toContain('value="https://two.toasttab.com"');
  });
