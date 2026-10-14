@@ -18,6 +18,7 @@ INSERT INTO public.locations(id,business_id,name)
 INSERT INTO public.employees(id,business_id,display_name,active)
  VALUES(:'employee',:'business','Night employee',true);
 -- Zone checked against real pg_timezone_names; invalid zone fails without changing state.
+SELECT set_config('test.pr1b_location',:'location',true);
 UPDATE public.locations SET timezone='America/Los_Angeles' WHERE id=:'location';
 DO $$
 BEGIN
