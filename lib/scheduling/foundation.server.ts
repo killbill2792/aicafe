@@ -135,12 +135,21 @@ async function readAllTenantRows(
   const rows: Record<string, unknown>[] = [];
   let lastId: string | null = null;
   for (;;) {
-    const page = supabase.from(table).select("*")
+    const page = supabase.from(table).select("*", { count: "exact" })
       .eq("business_id", businessId)
       .order("id", { ascending: true })
       .limit(READ_PAGE_SIZE);
-    const { data, error } = await (lastId ? page.gt("id", lastId) : page);
-    if (error || !data || data.length > READ_PAGE_SIZE) throw new Error("incomplete foundation read");
+    const response: {
+      data: Record<string, unknown>[] | null;
+      error: { message: string } | null;
+      count: number | null;
+    } = await (lastId ? page.gt("id", lastId) : page);
+    const { data, error, count } = response;
+    if (error || !data || count === null || data.length > READ_PAGE_SIZE ||
+        (data.length < READ_PAGE_SIZE && count > data.length)) {
+      // A smaller PostgREST max-rows setting must not look like a last page.
+      throw new Error("incomplete foundation read");
+    }
     for (const row of data) {
       if (typeof row.id !== "string" || (lastId !== null && row.id <= lastId)) {
         throw new Error("unstable scheduling pagination");
