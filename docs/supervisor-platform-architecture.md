@@ -179,6 +179,8 @@ type ApprovedEffectInput = {approvalId:string; proposalId:string;
 // never exposes the commit executor to read/simulate/propose/evaluate handlers.
 ~~~
 
+**Mode-level enforcement:** The compile-time registration helper accepts only the six explicitly discriminated descriptor variants (never a generic `execute` method). Before dispatch it parses each input with its declared **strict Zod schema**; after dispatch it parses output with the mode-specific **strict discriminated schema** and rejects extra or unauthorized keys. Capability handlers receive only their mode-scoped trusted service facade: read/simulate/evaluate cannot access effect/proposal persistence, propose can access *only* inert proposal storage, approve can write only version-bound approval ledger entries, and only commit receives the domain effect gateway. Both the function types and least-privilege server interfaces/DB policies must enforce this boundary; TypeScript checks alone are insufficient against runtime code paths, generated JSON or direct DB calls. Default deny and RLS apply to all six paths, and a model-supplied mode, effect or handler name cannot override the server's registry selection. Reuse the existing legacy read path until behavior parity gates pass.
+
 **Non-effectful operation invariant:** `read` returns canonical facts and `simulate` runs a **transient, read-only, deterministic what-if** using pinned source inputs and `lib/calc/`. Neither creates a scheduling draft, proposed price, approval request, task, outside message or business-domain write. Protected usage/audit telemetry is permitted but cannot imply domain mutation. Simulations state baseline, changed assumptions, feasibility/limitations and source revision; they return `proposal: null`. `propose` is a **separate explicit transition** that may persist an inert versioned draft after the owner requests it. **`approve` is a first-class typed, server-only transition** that validates an immutable proposal and records a scoped approval artifact; it does **not** invoke a domain write. **`commit` is a separate policy-gated executable capability** that must consume that approval exactly once (or use a specifically validated standing grant, if a later reviewed effect supports delegation). `evaluate` is a bounded evidence check, and any task persistence goes through its separately authorized reconciler. Dispatcher and acceptance tests must prove these distinctions even if the model requests a more powerful action.
 
 The executable contract separates **all six modes** as type-discriminated descriptors with distinct callbacks and runtime-validated, mode-tagged result variants (§7). `read` and `simulate` return `proposal: null` by type and strict result schema, and may never call a draft or effect repository. `evaluate` returns only bounded findings; creating or changing an Operations task requires a distinct registered reconciler and policy, not an evaluator side effect. `propose` may persist only an inert, versioned proposal with an immutable, schema-validated canonical effect payload; it has no commit callback or authority. `approve` accepts an authenticated actor's exact server-issued proposal reference/decision, returns an approved/failed transition, and cannot invoke a domain effect. **Only** the `commit` mode's authorized server gateway may call the allowlisted effect executor after tenant, approval, payload, context/source/policy and idempotency checks; it accepts no model-issued consent or executable parameters. Registering a new domain supplies its own typed schemas, mode handlers and canonical effect contract without editing the central router. Startup, dispatcher, strict Zod output and negative tests must enforce these fences (not just prompt instructions). Implementations use Zod-inferred generics; the example is a specification, not application code. Every effect contract also supplies a safe preview renderer, authorization policy, compensation/rollback classification, deterministic idempotency key and postcondition verifier.
@@ -269,8 +271,8 @@ type MetricDefinition<F,P extends string> = {
   aggregationPolicy:"from_canonical_calc"|"sum_validated_parts"|"not_aggregatable";
   canonicalReader:string; // server-owned registered handler, no model SQL
 };
-type MetricResult = {
-  metricId: string; definitionVersion: 1; query: MetricQuery;
+type MetricResult<F,P extends string> = {
+  metricId: string; definitionVersion: 1; query: MetricQuery<F,P>;
   status: ResultStatus;
   value: number | boolean | null | readonly unknown[]; // null NEVER means zero
   unit: string; actuality: "actual" | "estimated" | "forecast" | "planned" | "unknown";
@@ -504,7 +506,10 @@ type CommitResult = {mode:"commit"; outcome:VerifiedActionOutcome;
   proposal?:never; approval?:never};
 
 // The build-time typed effect registry is composed from reviewed domain exports.
-// Keyed registration ties each discriminator/version to one STRICT Zod schema.
+// Each compiled entry carries {version, parametersSchema, canonicalizer,
+// safePreviewRenderer, policyKey, commitOnlyHandlerId, verifier}.
+// The generated manifest is a *future implementation artifact*, not a file
+// created by this documentation PR. New domains extend this typed map.
 type RegisteredEffectRegistry = typeof compiledEffectRegistry; // future manifest
 type EffectContractKey = keyof RegisteredEffectRegistry;
 type CanonicalEffectPayload<K extends EffectContractKey> = {
@@ -821,6 +826,12 @@ Additional integration cases: unsupported attachment as evidence, worker accepta
 
 **R17 — Unauthorized approval-result metadata leaks:** a union with nullable approved fields can still serialize source/context/policy details in rejected/unauthorized branches. Use strict state-discriminated schemas/serializers, omit all approved/private bindings in unsuccessful responses and retain sensitive failure audit only server-side.
 
+**R18 — Hash without executable effect parameters:** an effect hash is not an instruction. If a price/schedule/purchase change is reconstructed from preview text or mutable domain state, the executed action may not match consent. Store immutable canonical typed effect bytes/parameters, derive hash/preview from them and revalidate exact schema/version/bytes at propose, approve and commit; unregistered effects remain unavailable.
+
+**R19 — Erased mode type boundaries:** a shared `execute` method/result that permits `proposal:ActionProposal|null` for reads can smuggle unapproved drafts. Six discriminated descriptors and results, strict Zod parsing, mode-scoped service access, and a commit-only effect gateway are mandatory; runtime and type-check negative tests cover every mode.
+
+**R20 — Unregistered metric filters/purposes:** a generic metric filter record and unbounded purpose string can bypass source/role/granularity limits or lead to bespoke central routing. Require per-metric strict schemas, permitted purposes, source-selection mapping, authorization and bounded limits, validated before readers by one generic dispatcher.
+
 **Do not build:** unrestricted SQL/GraphQL model query, autonomous four-agent chat room, generalized distributed microservices, arbitrary plugin execution, all-purpose rules DSL, customer-facing agent marketplace, duplicated business data lake, new finance/payout formulas, second owner task inbox, a fake "0 data" fallback, automatic external POS writes, or speculative vendor connectors. Choose small in-process interfaces, canonical read adapters and meaningful verifiable domain tests instead.
 
 ### 15.1 Critical reconciliation with the attached Independent Architecture Review Packet
@@ -877,6 +888,20 @@ The fresh full-PR review of commit `b5ab39b` reported two further precise specif
 - **P2 — Strict successful versus unsuccessful approval types:** `ApprovalTransitionResult = ApprovedTransition | UnsuccessfulApprovalTransition` is state-discriminated. **Only `state:"approved"`** returns non-null copied `approvedEffectHash`, `approvedSourceSnapshotHash`, `approvedSourceRefs`, `approvedContextFingerprint`, `approvedContextRevisionRefs`, and `approvedPolicyRevisionRefs`. Other statuses (`rejected`, `unauthorized`, `expired`, `conflict`) **omit**, rather than null or fabricate, all approved bindings/IDs, with a safe error code and opaque request identifier; strict Zod object schemas reject extra keys. Secrets and source/context/policy revisions stay server-side in failure audit. P4 gates and **APPROVE-03/04** tests require this.
 
 **No architectural implementation or runtime security improvement is claimed by a documentation edit.** The [Issue #74 roadmap](https://github.com/killbill2792/aicafe/issues/74) retains ownership of merge/rollout gates and separate P1–P6 implementation, Olivia PR #72 / follow-ons, Alex/Maya/Leo, integrations, legacy-compatibility checks and verified owner time savings. This document is ready to request a fresh **whole-PR Codex review** before any owner-authorized merge; no app code, feature flag, migration or deployment is authorized.
+
+### 15.5 Codex whole-PR review on `0cce78b8`: exact effect payload, six mode contracts and metric security
+
+The next whole-PR Codex review flagged **P1 ×2 and P2 ×1** on documentation commit `0cce78b8`. These findings are accepted **architecture corrections**, not evidence of deployed fixes:
+
+| Finding | Contract correction | Future proof gate |
+| --- | --- | --- |
+| **P1: hash without exact effect payload** | `ActionProposal.canonicalEffectPayload` stores complete immutable capability/version-discriminated, strict domain Zod-validated parameters and target/expected revision. Trusted renderer derives owner preview **from that payload**; `proposedEffectHash` hashes canonical bytes. Approval reloads/revalidates original schema, params/hash/preview, copies unchanged hash to approval; **commit reloads/revalidates same exact bytes and executes only this typed payload**, never mutable state or untrusted preview. Missing original schema/payload denies. | **EFFECT-02/03/04**, APPROVE-01/04, IDEMP-03/04; P2 contract registry and P4 executable transaction gate |
+| **P1: read/simulate/propose/evaluate share unsafe descriptor/result** | Six `mode`-discriminated descriptors **ReadCapability, SimulateCapability, ProposeCapability, EvaluateCapability, ApprovalCapability, CommitCapability** with unique typed callbacks and strict runtime result variants. Read/simulate/evaluate contain `proposal:null`, propose returns only inert draft, evaluate only findings, approve authorization without effect, and **only commit** can call the reviewed domain executor. Least-privilege service interfaces/RLS and strict output validation supplement static type checks. | **MODE-01/02**, SIM-01, APPROVE-01/03 and EXT-04; P2/P3 shadow and P4 action boundaries |
+| **P2: metric-specific filters/purposes not registered** | Every `MetricDefinition<F,P>` declares strict full-query, filter and dimension schemas; allowed purposes, granularity, periods, registered source-selector requirements, sensitivity/access policy and cardinality/time/row/range limits. One dispatcher validates **all** per-metric contracts **before** canonical reader access, with no arbitrary SQL or specialist-specific central exceptions. | **METRIC-01/02**, COVER-01/02, BACK-03, SEC-01 and EXT-04; P1 CI inventory and P3 read cutover |
+
+**Whole-document invariant check to repeat during implementation:** (a) one owner-facing Supervisor and supported-but-authorized metric/entity access; (b) typed independent agent registrations and no central router exceptions; (c) read/simulate ≠ propose ≠ approve ≠ commit, with verified `evaluate` task reconciliation distinct; (d) exact immutable payload and provenance manifest/source selector, BusinessContext/policy and grant revisions bind one approved effect; (e) one-time DB consumption across distinct client request keys and fail-safe outbox; (f) canonical `lib/calc/`, owner consent, owner time/interrupt reduction, legacy EN/ES/AR, no-POS/manual, Olivia PR #72 and domain follow-ons remain separate; (g) default-off capabilities and migrations require an independent implementation/owner release gate.
+
+**GitHub Issue #74** remains the long-term P1–P6, Olivia 1B–3, Alex/Maya/Leo, optional integration and measurable owner-time roadmap. Neither this architecture-only PR nor a successful documentation review checks off implementation deliverables or authorizes a Supabase migration, production deployment, external transaction or auto-merge. **Fresh whole-PR reviewer/owner sign-off is outstanding until returned.**
 
 ## 16. Proposed targeted documentation alignment AFTER approval
 
