@@ -3,6 +3,7 @@ import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import {
   foundationCommandSchema, foundationTables, parseFoundationRecord,
   type FoundationKind,
@@ -133,6 +134,41 @@ export async function readSchedulingFoundation(): Promise<FoundationReadResult> 
     for (let i = 0; i < kinds.length; i += 1) {
       records[kinds[i]] = results[i].data ?? [];
     }
+
+    // A compensation attestation is not authoritative without a current
+    // canonical employee wage snapshot. The employees UPDATE trigger revokes
+    // stale zero attestations; this read guard also fails closed if a legacy
+    // import/race ever leaves an inconsistent row. Never expose stale
+    // eligibility evidence to a later scheduling planner.
+    type CompensationRow = {
+      employee_id: string;
+      cash_cost_state: CompensationProvenance;
+      eligibility_reference?: string | null;
+      eligibility_verified_by?: string | null;
+      eligibility_verified_at?: string | null;
+    };
+    const compensation = records.compensation as CompensationRow[];
+    if (compensation.length > 0) {
+      const employeeIds = [...new Set(compensation.map((row) => row.employee_id))];
+      const { data: employees, error: wageError } = await context.supabase
+        .from("employees")
+        .select("id,wage_amount_cents,default_hourly_wage_cents")
+        .eq("business_id", context.businessId)
+        .in("id", employeeIds);
+      if (wageError) return { ok: false, error: "storage_unavailable" };
+      const wages = new Map((employees ?? []).map((row) => [row.id, row]));
+      records.compensation = compensation.map((row) => {
+        const safeState = compensationProvenance(row, wages.get(row.employee_id) ?? null);
+        return safeState === row.cash_cost_state ? row : {
+          ...row,
+          cash_cost_state: safeState,
+          eligibility_reference: null,
+          eligibility_verified_by: null,
+          eligibility_verified_at: null,
+        };
+      });
+    }
+
     return { ok: true, records, audit: audit ?? [] };
   } catch {
     return { ok: false, error: "storage_unavailable" };
