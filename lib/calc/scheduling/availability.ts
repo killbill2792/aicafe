@@ -150,11 +150,13 @@ export function compensationProvenance(
   employee: EmployeeWageSnapshot | null,
 ): CompensationProvenance {
   if (!recorded) return "unknown";
-  if (recorded.cash_cost_state === "known_eligible_zero" &&
-      (!employee || employee.wage_amount_cents == null && employee.default_hourly_wage_cents == null ||
-       (employee.wage_amount_cents ?? 0) > 0 ||
-       (employee.default_hourly_wage_cents ?? 0) > 0)) {
-    return "unknown";
+  if (recorded.cash_cost_state === "known_eligible_zero") {
+    if (!employee ||
+        (employee.wage_amount_cents == null && employee.default_hourly_wage_cents == null) ||
+        (employee.wage_amount_cents ?? 0) > 0 ||
+        (employee.default_hourly_wage_cents ?? 0) > 0) {
+      return "unknown";
+    }
   }
   return recorded.cash_cost_state;
 }
