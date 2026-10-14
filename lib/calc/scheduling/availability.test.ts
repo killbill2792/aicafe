@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compensationProvenance,
   effectiveAvailabilityForDate,
+  effectiveAvailabilityForLocation,
   normalizeSchedulingWallTime,
   satisfiesLocalDayHoursCaps,
   type RecurringAvailability,
@@ -20,6 +21,47 @@ const exception = (
   end_local?: string,
 ): AvailabilityException => ({
   local_date, exception_type, start_local, end_local, overnight: false, confirmation: confirmed,
+});
+
+describe("Olivia PR1B: location-aware candidate availability", () => {
+  it("location-specific confirmed windows replace general positives, never expand them", () => {
+    const common = { date:"2026-10-14", locationId:"location-a",
+      recurring:[
+        {...recurring(3,"09:00","17:00"),location_id:null},
+        {...recurring(3,"10:00","12:00"),location_id:"location-a"},
+      ],exceptions:[],
+    };
+    const one = effectiveAvailabilityForLocation(common);
+    expect(one.basis).toBe("location");
+    expect(one.windows).toEqual([{start:600,end:720}]);
+    const other=effectiveAvailabilityForLocation({...common,locationId:"location-b"});
+    expect(other.basis).toBe("general");
+    expect(other.windows).toEqual([{start:540,end:1020}]);
+  });
+  it("full global leave overrides local windows, and positive caps remain constraints", () => {
+    const common={ date:"2026-10-14",locationId:"location-a",
+      recurring:[{...recurring(3,"10:00","12:00"),location_id:"location-a"}],
+      exceptions:[{...exception("2026-10-14","hours_cap"),max_minutes:60,location_id:null}],
+    };
+    const capped=effectiveAvailabilityForLocation(common);
+    expect(capped.windows).toEqual([{start:600,end:720}]);
+    expect(capped.dailyHourCaps).toContainEqual({localDate:"2026-10-14",maxMinutes:60});
+    const closed=effectiveAvailabilityForLocation({...common,exceptions:[
+      ...common.exceptions,{...exception("2026-10-14","approved_leave"),location_id:null},
+    ]});
+    expect(closed.windows).toEqual([]);
+  });
+  it("unconfirmed local reports do not displace confirmed general hours", () => {
+    const output=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[
+        {...recurring(3,"09:00","17:00"),location_id:null},
+        {...recurring(3,"18:00","20:00"),location_id:"location-a",confirmation:"unconfirmed"},
+      ],exceptions:[],
+    });
+    expect(output.basis).toBe("general");
+    expect(output.windows).toEqual([{start:540,end:1020}]);
+  });
 });
 
 describe("Olivia PR 1A: pure effective availability", () => {
