@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compensationProvenance,
   effectiveAvailabilityForDate,
+  satisfiesLocalDayHoursCaps,
   type RecurringAvailability,
   type AvailabilityException,
 } from "./availability";
@@ -172,6 +173,147 @@ describe("Olivia PR 1A: pure effective availability", () => {
     }).windows).toEqual([
       { start: 1380, end: 1470 }, { start: 1530, end: 1560 },
     ]);
+  });
+
+  it("carries a positive Thursday 60-minute cap without inventing permitted time slots", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [{ ...exception("2026-10-15", "hours_cap"), max_minutes: 60 }],
+    });
+    // All two Thursday hours remain candidate availability; planner must
+    // enforce the cumulative sixty-minute hard cap on LOCAL Thursday.
+    expect(result).toMatchObject({
+      windows: [{ start: 1320, end: 1560 }],
+      maxMinutes: null,
+      dailyHourCaps: [{ localDate: "2026-10-15", maxMinutes: 60 }],
+    });
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-14", minutes: 120 },
+      { localDate: "2026-10-15", minutes: 60 },
+    ], result.dailyHourCaps)).toBe(true);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-15", minutes: 61 },
+    ], result.dailyHourCaps)).toBe(false);
+  });
+
+  it("enforces the Thursday cap across overnight spillover and other split shifts", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [
+        recurring(3, "18:00", "20:00"),
+        { ...recurring(3, "22:00", "02:00"), overnight: true },
+      ],
+      exceptions: [
+        { ...exception("2026-10-14", "hours_cap"), max_minutes: 180 },
+        { ...exception("2026-10-15", "hours_cap"), max_minutes: 60 },
+      ],
+    });
+    expect(result.windows).toEqual([
+      { start: 1080, end: 1200 }, { start: 1320, end: 1560 },
+    ]);
+    expect(result.maxMinutes).toBe(180);
+    expect(result.dailyHourCaps).toEqual([
+      { localDate: "2026-10-14", maxMinutes: 180 },
+      { localDate: "2026-10-15", maxMinutes: 60 },
+    ]);
+    // A second, Thursday-starting shift also consumes Thursday's SAME cap.
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-15", minutes: 35 },
+      { localDate: "2026-10-15", minutes: 25 },
+    ], result.dailyHourCaps)).toBe(true);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-15", minutes: 35 },
+      { localDate: "2026-10-15", minutes: 26 },
+    ], result.dailyHourCaps)).toBe(false);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-14", minutes: 181 },
+    ], result.dailyHourCaps)).toBe(false);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-14", minutes: -1 },
+    ], result.dailyHourCaps)).toBe(false);
+  });
+
+  it("zero-minute next-day cap rejects all work and masks only that day", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [{ ...exception("2026-10-15", "hours_cap"), max_minutes: 0 }],
+    });
+    expect(result.windows).toEqual([{ start: 1320, end: 1440 }]);
+    expect(result.dailyHourCaps).toEqual([{ localDate: "2026-10-15", maxMinutes: 0 }]);
+    expect(satisfiesLocalDayHoursCaps([], result.dailyHourCaps)).toBe(true);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-15", minutes: 1 },
+    ], result.dailyHourCaps)).toBe(false);
+  });
+
+  it("does not confuse a next-day positive cap with a leave or partial block", () => {
+    const base = { date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "03:00"), overnight: true }] };
+    const positiveCap = { ...exception("2026-10-15", "hours_cap"), max_minutes: 60 };
+    const partial = effectiveAvailabilityForDate({
+      ...base,
+      exceptions: [
+        positiveCap,
+        exception("2026-10-15", "unavailable", "00:30", "01:30"),
+      ],
+    });
+    expect(partial.windows).toEqual([
+      { start: 1320, end: 1470 }, { start: 1530, end: 1620 },
+    ]);
+    expect(partial.dailyHourCaps).toEqual([{ localDate: "2026-10-15", maxMinutes: 60 }]);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2026-10-15", minutes: 90 },
+    ], partial.dailyHourCaps)).toBe(false);
+    const onLeave = effectiveAvailabilityForDate({
+      ...base,
+      exceptions: [positiveCap, exception("2026-10-15", "approved_leave")],
+    });
+    expect(onLeave.windows).toEqual([{ start: 1320, end: 1440 }]);
+    expect(onLeave.dailyHourCaps).toEqual([{ localDate: "2026-10-15", maxMinutes: 60 }]);
+  });
+
+  it("aggregates multiple confirmed caps by minimum, ignores unconfirmed caps", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [
+        { ...exception("2026-10-15", "hours_cap"), max_minutes: 180 },
+        { ...exception("2026-10-15", "hours_cap"), max_minutes: 60 },
+        { ...exception("2026-10-15", "hours_cap"), max_minutes: 0, confirmation: "unconfirmed" },
+      ],
+    });
+    expect(result.windows).toEqual([{ start: 1320, end: 1560 }]);
+    expect(result.dailyHourCaps).toEqual([{ localDate: "2026-10-15", maxMinutes: 60 }]);
+  });
+
+  it("preserves next-year local-date caps across New Year's midnight", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-12-31",
+      recurring: [{ ...recurring(4, "23:00", "02:00"), overnight: true }],
+      exceptions: [{ ...exception("2027-01-01", "hours_cap"), max_minutes: 45 }],
+    });
+    expect(result.windows).toEqual([{ start: 1380, end: 1560 }]);
+    expect(result.dailyHourCaps).toEqual([{ localDate: "2027-01-01", maxMinutes: 45 }]);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2027-01-01", minutes: 25 },
+      { localDate: "2027-01-01", minutes: 20 },
+    ], result.dailyHourCaps)).toBe(true);
+    expect(satisfiesLocalDayHoursCaps([
+      { localDate: "2027-01-01", minutes: 46 },
+    ], result.dailyHourCaps)).toBe(false);
+  });
+
+  it("a zero cap on the starting date cannot arbitrarily close the following date", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [{ ...exception("2026-10-14", "hours_cap"), max_minutes: 0 }],
+    });
+    expect(result.windows).toEqual([{ start: 1440, end: 1560 }]);
+    expect(result.maxMinutes).toBe(0);
+    expect(result.dailyHourCaps).toEqual([{ localDate: "2026-10-14", maxMinutes: 0 }]);
   });
 
   it("ignores unconfirmed owner-reported statements until the owner confirms them", () => {
