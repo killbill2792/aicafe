@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   compensationProvenance,
   effectiveAvailabilityForDate,
+  normalizeSchedulingWallTime,
   satisfiesLocalDayHoursCaps,
   type RecurringAvailability,
   type AvailabilityException,
@@ -22,6 +23,24 @@ const exception = (
 });
 
 describe("Olivia PR 1A: pure effective availability", () => {
+  it("accepts exact-minute PostgreSQL HH:mm:ss and zero-fraction wall times", () => {
+    for (const [input, expected] of [
+      ["07:00", "07:00"], ["07:00:00", "07:00"],
+      ["07:00:00.000000", "07:00"], ["23:59:00", "23:59"],
+    ]) expect(normalizeSchedulingWallTime(input)).toBe(expected);
+    for (const invalid of ["07:00:01", "07:00:00.000001", "24:00:00",
+      "07:60:00", "7:00:00", "07:00:01.0", "07:00:00+00"]) {
+      expect(() => normalizeSchedulingWallTime(invalid)).toThrow();
+    }
+    expect(effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00:00", "02:00:00"), overnight: true }],
+      exceptions: [exception("2026-10-15", "unavailable", "00:00:00", "01:00:00")],
+    }).windows).toEqual([
+      { start: 1320, end: 1440 }, { start: 1500, end: 1560 },
+    ]);
+  });
+
   it("supports multiple windows on the same weekday without filling the unavailable gap", () => {
     const result = effectiveAvailabilityForDate({
       date: "2026-10-14", recurring: [
