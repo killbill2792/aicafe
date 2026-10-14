@@ -622,6 +622,19 @@ Additional integration cases: unsupported attachment as evidence, worker accepta
 
 **Packet checklist disposition:** future specialist extensibility **specified but untested**; deterministic approval veto **specified but not implemented**; durable crash-safe execution **specified but not implemented**; cross-domain grounded result **specified but not implemented**; no-POS manual mode and independent Olivia track **preserved as binding requirements**; proposed/approved/applied visibility **contracted, not deployed**; simpler alternatives **considered with hybrid choice**. The architecture is **ready for a new critical architecture review**, not yet independently approved or ready for feature implementation.
 
+### 15.2 Reconciliation of Codex's four findings on PR #73 commit `59b9299`
+
+All four concerns are **accepted design corrections**, not deferred product choices. They were findings against a prior **documentation commit**; the following contracts are now specified but remain **unimplemented** until separately reviewed later phases.
+
+| Codex finding | Contract amendment | Mandatory future gate |
+| --- | --- | --- |
+| **P1: approval missing from typed modes** | `Mode` explicitly includes `approve`; `ApprovalTransitionInput/Result` and §8.2 require an authenticated, exact-proposal **no-effect** approval independent of `propose` and `commit` | Registry/dispatcher schema checks and **APPROVE-01/02**; no model-created approval, no implicit publication |
+| **P1: stale BusinessContext not bound to proposals** | `ActionProposal` binds `BusinessContext.v1` fingerprint + complete material preference/objective/guidance/workflow revision references **and** separate canonical source snapshot and applied policy/grant revisions; approval copies the exact binding | **CONTEXT-01/02**, AUTH-02 and PREF-02; compare at approval **and at commit**; changed/unknown/revoked/expired material references fail closed |
+| **P1: request-key dedupe does not enforce single-use proposal** | `UNIQUE(business_id,proposal_id,proposal_revision)` consumption and unique deterministic effect/outbox key independent of client key; atomically reserve+commit/reconcile with typed state | **IDEMP-01/02/03/04**, cross-owner different request keys, race, crash/provider timeout; never duplicate delivery or falsely report success |
+| **P2: untyped preference key/value and free text** | Reviewed versioned per-key Zod schemas, typed discriminated preference values, sensitivity/scope access and unknown-version denial; explicit `untrusted_guidance` lane separate from authority | **PREF-01/02**, CONTEXT-01/02 and no prompt-injection/policy escalation |
+
+**Architectural sign-off status:** the defects have been corrected **in the proposed contract**; future CI, database uniqueness, security and product validation remain prerequisites. The current fresh Codex reviewer must confirm no blocking specification gaps, and the owner must separately approve any merge and later implementation. These changes do not repair/alter Olivia PR #72 or check off Issue #74's implementation tasks.
+
 ## 16. Proposed targeted documentation alignment AFTER approval
 
 Do **not** edit these in this architecture PR. Once this contract and the reconciliation in §15 receive explicit approval:
