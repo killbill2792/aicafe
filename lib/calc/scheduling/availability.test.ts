@@ -83,6 +83,97 @@ describe("Olivia PR 1A: pure effective availability", () => {
     }).windows).toEqual([{ start: 1320, end: 1560 }]);
   });
 
+  it("excludes Thursday 00:00–01:00 from Wednesday 22:00–Thursday 02:00", () => {
+    const result = effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [exception("2026-10-15", "unavailable", "00:00", "01:00")],
+    });
+    expect(result.windows).toEqual([{ start: 1320, end: 1440 }, { start: 1500, end: 1560 }]);
+  });
+
+  it("next-day full leave or unavailable removes only the after-midnight spillover", () => {
+    for (const kind of ["approved_leave", "unavailable"] as const) {
+      expect(effectiveAvailabilityForDate({
+        date: "2026-10-14",
+        recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+        exceptions: [exception("2026-10-15", kind)],
+      }).windows).toEqual([{ start: 1320, end: 1440 }]);
+    }
+  });
+
+  it("honors both nights' exceptions for split overnight blocks without merging gaps", () => {
+    expect(effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [
+        recurring(3, "20:00", "22:00"),
+        { ...recurring(3, "23:00", "01:30"), overnight: true },
+      ],
+      exceptions: [
+        exception("2026-10-14", "unavailable", "23:30", "23:45"),
+        exception("2026-10-15", "unavailable", "00:30", "01:00"),
+      ],
+    }).windows).toEqual([
+      { start: 1200, end: 1320 },
+      { start: 1380, end: 1410 },
+      { start: 1425, end: 1470 },
+      { start: 1500, end: 1530 },
+    ]);
+  });
+
+  it("next-day hard avoidance blocks after midnight, soft avoidance does not", () => {
+    const base = {
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [],
+    };
+    const restriction = {
+      ...recurring(4, "00:00", "01:00"), preference: "avoid" as const,
+      strength: "hard" as const,
+    };
+    expect(effectiveAvailabilityForDate({
+      ...base, restrictions: [restriction],
+    }).windows).toEqual([{ start: 1320, end: 1440 }, { start: 1500, end: 1560 }]);
+    expect(effectiveAvailabilityForDate({
+      ...base, restrictions: [{ ...restriction, strength: "soft" }],
+    }).windows).toEqual([{ start: 1320, end: 1560 }]);
+  });
+
+  it("next-day replacement only permits the explicitly replaced local windows", () => {
+    expect(effectiveAvailabilityForDate({
+      date: "2026-10-14",
+      recurring: [{ ...recurring(3, "22:00", "02:00"), overnight: true }],
+      exceptions: [exception("2026-10-15", "replace_day", "00:30", "01:30")],
+    }).windows).toEqual([{ start: 1320, end: 1440 }, { start: 1470, end: 1530 }]);
+  });
+
+  it("preserves midnight and interval-end boundaries and ignores unconfirmed closures", () => {
+    const run = (end: string, exceptions: AvailabilityException[]) =>
+      effectiveAvailabilityForDate({
+        date: "2026-10-14",
+        recurring: [{ ...recurring(3, "22:00", end), overnight: true }],
+        exceptions,
+      }).windows;
+    expect(run("00:00", [exception("2026-10-15", "unavailable", "00:00", "01:00")]))
+      .toEqual([{ start: 1320, end: 1440 }]);
+    expect(run("01:00", [exception("2026-10-15", "unavailable", "01:00", "02:00")]))
+      .toEqual([{ start: 1320, end: 1500 }]);
+    expect(run("02:00", [{ ...exception("2026-10-15", "approved_leave"), confirmation: "unconfirmed" }]))
+      .toEqual([{ start: 1320, end: 1560 }]);
+    expect(run("02:00", [{ ...exception("2026-10-15", "hours_cap"), max_minutes: 0 }]))
+      .toEqual([{ start: 1320, end: 1440 }]);
+  });
+
+  it("looks across year boundaries using the following calendar date", () => {
+    expect(effectiveAvailabilityForDate({
+      date: "2026-12-31",
+      recurring: [{ ...recurring(4, "23:00", "02:00"), overnight: true }],
+      exceptions: [exception("2027-01-01", "unavailable", "00:30", "01:30")],
+    }).windows).toEqual([
+      { start: 1380, end: 1470 }, { start: 1530, end: 1560 },
+    ]);
+  });
+
   it("ignores unconfirmed owner-reported statements until the owner confirms them", () => {
     expect(effectiveAvailabilityForDate({
       date: "2026-10-14",
@@ -113,35 +204,49 @@ describe("Olivia PR 1A: pure effective availability", () => {
     })).toThrow();
   });
 
-  it("never treats unknown or salary-pending wages as eligible zero", () => {
-    const noWage = { wage_amount_cents: null, default_hourly_wage_cents: null };
-    expect(compensationProvenance(null, noWage)).toBe("unknown");
-    expect(compensationProvenance({ cash_cost_state: "unknown" }, noWage)).toBe("unknown");
-    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" }, {
-      wage_amount_cents: 200000, default_hourly_wage_cents: 0,
-    })).toBe("salary_conversion_pending");
-    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, {
-      wage_amount_cents: 0, default_hourly_wage_cents: 0,
-    })).toBe("known_eligible_zero");
-    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, null)).toBe("unknown");
-    // Explicit attestation is valid with null legacy rate fields; unknown
-    // employee identity is not. This preserves zero-versus-unknown provenance.
-    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, noWage))
+  const wages = (wage_period: string | null, wage_amount_cents: number | null,
+    default_hourly_wage_cents: number | null) =>
+    ({ wage_period, wage_amount_cents, default_hourly_wage_cents });
+
+  it("preserves explicit verified zero but never infers free labor from missing provenance", () => {
+    expect(compensationProvenance(null, wages("hour", null, null))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "unknown" }, wages("hour", 0, 0))).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, wages("hour", null, null)))
       .toBe("known_eligible_zero");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, null)).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, wages("hour", 1800, 1800)))
+      .toBe("unknown");
   });
 
-  it("fails closed after a zero-cost attestation if the Staff wage-update path records a positive wage", () => {
-    const attestedZero = { cash_cost_state: "known_eligible_zero" } as const;
-    const beforeStaffEdit = { wage_amount_cents: 0, default_hourly_wage_cents: 0 };
-    const afterStaffHourlyEdit = { wage_amount_cents: 1800, default_hourly_wage_cents: 1800 };
-    const afterStaffSalaryEdit = { wage_amount_cents: 200000, default_hourly_wage_cents: 0 };
-    expect(compensationProvenance(attestedZero, beforeStaffEdit)).toBe("known_eligible_zero");
-    expect(compensationProvenance(attestedZero, afterStaffHourlyEdit)).toBe("unknown");
-    expect(compensationProvenance(attestedZero, afterStaffSalaryEdit)).toBe("unknown");
-    // Checking the cached hourly amount is also required if the wage amount
-    // is missing in a legacy employee row.
-    expect(compensationProvenance(attestedZero, {
-      wage_amount_cents: null, default_hourly_wage_cents: 1800,
-    })).toBe("unknown");
+  it("revalidates ALL four states against canonical Staff wage updates", () => {
+    const cases: {
+      state: "known_paid" | "salary_conversion_pending" | "known_eligible_zero" | "unknown";
+      period: string;
+      amount: number | null;
+      hourly: number | null;
+      expected: string;
+    }[] = [
+      { state: "known_paid", period: "hour", amount: 1800, hourly: 1800, expected: "known_paid" },
+      { state: "known_paid", period: "hour", amount: 0, hourly: 0, expected: "unknown" },
+      { state: "known_paid", period: "month", amount: 200000, hourly: 0, expected: "unknown" },
+      { state: "known_paid", period: "month", amount: 200000, hourly: 2400, expected: "known_paid" },
+      { state: "salary_conversion_pending", period: "month", amount: 200000, hourly: 0, expected: "salary_conversion_pending" },
+      { state: "salary_conversion_pending", period: "year", amount: 2400000, hourly: 0, expected: "salary_conversion_pending" },
+      { state: "salary_conversion_pending", period: "hour", amount: 1800, hourly: 1800, expected: "unknown" },
+      { state: "salary_conversion_pending", period: "month", amount: 200000, hourly: 2400, expected: "unknown" },
+      { state: "known_eligible_zero", period: "hour", amount: 0, hourly: 0, expected: "known_eligible_zero" },
+      { state: "known_eligible_zero", period: "hour", amount: 1800, hourly: 1800, expected: "unknown" },
+      { state: "known_eligible_zero", period: "month", amount: 200000, hourly: 0, expected: "unknown" },
+      { state: "unknown", period: "hour", amount: 1800, hourly: 1800, expected: "unknown" },
+      { state: "unknown", period: "month", amount: 200000, hourly: 0, expected: "unknown" },
+    ];
+    for (const row of cases) {
+      expect(compensationProvenance(
+        { cash_cost_state: row.state },
+        wages(row.period, row.amount, row.hourly),
+      )).toBe(row.expected);
+    }
+    expect(compensationProvenance({ cash_cost_state: "known_paid" }, null)).toBe("unknown");
+    expect(compensationProvenance({ cash_cost_state: "salary_conversion_pending" }, null)).toBe("unknown");
   });
 });
