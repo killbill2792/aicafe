@@ -185,7 +185,7 @@ type ApprovedEffectInput = {approvalId:string; proposalId:string;
 
 The executable contract separates **all six modes** as type-discriminated descriptors with distinct callbacks and runtime-validated, mode-tagged result variants (§7). `read` and `simulate` return `proposal: null` by type and strict result schema, and may never call a draft or effect repository. `evaluate` returns only bounded findings; creating or changing an Operations task requires a distinct registered reconciler and policy, not an evaluator side effect. `propose` may persist only an inert, versioned proposal with an immutable, schema-validated canonical effect payload; it has no commit callback or authority. `approve` accepts an authenticated actor's exact server-issued proposal reference/decision, returns an approved/failed transition, and cannot invoke a domain effect. **Only** the `commit` mode's authorized server gateway may call the allowlisted effect executor after tenant, approval, payload, context/source/policy and idempotency checks; it accepts no model-issued consent or executable parameters. Registering a new domain supplies its own typed schemas, mode handlers and canonical effect contract without editing the central router. Startup, dispatcher, strict Zod output and negative tests must enforce these fences (not just prompt instructions). Implementations use Zod-inferred generics; the example is a specification, not application code. Every effect contract also supplies a safe preview renderer, authorization policy, compensation/rollback classification, deterministic idempotency key and postcondition verifier.
 
-Registry startup checks: unique ID+major version; **compiled typed union** has one of six legal descriptor/result discriminants with no erased generic executor, no cross-mode callbacks or executable proposal in read/simulate/evaluate outputs; valid strict bounded input/output Zod schemas; no orphan dependencies, cycles or conflicting owners of a canonical effect; registered metric names exist and **all allowed purposes map exhaustively to their registered source reader/selector contracts**, with strict query schemas and limits; every propose/commit effect contract resolves a known strict canonical payload schema, preview renderer and commit-only executor; approval/commit policy key exists and is default-deny; budget class is present; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
+Registry startup checks: unique ID+major version; **compiled typed union** has one of six legal descriptor/result discriminants with no erased generic executor, no cross-mode callbacks or executable proposal in read/simulate/evaluate outputs; valid strict bounded input/output Zod schemas; no orphan dependencies, cycles or conflicting owners of a canonical effect; registered metric names exist and **all allowed purposes map exhaustively to registered source reader/selector contracts, strict output schemas/unit/number validators and bounded queries**; every registered **analysis** has a matched existing typed read/simulate/evaluate capability, strict I/O schemas, scope/policy/source/coverage and finite budgets, verified registry/CI without central branches; every propose/commit effect contract resolves a known strict canonical payload schema, preview renderer and commit-only executor; approval/commit policy key exists and is default-deny; budget class is present; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
 
 Example future registration:
 
@@ -347,7 +347,7 @@ The first catalog is an **adapter over existing functions**, not a new set of fi
 
 Business dimensions are **allowed only if canonical readers can faithfully produce them**. For example, no hourly sales if only daily rollups; no item-level totals without covered order lines; no employee cost split if cached predicted/actual overlap cannot be reconciled. Derived ratios and period comparisons require matched source coverage, identical business/location boundaries and the shared pure engine; otherwise return partial/unavailable, not a convenient estimate disguised as actual.
 
-### 5.2a Metric queries are not typed domain record reads
+### 5.2a Distinct registered metric, entity and analysis access
 
 A **metric query** returns typed measures/series with unit, period, time zone, dimensionality, actual/estimated status and safe aggregation. An **entity read** returns a strictly selected, bounded projection of existing business records/relationships/revisions: people, recipes, bills, quotes, tasks, source details or plans. A registered **analysis** evaluates source-specific scenarios or recommendations using those readers and canonical pure functions. The shared registry discovers **three distinct typed access contracts**, not an unrestricted “ask the database” query:
 
@@ -364,9 +364,50 @@ type EntityReadResult<T> = {
   records: readonly T[]; truncated: boolean; nextCursor: string|null;
   evidence: readonly SourceRef[]; missingInputs: readonly string[];
 };
+
+// Analysis is cataloged as its OWN public surface, but its execution is
+// strictly bound to an existing NON-EFFECTFUL capability mode (§4).
+type AnalysisMode = "read"|"simulate"|"evaluate";
+type AnalysisResult<M extends AnalysisMode,O> =
+  M extends "simulate" ? SimulationResult<O> :
+  M extends "evaluate" ? EvaluationResult<O> : ReadResult<O>;
+type AnalysisBoundCapability<I,O,M extends AnalysisMode> =
+  M extends "simulate" ? SimulateCapability<I,O> :
+  M extends "evaluate" ? EvaluateCapability<I,O> : ReadCapability<I,O>;
+type AnalysisDefinition<I,O,M extends AnalysisMode> = {
+  kind:"analysis"; id:string; version:1;
+  domainOwner:AgentId; titleKey:string; descriptionKey:string;
+  boundCapability:{id:CapabilityId; version:1; mode:M};
+  inputSchema:ZodSchema<I>; // strict, typed params and purpose allowlist
+  outputSchema:ZodSchema<AnalysisResult<M,O>>; // strict mode result, no proposal
+  allowedPurposes:readonly string[];
+  authorization:{
+    policyKey:string; requiredRole:"owner"; sensitivity:"normal"|"staff"|"financial";
+    scope:"business"|"permitted_locations"|"owner_private";
+    allowedFields:readonly string[]; allowedEntityTypes:readonly string[];
+  };
+  requiredInputs:readonly {
+    purpose:string; metricIds:readonly string[]; entityReadIds:readonly string[];
+    readerId:string; readerVersion:number;
+    selectorId:string; selectorVersion:number;
+    minimumCoverage:"complete"|"partial_explicit";
+    allowedActualities:readonly ("actual"|"estimated"|"forecast"|"planned")[];
+  }[];
+  sourcePolicyKey:string; // provenance precedence, snapshot/time coherence
+  requiresContextVersion:1; // authorized BusinessContext projection
+  resourceLimits:{
+    maxRangeDays:number; maxRows:number; maxSourceRefs:number;
+    maxSeriesPoints:number; maxOperations:number;
+    timeoutMs:number; maxResultBytes:number;
+  };
+  // NO direct execute or domain writer: dispatcher resolves bound capability
+  // by server-registered id/version/mode and validates exact I/O contract.
+};
 ~~~
 
-Server-only handlers bind café/user/location/purpose, validate filters and resource caps, apply RLS and allowlist fields and relationships. Never expose a generic SQL editor, unrestricted SELECT, arbitrary joins, free-form table names, schema exploration or all-employees/all-records dumping to the model. Record permissions do **not** follow automatically from metric read permission; e.g., labor total does not authorize reading every staff wage. Unknown/restricted record types are explicit in the same coverage manifest.
+**Analysis registration and dispatch (mandatory P1/P2 gate):** Each public analytical read/scenario/diagnostic is a checked-in, **versioned `AnalysisDefinition<I,O,M>` catalog entry** with strict input and full output Zod schemas, role/tenant/location/owner-private authorization, explicit purposes and field/record sensitivity, registered prerequisite metric/entity readers, **versioned canonical source-selector contracts**, provenance/actuality/coverage requirements, versioned BusinessContext and finite execution/result budgets. On registry startup, resolve its `boundCapability.id + version + mode` and verify it matches the **exact typed `ReadCapability`, `SimulateCapability` or `EvaluateCapability` input/output contracts** and that every required metric/entity/source is registered; missing/mismatched/orphan bindings fail CI/startup and appear unavailable, not executable. The generic dispatcher authenticates scope, validates strict analysis arguments/purpose, authorization and resource budgets **before** any prerequisite reader, and uses the same mode-specific runtime Zod output validator after execution; independently verify result provenance/source revisions, period, quality/completeness, sensitivity and numeric fields (including the metric output constraints of §5.1) **before** assembling any owner-visible analysis. Read/simulate/evaluate analysis results have `proposal:null`, never apply or persist business changes and cannot call the commit gateway. An actionable recommendation becomes an actual proposal **only through a separately registered `propose` capability** with exact canonical effect payload and separate approval/commit gates; never turn a price scenario or staffing recommendation directly into a mutation.
+
+**Extensibility examples (contracted, not active features):** Alex price review/recipe margin comparison registers a read analysis backed by canonical pricing and `lib/calc/`; Olivia coverage-vs-cost what-if is a `simulate` analysis after domain readiness; Maya unit-normalized supplier-quote comparison is a read analysis with explicitly unverified quote provenance; Leo matched-period profit-cost comparison is a read analysis with complete numerator/denominator coverage, not a bank-feed assumption. A synthetic **fifth** specialist registers the same analysis and bound capability exports, tests and localization only, **without a central Supervisor analysis switch, metric exception or LLM SQL**. Unsupported/no-POS/denied/conflicting/stale inputs return a typed `unavailable`/`partial`/`insufficient_evidence` result with missingInputs/assumptions and no invented output; derived money remains `lib/calc/` canonical. Entity-read handlers likewise bind café/user/location/purpose, validate filters and resource caps, apply RLS and allowlist fields and relationships. Never expose a generic SQL editor, unrestricted SELECT, arbitrary joins, free-form table names, schema exploration or all-employees/all-records dumping. Record permissions do **not** follow automatically from metric permission; e.g., labor total does not authorize every staff wage. Restricted surfaces remain explicit in the coverage manifest.
 
 ### 5.3 Source precedence is by purpose, not by provider rank
 
