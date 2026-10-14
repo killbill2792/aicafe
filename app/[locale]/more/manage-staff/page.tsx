@@ -6,7 +6,7 @@ import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
 import { getSchedulingFoundationRecords, getSchedulingLocationOptions } from "@/lib/actions/schedulingFoundation";
-import { emptySchedulingRecords, type SchedulingClientRecords } from "@/components/staff/SchedulingInputsPanel";
+import type { SchedulingClientRecords } from "@/components/staff/SchedulingInputsPanel";
 import PageShell from "@/components/shared/PageShell";
 
 // Personalized, session-dependent — never statically prerendered.
@@ -28,7 +28,11 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
   const schedulingStatus = foundation?.ok && locationResult?.ok ? "ready" as const : "unavailable" as const;
   const schedulingRecords: SchedulingClientRecords = foundation?.ok
     ? foundation.records as unknown as SchedulingClientRecords
-    : emptySchedulingRecords;
+    : {
+      availability_rule: [], availability_exception: [], preferences: [],
+      preference_window: [], qualification_type: [], qualification: [],
+      coverage: [], compensation: [],
+    };
   const schedulingLocations = locationResult?.ok ? locationResult.locations : [];
   const schedulingBusinessTimezone = locationResult?.ok
     ? locationResult.businessTimezone : "America/Los_Angeles";
