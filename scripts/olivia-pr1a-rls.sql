@@ -224,6 +224,79 @@ BEGIN
 END $$;
 SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
 
+-- PostgreSQL permits 24:00:00 even when seconds are exactly zero.
+-- Every scheduling time table must forbid this from both owner RPC and
+-- authenticated-owner direct UPDATE, not merely from the Zod/read layers.
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    current_setting('test.biz_a')::uuid,'availability_rule',gen_random_uuid(),
+    jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'day_of_week',3,'start_local','09:00','end_local','24:00:00',
+    'overnight',false,'effective_from','2026-10-14',
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'RULE_24_HOUR_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    current_setting('test.biz_a')::uuid,'availability_exception',gen_random_uuid(),
+    jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'local_date','2026-10-15','exception_type','unavailable',
+    'start_local','09:00','end_local','24:00:00','overnight',false,
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'EXCEPTION_24_HOUR_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    current_setting('test.biz_a')::uuid,'preference_window',gen_random_uuid(),
+    jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'day_of_week',3,'start_local','09:00','end_local','24:00:00',
+    'overnight',false,'effective_from','2026-10-14',
+    'preference','avoid','strength','hard',
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'PREFERENCE_24_HOUR_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    current_setting('test.biz_a')::uuid,'coverage',gen_random_uuid(),
+    jsonb_build_object('location_id',current_setting('test.loc_a'),
+    'day_of_week',3,'effective_from','2026-10-14',
+    'start_local','09:00','end_local','24:00:00','overnight',false,
+    'min_headcount',1,'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'COVERAGE_24_HOUR_CREATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.staff_availability_rules SET end_local='24:00:00'
+   WHERE business_id=current_setting('test.biz_a')::uuid AND start_local='07:00';
+  RAISE EXCEPTION 'RULE_24_HOUR_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.staff_availability_exceptions SET start_local='09:00',
+    end_local='24:00:00',overnight=false
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'EXCEPTION_24_HOUR_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.staff_preference_windows SET end_local='24:00:00'
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'PREFERENCE_24_HOUR_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ BEGIN
+  UPDATE public.scheduling_coverage_requirements SET end_local='24:00:00'
+   WHERE business_id=current_setting('test.biz_a')::uuid;
+  RAISE EXCEPTION 'COVERAGE_24_HOUR_UPDATE_ACCEPTED';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+END $$;
+
 -- Composite FK rejects employee and location IDs from another business, even
 -- when an otherwise privileged owner supplies them.
 DO $$
@@ -890,6 +963,62 @@ BEGIN
     ((current_setting('test.original_receipt')::jsonb->>'id')::uuid,
      (current_setting('test.distinct_receipt')::jsonb->>'id')::uuid))<>2 THEN
    RAISE EXCEPTION 'RETRY_CREATED_ADDITIONAL_AUDIT_EVENT';
+ END IF;
+END $$;
+
+-- All signups have a privileged membership on the fixed shared demo
+-- identity. businesses.is_demo is writable via existing business policies,
+-- so it cannot be used as the sole scheduling authorization condition.
+-- This disposable transaction simulates a demo member setting is_demo=false.
+RESET ROLE;
+INSERT INTO public.businesses(id,name,is_demo)
+ VALUES ('11111111-1111-1111-1111-111111111111','Shared demo guard test',true)
+ ON CONFLICT(id) DO UPDATE SET is_demo=true;
+INSERT INTO public.memberships(business_id,user_id,role)
+ VALUES ('11111111-1111-1111-1111-111111111111',:'owner_id','owner')
+ ON CONFLICT(business_id,user_id) DO UPDATE SET role='owner';
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'owner_id',true);
+UPDATE public.businesses SET is_demo=false
+ WHERE id='11111111-1111-1111-1111-111111111111';
+DO $$
+DECLARE shared_demo uuid := '11111111-1111-1111-1111-111111111111';
+BEGIN
+ IF NOT EXISTS (SELECT 1 FROM public.businesses
+   WHERE id=shared_demo AND is_demo=false) THEN
+   RAISE EXCEPTION 'DEMO_MUTABLE_FLAG_TEST_SETUP_FAILED';
+ END IF;
+ IF public.scheduling_is_owner(shared_demo) THEN
+   RAISE EXCEPTION 'SHARED_DEMO_ID_GRANTED_OWNER_SCHEDULING_AUTH';
+ END IF;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    shared_demo,'availability_rule',gen_random_uuid(),
+    jsonb_build_object('employee_id',current_setting('test.employee_a'),
+    'day_of_week',3,'start_local','09:00','end_local','11:00',
+    'effective_from','2026-10-14','source','owner_direct',
+    'confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'SHARED_DEMO_RPC_CREATE_ACCEPTED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+    shared_demo,'qualification_type',gen_random_uuid(),
+    '{"code":"trainer","display_name":"Trainer"}'::jsonb);
+  RAISE EXCEPTION 'SHARED_DEMO_QUALIFICATION_RPC_ACCEPTED';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+END $$;
+RESET ROLE;
+DO $$
+BEGIN
+ IF EXISTS (SELECT 1 FROM public.scheduling_foundation_create_receipts
+  WHERE business_id='11111111-1111-1111-1111-111111111111'::uuid) THEN
+  RAISE EXCEPTION 'SHARED_DEMO_RECEIPT_CREATED_AFTER_FLAG_TAMPER';
+ END IF;
+ IF EXISTS (SELECT 1 FROM public.scheduling_foundation_audit_events
+  WHERE business_id='11111111-1111-1111-1111-111111111111'::uuid) THEN
+  RAISE EXCEPTION 'SHARED_DEMO_AUDIT_CREATED_AFTER_FLAG_TAMPER';
  END IF;
 END $$;
 
