@@ -255,7 +255,7 @@ BEGIN
       AND cash_cost_state='known_eligible_zero';
  END IF;
  RETURN NEW;
-END $;
+END $$;
 CREATE TRIGGER scheduling_invalidate_zero_on_employee_wage_change
 AFTER UPDATE OF wage_period, wage_amount_cents, default_hourly_wage_cents
 ON public.employees FOR EACH ROW
