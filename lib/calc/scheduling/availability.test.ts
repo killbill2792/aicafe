@@ -124,7 +124,10 @@ describe("Olivia PR 1A: pure effective availability", () => {
       wage_amount_cents: 0, default_hourly_wage_cents: 0,
     })).toBe("known_eligible_zero");
     expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, null)).toBe("unknown");
-    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, noWage)).toBe("unknown");
+    // Explicit attestation is valid with null legacy rate fields; unknown
+    // employee identity is not. This preserves zero-versus-unknown provenance.
+    expect(compensationProvenance({ cash_cost_state: "known_eligible_zero" }, noWage))
+      .toBe("known_eligible_zero");
   });
 
   it("fails closed after a zero-cost attestation if the Staff wage-update path records a positive wage", () => {
