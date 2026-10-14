@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const businessId = "10000000-0000-4000-8000-000000000001";
 const mocks = vi.hoisted(() => ({
   compensation: [] as Array<Record<string, unknown>>,
   wages: [] as Array<Record<string, unknown>>,
