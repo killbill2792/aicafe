@@ -27,6 +27,9 @@ async function requireSchedulingOwner(): Promise<
   // Use authenticated, cookie-selected membership; never accept a model- or
   // client-supplied business ID. A manager or shared demo member cannot write.
   const businessId = await getActiveBusinessId(user.id);
+  // Shared demo access grants all signups owner membership. Never trust its
+  // mutable is_demo flag alone; the fixed demo tenant is not schedulable.
+  if (businessId === "11111111-1111-1111-1111-111111111111") return null;
   const { data, error } = await supabase.from("memberships")
     .select("role, businesses(is_demo)")
     .eq("business_id", businessId)
