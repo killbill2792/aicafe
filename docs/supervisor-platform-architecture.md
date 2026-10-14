@@ -164,12 +164,12 @@ type CommitCapability =
     read?:never; simulate?:never; propose?:never;
     evaluate?:never; approve?:never;
   };
+// The build-time manifest merges concrete domain exports without erasing
+// typed mode, input or output schemas to "any" or a generic execute path.
 type RegisteredCapability =
-  | ReadCapability<any,any> | SimulateCapability<any,any>
-  | ProposeCapability<any,any> | EvaluateCapability<any,any>
-  | ApprovalCapability | CommitCapability;
-// The "any" above is ONLY for heterogeneous registry storage; concrete
-// registration APIs infer I/O via Zod and forbid weakening schemas or mode.
+  (typeof compiledCapabilityRegistry)[keyof typeof compiledCapabilityRegistry];
+// Future generated, server-owned manifest; each entry must satisfy exactly
+// ONE of the six descriptor variants via strict typed registration.
 type ApprovedEffectInput = {approvalId:string; proposalId:string;
   proposalRevision:number; approvedEffectHash:string};
 // The input is an opaque lookup/replay reference, NOT effect parameters.
@@ -185,7 +185,7 @@ type ApprovedEffectInput = {approvalId:string; proposalId:string;
 
 The executable contract separates **all six modes** as type-discriminated descriptors with distinct callbacks and runtime-validated, mode-tagged result variants (§7). `read` and `simulate` return `proposal: null` by type and strict result schema, and may never call a draft or effect repository. `evaluate` returns only bounded findings; creating or changing an Operations task requires a distinct registered reconciler and policy, not an evaluator side effect. `propose` may persist only an inert, versioned proposal with an immutable, schema-validated canonical effect payload; it has no commit callback or authority. `approve` accepts an authenticated actor's exact server-issued proposal reference/decision, returns an approved/failed transition, and cannot invoke a domain effect. **Only** the `commit` mode's authorized server gateway may call the allowlisted effect executor after tenant, approval, payload, context/source/policy and idempotency checks; it accepts no model-issued consent or executable parameters. Registering a new domain supplies its own typed schemas, mode handlers and canonical effect contract without editing the central router. Startup, dispatcher, strict Zod output and negative tests must enforce these fences (not just prompt instructions). Implementations use Zod-inferred generics; the example is a specification, not application code. Every effect contract also supplies a safe preview renderer, authorization policy, compensation/rollback classification, deterministic idempotency key and postcondition verifier.
 
-Registry startup checks: unique ID+major version; one of **six** legal descriptor/result discriminants, no cross-mode callbacks or executable proposal in read/simulate/evaluate outputs; valid strict bounded input/output Zod schemas; no orphan dependencies, cycles or conflicting owners of a canonical effect; registered metric names exist and their query schemas validate; every propose/commit effect contract resolves a known strict canonical payload schema, preview renderer and executor; approval/commit policy key exists and is default-deny; budget class is present; effect handler is allowlisted **only for commit**; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
+Registry startup checks: unique ID+major version; **compiled typed union** has one of six legal descriptor/result discriminants with no erased generic executor, no cross-mode callbacks or executable proposal in read/simulate/evaluate outputs; valid strict bounded input/output Zod schemas; no orphan dependencies, cycles or conflicting owners of a canonical effect; registered metric names exist and **all allowed purposes map exhaustively to their registered source reader/selector contracts**, with strict query schemas and limits; every propose/commit effect contract resolves a known strict canonical payload schema, preview renderer and commit-only executor; approval/commit policy key exists and is default-deny; budget class is present; no changed legacy tool name without explicit compatibility adapter. Disabled or unimplemented descriptors may be discoverable **as unavailable**, never callable as if active. Registrations return structured metadata, **not** arbitrary owner-controlled function code.
 
 Example future registration:
 
@@ -252,14 +252,14 @@ type MetricDefinition<F,P extends string> = {
   supportedPeriods:"instant"|"bounded_date_range"|"all_time";
   temporalBasis:"business_local"|"location_local"|"utc_instant";
   availabilityRequires:readonly string[]; // evidence/provider/coverage prerequisites
-  sourceSelectionRequirements:{
+  sourceSelectionRequirements:Readonly<Record<P,{
     canonicalReaderId:string; readerContractVersion:number;
     selectorContractId:string; selectorContractVersion:number;
-    sourcePurposeByQueryPurpose:Readonly<Record<P,string>>;
+    sourcePurpose:string; // purpose-specific canonical selection
     precedencePolicyId:string; precedencePolicyRevision:number;
-    minCoverage:"complete"|"partial_explicit"; // quality and purpose bound
+    minCoverage:"complete"|"partial_explicit"; // purpose-specific quality
     requiredSourceStatuses:readonly SourceRef["status"][];
-  };
+  }>>; // exhaustive for allowedPurposes; no fallback to another purpose
   sensitivity:"normal"|"staff"|"financial";
   accessPolicy:string; // tenant+role+location+purpose+field policy, default deny
   queryLimits:{
@@ -288,7 +288,7 @@ Use **explicit result variants** in production (e.g. a discriminated union requi
 
 Catalog discovery is two operations: **list permitted definitions** (small metadata only) and **query selected metric IDs with bounded arguments**. Before **any** canonical reader or source selector runs, the dispatcher must (1) resolve the authenticated business/actor/locations server-side, (2) find that exact registered metric ID+version or deny, (3) validate the *entire* query via its metric-owned **strict Zod `querySchema`, `filterSchema` and `dimensionSchema`**, (4) enforce its `allowedPurposes`, dimensions, granularity, unit/period/temporal basis, allowlisted source statuses and source-selection contract/version for that purpose, (5) enforce tenant/role/sensitivity authorization and all **range, row, cardinality, series, depth, timeout and read-call limits**, and **only then** call the trusted reader with typed parsed input. Unrecognized or extra filters, arbitrary purposes, unsupported hourly/dimension requests, unknown metric versions and privilege-sensitive dimensions are rejected, not forwarded as unknown values. The server builds the catalog from domain registration exports and tests per-metric source purpose+selector mappings; neither the dispatcher nor central goal/router requires specialist-specific conditional branches or a generic catch-all filter parser. The owner may learn which definitions are allowed while missing integrations return explicit unavailable. No schema exploration, free-form table names, REST endpoint composition, unrestricted SQL/GraphQL or raw arbitrary values from an LLM. Preserve source RLS, row/column sensitivity and bounded pagination; staff aggregates do **not** authorize named-person wage reads.
 
-**Metric registration and source-selection invariants (future P1 gate):** a metric's input contract is not just a display label or generic `Record<string, unknown>`: a strict, domain-exported query schema must parse **purpose, filters, dimension values, granularity, dates and bounds** together. The domain module owns schema, allowed purpose/source-selection table and canonical reader mapping; registry startup/CI rejects missing, unreachable, inconsistent or unbounded definitions. One metric can have a narrow purpose such as `payroll_actual` yet reject `schedule_forecast`; a second purpose must declare its source-selection and temporal/quality rules explicitly. Purpose cannot be obtained by reinterpreting an arbitrary model string. Selector versions are pinned to the returned `CanonicalSourceRevisionRef` manifest (§7). Query normalization and caching must bind metric version, validated arguments, authorized tenant/location, period/timezone and selected purpose to avoid cross-purpose or cross-tenant leakage. Every unsupported dimensionality/purpose returns a typed denial/unavailable result, never inferred data or a zero. Validate 5th-domain registration without platform core changes and exercise negative security limits in P1 CI.
+**Metric registration and source-selection invariants (future P1 gate):** a metric's input contract is not just a display label or generic `Record<string, unknown>`: a strict, domain-exported query schema must parse **purpose, filters, dimension values, granularity, dates and bounds** together, and its `sourceSelectionRequirements` must contain an **exhaustive purpose-keyed mapping** to the correct versioned reader, selector, precedence policy, coverage and permitted source states. The domain module owns schema, allowed purpose/source-selection table and canonical reader mapping; registry startup/CI rejects missing, unreachable, inconsistent or unbounded definitions. One metric can have a narrow purpose such as `payroll_actual` yet reject `schedule_forecast`; a second purpose must declare its source-selection and temporal/quality rules explicitly. Purpose cannot be obtained by reinterpreting an arbitrary model string. Selector versions are pinned to the returned `CanonicalSourceRevisionRef` manifest (§7). Query normalization and caching must bind metric version, validated arguments, authorized tenant/location, period/timezone and selected purpose to avoid cross-purpose or cross-tenant leakage. Every unsupported dimensionality/purpose returns a typed denial/unavailable result, never inferred data or a zero. Validate 5th-domain registration without platform core changes and exercise negative security limits in P1 CI.
 
 ### 5.2 Canonical starter catalog / ownership
 
