@@ -51,7 +51,12 @@ export type PlannerPinned = {
 export type PlannerRuleProfile = {
   /** Jurisdiction-specific rule set was actually verified, never inferred. */
   verified: boolean;
+  /** Reviewed policy source/version, not untrusted owner instructions. */
   source?: string;
+  /** Explicit configured jurisdictions for all scheduled locations. */
+  jurisdictionByLocationId?: Record<string,string>;
+  /** Explicit verified classification per worker; names are not IDs. */
+  classificationByEmployeeId?: Record<string,string>;
   maxContinuousWorkMinutes?: number | null;
   unpaidMealMinutes?: number | null;
   /** Verified paid rest break duration; without this no paid rest is invented. */
