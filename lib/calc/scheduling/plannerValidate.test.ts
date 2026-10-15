@@ -67,7 +67,7 @@ describe("Independent pure PR3-ready schedule validation",()=>{
   it("validates explicitly scheduled unpaid breaks and rejects fictitious break completion",()=>{
     const base=optimizeOliviaWeek({...input,
       coverage:[{...input.coverage[0],minHeadcount:1}]}).best!.shifts[0];
-    const invalid:PlannerShift={...base,unpaidBreaks:[{
+    const invalid:PlannerShift={...base,breaks:[{
       startAt:"2026-10-12T17:00:00.000Z",
       endAt:"2026-10-12T18:00:00.000Z",paid:false,
     }]};
@@ -96,7 +96,7 @@ describe("Independent pure PR3-ready schedule validation",()=>{
   it("rejects a shift outside the plan's seven local calendar days",()=>{
     const roster:PlannerShift={employeeId:"staff-a",locationId:"a",
       startAt:"2026-10-19T16:00:00.000Z",endAt:"2026-10-19T17:00:00.000Z",
-      paidMinutes:60,unpaidBreaks:[],pinned:false};
+      paidMinutes:60,breaks:[],pinned:false};
     expect(validateOliviaAssignments(input,[roster]).violations)
       .toContain("shift_outside_seven_day_horizon");
   });
@@ -104,7 +104,7 @@ describe("Independent pure PR3-ready schedule validation",()=>{
     const shift=optimizeOliviaWeek({...input,coverage:[{
       ...input.coverage[0],minHeadcount:1,
     }]}).best!.shifts[0];
-    const wrong:PlannerShift={...shift,paidMinutes:60,unpaidBreaks:[{
+    const wrong:PlannerShift={...shift,paidMinutes:60,breaks:[{
       startAt:"2026-10-12T16:30:00.000Z",
       endAt:"2026-10-12T17:30:00.000Z",paid:false,
     }]};
