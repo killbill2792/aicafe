@@ -12,6 +12,61 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/fixtureSnapshot.ts":{
+    getFixtureSnapshot:{restricted:"Demo/testing fixture is not authenticated real café evidence"},
+  },
+  "lib/data/getActiveBusinessId.ts":{
+    getActiveBusinessId:{restricted:"Trusted session selector; not a model-readable business record"},
+  },
+  "lib/data/getActiveCafeName.ts":{
+    getActiveCafeName:{capabilities:["business.profile"]},
+  },
+  "lib/data/getAlerts.ts":{
+    getOpenAlerts:{restricted:"Owner alert rows need a bounded typed source/status projection"},
+    getAlertById:{restricted:"Alert-by-ID requires owner-scope and separate evidence policy"},
+  },
+  "lib/data/getCatalogMatchReview.ts":{
+    getCatalogMatchReview:{restricted:"Raw POS mapping review contains private import identity metadata"},
+  },
+  "lib/data/getIngredientNames.ts":{
+    getIngredientNames:{capabilities:["menu.ingredients"]},
+  },
+  "lib/data/getPosConnectionStatus.ts":{
+    getPosConnectionStatus:{restricted:"Provider connection/sync metadata require separate owner-only contract"},
+  },
+  "lib/data/getProcessingFeeEstimateSetup.ts":{
+    getProcessingFeeEstimateSetup:{restricted:"Private processing-fee assumption settings need provenance"},
+  },
+  "lib/data/getProductPhoto.ts":{
+    getMenuCatalogPhotos:{restricted:"Product asset URLs require a separately authorized media contract"},
+    getProductPhoto:{restricted:"Product image metadata are not a canonical numeric record"},
+  },
+  "lib/data/getUploadHistory.ts":{
+    getUploadHistory:{restricted:"Private uploaded statement/receipt history needs safe evidence redaction"},
+  },
+  "lib/data/materializeSchedule.ts":{
+    ensureScheduledShiftsThroughDate:{restricted:"Materialization writes timecards; P1 never invokes this effect"},
+    ensureTodayScheduledShifts:{restricted:"Materialization writes timecards; P1 never invokes this effect"},
+  },
+  "lib/data/materializeScheduleRules.ts":{
+    localDatesInclusive:{restricted:"Pure date helper is not a business-data reader"},
+    selectSchedulesForDate:{restricted:"Internal schedule selection helper, not a public owner projection"},
+  },
+  "lib/data/monthCalendar.server.ts":{
+    getMonthCalendarFromDb:{restricted:"Internal broad Money view model; canonical typed metrics are separate"},
+  },
+  "lib/data/periodItemSales.server.ts":{
+    readPeriodItemSales:{capabilities:["sales.item_units","sales.item_coverage"]},
+  },
+  "lib/data/queryError.ts":{
+    logQueryError:{restricted:"Internal private error logger, not a read capability"},
+  },
+  "lib/data/runningCostCatalog.ts":{
+    rowToDailyFacts:{capabilities:["sales.daily"]},
+  },
+  "lib/data/snapshot.server.ts":{
+    getBusinessSnapshotFromDb:{restricted:"Private unbounded composite DB snapshot; use typed scoped projections"},
+  },
   "lib/data/getCafeProfile.ts": {
     getCafeProfile:{capabilities:["business.profile"]},
   },
