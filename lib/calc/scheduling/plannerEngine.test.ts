@@ -235,7 +235,8 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     // $2,600/month * 12 / (40*52) = $15/hour -> 2h = $30.
     expect(result.status).toBe("feasible");
     expect(result.best?.cost).toMatchObject({
-      cashWagesCents:3000,loadedPayrollCents:3360,costState:"verified",
+      cashWagesCents:3000,allocatedSalaryCents:3000,
+      loadedPayrollCents:3360,costState:"estimate",
     });
     const unverified=optimizeOliviaWeek(input([{...salaried,
       verifiedSalaryHoursPerWeek:null}],[coverage("salary")]));
