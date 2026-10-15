@@ -55,6 +55,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [conflicted,setConflicted] = useState(false);
   const [pending, startTransition] = useTransition();
   const requestKey = useRef<string | null>(null);
 
@@ -69,12 +70,12 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
 
   function change(updater: (previous: DraftWindow[]) => DraftWindow[]) {
     setDraftOverride((previous) => updater(previous ?? scoped.map(windowFromRecord))); setDirty(true); setSaved(false); setError(null);
-    requestKey.current = null;
+    requestKey.current = null;setConflicted(false);
   }
   function switchScope(setter: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
     setDraftOverride(null); setDirty(false); setError(null); setSaved(false);
-    requestKey.current = null; setter(value);
+    requestKey.current = null;setConflicted(false); setter(value);
   }
   function switchLocation(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
@@ -82,7 +83,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       (r.location_id??null)===(value||null))
       .sort((a,b)=>String(b.effective_from).localeCompare(String(a.effective_from)))[0];
     setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
-    requestKey.current=null;setLocationId(value);
+    requestKey.current=null;setConflicted(false);setLocationId(value);
     setEffectiveFrom(first?String(first.effective_from):
       (locations.find(l=>l.id===value)?.todayLocal??today));
     setEffectiveTo(first?String(first.effective_to??""):"");
@@ -91,10 +92,11 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
     if (dirty && !window.confirm(t("discardEdits"))) return;
     const scope=effectiveScopes.find(p=>`${p.from}|${p.to}`===value);
     setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
-    requestKey.current=null;
+    requestKey.current=null;setConflicted(false);
     setEffectiveFrom(scope?.from??(locations.find(l=>l.id===locationId)?.todayLocal??today));setEffectiveTo(scope?.to??"");
   }
   function save() {
+    if (conflicted && !window.confirm(t("applyAfterConflict"))) return;
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
         !window.confirm(t("confirmRemove"))) return;
     if (!effectiveFrom || (effectiveTo && effectiveTo < effectiveFrom)) {
@@ -119,10 +121,13 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
         expected, desired, requestKey: requestKey.current,
       });
       if (!result.ok) {
+        if (result.error==="conflict") {
+          requestKey.current=null;setConflicted(true);router.refresh();
+        }
         setError(result.error === "conflict" ? t("conflict") : t("saveFailed"));
         return;
       }
-      requestKey.current = null; setDraftOverride(null); setDirty(false); setSaved(true);
+      requestKey.current = null; setConflicted(false);setDraftOverride(null); setDirty(false); setSaved(true);
       router.refresh();
     });
   }
@@ -228,6 +233,19 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
         })}
       </div>
       <p className="text-sm text-ink-muted">{t("doesNotAssign")}</p>
+      {conflicted && <details open className="rounded-xl border border-line p-3">
+        <summary className="font-semibold">{t("latestSaved")}</summary>
+        <ul className="mt-2 text-sm">
+          {scoped.map(r=><li key={r.id}>{dayNames[Number(r.day_of_week)]}:
+            {" "}{String(r.start_local)}–{String(r.end_local)}
+            {" · "}#{r.revision}</li>)}
+        </ul>
+        {scoped.length===0&&<p className="text-sm">{t("notRecorded")}</p>}
+        <button type="button" className={schedulingButtonClass} onClick={()=>{
+          if (!window.confirm(t("discardEdits"))) return;
+          setDraftOverride(null);setDirty(false);setConflicted(false);setError(null);
+        }}>{t("useLatestSaved")}</button>
+      </details>}
       {error && <p role="alert" className="text-sm font-semibold text-warn">{error}</p>}
       {saved && <p role="status" className="text-sm text-good">{t("saved")}</p>}
       {dirty && <p role="status" className="text-sm text-warn">{t("unsaved")}</p>}
