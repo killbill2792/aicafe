@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("server-only",()=>({}));
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
-import { p1ReadCapabilities,p1Analyses,validateP1Analyses,
+import { p1ReadCapabilities,p1Analyses,PINNED_P1_SCHEMA_CONTRACTS,validateP1Analyses,
   executeP1AnalysisAuthorized,discoverP1Analyses } from "./p1Analyses.server";
 const identity={asOf:"2026-10-03",timezone:"America/Los_Angeles",businessId:"cafe-a"};
 const inv=(id:"alex.pricing.review.v1"|"maya.supplies.quote_evidence.v1"|
@@ -9,7 +9,6 @@ const inv=(id:"alex.pricing.review.v1"|"maya.supplies.quote_evidence.v1"|
  key:string,purpose:string,input:Record<string,unknown>)=>({
   analysisId:id,analysisVersion:1,boundCapabilityKey:key,selectedPurpose:purpose,input,
 });
-const high={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const profitPeriod={from:"2026-10-01",to:"2026-10-03"};
 const costSummary={
   period:profitPeriod,knownTotalCents:400,completeness:"partial" as const,
@@ -22,11 +21,6 @@ const costSummary={
     estimatedProductCostIds:[],missingFeeDays:0,missingOperatingCategories:[]},
 };
 describe("P1 analysis-to-typed-read binding",()=>{
-  it("reports reviewed schema hashes for contract pinning",()=>{
-    throw new Error("P1_SCHEMAS="+JSON.stringify(Object.fromEntries(
-      Object.values(p1Analyses).map(d=>[d.boundCapabilityKey,d.schemaContract])
-    )));
-  });
 
   it("pins mode, exact contract schemas, versions, nonempty purposes and source policies",()=>{
     expect(validateP1Analyses()).toBe(true);
@@ -40,6 +34,7 @@ describe("P1 analysis-to-typed-read binding",()=>{
       expect(def.schemaContract.version).toBe(1);
       expect(def.schemaContract.inputSchemaFingerprint).toMatch(/^[a-f0-9]{64}$/);
       expect(def.schemaContract.outputSchemaFingerprint).toMatch(/^[a-f0-9]{64}$/);
+      expect(def.schemaContract).toEqual(PINNED_P1_SCHEMA_CONTRACTS[def.boundCapabilityKey]);
       expect(Object.keys(def.sourceRequirementsByPurpose).sort()).toEqual([...def.allowedPurposes].sort());
       expect(def.resourceLimits.maxOperations).toBe(1);
     }
