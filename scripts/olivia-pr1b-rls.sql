@@ -200,7 +200,7 @@ BEGIN
 END $$;
 -- Explicit known-no-work weekdays live on confirmed effective-dated preferences;
 -- they are not inferred from missing availability windows.
-DO $
+DO $$
 DECLARE row_id uuid;
 BEGIN
  SELECT id INTO row_id FROM public.staff_scheduling_preferences
@@ -230,7 +230,7 @@ BEGIN
      AND effective_from='2026-11-01' AND unavailable_weekdays=ARRAY[0,6]::smallint[]) THEN
   RAISE EXCEPTION 'idempotent PR1A create could not persist unavailable weekdays';
  END IF;
-END $;
+END $$;
 -- Manager cannot invoke the elevated transactional RPC.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
