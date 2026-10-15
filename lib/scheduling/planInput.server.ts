@@ -7,7 +7,7 @@ import { requireSchedulingOwner } from "./foundation.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
-import { workerWageRate } from "@/lib/calc/scheduling/plannerCore";
+import { workerWageRate, historicalShiftWageKey } from "@/lib/calc/scheduling/plannerCore";
 import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 
 /**
@@ -109,7 +109,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     if(seriesError)throw new Error("Cannot read published schedule pointer");
     const publishedRevision=publishedSeries?.published_revision??null;
     let startedPublishedShifts:PlannerShift[]=[];
-    const historicalWageRates:NonNullable<PlannerInput["historicalWageRates"]>={};
+    const historicalShiftWageRates:NonNullable<PlannerInput["historicalShiftWageRates"]>={};
     if(publishedRevision!==null){
       if(!Number.isSafeInteger(publishedRevision) || publishedRevision<1)
         throw new Error("Corrupt published revision");
@@ -152,8 +152,13 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       // The immutable published revision stores the ORIGINAL wage snapshot.
       // Never reprice its started shifts with current employee wages.
       if(startedPublishedShifts.length){
-        const saved=z.object({employees:z.array(z.unknown())})
-          .safeParse(revision.planner_input);
+        const saved=z.object({
+          employees:z.array(z.unknown()),
+          historicalShiftWageRates:z.record(z.string(),z.object({
+            rateCentsPerHour:z.number().int().nonnegative().safe().nullable(),
+            salary:z.boolean(),
+          })).optional(),
+        }).safeParse(revision.planner_input);
         if(!saved.success)throw new Error("Missing published wage snapshot");
         const savedWage=z.object({
           id:z.string(),
@@ -170,15 +175,23 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
           verifiedSalaryHoursPerWeek:z.number().positive().max(168)
             .nullable().optional(),
         });
-        for(const employeeId of new Set(startedPublishedShifts.map(s=>s.employeeId))){
+        for(const shift of startedPublishedShifts){
+          const key=historicalShiftWageKey(shift);
+          // A second/third replan must retain each already-frozen shift's
+          // original rate, not the live rate at the most recent publication.
+          const carried=saved.data.historicalShiftWageRates?.[key];
+          if(carried){
+            historicalShiftWageRates[key]=carried;continue;
+          }
+          // A shift that started only AFTER the previous publication inherits
+          // the wage originally snapshotted for that published revision.
           const matching=saved.data.employees
             .filter(e=>e!==null && typeof e==="object" &&
-              (e as Row).id===employeeId);
+              (e as Row).id===shift.employeeId);
           if(matching.length!==1)throw new Error("Ambiguous published wage snapshot");
           const parsedWage=savedWage.safeParse(matching[0]);
           if(!parsedWage.success)throw new Error("Corrupt published wage snapshot");
-          historicalWageRates[employeeId]={
-            // Pure wage conversion uses ONLY parsed, persisted publication facts.
+          historicalShiftWageRates[key]={
             rateCentsPerHour:workerWageRate(parsedWage.data as PlannerEmployee),
             salary:["month","year"].includes(parsedWage.data.wage.wage_period??""),
           };
@@ -197,7 +210,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
-      startedPublishedShifts,historicalWageRates,
+      startedPublishedShifts,historicalShiftWageRates,
     })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
@@ -387,7 +400,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         ...(ruleProfile ? {ruleProfile} : {}),
-        pinned: [], startedPublishedShifts, historicalWageRates, replanAsOf,
+        pinned: [], startedPublishedShifts, historicalShiftWageRates, replanAsOf,
         slotMinutes, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
