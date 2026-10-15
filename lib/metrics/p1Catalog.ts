@@ -256,7 +256,7 @@ export const canonicalSourcePaths = {
   readP1EmployeeWages:"lib/metrics/p1Additional.server.ts",
   readP1SupplierQuotes:"lib/metrics/p1Additional.server.ts",
   readP1OwnerRules:"lib/metrics/p1Additional.server.ts",
-  readP1SchedulingFoundation:"lib/scheduling/foundation.server.ts",
+  readP1SchedulingFoundation:"lib/metrics/p1Additional.server.ts",
   readP1ExpenseEntries:"lib/metrics/p1Additional.server.ts",
   readP1RecurringBillRows:"lib/data/getRecurringCosts.ts",
   getProfitability:"lib/operating/cafeState.ts",
