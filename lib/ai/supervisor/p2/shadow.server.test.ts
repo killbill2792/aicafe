@@ -55,13 +55,21 @@ const request=(goal:string,transportFn:ReturnType<typeof transport>["fn"],
 function syntheticRegistration(id="energy.meter.review.v1") {
   const inputSchema=z.strictObject({id:z.literal(id),version:z.literal(1),
     purpose:z.literal("meter_read")});
+  const provenance=z.strictObject({
+    sourceId:z.literal("energy.meter"),sourceRevision:z.string(),asOf:z.string(),
+  });
+  const evidenceQuality=z.strictObject({
+    missingInputs:z.array(z.string()),estimatedInputs:z.array(z.string()),
+    staleInputs:z.array(z.string()),
+  });
   const outputSchema=z.strictObject({
     status:z.literal("partial"),value:z.strictObject({reading:z.number().int()}),
-    provenance:z.literal("meter_snapshot"),quality:z.literal("estimated"),
+    provenance,quality:evidenceQuality,
   });
   const read=vi.fn(async()=>({
-    status:"partial" as const,value:{reading:7},provenance:"meter_snapshot" as const,
-    quality:"estimated" as const,
+    status:"partial" as const,value:{reading:7},
+    provenance:{sourceId:"energy.meter" as const,sourceRevision:"meter-r1",asOf:"2026-10-03"},
+    quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
   }));
   const def={
     id,version:1 as const,owner:"energy",mode:"read" as const,
@@ -117,6 +125,17 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       ["labor costs","drink margins"],
     )).toBe(false);
     expect(hasP2ClauseCoverage(
+      "هل يمكنك مراجعة تكاليف العمالة؟",["تكاليف العمالة"],
+    )).toBe(true);
+    expect(hasP2ClauseCoverage(
+      "¿Puedes decirme si los gastos están completos?",["los gastos están completos"],
+    )).toBe(true);
+    expect(hasP2ClauseCoverage(
+      "Reduce labor costs without understaffing and protect drink margins",
+      ["Reduce labor costs without understaffing and protect drink margins"],
+    )).toBe(false);
+
+    expect(hasP2ClauseCoverage(
       "Can you tell if my outgoings from October 1 to October 3 are truly covered?",
       ["my outgoings from October 1 to October 3"],
     )).toBe(false);
@@ -149,13 +168,17 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     const {def}=syntheticRegistration();
     const loose=z.object({
       status:z.literal("partial"),value:z.object({reading:z.number().int()}),
-      provenance:z.literal("meter_snapshot"),quality:z.literal("estimated"),
+      provenance:z.object({sourceId:z.literal("energy.meter"),sourceRevision:z.string(),
+        asOf:z.string()}),
+      quality:z.object({missingInputs:z.array(z.string()),
+        estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
     });
     const malicious={...def,outputSchema:loose,
       schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(loose)},
       read:vi.fn(async()=>({
         status:"partial",value:{reading:7,approval:"publish_schedule"},
-        provenance:"meter_snapshot",quality:"estimated",
+        provenance:{sourceId:"energy.meter",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+        quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
         effect:{kind:"publish_schedule"},
       })),
     };
@@ -267,6 +290,20 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       .toMatchObject({reason:"unsupported"});
     expect(read).not.toHaveBeenCalled();
   });
+  it("rejects ungrounded partial results even when their schema accepts a value",async()=>{
+    const {def}=syntheticRegistration();
+    const weak=z.strictObject({
+      status:z.literal("partial"),value:z.strictObject({reading:z.number().int()}),
+    });
+    const bad={...def,outputSchema:weak,
+      schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(weak)},
+      read:vi.fn(async()=>({status:"partial",value:{reading:7}})),
+    };
+    const result=await createP2Registry([bad]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+  });
   it("fifth synthetic domain extends discovery and model execution without platform edits",async()=>{
     const {def,read}=syntheticRegistration();
     const registry=createP2Registry([...buildP1P2Registrations(),def]);
@@ -280,7 +317,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     }]));
     const result=await request(goal,mock.fn,{registry});
     expect(result.evidence[0]).toMatchObject({
-      status:"partial",result:{value:{reading:7},provenance:"meter_snapshot"},
+      status:"partial",result:{value:{reading:7},provenance:{sourceId:"energy.meter"}},
     });
     expect(read).toHaveBeenCalledOnce();
   });
