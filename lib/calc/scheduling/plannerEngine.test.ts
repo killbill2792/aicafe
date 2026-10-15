@@ -79,6 +79,16 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     const altered=shifts.map(s=>s.employeeId==="former"
       ? {...s,paidMinutes:120,breaks:[]} : s);
     expect(validateOliviaAssignments(args,altered).valid).toBe(false);
+    // A previously paid break is frozen and counted as wages, but never as
+    // staffing coverage; changes to today's rest policy cannot erase it.
+    const paidOfficial={...official,paidMinutes:120,
+      breaks:[{...official.breaks[0],paid:true}]};
+    const paidArgs={...args,startedPublishedShifts:[paidOfficial]};
+    const paidResult=optimizeOliviaWeek(paidArgs);
+    expect(paidResult.best?.shifts).toContainEqual(paidOfficial);
+    expect(validateOliviaAssignments(paidArgs,paidResult.best!.shifts).valid).toBe(true);
+    expect(paidResult.best?.cost.cashWagesCents)
+      .toBe((result.best!.cost.cashWagesCents??0)+800);
   });
   it("honors confirmed absence and returns an exact uncovered role/date/interval",()=>{
     const e=employee("solo",{exceptions:[{
