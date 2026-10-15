@@ -1534,7 +1534,7 @@
   },
   "OliviaPlanning": {
     "title": "Olivia weekly scheduling",
-    "draftOnly": "Proposal and draft review only. Approval and publication are not yet available.",
+    "draftOnly": "Review proposed shifts, save revisions, and use separate owner approval and publication steps when enabled.",
     "week": "Week beginning Monday",
     "generate": "Generate seven-day proposal",
     "status": "Planner status",
@@ -1587,7 +1587,7 @@
     "missingInputs": "Required scheduling information is missing or conflicting. Review the Staff scheduling forms.",
     "partialDraftUnavailable": "This incomplete proposal shows gaps for review; saving it is disabled until required coverage is valid.",
     "editTitle": "Edit schedule shifts",
-    "editInstructions": "Changes create a new draft. Each adjustment is checked against availability, coverage and other limits before saving. Publishing is not available yet.",
+    "editInstructions": "Edits create a new draft. Availability, qualifications, coverage and hour limits are checked before saving.",
     "shiftNumber": "Shift {number}",
     "removeShift": "Remove shift",
     "employee": "Employee",
@@ -1644,6 +1644,21 @@
     "ruleLoadError": "Could not load the current policy review.",
     "ruleSaveError": "Could not save the policy review. Check all fields, source evidence, and the current revision.",
     "ruleReviewSaved": "Labor-rule review saved as version {revision}; regenerate the schedule before approval.",
-    "saveRuleReview": "Save reviewed policy"
+    "saveRuleReview": "Save reviewed policy",
+    "previewInvalid": "Choose a valid Monday to start the scheduling week.",
+    "previewDisabled": "Scheduling is not enabled for this café.",
+    "previewUnavailable": "Unable to load the schedule from saved staff details. Refresh and try again.",
+    "gapNoStaff": "No active staff",
+    "gapQualification": "Required qualification missing",
+    "gapAvailability": "No confirmed availability",
+    "gapCapacity": "Worker capacity or overlap conflict",
+    "gapRest": "Break or rest constraint",
+    "gapDaily": "Daily working-hour limit",
+    "gapWeekly": "Weekly working-hour limit",
+    "gapDateCap": "Date-specific hour limit",
+    "gapPinned": "Pinned shift conflict",
+    "gapSolver": "Solver limit reached",
+    "gapHandoff": "Required handoff overlap missing",
+    "gapUnknown": "Unfilled requirement"
   }
 }
