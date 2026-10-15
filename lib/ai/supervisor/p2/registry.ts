@@ -162,8 +162,8 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           return unavailable("invalid_result");
         const actual=validated.data as {
           status?:string;value?:unknown;reason?:unknown;
-          provenance?:{sourceRevision?:unknown};
-          quality?:{estimatedInputs?:unknown};
+          provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;asOf?:unknown};
+          quality?:{missingInputs?:unknown;estimatedInputs?:unknown;staleInputs?:unknown};
         };
         if(["proposal","approve","approval","commit","effect","executedEffects",
           "applied","outbox"].some(k=>Object.hasOwn(actual,k)))return unavailable("invalid_result");
@@ -177,6 +177,25 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
             return unavailable("invalid_result");
         }else if(actual.value===null || actual.value===undefined)
           return unavailable("invalid_result");
+        // Even partial or estimated canonical evidence needs source provenance
+        // and quality; model metadata alone is not a trusted reader result.
+        if(["verified","estimated","partial"].includes(actual.status??"")){
+          const p=actual.provenance,q=actual.quality;
+          const registeredSource=typeof p?.sourceId==="string" &&
+            def.sourceIds.includes(p.sourceId);
+          const canonicalReader=typeof p?.canonicalReaderId==="string" &&
+            p.canonicalReaderId.length>0;
+          const revision=p?.sourceRevision;
+          const validRevision=revision===null ||
+            (typeof revision==="string" && revision.length>0);
+          const arrays=[q?.missingInputs,q?.estimatedInputs,q?.staleInputs];
+          if(!p || typeof p.asOf!=="string" ||
+            !/^\\d{4}-\\d{2}-\\d{2}$/.test(p.asOf) ||
+            (!registeredSource && !canonicalReader) || !validRevision ||
+            !q || arrays.some(items=>!Array.isArray(items) ||
+              items.some((item:unknown)=>typeof item!=="string")))
+            return unavailable("invalid_result");
+        }
         if(actual.status==="verified" &&
           (typeof actual.provenance?.sourceRevision!=="string" ||
             !actual.provenance.sourceRevision))
