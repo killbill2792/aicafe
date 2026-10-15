@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
-import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
+import { getSchedulingFoundationRecords, saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
 import { reconcileDeletedDraftIds } from "@/lib/scheduling/reconcileDraft";
 import { type SchedulingRow, type SchedulingLocation,
   schedulingFieldClass as field, schedulingButtonClass as secondary,
@@ -39,9 +39,11 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const key = useRef<string | null>(null);
   const draftManifest = useRef<{id:string;revision:number}[] | null>(null);
   const [reapplyReady,setReapplyReady] = useState(false);
+  const [rebasedScoped,setRebasedScoped] = useState<SchedulingRow[] | null>(null);
   const scoped = useMemo(() => rows.filter(r => r.employee_id===employeeId &&
     r.local_date===date && (r.location_id??null)===(locationId||null)
   ),[rows,employeeId,date,locationId]);
+  const latestScoped = status==="conflict" && reapplyReady && rebasedScoped ? rebasedScoped : scoped;
   const draft = draftOverride ?? scoped.map(fromRow);
   function touch(next: ExceptionDraft[]) {
     draftManifest.current ??= scoped.map(r=>({id:r.id,revision:r.revision}));
@@ -52,11 +54,11 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   }
   function changeScope(fn: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null); draftManifest.current=null; setDirty(false); setStatus("idle"); setReapplyReady(false); key.current=null; fn(value);
+    setDraftOverride(null); draftManifest.current=null; setRebasedScoped(null); setDirty(false); setStatus("idle"); setReapplyReady(false); key.current=null; fn(value);
   }
   function switchLocation(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null);draftManifest.current=null;setDirty(false);setStatus("idle");setReapplyReady(false);key.current=null;
+    setDraftOverride(null);draftManifest.current=null;setRebasedScoped(null);setDirty(false);setStatus("idle");setReapplyReady(false);key.current=null;
     setLocationId(value);
     if (!dateEdited) setDate(locations.find(l=>l.id===value)?.todayLocal??today);
   }
@@ -66,7 +68,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   function save() {
     if (status==="conflict" && !reapplyReady) {router.refresh();return;}
     if (status==="conflict" && !window.confirm(t("applyAfterConflict"))) return;
-    if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
+    if (latestScoped.some((row) => !draft.some((d) => d.id===row.id)) &&
         !window.confirm(t("confirmRemove"))) return;
     if (draft.some((r) => r.exception_type==="hours_cap" &&
         (r.max_minutes.trim()==="" || !Number.isInteger(Number(r.max_minutes)) ||
@@ -81,7 +83,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       setStatus("error"); return;
     }
     key.current ??= crypto.randomUUID();
-    const desired = reconcileDeletedDraftIds(draft,scoped).map(r => ({
+    const desired = reconcileDeletedDraftIds(draft,latestScoped).map(r => ({
       ...(r.id ? {id:r.id} : {}),
       data: {
         employee_id:employeeId, location_id:locationId||null, local_date:date,
@@ -99,15 +101,15 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       const result = await saveStaffAvailabilityBatch({
         kind:"availability_exception",employeeId,locationId:locationId||null,
         scope:{local_date:date},expected:status==="conflict" && reapplyReady
-          ? scoped.map(r=>({id:r.id,revision:r.revision}))
+          ? latestScoped.map(r=>({id:r.id,revision:r.revision}))
           : draftManifest.current ?? scoped.map(r=>({id:r.id,revision:r.revision})),
         desired,requestKey:key.current,
       });
       if (!result.ok) {
-        if (result.error==="conflict") {key.current=null;setReapplyReady(false);router.refresh();}
+        if (result.error==="conflict") {key.current=null;setReapplyReady(false);setRebasedScoped(null);router.refresh();}
         setStatus(result.error==="conflict"?"conflict":"error");return;
       }
-      key.current=null;draftManifest.current=null;setReapplyReady(false);setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
+      key.current=null;draftManifest.current=null;setReapplyReady(false);setRebasedScoped(null);setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
     });
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
@@ -115,7 +117,18 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <h4 className="text-[17px] font-bold">{t("dateExceptions")}</h4>
     {status==="conflict" && !reapplyReady && <button type="button" className={secondary}
-      onClick={()=>{draftManifest.current=scoped.map(r=>({id:r.id,revision:r.revision}));setReapplyReady(true);}}>{t("applyAfterConflict")}</button>}
+      onClick={()=>startTransition(async()=>{
+        // A pending router refresh does not guarantee fresh props. Read the
+        // currently authorized database records before allowing reapply.
+        const result=await getSchedulingFoundationRecords();
+        if(!result.ok){setStatus("error");return;}
+        const current=(result.records.availability_exception as SchedulingRow[]).filter(r=>
+          r.employee_id===employeeId && r.local_date===date &&
+          (r.location_id??null)===(locationId||null));
+        setRebasedScoped(current);
+        draftManifest.current=current.map(r=>({id:r.id,revision:r.revision}));
+        setReapplyReady(true);router.refresh();
+      })}>{t("applyAfterConflict")}</button>}
     <p className="text-[17px] text-ink-muted">{t("exceptionExplainer")}</p>
     <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("date")}
       <input type="date" className={field} value={date}
@@ -200,7 +213,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       {scoped.length===0 && <p className="text-[17px]">{t("notRecorded")}</p>}
       <button type="button" className={secondary} onClick={()=>{
         if (!window.confirm(t("discardEdits"))) return;
-        setDraftOverride(null);draftManifest.current=null;setReapplyReady(false);setDirty(false);setStatus("idle");
+        setDraftOverride(null);draftManifest.current=null;setRebasedScoped(null);setReapplyReady(false);setDirty(false);setStatus("idle");
       }}>{t("useLatestSaved")}</button>
     </details>}
     {status==="conflict" && <p role="alert" className="text-[17px] text-warn">{t("conflict")}</p>}
