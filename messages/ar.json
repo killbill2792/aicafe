@@ -1663,6 +1663,11 @@
     "viewRevision": "عرض الإصدار",
     "reviewVersion": "تكليفات الإصدار {revision}",
     "closeRevision": "إغلاق التفاصيل",
-    "historicalPlanOnly": "هذه تكليفات مخططة سابقة، وليست سجلات حضور أو دليلًا على أن الورديات نُفذت."
+    "historicalPlanOnly": "هذه تكليفات مخططة سابقة، وليست سجلات حضور أو دليلًا على أن الورديات نُفذت.",
+    "revisionDraft": "مسودة",
+    "revisionApproved": "تمت الموافقة",
+    "revisionPublished": "منشور",
+    "revisionSuperseded": "تم استبداله",
+    "revisionUnknown": "حالة غير معروفة"
   }
 }
