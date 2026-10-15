@@ -148,7 +148,8 @@ export const values = {
   }),
   "money.expense_entries": z.array(z.strictObject({
     id:text,spentOn:day,categoryCode:text,amountCents:money,
-    status:z.enum(["actual","estimated"]),source:text,
+    status:z.enum(["actual","estimated"]),
+    source:z.enum(["manual","recurring","receipt","statement","voice","quickbooks","bank_feed"]),
   })).max(500),
   "money.profitability": profitability,
   "money.business_costs": costs,
