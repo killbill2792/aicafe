@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
@@ -20,29 +21,32 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   const [confirmation,setConfirmation]=useState<"unconfirmed"|"owner_confirmed">("unconfirmed");
   const [error,setError]=useState(""),[saved,setSaved]=useState(false);
   const [pending,startTransition]=useTransition();
+  const typeRetry=useRef<PendingCreate>(null), assignmentRetry=useRef<PendingCreate>(null);
   const mine=assignments.filter(r=>r.employee_id===employeeId);
   function issue(errorCode:string) {setError(errorCode);setSaved(false);}
   function addType() {
+    const payload={code:newCode.trim().toLowerCase(),display_name:newName.trim(),active:true};
     startTransition(async()=>{
       const result=await saveSchedulingFoundationRecord({
-        kind:"qualification_type",action:"create",requestKey:crypto.randomUUID(),
-        data:{code:newCode.trim().toLowerCase(),display_name:newName.trim(),active:true},
+        kind:"qualification_type",action:"create",requestKey:stableCreateRequestKey(typeRetry,payload),
+        data:payload,
       });
       if(!result.ok){issue(t("saveFailed"));return;}
       setError("");setSaved(true);setCode(newCode.trim().toLowerCase());
-      setNewCode("");setNewName("");router.refresh();
+      typeRetry.current=null;setNewCode("");setNewName("");router.refresh();
     });
   }
   function assign() {
     if (!code){issue(t("chooseQualification"));return;}
+    const payload={employee_id:employeeId,location_id:locationId||null,qualification_code:code,
+      valid_from:from,valid_to:to||null,source,confirmation};
     startTransition(async()=>{
       const result=await saveSchedulingFoundationRecord({
-        kind:"qualification",action:"create",requestKey:crypto.randomUUID(),
-        data:{employee_id:employeeId,location_id:locationId||null,qualification_code:code,
-          valid_from:from,valid_to:to||null,source,confirmation},
+        kind:"qualification",action:"create",requestKey:stableCreateRequestKey(assignmentRetry,payload),
+        data:payload,
       });
       if(!result.ok){issue(t("saveFailed"));return;}
-      setError("");setSaved(true);router.refresh();
+      assignmentRetry.current=null;setError("");setSaved(true);router.refresh();
     });
   }
   function revoke(r:SchedulingRow) {
