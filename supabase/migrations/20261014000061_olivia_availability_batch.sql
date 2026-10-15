@@ -264,6 +264,23 @@ GRANT EXECUTE ON FUNCTION public.scheduling_save_availability_batch(
  uuid,uuid,uuid,text,jsonb,jsonb,jsonb,uuid) TO authenticated;
 
 
+-- PR1A could already contain overlapping effective-dated preferences. A new
+-- write-only trigger does not repair those old ambiguities. Fail this manual
+-- migration transaction until the owner reviews and reconciles them in staging.
+DO $
+BEGIN
+ IF EXISTS (
+   SELECT 1 FROM public.staff_scheduling_preferences a
+   JOIN public.staff_scheduling_preferences b
+     ON a.business_id=b.business_id AND a.employee_id=b.employee_id AND a.id<b.id
+    AND daterange(a.effective_from,a.effective_to,'[]') &&
+        daterange(b.effective_from,b.effective_to,'[]')
+ ) THEN
+   RAISE EXCEPTION 'Existing overlapping Olivia hour-limit periods require owner reconciliation'
+     USING ERRCODE='23505';
+ END IF;
+END $;
+
 -- A worker must not have two simultaneously effective hour-limit policies.
 -- Enforce on every owner INSERT/UPDATE (including legacy per-record actions).
 -- Locking employee serializes checks by concurrent co-owners.
