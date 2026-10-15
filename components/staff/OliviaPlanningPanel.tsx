@@ -7,6 +7,7 @@ import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory,
   readOliviaPlanRevision, saveOliviaWeekEdit } from "@/lib/actions/oliviaPlanning";
 import OliviaShiftEditor from "./OliviaShiftEditor";
 import OliviaPublicationPanel from "./OliviaPublicationPanel";
+import OliviaRuleReviewPanel from "./OliviaRuleReviewPanel";
 import type { PlannerResult, PlannerScenario, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import type { OliviaNotice, OliviaBlocker } from "@/lib/scheduling/planInput.server";
 
@@ -274,6 +275,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         </div>
       </>}
     </div>
+    <OliviaRuleReviewPanel week={week} onChanged={()=>loadHistory(week)}/>
     <OliviaPublicationPanel week={week}
       latest={history.find(item=>item.revision===currentRevision)??null}
       publishedRevision={publishedRevision} enabled={publicationEnabled}
