@@ -98,4 +98,36 @@ describe("P1 analysis-to-typed-read binding",()=>{
     expect(r).toEqual({status:"unavailable",value:null,reason:"unknown_analysis"});
     expect(tools.getBusinessCostSummary).not.toHaveBeenCalled();
   });
+  it("requires real typed Alex prerequisites rather than self-referential analysis sources",()=>{
+    const d=p1Analyses["alex.pricing.review.v1"];
+    const p=d.sourceRequirementsByPurpose.current_pricing_review;
+    const sourceIds=p.inputs.flatMap(input=>[...input.metricIds,...input.entityReadIds]);
+    expect(sourceIds).toEqual(["menu.recipe","menu.product_economics"]);
+    expect(sourceIds).not.toContain("pricing.recommendation");
+    expect(validateP1Analyses()).toBe(true);
+    const input=p.inputs[0];
+    const old=input.readerId;
+    input.readerId="getDecisionHistory";
+    expect(validateP1Analyses()).toBe(false);
+    input.readerId=old;
+    expect(validateP1Analyses()).toBe(true);
+  });
+  it("enforces registered response-time budget for a stalled non-effectful read",async()=>{
+    vi.useFakeTimers();
+    try{
+      const blocked=vi.fn(()=>new Promise<never>(()=>{}));
+      const args=inv("leo.money.costs.v1","money.business_costs","actual_period_cost_review",{
+        id:"money.business_costs",version:1,purpose:"actual_period_cost_review",
+        period:profitPeriod,
+      });
+      const pending=executeP1AnalysisAuthorized(
+        {getBusinessCostSummary:blocked} as unknown as BusinessScopedCafeTools,identity,args);
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(await pending).toEqual({
+        status:"unavailable",value:null,reason:"reader_failure",
+      });
+      expect(blocked).toHaveBeenCalledTimes(1);
+    }finally{vi.useRealTimers();}
+  });
+
 });
