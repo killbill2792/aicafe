@@ -76,6 +76,20 @@ export type PlannerInput = {
   horizonStart: string; locations: PlannerLocation[];
   employees: PlannerEmployee[]; coverage: PlannerCoverage[];
   pinned?: PlannerPinned[];
+  /** Trusted, exact published assignments whose starts are already in the past.
+   * Never caller-supplied. The solver must preserve every field byte-for-byte.
+   */
+  startedPublishedShifts?: PlannerShift[];
+  /** Hourly cost equivalents from the original *published* revision's
+   * immutable planner_input, never repriced using the live employee wage.
+   * Keys are exact employee/location/start-time shift identities. A null rate
+   * means historical cost is unavailable, not zero.
+   */
+  historicalShiftWageRates?: Record<string,{
+    rateCentsPerHour:number|null;salary:boolean;
+  }>;
+  /** Trusted server-read UTC instant; prevents proposing retroactive new work. */
+  replanAsOf?: string;
   ruleProfile?: PlannerRuleProfile | null;
   burden?: PlannerBurden | null;
   /** 5/10/15/30/60 minute finite grid for verified break durations. */

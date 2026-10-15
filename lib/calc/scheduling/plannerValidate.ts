@@ -41,11 +41,27 @@ export function validateOliviaAssignments(input:PlannerInput,
   const violations:string[]=[];
   const gaps:PlannerGap[]=[];
   const work:WorkUnit[]=[];
+  const freezeKey=(s:PlannerShift)=>JSON.stringify({
+    employeeId:s.employeeId,locationId:s.locationId,startAt:s.startAt,
+    endAt:s.endAt,paidMinutes:s.paidMinutes,breaks:s.breaks,pinned:s.pinned,
+  });
+  const requiredFrozen=new Map<string,number>();
+  for(const s of input.startedPublishedShifts??[]){
+    const key=freezeKey(s);
+    requiredFrozen.set(key,(requiredFrozen.get(key)??0)+1);
+  }
+  const cutoff=input.replanAsOf==null?null:parseUtcInstant(input.replanAsOf);
   const declaredPaidRest=new Set<string>();
   const interval=input.slotMinutes??30;
   if(proposal.length>2000)throw new Error("invalid_planner_input:too_many_shifts");
   for(const shift of proposal){
     try {
+      const frozenKey=freezeKey(shift);
+      const remaining=requiredFrozen.get(frozenKey)??0;
+      const historical=remaining>0;
+      if(historical)requiredFrozen.set(frozenKey,remaining-1);
+      else if(cutoff!=null && parseUtcInstant(shift.startAt)<=cutoff)
+        throw new Error("new_retroactive_shift");
       if(!plan.employees.some(e=>e.id===shift.employeeId) ||
         !plan.locations.has(shift.locationId))
         throw new Error("unknown_employee_or_location");
@@ -74,14 +90,14 @@ export function validateOliviaAssignments(input:PlannerInput,
         if(brk.paid){
           // Paid rest remains compensable, but supplies ZERO work coverage.
           const rule=input.ruleProfile;
-          if(!rule?.verified || rule.paidRestMinutes==null ||
-            breakMinutes!==rule.paidRestMinutes)
+          if(!historical && (!rule?.verified || rule.paidRestMinutes==null ||
+            breakMinutes!==rule.paidRestMinutes))
             throw new Error("unverified_paid_rest_break");
           declaredPaidRest.add([shift.employeeId,shift.locationId,
             brk.start,brk.end].join("|"));
         } else {
           unpaid+=breakMinutes;
-          if(input.ruleProfile?.unpaidMealMinutes!=null &&
+          if(!historical && input.ruleProfile?.unpaidMealMinutes!=null &&
             breakMinutes<input.ruleProfile.unpaidMealMinutes)
             throw new Error("meal_shorter_than_configured_minimum");
         }
@@ -92,17 +108,19 @@ export function validateOliviaAssignments(input:PlannerInput,
       for(let t=start;t<end;t+=interval*60000){
         if(breaks.some(b=>b.start<t+interval*60000 && b.end>t))continue;
         work.push({employeeId:shift.employeeId,locationId:shift.locationId,
-          start:t,end:t+interval*60000,pinned:false});
+          start:t,end:t+interval*60000,pinned:historical,historical});
       }
     }catch(error){
       violations.push(error instanceof Error?error.message:"invalid_shift");
     }
   }
+  if([...requiredFrozen.values()].some(count=>count>0))
+    violations.push("pinned_commitment_removed");
   // A gap exactly matching a paid rest duration cannot silently become
   // compensable just because two separately authored shifts are adjacent.
   // Paid rest must appear explicitly in the proposed shift's break record.
   const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
-  if(paidRest!=null){
+  if(paidRest!=null && paidRest>0){
     const perWorker=new Map<string,WorkUnit[]>();
     for(const piece of work){
       const rows=perWorker.get(piece.employeeId)??[];
@@ -123,7 +141,8 @@ export function validateOliviaAssignments(input:PlannerInput,
   const cache=new Map<string,Array<{start:number;end:number}>>();
   for(const piece of work){
     const employee=plan.employees.find(e=>e.id===piece.employeeId);
-    if(employee && !isConfirmedAvailable(piece,employee,plan.locations,cache)){
+    if(employee && !piece.historical &&
+       !isConfirmedAvailable(piece,employee,plan.locations,cache)){
       violations.push("outside_confirmed_availability:"+piece.employeeId+":"+utcIso(piece.start));
     }
   }
@@ -136,8 +155,12 @@ export function validateOliviaAssignments(input:PlannerInput,
   // Matching must allocate a distinct qualified worker to simultaneous
   // requirements. A single worker cannot be credited twice to different
   // headcount slots (even across overlapping roles or locations).
+  const historicalWork=work.filter(w=>w.historical);
   const candidates=plan.units.map(unit=>
-    plan.employees.filter(e=>qualifies(e,unit,plan.locations) &&
+    plan.employees.filter(e=>
+      (cutoff!=null && unit.start<cutoff
+        ? coveredBy(historicalWork,unit,e.id)
+        : qualifies(e,unit,plan.locations)) &&
       coveredBy(work,unit,e.id)).map(e=>e.id).sort());
   // Advisory coverage is a soft preference, not a hard publish gate.
   const indices=plan.units.map((_,i)=>i)
@@ -195,7 +218,8 @@ export function validateOliviaAssignments(input:PlannerInput,
     const ordered=[...byStart.values()].sort((a,b)=>plan.units[a].start-plan.units[b].start);
     for(let i=1;i<ordered.length;i++){
       const previous=plan.units[ordered[i-1]],current=plan.units[ordered[i]];
-      if(previous.end!==current.start)continue; // separate dates/periods
+      if(previous.end!==current.start ||
+        (cutoff!=null && current.start<cutoff))continue; // no retrospective handoffs
       const before=new Set(candidates[ordered[i-1]]);
       const after=new Set(candidates[ordered[i]]);
       if(before.size===after.size && [...before].every(id=>after.has(id)))

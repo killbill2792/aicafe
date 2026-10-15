@@ -3,8 +3,11 @@ import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getEmployees } from "@/lib/data/getEmployees";
 import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { getSnapshot } from "@/lib/data/getSnapshot";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
+import OliviaPlanningPanel from "@/components/staff/OliviaPlanningPanel";
 import { getSchedulingFoundationRecords, getSchedulingLocationOptions } from "@/lib/actions/schedulingFoundation";
 import type { SchedulingClientRecords } from "@/components/staff/SchedulingInputsPanel";
 import PageShell from "@/components/shared/PageShell";
@@ -37,12 +40,31 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
   const schedulingBusinessTimezone = locationResult?.ok
     ? locationResult.businessTimezone : "America/Los_Angeles";
 
+  // Currency is specific to the currently selected café; never silently
+  // label another tenant's monetary units as USD.
+  let schedulingCurrency: string | null = null;
+  if(enabled){
+    if(!isSupabaseConfigured()) schedulingCurrency="USD"; // fixture demo
+    else {
+      const client=await createServerSupabaseClient();
+      const {data,error}=await client.from("businesses").select("currency")
+        .eq("id",snapshot.business.id).maybeSingle();
+      if(!error && typeof data?.currency==="string" &&
+        /^[A-Z]{3}$/.test(data.currency))
+        schedulingCurrency=data.currency;
+    }
+  }
+
   const focusEmployeeId = employees.some((candidate) => candidate.id === employee) ? employee ?? null : null;
   const focusDate = /^\d{4}-\d{2}-\d{2}$/.test(date ?? "") ? date! : null;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
+      {enabled && process.env.SCHEDULING_PR3_DRAFTS_ENABLED === "true" &&
+        <OliviaPlanningPanel today={snapshot.todayDateStr}
+          currency={schedulingCurrency}
+          publicationEnabled={process.env.SCHEDULING_PR3_PUBLICATION_ENABLED==="true"} />}
       <ManageStaffPanel
         employees={employees}
         schedules={schedules}

@@ -16,7 +16,7 @@ const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const optionsSchema = z.object({
   horizonStart: date,
-  expectedRevision: z.number().int().min(0),
+  expectedRevision: z.number().int().min(0).max(499),
   requestKey: uuid,
   objective: z.enum(["cash", "owner_time", "balanced"]),
 }).strict();
@@ -25,10 +25,14 @@ export type DraftSaveResult =
   | { ok: true; seriesId: string; revisionId: string; revision: number; replayed: boolean;
       scenario: PlannerScenario }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_input" |
-      "conflict" | "storage_unavailable" | "no_scenario" };
+      "conflict" | "storage_unavailable" | "no_scenario" | "tenant_changed" | "capacity_exceeded" };
 
-function snapshotDigest(input: PlannerInput): string {
-  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
+export function oliviaSnapshotDigest(input: PlannerInput, sourceFingerprint: string): string {
+  // The clock advances between preview, draft, approval and publication.
+  // Source revisions and the exact started published shifts ARE part of the
+  // digest; a volatile observation instant is not a material source change.
+  const {replanAsOf: _observedAt, ...stableInput}=input;
+  return createHash("sha256").update(JSON.stringify({input:stableInput,sourceFingerprint})).digest("hex");
 }
 
 /** Internal-only: caller must load the entire owner-scoped planner snapshot.
@@ -38,16 +42,21 @@ function snapshotDigest(input: PlannerInput): string {
 export async function createOliviaDraftFromTrustedSnapshot(
   rawOptions: unknown,
   input: PlannerInput,
+  sourceBusinessId: string,
+  sourceFingerprint: string,
 ): Promise<DraftSaveResult> {
   if (process.env.SCHEDULING_FOUNDATION_ENABLED !== "true" ||
       process.env.SCHEDULING_PR3_DRAFTS_ENABLED !== "true") {
     return { ok: false, error: "disabled" };
   }
   const options = optionsSchema.safeParse(rawOptions);
-  if (!options.success || input.horizonStart !== options.data.horizonStart)
+  if (!options.success || input.horizonStart !== options.data.horizonStart ||
+      !/^[a-f0-9]{64}$/.test(sourceFingerprint))
     return { ok: false, error: "invalid_input" };
   const owner = await requireSchedulingOwner();
   if (!owner) return { ok: false, error: "unauthorized" };
+  // Reauthorize after loading; selected café may have changed between requests.
+  if (owner.businessId !== sourceBusinessId) return { ok: false, error: "tenant_changed" };
 
   let scenario: PlannerScenario;
   try {
@@ -69,7 +78,8 @@ export async function createOliviaDraftFromTrustedSnapshot(
     startAt: s.startAt, endAt: s.endAt, paidMinutes: s.paidMinutes,
     breaks: s.breaks.map(b => ({ ...b })), pinned: s.pinned,
   }));
-  const sourceDigest = snapshotDigest(input);
+  if (normalizedShifts.length > 200) return { ok: false, error: "capacity_exceeded" };
+  const sourceDigest = oliviaSnapshotDigest(input, sourceFingerprint);
   try {
     const { data, error } = await owner.supabase.rpc("scheduling_create_plan_draft", {
       p_business_id: owner.businessId,
