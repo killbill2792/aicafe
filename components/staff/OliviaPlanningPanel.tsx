@@ -5,6 +5,7 @@ import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/ide
 import { useLocale, useTranslations } from "next-intl";
 import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory } from "@/lib/actions/oliviaPlanning";
 import type { PlannerResult, PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
+import type { OliviaNotice, OliviaBlocker } from "@/lib/scheduling/planInput.server";
 
 function mondayOf(date: string): string {
   const d = new Date(date + "T12:00:00Z");
@@ -36,7 +37,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   const locale = useLocale();
   const [week, setWeek] = useState(() => nextMonday(today));
   const [result, setResult] = useState<PlannerResult | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
+  const [notices, setNotices] = useState<OliviaNotice[]>([]);
   const [employees, setEmployees] = useState<Record<string,string>>({});
   const [locations, setLocations] = useState<Record<string,string>>({});
   const [locationNames, setLocationNames] = useState<Record<string,string>>({});
@@ -50,6 +51,17 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   const [notice, setNotice] = useState("");
   const [pending, startTransition] = useTransition();
   const scenario = result?.scenarios.find(s => s.objective === objective);
+  const noticeKeys: Record<OliviaNotice["code"], string> = {
+    wage_unknown:"noticeWage", availability_missing:"noticeAvailability",
+    unconfirmed_absence:"noticeLeave", coverage_unconfirmed:"noticeCoverage",
+    no_active_staff:"noticeNoStaff", limits_missing:"noticeLimits",
+    legacy_schedules:"noticeLegacy", policy_unverified:"noticePolicy",
+    source_provisional:"noticeProvisional",
+  };
+  const blockerKeys: Record<OliviaBlocker["code"], string> = {
+    no_location:"blockerLocation", no_coverage:"blockerCoverage",
+    conflicting_limits:"blockerLimits",
+  };
 
   function loadHistory(selectedWeek: string) {
     return readOliviaPlanHistory({ week: selectedWeek }).then(r => {
@@ -65,13 +77,19 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
 
   function preview() {
     setError(""); setNotice(""); setResult(null); setSourceDigest(null);
+    setNotices([]);
     retry.current = null;
     startTransition(async () => {
       const selectedWeek = week;
       const response = await previewOliviaWeek({ week: selectedWeek });
-      if (!response.ok) { setError(response.error); return; }
+      if (!response.ok) {
+        setError(response.blockers?.length ? response.blockers.map(b =>
+          t(blockerKeys[b.code], { employee: b.employeeName ?? "" })).join(" ") :
+          response.error);
+        return;
+      }
       setResult(response.plan);
-      setWarnings(response.warnings);
+      setNotices(response.notices);
       setEmployees(response.employees); setLocations(response.locations);
       setLocationNames(response.locationNames);
       setSourceDigest(response.sourceDigest);
@@ -91,6 +109,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
           setError(response.error === "source_changed" ? t("sourceChanged") :
             response.error === "conflict" ? t("revisionConflict") :
             response.error === "capacity_exceeded" ? t("capacityExceeded") :
+            response.error === "missing_inputs" ? t("missingInputs") :
             t("saveFailed"));
           return;
         }
@@ -115,7 +134,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
       <input type="date" value={week} disabled={pending} onChange={e => {
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
-        setSourceDigest(null); retry.current = null;
+        setSourceDigest(null); retry.current = null; setNotices([]);
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
@@ -159,17 +178,18 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
         {scenario.gaps.map((gap, i) => <p key={i} className="text-sm text-warn">
           {localShiftTime(gap.startAt, locations[gap.locationId] ?? "UTC", locale)} — {localShiftTime(gap.endAt, locations[gap.locationId] ?? "UTC", locale)}: {gap.reason} ({gap.missingHeadcount})
         </p>)}
-        <button type="button" disabled={pending || !sourceDigest || !scenario.hardConstraintsSatisfied}
+        {!scenario.completeCoverage && <p className="text-sm text-warn">{t("partialDraftUnavailable")}</p>}
+        <button type="button" disabled={pending || !sourceDigest || !scenario.hardConstraintsSatisfied || !scenario.completeCoverage}
           onClick={save}
           className="min-h-12 rounded-full border border-ink px-4 font-bold disabled:opacity-50">
           {t("saveDraft")}
         </button>
       </div>}
     </>}
-    {warnings.length > 0 && <div role="status" className="text-sm text-ink-muted">
+    {notices.length > 0 && <div role="status" className="text-sm text-ink-muted">
       <h3 className="font-bold">{t("warnings")}</h3>
-      <ul className="list-disc space-y-1 ps-5">{warnings.map((warning, i) =>
-        <li key={i}>{warning}</li>)}</ul>
+      <ul className="list-disc space-y-1 ps-5">{notices.map((notice, i) =>
+        <li key={i}>{t(noticeKeys[notice.code], { employee: notice.employeeName ?? "" })}</li>)}</ul>
     </div>}
     <div className="border-t border-line pt-3">
       <button type="button" onClick={() => startTransition(() => { void loadHistory(week); })}
