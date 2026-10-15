@@ -101,7 +101,7 @@ BEGIN
  END IF;
  IF p_kind='availability_rule' THEN
    v_table:='staff_availability_rules';
-   IF (p_scope.value ? 'effective_from') IS NOT TRUE OR
+   IF (p_scope ? 'effective_from') IS NOT TRUE OR
       EXISTS(SELECT 1 FROM jsonb_object_keys(p_scope) AS k(x)
              WHERE k.x NOT IN('effective_from','effective_to')) THEN
      RAISE EXCEPTION 'invalid recurring scope' USING ERRCODE='22023';
@@ -110,7 +110,7 @@ BEGIN
      'overnight','effective_from','effective_to','source','confirmation'];
  ELSEIF p_kind='availability_exception' THEN
    v_table:='staff_availability_exceptions';
-   IF (SELECT count(*) FROM jsonb_object_keys(p_scope))<>1 OR NOT (p_scope.value ? 'local_date') THEN
+   IF (SELECT count(*) FROM jsonb_object_keys(p_scope))<>1 OR NOT (p_scope ? 'local_date') THEN
      RAISE EXCEPTION 'invalid exception scope' USING ERRCODE='22023';
    END IF;
    v_keys:=ARRAY['employee_id','location_id','local_date','exception_type',
@@ -168,15 +168,15 @@ BEGIN
    INTO v_actual FROM public.staff_availability_rules
    WHERE business_id=p_business_id AND employee_id=p_employee_id
      AND location_id IS NOT DISTINCT FROM p_location_id
-     AND effective_from=(p_scope.value->>'effective_from')::date
-     AND effective_to IS NOT DISTINCT FROM (p_scope.value->>'effective_to')::date;
+     AND effective_from=(p_scope->>'effective_from')::date
+     AND effective_to IS NOT DISTINCT FROM (p_scope->>'effective_to')::date;
  ELSE
    SELECT coalesce(jsonb_agg(jsonb_build_object('id',id::text,'revision',revision)
        ORDER BY id::text),'[]'::jsonb)
    INTO v_actual FROM public.staff_availability_exceptions
    WHERE business_id=p_business_id AND employee_id=p_employee_id
      AND location_id IS NOT DISTINCT FROM p_location_id
-     AND local_date=(p_scope.value->>'local_date')::date;
+     AND local_date=(p_scope->>'local_date')::date;
  END IF;
  IF v_actual<>v_expected THEN
    -- Terminal CAS conflict: replaying the same request must report the same
@@ -210,10 +210,10 @@ BEGIN
      RAISE EXCEPTION 'batch employee/location mismatch' USING ERRCODE='22023';
    END IF;
    IF (p_kind='availability_rule' AND (
-        v_record->>'effective_from' IS DISTINCT FROM p_scope.value->>'effective_from' OR
-        coalesce(v_record->>'effective_to','') IS DISTINCT FROM coalesce(p_scope.value->>'effective_to','')))
+        v_record->>'effective_from' IS DISTINCT FROM p_scope->>'effective_from' OR
+        coalesce(v_record->>'effective_to','') IS DISTINCT FROM coalesce(p_scope->>'effective_to','')))
      OR (p_kind='availability_exception' AND
-        v_record->>'local_date' IS DISTINCT FROM p_scope.value->>'local_date') THEN
+        v_record->>'local_date' IS DISTINCT FROM p_scope->>'local_date') THEN
      RAISE EXCEPTION 'batch date scope mismatch' USING ERRCODE='22023';
    END IF;
    IF v_item ? 'id' THEN
@@ -236,11 +236,11 @@ BEGIN
      -- Existing RPC validates allowlist, FK, audit, owner, confirmed stamping.
      SELECT public.scheduling_create_foundation(
        p_business_id,p_kind,gen_random_uuid(),v_record) INTO v_response;
-     IF v_response.value->>'id' IS NULL THEN
+     IF v_response->>'id' IS NULL THEN
        RAISE EXCEPTION 'batch create failed' USING ERRCODE='22023';
      END IF;
-     v_id:=(v_response.value->>'id')::uuid;
-     v_rev:=(v_response.value->>'revision')::int;
+     v_id:=(v_response->>'id')::uuid;
+     v_rev:=(v_response->>'revision')::int;
    END IF;
    v_result:=v_result||jsonb_build_array(jsonb_build_object('id',v_id,'revision',v_rev));
  END LOOP;
