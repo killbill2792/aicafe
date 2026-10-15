@@ -103,8 +103,12 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       setError(t("checkDates")); return;
     }
     const expected = scoped.map((row) => ({ id: row.id, revision: row.revision }));
+    const currentIds=new Set(scoped.map(row=>row.id));
     const desired = draft.map((row) => ({
-      ...(row.id ? { id: row.id } : {}),
+      // A competing owner may have deleted this original ID. After the
+      // explicit conflict-confirmation, recreate that draft row as a new
+      // record instead of sending an ID absent from the fresh manifest.
+      ...(row.id && currentIds.has(row.id) ? { id: row.id } : {}),
       data: {
         employee_id: employeeId, location_id: locationId || null,
         day_of_week: row.day_of_week, start_local: row.start_local,
@@ -243,6 +247,8 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
             {" "}{String(r.start_local)}–{String(r.end_local)}
             {" · "}#{r.revision}</li>)}
         </ul>
+        {draft.some(d=>d.id && !scoped.some(r=>r.id===d.id)) &&
+          <p className="text-sm">{t("deletedDraftRecreate")}</p>}
         {scoped.length===0&&<p className="text-sm">{t("notRecorded")}</p>}
         <button type="button" className={schedulingButtonClass} onClick={()=>{
           if (!window.confirm(t("discardEdits"))) return;
