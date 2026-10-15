@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
@@ -34,6 +35,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const [strength,setStrength] = useState<"soft"|"hard">("soft");
   const [error,setError] = useState(""),[saved,setSaved] = useState(false);
   const [pending,run] = useTransition();
+  const preferenceRetry=useRef<PendingCreate>(null), windowRetry=useRef<PendingCreate>(null);
 
   function selectPreference(id:string) {
     setSelected(id); const r=active.find(row=>row.id===id);
@@ -51,25 +53,30 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
         (c!==null && (!Number.isInteger(c)||c<a||(b!==null&&b>c)))) {
       setError(t("invalidLimits")); return;
     }
+    const payload={employee_id:employeeId,effective_from:from,effective_to:to||null,
+      min_weekly_minutes:a,desired_weekly_minutes:b,max_weekly_minutes:c,
+      max_daily_minutes:daily===""?null:Number(daily),source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"preferences",action:selectedRow?"update":"create",
-        ...(selectedRow?{id:selectedRow.id,expectedRevision:selectedRow.revision}:{requestKey:crypto.randomUUID()}),
-        data:{employee_id:employeeId,effective_from:from,effective_to:to||null,
-          min_weekly_minutes:a,desired_weekly_minutes:b,max_weekly_minutes:c,
-          max_daily_minutes:daily===""?null:Number(daily),source,confirmation},
+        ...(selectedRow?{id:selectedRow.id,expectedRevision:selectedRow.revision}:
+          {requestKey:stableCreateRequestKey(preferenceRetry,payload)}),
+        data:payload,
       });
-      if(!result.ok){setError(t("saveFailed"));return;}setError("");setSaved(true);router.refresh();
+      if(!result.ok){setError(t("saveFailed"));return;}
+      preferenceRetry.current=null;setError("");setSaved(true);router.refresh();
     });
   }
   function saveWindow() {
+    const payload={employee_id:employeeId,day_of_week:Number(day),start_local:start,end_local:end,
+      overnight,preference,strength,effective_from:from,effective_to:to||null,source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
-        kind:"preference_window",action:"create",requestKey:crypto.randomUUID(),
-        data:{employee_id:employeeId,day_of_week:Number(day),start_local:start,end_local:end,
-          overnight,preference,strength,effective_from:from,effective_to:to||null,source,confirmation},
+        kind:"preference_window",action:"create",requestKey:stableCreateRequestKey(windowRetry,payload),
+        data:payload,
       });
-      if(!result.ok){setError(t("saveFailed"));return;}setError("");setSaved(true);router.refresh();
+      if(!result.ok){setError(t("saveFailed"));return;}
+      windowRetry.current=null;setError("");setSaved(true);router.refresh();
     });
   }
   function removeWindow(row:SchedulingRow){
