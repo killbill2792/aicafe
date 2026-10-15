@@ -31,7 +31,8 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const names=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   const location=locations.find(l=>l.id===locationId);
   function select(id:string){
-    setSelected(id);setSavedRecord(null);const r=rows.find(v=>v.id===id);
+    setSelected(id);const r=rows.find(v=>v.id===id);
+    setSavedRecord(r ? {id:r.id,revision:r.revision} : null);
     // Saved effective dates are never pristine proposed defaults.
     setFromEdited(Boolean(r));
     if (!r) return;
