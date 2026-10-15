@@ -57,6 +57,13 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
          Number(r.max_minutes)<0 || Number(r.max_minutes)>1440))) {
       setStatus("error"); return;
     }
+    if (draft.some(r =>
+      (r.exception_type==="unavailable" &&
+        Boolean(r.start_local) !== Boolean(r.end_local)) ||
+      ((r.exception_type==="replace_day" || r.exception_type==="add_available") &&
+        (!r.start_local || !r.end_local)))) {
+      setStatus("error"); return;
+    }
     key.current ??= crypto.randomUUID();
     const desired = draft.map(r => ({
       ...(r.id ? {id:r.id} : {}),
@@ -67,7 +74,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
         ...(r.exception_type==="hours_cap"
           ? {max_minutes:Number(r.max_minutes),start_local:null,end_local:null}
           : r.exception_type==="approved_leave" ||
-            (r.exception_type==="unavailable" && (!r.start_local || !r.end_local))
+            (r.exception_type==="unavailable" && !r.start_local && !r.end_local)
           ? {start_local:null,end_local:null,max_minutes:null,overnight:false}
           : {start_local:r.start_local,end_local:r.end_local,max_minutes:null}),
       },
@@ -105,11 +112,20 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
           {exceptionTypes.map(v=><option key={v} value={v}>{t(v)}</option>)}
         </select>
       </label>
+      {r.exception_type==="unavailable" && <label className="flex min-h-12 items-center gap-2 text-sm">
+        <input type="checkbox" checked={!r.start_local && !r.end_local}
+          onChange={e=>update(i,e.target.checked
+            ? {start_local:"",end_local:"",overnight:false}
+            : {start_local:"09:00",end_local:"17:00",overnight:false})}/>
+        {t("fullDay")}
+      </label>}
       {r.exception_type==="hours_cap" ? <label className="flex flex-col gap-1 text-sm">
         {t("maxMinutes")}
         <input type="number" min="0" max="1440" className={field}
           value={r.max_minutes} onChange={e=>update(i,{max_minutes:e.target.value})}/>
-      </label> : r.exception_type!=="approved_leave" && <div className="grid grid-cols-2 gap-2">
+      </label> : r.exception_type!=="approved_leave" &&
+        !(r.exception_type==="unavailable" && !r.start_local && !r.end_local) &&
+        <div className="grid grid-cols-2 gap-2">
         <label className="flex flex-col gap-1 text-sm">{t("start")}
           <input type="time" className={field} value={r.start_local}
             onChange={e=>update(i,{start_local:e.target.value})}/>
