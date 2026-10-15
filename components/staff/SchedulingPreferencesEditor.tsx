@@ -110,8 +110,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   }
   const days=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
-    <h4 className="text-base font-bold">{t("hourLimitsAndPreferences")}</h4>
-    <label className="flex flex-col gap-1 text-sm font-semibold">{t("existingPeriods")}
+    <h4 className="text-[17px] font-bold">{t("hourLimitsAndPreferences")}</h4>
+    <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("existingPeriods")}
       <select className={field} value={selected} onChange={e=>selectPreference(e.target.value)}>
         <option value="">{t("newPeriod")}</option>
         {active.map(r=><option key={r.id} value={r.id}>{String(r.effective_from)} — {String(r.effective_to??t("ongoing"))}</option>)}
@@ -120,10 +120,10 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       </select>
     </label>
     <div className="grid grid-cols-2 gap-2">
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveFrom")}
         <input className={field} type="date" value={from} onChange={e=>setFrom(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveTo")}
         <input className={field} type="date" value={to} onChange={e=>setTo(e.target.value)}/>
       </label>
     </div>
@@ -131,16 +131,16 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       [t("minimumWeekly"),min,setMin],[t("desiredWeekly"),desired,setDesired],
       [t("maximumWeekly"),max,setMax],[t("maximumDaily"),daily,setDaily],
     ] as [string,string,(x:string)=>void][]).map(([label,value,fn])=>
-      <label key={label} className="flex flex-col gap-1 text-sm">{label} ({t("hoursMinutes")})
+      <label key={label} className="flex flex-col gap-1 text-[17px]">{label} ({t("hoursMinutes")})
         <input className={field} type="text" inputMode="numeric" placeholder="8:00"
           value={value} onChange={e=>fn(e.target.value)}/>
       </label>)}
     <fieldset className="rounded-xl border border-line p-3">
       <legend className="font-semibold">{t("hardUnavailableDays")}</legend>
-      <p className="text-sm text-ink-muted">{t("hardUnavailableDaysHelp")}</p>
+      <p className="text-[17px] text-ink-muted">{t("hardUnavailableDaysHelp")}</p>
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[0,1,2,3,4,5,6].map(d=><label key={d}
-          className="flex min-h-12 items-center gap-2 rounded-xl border border-line px-2 text-sm">
+          className="flex min-h-12 items-center gap-2 rounded-xl border border-line px-2 text-[17px]">
           <input type="checkbox" checked={hardUnavailableDays.includes(d)}
             onChange={e=>setHardUnavailableDays(old=>e.target.checked
               ? [...old,d] : old.filter(x=>x!==d))}/>
@@ -149,12 +149,12 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       </div>
     </fieldset>
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      <label className="flex flex-col gap-1 text-sm">{t("source")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("source")}
         <select className={field} value={source} onChange={e=>setSource(e.target.value as typeof source)}>
           {sourceOptions.map(k=><option key={k} value={k}>{t(k==="owner_direct"?"ownerDirect":"workerReported")}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("confirmation")}
         <select className={field} value={confirmation}
           onChange={e=>setConfirmation(e.target.value as typeof confirmation)}>
           {confirmedOptions.map(k=><option key={k} value={k}>{t(k==="unconfirmed"?"unconfirmed":"ownerConfirmed")}</option>)}
@@ -164,44 +164,44 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     <button className={primary} disabled={pending} type="button" onClick={savePreference}>
       {t("saveLimits")}
     </button>
-    <h5 className="text-base font-semibold">{t("preferredAvoidedHours")}</h5>
+    <h5 className="text-[17px] font-semibold">{t("preferredAvoidedHours")}</h5>
     {prefWindows.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-2">
-      <p className="text-sm">{days[Number(r.day_of_week)]} {String(r.start_local)}–{String(r.end_local)}
+      <p className="text-[17px]">{days[Number(r.day_of_week)]} {String(r.start_local)}–{String(r.end_local)}
         {" · "}{r.preference==="avoid"?t("avoid"):t("prefer")} {" · "}
         {r.strength==="hard"?t("hard"):t("soft")} {" · "}
         {r.confirmation==="owner_confirmed"?t("ownerConfirmed"):t("unconfirmed")}</p>
       <button className={secondary} type="button" disabled={pending} onClick={()=>removeWindow(r)}>{t("remove")}</button>
     </div>)}
     <div className="grid grid-cols-2 gap-2">
-      <label className="flex flex-col gap-1 text-sm">{t("day")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("day")}
         <select className={field} value={day} onChange={e=>setDay(e.target.value)}>
           {days.map((label,i)=><option key={i} value={i}>{label}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("preference")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("preference")}
         <select className={field} value={preference} onChange={e=>{setPreference(e.target.value as typeof preference);if(strength==="hard")setStrength("soft");}}>
           <option value="prefer">{t("prefer")}</option><option value="avoid">{t("avoid")}</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("start")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("start")}
         <input className={field} type="time" value={start} onChange={e=>setStart(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("end")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("end")}
         <input className={field} type="time" value={end} onChange={e=>setEnd(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("strength")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("strength")}
         <select className={field} value={strength} onChange={e=>setStrength(e.target.value as typeof strength)}>
           <option value="soft">{t("soft")}</option>
           {preference==="avoid"&&<option value="hard">{t("hard")}</option>}
         </select>
       </label>
-      <label className="flex min-h-12 items-center gap-2 text-sm">
+      <label className="flex min-h-12 items-center gap-2 text-[17px]">
         <input type="checkbox" checked={overnight} onChange={e=>setOvernight(e.target.checked)}/>
         {t("overnight")}
       </label>
     </div>
     <button type="button" className={secondary} disabled={pending||!from} onClick={saveWindow}>{t("addPreference")}</button>
-    {error && <p role="alert" className="text-sm text-warn">{error}</p>}
-    {saved && <p role="status" className="text-sm text-good">{t("saved")}</p>}
+    {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
+    {saved && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
   </section>;
 }
