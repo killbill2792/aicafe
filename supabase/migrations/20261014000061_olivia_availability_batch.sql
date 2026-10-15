@@ -147,6 +147,9 @@ BEGIN
    IF v_receipt.result IS NULL THEN
      RAISE EXCEPTION 'incomplete batch receipt' USING ERRCODE='40001';
    END IF;
+   IF v_receipt.result->>'conflict'='true' THEN
+     RETURN jsonb_build_object('conflict',true);
+   END IF;
    RETURN jsonb_build_object('replayed',true,'records',v_receipt.result);
  END IF;
 
@@ -176,6 +179,11 @@ BEGIN
      AND local_date=(p_scope.value->>'local_date')::date;
  END IF;
  IF v_actual<>v_expected THEN
+   -- Terminal CAS conflict: replaying the same request must report the same
+   -- conflict, not an unfinished receipt/internal DB exception.
+   UPDATE public.scheduling_availability_batch_receipts
+    SET result='{"conflict":true}'::jsonb
+    WHERE business_id=p_business_id AND request_key=p_request_key;
    RETURN jsonb_build_object('conflict',true);
  END IF;
 
