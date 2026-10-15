@@ -95,7 +95,7 @@ export type PlannerGapReason =
   | "no_active_staff" | "qualification_missing" | "no_confirmed_availability"
   | "capacity_or_overlap" | "break_or_rest_constraint"
   | "daily_hour_limit" | "weekly_hour_limit" | "date_specific_cap"
-  | "pinned_conflict" | "solver_budget";
+  | "pinned_conflict" | "solver_budget" | "handoff_overlap_missing";
 export type PlannerGap = {
   coverageId: string; locationId: string;
   startAt: string; endAt: string;
