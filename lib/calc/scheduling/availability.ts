@@ -105,6 +105,17 @@ function mergeWindows(windows: MinuteWindow[]): MinuteWindow[] {
   return merged;
 }
 
+function intersectWindows(first: MinuteWindow[], second: MinuteWindow[]): MinuteWindow[] {
+  const matches: MinuteWindow[]=[];
+  for(const a of mergeWindows(first)){
+    for(const b of mergeWindows(second)){
+      const start=Math.max(a.start,b.start),end=Math.min(a.end,b.end);
+      if(start<end) matches.push({start,end});
+    }
+  }
+  return mergeWindows(matches);
+}
+
 function subtractWindows(windows: MinuteWindow[], blocked: MinuteWindow[]): MinuteWindow[] {
   let current = mergeWindows(windows);
   for (const mask of mergeWindows(blocked)) {
@@ -295,9 +306,45 @@ export function effectiveAvailabilityForLocation(input: {
       });
     }
   }
+  const scopedExceptions=[...chosenExceptions,...hardExceptions];
   const projection = effectiveAvailabilityForDate({
-    date, recurring: chosenRules, exceptions: [...chosenExceptions,...hardExceptions], restrictions,
+    date, recurring: chosenRules, exceptions: scopedExceptions, restrictions,
   });
+  // Location-specific positive windows narrow general employee-wide hours,
+  // not expand them. When the general confirmed hours are known, intersect
+  // the override with the general candidate set (including global masks).
+  // Explicit date-specific add_available remains an intentional expansion
+  // and is combined separately, subject to all global/local hard masks.
+  const generalRecurring=recurring.filter(r=>r.location_id==null);
+  const generalExceptions=exceptions.filter(r=>r.location_id==null);
+  const generalHasPositive=generalRecurring.some(r=>
+    r.confirmation==="owner_confirmed" && r.day_of_week===day.getUTCDay() &&
+    activeOnDate(date,r)) || generalExceptions.some(r=>
+    r.confirmation==="owner_confirmed" && r.local_date===date &&
+    (r.exception_type==="replace_day" || r.exception_type==="add_available"));
+  if(specific && generalHasPositive) {
+    const global=effectiveAvailabilityForDate({
+      date,recurring:generalRecurring,
+      exceptions:[...generalExceptions,...hardExceptions],restrictions,
+    });
+    const withoutLocalAdd=scopedExceptions.filter(row=>
+      !(row.location_id===locationId && row.exception_type==="add_available"));
+    const locationBase=effectiveAvailabilityForDate({
+      date,recurring:chosenRules,exceptions:withoutLocalAdd,restrictions,
+    });
+    const additionOnly=effectiveAvailabilityForDate({
+      date,recurring:[],exceptions:scopedExceptions.filter(row=>
+        row.exception_type!=="replace_day" &&
+        (row.exception_type!=="add_available" || row.location_id===locationId)),
+      restrictions,
+    });
+    return { ...projection,
+      windows:mergeWindows([
+        ...intersectWindows(locationBase.windows,global.windows),
+        ...additionOnly.windows,
+      ]),
+      basis:"location" };
+  }
   return { ...projection, basis: specific ? "location" : "general" };
 }
 
