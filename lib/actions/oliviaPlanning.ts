@@ -49,6 +49,9 @@ export async function saveOliviaWeekDraft(raw: unknown) {
   const loaded = await loadOliviaWeekFromSavedStaff(parsed.data.week);
   if (!loaded.ok) return { ok: false as const, error: loaded.error };
   if (loaded.blockers.length) return { ok: false as const, error: "missing_coverage" as const };
+  if (parsed.data.objective === "owner_time" &&
+      !loaded.input.employees.some(employee => employee.isOwner === true))
+    return { ok: false as const, error: "owner_link_missing" as const };
   // A preview is informative, not authority. Refuse to save a different roster
   // after wages, availability, coverage or selected café facts have changed.
   if (oliviaSnapshotDigest(loaded.input) !== parsed.data.expectedSourceDigest)
@@ -84,7 +87,9 @@ export async function readOliviaPlanHistory(raw: unknown) {
     .eq("series_id", series.id)
     .order("revision", { ascending: false }).limit(501);
   if (revisionError || !revisions || revisions.length > 500 ||
-      (series.current_revision as number) > 500)
+      (series.current_revision as number) > 500 ||
+      ((series.current_revision as number) > 0 &&
+        revisions[0]?.revision !== series.current_revision))
     return { ok: false as const, error: "history_too_large_or_unavailable" as const };
   return { ok: true as const, currentRevision: series.current_revision as number,
     publishedRevision: series.published_revision as number | null, revisions };
