@@ -285,7 +285,15 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
   it("loads only already-started published assignments as immutable replan inputs, including inactive staff and breaks",async()=>{
     const seriesId=id(3000),revId=id(3001);
     fixtures.tables.scheduling_plan_series=[{id:seriesId,published_revision:1}];
-    fixtures.tables.scheduling_plan_revisions=[{id:revId,status:"published"}];
+    fixtures.tables.scheduling_plan_revisions=[{
+      id:revId,status:"published",
+      planner_input:{employees:[{
+        id:id(1),
+        wage:{wage_period:"hour",wage_amount_cents:1800,
+          default_hourly_wage_cents:1800},
+        provenance:"known_paid",
+      }]},
+    }];
     const frozen={
       employee_id:id(1),location_id:id(800),
       starts_at:"2026-10-12T15:00:00.000Z",ends_at:"2026-10-12T19:00:00.000Z",
@@ -299,7 +307,8 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       {id:id(3003),...frozen,starts_at:"2026-11-02T15:00:00.000Z",
         ends_at:"2026-11-02T19:00:00.000Z"},
     ];
-    fixtures.tables.employees=[employee(1,{active:false})];
+    // Current pay changed after publication; do not reprice frozen work.
+    fixtures.tables.employees=[employee(1,{active:false,wage_amount_cents:2800})];
     const result=await loadOliviaWeekFromSavedStaff(week);
     expect(result.ok).toBe(true);
     if(!result.ok)return;
@@ -310,6 +319,10 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       employeeId:id(1),startAt:frozen.starts_at,paidMinutes:210,
       breaks:frozen.breaks,pinned:false,
     });
+    expect(result.input.historicalWageRates?.[id(1)]).toEqual({
+      rateCentsPerHour:1800,salary:false,
+    });
+    expect(result.input.employees[0].wage.wage_amount_cents).toBe(2800);
     expect(result.input.replanAsOf).toMatch(/^\d{4}-/);
     expect(()=>expandPlannerInput(result.input)).not.toThrow();
   });
