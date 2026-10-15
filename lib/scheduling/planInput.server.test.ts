@@ -91,7 +91,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     });
     expect(output.input.employees[0].isOwner).toBeUndefined();
     expect(output.input.coverage[0].start_local).toBe("08:00");
-    expect(output.warnings.some(w=>w.includes("not verified"))).toBe(true);
+    expect(output.notices.some(n=>n.code==="policy_unverified")).toBe(true);
   });
 
   it.each(["2026-10-13","2026-02-30","2026-10-12junk","2026-10-12 OR true",""])(
