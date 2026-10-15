@@ -78,4 +78,17 @@ describe("Platform P1 checked-in coverage manifest", () => {
     const pricing=values["pricing.recommendation"];
     expect(pricing.safeParse({status:"PRICE_UNAVAILABLE",recommendedPriceCents:0}).success).toBe(false);
   });
+  it("requires original source and actual/estimated status on recorded expense entries",()=>{
+    const entry={id:"expense-1",spentOn:"2026-10-01",categoryCode:"rent",
+      amountCents:0,status:"actual" as const,source:"manual"};
+    const contract=values["money.expense_entries"];
+    expect(contract.safeParse([entry]).success).toBe(true);
+    expect(contract.safeParse([{...entry,source:undefined}]).success).toBe(false);
+    expect(contract.safeParse([{...entry,status:undefined}]).success).toBe(false);
+    expect(contract.safeParse([{...entry,status:"unknown"}]).success).toBe(false);
+    expect(contract.safeParse([{...entry,amountCents:0.5}]).success).toBe(false);
+    expect(additionalSurfaces).toHaveProperty("money.expense_categories");
+    expect(Object.hasOwn(values,"money.expense_categories")).toBe(false);
+  });
+
 });
