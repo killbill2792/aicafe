@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory,
   readOliviaPlanRevision, saveOliviaWeekEdit } from "@/lib/actions/oliviaPlanning";
 import OliviaShiftEditor from "./OliviaShiftEditor";
+import OliviaPublicationPanel from "./OliviaPublicationPanel";
 import type { PlannerResult, PlannerScenario, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import type { OliviaNotice, OliviaBlocker } from "@/lib/scheduling/planInput.server";
 
@@ -34,7 +35,7 @@ function localShiftTime(value: string, timezone: string, locale: string) {
 /** Owner-facing proposal workspace only. No approval or publishing controls
  * until backend can independently revalidate and transactionally commit.
  */
-export default function OliviaPlanningPanel({ today }: { today: string }) {
+export default function OliviaPlanningPanel({ today, publicationEnabled=false }: { today: string; publicationEnabled?: boolean }) {
   const t = useTranslations("OliviaPlanning");
   const locale = useLocale();
   const [week, setWeek] = useState(() => nextMonday(today));
@@ -273,5 +274,10 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
         </div>
       </>}
     </div>
+    <OliviaPublicationPanel week={week}
+      latest={history.find(item=>item.revision===currentRevision)??null}
+      publishedRevision={publishedRevision} enabled={publicationEnabled}
+      employees={employees} locations={locations} names={locationNames}
+      onChanged={()=>loadHistory(week)}/>
   </section>;
 }
