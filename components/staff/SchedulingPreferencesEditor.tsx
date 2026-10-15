@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
+import { minutesToHourInput, hourInputToMinutes } from "@/lib/scheduling/hourInput";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
@@ -21,10 +22,10 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const selectedRow = active.find(r=>r.id===selected);
   const [from,setFrom] = useState(String(selectedRow?.effective_from??today));
   const [to,setTo] = useState(String(selectedRow?.effective_to??""));
-  const [min,setMin] = useState(String(selectedRow?.min_weekly_minutes??0));
-  const [desired,setDesired] = useState(String(selectedRow?.desired_weekly_minutes??""));
-  const [max,setMax] = useState(String(selectedRow?.max_weekly_minutes??""));
-  const [daily,setDaily] = useState(String(selectedRow?.max_daily_minutes??""));
+  const [min,setMin] = useState(minutesToHourInput(Number(selectedRow?.min_weekly_minutes??0)));
+  const [desired,setDesired] = useState(minutesToHourInput(selectedRow?.desired_weekly_minutes as number | null | undefined));
+  const [max,setMax] = useState(minutesToHourInput(selectedRow?.max_weekly_minutes as number | null | undefined));
+  const [daily,setDaily] = useState(minutesToHourInput(selectedRow?.max_daily_minutes as number | null | undefined));
   const [source,setSource] = useState<"owner_direct"|"worker_reported_by_owner">(
     selectedRow?.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
   const [confirmation,setConfirmation] = useState<"unconfirmed"|"owner_confirmed">(
@@ -40,22 +41,29 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   function selectPreference(id:string) {
     setSelected(id); const r=active.find(row=>row.id===id);
     setFrom(String(r?.effective_from??today));setTo(String(r?.effective_to??""));
-    setMin(String(r?.min_weekly_minutes??0));setDesired(String(r?.desired_weekly_minutes??""));
-    setMax(String(r?.max_weekly_minutes??""));setDaily(String(r?.max_daily_minutes??""));
+    setMin(minutesToHourInput(Number(r?.min_weekly_minutes??0)));setDesired(minutesToHourInput(r?.desired_weekly_minutes as number | null | undefined));
+    setMax(minutesToHourInput(r?.max_weekly_minutes as number | null | undefined));setDaily(minutesToHourInput(r?.max_daily_minutes as number | null | undefined));
     setSource(r?.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
     setConfirmation(r?.confirmation==="owner_confirmed"?"owner_confirmed":"unconfirmed");
     setSaved(false);setError("");
   }
   function savePreference() {
-    const a=Number(min),b=desired===""?null:Number(desired),c=max===""?null:Number(max);
-    if (!from || (to && to<from) ||
-        !Number.isInteger(a) || a<0 || (b!==null && (!Number.isInteger(b)||b<a)) ||
-        (c!==null && (!Number.isInteger(c)||c<a||(b!==null&&b>c)))) {
-      setError(t("invalidLimits")); return;
+    let a:number, b:number|null, c:number|null, dailyMinutes:number|null;
+    try {
+      a=hourInputToMinutes(min,10080,true)!;
+      b=hourInputToMinutes(desired,10080);
+      c=hourInputToMinutes(max,10080);
+      dailyMinutes=hourInputToMinutes(daily,1440);
+      if (!from || (to && to<from) ||
+          (b!==null && b<a) || (c!==null && (c<a || (b!==null && b>c)))) {
+        setError(t("invalidLimits"));return;
+      }
+    } catch {
+      setError(t("invalidLimits"));return;
     }
     const payload={employee_id:employeeId,effective_from:from,effective_to:to||null,
       min_weekly_minutes:a,desired_weekly_minutes:b,max_weekly_minutes:c,
-      max_daily_minutes:daily===""?null:Number(daily),source,confirmation};
+      max_daily_minutes:dailyMinutes,source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"preferences",action:selectedRow?"update":"create",
@@ -109,8 +117,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       [t("minimumWeekly"),min,setMin],[t("desiredWeekly"),desired,setDesired],
       [t("maximumWeekly"),max,setMax],[t("maximumDaily"),daily,setDaily],
     ] as [string,string,(x:string)=>void][]).map(([label,value,fn])=>
-      <label key={label} className="flex flex-col gap-1 text-sm">{label} ({t("minutes")})
-        <input className={field} type="number" min="0" max={label===t("maximumDaily")?1440:10080}
+      <label key={label} className="flex flex-col gap-1 text-sm">{label} ({t("hours")})
+        <input className={field} type="number" inputMode="decimal" step="any" min="0" max={label===t("maximumDaily")?24:168}
           value={value} onChange={e=>fn(e.target.value)}/>
       </label>)}
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
