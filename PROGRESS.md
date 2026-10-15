@@ -15,7 +15,7 @@
 
 **Release gates remain:** source quality, exact integer cents and canonical `lib/calc/` math; roles/RLS/co-owner privacy, effective dates/time zones, provenance, revisions/CAS and audit; owner confirmation for effects; staged database ledger/flags, EN/ES/AR and mobile checks; no unsupported POS writes, employee contact, payroll changes, purchases, or fabricated completions. P2 must not touch Olivia PR #77 or the production Supervisor router.
 
-This handoff is a documentation-only product and implementation contract; no application code, schema, feature flag or deployment has been changed by it.
+This handoff adds documentation and the non-executable P1 source-manifest restriction for the already merged `requireSchedulingOwner` export (also independently present in draft Olivia PR #77). It does not change runtime behavior, schema, feature flags, permission grants, or deployment.
 
 ---
 
