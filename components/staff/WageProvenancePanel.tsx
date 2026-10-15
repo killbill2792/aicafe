@@ -42,7 +42,7 @@ export default function WageProvenancePanel({ employee, records }: {
       });
       if(!result.ok){
         if(result.error==="conflict_or_missing"){setConflicted(true);router.refresh();}
-        setError(t("compensationCannotVerify"));return;
+        setError(t(result.error==="conflict_or_missing"?"conflict":"compensationCannotVerify"));return;
       }
       retry.current=null;setSavedRecord({id:result.id,revision:result.revision});
       setSaved(true);setError("");router.refresh();
