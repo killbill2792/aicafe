@@ -6,9 +6,10 @@
 ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS timezone text;
 CREATE OR REPLACE FUNCTION public.scheduling_check_location_timezone()
 RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
+DECLARE v_previous text;
 BEGIN
- IF NEW.timezone IS DISTINCT FROM
-    (CASE WHEN TG_OP='INSERT' THEN NULL ELSE OLD.timezone END) AND
+ IF TG_OP='UPDATE' THEN v_previous:=OLD.timezone; END IF;
+ IF NEW.timezone IS DISTINCT FROM v_previous AND
     auth.uid() IS NOT NULL AND
     NOT public.scheduling_is_owner(NEW.business_id) THEN
    RAISE EXCEPTION 'only the scheduling owner may change location timezone'
