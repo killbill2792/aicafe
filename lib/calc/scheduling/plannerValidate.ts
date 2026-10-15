@@ -1,6 +1,6 @@
 import { expandPlannerInput, isConfirmedAvailable, qualifies, baselineGapReason,
   type DemandUnit, type WorkUnit } from "./plannerCore";
-import { parseUtcInstant, utcIso } from "./plannerClock";
+import { localParts, parseUtcInstant, utcIso } from "./plannerClock";
 import { costForWork, hardValid } from "./plannerRules";
 import type { PlannerCost, PlannerGap, PlannerInput, PlannerShift } from "./plannerTypes";
 
@@ -52,13 +52,21 @@ export function validateOliviaAssignments(input:PlannerInput,
       const end=parseUtcInstant(shift.endAt);
       if(end<=start || (end-start)% (interval*60000)!==0 || end-start>24*3_600_000)
         throw new Error("invalid_shift_interval");
+      const zone=plan.locations.get(shift.locationId)!.timezone;
+      const startDate=localParts(start,zone).date;
+      // An overnight shift may finish after the horizon, but its first
+      // calendar date must belong to the seven-day input snapshot.
+      if(startDate<input.horizonStart || startDate>plan.horizonEnd)
+        throw new Error("shift_outside_seven_day_horizon");
       const breaks=shift.unpaidBreaks.map(b=>({
         start:parseUtcInstant(b.startAt),end:parseUtcInstant(b.endAt),paid:b.paid,
       })).sort((a,b)=>a.start-b.start);
       let last=start,unpaid=0;
       for(const brk of breaks){
         if(brk.paid!==false || brk.start<last || brk.end<=brk.start ||
-          brk.end>end || (brk.end-brk.start)%(interval*60000)!==0)
+          brk.end>end || (brk.end-brk.start)%(interval*60000)!==0 ||
+          (brk.start-start)%(interval*60000)!==0 ||
+          (brk.end-start)%(interval*60000)!==0)
           throw new Error("invalid_unpaid_break");
         last=brk.end;unpaid+=(brk.end-brk.start)/60000;
         if(input.ruleProfile?.unpaidMealMinutes!=null &&
@@ -104,6 +112,7 @@ export function validateOliviaAssignments(input:PlannerInput,
     plan.units[a].id.localeCompare(plan.units[b].id));
   const chosen=new Map<number,string>();
   let nodes=0,exhausted=false;
+  let deepestUnmatched=-1;
   function match(position:number):boolean {
     if(position===indices.length)return true;
     if(nodes>=30000){exhausted=true;return false;}
@@ -117,6 +126,7 @@ export function validateOliviaAssignments(input:PlannerInput,
       chosen.delete(index);
       if(exhausted)return false;
     }
+    deepestUnmatched=Math.max(deepestUnmatched,position);
     return false;
   }
   const satisfied=match(0);
@@ -124,9 +134,13 @@ export function validateOliviaAssignments(input:PlannerInput,
     const shortfall=indices.filter(i=>candidates[i].length===0);
     for(const index of shortfall)gaps.push(markGap(plan.units[index],
       baselineGapReason(plan.units[index],plan,cache)));
-    if(shortfall.length===0)
+    if(shortfall.length===0){
+      if(!exhausted && deepestUnmatched>=0 && deepestUnmatched<indices.length)
+        gaps.push(markGap(plan.units[indices[deepestUnmatched]],
+          "capacity_or_overlap"));
       violations.push(exhausted?"coverage_matching_budget_exhausted":
         "simultaneous_qualified_coverage_unsatisfied");
+    }
   }
   return {
     valid:violations.length===0 && satisfied,
