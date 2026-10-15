@@ -7,6 +7,7 @@ import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
 import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
+import {transitionOliviaPlan} from "@/lib/scheduling/planPublication.server";
 import type { PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 
 const args = z.object({
@@ -146,4 +147,47 @@ export async function readOliviaPlanRevision(raw:unknown) {
     status:revision.status as string,currentRevision:series.current_revision as number,
     publishedRevision:series.published_revision as number|null,
     scenario,sourceDigest:revision.source_digest as string};
+}
+
+export async function approveOliviaWeek(raw:unknown) {
+  return transitionOliviaPlan(raw,"approve");
+}
+export async function publishOliviaWeek(raw:unknown) {
+  return transitionOliviaPlan(raw,"publish");
+}
+
+/** Published Olivia assignments are explicitly planned shifts, not attendance.
+ * No legacy timecards or financial calculations are read or written here.
+ */
+export async function readOliviaPublishedWeek(raw:unknown) {
+  const parsed=args.safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid_input" as const};
+  if(process.env.SCHEDULING_FOUNDATION_ENABLED!=="true" ||
+    process.env.SCHEDULING_PR3_DRAFTS_ENABLED!=="true")
+    return {ok:false as const,error:"disabled" as const};
+  const owner=await requireSchedulingOwner();
+  if(!owner)return {ok:false as const,error:"unauthorized" as const};
+  const {data:series,error:seriesError}=await owner.supabase
+    .from("scheduling_plan_series").select("id,published_revision")
+    .eq("business_id",owner.businessId).eq("horizon_start",parsed.data.week)
+    .maybeSingle();
+  if(seriesError)return {ok:false as const,error:"storage_unavailable" as const};
+  if(!series||series.published_revision===null)
+    return {ok:true as const,publishedRevision:null,assignments:[]};
+  const {data:revision,error:revError}=await owner.supabase
+    .from("scheduling_plan_revisions").select("id,revision,status")
+    .eq("business_id",owner.businessId).eq("series_id",series.id)
+    .eq("revision",series.published_revision).maybeSingle();
+  if(revError || !revision || revision.status!=="published")
+    return {ok:false as const,error:"storage_unavailable" as const};
+  const {data:assignments,error:assignError}=await owner.supabase
+    .from("scheduling_plan_assignments")
+    .select("id,employee_id,location_id,starts_at,ends_at,paid_minutes,breaks")
+    .eq("business_id",owner.businessId)
+    .eq("plan_revision_id",revision.id)
+    .order("starts_at",{ascending:true}).limit(201);
+  if(assignError||!assignments||assignments.length>200)
+    return {ok:false as const,error:"storage_unavailable" as const};
+  return {ok:true as const,publishedRevision:revision.revision as number,
+    assignments};
 }
