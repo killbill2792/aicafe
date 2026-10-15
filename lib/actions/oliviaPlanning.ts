@@ -17,7 +17,7 @@ const saveArgs = args.extend({
 }).strict();
 
 export async function previewOliviaWeek(raw: unknown): Promise<
-  | { ok: true; plan: PlannerResult; warnings: string[]; blockers: string[] }
+  | { ok: true; plan: PlannerResult; warnings: string[]; blockers: string[]; employees: Record<string,string>; locations: Record<string,string> }
   | { ok: false; error: string }
 > {
   const parsed = args.safeParse(raw);
@@ -29,7 +29,7 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   };
   try {
     const plan = optimizeOliviaWeek(loaded.input);
-    return { ok: true, plan, warnings: loaded.warnings, blockers: loaded.blockers };
+    return { ok: true, plan, warnings: loaded.warnings, blockers: loaded.blockers,\n      employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),\n      locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])) };
   } catch {
     return { ok: false, error: "The saved scheduling inputs cannot yet form a valid plan. Review availability, coverage and location timezones." };
   }
