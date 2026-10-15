@@ -46,7 +46,7 @@ export function verifiedOliviaRuleProfile(
   if(rules.paidRestMinutes!==0 && rules.paidRestMinutes%5!==0)return null;
   // Honor the pure planner's invariant checks at the OWNER ATTESTATION gate,
   // instead of accepting a profile that prevents all future previews.
-  if(rules.maxContinuousWorkMinutes>0 &&
+  if(rules.maxContinuousWorkMinutes>=0 &&
       rules.unpaidMealMinutes===0 && rules.paidRestMinutes===0)return null;
   if(rules.paidRestMinutes>0 &&
       rules.paidRestMinutes===rules.unpaidMealMinutes)return null;
