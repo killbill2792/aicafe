@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { requireSchedulingOwner } from "./foundation.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
-import type { PlannerEmployee, PlannerInput, PlannerLocation } from "@/lib/calc/scheduling/plannerTypes";
+import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
 import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 
@@ -95,15 +95,70 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       supabase.from("businesses").select("timezone").eq("id", businessId).single(),
     ]);
     if (business.error || !business.data || !str(business.data.timezone)) throw new Error("Missing business timezone");
-    const {data:tokenAfter,error:tokenAfterError}=await supabase.rpc(
-      "scheduling_owner_source_token",{p_business_id:businessId});
-    if(tokenAfterError || tokenAfter!==tokenBefore)
-      throw new Error("Scheduling source changed during read");
+    // Read the exact published revision for this week, including future shifts.
+    // Only assignments that have already STARTED become frozen replan inputs.
+    // The current published pointer is also fingerprinted, so an intervening
+    // publication invalidates an old preview even when no shift has started.
+    const replanAsOf=new Date().toISOString();
+    const {data:publishedSeries,error:seriesError}=await supabase
+      .from("scheduling_plan_series").select("id,published_revision")
+      .eq("business_id",businessId).eq("horizon_start",week).maybeSingle();
+    if(seriesError)throw new Error("Cannot read published schedule pointer");
+    const publishedRevision=publishedSeries?.published_revision??null;
+    let startedPublishedShifts:PlannerShift[]=[];
+    if(publishedRevision!==null){
+      if(!Number.isSafeInteger(publishedRevision) || publishedRevision<1)
+        throw new Error("Corrupt published revision");
+      const {data:revision,error:revisionError}=await supabase
+        .from("scheduling_plan_revisions").select("id,status")
+        .eq("business_id",businessId).eq("series_id",publishedSeries!.id)
+        .eq("revision",publishedRevision).maybeSingle();
+      if(revisionError || !revision || revision.status!=="published")
+        throw new Error("Missing published schedule revision");
+      const {data:assignments,error:assignmentsError}=await supabase
+        .from("scheduling_plan_assignments")
+        .select("employee_id,location_id,starts_at,ends_at,paid_minutes,breaks,pinned")
+        .eq("business_id",businessId).eq("plan_revision_id",revision.id)
+        .order("starts_at",{ascending:true}).limit(201);
+      if(assignmentsError || !assignments || assignments.length>200)
+        throw new Error("Incomplete published schedule");
+      const normalized=assignments.map(a=>{
+        const breaks=Array.isArray(a.breaks)?a.breaks:null;
+        if(!breaks || typeof a.employee_id!=="string" ||
+           typeof a.location_id!=="string" || typeof a.starts_at!=="string" ||
+           typeof a.ends_at!=="string" || typeof a.paid_minutes!=="number" ||
+           typeof a.pinned!=="boolean")
+          throw new Error("Corrupt published shift");
+        return {
+          employeeId:a.employee_id,locationId:a.location_id,
+          startAt:new Date(a.starts_at).toISOString(),
+          endAt:new Date(a.ends_at).toISOString(),
+          paidMinutes:a.paid_minutes,pinned:a.pinned,
+          breaks:breaks.map((item:unknown)=>{
+            const value=item as Row;
+            if(!value || typeof value.startAt!=="string" ||
+               typeof value.endAt!=="string" || typeof value.paid!=="boolean")
+              throw new Error("Corrupt published shift break");
+            return {startAt:new Date(value.startAt).toISOString(),
+              endAt:new Date(value.endAt).toISOString(),paid:value.paid};
+          }),
+        } satisfies PlannerShift;
+      });
+      startedPublishedShifts=normalized.filter(s=>s.startAt<=replanAsOf);
+    }
+    const [{data:tokenAfter,error:tokenAfterError},pointerCheck]=await Promise.all([
+      supabase.rpc("scheduling_owner_source_token",{p_business_id:businessId}),
+      supabase.from("scheduling_plan_series").select("id,published_revision")
+        .eq("business_id",businessId).eq("horizon_start",week).maybeSingle(),
+    ]);
+    if(tokenAfterError || tokenAfter!==tokenBefore || pointerCheck.error ||
+       (pointerCheck.data?.id??null)!==(publishedSeries?.id??null) ||
+       (pointerCheck.data?.published_revision??null)!==publishedRevision)
+      throw new Error("Scheduling source or published pointer changed during read");
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
-    // Track *all* source records, including legacy commitments, attestation revisions,
-    // and the business timezone. Input-only hashing can miss material changes.
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
-      businessId, businessTimezone: business.data.timezone, rows,
+      businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
+      startedPublishedShifts,
     })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
@@ -124,7 +179,9 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const activeCodes = new Set(rows.scheduling_qualification_types
       .filter(r => r.active === true).map(r => str(r.code)));
     const compensation = new Map(rows.staff_scheduling_compensation.map(r => [str(r.employee_id), r]));
-    const employees: PlannerEmployee[] = rows.employees.filter(r => r.active === true).map(r => {
+    const frozenEmployeeIds=new Set(startedPublishedShifts.map(s=>s.employeeId));
+    const employees: PlannerEmployee[] = rows.employees.filter(r =>
+      r.active===true || frozenEmployeeIds.has(str(r.id))).map(r => {
       const id = str(r.id);
       const preferences = rows.staff_scheduling_preferences.filter(p =>
         str(p.employee_id) === id && confirmed(p) && inPeriod(p, week, end));
@@ -174,7 +231,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         warn("unconfirmed_absence", "Unconfirmed absence or leave for " +
           str(r.display_name) + " may affect this plan. Confirm it before relying on a shift.", str(r.display_name));
       return {
-        id, displayName: str(r.display_name), active: true,
+        id, displayName: str(r.display_name), active: r.active===true,
         // No canonical owner-to-worker link: never guess isOwner.
         recurring,
         exceptions: rows.staff_availability_exceptions
@@ -270,8 +327,13 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       const [hour,minute]=wall.slice(0,5).split(":").map(Number);
       return hour*60+minute;
     };
+    const frozenLengths=startedPublishedShifts.flatMap(s=>[
+      (Date.parse(s.endAt)-Date.parse(s.startAt))/60000,
+      ...s.breaks.map(x=>(Date.parse(x.endAt)-Date.parse(x.startAt))/60000),
+    ]);
     const slotMinutes=([30,15,10,5] as const).find(slot=>
-      paidRest%slot===0 && coverage.every(c=>{
+      paidRest%slot===0 && frozenLengths.every(n=>n>0 && n%slot===0) &&
+      coverage.every(c=>{
         const start=wallMinute(c.start_local),end=wallMinute(c.end_local);
         const duration=end-start+(c.overnight?1440:0);
         return duration>0 && duration%slot===0 &&
@@ -280,7 +342,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         ...(ruleProfile ? {ruleProfile} : {}),
-        pinned: [], slotMinutes, maxNodes: 12000, beamWidth: 24 },
+        pinned: [], startedPublishedShifts, replanAsOf,
+        slotMinutes, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
   } catch {
