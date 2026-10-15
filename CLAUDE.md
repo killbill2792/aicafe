@@ -2,6 +2,9 @@
 
 Read this file fully before any task. Then read only the docs file(s) the task needs.
 
+**Binding product contract:** Also read the `## Binding product contract — AI-first café operator` section of `AGENTS.md` before implementing ANY AI CAFE milestone. The project builds one goal-driven Universal Supervisor that uses open-ended AI planning plus registered, validated, securely executed domain capabilities; do not regress to a fixed-question chatbot or bypass approval/evidence gates. This cross-agent pointer is intentional; see Issue #74.
+
+
 ## What we are building
 A mobile-first web app (PWA) that tells independent café owners **how much money they actually kept, and why**.
 Square/Toast already show sales, voids and labor reports. We show the full owner picture: POS data **plus** rent, bills,
