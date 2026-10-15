@@ -4,7 +4,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows } from "./p1Additional.server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -53,7 +53,7 @@ const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
  * Each key is one concrete typed canonical read; no generic expression executor.
  */
 const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
-  period?:{from:string;to:string};productId?:string;
+  period?:{from:string;to:string};productId?:string;page?:number;
 },ctx:{asOf:string;timezone:string;businessId?:string})=>Promise<unknown>> = {
   "money.owner_profit_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.ownerProfitCents:null}:r;},
   "sales.net_sales_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.netSalesCents:null}:r;},
@@ -74,7 +74,6 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "menu.product_economics":(t,a)=>t.getProductEconomics(a.productId!),
   "sales.daily":(t,a)=>t.getSalesTrend(a.period!),
   "pricing.recommendation":(t,a)=>t.getPricingRecommendation(a.productId!),
-  "money.expense_categories":(t,a)=>t.getExpenseSummary(a.period!),
   "money.recurring_bill_rows":(_t,_a,ctx)=>readP1RecurringBillRows({businessId:ctx.businessId ?? ""}),
   "money.monthly_bills":t=>t.getMonthlyBills(),
   "money.recorded_spending":(t,a)=>t.getRecordedExpenses(a.period!),
@@ -100,19 +99,26 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
       id:r.id,type:r.type,status:r.status,confidence:r.confidence,createdAt:r.createdAt.toISOString(),
     })),quality:{level:"high",missingInputs:["decision_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
   },
-  "team.tasks":t=>t.getTeamTasks(),
+  "team.tasks":(_t,a,ctx)=>readP1TaskPage({businessId:ctx.businessId??""},a.page??0),
 };
 export const registeredHandlerIds = Object.freeze(Object.keys(handlers));
 
-function isPeriodAllowed(id:SupportedId, p:{from:string;to:string}|undefined,asOf:string):boolean {
-  if (!p) return true;
-  // The current profit/cost reader only has this month's snapshot, and the
-  // source for historical sales is daily, never an inferred hourly series.
-  if (new Set(["money.profitability","money.business_costs","money.owner_profit_cents",
-    "sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio","money.expense_categories",
-    "labor.daily_costs"]).has(id)) return p.from.slice(0,7)===asOf.slice(0,7) &&
-      p.from >= asOf.slice(0,7)+"-01" && p.to<=asOf;
-  if (id==="labor.recurring_assignments")return p.from>=asOf;
+function isPeriodAllowed(id:SupportedId,p:{from:string;to:string}|undefined,asOf:string):boolean {
+  if(!p)return true;
+  // Money's canonical business-cost reader permits exactly the 7 calendar days
+  // ending today across the previous-month boundary, never arbitrary history.
+  if(id==="money.business_costs"){
+    const weekStart=new Date(Date.parse(asOf+"T12:00:00Z")-6*86400000).toISOString().slice(0,10);
+    return p.to<=asOf && (p.from>=asOf.slice(0,7)+"-01" ||
+      (p.from===weekStart && p.to===asOf));
+  }
+  // State-derived profitability/scalars and labor retain their actual current
+  // month snapshot bounds; daily sales/expense entry readers are separate.
+  if(new Set(["money.profitability","money.owner_profit_cents",
+    "sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio",
+    "labor.daily_costs"]).has(id))
+    return p.from>=asOf.slice(0,7)+"-01" && p.to<=asOf;
+  if(id==="labor.recurring_assignments")return p.from>=asOf;
   return p.to<=asOf;
 }
 
@@ -136,7 +142,7 @@ export async function executeP1Authorized(
   const id=raw.id as SupportedId;
   const parsed=inputFor(id).safeParse(raw);
   if(!parsed.success)return unavailable("invalid_request");
-  const args=parsed.data as {id:string;version:1;purpose:string;period?:{from:string;to:string};productId?:string};
+  const args=parsed.data as {id:string;version:1;purpose:string;period?:{from:string;to:string};productId?:string;page?:number};
   // Critical: validate selected analysis purpose AND corresponding policy.
   const allowed=purposePolicies[id] as readonly string[];
   if(!allowed.includes(args.purpose)||!Object.hasOwn(sourcePolicies[id],args.purpose))
@@ -157,6 +163,16 @@ export async function executeP1Authorized(
     : slice(values[id]).safeParse(rawResult);
   if(!validated.success)return unavailable("invalid_result");
   const record=validated.data;
+  if(id==="money.business_costs"){
+    const summary=record as {completeness:string;period:{from:string;to:string};
+      observed:Record<string,boolean>;missingInputs:string[]};
+    if(summary.completeness==="unavailable")return unavailable("unavailable_source");
+    if(!args.period || summary.period.from!==args.period.from ||
+       summary.period.to!==args.period.to ||
+       !Object.values(summary.observed).some(Boolean))return unavailable("invalid_result");
+    if(summary.completeness==="complete"&&summary.missingInputs.length)
+      return unavailable("invalid_result");
+  }
   const known=id==="money.business_costs"
     ? {available:true as const,value:record,quality:{
         level:"high" as const,missingInputs:(record as {missingInputs:string[]}).missingInputs,
@@ -181,7 +197,7 @@ export async function executeP1Authorized(
       purpose:args.purpose,asOf:identity.asOf,timezone:identity.timezone,
       sourceRevision:null,
     },
-    completeness:incomplete?"partial":"partial",
+    completeness:"partial",
     actuality:id==="labor.recurring_assignments"?"planned":estimated?"estimated":"actual",
   };
   if(JSON.stringify(output).length>limits.maxOutputBytes)return unavailable("output_limit");
