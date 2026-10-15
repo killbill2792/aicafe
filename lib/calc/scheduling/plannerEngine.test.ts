@@ -222,4 +222,24 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(["feasible","unproven"]).toContain(p.status);
     expect(p.warnings.some(w=>w.includes("Search budget"))).toBe(true);
   });
+  it("reuses canonical monthly salary conversion only with verified weekly hours",()=>{
+    const salaried=employee("salaried",{
+      wage:{wage_period:"month",wage_amount_cents:260000,default_hourly_wage_cents:1500},
+      provenance:"known_paid",verifiedSalaryHoursPerWeek:40,
+    });
+    const result=optimizeOliviaWeek(input([salaried],[coverage("salary")],{
+      ruleProfile:{verified:true,overtime:{verified:true,
+        multiplierNumerator:3,multiplierDenominator:2}},
+      burden:{rate:0.12,status:"verified"},
+    }));
+    // $2,600/month * 12 / (40*52) = $15/hour -> 2h = $30.
+    expect(result.status).toBe("feasible");
+    expect(result.best?.cost).toMatchObject({
+      cashWagesCents:3000,loadedPayrollCents:3360,costState:"verified",
+    });
+    const unverified=optimizeOliviaWeek(input([{...salaried,
+      verifiedSalaryHoursPerWeek:null}],[coverage("salary")]));
+    expect(unverified.best?.cost.cashWagesCents).toBeNull();
+  });
+
 });
