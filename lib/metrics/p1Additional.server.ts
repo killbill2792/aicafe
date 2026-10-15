@@ -200,3 +200,24 @@ export async function readP1TaskPage({businessId}:Scoped,page:number=0) {
   return present({items,page,hasMore,nextPage:hasMore?page+1:null},
     hasMore||page>0?["task_inbox_page_only"]:[]);
 }
+
+/** P1 decision lifecycle projection: never load recommendation/provenance JSON
+ * or the full historical decision ledger, which remains a private legacy source.
+ */
+export async function readP1DecisionPage({businessId}:Scoped,page:number=0) {
+  if(!businessId||!Number.isInteger(page)||page<0||page>250)
+    return absent("decision_page_invalid");
+  const client=await createServerSupabaseClient();
+  const size=40,start=page*size;
+  const {data,error}=await client.from("cafe_decisions")
+    .select("id,business_id,type,status,confidence,created_at")
+    .eq("business_id",businessId).order("created_at",{ascending:false})
+    .order("id",{ascending:false}).range(start,start+size);
+  if(error||!data||data.length>size+1||data.some(r=>r.business_id!==businessId))
+    return absent("decision_page_unavailable");
+  const hasMore=data.length>size;
+  return present({items:data.slice(0,size).map(r=>({
+    id:r.id,type:r.type,status:r.status,confidence:r.confidence,createdAt:r.created_at,
+  })),page,hasMore,nextPage:hasMore?page+1:null},
+  hasMore||page>0?["decision_history_page_only"]:[]);
+}
