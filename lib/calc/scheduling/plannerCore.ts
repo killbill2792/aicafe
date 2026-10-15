@@ -25,6 +25,7 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
   assert(input.employees.length<=250 && input.coverage.length<=2000, "size");
   assert(new Set(input.locations.map(x=>x.id)).size===input.locations.length, "duplicate_location");
   assert(new Set(input.employees.map(x=>x.id)).size===input.employees.length, "duplicate_employee");
+  assert(new Set(input.coverage.map(x=>x.id)).size===input.coverage.length, "duplicate_coverage");
   const locations=new Map(input.locations.map(l=>[l.id,l]));
   for(const location of locations.values()){
     assert(location.id.length>0, "location_id");
@@ -81,8 +82,9 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     const duration=coverage.minOverlapMinutes??0;
     assert(Number.isSafeInteger(duration) && duration>=0 && duration<=1440,
       "minimum_overlap");
-    const chunk=Math.max(slot,duration);
-    assert(chunk%slot===0, "unaligned_minimum_overlap");
+    // Overlap is a separate hard handoff invariant, not a larger solver slot.
+    const chunk=slot;
+    assert(duration%slot===0, "unaligned_minimum_overlap");
     assert((coverage.localDate==null)!==(coverage.dayOfWeek==null),
       "coverage_date_xor_weekday");
     if(coverage.dayOfWeek!=null) assert(Number.isInteger(coverage.dayOfWeek)&&
