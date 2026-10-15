@@ -92,8 +92,8 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     expect(JSON.stringify(manifest)).not.toMatch(/"execute"|"handler"|"read":function/);
   });
   it("interprets an unfamiliar goal through model output, then invokes real canonical Leo data",async()=>{
-    const goal="Can you tell if my outgoings for this stretch are truly covered?";
-    const clauses=["my outgoings for this stretch"];
+    const goal="Can you tell if my outgoings from October 1 to October 3 are truly covered?";
+    const clauses=["my outgoings from October 1 to October 3"];
     const mock=transport({complete:true,clauses},select(clauses,[{
       capabilityId:"leo.money.costs.v1",inputJson:JSON.stringify(args),reason:null,
     }]));
@@ -111,7 +111,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     expect(read).toHaveBeenCalledOnce();
     expect(read).toHaveBeenCalledWith(period);
     expect(outcome.usage).toMatchObject({modelCalls:2,inputTokens:84,outputTokens:24});
-    expect(mock.calls.every((x:any)=>x.store===false && !("tools" in x))).toBe(true);
+    expect(mock.calls.every((x:unknown)=>{const r=x as {store?:boolean;tools?:unknown};return r.store===false && !("tools" in r);})).toBe(true);
   });
   it("keeps both parts of a multi-domain goal, marking unknown inputs unavailable",async()=>{
     const goal="Review this month's labor costs and tell me whether our suppliers quoted better rates";
@@ -231,7 +231,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
   it("does not turn source-unavailable/invalid read into zero or completed effect",async()=>{
     const read=vi.fn(async()=>({...costSummary,knownTotalCents:"100"}));
     const reg=createDefaultShadowRegistry();
-    const result=await reg.invoke(scope({getBusinessCostSummary:read}),
+    const result=await reg.invoke(scope({getBusinessCostSummary:read} as unknown as Partial<BusinessScopedCafeTools>),
       "leo.money.costs.v1",args);
     expect(result).toMatchObject({status:"unavailable",reason:"invalid_result"});
     expect(JSON.stringify(result)).not.toContain("knownTotalCents");
