@@ -22,7 +22,7 @@ const saveArgs = args.extend({
 }).strict();
 
 export async function previewOliviaWeek(raw: unknown): Promise<
-  | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string }
+  | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number }
   | { ok: false; error: string; blockers?: OliviaBlocker[] }
 > {
   const parsed = args.safeParse(raw);
@@ -32,15 +32,28 @@ export async function previewOliviaWeek(raw: unknown): Promise<
   if (loaded.blockers.length) return {
     ok: false, error: "missing_inputs", blockers: loaded.blockers,
   };
+  // Capture the draft head at the start of this proposal. Saving MUST use
+  // precisely this revision, never a later history refresh from a co-owner.
+  const owner = await requireSchedulingOwner();
+  if (!owner || owner.businessId !== loaded.businessId)
+    return { ok:false, error:"unauthorized" };
+  const head = await owner.supabase.from("scheduling_plan_series")
+    .select("current_revision").eq("business_id",loaded.businessId)
+    .eq("horizon_start",parsed.data.week).maybeSingle();
+  if (head.error || (head.data &&
+      (!Number.isSafeInteger(head.data.current_revision) ||
+       head.data.current_revision < 0 || head.data.current_revision > 500)))
+    return {ok:false,error:"storage_unavailable"};
+  const previewRevision = head.data?.current_revision ?? 0;
   try {
     const plan = optimizeOliviaWeek(loaded.input);
     return { ok: true, plan, notices: loaded.notices, blockers: loaded.blockers,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
-      locationNames: loaded.locationNames,
+      locationNames: loaded.locationNames, previewRevision,
       sourceDigest: oliviaSnapshotDigest(loaded.input, loaded.sourceFingerprint) };
   } catch {
-    return { ok: false, error: "The saved scheduling inputs cannot yet form a valid plan. Review availability, coverage and location timezones." };
+    return { ok: false, error: "planner_unavailable" };
   }
 }
 
