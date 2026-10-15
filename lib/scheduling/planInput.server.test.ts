@@ -190,7 +190,10 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     const after=await loadOliviaWeekFromSavedStaff(week);
     expect(before.ok && after.ok).toBe(true);
     if(!before.ok || !after.ok) return;
-    expect(after.input).toEqual(before.input);
+    // The observation clock is transient, never a source revision.
+    const {replanAsOf: _beforeClock, ...beforeStable}=before.input;
+    const {replanAsOf: _afterClock, ...afterStable}=after.input;
+    expect(afterStable).toEqual(beforeStable);
     expect(after.sourceFingerprint).not.toBe(before.sourceFingerprint);
   });
 
