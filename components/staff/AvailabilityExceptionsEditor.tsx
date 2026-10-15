@@ -29,6 +29,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
 }) {
   const t = useTranslations("SchedulingAvailability"), router = useRouter();
   const [date,setDate] = useState(today);
+  const [dateEdited,setDateEdited] = useState(false);
   const [locationId,setLocationId] = useState("");
   const [draftOverride,setDraftOverride] = useState<ExceptionDraft[] | null>(null);
   const [dirty,setDirty] = useState(false);
@@ -45,6 +46,12 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   function changeScope(fn: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
     setDraftOverride(null); setDirty(false); setStatus("idle"); key.current=null; fn(value);
+  }
+  function switchLocation(value:string) {
+    if (dirty && !window.confirm(t("discardEdits"))) return;
+    setDraftOverride(null);setDirty(false);setStatus("idle");key.current=null;
+    setLocationId(value);
+    if (!dateEdited) setDate(locations.find(l=>l.id===value)?.todayLocal??today);
   }
   function update(i:number, patch:Partial<ExceptionDraft>) {
     touch(draft.map((r,j) => j===i ? {...r,...patch} : r));
@@ -95,11 +102,11 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     <p className="text-sm text-ink-muted">{t("exceptionExplainer")}</p>
     <label className="flex flex-col gap-1 text-sm font-semibold">{t("date")}
       <input type="date" className={field} value={date}
-        onChange={e=>changeScope(setDate,e.target.value)}/>
+        onChange={e=>{setDateEdited(true);changeScope(setDate,e.target.value);}}/>
     </label>
     <label className="flex flex-col gap-1 text-sm font-semibold">{t("location")}
       <select className={field} value={locationId}
-        onChange={e=>changeScope(setLocationId,e.target.value)}>
+        onChange={e=>switchLocation(e.target.value)}>
         <option value="">{t("allLocations")}</option>
         {locations.map(l=><option value={l.id} key={l.id}>{l.name}</option>)}
       </select>
