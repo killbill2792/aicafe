@@ -1,0 +1,50 @@
+name: AI CAFE Pull Request Baseline
+
+# This gate intentionally runs for *every* PR targeting main. Most existing
+# domain workflows are path-filtered, so their check names cannot be required
+# globally without permanently blocking unrelated PRs.
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-cafe-pr-baseline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    name: AI CAFE PR baseline
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Strict TypeScript
+        run: npx tsc --noEmit
+      - name: Complete Vitest regression suite
+        run: npm test
+      - name: ESLint changed JS/TS sources
+        shell: bash
+        run: |
+          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
+          if (( ${#changed[@]} > 0 )); then
+            npx eslint "${changed[@]}"
+          else
+            echo "No changed JavaScript or TypeScript files."
+          fi
+      - name: Production build
+        run: npm run build
+      - name: Verify Git patch whitespace
+        run: git diff --check origin/main...HEAD
