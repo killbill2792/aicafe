@@ -54,6 +54,9 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
   const [history, setHistory] = useState<Array<{ revision: number; status: string; id:string }>>([]);
   const [editing, setEditing] = useState<{revision:number;id:string;objective:PlannerScenario["objective"]}|null>(null);
   const [editedShifts, setEditedShifts] = useState<PlannerShift[]>([]);
+  const [inspected, setInspected] = useState<{
+    revision: number; status: string; shifts: PlannerShift[]
+  }|null>(null);
   const editRetry = useRef<PendingCreate>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -151,6 +154,17 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
     });
   }
 
+  function inspectRevision(revisionId:string) {
+    setError("");
+    startTransition(async()=>{
+      try {
+        const response=await readOliviaPlanRevision({week,revisionId});
+        if(!response.ok){setError(t("editLoadFailed"));return;}
+        setInspected({revision:response.revision,status:response.status,
+          shifts:response.scenario.shifts});
+      } catch {setError(t("editLoadFailed"));}
+    });
+  }
   function startEditing(revisionId:string) {
     if(!sourceDigest){setError(t("previewRequired"));return;}
     setError("");setNotice("");
@@ -209,6 +223,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         setSourceDigest(null); retry.current = null; setNotices([]);
         proposalHead.current=null;
         setEditing(null); setEditedShifts([]); editRetry.current=null;
+        setInspected(null);
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
@@ -282,11 +297,31 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
       {history.map(item => <div key={item.revision}
         className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
         <span>V{item.revision} · {item.status}</span>
+        <button type="button" className="min-h-12 px-3 underline"
+          disabled={pending}
+          onClick={()=>inspectRevision(item.id)}>{t("viewRevision")}</button>
         {item.revision===currentRevision &&
           <button type="button" className="min-h-12 px-3 underline"
             disabled={pending || !sourceDigest}
             onClick={()=>startEditing(item.id)}>{t("editRevision")}</button>}
       </div>)}
+      {inspected && <section aria-label={t("viewRevision")}
+        className="rounded-xl border border-line p-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <strong>{t("reviewVersion",{revision:inspected.revision})} · {inspected.status}</strong>
+          <button type="button" className="min-h-12 underline"
+            onClick={()=>setInspected(null)}>{t("closeRevision")}</button>
+        </div>
+        {inspected.shifts.length===0 && <p>{t("noAssignments")}</p>}
+        {inspected.shifts.map((shift,i)=><div key={i}
+          className="border-t border-line py-2">
+          <strong>{employees[shift.employeeId]??shift.employeeId}</strong>
+          <p>{localShiftTime(shift.startAt,locations[shift.locationId]??"UTC",locale)}
+          {" — "}{localShiftTime(shift.endAt,locations[shift.locationId]??"UTC",locale)}</p>
+          <p>{locationNames[shift.locationId]??shift.locationId}</p>
+        </div>)}
+        <p className="text-ink-muted">{t("historicalPlanOnly")}</p>
+      </section>}
       {editing && <>
         <p role="status">{t("editingRevision",{revision:editing.revision})}</p>
         <OliviaShiftEditor shifts={editedShifts} onChange={setEditedShifts}
