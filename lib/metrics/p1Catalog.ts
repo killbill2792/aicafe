@@ -119,7 +119,9 @@ export const values = {
       city:text.nullable(),region:text.nullable(),countryCode:text.nullable()})).max(100),
   }),
   "menu.recipe": z.strictObject({
-    id:text,name:text,priceCents:money,costStatus:z.enum(["READY","NO_RECIPE","MISSING_INGREDIENT_COST"]),
+    id:text,name:text,priceCents:money.nullable(),
+    priceStatus:z.enum(["recorded","unrecorded"]),
+    costStatus:z.enum(["READY","NO_RECIPE","MISSING_INGREDIENT_COST"]),
     recipe:z.array(z.strictObject({ingredientId:text,ingredientName:text,
       baseUnit:z.enum(["g","ml","each"]),quantity:finite.nonnegative(),
       displayUnit:text.nullable(),displayQuantity:finite.nullable(),
