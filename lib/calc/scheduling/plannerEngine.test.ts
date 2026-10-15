@@ -314,4 +314,19 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(unable.status).toBe("unproven");
   });
 
+  it("automatically extends an eligible incoming worker to meet handoff overlap",()=>{
+    const opener=employee("early",{recurring:[recurring(1,"09:00","10:00")],
+      wage:{wage_period:"hour",wage_amount_cents:1000,
+        default_hourly_wage_cents:null}});
+    const closer=employee("later",{recurring:[recurring(1,"09:30","11:00")]});
+    const result=optimizeOliviaWeek(input([opener,closer],[coverage("handoff",{
+      start_local:"09:00",end_local:"11:00",minOverlapMinutes:30,
+    })],{slotMinutes:30}));
+    expect(result.status).toBe("feasible");
+    expect(result.best?.gaps).toEqual([]);
+    const later=result.best!.shifts.find(s=>s.employeeId==="later")!;
+    expect(later.startAt).toBe("2026-10-12T16:30:00.000Z");
+    expect(later.paidMinutes).toBe(90);
+  });
+
 });
