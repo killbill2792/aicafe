@@ -1585,6 +1585,24 @@
     "blockerCoverage": "Enter and confirm required opening, closing or other coverage.",
     "blockerLimits": "Conflicting confirmed hour limits for {employee}. Review their effective dates.",
     "missingInputs": "Required scheduling information is missing or conflicting. Review the Staff scheduling forms.",
-    "partialDraftUnavailable": "This incomplete proposal shows gaps for review; saving it is disabled until required coverage is valid."
+    "partialDraftUnavailable": "This incomplete proposal shows gaps for review; saving it is disabled until required coverage is valid.",
+    "editTitle": "Edit schedule shifts",
+    "editInstructions": "Changes create a new draft. Each adjustment is checked against availability, coverage and other limits before saving. Publishing is not available yet.",
+    "shiftNumber": "Shift {number}",
+    "removeShift": "Remove shift",
+    "employee": "Employee",
+    "shiftStart": "Start",
+    "shiftEnd": "End",
+    "earlier": "Move time 30 minutes earlier",
+    "later": "Move time 30 minutes later",
+    "unpaidBreak": "Add a 30-minute unpaid break 60 minutes after shift start",
+    "existingBreaks": "This shift has multiple recorded breaks; preserve them when editing.",
+    "addShift": "Add shift",
+    "editRevision": "Edit version",
+    "editingRevision": "Editing version {revision} (not official)",
+    "saveEditedDraft": "Save edited draft",
+    "cancelEdit": "Cancel editing",
+    "editLoadFailed": "Could not load the selected revision. Refresh and try again.",
+    "editInvalid": "Cannot save: scheduling validation failed. {details}"
   }
 }
