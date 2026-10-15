@@ -187,12 +187,14 @@ export const values = {
     ]),
     severity:z.enum(["info","warning","critical"]),confidence:z.enum(["low","medium","high"]),
   })).max(100),
-  "team.decisions": z.array(z.strictObject({
-    id:text,type:z.enum(["PRICE_CHANGE","INVENTORY_ORDER","STAFFING_CHANGE","SUPPLIER_CHANGE",
-      "MENU_CHANGE","PROMOTION","COST_REDUCTION"]),
-    status:z.enum(["recommended","accepted","rejected","executed","dismissed","review_later"]),
-    confidence:z.enum(["low","medium","high"]),createdAt:z.string().datetime({offset:true}),
-  })).max(100),
+  "team.decisions": z.strictObject({
+    items:z.array(z.strictObject({
+      id:text,type:z.enum(["PRICE_CHANGE","INVENTORY_ORDER","STAFFING_CHANGE","SUPPLIER_CHANGE",
+        "MENU_CHANGE","PROMOTION","COST_REDUCTION"]),
+      status:z.enum(["recommended","accepted","rejected","executed","dismissed","review_later"]),
+      confidence:z.enum(["low","medium","high"]),createdAt:z.string().datetime({offset:true}),
+    })).max(40),page:count.max(250),hasMore:z.boolean(),nextPage:count.max(250).nullable(),
+  }).refine(x=>x.nextPage===(x.hasMore?x.page+1:null)),
   "team.tasks": z.strictObject({
     items:z.array(task).max(40),page:count.max(250),hasMore:z.boolean(),
     nextPage:count.max(250).nullable(),
@@ -241,7 +243,7 @@ export const readers = {
   "money.break_even":"getBreakEven",
   "labor.daily_costs":"getLaborMetrics",
   "team.signals":"getActiveSignals",
-  "team.decisions":"getDecisionHistory",
+  "team.decisions":"readP1DecisionPage",
   "team.tasks":"readP1TaskPage",
 } as const satisfies Record<SupportedId,string>;
 
@@ -273,7 +275,7 @@ export const canonicalSourcePaths = {
   getBreakEven:"lib/ai/conversations/domainProjections.ts",
   getLaborMetrics:"lib/operating/cafeState.ts",
   getActiveSignals:"lib/ai/tools.ts",
-  getDecisionHistory:"lib/operating/supabaseDecisionStore.ts",
+  readP1DecisionPage:"lib/metrics/p1Additional.server.ts",
   readP1TaskPage:"lib/metrics/p1Additional.server.ts",
 } as const satisfies Record<(typeof readers)[SupportedId],string>;
 
@@ -285,6 +287,7 @@ export const classified = {
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
   getTeamTasks:{kind:"restricted",reason:"Legacy unbounded internal inbox includes private payload and evidence; P1 uses bounded readP1TaskPage"},
+  getDecisionHistory:{kind:"restricted",reason:"Legacy unbounded decision history contains private snapshots; P1 uses bounded status page"},
 } as const;
 export const additionalSurfaces = {
   "money.expense_categories":{kind:"restricted",source:"lib/operating/cafeState.ts",reason:"Source and actual/estimate evidence absent from canonical category projection"},
@@ -367,7 +370,7 @@ export const inputFor = (id: SupportedId) => z.strictObject({
     "money.recorded_spending","money.recorded_spending_cents","sales.item_units","sales.item_coverage","labor.attendance",
     "labor.recurring_assignments","labor.daily_costs"]).has(id) ? {period} : {}),
   ...((id in metricUnits) ? {granularity:z.literal("period")} : {}),
-  ...(id==="team.tasks" ? {page:z.number().int().min(0).max(250).optional()} : {}),
+  ...(id==="team.tasks"||id==="team.decisions" ? {page:z.number().int().min(0).max(250).optional()} : {}),
   ...(new Set(["menu.product_economics","pricing.recommendation","menu.recipe"]).has(id) ? {productId:z.string().min(1).max(120)} : {}),
 });
 export function discoverP1() {
