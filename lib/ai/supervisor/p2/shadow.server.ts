@@ -87,7 +87,9 @@ export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boole
   }
   unmatched.push(original.slice(end));
   return unmatched.every(segment=>
-    (segment.match(/[\p{L}\p{N}]+/gu)?.length??0)<5);
+    // Only punctuation/whitespace may be omitted. Even short constraints
+    // such as "without understaffing" are material owner instructions.
+    !/[\p{L}\p{N}]/u.test(segment));
 }
 function responseText(response:unknown):string|null {
   if(!response||typeof response!=="object")return null;
@@ -205,6 +207,7 @@ export async function runP2ShadowWithScope(params:{
     return missing("scope_unverified",usage);
   const supportedIds=new Set(discover.map(d=>d.id));
   const evidence:ShadowEvidence[]=[];
+  let attemptedReads=0;
   for(const selected of plan.choices){
     const id=selected.capabilityId;
     if(!id) {
@@ -217,7 +220,7 @@ export async function runP2ShadowWithScope(params:{
         result:null,reason:"unknown_capability"});
       continue;
     }
-    if(evidence.filter(x=>x.capabilityId!==null && x.reason!=="budget_exceeded").length>=4) {
+    if(attemptedReads>=4) {
       evidence.push({clause:selected.clause,capabilityId:id,status:"unavailable",
         result:null,reason:"budget_exceeded"});
       continue;
@@ -233,6 +236,7 @@ export async function runP2ShadowWithScope(params:{
       evidence.push({clause:selected.clause,capabilityId:id,status:"unavailable",
         result:null,reason:"invalid_request"});continue;
     }
+    attemptedReads++;
     const result=await params.registry.invoke(params.scope,id,parsed);
     const raw=result as {status?:ResultStatus;reason?:string};
     const accepted=raw.status==="verified" || raw.status==="estimated" || raw.status==="partial";
