@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { optimizeOliviaWeek } from "./plannerEngine";
+import { validateOliviaAssignments } from "./plannerValidate";
 import { wallToUtc, windowUtc } from "./plannerClock";
 import type { PlannerCoverage, PlannerEmployee, PlannerInput } from "./plannerTypes";
 
@@ -48,6 +49,37 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(a.warnings.some(w=>w.includes("no hourly POS"))).toBe(true);
   });
 
+  it("replans after a source change without rewriting an inactive worker's started published shift or breaks",()=>{
+    const official={
+      employeeId:"former",locationId:"a",
+      startAt:"2026-10-12T16:00:00.000Z",
+      endAt:"2026-10-12T18:00:00.000Z",
+      paidMinutes:90,pinned:false,
+      breaks:[{startAt:"2026-10-12T17:00:00.000Z",
+        endAt:"2026-10-12T17:30:00.000Z",paid:false}],
+    };
+    const args=input([employee("former",{active:false,recurring:[]}),employee("active")],
+      [coverage("published",{end_local:"10:00"}),
+        coverage("future",{dayOfWeek:2})],{
+        slotMinutes:30,
+        replanAsOf:"2026-10-12T19:00:00.000Z",
+        startedPublishedShifts:[official],
+      });
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toContainEqual(official);
+    expect(result.best?.shifts.some(s=>s.employeeId==="active" &&
+      s.startAt.startsWith("2026-10-13"))).toBe(true);
+    const shifts=result.best!.shifts;
+    expect(validateOliviaAssignments(args,shifts).valid).toBe(true);
+    const dropped=shifts.filter(s=>s.employeeId!=="former");
+    const missing=validateOliviaAssignments(args,dropped);
+    expect(missing.valid).toBe(false);
+    expect(missing.violations.some(v=>v.startsWith("pinned_commitment_removed"))).toBe(true);
+    const altered=shifts.map(s=>s.employeeId==="former"
+      ? {...s,paidMinutes:120,breaks:[]} : s);
+    expect(validateOliviaAssignments(args,altered).valid).toBe(false);
+  });
   it("honors confirmed absence and returns an exact uncovered role/date/interval",()=>{
     const e=employee("solo",{exceptions:[{
       local_date:monday,exception_type:"unavailable",confirmation:"owner_confirmed",
