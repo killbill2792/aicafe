@@ -57,6 +57,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     touch(draft.map((r,j) => j===i ? {...r,...patch} : r));
   }
   function save() {
+    if (status==="conflict" && !window.confirm(t("applyAfterConflict"))) return;
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
         !window.confirm(t("confirmRemove"))) return;
     if (draft.some((r) => r.exception_type==="hours_cap" &&
@@ -92,7 +93,10 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
         scope:{local_date:date},expected:scoped.map(r=>({id:r.id,revision:r.revision})),
         desired,requestKey:key.current,
       });
-      if (!result.ok) {setStatus(result.error==="conflict"?"conflict":"error");return;}
+      if (!result.ok) {
+        if (result.error==="conflict") {key.current=null;router.refresh();}
+        setStatus(result.error==="conflict"?"conflict":"error");return;
+      }
       key.current=null;setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
     });
   }
@@ -173,6 +177,17 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     <p className="text-sm text-ink-muted">{t("exceptionPrecedence")}</p>
     {dirty && <p role="status" className="text-sm text-warn">{t("unsaved")}</p>}
     {status==="saved" && <p role="status" className="text-sm text-good">{t("saved")}</p>}
+    {status==="conflict" && <details open className="rounded-xl border border-line p-3">
+      <summary className="font-semibold">{t("latestSaved")}</summary>
+      {scoped.map(r=><p key={r.id} className="text-sm">{String(r.exception_type)}:
+        {" "}{String(r.start_local??"")}–{String(r.end_local??"")}
+        {" · "}#{r.revision}</p>)}
+      {scoped.length===0 && <p className="text-sm">{t("notRecorded")}</p>}
+      <button type="button" className={secondary} onClick={()=>{
+        if (!window.confirm(t("discardEdits"))) return;
+        setDraftOverride(null);setDirty(false);setStatus("idle");
+      }}>{t("useLatestSaved")}</button>
+    </details>}
     {status==="conflict" && <p role="alert" className="text-sm text-warn">{t("conflict")}</p>}
     {status==="error" && <p role="alert" className="text-sm text-warn">{t("saveFailed")}</p>}
     <button type="button" className={primary} onClick={save} disabled={pending||!dirty}>
