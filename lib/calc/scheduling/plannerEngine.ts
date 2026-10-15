@@ -1,6 +1,7 @@
 import { localParts, utcIso } from "./plannerClock";
 import { baselineGapReason, eligibleCandidates, expandPlannerInput,
-  workerWageRate, type WorkUnit, type DemandUnit, type ExpandedPlan } from "./plannerCore";
+  isConfirmedAvailable, qualifies, workerWageRate,
+  type WorkUnit, type DemandUnit, type ExpandedPlan } from "./plannerCore";
 import { costForWork, hardValid, shiftsForWork } from "./plannerRules";
 import { validateOliviaAssignments } from "./plannerValidate";
 import type {
@@ -110,6 +111,69 @@ function chunkReason(unit:DemandUnit,plan:ExpandedPlan,input:PlannerInput,
   });
   return reasons.every(r=>r===reasons[0])?reasons[0]:"capacity_or_overlap";
 }
+/** Add verified overlap at worker handoffs when the originally chosen
+ * worker is already available before the transition. Extra work is paid and
+ * explicitly revalidated; never assume undocumented availability.
+ */
+function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
+  starting:readonly WorkUnit[],
+  cache:Map<string,Array<{start:number;end:number}>>):WorkUnit[] {
+  const work=starting.slice();
+  const grid=(input.slotMinutes??30)*60_000;
+  let extraUnits=0;
+  const covers=(workerId:string,unit:DemandUnit)=>
+    work.some(w=>w.employeeId===workerId && w.locationId===unit.locationId &&
+      w.start<=unit.start && w.end>=unit.end);
+  for(const requirement of input.coverage){
+    const overlap=requirement.minOverlapMinutes??0;
+    if(requirement.priority!=="required" || overlap<=0 ||
+      requirement.minHeadcount<=0)continue;
+    const slices=new Map<number,DemandUnit>();
+    for(const unit of plan.units)if(unit.coverageId===requirement.id &&
+      !slices.has(unit.start))slices.set(unit.start,unit);
+    const ordered=[...slices.values()].sort((a,b)=>a.start-b.start);
+    for(let i=1;i<ordered.length;i++){
+      const before=ordered[i-1],after=ordered[i];
+      if(before.end!==after.start)continue;
+      const prev=plan.employees.filter(e=>qualifies(e,before,plan.locations) &&
+        covers(e.id,before)).map(e=>e.id);
+      const current=plan.employees.filter(e=>qualifies(e,after,plan.locations) &&
+        covers(e.id,after)).map(e=>e.id).sort();
+      if(prev.length===current.length && prev.every(id=>current.includes(id)))continue;
+      const requiredStart=after.start-overlap*60_000;
+      const sustained=(id:string)=> {
+        for(let time=requiredStart;time<after.start;time+=grid){
+          if(!covers(id,{...after,start:time,end:time+grid}))return false;
+        }
+        return true;
+      };
+      let continuous=current.filter(sustained).length;
+      if(continuous>=requirement.minHeadcount)continue;
+      for(const id of current){
+        if(sustained(id))continue;
+        const extra:WorkUnit[]=[];
+        let acceptable=true;
+        const employee=plan.employees.find(e=>e.id===id)!;
+        for(let time=requiredStart;time<after.start;time+=grid){
+          const piece:WorkUnit={employeeId:id,locationId:after.locationId,
+            start:time,end:time+grid,pinned:false};
+          if(covers(id,{...after,start:time,end:time+grid}))continue;
+          if(!qualifies(employee,{...after,start:time,end:time+grid},plan.locations) ||
+            !isConfirmedAvailable(piece,employee,plan.locations,cache)){
+            acceptable=false;break;
+          }
+          extra.push(piece);
+        }
+        if(!acceptable || extraUnits+extra.length>2000 ||
+          !hardValid([...work,...extra],plan,input))continue;
+        work.push(...extra);extraUnits+=extra.length;
+        continuous++;
+        if(continuous>=requirement.minHeadcount)break;
+      }
+    }
+  }
+  return work;
+}
 function gapsFor(state:State):PlannerGap[] {
   const raw:PlannerGap[]=state.missing.map(({unit,reason})=>({
     coverageId:unit.coverageId,locationId:unit.locationId,
@@ -180,6 +244,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     }
   }
   const best=frontier[0]!;
+  const repairedWork=repairHandoffs(input,plan,best.work,cache);
   // A gap recorded early may become constrained by assignments made later.
   // Explain each unmet slot relative to the FINAL candidate work roster,
   // not just the partial state when the omission was first considered.
@@ -187,17 +252,17 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     if(m.reason==="solver_budget")return m;
     const staticReason=baselineGapReason(m.unit,plan,cache);
     return {unit:m.unit,reason:staticReason==="capacity_or_overlap"
-      ?chunkReason(m.unit,plan,input,candidates.get(m.unit.id)??[],best.work)
+      ?chunkReason(m.unit,plan,input,candidates.get(m.unit.id)??[],repairedWork)
       :staticReason};
   });
   const gaps=gapsFor({...best,missing:resolvedMissing});
   const requiredMissing=best.missing.some(m=>m.unit.priority==="required");
-  const cost=costForWork(input,plan,best.work);
+  const cost=costForWork(input,plan,repairedWork);
   return {
     scenario:{
-      objective,shifts:shiftsForWork(input,plan,best.work),gaps,
+      objective,shifts:shiftsForWork(input,plan,repairedWork),gaps,
       completeCoverage:!requiredMissing && !exhausted,
-      hardConstraintsSatisfied:hardValid(best.work,plan,input),
+      hardConstraintsSatisfied:hardValid(repairedWork,plan,input),
       ownerMinutes:cost.ownerMinutes,cost,
       preferencePenalty:best.score,exploredNodes:nodes,
       legalReview:hasReviewedLegalInputs(input,plan)?"verified_profile":"unverified_profile",
