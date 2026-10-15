@@ -43,6 +43,11 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   }
   function assign() {
     if (!code){issue(t("chooseQualification"));return;}
+    if (mine.some(r=>r.qualification_code===code &&
+        (r.location_id??null)===(locationId||null) &&
+        r.valid_from===from && (r.valid_to??null)===(to||null))) {
+      issue(t("alreadyAssigned"));return;
+    }
     const payload={employee_id:employeeId,location_id:locationId||null,qualification_code:code,
       valid_from:from,valid_to:to||null,source,confirmation};
     startTransition(async()=>{
@@ -51,7 +56,7 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
         data:payload,
       });
       if(!result.ok){issue(t("saveFailed"));return;}
-      assignmentRetry.current=null;setError("");setSaved(true);router.refresh();
+      assignmentRetry.current=null;setCode("");setError("");setSaved(true);router.refresh();
     });
   }
   function revoke(r:SchedulingRow) {
