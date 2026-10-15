@@ -9,6 +9,25 @@ supplies and payroll taxes → true owner profit, cost recovery, true cost per d
 
 Pitch: "Square tells you what you sold. We tell you what you actually kept."
 
+## Binding product contract — AI-first café operator (2026-10-15)
+
+**One Universal Supervisor; not a finite question-and-answer chatbot.** The owner describes open-ended café goals in their own words, by text/voice or supported reviewed documents, without selecting agent names, menu screens, spreadsheet workflows, or canned commands. The OpenAI-powered Supervisor should interpret all material parts of the goal, discover permitted registered capabilities, investigate authorized current and historical business evidence, coordinate Olivia (staff), Alex (pricing), Maya (supplies), and Leo (money), and return actionable, source-grounded options in **one** conversation. As safe domain operations become available, it should carry supported work through explicit approval where required, idempotent execution, authoritative reread, and honest outcome/follow-up status.
+
+**Design for novel requests, not a collection of example prompts.** Do not grow a centralized keyword/regex intent router, a fixed FAQ catalog, specialist-specific Supervisor branches, or separate owner-facing specialist chats for each new workflow. Register new domain-owned typed capabilities and source contracts; use AI for semantic understanding, goal decomposition, dynamic capability selection, clarification and explanation. AI must not invent business records, execute SQL, calculate canonical money/scheduling results, grant itself access, approve its own changes, or claim completion. Trusted services enforce tenant/role authorization, precise calculations, feasibility, revisions, source quality, risk limits, approval and verified effects. Understanding any reasonable question does **not** imply the capability to execute every request.
+
+**Progress must be measured by owner outcomes, not registry size or a green typecheck alone.** Every domain/platform milestone must identify at least one real owner journey and prove the supported portion end-to-end: natural request or source input → typed validated interpretation → real canonical data/calculation → grounded decision/options → authorized action if implemented → verified state/outcome. Explicitly label unsupported steps, shadow-only behavior, planned effects, unavailable inputs, and future integrations. No fake demo writes or synthetic claims of deployed automation.
+
+Canonical cross-domain acceptance journeys to preserve:
+- Five employees' spoken availability → correctly reviewed records → Olivia's seven-day feasible schedule and owner-hours-versus-cash-labor scenarios; no POS required; publishing is a distinct authorized step.
+- Whole/oat/almond milk prices and size-specific recipe quantities → Alex's variant costs, surcharge and margins; Maya's supplier evidence; Leo's period impact **only with observed option-level sales**.
+- Purchase-order PDF/CSV or image → private original storage → typed evidence-linked extraction/review → confirmed purchase-order record, never assume received inventory, invoice or payment from the order alone.
+- "Reduce labor costs without understaffing and protect drink margins" → preserve every goal, consult relevant specialists, reconcile periods/provenance, and give partial/unavailable statuses honestly.
+- Proactive coverage/price/supplier risks → deduped tasks in the existing inbox, appropriate urgency/quiet hours, notifications only when consent/provider receipt exist.
+
+Phase boundaries: merged PRs #75 and #76 are foundations, not end-to-end Supervisor automation. Supervisor **P2** implements the approved six-mode typed *shadow* registry and can include an isolated AI-to-real-reader shadow proof; **P3** connects dynamic AI capability discovery and multi-domain orchestration to live read/simulation chat; **P4** builds versioned proposal/approval/one-time verified execution; **P5/P6** connect ready domain services and proactive evaluation. Olivia PR 2 delivers deterministic scheduling, not live conversational publishing. Never use a milestone to skip safety, staged rollout, owner authorization or the appropriate later-phase gate.
+
+**Durable sources:** `docs/01-product.md`, `docs/supervisor-platform-architecture.md`, `docs/scheduling-architecture.md`, [Issue #74](https://github.com/killbill2792/aicafe/issues/74), and its [owner-outcome acceptance supplement](https://github.com/killbill2792/aicafe/issues/74#issuecomment-6186706321). When any older note conflicts with completed PR merges or this approved outcome-first scope, reconcile against latest `main` and verified code; do not reopen already approved Olivia scheduling product scope.
+
 ## Users (design for all of them at once)
 Owners aged 30–70, many not tech-comfortable, some more comfortable in Arabic or Spanish than English.
 Gen Z shift managers also use it. Rules: big numbers, icon + word on everything, plain language, no jargon.
