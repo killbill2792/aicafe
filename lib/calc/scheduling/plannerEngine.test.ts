@@ -271,4 +271,21 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(result.best?.shifts.map(s=>s.paidMinutes).sort((x,y)=>x-y)).toEqual([60,60]);
   });
 
+  it("never upgrades legal review without jurisdiction and employee classification evidence",()=>{
+    const worker=employee("classified");
+    const rules={verified:true,overtime:{verified:true,weeklyAfterMinutes:2400,
+      multiplierNumerator:3,multiplierDenominator:2}};
+    const unreviewed=optimizeOliviaWeek(input([worker],[coverage("law")],{
+      ruleProfile:rules,
+    }));
+    expect(unreviewed.best?.legalReview).toBe("unverified_profile");
+    expect(unreviewed.warnings.some(w=>w.includes("legal compliance is not verified"))).toBe(true);
+    const reviewed=optimizeOliviaWeek(input([worker],[coverage("law")],{
+      ruleProfile:{...rules,source:"verified-cafe-policy-v3",
+        jurisdictionByLocationId:{a:"CA-US"},
+        classificationByEmployeeId:{"classified":"nonexempt"}},
+    }));
+    expect(reviewed.best?.legalReview).toBe("verified_profile");
+  });
+
 });
