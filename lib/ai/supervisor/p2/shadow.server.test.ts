@@ -101,6 +101,18 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       ["this month's labor costs","our suppliers quoted better rates"],
     )).toBe(true);
     expect(hasP2ClauseCoverage(
+      "Reduce labor costs and review labor costs",
+      ["Reduce labor costs","labor costs"],
+    )).toBe(true);
+    expect(hasP2ClauseCoverage(
+      "Review labor costs and review labor costs",
+      ["Review labor costs","review labor costs"],
+    )).toBe(true);
+    expect(hasP2ClauseCoverage(
+      "Review labor costs",
+      ["Review labor costs","labor costs"],
+    )).toBe(false);
+    expect(hasP2ClauseCoverage(
       "Reduce labor costs without understaffing and protect drink margins",
       ["labor costs","drink margins"],
     )).toBe(false);
@@ -108,6 +120,18 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       "Can you tell if my outgoings from October 1 to October 3 are truly covered?",
       ["my outgoings from October 1 to October 3"],
     )).toBe(false);
+  });
+  it("runs each repeated audit clause against a distinct source substring",async()=>{
+    const {def,read}=syntheticRegistration();
+    const goal="Inspect meter and inspect meter";
+    const clauses=["Inspect meter","inspect meter"];
+    const requestJson=JSON.stringify({id:def.id,version:1,purpose:"meter_read"});
+    const mock=transport({complete:true,clauses},select(clauses,clauses.map(()=>({
+      capabilityId:def.id,inputJson:requestJson,reason:null,
+    }))));
+    const result=await request(goal,mock.fn,{registry:createP2Registry([def])});
+    expect(result.evidence).toHaveLength(2);
+    expect(read).toHaveBeenCalledTimes(2);
   });
   it("never trusts model no_data before a valid canonical read",async()=>{
     const {def,read}=syntheticRegistration();
