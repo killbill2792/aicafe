@@ -45,6 +45,14 @@ describe("Olivia pure editing helpers",()=>{
     expect(()=>setOliviaLocalBoundary(base,"startAt",
       "2026-11-01T01:30","America/Los_Angeles")).toThrow("ambiguous_local_time");
   });
+  it("keeps the next added shift within the chosen Monday-Sunday local week",()=>{
+    const sunday={...base,startAt:"2026-10-18T09:00:00.000Z",
+      endAt:"2026-10-18T13:00:00.000Z"};
+    const result=addOliviaShift("2026-10-12",[sunday],
+      "worker-2","cafe-1","UTC");
+    expect(result.startAt).toBe("2026-10-12T09:00:00.000Z");
+    expect(result.endAt).toBe("2026-10-12T13:00:00.000Z");
+  });
   it("adds a separate future shift without silently copying prior breaks",()=>{
     const result=addOliviaShift("2026-10-12",[base],"worker-2","cafe-1");
     expect(result).toMatchObject({employeeId:"worker-2",pinned:false,
