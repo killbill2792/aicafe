@@ -159,4 +159,48 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     expect(result.input.employees).toHaveLength(0);
     expect(result.input.coverage).toHaveLength(0);
   });
+
+  it("blocks contradictory confirmed employee hour limits instead of selecting an arbitrary row",async()=>{
+    fixtures.tables.staff_scheduling_preferences=[
+      {id:id(400),employee_id:id(1),effective_from:"2026-01-01",
+        effective_to:null,confirmation:"owner_confirmed",
+        min_weekly_minutes:0,desired_weekly_minutes:600,
+        max_weekly_minutes:1200,max_daily_minutes:480},
+      {id:id(401),employee_id:id(1),effective_from:"2026-10-01",
+        effective_to:null,confirmation:"owner_confirmed",
+        min_weekly_minutes:0,desired_weekly_minutes:900,
+        max_weekly_minutes:900,max_daily_minutes:240},
+    ];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok) return;
+    expect(result.blockers).toContainEqual({
+      code:"conflicting_limits",employeeName:"Staff 1",
+    });
+  });
+
+  it("fingerprints changes to legacy commitments even when optimizer inputs remain unchanged",async()=>{
+    const before=await loadOliviaWeekFromSavedStaff(week);
+    fixtures.tables.staff_schedules=[{id:id(1000),active:true,
+      effective_from:"2026-01-01",effective_to:null}];
+    const after=await loadOliviaWeekFromSavedStaff(week);
+    expect(before.ok && after.ok).toBe(true);
+    if(!before.ok || !after.ok) return;
+    expect(after.input).toEqual(before.input);
+    expect(after.sourceFingerprint).not.toBe(before.sourceFingerprint);
+  });
+
+  it("surfaces uncertain employee leave without inventing verified unavailability",async()=>{
+    fixtures.tables.staff_availability_exceptions=[{
+      id:id(700),employee_id:id(1),local_date:"2026-10-12",
+      exception_type:"approved_leave",confirmation:"unconfirmed",
+    }];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok) return;
+    expect(result.notices).toContainEqual({
+      code:"unconfirmed_absence",employeeName:"Staff 1",
+    });
+    expect(result.input.employees[0].exceptions[0].confirmation).toBe("unconfirmed");
+  });
 });
