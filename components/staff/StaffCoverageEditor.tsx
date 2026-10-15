@@ -19,6 +19,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const [locationId,setLocationId]=useState(locations[0]?.id??"");
   const [day,setDay]=useState("1"),[specificDate,setSpecificDate]=useState("");
   const [from,setFrom]=useState(today),[to,setTo]=useState("");
+  const [fromEdited,setFromEdited]=useState(false);
   const [start,setStart]=useState("08:00"),[end,setEnd]=useState("16:00");
   const [overnight,setOvernight]=useState(false),[count,setCount]=useState("1");
   const [code,setCode]=useState(""),[overlap,setOverlap]=useState("0");
@@ -39,6 +40,10 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     setCode(String(r.qualification_code??""));setPriority(r.priority==="advisory"?"advisory":"required");
     setSource(r.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
     setConfirmation(r.confirmation==="owner_confirmed"?"owner_confirmed":"unconfirmed");setSaved(false);setError("");
+  }
+  function changeLocation(value:string) {
+    setLocationId(value);
+    if (!fromEdited) setFrom(locations.find(l=>l.id===value)?.todayLocal??today);
   }
   function save(){
     if(!locationId){setError(t("chooseLocation"));return;}
@@ -97,7 +102,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
       </select>
     </label>
     <label className="flex flex-col gap-1 text-sm">{t("location")}
-      <select className={field} value={locationId} onChange={e=>setLocationId(e.target.value)}>
+      <select className={field} value={locationId} onChange={e=>changeLocation(e.target.value)}>
         {locations.map(l=><option value={l.id} key={l.id}>{l.name}</option>)}
       </select>
     </label>
@@ -113,7 +118,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         </select>
       </label>
       <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
-        <input className={field} type="date" value={from} onChange={e=>setFrom(e.target.value)}/>
+        <input className={field} type="date" value={from} onChange={e=>{setFromEdited(true);setFrom(e.target.value);}}/>
       </label>
       <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
         <input className={field} type="date" value={to} onChange={e=>setTo(e.target.value)}/>
