@@ -148,3 +148,18 @@ export async function readP1ExpenseEntries({businessId}:Scoped,period:{from:stri
     amountCents:row.amount_cents,status:row.status,source:row.source,
   })),data.some(row=>row.status==="estimated")?["estimated_expense_rows"] : []);
 }
+
+/** Bills are recurring obligations, NOT actual cash expense entries. */
+export async function readP1RecurringBillRows({businessId}:Scoped) {
+  if(!businessId)return absent("scope_missing");
+  const client=await createServerSupabaseClient();
+  const {data,error}=await client.from("recurring_costs")
+    .select("id,category_code,label,amount_cents,frequency,due_day,is_estimate")
+    .eq("business_id",businessId).is("active_to",null)
+    .order("id").limit(MAX_RECORDS+1);
+  if(error||!data||data.length>MAX_RECORDS)return absent("recurring_bills_incomplete");
+  return present(data.map(r=>({
+    id:r.id,categoryCode:r.category_code,label:r.label,amountCents:r.amount_cents,
+    frequency:r.frequency,dueDay:r.due_day,isEstimate:r.is_estimate,
+  })),[],data.some(r=>r.is_estimate)?["estimated_recurring_obligation_rows"]:[]);
+}
