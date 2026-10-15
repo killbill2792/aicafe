@@ -25,9 +25,9 @@ export type DraftSaveResult =
   | { ok: true; seriesId: string; revisionId: string; revision: number; replayed: boolean;
       scenario: PlannerScenario }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_input" |
-      "conflict" | "storage_unavailable" | "no_scenario" };
+      "conflict" | "storage_unavailable" | "no_scenario" | "tenant_changed" | "capacity_exceeded" };
 
-function snapshotDigest(input: PlannerInput): string {
+export function oliviaSnapshotDigest(input: PlannerInput): string {
   return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
 
@@ -38,6 +38,7 @@ function snapshotDigest(input: PlannerInput): string {
 export async function createOliviaDraftFromTrustedSnapshot(
   rawOptions: unknown,
   input: PlannerInput,
+  sourceBusinessId: string,
 ): Promise<DraftSaveResult> {
   if (process.env.SCHEDULING_FOUNDATION_ENABLED !== "true" ||
       process.env.SCHEDULING_PR3_DRAFTS_ENABLED !== "true") {
@@ -48,6 +49,8 @@ export async function createOliviaDraftFromTrustedSnapshot(
     return { ok: false, error: "invalid_input" };
   const owner = await requireSchedulingOwner();
   if (!owner) return { ok: false, error: "unauthorized" };
+  // Reauthorize after loading; selected café may have changed between requests.
+  if (owner.businessId !== sourceBusinessId) return { ok: false, error: "tenant_changed" };
 
   let scenario: PlannerScenario;
   try {
@@ -69,7 +72,8 @@ export async function createOliviaDraftFromTrustedSnapshot(
     startAt: s.startAt, endAt: s.endAt, paidMinutes: s.paidMinutes,
     breaks: s.breaks.map(b => ({ ...b })), pinned: s.pinned,
   }));
-  const sourceDigest = snapshotDigest(input);
+  if (normalizedShifts.length > 200) return { ok: false, error: "capacity_exceeded" };
+  const sourceDigest = oliviaSnapshotDigest(input);
   try {
     const { data, error } = await owner.supabase.rpc("scheduling_create_plan_draft", {
       p_business_id: owner.businessId,
