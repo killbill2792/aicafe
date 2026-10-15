@@ -47,29 +47,18 @@ jobs:
         run: |
           if [ ! -f supabase/config.toml ]; then supabase init --force; fi
           supabase start
-      - name: Check PR1B anonymous SQL block delimiters
+      - name: Check SQL anonymous block delimiters
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          for path in ('scripts/olivia-pr1b-rls.sql',
-                       'supabase/migrations/20261014000061_olivia_availability_batch.sql'):
+          bad = {'DO ' + chr(36), 'END ' + chr(36) + ';'}
+          paths = (
+              'scripts/olivia-pr1b-rls.sql',
+              'supabase/migrations/20261014000061_olivia_availability_batch.sql',
+          )
+          for path in paths:
               lines = Path(path).read_text().splitlines()
-              assert all(line.strip() not in ('DO 
-          PY
-      - name: Replay ALL migrations in disposable Supabase
-        run: supabase db reset --local --yes
-      - name: Preserve PR1A tenant/compensation/RLS regressions
-        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr1a-rls.sql
-      - name: PR1B atomic availability/RLS regressions
-        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr1b-rls.sql
-      - name: Concurrent independent PR1A create regression
-        run: bash scripts/olivia-pr1a-create-concurrency.sh
-      - name: Concurrent independent PR1B batch co-owners
-        run: bash scripts/olivia-pr1b-create-concurrency.sh
-      - name: Stop disposable database
-        if: always()
-        run: supabase stop --no-backup
-, 'END $;') for line in lines), f'Broken SQL block in {path}'
+              assert all(line.strip() not in bad for line in lines), f'Bad SQL block in {path}'
           PY
       - name: Replay ALL migrations in disposable Supabase
         run: supabase db reset --local --yes
