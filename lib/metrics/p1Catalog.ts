@@ -49,10 +49,6 @@ const daily = z.strictObject({
   staffTaxSource: text.optional(), salesDataStatus: z.enum(["actual","missing"]).optional(),
   cardFeesCents: money, cardFeesStatus: z.enum(["actual","estimated","missing"]).optional(), voidsCents: money,
 });
-const costLine = z.strictObject({
-  categoryCode: z.enum(["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","ingredients","other"]),
-  label: text, amountCents: money, isEstimate: z.boolean(), isMissing: z.boolean(), isExpected: z.boolean().optional(),
-});
 const profitability = z.strictObject({
   netSalesCents: money, totalCostsCents: money, ownerProfitCents: money, operatingMargin: finite,
   coveredSalesDays: count, expectedSalesDays: count,
@@ -88,14 +84,11 @@ const pricing = z.strictObject({
     ctx.addIssue({code:"custom",message:"Ready price must be grounded"});
 });
 const task = z.strictObject({
-  id:text,businessId:text,agentId:z.enum(["alex","olivia","maya","leo"]),
+  id:text,agentId:z.enum(["alex","olivia","maya","leo"]),
   kind:z.enum(["price_review","staff_coverage","supply_check","money_update","data_quality"]),
-  entityType:text.optional(),entityId:text.optional(),
   status:z.enum(["watching","needs_response","needs_owner","handled","expired"]),
-  payload:z.record(z.string(),z.union([text,finite,z.boolean(),z.null()])),
-  confidence:z.enum(["low","medium","high"]),
-  evidence:z.array(z.strictObject({source:text,facts:z.record(z.string(),z.union([text,finite,z.boolean(),z.null()]))})),
-  createdAt:z.string().datetime({offset:true}),resolvedAt:z.string().datetime({offset:true}).optional(),
+  createdAt:z.string().datetime({offset:true}),
+  resolvedAt:z.string().datetime({offset:true}).nullable(),
 });
 const person = z.strictObject({
   name:text,role:text.nullable(),sourceType:z.enum(["owner_schedule","owner_manual","connected_pos","imported","ai_cafe"]).optional(),
@@ -162,7 +155,6 @@ export const values = {
   "menu.product_economics": product,
   "sales.daily": z.array(daily).max(366),
   "pricing.recommendation": pricing,
-  "money.expense_categories": z.array(costLine).max(100),
   "money.recurring_bill_rows": z.array(z.strictObject({
     id:text,categoryCode:z.enum(["rent","utilities_power","water","internet","insurance","loan","software","supplies","repairs","ingredients","other"]),
     label:text,amountCents:money,frequency:z.enum(["monthly","weekly","quarterly","yearly"]),
@@ -201,7 +193,10 @@ export const values = {
     status:z.enum(["recommended","accepted","rejected","executed","dismissed","review_later"]),
     confidence:z.enum(["low","medium","high"]),createdAt:z.string().datetime({offset:true}),
   })).max(100),
-  "team.tasks": z.array(task).max(1000),
+  "team.tasks": z.strictObject({
+    items:z.array(task).max(40),page:count.max(250),hasMore:z.boolean(),
+    nextPage:count.max(250).nullable(),
+  }).refine(x=>x.nextPage===(x.hasMore?x.page+1:null)),
 } as const;
 
 export type SupportedId = keyof typeof values;
@@ -234,7 +229,6 @@ export const readers = {
   "menu.product_economics":"getProductEconomics",
   "sales.daily":"getSalesTrend",
   "pricing.recommendation":"getPricingRecommendation",
-  "money.expense_categories":"getExpenseSummary",
   "money.recurring_bill_rows":"readP1RecurringBillRows",
   "money.monthly_bills":"getMonthlyBills",
   "money.recorded_spending":"getRecordedExpenses",
@@ -268,7 +262,6 @@ export const canonicalSourcePaths = {
   getProductEconomics:"lib/ai/tools.ts",
   getSalesTrend:"lib/ai/supervisorReads.server.ts",
   getPricingRecommendation:"lib/ai/tools.ts",
-  getExpenseSummary:"lib/operating/cafeState.ts",
   getMonthlyBills:"lib/ai/supervisorFacts.server.ts",
   getRecordedExpenses:"lib/ai/supervisorFacts.server.ts",
   getProductSales:"lib/ai/supervisorFacts.server.ts",
@@ -287,11 +280,13 @@ export const canonicalSourcePaths = {
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
+  getExpenseSummary:{kind:"restricted",reason:"Projected running-cost rows lack authoritative source and actual/estimated provenance; use recorded expense entries instead"},
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
 } as const;
 export const additionalSurfaces = {
+  "money.expense_categories":{kind:"restricted",source:"lib/operating/cafeState.ts",reason:"Source and actual/estimate evidence absent from canonical category projection"},
   orders_raw:{kind:"restricted",source:"lib/pos/square/adapter.ts",reason:"No authorized P1 raw-order service with complete coverage"},
   attachments_extraction:{kind:"unsupported",source:"lib/ai/conversations/attachments.ts",reason:"Attachment storage is not verified parsing"},
   bank_feed:{kind:"unsupported",source:"lib/operating/cafeState.ts",reason:"No consented bank feed"},
@@ -321,7 +316,6 @@ export const purposePolicies = {
   "menu.product_economics":["current_recipe_cost_review"],
   "sales.daily":["actual_daily_sales"],
   "pricing.recommendation":["current_pricing_review"],
-  "money.expense_categories":["actual_period_expense_review"],
   "money.recurring_bill_rows":["owner_recurring_obligation_lines"],
   "money.monthly_bills":["recurring_obligation_review"],
   "money.recorded_spending":["recorded_actual_spending"],
@@ -368,10 +362,11 @@ export const sourcePolicies = Object.fromEntries((Object.keys(values) as Support
 }>>;
 export const inputFor = (id: SupportedId) => z.strictObject({
   id:z.literal(id), version:z.literal(1), purpose:z.enum(purposePolicies[id] as unknown as [string,...string[]]),
-  ...(new Set(["money.profitability","money.business_costs","money.owner_profit_cents","sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio","sales.daily","money.expense_categories","money.expense_entries",
+  ...(new Set(["money.profitability","money.business_costs","money.owner_profit_cents","sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio","sales.daily","money.expense_entries",
     "money.recorded_spending","money.recorded_spending_cents","sales.item_units","sales.item_coverage","labor.attendance",
     "labor.recurring_assignments","labor.daily_costs"]).has(id) ? {period} : {}),
   ...((id in metricUnits) ? {granularity:z.literal("period")} : {}),
+  ...(id==="team.tasks" ? {page:z.number().int().min(0).max(250).optional()} : {}),
   ...(new Set(["menu.product_economics","pricing.recommendation","menu.recipe"]).has(id) ? {productId:z.string().min(1).max(120)} : {}),
 });
 export function discoverP1() {
