@@ -87,7 +87,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       });
       if(!result.ok){
         if(result.error==="conflict_or_missing"){setConflicted(true);router.refresh();}
-        setError(t("saveFailed"));return;
+        setError(t(result.error==="conflict_or_missing"?"conflict":"saveFailed"));return;
       }
       preferenceRetry.current=null;setSelected(result.id);
       setLastSaved({id:result.id,revision:result.revision});
