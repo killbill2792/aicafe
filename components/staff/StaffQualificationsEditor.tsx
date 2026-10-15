@@ -80,6 +80,7 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
     <h4 className="text-[17px] font-bold">{t("qualifications")}</h4>
     <p className="text-[17px] text-ink-muted">{t("roleNotQualification")}</p>
+    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     {mine.length===0&&<p className="text-[17px] text-ink-muted">{t("noQualifications")}</p>}
     {mine.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
       <div className="min-w-0">
@@ -139,5 +140,6 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
     </details>
     {error&&<p role="alert" className="text-[17px] text-warn">{error}</p>}
     {saved&&<p role="status" className="text-[17px] text-good">{t("saved")}</p>}
+    </fieldset>
   </section>;
 }
