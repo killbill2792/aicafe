@@ -190,7 +190,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
             (typeof revision==="string" && revision.length>0);
           const arrays=[q?.missingInputs,q?.estimatedInputs,q?.staleInputs];
           if(!p || typeof p.asOf!=="string" ||
-            !/^\\d{4}-\\d{2}-\\d{2}$/.test(p.asOf) ||
+            !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
             (!registeredSource && !canonicalReader) || !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))
