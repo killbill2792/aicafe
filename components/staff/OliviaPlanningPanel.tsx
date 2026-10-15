@@ -3,8 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useLocale, useTranslations } from "next-intl";
-import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory } from "@/lib/actions/oliviaPlanning";
-import type { PlannerResult, PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
+import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory,\n  readOliviaPlanRevision, saveOliviaWeekEdit } from "@/lib/actions/oliviaPlanning";\nimport OliviaShiftEditor from "./OliviaShiftEditor";
+import type { PlannerResult, PlannerScenario, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import type { OliviaNotice, OliviaBlocker } from "@/lib/scheduling/planInput.server";
 
 function mondayOf(date: string): string {
@@ -46,7 +46,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
   const [currentRevision, setCurrentRevision] = useState(0);
   const [publishedRevision, setPublishedRevision] = useState<number | null>(null);
-  const [history, setHistory] = useState<Array<{ revision: number; status: string }>>([]);
+  const [history, setHistory] = useState<Array<{ revision: number; status: string; id:string }>>([]);\n  const [editing, setEditing] = useState<{revision:number;id:string;objective:PlannerScenario["objective"]}|null>(null);\n  const [editedShifts, setEditedShifts] = useState<PlannerShift[]>([]);\n  const editRetry = useRef<PendingCreate>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, startTransition] = useTransition();
@@ -123,6 +123,50 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
     });
   }
 
+  function startEditing(revisionId:string) {
+    if(!sourceDigest){setError(t("previewRequired"));return;}
+    setError("");setNotice("");
+    startTransition(async()=>{
+      try {
+        const response=await readOliviaPlanRevision({week,revisionId});
+        if(!response.ok){setError(t("editLoadFailed"));return;}
+        if(response.revision!==response.currentRevision){
+          setError(t("revisionConflict"));return;
+        }
+        if(response.sourceDigest!==sourceDigest){
+          setError(t("sourceChanged"));return;
+        }
+        setEditing({revision:response.revision,id:revisionId,
+          objective:response.scenario.objective});
+        setEditedShifts(response.scenario.shifts.map(s=>({...s,
+          breaks:s.breaks.map(b=>({...b}))})));
+        editRetry.current=null;
+      } catch {setError(t("editLoadFailed"));}
+    });
+  }
+  function saveEdit() {
+    if(!editing || !sourceDigest){setError(t("previewRequired"));return;}
+    const intent={horizonStart:week,expectedRevision:editing.revision,
+      baseRevisionId:editing.id,objective:editing.objective,
+      expectedSourceDigest:sourceDigest,shifts:editedShifts};
+    const requestKey=stableCreateRequestKey(editRetry,intent);
+    setError("");setNotice("");
+    startTransition(async()=>{
+      try {
+        const response=await saveOliviaWeekEdit({...intent,requestKey});
+        if(!response.ok){
+          setError(response.error==="invalid_shifts" ?
+            t("editInvalid",{details:response.violations?.join("; ")||""}) :
+            response.error==="source_changed" ? t("sourceChanged") :
+            response.error==="revision_conflict" ? t("revisionConflict") : t("saveFailed"));
+          return;
+        }
+        editRetry.current=null;setEditing(null);setEditedShifts([]);
+        setNotice(t("savedRevision",{revision:response.revision}));
+        await loadHistory(week);
+      } catch {setError(t("saveFailed"));}
+    });
+  }
   return <section className="flex flex-col gap-4 rounded-card-lg bg-card p-[18px]"
     aria-label={t("title")}>
     <div>
@@ -134,7 +178,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
       <input type="date" value={week} disabled={pending} onChange={e => {
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
-        setSourceDigest(null); retry.current = null; setNotices([]);
+        setSourceDigest(null); retry.current = null; setNotices([]);\n        setEditing(null); setEditedShifts([]); editRetry.current=null;
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
