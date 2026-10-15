@@ -12,8 +12,14 @@ import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
  * coverage, location or policy facts from a browser or language model.
  * Missing/unconfirmed facts are never silently promoted to verified facts.
  */
+export type OliviaNotice = { code:
+  | "wage_unknown" | "availability_missing" | "unconfirmed_absence"
+  | "coverage_unconfirmed" | "no_active_staff" | "limits_missing"
+  | "legacy_schedules" | "policy_unverified" | "source_provisional";
+  employeeName?: string };
+
 export type OliviaInputResult =
-  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; blockers: string[] }
+  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: string[] }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_week" | "storage_unavailable" };
 
 const PAGE = 300;
@@ -90,6 +96,11 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const extendedStart = civilDateAdd(week, -1);
     const extendedEnd = civilDateAdd(end, 1);
     const warnings: string[] = [];
+    const notices: OliviaNotice[] = [];
+    const warn = (code: OliviaNotice["code"], message: string, employeeName?: string) => {
+      warnings.push(message);
+      notices.push({code, ...(employeeName ? {employeeName} : {})});
+    };
     const blockers: string[] = [];
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
@@ -104,6 +115,13 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       const id = str(r.id);
       const preferences = rows.staff_scheduling_preferences.filter(p =>
         str(p.employee_id) === id && confirmed(p) && inPeriod(p, week, end));
+      const limitVariants = new Set(preferences.map(p => JSON.stringify([
+        p.min_weekly_minutes, p.desired_weekly_minutes,
+        p.max_weekly_minutes, p.max_daily_minutes,
+      ])));
+      if (limitVariants.size > 1) blockers.push(
+        "Conflicting confirmed weekly work limits for " + str(r.display_name) +
+        ". Review the effective dates before generating a plan.");
       const cap = (column: string): number | null => {
         const numbers = preferences.map(p => minutes(p[column])).filter((n): n is number => n != null);
         return numbers.length ? Math.min(...numbers) : null;
@@ -117,7 +135,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       const reported = (attestation?.cash_cost_state ?? "unknown") as CompensationProvenance;
       const provenance = compensationProvenance(
         { cash_cost_state: reported }, wage);
-      if (provenance === "unknown") warnings.push("Review wage source and verification for " + str(r.display_name) + ".");
+      if (provenance === "unknown") warn("wage_unknown",
+        "Review wage source and verification for " + str(r.display_name) + ".", str(r.display_name));
       const recurring = rows.staff_availability_rules
         .filter(p => str(p.employee_id) === id && inPeriod(p, extendedStart, extendedEnd))
         .map(p => ({
@@ -133,8 +152,14 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
           !rows.staff_availability_exceptions.some(p => str(p.employee_id) === id &&
             confirmed(p) && ["replace_day", "add_available"].includes(str(p.exception_type)) &&
             str(p.local_date) >= extendedStart && str(p.local_date) <= extendedEnd)) {
-        warnings.push("Confirm availability for " + str(r.display_name) + "; staff-list membership is not availability.");
+        warn("availability_missing", "Confirm availability for " + str(r.display_name) +
+          "; staff-list membership is not availability.", str(r.display_name));
       }
+      if (rows.staff_availability_exceptions.some(p => str(p.employee_id) === id &&
+        !confirmed(p) && ["approved_leave", "unavailable", "replace_day"].includes(str(p.exception_type)) &&
+        str(p.local_date) >= extendedStart && str(p.local_date) <= extendedEnd))
+        warn("unconfirmed_absence", "Unconfirmed absence or leave for " +
+          str(r.display_name) + " may affect this plan. Confirm it before relying on a shift.", str(r.display_name));
       return {
         id, displayName: str(r.display_name), active: true,
         // No canonical owner-to-worker link: never guess isOwner.
@@ -208,22 +233,22 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     if (!coverage.some(c => c.priority === "required" && c.minHeadcount > 0))
       blockers.push("Enter and confirm required opening/closing or other staff coverage for this week.");
     if (rows.scheduling_coverage_requirements.some(c => !confirmed(c)))
-      warnings.push("Unconfirmed coverage records were excluded from this proposal.");
-    if (!employees.length) warnings.push("No active staff. Add employees and their confirmed availability.");
+      warn("coverage_unconfirmed", "Unconfirmed coverage records were excluded from this proposal.");
+    if (!employees.length) warn("no_active_staff", "No active staff. Add employees and their confirmed availability.");
     if (!rows.staff_scheduling_preferences.some(p => confirmed(p) && inPeriod(p, week, end)))
-      warnings.push("No confirmed employee hour limits or preferences. Review staffing limits before using a proposal.");
+      warn("limits_missing", "No confirmed employee hour limits or preferences. Review staffing limits before using a proposal.");
     if (rows.staff_schedules.some(s => s.active === true &&
       str(s.effective_from) <= end && (s.effective_to == null || str(s.effective_to) >= week)))
-      warnings.push("Legacy recurring shifts exist. Olivia proposals do not replace them or create attendance; reconcile both before publication.");
+      warn("legacy_schedules", "Legacy recurring shifts exist. Olivia proposals do not replace them or create attendance; reconcile both before publication.");
 
     // The foundation has no verified per-jurisdiction labor-policy or owner-person
     // link. Never invent them, or mislabel a planner proposal as legally cleared.
-    warnings.push("Labor law, worker classifications, break/overtime settings and owner-worker identity are not verified; publication needs independent review.");
-    warnings.push("This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
+    warn("policy_unverified", "Labor law, worker classifications, break/overtime settings and owner-worker identity are not verified; publication needs independent review.");
+    warn("source_provisional", "This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
     return {
       ok: true, businessId, sourceFingerprint, locationNames, input: { horizonStart: week, locations, employees, coverage,
         pinned: [], slotMinutes: 30, maxNodes: 12000, beamWidth: 24 },
-      warnings, blockers,
+      warnings, notices, blockers,
     };
   } catch {
     // No partial employee/coverage read can ever be treated as complete.
