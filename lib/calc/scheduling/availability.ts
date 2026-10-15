@@ -259,9 +259,12 @@ export function effectiveAvailabilityForLocation(input: {
       r.day_of_week === day.getUTCDay() && activeOnDate(date, r)) ||
     exceptions.some(r => r.location_id === locationId &&
       r.confirmation === "owner_confirmed" && r.local_date === date &&
-      (r.exception_type === "replace_day" || r.exception_type === "add_available" ||
-       r.exception_type === "unavailable" || r.exception_type === "approved_leave"))
+      (r.exception_type === "replace_day" || r.exception_type === "add_available"))
   );
+  // Date-specific local *restrictions* (including partial unavailability
+  // and leave) must subtract from the general fallback; they do not replace
+  // general positive windows. Only confirmed positive local windows switch
+  // the basis to location-specific availability.
   const chosenRules = recurring.filter(r => specific
     ? r.location_id === locationId : r.location_id == null);
   const chosenExceptions = exceptions.filter(r => r.location_id === locationId ||
