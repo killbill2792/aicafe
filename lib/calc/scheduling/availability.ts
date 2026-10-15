@@ -250,7 +250,7 @@ export function effectiveAvailabilityForLocation(input: {
 } {
   const { date, locationId, recurring, exceptions, restrictions } = input;
   const day = new Date(date + "T00:00:00Z");
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date) ||
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       Number.isNaN(day.getTime()) || day.toISOString().slice(0, 10) !== date) {
     throw new Error("Invalid local date");
   }
