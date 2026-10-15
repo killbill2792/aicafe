@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { saveSchedulingFoundationRecord, createSchedulingQualificationType } from "@/lib/actions/schedulingFoundation";
+import { saveSchedulingFoundationRecord, createSchedulingQualificationType, getSchedulingFoundationRecords } from "@/lib/actions/schedulingFoundation";
 import { type SchedulingRow, type SchedulingLocation,
  schedulingFieldClass as field, schedulingButtonClass as secondary,
  schedulingPrimaryClass as primary } from "./AvailabilityEditor";
@@ -39,7 +39,19 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
       const result=await createSchedulingQualificationType({
         ...payload,requestKey:stableCreateRequestKey(typeRetry,payload),
       });
-      if(!result.ok){issue(t("saveFailed"));return;}
+      if(!result.ok){
+        if(result.error==="conflict_or_missing"){
+          // Another owner may have created this label with a different key.
+          // Choose its canonical code from a fresh authorized read instead
+          // of repeatedly creating the same owner-visible qualification.
+          const latest=await getSchedulingFoundationRecords();
+          const match=latest.ok ? (latest.records.qualification_type as SchedulingRow[])
+            .find(r=>String(r.display_name).trim().toLocaleLowerCase()===name.toLocaleLowerCase()) : undefined;
+          if(match){setCode(String(match.code));setNewName("");typeRetry.current=null;}
+          router.refresh();issue(t("conflict"));return;
+        }
+        issue(t("saveFailed"));return;
+      }
       setCreatedType({code:result.code,name});setCode(result.code);
       setError("");setSaved(true);typeRetry.current=null;setNewName("");router.refresh();
     });
@@ -62,7 +74,17 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
         kind:"qualification",action:"create",requestKey:stableCreateRequestKey(assignmentRetry,payload),
         data:payload,
       });
-      if(!result.ok){issue(t("saveFailed"));return;}
+      if(!result.ok){
+        if(result.error==="conflict_or_missing"){
+          const latest=await getSchedulingFoundationRecords();
+          const duplicate=latest.ok && (latest.records.qualification as SchedulingRow[]).some(r=>
+            r.employee_id===employeeId && r.qualification_code===code &&
+            (r.location_id??null)===(locationId||null) && r.valid_from===from &&
+            (r.valid_to??null)===(to||null));
+          router.refresh();issue(t(duplicate?"alreadyAssigned":"conflict"));return;
+        }
+        issue(t("saveFailed"));return;
+      }
       assignmentRetry.current=null;setCode("");setError("");setSaved(true);router.refresh();
     });
   }
