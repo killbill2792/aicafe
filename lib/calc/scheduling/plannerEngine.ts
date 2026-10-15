@@ -1,4 +1,4 @@
-import { civilDateAdd, localParts, utcIso } from "./plannerClock";
+import { localParts, utcIso } from "./plannerClock";
 import { baselineGapReason, eligibleCandidates, expandPlannerInput,
   workerWageRate, type WorkUnit, type DemandUnit, type ExpandedPlan } from "./plannerCore";
 import { costForWork, hardValid, shiftsForWork } from "./plannerRules";
