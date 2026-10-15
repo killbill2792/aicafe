@@ -6,7 +6,7 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
-import { discoverP1, inputFor, purposePolicies, readers, sourcePolicies, values,
+import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
 
 const limits = { maxOutputBytes: 100_000 } as const;
@@ -112,7 +112,12 @@ export async function executeP1Authorized(
      !/^\d{4}-\d{2}-\d{2}$/.test(identity.asOf)) return unavailable("unauthorized");
   if(!request || typeof request!=="object" || Array.isArray(request))return unavailable("invalid_request");
   const raw=request as Record<string,unknown>;
-  if(typeof raw.id!=="string"||!validIds.has(raw.id))return unavailable("unknown_capability");
+  if(typeof raw.id!=="string")return unavailable("unknown_capability");
+  if(!validIds.has(raw.id)){
+    if(Object.hasOwn(additionalSurfaces,raw.id))return unavailable("unsupported");
+    if(Object.hasOwn(classified,raw.id))return unavailable("unsupported");
+    return unavailable("unknown_capability");
+  }
   const id=raw.id as SupportedId;
   const parsed=inputFor(id).safeParse(raw);
   if(!parsed.success)return unavailable("invalid_request");
@@ -205,4 +210,10 @@ export async function readAuthenticatedP1(request:unknown):Promise<unknown> {
     const {tools,identity}=await authorizedOwnerP1();
     return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone,businessId:identity.businessId},request);
   }catch{return unavailable("unauthorized");}
+}
+
+/** Authorized full inventory includes explicitly unsupported and restricted entries. */
+export async function discoverAuthenticatedP1Inventory() {
+  await authorizedOwnerP1();
+  return discoverP1Inventory();
 }
