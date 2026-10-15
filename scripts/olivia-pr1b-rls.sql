@@ -142,6 +142,31 @@ BEGIN
     RAISE EXCEPTION 'failed batch partially changed records or audit';
  END IF;
 END $;
+-- Effective-dated hour-limit policies may not overlap or ambiguously
+-- override each other, including via the pre-existing PR1A create RPC.
+DO $
+BEGIN
+ PERFORM public.scheduling_create_foundation(
+   current_setting('test.pr1b_business')::uuid,'preferences',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.pr1b_employee'),
+    'effective_from','2026-10-14','effective_to','2026-10-20',
+    'min_weekly_minutes',0,'max_weekly_minutes',1200,
+    'source','owner_direct','confirmation','owner_confirmed'));
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.pr1b_business')::uuid,'preferences',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.pr1b_employee'),
+    'effective_from','2026-10-19','effective_to','2026-10-25',
+    'min_weekly_minutes',0,'max_weekly_minutes',1400,
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'overlapping hour-limit policy was accepted';
+ EXCEPTION WHEN unique_violation THEN NULL;
+ END;
+ IF (SELECT count(*) FROM public.staff_scheduling_preferences
+   WHERE business_id=current_setting('test.pr1b_business')::uuid)<>1 THEN
+   RAISE EXCEPTION 'invalid preference overlap was persisted';
+ END IF;
+END $;
 -- Manager cannot invoke the elevated transactional RPC.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
