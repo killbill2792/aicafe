@@ -196,15 +196,6 @@ export const values = {
     dailyCostsToCoverCents:money,averageMoneyLeftPerDrinkCents:money,progressPercent:finite.nullable(),
   }),
   "labor.daily_costs": z.array(z.strictObject({date:day,wagesCents:money,staffTaxCents:money,loadedStaffCostCents:money})).max(366),
-  "team.signals": z.array(z.strictObject({
-    id:text,type:z.enum([
-      "INGREDIENT_COST_INCREASED","PRODUCT_COST_CHANGED","PRODUCT_PROFITABILITY_DECLINED",
-      "PRODUCT_HIGH_CONTRIBUTION","SALES_INCREASED","SALES_DECLINED","LABOR_COST_CHANGED",
-      "EXPENSE_INCREASED","OPERATING_MARGIN_DECLINED","PRICE_REVIEW_REQUIRED",
-      "INVENTORY_LOW","STOCKOUT_RISK","SUPPLIER_COST_CHANGED","DATA_INCOMPLETE",
-    ]),
-    severity:z.enum(["info","warning","critical"]),confidence:z.enum(["low","medium","high"]),
-  })).max(100),
   "team.decisions": z.strictObject({
     items:z.array(z.strictObject({
       id:text,type:z.enum(["PRICE_CHANGE","INVENTORY_ORDER","STAFFING_CHANGE","SUPPLIER_CHANGE",
@@ -262,7 +253,6 @@ export const readers = {
   "labor.recurring_assignments":"getRecurringSchedule",
   "money.break_even":"getBreakEven",
   "labor.daily_costs":"getLaborMetrics",
-  "team.signals":"getActiveSignals",
   "team.decisions":"readP1DecisionPage",
   "team.tasks":"readP1TaskPage",
 } as const satisfies Record<SupportedId,string>;
@@ -294,7 +284,6 @@ export const canonicalSourcePaths = {
   getRecurringSchedule:"lib/ai/conversations/domainProjections.ts",
   getBreakEven:"lib/ai/conversations/domainProjections.ts",
   getLaborMetrics:"lib/operating/cafeState.ts",
-  getActiveSignals:"lib/ai/tools.ts",
   readP1DecisionPage:"lib/metrics/p1Additional.server.ts",
   readP1TaskPage:"lib/metrics/p1Additional.server.ts",
 } as const satisfies Record<(typeof readers)[SupportedId],string>;
@@ -303,6 +292,7 @@ export const canonicalSourcePaths = {
 export const classified = {
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},
+  getActiveSignals:{kind:"restricted",reason:"Live signal generation loads unbounded menu/pricing observations; needs bounded source before registration"},
   getExpenseSummary:{kind:"restricted",reason:"Projected running-cost rows lack authoritative source and actual/estimated provenance; use recorded expense entries instead"},
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
@@ -311,6 +301,7 @@ export const classified = {
   getDecisionHistory:{kind:"restricted",reason:"Legacy unbounded decision history contains private snapshots; P1 uses bounded status page"},
 } as const;
 export const additionalSurfaces = {
+  "team.signals":{kind:"restricted",source:"lib/ai/cafeTools.server.ts",reason:"Unbounded live pricing signals cannot be exposed safely as P1 results"},
   "money.expense_categories":{kind:"restricted",source:"lib/operating/cafeState.ts",reason:"Source and actual/estimate evidence absent from canonical category projection"},
   orders_raw:{kind:"restricted",source:"lib/pos/square/adapter.ts",reason:"No authorized P1 raw-order service with complete coverage"},
   attachments_extraction:{kind:"unsupported",source:"lib/ai/conversations/attachments.ts",reason:"Attachment storage is not verified parsing"},
@@ -352,7 +343,6 @@ export const purposePolicies = {
   "labor.recurring_assignments":["future_owner_assignment_review"],
   "money.break_even":["current_break_even_review"],
   "labor.daily_costs":["recorded_labor_cost_review"],
-  "team.signals":["observed_team_signal_status"],
   "team.decisions":["read_only_decision_history"],
   "team.tasks":["owner_task_review"],
 } as const satisfies Record<SupportedId,readonly [string,...string[]]>;
