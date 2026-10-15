@@ -1571,6 +1571,20 @@
     "ownerUnavailable": "Owner hours cannot be compared until a verified owner-to-staff link is configured.",
     "feasible": "Feasible proposal",
     "infeasible": "Required coverage cannot be filled",
-    "unproven": "Optimizer could not prove completeness"
+    "unproven": "Optimizer could not prove completeness",
+    "noticeWage": "Review the wage verification for {employee}; unknown wages are not $0.",
+    "noticeAvailability": "Confirm availability for {employee} before trusting any assignment.",
+    "noticeLeave": "Unconfirmed absence or leave for {employee}; review it before relying on a shift.",
+    "noticeCoverage": "Unconfirmed coverage was excluded from this proposal.",
+    "noticeNoStaff": "No active employees are recorded; add staff and availability.",
+    "noticeLimits": "No confirmed work-hour limits or preferences; review them.",
+    "noticeLegacy": "Legacy recurring shifts remain separate and may conflict; reconcile before publishing.",
+    "noticePolicy": "Labor rules, break/overtime policy, and owner-worker identity are not verified.",
+    "noticeProvisional": "This is a provisional multi-request snapshot; revalidation is required before approval and publishing.",
+    "blockerLocation": "Add a café location before scheduling.",
+    "blockerCoverage": "Enter and confirm required opening, closing or other coverage.",
+    "blockerLimits": "Conflicting confirmed hour limits for {employee}. Review their effective dates.",
+    "missingInputs": "Required scheduling information is missing or conflicting. Review the Staff scheduling forms.",
+    "partialDraftUnavailable": "This incomplete proposal shows gaps for review; saving it is disabled until required coverage is valid."
   }
 }
