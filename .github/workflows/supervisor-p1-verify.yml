@@ -1,0 +1,42 @@
+name: Universal Supervisor Platform P1 Verification
+
+on:
+  pull_request:
+    paths:
+      - "lib/metrics/**"
+      - "lib/ai/tools.ts"
+      - "lib/ai/cafeTools.server.ts"
+      - "lib/ai/conversations/**"
+      - "lib/data/**"
+      - "lib/operating/**"
+      - ".github/workflows/supervisor-p1-verify.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p1:
+    name: P1 catalog, typecheck, regressions, lint, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: TypeScript (strict)
+        run: npx tsc --noEmit
+      - name: P1 bidirectional coverage and negative security tests
+        run: npx vitest run lib/metrics
+      - name: Full regression suite
+        run: npm test
+      - name: Changed TypeScript lint
+        run: npx eslint lib/metrics
+      - name: Production build
+        run: npm run build
+      - name: Whitespace
+        run: git diff --check origin/main...HEAD
