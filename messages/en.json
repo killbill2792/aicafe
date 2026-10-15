@@ -1526,6 +1526,7 @@
     "applyAfterConflict": "Your draft may overwrite a newer owner's changes. After comparing the latest records, deliberately apply your draft?",
     "fullDay": "Full day (both time fields empty)",
     "hardUnavailableConflict": "The confirmed no-work restriction takes priority over these windows.",
-    "alreadyAssigned": "This qualification is already assigned for the same location and dates."
+    "alreadyAssigned": "This qualification is already assigned for the same location and dates.",
+    "deletedDraftRecreate": "A record in your draft was deleted by another owner. If you deliberately reapply, it will be created as a new record."
   }
 }
