@@ -5,6 +5,7 @@ import { getStaffSchedules } from "@/lib/data/getStaffSchedules";
 import { getSnapshot } from "@/lib/data/getSnapshot";
 import BackHeader from "@/components/shared/BackHeader";
 import ManageStaffPanel from "@/components/staff/ManageStaffPanel";
+import OliviaPlanningPanel from "@/components/staff/OliviaPlanningPanel";
 import { getSchedulingFoundationRecords, getSchedulingLocationOptions } from "@/lib/actions/schedulingFoundation";
 import type { SchedulingClientRecords } from "@/components/staff/SchedulingInputsPanel";
 import PageShell from "@/components/shared/PageShell";
@@ -43,6 +44,8 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
+      {enabled && process.env.SCHEDULING_PR3_DRAFTS_ENABLED === "true" &&
+        <OliviaPlanningPanel today={snapshot.todayDateStr} />}
       <ManageStaffPanel
         employees={employees}
         schedules={schedules}
