@@ -135,5 +135,5 @@ export type PlannerResult = {
   /** Some constraints may be unknown without jurisdiction/verified wage data. */
   warnings: string[];
   /** Infeasible only for independently proven missing eligibility/capacity. */
-  proof: "complete_candidate_solution" | "required_slot_has_no_eligible_worker" | "search_budget_exhausted";
+  proof: "complete_candidate_solution" | "required_slot_has_no_eligible_worker" | "search_budget_exhausted" | "candidate_constraints_unresolved";
 };
