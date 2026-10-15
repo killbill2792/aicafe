@@ -4,7 +4,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage } from "./p1Additional.server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage, readP1MenuCatalog } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, metricUnits, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -95,7 +95,7 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "money.recorded_spending":(t,a)=>t.getRecordedExpenses(a.period!),
   "sales.item_units":(t,a)=>t.getProductSales(a.period!),
   "sales.item_coverage":(t,a)=>t.getItemSalesCoverage(a.period!),
-  "menu.catalog":t=>t.getMenuCatalog(),
+  "menu.catalog":(_t,_a,ctx)=>readP1MenuCatalog({businessId:ctx.businessId??""}),
   "labor.attendance":(t,a,ctx)=>t.getStaffAttendance(a.period!,ctx.timezone),
   "labor.current_staff":t=>t.getCurrentStaff(),
   "labor.recurring_assignments":(t,a,ctx)=>t.getRecurringSchedule(a.period!,ctx.asOf),
