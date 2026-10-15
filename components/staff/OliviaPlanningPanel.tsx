@@ -20,6 +20,8 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   const [week, setWeek] = useState(() => mondayOf(today));
   const [result, setResult] = useState<PlannerResult | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [employees, setEmployees] = useState<Record<string,string>>({});
+  const [locations, setLocations] = useState<Record<string,string>>({});
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
   const [currentRevision, setCurrentRevision] = useState(0);
   const [publishedRevision, setPublishedRevision] = useState<number | null>(null);
@@ -48,6 +50,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
       if (!response.ok) { setError(response.error); return; }
       setResult(response.plan);
       setWarnings(response.warnings);
+      setEmployees(response.employees); setLocations(response.locations);
       await loadHistory(week);
     });
   }
@@ -107,9 +110,9 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
         {scenario.shifts.length === 0 && <p>{t("noAssignments")}</p>}
         {scenario.shifts.map((shift, i) => <div key={i}
           className="rounded-xl border border-line px-3 py-2 text-sm">
-          <p className="font-semibold">{shift.employeeId}</p>
+          <p className="font-semibold">{employees[shift.employeeId] ?? shift.employeeId}</p>
           <p>{shift.startAt} — {shift.endAt}</p>
-          <p>{t("location")}: {shift.locationId}</p>
+          <p>{t("location")}: {locations[shift.locationId] ? `${shift.locationId} (${locations[shift.locationId]})` : shift.locationId}</p>
           <p>{t("paidMinutes")}: {shift.paidMinutes}</p>
         </div>)}
         <h3 className="font-bold">{t("gaps")}</h3>
