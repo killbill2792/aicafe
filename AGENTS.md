@@ -67,6 +67,10 @@ See `docs/02-design-system.md` — it is binding.
 - `design/mockups/*.html` — approved visual references. Open in a browser. Rebuild them as React components;
   do not copy inline styles verbatim — extract into Tailwind tokens from the design system.
 
+## Multi-developer GitHub safety
+
+When two ChatGPT/Codex accounts work on this repository, follow `docs/team-collaboration.md` and [onboarding checklist #82](https://github.com/killbill2792/aicafe/issues/82). One accountable implementer per feature branch/PR; identify overlapping files and merged dependencies before editing. No unreviewed direct `main` writes, bot merges or production deployments; independent human review, green **AI CAFE PR baseline** and relevant domain checks on final HEAD are required. Owner-controlled production migration/flags remain separate explicit gates. GitHub policies must be configured by the repository owner; these instructions alone cannot enforce branch protection.
+
 ## Working style (saves tokens, keeps quality)
 - One milestone task per session. Read only the docs it needs.
 - Before coding a milestone: write a short plan in `PROGRESS.md`, then implement, then run tests, then tick it off.
