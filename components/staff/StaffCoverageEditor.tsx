@@ -4,7 +4,8 @@ import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { getSchedulingFoundationRecords, saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { findEquivalentCoverage } from "@/lib/scheduling/coverageIdentity";
 import { type SchedulingRow, type SchedulingLocation,
  schedulingFieldClass as field, schedulingButtonClass as secondary,
  schedulingPrimaryClass as primary } from "./AvailabilityEditor";
@@ -49,15 +50,18 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     setLocationId(value);
     if (!fromEdited) setFrom(locations.find(l=>l.id===value)?.todayLocal??today);
   }
-  function save(){
-    if(conflicted){setError(t("conflict"));return;}
-    if(!locationId){setError(t("chooseLocation"));return;}
-    const old=savedRecord?.id===selected ? savedRecord : null;
-    const payload={location_id:locationId,day_of_week:specificDate?null:Number(day),
+  function coveragePayload(){
+    return {location_id:locationId,day_of_week:specificDate?null:Number(day),
       local_date:specificDate||null,effective_from:specificDate?null:from,
       effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
       min_headcount:Number(count),qualification_code:code||null,
       min_overlap_minutes:Number(overlap),priority,source,confirmation};
+  }
+  function save(){
+    if(conflicted){setError(t("conflict"));return;}
+    if(!locationId){setError(t("chooseLocation"));return;}
+    const old=savedRecord?.id===selected ? savedRecord : null;
+    const payload=coveragePayload();
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"coverage",action:old?"update":"create",
@@ -86,12 +90,19 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   return <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
     <h3 className="text-[17px] font-bold">{t("staffingNeeds")}</h3>
     <p className="text-[17px] text-ink-muted">{t("coverageExplainer")}</p>
-    {conflicted && <button type="button" className={secondary} onClick={()=>{
-      const fresh=rows.find(r=>r.id===selected);
+    {conflicted && <button type="button" className={secondary} disabled={pending} onClick={()=>run(async()=>{
+      // Fetch committed rows instead of treating router.refresh() as finished.
+      // If a distinct-key create collided, explicitly adopt that exact demand
+      // for revision-checked editing rather than retrying a duplicate insert.
+      const result=await getSchedulingFoundationRecords();
+      if(!result.ok){setError(t("saveFailed"));return;}
+      const current=result.records.coverage as SchedulingRow[];
+      const fresh=selected ? current.find(r=>r.id===selected)
+        : findEquivalentCoverage(current,coveragePayload());
       setSavedRecord(fresh?{id:fresh.id,revision:fresh.revision}:null);
-      if(!fresh)setSelected("");
-      setConflicted(false);setError("");retry.current=null;
-    }}>{t("applyAfterConflict")}</button>}
+      setSelected(fresh?.id??"");
+      setConflicted(false);setError("");retry.current=null;router.refresh();
+    })}>{t("applyAfterConflict")}</button>}
     <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     {locations.length===0 && <p role="status" className="text-[17px] text-warn">{t("noLocations")}</p>}
     {rows.length===0&&<p className="text-[17px] text-ink-muted">{t("noCoverage")}</p>}
