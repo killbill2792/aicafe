@@ -124,8 +124,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       [t("minimumWeekly"),min,setMin],[t("desiredWeekly"),desired,setDesired],
       [t("maximumWeekly"),max,setMax],[t("maximumDaily"),daily,setDaily],
     ] as [string,string,(x:string)=>void][]).map(([label,value,fn])=>
-      <label key={label} className="flex flex-col gap-1 text-sm">{label} ({t("hours")})
-        <input className={field} type="number" inputMode="decimal" step="any" min="0" max={label===t("maximumDaily")?24:168}
+      <label key={label} className="flex flex-col gap-1 text-sm">{label} ({t("hoursMinutes")})
+        <input className={field} type="text" inputMode="numeric" placeholder="8:00"
           value={value} onChange={e=>fn(e.target.value)}/>
       </label>)}
     <fieldset className="rounded-xl border border-line p-3">
