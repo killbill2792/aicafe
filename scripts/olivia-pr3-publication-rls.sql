@@ -190,7 +190,7 @@ BEGIN
     WHERE id=current_setting('test.olivia3_old3')::uuid)<>'superseded' THEN
    RAISE EXCEPTION 'republish did not atomically supersede prior official version';
  END IF;
-END $;
+END $$;
 INSERT INTO public.scheduling_plan_revisions
  (business_id,series_id,revision,status,source_digest,planner_input,scenario,
   created_by,approved_by,approved_at)
@@ -215,6 +215,6 @@ BEGIN
  IF (SELECT published_revision FROM public.scheduling_plan_series
     WHERE id=current_setting('test.olivia3_s3')::uuid)<>2
     THEN RAISE EXCEPTION 'rejected edit changed official version'; END IF;
-END $;
+END $$;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed
