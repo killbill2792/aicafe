@@ -79,6 +79,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     if(!output.ok) return;
     expect(output.businessId).toBe(fixtures.businessId);
     expect(output.blockers).toEqual([]);
+    expect(output.notices.some(n=>n.code==="policy_unverified")).toBe(true);
     expect(output.locationNames[id(800)]).toBe("Downtown");
     expect(output.input.horizonStart).toBe(week);
     expect(output.input.employees[0]).toMatchObject({
@@ -154,7 +155,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     const result=await loadOliviaWeekFromSavedStaff(week);
     expect(result.ok).toBe(true);
     if(!result.ok) return;
-    expect(result.blockers.some(b=>b.includes("required"))).toBe(true);
+    expect(result.blockers).toContainEqual({code:"no_coverage"});
     expect(result.input.employees).toHaveLength(0);
     expect(result.input.coverage).toHaveLength(0);
   });
