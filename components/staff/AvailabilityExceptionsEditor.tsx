@@ -73,8 +73,11 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       setStatus("error"); return;
     }
     key.current ??= crypto.randomUUID();
+    const currentIds=new Set(scoped.map(r=>r.id));
     const desired = draft.map(r => ({
-      ...(r.id ? {id:r.id} : {}),
+      // A deleted row is deliberately re-created only after the owner's
+      // explicit conflict comparison/reapply confirmation.
+      ...(r.id && currentIds.has(r.id) ? {id:r.id} : {}),
       data: {
         employee_id:employeeId, location_id:locationId||null, local_date:date,
         exception_type:r.exception_type, overnight:r.overnight,
@@ -179,9 +182,11 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     {status==="saved" && <p role="status" className="text-sm text-good">{t("saved")}</p>}
     {status==="conflict" && <details open className="rounded-xl border border-line p-3">
       <summary className="font-semibold">{t("latestSaved")}</summary>
-      {scoped.map(r=><p key={r.id} className="text-sm">{String(r.exception_type)}:
+      {scoped.map(r=><p key={r.id} className="text-sm">{t(r.exception_type as ExceptionType)}:
         {" "}{String(r.start_local??"")}–{String(r.end_local??"")}
         {" · "}#{r.revision}</p>)}
+      {draft.some(d=>d.id && !scoped.some(r=>r.id===d.id)) &&
+        <p className="text-sm">{t("deletedDraftRecreate")}</p>}
       {scoped.length===0 && <p className="text-sm">{t("notRecorded")}</p>}
       <button type="button" className={secondary} onClick={()=>{
         if (!window.confirm(t("discardEdits"))) return;
