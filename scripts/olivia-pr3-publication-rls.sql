@@ -141,5 +141,80 @@ BEGIN
     RAISE EXCEPTION 'blocked publication altered official pointers, attendance or legacy assignments';
   END IF;
 END $$;
+-- Republish after a shift has started: identical historical commitments survive,
+-- future edits may proceed, but dropping or rewriting old planned shifts is denied.
+INSERT INTO public.scheduling_plan_series
+ (business_id,horizon_start,current_revision,published_revision,created_by)
+VALUES(:'business','2020-01-06',2,1,:'owner') RETURNING id AS series3 \gset
+INSERT INTO public.scheduling_plan_revisions
+ (business_id,series_id,revision,status,source_digest,planner_input,scenario,
+  created_by,approved_by,approved_at,published_by,published_at)
+VALUES(:'business',:'series3',1,'published',repeat('a',64),
+ '{"horizonStart":"2020-01-06"}',
+ '{"objective":"balanced","completeCoverage":true,"hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}',
+ :'owner',:'owner',now(),:'owner',now()) RETURNING id AS old3 \gset
+INSERT INTO public.scheduling_plan_revisions
+ (business_id,series_id,revision,status,source_digest,planner_input,scenario,
+  created_by,approved_by,approved_at)
+VALUES(:'business',:'series3',2,'approved',repeat('a',64),
+ '{"horizonStart":"2020-01-06"}',
+ '{"objective":"balanced","completeCoverage":true,"hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}',
+ :'owner',:'owner',now()) RETURNING id AS new3 \gset
+INSERT INTO public.scheduling_plan_assignments
+ (business_id,plan_revision_id,employee_id,location_id,
+  starts_at,ends_at,paid_minutes,breaks,pinned)
+VALUES
+ (:'business',:'old3',:'employee',:'location',
+  '2020-01-07T09:00:00Z','2020-01-07T11:00:00Z',120,'[]',false),
+ (:'business',:'new3',:'employee',:'location',
+  '2020-01-07T09:00:00Z','2020-01-07T11:00:00Z',120,'[]',false);
+SELECT set_config('test.olivia3_s3',:'series3',true);
+SELECT set_config('test.olivia3_old3',:'old3',true);
+SELECT set_config('test.olivia3_new3',:'new3',true);
+DO $
+DECLARE
+ b uuid:=current_setting('test.olivia3_biz')::uuid;
+ actor uuid:=current_setting('test.olivia3_owner')::uuid;
+ token text:=current_setting('test.olivia3_token');
+ response jsonb;
+BEGIN
+ SELECT public.scheduling_pr3_publish(b,actor,
+  current_setting('test.olivia3_new3')::uuid,2,repeat('a',64),token,
+  gen_random_uuid()) INTO response;
+ IF response->>'status'<>'published' THEN
+   RAISE EXCEPTION 'republishing unchanged started shifts failed: %',response;
+ END IF;
+ IF (SELECT published_revision FROM public.scheduling_plan_series
+    WHERE id=current_setting('test.olivia3_s3')::uuid)<>2 OR
+    (SELECT status FROM public.scheduling_plan_revisions
+    WHERE id=current_setting('test.olivia3_old3')::uuid)<>'superseded' THEN
+   RAISE EXCEPTION 'republish did not atomically supersede prior official version';
+ END IF;
+END $;
+INSERT INTO public.scheduling_plan_revisions
+ (business_id,series_id,revision,status,source_digest,planner_input,scenario,
+  created_by,approved_by,approved_at)
+VALUES(:'business',:'series3',3,'approved',repeat('a',64),
+ '{"horizonStart":"2020-01-06"}',
+ '{"objective":"balanced","completeCoverage":true,"hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}',
+ :'owner',:'owner',now()) RETURNING id AS removed3 \gset
+UPDATE public.scheduling_plan_series SET current_revision=3 WHERE id=:'series3';
+SELECT set_config('test.olivia3_removed3',:'removed3',true);
+DO $
+DECLARE
+ b uuid:=current_setting('test.olivia3_biz')::uuid;
+ actor uuid:=current_setting('test.olivia3_owner')::uuid;
+ response jsonb;
+BEGIN
+ SELECT public.scheduling_pr3_publish(b,actor,
+   current_setting('test.olivia3_removed3')::uuid,3,repeat('a',64),
+   current_setting('test.olivia3_token'),gen_random_uuid()) INTO response;
+ IF response->>'error'<>'past_shift' THEN
+   RAISE EXCEPTION 'republishing deleted already-started planned shift: %',response;
+ END IF;
+ IF (SELECT published_revision FROM public.scheduling_plan_series
+    WHERE id=current_setting('test.olivia3_s3')::uuid)<>2
+    THEN RAISE EXCEPTION 'rejected edit changed official version'; END IF;
+END $;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed
