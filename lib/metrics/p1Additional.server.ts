@@ -221,3 +221,25 @@ export async function readP1DecisionPage({businessId}:Scoped,page:number=0) {
   })),page,hasMore,nextPage:hasMore&&page<250?page+1:null,limitReached:hasMore&&page===250},
   hasMore||page>0?["decision_history_page_only"]:[]);
 }
+
+/** P1-specific menu reader. The legacy Supervisor's UI projection maps a null
+ * database price to zero; a canonical P1 reader must preserve unknown prices.
+ * A server-side hard limit prevents reading and silently truncating larger catalogs.
+ */
+export async function readP1MenuCatalog({businessId}:Scoped) {
+  if(!businessId)return absent("scope_missing");
+  const client=await createServerSupabaseClient();
+  const {data,error}=await client.from("menu_items")
+    .select("id,business_id,name,category,is_active,price_cents")
+    .eq("business_id",businessId)
+    .order("id",{ascending:true}).limit(MAX_RECORDS+1);
+  if(error||!data||data.length>MAX_RECORDS||
+    data.some(row=>row.business_id!==businessId))return absent("menu_catalog_incomplete");
+  const unpriced=data.filter(row=>row.price_cents===null).length;
+  return present(data.map(row=>({
+    id:row.id,name:row.name,category:row.category==="food"?"food":"drink",
+    active:row.is_active!==false,
+    priceCents:row.price_cents,
+    priceStatus:row.price_cents===null?"unrecorded":"recorded",
+  })),unpriced?["menu_items_missing_recorded_price:"+unpriced]:[]);
+}
