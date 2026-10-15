@@ -19,10 +19,10 @@ type DraftWindow = {
 };
 
 const week = [1, 2, 3, 4, 5, 6, 0];
-const field = "min-h-12 rounded-xl border border-line bg-white px-3 text-base text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+const field = "min-h-12 rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 export const schedulingFieldClass = field;
-export const schedulingButtonClass = "min-h-12 rounded-xl border border-line bg-card px-3 text-base font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
-export const schedulingPrimaryClass = "min-h-12 rounded-xl bg-ink px-4 text-base font-semibold text-paper disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+export const schedulingButtonClass = "min-h-12 rounded-xl border border-line bg-card px-3 text-[17px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+export const schedulingPrimaryClass = "min-h-12 rounded-xl bg-ink px-4 text-[17px] font-semibold text-paper disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 function windowFromRecord(row: SchedulingRow): DraftWindow {
   return {
@@ -146,20 +146,20 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
 
   return (
     <section aria-label={t("weeklyAvailability")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
-      <h4 className="text-base font-bold">{t("weeklyAvailability")}</h4>
-      <p className="text-sm text-ink-muted">{t("availabilityExplainer")}</p>
-      <label className="flex flex-col gap-1 text-sm font-semibold">{t("location")}
+      <h4 className="text-[17px] font-bold">{t("weeklyAvailability")}</h4>
+      <p className="text-[17px] text-ink-muted">{t("availabilityExplainer")}</p>
+      <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("location")}
         <select className={field} value={locationId}
           onChange={(e) => switchLocation(e.target.value)}>
           <option value="">{t("allLocations")}</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm font-semibold">{t("effectiveFrom")}
+      <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("effectiveFrom")}
         <input className={field} type="date" value={effectiveFrom}
           onChange={(e) => switchScope(setEffectiveFrom, e.target.value)}/>
       </label>
-      {effectiveScopes.length > 0 && <label className="flex flex-col gap-1 text-sm font-semibold">
+      {effectiveScopes.length > 0 && <label className="flex flex-col gap-1 text-[17px] font-semibold">
         {t("existingPeriods")}
         <select className={field}
           value={effectiveScopes.some(p=>p.from===effectiveFrom&&p.to===effectiveTo)
@@ -170,7 +170,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
             value={`${p.from}|${p.to}`}>{p.from} — {p.to||t("ongoing")}</option>)}
         </select>
       </label>}
-      <label className="flex flex-col gap-1 text-sm font-semibold">{t("effectiveTo")}
+      <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("effectiveTo")}
         <input className={field} type="date" value={effectiveTo}
           onChange={(e) => switchScope(setEffectiveTo, e.target.value)}/>
       </label>
@@ -188,34 +188,34 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
                   overnight: false, source: "owner_direct", confirmation: "unconfirmed",
                 }])}>{t("addWindow")}</button>
             </div>
-            {confirmedUnavailableDays.has(day) && <p role="status" className="py-2 text-sm font-semibold text-warn">
+            {confirmedUnavailableDays.has(day) && <p role="status" className="py-2 text-[17px] font-semibold text-warn">
               {t("confirmedUnavailableDay")}
               {windows.length>0 && ` · ${t("hardUnavailableConflict")}`}
             </p>}
             {windows.length===0 && !confirmedUnavailableDays.has(day) &&
-              <p className="py-2 text-sm text-ink-muted">{t("notRecorded")}</p>}
+              <p className="py-2 text-[17px] text-ink-muted">{t("notRecorded")}</p>}
             {windows.map(({ row, index }) => (
               <div key={row.id ?? `new-${index}`} className="mt-2 flex flex-col gap-2 rounded-xl bg-paper p-3">
                 <div className="grid grid-cols-2 gap-2">
-                  <label className="flex flex-col gap-1 text-sm">{t("start")}
+                  <label className="flex flex-col gap-1 text-[17px]">{t("start")}
                     <input type="time" className={field} value={row.start_local}
                       onChange={(e) => change((all) => all.map((item, i) =>
                         i===index ? {...item, start_local:e.target.value} : item))}/>
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">{t("end")}
+                  <label className="flex flex-col gap-1 text-[17px]">{t("end")}
                     <input type="time" className={field} value={row.end_local}
                       onChange={(e) => change((all) => all.map((item, i) =>
                         i===index ? {...item, end_local:e.target.value} : item))}/>
                   </label>
                 </div>
-                <label className="flex min-h-12 items-center gap-2 text-sm">
+                <label className="flex min-h-12 items-center gap-2 text-[17px]">
                   <input type="checkbox" checked={row.overnight}
                     onChange={(e) => change((all) => all.map((item, i) =>
                       i===index ? {...item, overnight:e.target.checked} : item))}/>
                   {t("overnight")}
                 </label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-sm">{t("source")}
+                  <label className="flex flex-col gap-1 text-[17px]">{t("source")}
                     <select className={field} value={row.source}
                       onChange={(e) => change((all) => all.map((item,i) => i===index ?
                         {...item, source:e.target.value as DraftWindow["source"]} : item))}>
@@ -223,7 +223,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
                       <option value="worker_reported_by_owner">{t("workerReported")}</option>
                     </select>
                   </label>
-                  <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+                  <label className="flex flex-col gap-1 text-[17px]">{t("confirmation")}
                     <select className={field} value={row.confirmation}
                       onChange={(e) => change((all) => all.map((item,i) => i===index ?
                         {...item, confirmation:e.target.value as DraftWindow["confirmation"]} : item))}>
@@ -239,25 +239,25 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
           </div>;
         })}
       </div>
-      <p className="text-sm text-ink-muted">{t("doesNotAssign")}</p>
+      <p className="text-[17px] text-ink-muted">{t("doesNotAssign")}</p>
       {conflicted && <details open className="rounded-xl border border-line p-3">
         <summary className="font-semibold">{t("latestSaved")}</summary>
-        <ul className="mt-2 text-sm">
+        <ul className="mt-2 text-[17px]">
           {scoped.map(r=><li key={r.id}>{dayNames[Number(r.day_of_week)]}:
             {" "}{String(r.start_local)}–{String(r.end_local)}
             {" · "}#{r.revision}</li>)}
         </ul>
         {draft.some(d=>d.id && !scoped.some(r=>r.id===d.id)) &&
-          <p className="text-sm">{t("deletedDraftRecreate")}</p>}
-        {scoped.length===0&&<p className="text-sm">{t("notRecorded")}</p>}
+          <p className="text-[17px]">{t("deletedDraftRecreate")}</p>}
+        {scoped.length===0&&<p className="text-[17px]">{t("notRecorded")}</p>}
         <button type="button" className={schedulingButtonClass} onClick={()=>{
           if (!window.confirm(t("discardEdits"))) return;
           setDraftOverride(null);setDirty(false);setConflicted(false);setError(null);
         }}>{t("useLatestSaved")}</button>
       </details>}
-      {error && <p role="alert" className="text-sm font-semibold text-warn">{error}</p>}
-      {saved && <p role="status" className="text-sm text-good">{t("saved")}</p>}
-      {dirty && <p role="status" className="text-sm text-warn">{t("unsaved")}</p>}
+      {error && <p role="alert" className="text-[17px] font-semibold text-warn">{error}</p>}
+      {saved && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
+      {dirty && <p role="status" className="text-[17px] text-warn">{t("unsaved")}</p>}
       <button type="button" className={schedulingPrimaryClass} disabled={pending || !dirty} onClick={save}>
         {pending ? t("saving") : t("saveAvailability")}
       </button>
