@@ -35,9 +35,13 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     assert(e.id.length>0 && e.displayName.length>0, "employee");
     for(const number of [e.minWeeklyMinutes, e.desiredWeeklyMinutes,
       e.maxDailyMinutes,e.maxWeeklyMinutes,e.ownerOpportunityCentsPerHour,
-      e.verifiedSalaryHourlyCents, e.verifiedSalaryHoursPerWeek]) {
+      e.verifiedSalaryHourlyCents]) {
       assert(number==null || (Number.isSafeInteger(number) && number>=0), "employee_limits_or_cents");
     }
+    assert(e.verifiedSalaryHoursPerWeek==null ||
+      (Number.isFinite(e.verifiedSalaryHoursPerWeek) &&
+        e.verifiedSalaryHoursPerWeek>0 && e.verifiedSalaryHoursPerWeek<=168),
+      "verified_salary_weekly_hours");
     assert(e.maxDailyMinutes==null || e.maxDailyMinutes<=1440, "max_daily_minutes");
     assert(e.maxWeeklyMinutes==null || e.maxWeeklyMinutes<=10080, "max_weekly_minutes");
     if(e.maxWeeklyMinutes!=null && e.minWeeklyMinutes!=null)
