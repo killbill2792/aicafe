@@ -73,6 +73,12 @@ describe("Olivia immutable owner schedule edit service",()=>{
       .toEqual({ok:false,error:"invalid_input"});
     expect(mocks.owner).not.toHaveBeenCalled();
   });
+  it("rejects edits that would produce revision 501",async()=>{
+    expect(await saveOliviaEditedDraft({...edit,expectedRevision:500},
+      input,businessId,sourceFingerprint))
+      .toEqual({ok:false,error:"invalid_input"});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("rejects stale source data and changed selected business",async()=>{
     mocks.digest.mockReturnValueOnce("c".repeat(64));
     expect(await saveOliviaEditedDraft(edit,input,businessId,sourceFingerprint))
