@@ -87,6 +87,7 @@ export type PlannerShift = {
 export type PlannerGapReason =
   | "no_active_staff" | "qualification_missing" | "no_confirmed_availability"
   | "capacity_or_overlap" | "break_or_rest_constraint"
+  | "daily_hour_limit" | "weekly_hour_limit" | "date_specific_cap"
   | "pinned_conflict" | "solver_budget";
 export type PlannerGap = {
   coverageId: string; locationId: string;
