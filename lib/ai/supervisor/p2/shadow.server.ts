@@ -67,9 +67,19 @@ const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+
  * specialist intent or adding a question-specific routing taxonomy.
  * Permit only generic conversational framing; material omissions fail closed.
  */
-const opening=new Set(["can","could","would","will","you","please","kindly","tell","me","if","whether","what","did","were","our","we","review","check","inspect","examine","revisa","show","explain","look","at","do","does","is","are"]);
-const bridge=new Set(["and","or","also","then","tell","me","if","whether","please","could","you","review","check","inspect","examine"]);
-const closing=new Set(["please","thanks","thank","you"]);
+const opening=new Set([
+  "can","could","would","will","you","please","kindly","tell","me","if",
+  "whether","what","did","were","our","we","review","check","inspect",
+  "examine","show","explain","look","at","do","does","is","are",
+  // Only generic Spanish and Arabic conversation framing, never business facts.
+  "revisa","revisar","puedes","podrías","podrias","decirme","dime","si","por","favor",
+  "هل","يمكنك","يمكن","مراجعة","تخبرني","الرجاء","من","فضلك","رجاء",
+]);
+const bridge=new Set([
+  "and","or","also","then","tell","me","if","whether","please","could","you",
+  "review","check","inspect","examine","y","e","también","además","و","ثم","أيضا",
+]);
+const closing=new Set(["please","thanks","thank","you","gracias","شكرا"]);
 function onlyFraming(segment:string,role:"opening"|"bridge"|"closing"):boolean {
   const words=normalize(segment).match(/[\p{L}\p{N}]+/gu)??[];
   const allowed=role==="opening"?opening:role==="bridge"?bridge:closing;
@@ -84,6 +94,11 @@ export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boole
   for(const c of clauses){
     const part=normalize(c);
     if(!part)return false;
+    // Reject potential multi-intent clauses rather than letting one model
+    // selection silently represent only the first of several owner goals.
+    // Conservative in P2: an ambiguous conjunction is reported unverified.
+    if(/(?:^|[^\p{L}])(?:and|or|also|plus|y|e|además|también|و|ثم|وكذلك)(?:[^\p{L}]|$)/iu.test(part))
+      return false;
     const start=original.indexOf(part,cursor);
     if(start<0)return false;
     unmatched.push(original.slice(cursor,start));
@@ -167,6 +182,8 @@ export async function runP2ShadowWithScope(params:{
     instructions:[
       "This is a read-only shadow completeness audit, not an answer.",
       "Split the owner's exact goal into EVERY independent semantic request, including unsupported work.",
+      "Do not combine independent goals joined by and/or/y/و into one clause.",
+      "Preserve standalone conjunctions outside individually addressable clauses.",
       "Return each clause as an EXACT CONTIGUOUS SUBSTRING of the original question,",
       "without paraphrasing, invented facts, substitutions, or merging distinct goals.",
       "Include all material outcome predicates, limitations and restrictions in clauses.",
