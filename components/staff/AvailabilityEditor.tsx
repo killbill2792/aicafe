@@ -74,12 +74,15 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
   function change(updater: (previous: DraftWindow[]) => DraftWindow[]) {
     draftManifest.current ??= scoped.map(r=>({id:r.id,revision:r.revision}));
     setDraftOverride((previous) => updater(previous ?? scoped.map(windowFromRecord))); setDirty(true); setSaved(false); setError(null);
-    requestKey.current = null;setConflicted(false);
+    // Keep conflict mode until the owner explicitly rebases against the
+    // refreshed authoritative manifest. Editing a preserved draft is not
+    // consent to overwrite a co-owner's newer work.
+    requestKey.current = null;
   }
   function switchScope(setter: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
     setDraftOverride(null); setDirty(false); setError(null); setSaved(false);
-    requestKey.current = null;draftManifest.current=null;setConflicted(false); setter(value);
+    requestKey.current = null;draftManifest.current=null;setConflicted(false);setReapplyReady(false); setter(value);
   }
   function switchLocation(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
@@ -87,7 +90,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       (r.location_id??null)===(value||null))
       .sort((a,b)=>String(b.effective_from).localeCompare(String(a.effective_from)))[0];
     setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
-    requestKey.current=null;draftManifest.current=null;setConflicted(false);setLocationId(value);
+    requestKey.current=null;draftManifest.current=null;setConflicted(false);setReapplyReady(false);setLocationId(value);
     setEffectiveFrom(first?String(first.effective_from):
       (locations.find(l=>l.id===value)?.todayLocal??today));
     setEffectiveTo(first?String(first.effective_to??""):"");
@@ -96,7 +99,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
     if (dirty && !window.confirm(t("discardEdits"))) return;
     const scope=effectiveScopes.find(p=>`${p.from}|${p.to}`===value);
     setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
-    requestKey.current=null;draftManifest.current=null;setConflicted(false);
+    requestKey.current=null;draftManifest.current=null;setConflicted(false);setReapplyReady(false);
     setEffectiveFrom(scope?.from??(locations.find(l=>l.id===locationId)?.todayLocal??today));setEffectiveTo(scope?.to??"");
   }
   function save() {
@@ -258,7 +261,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
         {scoped.length===0&&<p className="text-[17px]">{t("notRecorded")}</p>}
         <button type="button" className={schedulingButtonClass} onClick={()=>{
           if (!window.confirm(t("discardEdits"))) return;
-          setDraftOverride(null);draftManifest.current=null;setDirty(false);setConflicted(false);setError(null);
+          setDraftOverride(null);draftManifest.current=null;setDirty(false);setConflicted(false);setReapplyReady(false);setError(null);
         }}>{t("useLatestSaved")}</button>
       </details>}
       {error && <p role="alert" className="text-[17px] font-semibold text-warn">{error}</p>}
