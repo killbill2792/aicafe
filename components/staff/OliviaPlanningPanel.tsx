@@ -261,7 +261,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
           } as Record<string,string>)[gap.reason]??"gapUnknown")} ({gap.missingHeadcount})
         </p>)}
         {!scenario.completeCoverage && <p className="text-sm text-warn">{t("partialDraftUnavailable")}</p>}
-        <button type="button" disabled={pending || !sourceDigest || proposalHead.current!==currentRevision || !scenario.hardConstraintsSatisfied || !scenario.completeCoverage}
+        <button type="button" disabled={pending || !sourceDigest || !scenario.hardConstraintsSatisfied || !scenario.completeCoverage}
           onClick={save}
           className="min-h-12 rounded-full border border-ink px-4 font-bold disabled:opacity-50">
           {t("saveDraft")}
