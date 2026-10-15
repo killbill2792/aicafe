@@ -1585,6 +1585,24 @@
     "blockerCoverage": "Introduzca y confirme la cobertura necesaria para aperturas, cierres u otros turnos.",
     "blockerLimits": "Límites de horas confirmados contradictorios para {employee}. Revise las fechas de vigencia.",
     "missingInputs": "Faltan datos de programación obligatorios o hay contradicciones. Revise los formularios de personal.",
-    "partialDraftUnavailable": "Esta propuesta incompleta muestra las vacantes; no se puede guardar hasta validar la cobertura requerida."
+    "partialDraftUnavailable": "Esta propuesta incompleta muestra las vacantes; no se puede guardar hasta validar la cobertura requerida.",
+    "editTitle": "Editar turnos",
+    "editInstructions": "Los cambios crean un nuevo borrador. Se comprueban la disponibilidad, la cobertura y los límites antes de guardar. La publicación aún no está disponible.",
+    "shiftNumber": "Turno {number}",
+    "removeShift": "Eliminar turno",
+    "employee": "Empleado",
+    "shiftStart": "Inicio",
+    "shiftEnd": "Fin",
+    "earlier": "Adelantar 30 minutos",
+    "later": "Retrasar 30 minutos",
+    "unpaidBreak": "Añadir descanso no remunerado de 30 minutos una hora después del inicio",
+    "existingBreaks": "Este turno tiene varios descansos registrados; consérvelos al editar.",
+    "addShift": "Añadir turno",
+    "editRevision": "Editar versión",
+    "editingRevision": "Editando versión {revision} (no oficial)",
+    "saveEditedDraft": "Guardar borrador editado",
+    "cancelEdit": "Cancelar edición",
+    "editLoadFailed": "No se pudo cargar la versión. Actualice e inténtelo de nuevo.",
+    "editInvalid": "No se puede guardar: falló la validación de turnos. {details}"
   }
 }
