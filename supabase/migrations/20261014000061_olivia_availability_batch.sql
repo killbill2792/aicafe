@@ -7,6 +7,13 @@ ALTER TABLE public.locations ADD COLUMN IF NOT EXISTS timezone text;
 CREATE OR REPLACE FUNCTION public.scheduling_check_location_timezone()
 RETURNS trigger LANGUAGE plpgsql SET search_path=public AS $$
 BEGIN
+ IF NEW.timezone IS DISTINCT FROM
+    (CASE WHEN TG_OP='INSERT' THEN NULL ELSE OLD.timezone END) AND
+    auth.uid() IS NOT NULL AND
+    NOT public.scheduling_is_owner(NEW.business_id) THEN
+   RAISE EXCEPTION 'only the scheduling owner may change location timezone'
+      USING ERRCODE='42501';
+ END IF;
  IF NEW.timezone IS NOT NULL AND NOT EXISTS (
    SELECT 1 FROM pg_timezone_names WHERE name=NEW.timezone
  ) THEN RAISE EXCEPTION 'unknown IANA timezone' USING ERRCODE='22023'; END IF;
