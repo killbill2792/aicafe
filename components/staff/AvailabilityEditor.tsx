@@ -20,7 +20,7 @@ type DraftWindow = {
 };
 
 const week = [1, 2, 3, 4, 5, 6, 0];
-const field = "min-h-12 rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+const field = "min-h-12 min-w-0 w-full rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 export const schedulingFieldClass = field;
 export const schedulingButtonClass = "min-h-12 rounded-xl border border-line bg-card px-3 text-[17px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 export const schedulingPrimaryClass = "min-h-12 rounded-xl bg-ink px-4 text-[17px] font-semibold text-paper disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
