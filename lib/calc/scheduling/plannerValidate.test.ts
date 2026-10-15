@@ -127,4 +127,34 @@ describe("Independent pure PR3-ready schedule validation",()=>{
       v.startsWith("unrecorded_paid_rest_break:"))).toBe(true);
   });
 
+  it("rejects zero-overlap handoff and identifies its exact transition",()=>{
+    const configured:PlannerInput={...input,slotMinutes:30,
+      coverage:[{...input.coverage[0],minHeadcount:1,minOverlapMinutes:30}]};
+    const roster:PlannerShift[]=[
+      {employeeId:"staff-a",locationId:"a",startAt:"2026-10-12T16:00:00.000Z",
+        endAt:"2026-10-12T17:00:00.000Z",paidMinutes:60,breaks:[],pinned:false},
+      {employeeId:"staff-b",locationId:"a",startAt:"2026-10-12T17:00:00.000Z",
+        endAt:"2026-10-12T18:00:00.000Z",paidMinutes:60,breaks:[],pinned:false},
+    ];
+    const result=validateOliviaAssignments(configured,roster);
+    expect(result.valid).toBe(false);
+    expect(result.gaps).toContainEqual(expect.objectContaining({
+      coverageId:"opener",startAt:"2026-10-12T16:30:00.000Z",
+      endAt:"2026-10-12T17:00:00.000Z",reason:"handoff_overlap_missing",
+    }));
+  });
+  it("accepts a fully staffed overlap interval across a verified handoff",()=>{
+    const configured:PlannerInput={...input,slotMinutes:30,
+      coverage:[{...input.coverage[0],minHeadcount:1,minOverlapMinutes:30}]};
+    const roster:PlannerShift[]=[
+      {employeeId:"staff-a",locationId:"a",startAt:"2026-10-12T16:00:00.000Z",
+        endAt:"2026-10-12T17:00:00.000Z",paidMinutes:60,breaks:[],pinned:false},
+      {employeeId:"staff-b",locationId:"a",startAt:"2026-10-12T16:30:00.000Z",
+        endAt:"2026-10-12T18:00:00.000Z",paidMinutes:90,breaks:[],pinned:false},
+    ];
+    const result=validateOliviaAssignments(configured,roster);
+    expect(result.valid).toBe(true);
+    expect(result.completeCoverage).toBe(true);
+  });
+
 });
