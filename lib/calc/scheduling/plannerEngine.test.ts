@@ -334,4 +334,17 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(later.paidMinutes).toBe(90);
   });
 
+  it("genuinely prefers closing a verified weekly desired/minimum-hours deficit",()=>{
+    const noTarget=employee("alpha");
+    const needsHours=employee("beta",{
+      minWeeklyMinutes:120,desiredWeeklyMinutes:120,
+    });
+    const result=optimizeOliviaWeek(input([noTarget,needsHours],[coverage("one-hour",{
+      end_local:"10:00",
+    })]));
+    expect(result.status).toBe("feasible");
+    expect(result.scenarios.find(s=>s.objective==="balanced")?.shifts[0].employeeId)
+      .toBe("beta");
+  });
+
 });
