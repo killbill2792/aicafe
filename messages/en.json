@@ -1668,6 +1668,7 @@
     "revisionApproved": "Approved",
     "revisionPublished": "Published",
     "revisionSuperseded": "Superseded",
-    "revisionUnknown": "Unknown status"
+    "revisionUnknown": "Unknown status",
+    "invalidWallTime": "Choose an unambiguous valid local date and time. Daylight-saving transitions may make some times unavailable or repeated."
   }
 }
