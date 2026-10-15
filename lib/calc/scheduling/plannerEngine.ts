@@ -12,12 +12,14 @@ function hasReviewedLegalInputs(input:PlannerInput,plan:ExpandedPlan):boolean {
   const profile=input.ruleProfile;
   return Boolean(profile?.verified && profile.overtime?.verified &&
     profile.source?.trim() && plan.locations.size>0 &&
-    [...plan.locations.keys()].every(id=>
-      typeof profile.jurisdictionByLocationId?.[id]==="string" &&
-      profile.jurisdictionByLocationId[id].trim().length>0) &&
-    plan.employees.filter(e=>e.active).every(e=>
-      typeof profile.classificationByEmployeeId?.[e.id]==="string" &&
-      profile.classificationByEmployeeId[e.id].trim().length>0));
+    [...plan.locations.keys()].every(id=>{
+      const jurisdiction=profile?.jurisdictionByLocationId?.[id];
+      return typeof jurisdiction==="string" && jurisdiction.trim().length>0;
+    }) &&
+    plan.employees.filter(e=>e.active).every(e=>{
+      const classification=profile?.classificationByEmployeeId?.[e.id];
+      return typeof classification==="string" && classification.trim().length>0;
+    }));
 }
 type State = {
   work: WorkUnit[];
