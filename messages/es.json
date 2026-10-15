@@ -1562,6 +1562,15 @@
     "refreshHistory": "Actualizar versiones",
     "officialVersion": "Versión oficial publicada",
     "none": "Ninguna",
-    "savedRevision": "Borrador versión {revision} guardado"
+    "savedRevision": "Borrador versión {revision} guardado",
+    "previewRequired": "Genere una propuesta actual antes de guardar.",
+    "sourceChanged": "Los datos del personal cambiaron desde la vista previa. Genere otra propuesta.",
+    "revisionConflict": "Otro propietario cambió el borrador. Actualice las versiones y vuelva a generar.",
+    "capacityExceeded": "Hay demasiados turnos para guardar en un solo borrador. Revise la cobertura.",
+    "saveFailed": "No se pudo guardar el borrador. Vuelva a intentarlo; se reutilizará la misma solicitud.",
+    "ownerUnavailable": "No se pueden comparar las horas del propietario sin un vínculo verificado con el personal.",
+    "feasible": "Propuesta viable",
+    "infeasible": "No se puede cubrir la demanda requerida",
+    "unproven": "No se pudo demostrar la cobertura completa"
   }
 }
