@@ -163,3 +163,30 @@ export async function readP1RecurringBillRows({businessId}:Scoped) {
     frequency:r.frequency,dueDay:r.due_day,isEstimate:r.is_estimate,
   })),[],data.some(r=>r.is_estimate)?["estimated_recurring_obligation_rows"]:[]);
 }
+
+/** Independent bounded read; never fetches the complete historical task inbox.
+ * Total ordering (created_at, id) makes pages deterministic for a stable dataset.
+ * Both initial and subsequent pages disclose whether more records exist, without
+ * forwarding task payload/evidence, worker identities or response history.
+ */
+export async function readP1TaskPage({businessId}:Scoped,page:number=0) {
+  if(!businessId || !Number.isInteger(page) || page<0 || page>250)
+    return absent("task_page_invalid");
+  const client=await createServerSupabaseClient();
+  const size=40, start=page*size;
+  const {data,error}=await client.from("operating_tasks")
+    .select("id,business_id,agent_id,kind,status,created_at,resolved_at")
+    .eq("business_id",businessId)
+    .order("created_at",{ascending:false})
+    .order("id",{ascending:false})
+    .range(start,start+size);
+  if(error || !data || data.length>size+1 || data.some(r=>r.business_id!==businessId))
+    return absent("task_page_unavailable");
+  const hasMore=data.length>size;
+  const items=data.slice(0,size).map(row=>({
+    id:row.id,agentId:row.agent_id,kind:row.kind,status:row.status,
+    createdAt:row.created_at,resolvedAt:row.resolved_at,
+  }));
+  return present({items,page,hasMore,nextPage:hasMore?page+1:null},
+    hasMore||page>0?["task_inbox_page_only"]:[]);
+}
