@@ -1,11 +1,13 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { z } from "zod";
 
 import { requireSchedulingOwner } from "./foundation.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
+import { workerWageRate } from "@/lib/calc/scheduling/plannerCore";
 import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 
 /**
@@ -107,11 +109,12 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     if(seriesError)throw new Error("Cannot read published schedule pointer");
     const publishedRevision=publishedSeries?.published_revision??null;
     let startedPublishedShifts:PlannerShift[]=[];
+    const historicalWageRates:NonNullable<PlannerInput["historicalWageRates"]>={};
     if(publishedRevision!==null){
       if(!Number.isSafeInteger(publishedRevision) || publishedRevision<1)
         throw new Error("Corrupt published revision");
       const {data:revision,error:revisionError}=await supabase
-        .from("scheduling_plan_revisions").select("id,status")
+        .from("scheduling_plan_revisions").select("id,status,planner_input")
         .eq("business_id",businessId).eq("series_id",publishedSeries!.id)
         .eq("revision",publishedRevision).maybeSingle();
       if(revisionError || !revision || revision.status!=="published")
@@ -146,6 +149,41 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         } satisfies PlannerShift;
       });
       startedPublishedShifts=normalized.filter(s=>s.startAt<=replanAsOf);
+      // The immutable published revision stores the ORIGINAL wage snapshot.
+      // Never reprice its started shifts with current employee wages.
+      if(startedPublishedShifts.length){
+        const saved=z.object({employees:z.array(z.unknown())})
+          .safeParse(revision.planner_input);
+        if(!saved.success)throw new Error("Missing published wage snapshot");
+        const savedWage=z.object({
+          id:z.string(),
+          wage:z.object({
+            wage_period:z.string().nullable(),
+            wage_amount_cents:z.number().int().nonnegative().safe().nullable(),
+            default_hourly_wage_cents:z.number().int().nonnegative().safe().nullable(),
+          }),
+          provenance:z.enum(["unknown","known_paid","salary_conversion_pending",
+            "known_eligible_zero"]),
+          eligibleZeroVerified:z.boolean().optional(),
+          verifiedSalaryHourlyCents:z.number().int().nonnegative().safe()
+            .nullable().optional(),
+          verifiedSalaryHoursPerWeek:z.number().positive().max(168)
+            .nullable().optional(),
+        });
+        for(const employeeId of new Set(startedPublishedShifts.map(s=>s.employeeId))){
+          const matching=saved.data.employees
+            .filter(e=>e!==null && typeof e==="object" &&
+              (e as Row).id===employeeId);
+          if(matching.length!==1)throw new Error("Ambiguous published wage snapshot");
+          const parsedWage=savedWage.safeParse(matching[0]);
+          if(!parsedWage.success)throw new Error("Corrupt published wage snapshot");
+          historicalWageRates[employeeId]={
+            // Pure wage conversion uses ONLY parsed, persisted publication facts.
+            rateCentsPerHour:workerWageRate(parsedWage.data as PlannerEmployee),
+            salary:["month","year"].includes(parsedWage.data.wage.wage_period??""),
+          };
+        }
+      }
     }
     const [{data:tokenAfter,error:tokenAfterError},pointerCheck]=await Promise.all([
       supabase.rpc("scheduling_owner_source_token",{p_business_id:businessId}),
@@ -159,7 +197,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
     const sourceFingerprint = createHash("sha256").update(JSON.stringify({
       businessId,businessTimezone:business.data.timezone,rows,publishedRevision,
-      startedPublishedShifts,
+      startedPublishedShifts,historicalWageRates,
     })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
@@ -343,7 +381,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         ...(ruleProfile ? {ruleProfile} : {}),
-        pinned: [], startedPublishedShifts, replanAsOf,
+        pinned: [], startedPublishedShifts, historicalWageRates, replanAsOf,
         slotMinutes, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
