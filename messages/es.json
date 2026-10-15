@@ -1524,6 +1524,7 @@
     "latestSaved": "Últimos registros guardados — compáralos con tus cambios",
     "useLatestSaved": "Usar la última versión guardada",
     "applyAfterConflict": "Tus cambios podrían reemplazar los de otro propietario. ¿Quieres aplicar tu borrador después de comparar los datos nuevos?",
-    "fullDay": "Día completo (sin horas de inicio ni fin)"
+    "fullDay": "Día completo (sin horas de inicio ni fin)",
+    "hardUnavailableConflict": "La restricción confirmada sin trabajo tiene prioridad sobre estas franjas."
   }
 }
