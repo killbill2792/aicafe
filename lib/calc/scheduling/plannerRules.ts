@@ -138,14 +138,34 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
       if(e.ownerOpportunityCentsPerHour==null)ownerUnknown=true;
       else ownerOpportunity+=money(total*e.ownerOpportunityCentsPerHour/60);
     }
-    const wageRate=workerWageRate(e);
-    if(wageRate==null){missing.push(e.id);continue;}
-    // Payroll base is rounded ONCE per employee, not separately for every
-    // planning slot. No shift writes are made to historical timecards.
-    let base=money(total*wageRate/60);
+    const publishedRate=input.historicalWageRates?.[e.id];
+    const presentRate=workerWageRate(e);
+    const hasOld=billedRows.some(w=>w.historical);
+    const hasNew=billedRows.some(w=>!w.historical);
+    // A missing historical wage is NOT permission to use today's rate.
+    if((hasOld && publishedRate?.rateCentsPerHour==null) ||
+       (hasNew && presentRate==null)){
+      missing.push(e.id);continue;
+    }
+    const rateFor=(w:WorkUnit)=>w.historical
+      ? publishedRate!.rateCentsPerHour! : presentRate!;
+    const salaryFor=(w:WorkUnit)=>w.historical
+      ? publishedRate?.salary===true
+      : e.wage.wage_period==="month"||e.wage.wage_period==="year";
+    // One base rounding per employee, even when old and new rates differ.
+    let rawBase=0,rawSalary=0;
+    for(const w of billedRows){
+      const value=minutes(w)*rateFor(w)/60;
+      rawBase+=value;
+      if(salaryFor(w))rawSalary+=value;
+    }
+    let base=money(rawBase);
+    let salaryBase=money(rawSalary);
     const overtime=input.ruleProfile?.overtime;
     if(overtime?.verified){
-      let week=0, premiumMinutes=0;
+      let week=0,premium=0,salaryPremium=0;
+      const factor=(overtime.multiplierNumerator-overtime.multiplierDenominator)/
+        overtime.multiplierDenominator;
       const daily=new Map<string,number>();
       for(const w of billedRows){
         const zone=plan.locations.get(w.locationId)!.timezone;
@@ -153,19 +173,21 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
           const d=localParts(t,zone).date;
           const day=daily.get(d)??0;
           if((overtime.dailyAfterMinutes!=null && day>=overtime.dailyAfterMinutes) ||
-            (overtime.weeklyAfterMinutes!=null && week>=overtime.weeklyAfterMinutes))
-            premiumMinutes++;
+            (overtime.weeklyAfterMinutes!=null && week>=overtime.weeklyAfterMinutes)){
+            const premiumCent=rateFor(w)*factor/60;
+            premium+=premiumCent;
+            if(salaryFor(w))salaryPremium+=premiumCent;
+          }
           daily.set(d,day+1);week++;
         }
       }
-      base+=money(premiumMinutes*wageRate*
-        (overtime.multiplierNumerator-overtime.multiplierDenominator)/
-        (60*overtime.multiplierDenominator));
+      base+=money(premium);
+      salaryBase+=money(salaryPremium);
     }
-    if(e.wage.wage_period==="month" || e.wage.wage_period==="year"){
-      // Salary is already owed according to employment terms. These cents
-      // are an allocated cost-equivalent, NOT incremental payroll savings.
-      hasSalary=true;allocatedSalary+=base;
+    if(billedRows.some(salaryFor)){
+      // Salary is already owed according to employment terms; this is an
+      // allocated equivalent, not an incremental scheduling cost reduction.
+      hasSalary=true;allocatedSalary+=salaryBase;
     }
     wages+=base;
   }
