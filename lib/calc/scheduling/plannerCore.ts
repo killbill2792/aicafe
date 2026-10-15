@@ -1,14 +1,20 @@
 import { effectiveAvailabilityForLocation, compensationProvenance } from "./availability";
 import { hourlyWageCentsFromSalary } from "../staff";
 import { civilDateAdd, localParts, parseUtcInstant, weekday, wallToUtc, windowUtc } from "./plannerClock";
-import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason } from "./plannerTypes";
+import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason, PlannerShift } from "./plannerTypes";
 
 export type DemandUnit = {
   id: string; coverageId: string; locationId: string;
   start: number; end: number; qualificationCode: string | null;
   priority: "required" | "advisory";
 };
-export type WorkUnit = { employeeId: string; locationId: string; start: number; end: number; pinned: boolean; historical?: boolean };
+/** Stable across republishing; wage snapshots are tied to the exact shift,
+ * not merely the employee, since separate shifts may have different rates.
+ */
+export const historicalShiftWageKey=(s:Pick<PlannerShift,"employeeId"|"locationId"|"startAt">)=>
+  JSON.stringify([s.employeeId,s.locationId,s.startAt]);
+export type WorkUnit = { employeeId: string; locationId: string; start: number; end: number;
+  pinned: boolean; historical?: boolean; historicalShiftKey?: string };
 export type ExpandedPlan = {
   units: DemandUnit[]; pinned: WorkUnit[]; employees: PlannerEmployee[];
   locations: Map<string,PlannerLocation>; warnings: string[]; horizonEnd: string;
@@ -174,7 +180,8 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
       for(let t=start;t<end;t+=slot*60000){
         if(sorted.some(item=>item.start<t+slot*60000 && item.end>t))continue;
         pinned.push({employeeId:shift.employeeId,locationId:shift.locationId,
-          start:t,end:t+slot*60000,pinned:true,historical:true});
+          start:t,end:t+slot*60000,pinned:true,historical:true,
+          historicalShiftKey:historicalShiftWageKey(shift)});
       }
     }
   }
