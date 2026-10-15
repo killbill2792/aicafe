@@ -20,12 +20,14 @@ export default function WageProvenancePanel({ employee, records }: {
   const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(
     existing ? {id:existing.id,revision:existing.revision} : null);
   // Keep our submitted revision for CAS: newer props may belong to another owner.
-  const currentRecord = savedRecord ?? existing;
+  const currentRecord = savedRecord;
   const [status,setStatus]=useState<CashState>((existing?.cash_cost_state as CashState)??"unknown");
   const [evidence,setEvidence]=useState(String(existing?.eligibility_reference??""));
   const [pending,run]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
   const retry=useRef<PendingCreate>(null);
+  const [conflicted,setConflicted]=useState(false);
   function submit(){
+    if(conflicted){setError(t("conflict"));return;}
     if(status==="known_eligible_zero" && evidence.trim().length<8){
       setError(t("eligibilityEvidenceRequired"));return;
     }
@@ -38,7 +40,10 @@ export default function WageProvenancePanel({ employee, records }: {
           {requestKey:stableCreateRequestKey(retry,payload)}),
         data:payload,
       });
-      if(!result.ok){setError(t("compensationCannotVerify"));return;}
+      if(!result.ok){
+        if(result.error==="conflict_or_missing"){setConflicted(true);router.refresh();}
+        setError(t("compensationCannotVerify"));return;
+      }
       retry.current=null;setSavedRecord({id:result.id,revision:result.revision});
       setSaved(true);setError("");router.refresh();
     });
@@ -60,7 +65,11 @@ export default function WageProvenancePanel({ employee, records }: {
     {existing?.eligibility_verified_at != null && <p className="text-[17px] text-ink-muted">
       {t("confirmedAt")}: {String(existing.eligibility_verified_at)}
     </p>}
-    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
+    {conflicted && <button type="button" className={primary} onClick={()=>{
+      setSavedRecord(existing ? {id:existing.id,revision:existing.revision} : null);
+      setConflicted(false);setError("");retry.current=null;
+    }}>{t("applyAfterConflict")}</button>}
+    <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px]">{t("cashState")}
       <select className={field} value={status} onChange={e=>{setStatus(e.target.value as CashState);setSaved(false);}}>
         {(["unknown","known_paid","salary_conversion_pending","known_eligible_zero"] as CashState[]).map(s=>
