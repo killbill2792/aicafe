@@ -75,10 +75,13 @@ function discardedOutputKeys(raw:unknown,parsed:unknown):boolean {
   if(raw!==null && typeof raw==="object"){
     if(parsed===null || typeof parsed!=="object" || Array.isArray(parsed))return true;
     const output=parsed as Record<string,unknown>;
-    return Object.entries(raw).some(([key,value])=>
-      !Object.hasOwn(output,key) || discardedOutputKeys(value,output[key]));
+    const original=raw as Record<string,unknown>;
+    return Object.keys(original).length!==Object.keys(output).length ||
+      Object.entries(original).some(([key,value])=>
+        !Object.hasOwn(output,key) || discardedOutputKeys(value,output[key]));
   }
-  return false;
+  // No Zod coercion/transformation of authoritative scalar evidence.
+  return !Object.is(raw,parsed);
 }
 
 function validateRegistration(def:P2Registration) {
@@ -151,11 +154,16 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         return unavailable("unsupported_period");
       let timer:ReturnType<typeof setTimeout>|undefined;
       try {
-        const timedOut=new Promise<ReturnType<typeof unavailable>>(resolve=>{
-          timer=setTimeout(()=>resolve(unavailable("reader_timeout")),def.budgets.timeoutMs);
+        const timedOut=new Promise<{timedOut:true}>(resolve=>{
+          timer=setTimeout(()=>resolve({timedOut:true}),def.budgets.timeoutMs);
         });
-        const read=Promise.resolve().then(()=>def.read(scope,input.data));
-        const output=await Promise.race([read,timedOut]);
+        const read=Promise.resolve().then(()=>def.read(scope,input.data))
+          .then(value=>({timedOut:false as const,value}));
+        const settled=await Promise.race([read,timedOut]);
+        // Platform timeout is not a domain reader output, so never parse it
+        // against a domain-specific result schema or reinterpret the reason.
+        if(settled.timedOut)return unavailable("reader_timeout");
+        const output=settled.value;
         // Unknown/forged effects, extra fields and malformed quality are not evidence.
         const validated=def.outputSchema.safeParse(output);
         if(!validated.success || discardedOutputKeys(output,validated.data))
@@ -199,6 +207,10 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         if(actual.status==="verified" &&
           (typeof actual.provenance?.sourceRevision!=="string" ||
             !actual.provenance.sourceRevision))
+          return unavailable("invalid_result");
+        if(actual.status==="verified" &&
+          [actual.quality?.missingInputs,actual.quality?.estimatedInputs,
+            actual.quality?.staleInputs].some(x=>Array.isArray(x) && x.length>0))
           return unavailable("invalid_result");
         if(actual.status==="estimated" &&
           (!Array.isArray(actual.quality?.estimatedInputs) ||
