@@ -28,7 +28,11 @@ export type DraftSaveResult =
       "conflict" | "storage_unavailable" | "no_scenario" | "tenant_changed" | "capacity_exceeded" };
 
 export function oliviaSnapshotDigest(input: PlannerInput, sourceFingerprint: string): string {
-  return createHash("sha256").update(JSON.stringify({input, sourceFingerprint})).digest("hex");
+  // The clock advances between preview, draft, approval and publication.
+  // Source revisions and the exact started published shifts ARE part of the
+  // digest; a volatile observation instant is not a material source change.
+  const {replanAsOf: _observedAt, ...stableInput}=input;
+  return createHash("sha256").update(JSON.stringify({input:stableInput,sourceFingerprint})).digest("hex");
 }
 
 /** Internal-only: caller must load the entire owner-scoped planner snapshot.
