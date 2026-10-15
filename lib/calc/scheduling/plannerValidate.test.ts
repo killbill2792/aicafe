@@ -113,4 +113,18 @@ describe("Independent pure PR3-ready schedule validation",()=>{
     }]},[wrong]).violations).toContain("invalid_unpaid_break");
   });
 
+  it("does not silently turn a gap between two shifts into paid rest",()=>{
+    const restInput:PlannerInput={...input,slotMinutes:10,coverage:[],
+      ruleProfile:{verified:true,paidRestMinutes:10,
+        overtime:{verified:true,multiplierNumerator:3,multiplierDenominator:2}}};
+    const separate:PlannerShift[]=[
+      {employeeId:"staff-a",locationId:"a",startAt:"2026-10-12T16:00:00.000Z",
+        endAt:"2026-10-12T16:10:00.000Z",paidMinutes:10,breaks:[],pinned:false},
+      {employeeId:"staff-a",locationId:"a",startAt:"2026-10-12T16:20:00.000Z",
+        endAt:"2026-10-12T16:30:00.000Z",paidMinutes:10,breaks:[],pinned:false},
+    ];
+    expect(validateOliviaAssignments(restInput,separate).violations.some(v=>
+      v.startsWith("unrecorded_paid_rest_break:"))).toBe(true);
+  });
+
 });
