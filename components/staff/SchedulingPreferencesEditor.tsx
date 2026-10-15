@@ -19,7 +19,10 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const active = preferences.filter(r=>r.employee_id===employeeId);
   const prefWindows = windows.filter(r=>r.employee_id===employeeId);
   const [selected,setSelected] = useState<string>(active[0]?.id??"");
+  const [lastSaved,setLastSaved]=useState<{id:string;revision:number}|null>(null);
   const selectedRow = active.find(r=>r.id===selected);
+  const selectedVersion = selectedRow ??
+    (lastSaved?.id===selected ? lastSaved : null);
   const [from,setFrom] = useState(String(selectedRow?.effective_from??today));
   const [to,setTo] = useState(String(selectedRow?.effective_to??""));
   const [min,setMin] = useState(minutesToHourInput(Number(selectedRow?.min_weekly_minutes??0)));
@@ -43,7 +46,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const preferenceRetry=useRef<PendingCreate>(null), windowRetry=useRef<PendingCreate>(null);
 
   function selectPreference(id:string) {
-    setSelected(id); const r=active.find(row=>row.id===id);
+    setSelected(id);setLastSaved(null); const r=active.find(row=>row.id===id);
     setFrom(String(r?.effective_from??today));setTo(String(r?.effective_to??""));
     setMin(minutesToHourInput(Number(r?.min_weekly_minutes??0)));setDesired(minutesToHourInput(r?.desired_weekly_minutes as number | null | undefined));
     setMax(minutesToHourInput(r?.max_weekly_minutes as number | null | undefined));setDaily(minutesToHourInput(r?.max_daily_minutes as number | null | undefined));
@@ -73,13 +76,15 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       unavailable_weekdays:[...hardUnavailableDays].sort((a,b)=>a-b),source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
-        kind:"preferences",action:selectedRow?"update":"create",
-        ...(selectedRow?{id:selectedRow.id,expectedRevision:selectedRow.revision}:
+        kind:"preferences",action:selectedVersion?"update":"create",
+        ...(selectedVersion?{id:selectedVersion.id,expectedRevision:selectedVersion.revision}:
           {requestKey:stableCreateRequestKey(preferenceRetry,payload)}),
         data:payload,
       });
       if(!result.ok){setError(t("saveFailed"));return;}
-      preferenceRetry.current=null;setError("");setSaved(true);router.refresh();
+      preferenceRetry.current=null;setSelected(result.id);
+      setLastSaved({id:result.id,revision:result.revision});
+      setError("");setSaved(true);router.refresh();
     });
   }
   function saveWindow() {
@@ -110,6 +115,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
       <select className={field} value={selected} onChange={e=>selectPreference(e.target.value)}>
         <option value="">{t("newPeriod")}</option>
         {active.map(r=><option key={r.id} value={r.id}>{String(r.effective_from)} — {String(r.effective_to??t("ongoing"))}</option>)}
+        {lastSaved && !active.some(r=>r.id===lastSaved.id) &&
+          <option value={lastSaved.id}>{t("saved")}</option>}
       </select>
     </label>
     <div className="grid grid-cols-2 gap-2">
