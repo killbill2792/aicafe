@@ -120,7 +120,7 @@ BEGIN
        AND effective_from='2026-12-01')<>1 THEN
    RAISE EXCEPTION 'scope-move bypass changed authoritative windows';
  END IF;
-END $;
+END $$;
 -- Same key with different payload conflicts.
 DO $$
 DECLARE conflict jsonb;
