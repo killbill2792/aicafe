@@ -1520,6 +1520,10 @@
     "hardUnavailableDays": "Confirmed days with no availability",
     "hardUnavailableDaysHelp": "Select weekdays when this employee cannot work. Only owner-confirmed information blocks scheduling; unchecked days with no windows remain unrecorded.",
     "confirmedUnavailableDay": "Confirmed unavailable — no working hours",
-    "hoursMinutes": "hours:minutes"
+    "hoursMinutes": "hours:minutes",
+    "latestSaved": "Latest saved records — compare with your retained draft",
+    "useLatestSaved": "Use latest saved version",
+    "applyAfterConflict": "Your draft may overwrite a newer owner's changes. After comparing the latest records, deliberately apply your draft?",
+    "fullDay": "Full day (both time fields empty)"
   }
 }
