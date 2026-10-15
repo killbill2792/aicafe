@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
@@ -24,6 +25,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const [confirmation,setConfirmation]=useState<"unconfirmed"|"owner_confirmed">("unconfirmed");
   const [source,setSource]=useState<"owner_direct"|"worker_reported_by_owner">("owner_direct");
   const [pending,run]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
+  const retry=useRef<PendingCreate>(null);
   const names=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   const location=locations.find(l=>l.id===locationId);
   function select(id:string){
@@ -40,18 +42,20 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   function save(){
     if(!locationId){setError(t("chooseLocation"));return;}
     const old=rows.find(r=>r.id===selected);
+    const payload={location_id:locationId,day_of_week:specificDate?null:Number(day),
+      local_date:specificDate||null,effective_from:specificDate?null:from,
+      effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
+      min_headcount:Number(count),qualification_code:code||null,
+      min_overlap_minutes:Number(overlap),priority,source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"coverage",action:old?"update":"create",
-        ...(old?{id:old.id,expectedRevision:old.revision}:{requestKey:crypto.randomUUID()}),
-        data:{location_id:locationId,day_of_week:specificDate?null:Number(day),
-          local_date:specificDate||null,effective_from:specificDate?null:from,
-          effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
-          min_headcount:Number(count),qualification_code:code||null,
-          min_overlap_minutes:Number(overlap),priority,source,confirmation},
+        ...(old?{id:old.id,expectedRevision:old.revision}:
+          {requestKey:stableCreateRequestKey(retry,payload)}),
+        data:payload,
       });
       if(!result.ok){setError(t("saveFailed"));return;}
-      setError("");setSaved(true);router.refresh();
+      retry.current=null;setError("");setSaved(true);router.refresh();
     });
   }
   function remove(r:SchedulingRow){
