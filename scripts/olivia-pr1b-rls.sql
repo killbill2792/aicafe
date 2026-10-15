@@ -167,6 +167,39 @@ BEGIN
    RAISE EXCEPTION 'invalid preference overlap was persisted';
  END IF;
 END $$;
+-- Explicit known-no-work weekdays live on confirmed effective-dated preferences;
+-- they are not inferred from missing availability windows.
+DO $
+DECLARE row_id uuid;
+BEGIN
+ SELECT id INTO row_id FROM public.staff_scheduling_preferences
+  WHERE business_id=current_setting('test.pr1b_business')::uuid LIMIT 1;
+ UPDATE public.staff_scheduling_preferences
+  SET unavailable_weekdays=ARRAY[3,4]::smallint[]
+  WHERE id=row_id;
+ IF NOT EXISTS(SELECT 1 FROM public.staff_scheduling_preferences
+   WHERE id=row_id AND confirmation='owner_confirmed'
+     AND unavailable_weekdays=ARRAY[3,4]::smallint[]) THEN
+  RAISE EXCEPTION 'confirmed hard unavailable weekdays not saved';
+ END IF;
+ BEGIN
+  UPDATE public.staff_scheduling_preferences SET unavailable_weekdays=ARRAY[7]::smallint[]
+   WHERE id=row_id;
+  RAISE EXCEPTION 'invalid unavailable weekday accepted';
+ EXCEPTION WHEN check_violation THEN NULL;
+ END;
+ PERFORM public.scheduling_create_foundation(
+   current_setting('test.pr1b_business')::uuid,'preferences',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.pr1b_employee'),
+      'effective_from','2026-11-01','min_weekly_minutes',0,
+      'unavailable_weekdays',jsonb_build_array(0,6),
+      'source','owner_direct','confirmation','owner_confirmed'));
+ IF NOT EXISTS(SELECT 1 FROM public.staff_scheduling_preferences
+   WHERE business_id=current_setting('test.pr1b_business')::uuid
+     AND effective_from='2026-11-01' AND unavailable_weekdays=ARRAY[0,6]::smallint[]) THEN
+  RAISE EXCEPTION 'idempotent PR1A create could not persist unavailable weekdays';
+ END IF;
+END $;
 -- Manager cannot invoke the elevated transactional RPC.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
