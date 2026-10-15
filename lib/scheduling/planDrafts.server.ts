@@ -16,7 +16,7 @@ const uuid = z.string().uuid();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const optionsSchema = z.object({
   horizonStart: date,
-  expectedRevision: z.number().int().min(0),
+  expectedRevision: z.number().int().min(0).max(499),
   requestKey: uuid,
   objective: z.enum(["cash", "owner_time", "balanced"]),
 }).strict();
