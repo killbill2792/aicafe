@@ -128,7 +128,13 @@ export function validateP1Analyses() {
       return false;
     return def.allowedPurposes.every(p=>{
       if(!Object.hasOwn(def.sourceRequirementsByPurpose,p))return false;
-      const selection=(def.sourceRequirementsByPurpose as Record<string,typeof def.sourceRequirementsByPurpose[keyof typeof def.sourceRequirementsByPurpose]>)[p];
+      const selection=(def.sourceRequirementsByPurpose as unknown as Record<string,{
+        kind:string;minimumOverallCoverage:string;inputs:Array<{
+          readerId:string;sourcePurpose:string;selectorId:string;selectorVersion:number;
+          precedencePolicyId:string;precedencePolicyRevision:number;entityReadIds:string[];
+        }>;
+      }>)[p];
+      if(!selection)return false;
       const required=sourcePolicies[key][p];
       return !!required && selection.kind==="registered_sources" &&
         selection.minimumOverallCoverage==="partial_explicit" &&
