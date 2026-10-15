@@ -1,0 +1,210 @@
+import { effectiveAvailabilityForLocation, compensationProvenance } from "./availability";
+import { civilDateAdd, localParts, parseUtcInstant, utcIso, weekday, wallToUtc, windowUtc } from "./plannerClock";
+import type { PlannerCoverage, PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason } from "./plannerTypes";
+
+export type DemandUnit = {
+  id: string; coverageId: string; locationId: string;
+  start: number; end: number; qualificationCode: string | null;
+  priority: "required" | "advisory";
+};
+export type WorkUnit = { employeeId: string; locationId: string; start: number; end: number; pinned: boolean };
+export type ExpandedPlan = {
+  units: DemandUnit[]; pinned: WorkUnit[]; employees: PlannerEmployee[];
+  locations: Map<string,PlannerLocation>; warnings: string[]; horizonEnd: string;
+};
+
+function assert(condition: unknown, code: string): asserts condition {
+  if (!condition) throw new Error("invalid_planner_input:"+code);
+}
+export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
+  const endDate=civilDateAdd(input.horizonStart,6);
+  const slot=input.slotMinutes??30;
+  assert([15,30,60].includes(slot), "slot_granularity");
+  assert(input.locations.length>0, "no_locations");
+  assert(input.employees.length<=250 && input.coverage.length<=2000, "size");
+  assert(new Set(input.locations.map(x=>x.id)).size===input.locations.length, "duplicate_location");
+  assert(new Set(input.employees.map(x=>x.id)).size===input.employees.length, "duplicate_employee");
+  const locations=new Map(input.locations.map(l=>[l.id,l]));
+  for(const location of locations.values()){
+    assert(location.id.length>0, "location_id");
+    try { new Intl.DateTimeFormat("en-US",{timeZone:location.timezone}); }
+    catch { throw new Error("invalid_planner_input:location_timezone"); }
+  }
+  for(const e of input.employees){
+    assert(e.id.length>0 && e.displayName.length>0, "employee");
+    for(const number of [e.minWeeklyMinutes, e.desiredWeeklyMinutes,
+      e.maxDailyMinutes,e.maxWeeklyMinutes,e.ownerOpportunityCentsPerHour,
+      e.verifiedSalaryHourlyCents]) {
+      assert(number==null || (Number.isSafeInteger(number) && number>=0), "employee_limits_or_cents");
+    }
+    assert(e.maxDailyMinutes==null || e.maxDailyMinutes<=1440, "max_daily_minutes");
+    assert(e.maxWeeklyMinutes==null || e.maxWeeklyMinutes<=10080, "max_weekly_minutes");
+    if(e.maxWeeklyMinutes!=null && e.minWeeklyMinutes!=null)
+      assert(e.minWeeklyMinutes<=e.maxWeeklyMinutes, "min_above_max");
+  }
+  if (input.ruleProfile){
+    const r=input.ruleProfile;
+    for(const n of [r.maxContinuousWorkMinutes,r.unpaidMealMinutes,r.minRestBetweenShiftsMinutes])
+      assert(n==null || (Number.isSafeInteger(n)&&n>=0 && n<=10080), "rule_minutes");
+    if(r.maxContinuousWorkMinutes != null)
+      assert(r.unpaidMealMinutes!=null && r.unpaidMealMinutes>0, "meal_rule_missing");
+    if(r.overtime) {
+      for(const n of [r.overtime.dailyAfterMinutes,r.overtime.weeklyAfterMinutes,
+        r.overtime.multiplierNumerator,r.overtime.multiplierDenominator])
+        assert(n==null || (Number.isSafeInteger(n)&&n>=0), "overtime_rule");
+      assert(r.overtime.multiplierDenominator>0 &&
+        r.overtime.multiplierNumerator>=r.overtime.multiplierDenominator, "overtime_multiplier");
+    }
+  }
+  if(input.burden) assert(Number.isFinite(input.burden.rate) &&
+    input.burden.rate>=0 && input.burden.rate<=1, "payroll_burden");
+
+  const warnings:string[]=[];
+  const units:DemandUnit[]=[];
+  for(const coverage of input.coverage){
+    const location=locations.get(coverage.locationId);
+    assert(location, "unknown_coverage_location");
+    assert(coverage.id.length>0 && Number.isSafeInteger(coverage.minHeadcount) &&
+      coverage.minHeadcount>=0 && coverage.minHeadcount<=30, "headcount");
+    const duration=coverage.minOverlapMinutes??0;
+    assert(Number.isSafeInteger(duration) && duration>=0 && duration<=1440,
+      "minimum_overlap");
+    const chunk=Math.max(slot,duration);
+    assert(chunk%slot===0, "unaligned_minimum_overlap");
+    assert((coverage.localDate==null)!==(coverage.dayOfWeek==null),
+      "coverage_date_xor_weekday");
+    if(coverage.dayOfWeek!=null) assert(Number.isInteger(coverage.dayOfWeek)&&
+      coverage.dayOfWeek>=0&&coverage.dayOfWeek<=6, "weekday");
+    if(coverage.effectiveFrom) civilDateAdd(coverage.effectiveFrom,0);
+    if(coverage.effectiveTo) civilDateAdd(coverage.effectiveTo,0);
+    if(coverage.localDate) civilDateAdd(coverage.localDate,0);
+    for(let offset=0;offset<7;offset++){
+      const date=civilDateAdd(input.horizonStart,offset);
+      if(coverage.localDate?coverage.localDate!==date:
+        coverage.dayOfWeek!==weekday(date) ||
+        (coverage.effectiveFrom!=null&&date<coverage.effectiveFrom) ||
+        (coverage.effectiveTo!=null&&date>coverage.effectiveTo)) continue;
+      let interval:{startAt:number;endAt:number};
+      try {interval=windowUtc(date,coverage.start_local,coverage.end_local,
+        coverage.overnight,location.timezone);}
+      catch(e){throw new Error(`invalid_coverage_wall_time:${coverage.id}:${String(e)}`);}
+      const minutes=(interval.endAt-interval.startAt)/60000;
+      assert(minutes%chunk===0, "coverage_not_aligned");
+      for(let t=interval.startAt;t<interval.endAt;t+=chunk*60000){
+        for(let seat=0;seat<coverage.minHeadcount;seat++)
+          units.push({id:`${coverage.id}@${date}:${t}:${seat}`,
+            coverageId:coverage.id,locationId:coverage.locationId,
+            start:t,end:t+chunk*60000,
+            qualificationCode:coverage.qualificationCode??null,priority:coverage.priority});
+      }
+    }
+  }
+  assert(units.length<=1200, "coverage_slot_budget");
+  units.sort((a,b)=>a.start-b.start || a.end-b.end ||
+    a.locationId.localeCompare(b.locationId) || a.id.localeCompare(b.id));
+  const pinned:WorkUnit[]=[];
+  for(const p of input.pinned??[]){
+    const location=locations.get(p.locationId);
+    assert(location && input.employees.some(e=>e.id===p.employeeId), "pinned_scope");
+    const start=parseUtcInstant(p.startAt),end=parseUtcInstant(p.endAt);
+    assert(end>start && (end-start)/60000<=1440, "pinned_duration");
+    assert((end-start)%(slot*60000)===0, "pinned_grid");
+    const first=civilDateAdd(input.horizonStart,-1);
+    assert(localParts(start,location.timezone).date>=first &&
+      localParts(start,location.timezone).date<=endDate, "pinned_horizon");
+    for(let time=start;time<end;time+=slot*60000)
+      pinned.push({employeeId:p.employeeId,locationId:p.locationId,
+        start:time,end:time+slot*60000,pinned:true});
+  }
+  if(input.coverage.every(c=>c.priority==="advisory"))
+    warnings.push("Coverage requirements are advisory; no hard demand was supplied");
+  if(!input.ruleProfile?.verified)
+    warnings.push("Jurisdiction, employee classifications or labor/break rules are not verified; no legal compliance claim");
+  if(!input.ruleProfile?.overtime?.verified)
+    warnings.push("Overtime rules are unverified; modeled wages do not certify legal premiums");
+  if(!input.burden || input.burden.status!=="verified")
+    warnings.push("Payroll burden is unverified or unavailable; loaded labor may be an estimate");
+  if(input.hourlySalesEvidence == null)
+    warnings.push("Manual owner-entered coverage only; no hourly POS demand inferred");
+  return {units,pinned,employees:input.employees,locations,warnings,horizonEnd:endDate};
+}
+
+const availabilityCache=new Map<string,Array<{start:number;end:number}>>();
+/** Caller supplies its own cache per planning invocation; no cross-request
+ * or cross-tenant data survives between planner calls.
+ */
+export function isConfirmedAvailable(work:WorkUnit, employee:PlannerEmployee,
+  locations:Map<string,PlannerLocation>, cache:Map<string,Array<{start:number;end:number}>>) {
+  const location=locations.get(work.locationId);
+  if(!location || !employee.active) return false;
+  if(employee.eligibleLocationIds && !employee.eligibleLocationIds.includes(location.id)) return false;
+  const date=localParts(work.start,location.timezone).date;
+  for(const d of [civilDateAdd(date,-1),date]) {
+    const key=`${employee.id}|${location.id}|${d}`;
+    let permitted=cache.get(key);
+    if(!permitted){
+      const projection=effectiveAvailabilityForLocation({
+        date:d,locationId:location.id,
+        recurring:employee.recurring,exceptions:employee.exceptions,
+        restrictions:employee.preferences,
+        hardUnavailability:employee.unavailableWeekdays,
+      });
+      permitted=[];
+      for(const w of projection.windows){
+        const convert=(minute:number)=>{
+          const day=civilDateAdd(d,Math.floor(minute/1440));
+          const m=minute%1440;
+          return wallToUtc(day,
+            `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`,
+            location.timezone);
+        };
+        try {
+          const start=convert(w.start),end=convert(w.end);
+          if(end>start) permitted.push({start,end});
+        }catch {
+          // DST repeated/nonexistent boundary: never guess an available interval.
+        }
+      }
+      cache.set(key,permitted);
+    }
+    if(permitted.some(w=>w.start<=work.start && work.end<=w.end)) return true;
+  }
+  return false;
+}
+export function qualifies(employee:PlannerEmployee, unit:DemandUnit,
+  locations:Map<string,PlannerLocation>) {
+  if(!unit.qualificationCode)return true;
+  const loc=locations.get(unit.locationId);
+  if(!loc)return false;
+  const date=localParts(unit.start,loc.timezone).date;
+  return employee.qualifications.some(q=>q.confirmed && q.code===unit.qualificationCode &&
+    (q.locationId==null || q.locationId===unit.locationId) &&
+    date>=q.validFrom && (q.validTo==null || date<=q.validTo));
+}
+export function workerWageRate(employee:PlannerEmployee):number|null {
+  const state=compensationProvenance({cash_cost_state:employee.provenance},employee.wage);
+  if(state==="known_eligible_zero" && employee.eligibleZeroVerified===true) return 0;
+  if(state!=="known_paid")return null;
+  if(employee.wage.wage_period==="hour"){
+    const cents=employee.wage.wage_amount_cents;
+    return cents!=null && Number.isSafeInteger(cents) && cents>0 ? cents : null;
+  }
+  return employee.verifiedSalaryHourlyCents != null &&
+    Number.isSafeInteger(employee.verifiedSalaryHourlyCents) &&
+    employee.verifiedSalaryHourlyCents>0 ? employee.verifiedSalaryHourlyCents : null;
+}
+export function eligibleCandidates(unit:DemandUnit, plan:ExpandedPlan,
+  cache:Map<string,Array<{start:number;end:number}>>) {
+  return plan.employees.filter(e=>qualifies(e,unit,plan.locations) &&
+    isConfirmedAvailable({employeeId:e.id,locationId:unit.locationId,
+      start:unit.start,end:unit.end,pinned:false},e,plan.locations,cache));
+}
+export function baselineGapReason(unit:DemandUnit,plan:ExpandedPlan,
+  cache:Map<string,Array<{start:number;end:number}>>):PlannerGapReason {
+  const active=plan.employees.filter(e=>e.active &&
+    (!e.eligibleLocationIds || e.eligibleLocationIds.includes(unit.locationId)));
+  if(active.length===0)return "no_active_staff";
+  if(!active.some(e=>qualifies(e,unit,plan.locations)))return "qualification_missing";
+  if(eligibleCandidates(unit,plan,cache).length===0)return "no_confirmed_availability";
+  return "capacity_or_overlap";
+}
