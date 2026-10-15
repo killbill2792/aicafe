@@ -6,7 +6,7 @@ import { useRouter } from "@/i18n/navigation";
 import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
 
 export type SchedulingRow = Record<string, unknown> & { id: string; revision: number };
-export type SchedulingLocation = { id: string; name: string; timezone: string | null };
+export type SchedulingLocation = { id: string; name: string; timezone: string | null; todayLocal?: string };
 
 type DraftWindow = {
   id?: string;
@@ -76,12 +76,23 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
     setDraftOverride(null); setDirty(false); setError(null); setSaved(false);
     requestKey.current = null; setter(value);
   }
+  function switchLocation(value:string) {
+    if (dirty && !window.confirm(t("discardEdits"))) return;
+    const first=rows.filter(r=>r.employee_id===employeeId &&
+      (r.location_id??null)===(value||null))
+      .sort((a,b)=>String(b.effective_from).localeCompare(String(a.effective_from)))[0];
+    setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
+    requestKey.current=null;setLocationId(value);
+    setEffectiveFrom(first?String(first.effective_from):
+      (locations.find(l=>l.id===value)?.todayLocal??today));
+    setEffectiveTo(first?String(first.effective_to??""):"");
+  }
   function switchPeriod(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
     const scope=effectiveScopes.find(p=>`${p.from}|${p.to}`===value);
     setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
     requestKey.current=null;
-    setEffectiveFrom(scope?.from??today);setEffectiveTo(scope?.to??"");
+    setEffectiveFrom(scope?.from??(locations.find(l=>l.id===locationId)?.todayLocal??today));setEffectiveTo(scope?.to??"");
   }
   function save() {
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
@@ -130,7 +141,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       <p className="text-sm text-ink-muted">{t("availabilityExplainer")}</p>
       <label className="flex flex-col gap-1 text-sm font-semibold">{t("location")}
         <select className={field} value={locationId}
-          onChange={(e) => switchScope(setLocationId, e.target.value)}>
+          onChange={(e) => switchLocation(e.target.value)}>
           <option value="">{t("allLocations")}</option>
           {locations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
