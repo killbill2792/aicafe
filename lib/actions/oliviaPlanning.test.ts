@@ -39,6 +39,11 @@ describe("Olivia preview/draft server action safety",()=>{
     vi.resetAllMocks();
     mocks.load.mockResolvedValue(saved);
     mocks.digest.mockReturnValue(digest);
+    mocks.owner.mockResolvedValue({businessId,supabase:{from:()=>{
+      const query={select:()=>query,eq:()=>query,
+        maybeSingle:async()=>({data:{current_revision:4},error:null})};
+      return query;
+    }}});
     mocks.optimizer.mockReturnValue({status:"unproven",scenarios:[]});
     mocks.draft.mockResolvedValue({ok:true,seriesId:businessId,revision:1,
       revisionId:requestKey,replayed:false});
@@ -78,11 +83,27 @@ describe("Olivia preview/draft server action safety",()=>{
   it("previews a verifiable digest and display names without staff-record writes",async()=>{
     const result=await previewOliviaWeek({week:"2026-10-12"});
     expect(result).toMatchObject({
-      ok:true,sourceDigest:digest,
+      ok:true,sourceDigest:digest,previewRevision:4,
       employees:{emp:"Sarah"},locations:{loc:"UTC"},
       locationNames:{loc:"Main Café"},
     });
     expect(mocks.draft).not.toHaveBeenCalled();
+  });
+  it("rejects a selected café change while capturing the proposal revision",async()=>{
+    mocks.owner.mockResolvedValueOnce({businessId:"another-cafe"});
+    expect(await previewOliviaWeek({week:"2026-10-12"}))
+      .toEqual({ok:false,error:"unauthorized"});
+    expect(mocks.optimizer).not.toHaveBeenCalled();
+  });
+  it("fails closed when a proposal head cannot be read",async()=>{
+    mocks.owner.mockResolvedValueOnce({businessId,supabase:{from:()=>{
+      const q={select:()=>q,eq:()=>q,
+        maybeSingle:async()=>({data:null,error:{code:"42501"}})};
+      return q;
+    }}});
+    expect(await previewOliviaWeek({week:"2026-10-12"}))
+      .toEqual({ok:false,error:"storage_unavailable"});
+    expect(mocks.optimizer).not.toHaveBeenCalled();
   });
   it("does not preview plans lacking required confirmed staffing data",async()=>{
     mocks.load.mockResolvedValue({...saved,blockers:[{code:"no_coverage"}]});
