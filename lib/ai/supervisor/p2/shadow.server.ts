@@ -3,7 +3,7 @@ import { z } from "zod";
 import { SUPERVISOR_ENDPOINT, supervisorModelProfile } from "@/lib/ai/conversations/supervisorRequest.mjs";
 import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { buildP1P2Registrations } from "./p1Adapters.server";
-import { createP2Registry, unavailable, type ResultStatus, type TrustedReadScope } from "./registry";
+import { createP2Registry, type ResultStatus, type TrustedReadScope } from "./registry";
 
 const clause=z.string().trim().min(2).max(1000);
 const auditSchema=z.strictObject({
@@ -62,6 +62,34 @@ const missing=(reason:string,usage:Usage,evidence:ShadowEvidence[]=[]):ShadowOut
 });
 const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 const quotedClause=(goal:string,part:string)=>normalize(goal).includes(normalize(part));
+
+/** A model's `complete=true` is not proof of coverage. Reject material
+ * unmatched stretches of the original owner request without inferring any
+ * specialist intent or adding a question-specific routing taxonomy.
+ * Short connective/polite fragments are allowed; suspicious omissions fail closed.
+ */
+export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boolean {
+  const original=normalize(goal);
+  const spans:Array<{start:number;end:number}>=[];
+  for(const c of clauses){
+    const part=normalize(c);
+    if(!part)return false;
+    const start=original.indexOf(part);
+    if(start<0)return false;
+    spans.push({start,end:start+part.length});
+  }
+  spans.sort((a,b)=>a.start-b.start);
+  let end=0;
+  const unmatched:string[]=[];
+  for(const span of spans){
+    if(span.start<end)return false;
+    unmatched.push(original.slice(end,span.start));
+    end=span.end;
+  }
+  unmatched.push(original.slice(end));
+  return unmatched.every(segment=>
+    (segment.match(/[\\p{L}\\p{N}]+/gu)?.length??0)<5);
+}
 function responseText(response:unknown):string|null {
   if(!response||typeof response!=="object")return null;
   const r=response as {status?:unknown;output?:unknown};
@@ -144,7 +172,7 @@ export async function runP2ShadowWithScope(params:{
     input:{goal},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
-  if(!audit || !audit.complete || audit.clauses.some(c=>!quotedClause(goal,c)) ||
+  if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses) ||
     new Set(audit.clauses.map(normalize)).size!==audit.clauses.length)
     return missing("scope_unverified",usage);
   const plan=await requestStructured({
