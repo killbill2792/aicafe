@@ -1,3 +1,13 @@
+## Universal Supervisor Platform P1 — canonical typed reads (2026-10-14, implementation in review)
+
+- Branch: `codex/supervisor-platform-p1-catalog`, targeting latest main, tracking #74. Do not merge/deploy or activate flags/migrations.
+- Added checked-in P1 business-data catalog with 17 registered typed canonical reader surfaces, a 23-method bidirectional current `BusinessScopedCafeTools` manifest, 12 additional explicitly classified domain gaps/restricted surfaces, strict Zod request and result schemas, per-purpose versioned selector/source policy IDs, and safe authenticated owner-selected-business read dispatch. Retains existing Supervisor routing and pure financial calculations.
+- Current data quality is **conservatively partial** when no source revision proof exists, with missing values unavailable rather than zero. Sales remain daily, historical profitability uses supported current-month windows, and owner recurring schedules are planned rather than attendance.
+- Added catalog/source drift, malformed cents, nonexistent inputs, context/period, sensitive metadata and no-wage/no-timecard tests. Remote CI and independent whole-PR review are required; locally running the project is not possible in the available repository-less execution environment.
+- **Remaining before the full P1 acceptance gate:** dedicate bounded owner-only catalog entries for business locations, recipes/ingredients, named roster/wage provenance, supplier quotes and owner rules; integrate registered true scalar metric units and explicit source revision/coverage proofs so complete values can be verified; expand source-surface drift tests beyond existing scoped facade to UI/domain exports; confirm synthetic cross-tenant/RLS coverage and CI; request independent review. No P1 completion or merge readiness is claimed yet.
+
+---
+
 ## Olivia scheduling — PR 1A universal manual foundation (review, 2026-10-14)
 
 Plan: reconcile the owner-approved scheduling exception in docs/01-product.md; add one additive scheduling-input migration with tenant-scoped owner RLS, audit and wage provenance; add strict typed owner-only server operations; place only pure availability/date-precedence calculations in lib/calc/scheduling and test them. Preserve existing Staff, assigned staff_schedules, timecards, payroll formulas, POS and Supervisor behavior. No production migration, merge or deployment.
