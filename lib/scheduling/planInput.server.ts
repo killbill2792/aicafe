@@ -362,16 +362,22 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     // rest and coverage handoff duration. A 10-minute paid rest MUST NOT be
     // passed to a 30-minute solver. Non-5-minute rests fail review earlier.
     const paidRest=ruleProfile?.paidRestMinutes??0;
+    const unpaidMeal=ruleProfile?.unpaidMealMinutes??0;
     const wallMinute=(wall:string)=>{
       const [hour,minute]=wall.slice(0,5).split(":").map(Number);
       return hour*60+minute;
     };
     const frozenLengths=startedPublishedShifts.flatMap(s=>[
       (Date.parse(s.endAt)-Date.parse(s.startAt))/60000,
-      ...s.breaks.map(x=>(Date.parse(x.endAt)-Date.parse(x.startAt))/60000),
+      ...s.breaks.flatMap(x=>[
+        (Date.parse(x.startAt)-Date.parse(s.startAt))/60000,
+        (Date.parse(x.endAt)-Date.parse(s.startAt))/60000,
+        (Date.parse(x.endAt)-Date.parse(x.startAt))/60000,
+      ]),
     ]);
     const slotMinutes=([30,15,10,5] as const).find(slot=>
-      paidRest%slot===0 && frozenLengths.every(n=>n>0 && n%slot===0) &&
+      paidRest%slot===0 && unpaidMeal%slot===0 &&
+      frozenLengths.every(n=>n>=0 && n%slot===0) &&
       coverage.every(c=>{
         const start=wallMinute(c.start_local),end=wallMinute(c.end_local);
         const duration=end-start+(c.overnight?1440:0);
