@@ -41,6 +41,9 @@ export function verifiedOliviaRuleProfile(
   const parsed=oliviaReviewedRuleProfileSchema.safeParse(candidate);
   if(!parsed.success)return null;
   const rules=parsed.data;
+  // The pure planner's smallest supported grid is five minutes. Refuse a
+  // rest rule we cannot honor before saving an owner attestation.
+  if(rules.paidRestMinutes!==0 && rules.paidRestMinutes%5!==0)return null;
   if(!input.locations.every(location=>Boolean(rules.jurisdictionByLocationId[location.id]))||
      !input.employees.filter(e=>e.active).every(employee=>
        Boolean(rules.classificationByEmployeeId[employee.id])))
