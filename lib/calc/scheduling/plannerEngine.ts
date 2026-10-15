@@ -125,6 +125,7 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
   cache:Map<string,Array<{start:number;end:number}>>):WorkUnit[] {
   const work=starting.slice();
   const grid=(input.slotMinutes??30)*60_000;
+  const frozenUntil=input.replanAsOf==null?null:Date.parse(input.replanAsOf);
   let extraUnits=0;
   const covers=(workerId:string,unit:DemandUnit)=>
     work.some(w=>w.employeeId===workerId && w.locationId===unit.locationId &&
@@ -139,7 +140,8 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
     const ordered=[...slices.values()].sort((a,b)=>a.start-b.start);
     for(let i=1;i<ordered.length;i++){
       const before=ordered[i-1],after=ordered[i];
-      if(before.end!==after.start)continue;
+      if(before.end!==after.start ||
+        (frozenUntil!=null && after.start<frozenUntil))continue;
       const prev=plan.employees.filter(e=>qualifies(e,before,plan.locations) &&
         covers(e.id,before)).map(e=>e.id);
       const current=plan.employees.filter(e=>qualifies(e,after,plan.locations) &&
@@ -293,6 +295,7 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
   // Pinned shifts are commitments, never silently discarded. Validate
   // availability and cross-location limits before trying optimization.
   for(const w of plan.pinned){
+    if(w.historical)continue; // already-published, not re-authorized against changed availability
     const employee=plan.employees.find(e=>e.id===w.employeeId)!;
     const eligible=eligibleCandidates({
       id:"pinned",coverageId:"pinned",locationId:w.locationId,
@@ -303,8 +306,15 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
   if(!hardValid(plan.pinned,plan,input))
     throw new Error("invalid_pinned_commitment:hard_constraints");
   const candidates=new Map<string,string[]>();
+  const frozenUntil=input.replanAsOf==null?null:Date.parse(input.replanAsOf);
+  const historical=plan.pinned.filter(w=>w.historical);
   for(const unit of plan.units){
-    candidates.set(unit.id,eligibleCandidates(unit,plan,cache).map(e=>e.id).sort());
+    // A new roster may never invent a shift that began before this trusted
+    // snapshot. Only previously published, exact frozen work covers past slots.
+    const options=frozenUntil!=null && unit.start<frozenUntil
+      ? plan.employees.filter(e=>containsPinned(historical,e.id,unit)).map(e=>e.id)
+      : eligibleCandidates(unit,plan,cache).map(e=>e.id);
+    candidates.set(unit.id,options.sort());
   }
   const objectives:Objective[]=["cash","owner_time","balanced"];
   const outputs=objectives.map(objective=>runObjective(
