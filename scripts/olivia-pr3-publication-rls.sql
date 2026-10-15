@@ -217,7 +217,7 @@ BEGIN
     THEN RAISE EXCEPTION 'rejected edit changed official version'; END IF;
 END $$;
 -- Version 501 must be forbidden by the database, not merely by UI forms.
-DO $
+DO $$
 DECLARE
   blocked_series boolean:=false;
   blocked_revision boolean:=false;
@@ -235,6 +235,6 @@ BEGIN
   IF NOT blocked_series OR NOT blocked_revision THEN
     RAISE EXCEPTION 'Olivia revision cap not enforced in PostgreSQL';
   END IF;
-END $;
+END $$;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed
