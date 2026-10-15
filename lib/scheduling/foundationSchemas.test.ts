@@ -41,6 +41,23 @@ describe("scheduling foundation input boundary", () => {
     }).exception_type).toBe("unavailable");
   });
 
+  it("records intentional unavailable weekdays with explicit confirmation, never from missing windows",()=>{
+    const base={employee_id:validWindow.employee_id,effective_from:"2026-10-14",
+      min_weekly_minutes:0,source:"owner_direct",confirmation:"owner_confirmed"};
+    const known=parseFoundationRecord("preferences",{
+      ...base,unavailable_weekdays:[3,4],
+    });
+    expect(known.unavailable_weekdays).toEqual([3,4]);
+    const unknown=parseFoundationRecord("preferences",base);
+    expect(unknown.unavailable_weekdays).toEqual([]);
+    expect(()=>parseFoundationRecord("preferences",{
+      ...base,unavailable_weekdays:[7],
+    })).toThrow();
+    expect(()=>parseFoundationRecord("preferences",{
+      ...base,unavailable_weekdays:[3,3],
+    })).toThrow();
+  });
+
   it("records minimum, desired and maximum distinctly", () => {
     const parsed = parseFoundationRecord("preferences", {
       employee_id: validWindow.employee_id,
