@@ -37,20 +37,22 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const [pending,startTransition] = useTransition();
   const [status,setStatus] = useState<"idle"|"saved"|"error"|"conflict">("idle");
   const key = useRef<string | null>(null);
+  const draftManifest = useRef<{id:string;revision:number}[] | null>(null);
   const scoped = useMemo(() => rows.filter(r => r.employee_id===employeeId &&
     r.local_date===date && (r.location_id??null)===(locationId||null)
   ),[rows,employeeId,date,locationId]);
   const draft = draftOverride ?? scoped.map(fromRow);
   function touch(next: ExceptionDraft[]) {
+    draftManifest.current ??= scoped.map(r=>({id:r.id,revision:r.revision}));
     setDraftOverride(next); setDirty(true); setStatus("idle"); key.current=null;
   }
   function changeScope(fn: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null); setDirty(false); setStatus("idle"); key.current=null; fn(value);
+    setDraftOverride(null); draftManifest.current=null; setDirty(false); setStatus("idle"); key.current=null; fn(value);
   }
   function switchLocation(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null);setDirty(false);setStatus("idle");key.current=null;
+    setDraftOverride(null);draftManifest.current=null;setDirty(false);setStatus("idle");key.current=null;
     setLocationId(value);
     if (!dateEdited) setDate(locations.find(l=>l.id===value)?.todayLocal??today);
   }
@@ -91,14 +93,14 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     startTransition(async () => {
       const result = await saveStaffAvailabilityBatch({
         kind:"availability_exception",employeeId,locationId:locationId||null,
-        scope:{local_date:date},expected:scoped.map(r=>({id:r.id,revision:r.revision})),
+        scope:{local_date:date},expected:draftManifest.current ?? scoped.map(r=>({id:r.id,revision:r.revision})),
         desired,requestKey:key.current,
       });
       if (!result.ok) {
         if (result.error==="conflict") {key.current=null;router.refresh();}
         setStatus(result.error==="conflict"?"conflict":"error");return;
       }
-      key.current=null;setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
+      key.current=null;draftManifest.current=null;setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
     });
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
