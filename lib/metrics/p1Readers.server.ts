@@ -1,6 +1,9 @@
 import "server-only";
 import { z } from "zod";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
+import { requireOwnBusiness } from "@/lib/auth/requireUser";
+import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -157,8 +160,27 @@ export async function executeP1Authorized(
 /** Only metadata that an authenticated owner is permitted to discover.
  * No unsanctioned external capabilities or private table names.
  */
+async function authorizedOwnerP1() {
+  const user=await requireOwnBusiness();
+  if(!user) throw new Error("Unauthorized");
+  const businessId=await getActiveBusinessId(user.id);
+  const supabase=await createServerSupabaseClient();
+  const membership=await supabase.from("memberships")
+    .select("role,businesses(is_demo)")
+    .eq("user_id",user.id).eq("business_id",businessId).eq("role","owner")
+    .maybeSingle();
+  if(membership.error||!membership.data) throw new Error("Unauthorized");
+  const raw=membership.data.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
+  const business=Array.isArray(raw)?raw[0]:raw;
+  if(!business||business.is_demo)throw new Error("Unauthorized");
+  const tools=await createAuthenticatedCafeTools();
+  const identity=await readSupervisorCafeIdentity(businessId);
+  return {tools,identity};
+}
+
+/** No sensitive definitions are discoverable to a non-owner or a demo member. */
 export async function discoverAuthenticatedP1() {
-  await createAuthenticatedCafeTools();
+  await authorizedOwnerP1();
   return discoverP1();
 }
 
@@ -166,18 +188,8 @@ export async function discoverAuthenticatedP1() {
  * and never called by the existing production Supervisor router.
  */
 export async function readAuthenticatedP1(request:unknown):Promise<unknown> {
-  let tools:BusinessScopedCafeTools;
-  try { tools=await createAuthenticatedCafeTools(); }
-  catch { return unavailable("unauthorized"); }
-  // Existing service authenticates owner selection; identity is looked up by the
-  // trusted session-selected active business in the same authenticated request.
-  // readSupervisorCafeIdentity requires a concrete bound ID, so use the
-  // existing scoped summary for timezone/as-of without caller-supplied tenancy.
   try {
-    const state=await tools.getCafeSummary();
-    if(!state.business?.id || !state.business.timezone || !state.asOf)
-      return unavailable("unavailable_source");
-    const identity=await readSupervisorCafeIdentity(state.business.id);
+    const {tools,identity}=await authorizedOwnerP1();
     return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone},request);
-  }catch{return unavailable("unavailable_source");}
+  }catch{return unavailable("unauthorized");}
 }
