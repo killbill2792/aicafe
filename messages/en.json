@@ -1623,6 +1623,27 @@
     "pastShift": "Past or already-started shifts cannot be newly published.",
     "publishError": "Unable to verify schedule publication. Refresh and retry.",
     "ownerRequired": "Only an authenticated café owner can do this.",
-    "editInvalidGeneric": "Proposed shifts fail scheduling validation."
+    "editInvalidGeneric": "Proposed shifts fail scheduling validation.",
+    "ruleReviewTitle": "Review applicable labor rules",
+    "ruleReviewCaution": "Enter only labor rules actually verified for your café, locations and worker classifications using an authoritative source or qualified adviser. No legal rules are supplied or certified by AI CAFE. Changing the review invalidates earlier schedule approvals.",
+    "loadRules": "Load current rule review",
+    "ruleReviewVersion": "Rule-review version",
+    "ruleSource": "Reviewed official/legal reference and version",
+    "ruleJurisdiction": "Applicable jurisdiction for {name}",
+    "ruleClassification": "Verified classification for {name}",
+    "ruleContinuous": "Maximum continuous work (minutes)",
+    "ruleMeal": "Required unpaid meal break (minutes)",
+    "rulePaidRest": "Verified paid rest length (minutes; enter 0 if none)",
+    "ruleShiftRest": "Minimum rest between shifts (minutes)",
+    "ruleOvertimeDaily": "Daily overtime threshold (minutes)",
+    "ruleOvertimeWeekly": "Weekly overtime threshold (minutes)",
+    "ruleMultiplierNumerator": "Overtime multiplier numerator",
+    "ruleMultiplierDenominator": "Overtime multiplier denominator",
+    "ruleAttestation": "I personally confirmed these rules and classifications against the cited current authority or qualified legal advice. I understand AI CAFE does not verify labor-law compliance.",
+    "ruleAttestRequired": "Review the rules and confirm your attestation before saving.",
+    "ruleLoadError": "Could not load the current policy review.",
+    "ruleSaveError": "Could not save the policy review. Check all fields, source evidence, and the current revision.",
+    "ruleReviewSaved": "Labor-rule review saved as version {revision}; regenerate the schedule before approval.",
+    "saveRuleReview": "Save reviewed policy"
   }
 }
