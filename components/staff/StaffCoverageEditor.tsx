@@ -79,11 +79,11 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   }
   return <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
     <h3 className="text-[17px] font-bold">{t("staffingNeeds")}</h3>
-    <p className="text-sm text-ink-muted">{t("coverageExplainer")}</p>
-    {locations.length===0 && <p role="status" className="text-sm text-warn">{t("noLocations")}</p>}
-    {rows.length===0&&<p className="text-sm text-ink-muted">{t("noCoverage")}</p>}
+    <p className="text-[17px] text-ink-muted">{t("coverageExplainer")}</p>
+    {locations.length===0 && <p role="status" className="text-[17px] text-warn">{t("noLocations")}</p>}
+    {rows.length===0&&<p className="text-[17px] text-ink-muted">{t("noCoverage")}</p>}
     {rows.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
-      <p className="min-w-0 text-sm">{locations.find(l=>l.id===r.location_id)?.name??t("location")}
+      <p className="min-w-0 text-[17px]">{locations.find(l=>l.id===r.location_id)?.name??t("location")}
         {" · "}{r.local_date?String(r.local_date):names[Number(r.day_of_week)]}
         {" · "}{String(r.start_local)}–{String(r.end_local)}
         {" · "}{String(r.min_headcount)} {t("people")}
@@ -93,7 +93,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         <button className={secondary} type="button" disabled={pending} onClick={()=>remove(r)}>{t("remove")}</button>
       </div>
     </div>)}
-    <label className="flex flex-col gap-1 text-sm">{t("existingRecords")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("existingRecords")}
       <select className={field} value={selected} onChange={e=>select(e.target.value)}>
         <option value="">{t("newRequirement")}</option>
         {savedRecord && !rows.some(r=>r.id===savedRecord.id) &&
@@ -103,64 +103,64 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         </option>)}
       </select>
     </label>
-    <label className="flex flex-col gap-1 text-sm">{t("location")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("location")}
       <select className={field} value={locationId} onChange={e=>changeLocation(e.target.value)}>
         {locations.map(l=><option value={l.id} key={l.id}>{l.name}</option>)}
       </select>
     </label>
-    <p className="text-sm text-ink-muted">{t("timezone")}: {location?.timezone??businessTimezone}
+    <p className="text-[17px] text-ink-muted">{t("timezone")}: {location?.timezone??businessTimezone}
       {location?.timezone? "":` (${t("inheritedTimezone")})`}</p>
-    <label className="flex flex-col gap-1 text-sm">{t("specificDate")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("specificDate")}
       <input className={field} type="date" value={specificDate} onChange={e=>setSpecificDate(e.target.value)}/>
     </label>
     {!specificDate&&<div className="grid grid-cols-2 gap-2">
-      <label className="flex flex-col gap-1 text-sm">{t("day")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("day")}
         <select className={field} value={day} onChange={e=>setDay(e.target.value)}>
           {names.map((n,i)=><option value={i} key={i}>{n}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveFrom")}
         <input className={field} type="date" value={from} onChange={e=>{setFromEdited(true);setFrom(e.target.value);}}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveTo")}
         <input className={field} type="date" value={to} onChange={e=>setTo(e.target.value)}/>
       </label>
     </div>}
     <div className="grid grid-cols-2 gap-2">
-      <label className="flex flex-col gap-1 text-sm">{t("start")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("start")}
         <input className={field} type="time" value={start} onChange={e=>setStart(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("end")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("end")}
         <input className={field} type="time" value={end} onChange={e=>setEnd(e.target.value)}/>
       </label>
-      <label className="flex min-h-12 items-center gap-2 text-sm">
+      <label className="flex min-h-12 items-center gap-2 text-[17px]">
         <input type="checkbox" checked={overnight} onChange={e=>setOvernight(e.target.checked)}/>{t("overnight")}
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("minimumHeadcount")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("minimumHeadcount")}
         <input className={field} type="number" min="0" max="50" value={count} onChange={e=>setCount(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("qualification")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("qualification")}
         <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
           <option value="">{t("anyQualification")}</option>
           {qualifications.filter(r=>r.active!==false).map(r=><option key={r.id} value={String(r.code)}>{String(r.display_name)}</option>)}
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("minOverlapMinutes")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("minOverlapMinutes")}
         <input className={field} type="number" min="0" max="1440" value={overlap} onChange={e=>setOverlap(e.target.value)}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("priority")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("priority")}
         <select className={field} value={priority} onChange={e=>setPriority(e.target.value as typeof priority)}>
           <option value="required">{t("required")}</option>
           <option value="advisory">{t("advisory")}</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("source")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("source")}
         <select className={field} value={source} onChange={e=>setSource(e.target.value as typeof source)}>
           <option value="owner_direct">{t("ownerDirect")}</option>
           <option value="worker_reported_by_owner">{t("workerReported")}</option>
         </select>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("confirmation")}
         <select className={field} value={confirmation} onChange={e=>setConfirmation(e.target.value as typeof confirmation)}>
           <option value="unconfirmed">{t("unconfirmed")}</option>
           <option value="owner_confirmed">{t("ownerConfirmed")}</option>
@@ -170,7 +170,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     <button className={primary} type="button" onClick={save} disabled={pending||locations.length===0}>
       {t("saveRequirement")}
     </button>
-    {error&&<p role="alert" className="text-sm text-warn">{error}</p>}
-    {saved&&<p role="status" className="text-sm text-good">{t("saved")}</p>}
+    {error&&<p role="alert" className="text-[17px] text-warn">{error}</p>}
+    {saved&&<p role="status" className="text-[17px] text-good">{t("saved")}</p>}
   </section>;
 }
