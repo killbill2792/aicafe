@@ -42,7 +42,7 @@ export const outputFor = (id: SupportedId) => {
     }),
     z.strictObject({
       ...base,status:z.literal("estimated"),value:values[id],
-      completeness:z.enum(["complete","partial"]),actuality:z.literal("estimated"),
+      completeness:z.enum(["complete","partial"]),actuality:z.enum(["estimated","planned"]),
     }),
     z.strictObject({
       ...base,status:z.literal("partial"),value:values[id],
@@ -101,13 +101,6 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "labor.recurring_assignments":(t,a,ctx)=>t.getRecurringSchedule(a.period!,ctx.asOf),
   "money.break_even":t=>t.getBreakEven(),
   "labor.daily_costs":(t,a)=>t.getLaborMetrics(a.period!),
-  "team.signals":async(t)=>{
-    const rows=await t.getActiveSignals();
-    if(rows.length>100)throw new Error("signal_read_limit");
-    return {available:true,value:rows.map(r=>({
-      id:r.id,type:r.type,severity:r.severity,confidence:r.confidence,
-    })),quality:{level:"high",missingInputs:["signal_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
-  },
   "team.decisions":(_t,a,ctx)=>readP1DecisionPage({businessId:ctx.businessId??""},a.page??0),
   "team.tasks":(_t,a,ctx)=>readP1TaskPage({businessId:ctx.businessId??""},a.page??0),
 };
@@ -211,7 +204,9 @@ export async function executeP1Authorized(
     },
     freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
     completeness:"partial",
-    actuality:id==="labor.recurring_assignments"?"planned":estimated?"estimated":"actual",
+    actuality:new Set<string>(["labor.recurring_assignments","money.monthly_bills",
+      "money.recurring_bill_rows","money.recurring_monthly_bills_cents"]).has(id)
+      ? "planned" : estimated ? "estimated" : "actual",
   };
   if(JSON.stringify(output).length>limits.maxOutputBytes)return unavailable("output_limit");
   // Explicit schema gate on the ENTIRE output envelope, not just the number.
