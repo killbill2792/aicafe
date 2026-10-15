@@ -1,0 +1,41 @@
+name: Universal Supervisor P2 Shadow Verification
+
+on:
+  pull_request:
+    paths:
+      - "lib/ai/supervisor/p2/**"
+      - "lib/metrics/p1Analyses.server.ts"
+      - ".github/workflows/supervisor-p2-verify.yml"
+      - "PROGRESS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p2-shadow:
+    name: P2 shadow registry, strict checks, regressions and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: TypeScript strict
+        run: npx tsc --noEmit
+      - name: P2 security, model and owner-journey fixtures
+        run: npx vitest run lib/ai/supervisor/p2
+      - name: P1 specialist and source contract regressions
+        run: npx vitest run lib/metrics
+      - name: Complete Vitest suite
+        run: npm test
+      - name: Changed-code lint
+        run: npx eslint lib/ai/supervisor/p2 lib/metrics/p1Analyses.server.ts
+      - name: Production build (no deployment)
+        run: npm run build
+      - name: Whitespace
+        run: git diff --check origin/main...HEAD
