@@ -228,6 +228,36 @@ export const readers = {
   "team.tasks":"getTeamTasks",
 } as const satisfies Record<SupportedId,string>;
 
+
+/** Code-owned canonical source paths are reviewable and never model supplied. */
+export const canonicalSourcePaths = {
+  readP1BusinessProfile:"lib/metrics/p1Additional.server.ts",
+  readP1Recipe:"lib/data/getMenuItemsForEdit.ts",
+  readP1Ingredients:"lib/data/getMenuItemsForEdit.ts",
+  readP1EmployeeWages:"lib/metrics/p1Additional.server.ts",
+  readP1SupplierQuotes:"lib/metrics/p1Additional.server.ts",
+  readP1OwnerRules:"lib/metrics/p1Additional.server.ts",
+  readP1SchedulingFoundation:"lib/scheduling/foundation.server.ts",
+  readP1ExpenseEntries:"lib/metrics/p1Additional.server.ts",
+  getProfitability:"lib/operating/cafeState.ts",
+  getBusinessCostSummary:"lib/operating/businessCosts.ts",
+  getProductEconomics:"lib/ai/tools.ts",
+  getSalesTrend:"lib/ai/supervisorReads.server.ts",
+  getPricingRecommendation:"lib/ai/tools.ts",
+  getExpenseSummary:"lib/operating/cafeState.ts",
+  getMonthlyBills:"lib/ai/supervisorFacts.server.ts",
+  getRecordedExpenses:"lib/ai/supervisorFacts.server.ts",
+  getProductSales:"lib/ai/supervisorFacts.server.ts",
+  getItemSalesCoverage:"lib/ai/supervisorFacts.server.ts",
+  getMenuCatalog:"lib/ai/supervisorReads.server.ts",
+  getStaffAttendance:"lib/ai/supervisorReads.server.ts",
+  getCurrentStaff:"lib/ai/conversations/domainProjections.ts",
+  getRecurringSchedule:"lib/ai/conversations/domainProjections.ts",
+  getBreakEven:"lib/ai/conversations/domainProjections.ts",
+  getLaborMetrics:"lib/operating/cafeState.ts",
+  getTeamTasks:"lib/data/operatingTasks.ts",
+} as const satisfies Record<(typeof readers)[SupportedId],string>;
+
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
@@ -320,7 +350,16 @@ export const inputFor = (id: SupportedId) => z.strictObject({
 export function discoverP1() {
   return (Object.keys(values) as SupportedId[]).map(id=>({
     id,version:1 as const,kind:kindFor(id),owner:ownerFor(id),
-    canonicalReader:readers[id],allowedPurposes:purposePolicies[id],
+    canonicalReader:readers[id],canonicalSourcePath:canonicalSourcePaths[readers[id]],
+    querySchemaContractId:id+".query",querySchemaVersion:1 as const,
+    resultSchemaContractId:id+".result",resultSchemaVersion:1 as const,
+    allowedPurposes:purposePolicies[id],
+    sourcePolicies:sourcePolicies[id],
+    authorization:"selected_business_owner_session_RLS" as const,
+    expectedFreshnessSeconds:null,
+    freshness:"source_timestamp_not_proven" as const,
+    completeness:"source_reported_or_unknown" as const,
+    maxRangeDays:365,maxResponseBytes:100000,allowedDimensions:[] as string[],
     selectorContractId:id+".selector",selectorContractVersion:1,
     temporalBasis:"business_local" as const,
     granularity: id==="sales.daily"||id==="labor.daily_costs" ? "day" : "aggregate",
