@@ -4,7 +4,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage } from "./p1Additional.server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -92,13 +92,7 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
       id:r.id,type:r.type,severity:r.severity,confidence:r.confidence,
     })),quality:{level:"high",missingInputs:["signal_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
   },
-  "team.decisions":async(t)=>{
-    const rows=await t.getDecisionHistory();
-    if(rows.length>100)throw new Error("decision_read_limit");
-    return {available:true,value:rows.map(r=>({
-      id:r.id,type:r.type,status:r.status,confidence:r.confidence,createdAt:r.createdAt.toISOString(),
-    })),quality:{level:"high",missingInputs:["decision_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
-  },
+  "team.decisions":(_t,a,ctx)=>readP1DecisionPage({businessId:ctx.businessId??""},a.page??0),
   "team.tasks":(_t,a,ctx)=>readP1TaskPage({businessId:ctx.businessId??""},a.page??0),
 };
 export const registeredHandlerIds = Object.freeze(Object.keys(handlers));
