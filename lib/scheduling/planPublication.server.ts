@@ -85,9 +85,9 @@ export async function transitionOliviaPlan(raw:unknown,kind:Transition):
     .maybeSingle();
   if(revError)return {ok:false,error:"storage_unavailable"};
   if(!revision)return {ok:false,error:"revision_conflict"};
-  if(kind==="approve" && revision.status!=="draft")
+  if(kind==="approve" && !["draft","approved"].includes(String(revision.status)))
     return {ok:false,error:"revision_conflict"};
-  if(kind==="publish" && revision.status!=="approved")
+  if(kind==="publish" && !["approved","published"].includes(String(revision.status)))
     return {ok:false,error:"not_approved"};
   const digest=oliviaSnapshotDigest(loaded.input,loaded.sourceFingerprint);
   if(revision.source_digest!==digest)return {ok:false,error:"source_changed"};
