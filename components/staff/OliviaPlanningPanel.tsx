@@ -114,8 +114,8 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
       }
       setResult(response.plan);
       proposalHead.current=response.previewRevision;
-      setObjective(response.plan.best?.objective ??
-        response.plan.scenarios[0]?.objective ?? "balanced");
+      setObjective(response.plan.scenarios.find(s=>s.objective!=="owner_time")
+        ?.objective ?? "balanced");
       setNotices(response.notices);
       setEmployees(response.employees); setLocations(response.locations);
       setLocationNames(response.locationNames);
