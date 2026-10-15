@@ -320,3 +320,5 @@ END $$;
 RESET ROLE;
 ROLLBACK;
 \echo Olivia PR1B disposable batch RLS and idempotency tests passed
+-- Olivia PR3 approval/publication tests run in a separate disposable transaction.
+\ir olivia-pr3-publication-rls.sql
