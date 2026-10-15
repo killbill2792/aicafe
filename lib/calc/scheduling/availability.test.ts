@@ -60,6 +60,36 @@ describe("Olivia PR1B: location-aware candidate availability", () => {
     expect(result.basis).toBe("general");
     expect(result.windows).toEqual([{start:540,end:660},{start:780,end:1020}]);
   });
+  it("location overrides cannot expand confirmed employee-wide hours",()=>{
+    const result=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[
+        {...recurring(3,"09:00","17:00"),location_id:null},
+        {...recurring(3,"08:00","18:00"),location_id:"location-a"},
+      ],
+      exceptions:[],
+    });
+    expect(result.basis).toBe("location");
+    expect(result.windows).toEqual([{start:540,end:1020}]);
+  });
+  it("explicit local additions may extend general hours but global hard masks still apply",()=>{
+    const result=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[
+        {...recurring(3,"09:00","17:00"),location_id:null},
+        {...recurring(3,"08:00","18:00"),location_id:"location-a"},
+      ],
+      exceptions:[
+        {...exception("2026-10-14","add_available","18:00","20:00"),
+          location_id:"location-a"},
+        {...exception("2026-10-14","unavailable","19:00","19:30"),
+          location_id:null},
+      ],
+    });
+    expect(result.windows).toEqual([
+      {start:540,end:1020},{start:1080,end:1140},{start:1170,end:1200},
+    ]);
+  });
   it("local add_available augments confirmed general availability",()=>{
     const result=effectiveAvailabilityForLocation({
       date:"2026-10-14",locationId:"location-a",
