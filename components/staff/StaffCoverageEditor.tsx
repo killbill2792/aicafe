@@ -18,7 +18,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(null);
   const [locationId,setLocationId]=useState(locations[0]?.id??"");
   const [day,setDay]=useState("1"),[specificDate,setSpecificDate]=useState("");
-  const [from,setFrom]=useState(today),[to,setTo]=useState("");
+  const [from,setFrom]=useState(locations[0]?.todayLocal??today),[to,setTo]=useState("");
   const [fromEdited,setFromEdited]=useState(false);
   const [start,setStart]=useState("08:00"),[end,setEnd]=useState("16:00");
   const [overnight,setOvernight]=useState(false),[count,setCount]=useState("1");
