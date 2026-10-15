@@ -64,10 +64,19 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
         slotMinutes:30,
         replanAsOf:"2026-10-12T19:00:00.000Z",
         startedPublishedShifts:[official],
+        historicalWageRates:{former:{rateCentsPerHour:1600,salary:false}},
       });
     const result=optimizeOliviaWeek(args);
     expect(result.status).toBe("feasible");
     expect(result.best?.shifts).toContainEqual(official);
+    // The current employee wage may change, but published-started minutes
+    // must use their original 1,600-cent/hour rate from the saved revision.
+    const changedCurrent=optimizeOliviaWeek({...args,employees:args.employees.map(e=>
+      e.id==="former"?{...e,wage:{...e.wage,wage_amount_cents:4900}}:e)});
+    expect(changedCurrent.best?.cost.cashWagesCents)
+      .toBe(result.best?.cost.cashWagesCents);
+    const missingPastRate=optimizeOliviaWeek({...args,historicalWageRates:{}});
+    expect(missingPastRate.best?.cost.cashWagesCents).toBeNull();
     expect(result.best?.shifts.some(s=>s.employeeId==="active" &&
       s.startAt.startsWith("2026-10-13"))).toBe(true);
     const shifts=result.best!.shifts;
