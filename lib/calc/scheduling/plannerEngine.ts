@@ -180,7 +180,17 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     }
   }
   const best=frontier[0]!;
-  const gaps=gapsFor(best);
+  // A gap recorded early may become constrained by assignments made later.
+  // Explain each unmet slot relative to the FINAL candidate work roster,
+  // not just the partial state when the omission was first considered.
+  const resolvedMissing=best.missing.map(m=>{
+    if(m.reason==="solver_budget")return m;
+    const staticReason=baselineGapReason(m.unit,plan,cache);
+    return {unit:m.unit,reason:staticReason==="capacity_or_overlap"
+      ?chunkReason(m.unit,plan,input,candidates.get(m.unit.id)??[],best.work)
+      :staticReason};
+  });
+  const gaps=gapsFor({...best,missing:resolvedMissing});
   const requiredMissing=best.missing.some(m=>m.unit.priority==="required");
   const cost=costForWork(input,plan,best.work);
   return {
