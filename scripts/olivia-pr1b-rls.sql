@@ -249,6 +249,36 @@ BEGIN
   RAISE EXCEPTION 'idempotent PR1A create could not persist unavailable weekdays';
  END IF;
 END $$;
+-- Manager is a legitimate business member with general locations UPDATE
+-- permission, but must not alter scheduling timezone semantics.
+SELECT set_config('request.jwt.claim.sub',:'manager',true);
+DO $$
+BEGIN
+ BEGIN
+   UPDATE public.locations SET timezone='Asia/Tokyo'
+     WHERE id=current_setting('test.pr1b_location')::uuid;
+   RAISE EXCEPTION 'manager changed owner-only location timezone';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ IF NOT EXISTS(SELECT 1 FROM public.locations
+    WHERE id=current_setting('test.pr1b_location')::uuid
+      AND timezone='America/Los_Angeles') THEN
+   RAISE EXCEPTION 'manager timezone mutation persisted';
+ END IF;
+END $$;
+SELECT set_config('request.jwt.claim.sub',:'owner',true);
+UPDATE public.locations SET timezone='Asia/Tokyo'
+ WHERE id=:'location';
+DO $$
+BEGIN
+ IF NOT EXISTS(SELECT 1 FROM public.locations
+  WHERE id=current_setting('test.pr1b_location')::uuid
+    AND timezone='Asia/Tokyo') THEN
+  RAISE EXCEPTION 'owner IANA timezone update rejected';
+ END IF;
+END $$;
+UPDATE public.locations SET timezone='America/Los_Angeles'
+ WHERE id=:'location';
 -- Manager cannot invoke the elevated transactional RPC.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
