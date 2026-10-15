@@ -1,9 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync,readdirSync } from "node:fs";
 import { SOURCE_SURFACES, LEGACY_MODEL_TOOL_SURFACES } from "./p1SourceManifest";
 import { values } from "./p1Catalog";
 
 describe("P1 independent public surface inventory",()=>{
+  it("scans every current or newly-added lib/data export, not just preselected manifest files",()=>{
+    const directory=new URL("../data/",import.meta.url);
+    const files=readdirSync(directory).filter(file=>file.endsWith(".ts") && !file.endsWith(".test.ts"));
+    for(const file of files){
+      const source=readFileSync(new URL(file,directory),"utf8");
+      const exports=[...source.matchAll(/\\bexport\\s+(?:async\\s+)?(?:function|class)\\s+([A-Za-z]\\w*)/g)]
+        .map(m=>m[1]);
+      if(!exports.length)continue;
+      const path="lib/data/"+file;
+      const mapped=(SOURCE_SURFACES as Record<string,Record<string,unknown>>)[path];
+      expect(mapped,"Unclassified source file: "+path).toBeDefined();
+      for(const name of exports)
+        expect(Object.hasOwn(mapped,name),"Unclassified source export: "+path+":"+name).toBe(true);
+    }
+  });
   it("flags new/renamed/removed business exports until explicitly classified",()=>{
     for(const [path,expected] of Object.entries(SOURCE_SURFACES)){
       const source=readFileSync(new URL("../../"+path,import.meta.url),"utf8");
