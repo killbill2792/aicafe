@@ -99,15 +99,13 @@ describe("P1 typed authorized dispatch",()=>{
     expect(exception).toEqual({status:"unavailable",value:null,reason:"reader_failure"});
     expect(JSON.stringify(exception)).not.toContain("token");
   });
-  it("does not expose private signal evidence",async()=>{
-    const signals=await read({getActiveSignals:vi.fn(async()=>[{
-      id:"s1",type:"DATA_INCOMPLETE",severity:"warning",confidence:"medium",
-      evidence:[{source:"sensitive-employee",field:"wage",value:12345}],
-      dataQuality:high,
-    }])},{id:"team.signals",version:1,purpose:"observed_team_signal_status"});
-    expect(signals).toMatchObject({status:"partial",value:[{id:"s1",type:"DATA_INCOMPLETE"}]});
-    expect(JSON.stringify(signals)).not.toContain("sensitive-employee");
-
+  it("does not load unbounded signal data for a restricted P1 capability",async()=>{
+    const reader=vi.fn();
+    const result=await read({getActiveSignals:reader},{
+      id:"team.signals",version:1,purpose:"observed_team_signal_status",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"unsupported"});
+    expect(reader).not.toHaveBeenCalled();
   });
 
 });
