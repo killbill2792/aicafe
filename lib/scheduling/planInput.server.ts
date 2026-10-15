@@ -262,10 +262,16 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     if(!ruleProfile)warn("policy_unverified",
       "Labor rules or classifications are unverified. An owner/legal policy review is required before approval and publication.");
     warn("source_provisional", "This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
+    // Use the coarsest supported grid that can represent every reviewed paid
+    // rest and coverage handoff duration. A 10-minute paid rest MUST NOT be
+    // passed to a 30-minute solver. Non-5-minute rests fail review earlier.
+    const paidRest=ruleProfile?.paidRestMinutes??0;
+    const slotMinutes=([30,15,10,5] as const).find(slot=>
+      paidRest%slot===0 && coverage.every(c=>(c.minOverlapMinutes??0)%slot===0))??5;
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         ...(ruleProfile ? {ruleProfile} : {}),
-        pinned: [], slotMinutes: 30, maxNodes: 12000, beamWidth: 24 },
+        pinned: [], slotMinutes, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
   } catch {
