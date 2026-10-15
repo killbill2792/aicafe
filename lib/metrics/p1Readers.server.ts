@@ -55,6 +55,12 @@ const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
 const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   period?:{from:string;to:string};productId?:string;
 },ctx:{asOf:string;timezone:string;businessId?:string})=>Promise<unknown>> = {
+  "money.owner_profit_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.ownerProfitCents}:r;},
+  "sales.net_sales_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.netSalesCents}:r;},
+  "money.total_costs_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.totalCostsCents}:r;},
+  "money.operating_margin_ratio":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.operatingMargin}:r;},
+  "money.recurring_monthly_bills_cents":async(t)=>{const r=await t.getMonthlyBills();return r.available?{...r,value:r.value.totalCents}:r;},
+  "money.recorded_spending_cents":async(t,a)=>{const r=await t.getRecordedExpenses(a.period!);return r.available?{...r,value:r.value.totalCents}:r;},
   "business.profile":(_t,_a,ctx)=>readP1BusinessProfile({businessId:ctx.businessId ?? ""}),
   "menu.recipe":(_t,a,ctx)=>readP1Recipe({businessId:ctx.businessId ?? ""},a.productId!),
   "menu.ingredients":(_t,_a,ctx)=>readP1Ingredients({businessId:ctx.businessId ?? ""}),
@@ -87,7 +93,8 @@ function isPeriodAllowed(id:SupportedId, p:{from:string;to:string}|undefined,asO
   if (!p) return true;
   // The current profit/cost reader only has this month's snapshot, and the
   // source for historical sales is daily, never an inferred hourly series.
-  if (new Set(["money.profitability","money.business_costs","money.expense_categories",
+  if (new Set(["money.profitability","money.business_costs","money.owner_profit_cents",
+    "sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio","money.expense_categories",
     "labor.daily_costs"]).has(id)) return p.from.slice(0,7)===asOf.slice(0,7) &&
       p.from >= asOf.slice(0,7)+"-01" && p.to<=asOf;
   if (id==="labor.recurring_assignments")return p.from>=asOf;
