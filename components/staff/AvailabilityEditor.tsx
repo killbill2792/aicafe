@@ -70,6 +70,8 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
     requestKey.current = null; setter(value);
   }
   function save() {
+    if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
+        !window.confirm(t("confirmRemove"))) return;
     if (!effectiveFrom || (effectiveTo && effectiveTo < effectiveFrom)) {
       setError(t("checkDates")); return;
     }
@@ -131,7 +133,8 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
       <div className="flex flex-col gap-3">
         {week.map((day) => {
           const windows = draft.map((row, index) => ({ row, index }))
-            .filter(({ row }) => row.day_of_week === day);
+            .filter(({ row }) => row.day_of_week === day)
+            .sort((a,b) => a.row.start_local.localeCompare(b.row.start_local));
           return <div key={day} className="rounded-xl border border-line p-3">
             <div className="flex items-center justify-between gap-2">
               <h5 className="font-semibold">{dayNames[day]}</h5>
