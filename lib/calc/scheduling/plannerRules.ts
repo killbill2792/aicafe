@@ -17,7 +17,7 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
     if(w.end<=w.start || w.start%60000!==0 || w.end%60000!==0)return false;
     if(!plan.locations.has(w.locationId))return false;
     const employee=plan.employees.find(e=>e.id===w.employeeId);
-    if(!employee || !employee.active)return false;
+    if(!employee || (!employee.active && !w.historical))return false;
     const rows=byEmployee.get(w.employeeId)??[];
     rows.push(w);byEmployee.set(w.employeeId,rows);
   }
@@ -27,6 +27,21 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
     let week=0,continuous=0,previous:WorkUnit|null=null;
     const daily=new Map<string,number>();
     const caps=new Map<string,number>();
+    // Paid breaks in already-started immutable shifts are compensable but
+    // never provide coverage. Count them toward future caps even if current
+    // labor policy changed after the original publication.
+    const historicalPaid=input.startedPublishedShifts?.filter(s=>s.employeeId===id)
+      .flatMap(s=>s.breaks.filter(b=>b.paid).map(b=>({
+        locationId:s.locationId,start:Date.parse(b.startAt),end:Date.parse(b.endAt),
+      })))??[];
+    for(const brk of historicalPaid){
+      week+=(brk.end-brk.start)/60000;
+      const zone=plan.locations.get(brk.locationId)!.timezone;
+      for(let time=brk.start;time<brk.end;time+=60_000){
+        const date=localParts(time,zone).date;
+        daily.set(date,(daily.get(date)??0)+1);
+      }
+    }
     for(const w of rows){
       if(previous && w.start<previous.end)return false;
       const gap=previous?(w.start-previous.end)/60000:Infinity;
@@ -37,18 +52,21 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
         const asMeal=meal!=null && gap===meal;
         const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
         const asPaidRest=paidRest!=null && paidRest>0 && gap===paidRest &&
-          previous.locationId===w.locationId;
-        if(gap>0 && !asMeal && !asPaidRest && rest!=null && gap<rest)return false;
+          previous.locationId===w.locationId &&
+          !(previous.historical && w.historical);
+        if(gap>0 && !asMeal && !asPaidRest && rest!=null && gap<rest &&
+          !(previous.historical && w.historical))return false;
         if(gap>0 && (asMeal || asPaidRest || (rest!=null&&gap>=rest)))continuous=0;
         if(asPaidRest)paidGap={employeeId:id,locationId:w.locationId,
           start:previous.end,end:w.start,pinned:false};
       }
       continuous+=minutes(w);
-      if(input.ruleProfile?.maxContinuousWorkMinutes!=null &&
+      if(!w.historical && input.ruleProfile?.maxContinuousWorkMinutes!=null &&
         continuous>input.ruleProfile.maxContinuousWorkMinutes)return false;
       previous=w;
       week+=minutes(w)+(paidGap?minutes(paidGap):0);
-      if(employee.maxWeeklyMinutes!=null && week>employee.maxWeeklyMinutes)return false;
+      if(!w.historical && employee.maxWeeklyMinutes!=null &&
+        week>employee.maxWeeklyMinutes)return false;
       // A dated cap is for the calendar day WHERE EACH minute occurs.
       // Traverse minute boundaries to handle midnight, overnight, offset
       // changes and co-owners scheduling different location timezones.
@@ -58,7 +76,8 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
         const p=localParts(time,location.timezone),day=p.date;
         const used=(daily.get(day)??0)+1;
         daily.set(day,used);
-        if(employee.maxDailyMinutes!=null&&used>employee.maxDailyMinutes)return false;
+        if(!w.historical && employee.maxDailyMinutes!=null &&
+          used>employee.maxDailyMinutes)return false;
         for(const ex of employee.exceptions){
           if(ex.confirmation!=="owner_confirmed" ||
             ex.exception_type!=="hours_cap" || ex.local_date!==day ||
@@ -66,7 +85,7 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
             ex.max_minutes==null)continue;
           caps.set(day,Math.min(caps.get(day)??Infinity,ex.max_minutes));
         }
-        if(used>(caps.get(day)??Infinity))return false;
+        if(!w.historical && used>(caps.get(day)??Infinity))return false;
       }
       }
     }
@@ -94,11 +113,19 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
     // Paid rest minutes remain payable while they provide NO coverage.
     // Only a verified configured rest duration may bridge two work segments.
     const billedRows=rows.slice();
+    for(const published of input.startedPublishedShifts??[]){
+      if(published.employeeId!==e.id)continue;
+      for(const brk of published.breaks.filter(b=>b.paid))
+        billedRows.push({employeeId:e.id,locationId:published.locationId,
+          start:Date.parse(brk.startAt),end:Date.parse(brk.endAt),
+          pinned:true,historical:true});
+    }
     const restMinutes=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
     if(restMinutes!=null && restMinutes>0){
       for(let i=1;i<rows.length;i++){
         const previous=rows[i-1],current=rows[i];
         if(previous.locationId===current.locationId &&
+          !(previous.historical && current.historical) &&
           (current.start-previous.end)/60000===restMinutes)
           billedRows.push({employeeId:e.id,locationId:current.locationId,
             start:previous.end,end:current.start,pinned:false});
@@ -162,6 +189,7 @@ export function shiftsForWork(input:PlannerInput,plan:ExpandedPlan,
   works:readonly WorkUnit[]):PlannerShift[] {
   const byEmployee=new Map<string,WorkUnit[]>();
   for(const w of works){
+    if(w.historical)continue;
     const key=w.employeeId+"|"+w.locationId;
     const rows=byEmployee.get(key)??[];
     rows.push(w);byEmployee.set(key,rows);
@@ -192,6 +220,10 @@ export function shiftsForWork(input:PlannerInput,plan:ExpandedPlan,
     }
     flush();
   }
+  // Historical started shifts are immutable exact published assignments,
+  // including their original paid/unpaid breaks, pay and pinned flag.
+  shifts.push(...(input.startedPublishedShifts??[]).map(s=>({...s,
+    breaks:s.breaks.map(b=>({...b}))})));
   return shifts.sort((a,b)=>a.startAt.localeCompare(b.startAt) ||
     a.employeeId.localeCompare(b.employeeId) || a.locationId.localeCompare(b.locationId));
 }
