@@ -69,13 +69,18 @@ function choiceScore(employeeId:string,unit:DemandUnit,plan:ExpandedPlan,
   const worked=work.filter(w=>w.employeeId===employeeId)
     .reduce((n,w)=>n+(w.end-w.start)/60000,0);
   const target=employee.desiredWeeklyMinutes;
-  const desiredPenalty=target==null?0:Math.abs(worked+minutes-target)/600;
+  const desiredPenalty=target==null?0:
+    (Math.abs(worked+minutes-target)-Math.abs(worked-target))/10;
+  const minimum=employee.minWeeklyMinutes;
+  const minHoursPenalty=minimum==null?0:
+    (Math.max(0,minimum-worked-minutes)-Math.max(0,minimum-worked))/10;
   const preference=softPenalty(employeeId,unit,plan);
+  const preferenceAndHours=preference+desiredPenalty+minHoursPenalty;
   // Unknown wage is deliberately NOT treated as free. Owner hours are
   // always visible, and the owner_time scenario strongly avoids them.
-  if(objective==="owner_time")return owner*300+unknown/30+preference+desiredPenalty;
-  if(objective==="cash")return unknown+owner*2+preference*2+desiredPenalty;
-  return unknown/20+owner*25+preference*4+desiredPenalty*4;
+  if(objective==="owner_time")return owner*300+unknown/30+preferenceAndHours;
+  if(objective==="cash")return unknown+owner*2+preferenceAndHours*2;
+  return unknown/20+owner*25+preferenceAndHours*4;
 }
 function chunkReason(unit:DemandUnit,plan:ExpandedPlan,input:PlannerInput,
   options:readonly string[],work:readonly WorkUnit[]):PlannerGap["reason"] {
