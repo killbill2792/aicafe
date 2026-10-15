@@ -4,7 +4,7 @@ const mocks=vi.hoisted(()=>({client:vi.fn()}));
 vi.mock("@/lib/supabase/server",()=>({createServerSupabaseClient:mocks.client}));
 vi.mock("@/lib/data/getMenuItemsForEdit",()=>({getMenuItemsForEdit:vi.fn()}));
 vi.mock("@/lib/scheduling/foundation.server",()=>({readSchedulingFoundation:vi.fn()}));
-import {readP1TaskPage} from "./p1Additional.server";
+import {readP1TaskPage,readP1DecisionPage} from "./p1Additional.server";
 
 const rows=Array.from({length:41},(_,i)=>({
   id:"task-"+String(i).padStart(3,"0"),business_id:"cafe-1",agent_id:"alex",
@@ -55,4 +55,18 @@ describe("P1 bounded deterministic Team task pages",()=>{
     expect(await readP1TaskPage({businessId:"cafe-1"},999)).toMatchObject({available:false});
     expect(mocks.client).not.toHaveBeenCalled();
   });
+  it("bounds decision history and strips all private decision provenance",async()=>{
+    result={data:rows.map((row,i)=>({
+      ...row,id:"decision-"+i,type:"PRICE_CHANGE",confidence:"high",
+      recommendation:{password:"not-for-p1"},provenance:{workerWage:12345},
+    })),error:null} as unknown as typeof result;
+    const r=await readP1DecisionPage({businessId:"cafe-1"});
+    expect(from).toHaveBeenCalledWith("cafe_decisions");
+    expect(select).toHaveBeenCalledWith("id,business_id,type,status,confidence,created_at");
+    expect(range).toHaveBeenCalledWith(0,40);
+    expect(r).toMatchObject({available:true,value:{hasMore:true,nextPage:1}});
+    expect(JSON.stringify(r)).not.toContain("workerWage");
+    expect(JSON.stringify(r)).not.toContain("password");
+  });
+
 });
