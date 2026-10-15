@@ -83,8 +83,8 @@ DECLARE
  v_affected int; v_receipt public.scheduling_availability_batch_receipts%ROWTYPE;
  v_actual jsonb; v_expected jsonb; v_result jsonb:='[]'::jsonb;
  v_item jsonb; v_record jsonb; v_old jsonb;
- v_id uuid; v_rev integer; v_response jsonb;
- v_set_clause text;
+ v_id uuid; v_rev integer;
+ v_set_clause text; v_columns text; v_values text;
 
 BEGIN
  IF p_business_id IS NULL OR auth.uid() IS NULL
@@ -233,14 +233,17 @@ BEGIN
        RAISE EXCEPTION 'stale batch record' USING ERRCODE='40001';
      END IF;
    ELSE
-     -- Existing RPC validates allowlist, FK, audit, owner, confirmed stamping.
-     SELECT public.scheduling_create_foundation(
-       p_business_id,p_kind,gen_random_uuid(),v_record) INTO v_response;
-     IF v_response->>'id' IS NULL THEN
-       RAISE EXCEPTION 'batch create failed' USING ERRCODE='22023';
-     END IF;
-     v_id:=(v_response->>'id')::uuid;
-     v_rev:=(v_response->>'revision')::int;
+     -- Batch writes use their OWN idempotent receipt and underlying audited
+     -- triggers; the legacy unversioned single CREATE is forbidden after
+     -- a scope has a committed batch receipt.
+     SELECT string_agg(format('%I',key),',' ORDER BY key),
+       string_agg(format('r.%I',key),',' ORDER BY key)
+       INTO v_columns,v_values FROM jsonb_object_keys(v_record) AS fields(key);
+     EXECUTE format(
+       'INSERT INTO public.%I (business_id,%s) SELECT $1,%s
+        FROM jsonb_populate_record(NULL::public.%I,$2) r
+        RETURNING id,revision',v_table,v_columns,v_values,v_table)
+       USING p_business_id,v_record INTO v_id,v_rev;
    END IF;
    v_result:=v_result||jsonb_build_array(jsonb_build_object('id',v_id,'revision',v_rev));
  END LOOP;
@@ -382,6 +385,16 @@ BEGIN
    RAISE EXCEPTION 'forbidden scheduling create column' USING ERRCODE='22023';
  END IF;
 
+ -- Serialize individual recurring/date-specific creates against scope batches.
+ -- The batch and this RPC both lock the canonical employee BEFORE claiming
+ -- a request receipt; existing same-key retries remain idempotent.
+ IF p_kind IN ('availability_rule','availability_exception') THEN
+   PERFORM 1 FROM public.employees WHERE business_id=p_business_id
+     AND id=(p_record->>'employee_id')::uuid FOR UPDATE;
+   IF NOT FOUND THEN RAISE EXCEPTION 'unknown availability employee'
+      USING ERRCODE='23503'; END IF;
+ END IF;
+
  -- The primary key (business_id, request_key) is independent of payload and
  -- kind: reusing a key for different work returns a typed conflict instead.
  -- PostgreSQL ON CONFLICT waits for the concurrent winner to commit/abort.
@@ -402,6 +415,26 @@ BEGIN
      RAISE EXCEPTION 'unfinished scheduling create receipt' USING ERRCODE='40001';
    END IF;
    RETURN jsonb_build_object('id',v_id,'revision',v_revision,'replayed',true);
+ END IF;
+
+ -- No unversioned new create may append stale windows to a scope after a
+ -- different owner committed its complete manifest-based replacement.
+ IF p_kind IN ('availability_rule','availability_exception') AND EXISTS(
+   SELECT 1 FROM public.scheduling_availability_batch_receipts receipt
+   WHERE receipt.business_id=p_business_id
+     AND receipt.employee_id=(p_record->>'employee_id')::uuid
+     AND receipt.kind=p_kind
+     AND receipt.location_id IS NOT DISTINCT FROM (p_record->>'location_id')::uuid
+     AND receipt.result IS NOT NULL
+     AND receipt.result->>'conflict' IS DISTINCT FROM 'true'
+     AND ((p_kind='availability_rule'
+        AND receipt.edit_scope->>'effective_from'=p_record->>'effective_from'
+        AND receipt.edit_scope->>'effective_to' IS NOT DISTINCT FROM p_record->>'effective_to')
+       OR (p_kind='availability_exception'
+        AND receipt.edit_scope->>'local_date'=p_record->>'local_date'))
+ ) THEN
+   RAISE EXCEPTION 'availability scope requires versioned batch writes'
+     USING ERRCODE='42501';
  END IF;
 
  SELECT string_agg(format('%I',field),',' ORDER BY field),
