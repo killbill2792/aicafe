@@ -324,3 +324,20 @@ export function discoverP1() {
     sensitivity:id.startsWith("labor.")?"staff" as const:id.startsWith("money.")?"financial" as const:"normal" as const,
   }));
 }
+
+/** Authenticated inventory reports unsupported/restricted surfaces as explicit states.
+ * These never receive a handler or permission to inspect private data.
+ */
+export function discoverP1Inventory() {
+  return {
+    supported:discoverP1(),
+    unavailable:[
+      ...Object.entries(classified).map(([id,entry])=>({
+        id,kind:entry.kind,reason:entry.reason,
+      })),
+      ...Object.entries(additionalSurfaces).map(([id,entry])=>({
+        id,kind:entry.kind,reason:entry.reason,
+      })),
+    ],
+  };
+}
