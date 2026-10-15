@@ -147,7 +147,6 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         }
         retry.current = null;
         proposalHead.current = null;
-        setSourceDigest(null);
         setResult(null);
         setNotice(t("savedRevision", { revision: response.revision }));
         await loadHistory(week);
@@ -344,8 +343,8 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         </div>
       </>}
     </div>
-    <OliviaRuleReviewPanel week={week} onChanged={()=>loadHistory(week)}/>
-    <OliviaPublicationPanel week={week}
+    <OliviaRuleReviewPanel key={week} week={week} onChanged={()=>loadHistory(week)}/>
+    <OliviaPublicationPanel key={week} week={week}
       latest={history.find(item=>item.revision===currentRevision)??null}
       publishedRevision={publishedRevision} enabled={publicationEnabled}
       employees={employees} locations={locations} names={locationNames}
