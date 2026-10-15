@@ -205,8 +205,10 @@ export async function executeP1Authorized(
   const estimated=q.data.estimatedInputs.length>0;
   // A null revision is *not* immutable source evidence. Preserve the truthful
   // observed subtotal but never upgrade it to a revision-proven verified figure.
+  const planned=new Set<string>(["labor.recurring_assignments","money.monthly_bills",
+    "money.recurring_bill_rows","money.recurring_monthly_bills_cents"]).has(id);
   const output={
-    status:incomplete?"partial":estimated?"estimated":"partial",
+    status:planned||incomplete?"partial":estimated?"estimated":"partial",
     id,version:1,query:args,unit:id in metricUnits?metricUnits[id as keyof typeof metricUnits]:"typed_record",
     valueKind:id in metricUnits ? (metricUnits[id as keyof typeof metricUnits]==="ratio"?"decimal_ratio":"money_cents") : "record",
     value:known.value,quality:q.data,
@@ -218,9 +220,7 @@ export async function executeP1Authorized(
     },
     freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
     completeness:"partial",
-    actuality:new Set<string>(["labor.recurring_assignments","money.monthly_bills",
-      "money.recurring_bill_rows","money.recurring_monthly_bills_cents"]).has(id)
-      ? "planned" : estimated ? "estimated" : "actual",
+    actuality:planned?"planned":estimated?"estimated":"actual",
   };
   if(JSON.stringify(output).length>limits.maxOutputBytes)return unavailable("output_limit");
   // Explicit schema gate on the ENTIRE output envelope, not just the number.
