@@ -22,6 +22,12 @@ const costSummary={
     estimatedProductCostIds:[],missingFeeDays:0,missingOperatingCategories:[]},
 };
 describe("P1 analysis-to-typed-read binding",()=>{
+  it("reports reviewed schema hashes for contract pinning",()=>{
+    throw new Error("P1_SCHEMAS="+JSON.stringify(Object.fromEntries(
+      Object.values(p1Analyses).map(d=>[d.boundCapabilityKey,d.schemaContract])
+    )));
+  });
+
   it("pins mode, exact contract schemas, versions, nonempty purposes and source policies",()=>{
     expect(validateP1Analyses()).toBe(true);
     const published=discoverP1Analyses();
