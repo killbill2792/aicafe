@@ -71,47 +71,47 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   }
   const findName=(qualCode:string)=>String(types.find(r=>r.code===qualCode)?.display_name??qualCode);
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
-    <h4 className="text-base font-bold">{t("qualifications")}</h4>
-    <p className="text-sm text-ink-muted">{t("roleNotQualification")}</p>
-    {mine.length===0&&<p className="text-sm text-ink-muted">{t("noQualifications")}</p>}
+    <h4 className="text-[17px] font-bold">{t("qualifications")}</h4>
+    <p className="text-[17px] text-ink-muted">{t("roleNotQualification")}</p>
+    {mine.length===0&&<p className="text-[17px] text-ink-muted">{t("noQualifications")}</p>}
     {mine.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
       <div className="min-w-0">
         <p className="font-semibold">{findName(String(r.qualification_code))}</p>
-        <p className="text-sm text-ink-muted">{String(r.valid_from)}
+        <p className="text-[17px] text-ink-muted">{String(r.valid_from)}
           {r.valid_to?` – ${String(r.valid_to)}`:""}{" · "}
           {r.confirmation==="owner_confirmed"?t("ownerConfirmed"):t("unconfirmed")}
         </p>
       </div>
       <button type="button" className={secondary} onClick={()=>revoke(r)} disabled={pending}>{t("remove")}</button>
     </div>)}
-    <label className="flex flex-col gap-1 text-sm">{t("qualification")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("qualification")}
       <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
         <option value="">{t("chooseQualification")}</option>
         {types.filter(r=>r.active!==false).map(r=><option key={r.id} value={String(r.code)}>{String(r.display_name)}</option>)}
       </select>
     </label>
-    <label className="flex flex-col gap-1 text-sm">{t("location")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("location")}
       <select className={field} value={locationId} onChange={e=>selectLocation(e.target.value)}>
         <option value="">{t("allLocations")}</option>
         {locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
       </select>
     </label>
     <div className="grid grid-cols-2 gap-2">
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveFrom")}
         <input type="date" className={field} value={from} onChange={e=>{setDateEdited(true);setFrom(e.target.value);}}/>
       </label>
-      <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("effectiveTo")}
         <input type="date" className={field} value={to} onChange={e=>setTo(e.target.value)}/>
       </label>
     </div>
-    <label className="flex flex-col gap-1 text-sm">{t("source")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("source")}
       <select className={field} value={source}
         onChange={e=>setSource(e.target.value as typeof source)}>
         <option value="owner_direct">{t("ownerDirect")}</option>
         <option value="worker_reported_by_owner">{t("workerReported")}</option>
       </select>
     </label>
-    <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("confirmation")}
       <select className={field} value={confirmation}
         onChange={e=>setConfirmation(e.target.value as typeof confirmation)}>
         <option value="unconfirmed">{t("unconfirmed")}</option>
@@ -122,16 +122,16 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
     <details className="rounded-xl border border-line p-3">
       <summary className="min-h-12 cursor-pointer font-semibold">{t("createQualification")}</summary>
       <div className="mt-2 flex flex-col gap-2">
-        <label className="flex flex-col gap-1 text-sm">{t("qualificationCode")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("qualificationCode")}
           <input className={field} value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="opening"/>
         </label>
-        <label className="flex flex-col gap-1 text-sm">{t("qualificationName")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("qualificationName")}
           <input className={field} value={newName} onChange={e=>setNewName(e.target.value)}/>
         </label>
         <button type="button" className={secondary} disabled={pending||!newCode||!newName} onClick={addType}>{t("createQualification")}</button>
       </div>
     </details>
-    {error&&<p role="alert" className="text-sm text-warn">{error}</p>}
-    {saved&&<p role="status" className="text-sm text-good">{t("saved")}</p>}
+    {error&&<p role="alert" className="text-[17px] text-warn">{error}</p>}
+    {saved&&<p role="status" className="text-[17px] text-good">{t("saved")}</p>}
   </section>;
 }
