@@ -82,9 +82,10 @@ export type PlannerInput = {
   startedPublishedShifts?: PlannerShift[];
   /** Hourly cost equivalents from the original *published* revision's
    * immutable planner_input, never repriced using the live employee wage.
-   * A null rate means historical cost is unavailable, not zero.
+   * Keys are exact employee/location/start-time shift identities. A null rate
+   * means historical cost is unavailable, not zero.
    */
-  historicalWageRates?: Record<string,{
+  historicalShiftWageRates?: Record<string,{
     rateCentsPerHour:number|null;salary:boolean;
   }>;
   /** Trusted server-read UTC instant; prevents proposing retroactive new work. */
