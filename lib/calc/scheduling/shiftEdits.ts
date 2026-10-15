@@ -1,5 +1,5 @@
 import type {PlannerShift} from "./plannerTypes";
-import {localParts,wallToUtc} from "./plannerClock";
+import {civilDateAdd,localParts,wallToUtc} from "./plannerClock";
 
 const halfHour=30*60_000;
 function utcAfter(value:string,delta:number):string {
@@ -45,10 +45,14 @@ export function setOliviaUnpaidBreak(shift:PlannerShift,enabled:boolean):Planner
 export function addOliviaShift(week:string,shifts:readonly PlannerShift[],
   employeeId:string,locationId:string,zone="UTC"):PlannerShift {
   const last=shifts[shifts.length-1];
-  const startAt=last?new Date(Date.parse(last.startAt)+86_400_000).toISOString():
-    new Date(wallToUtc(week,"09:00",zone)).toISOString();
-  const endAt=last?new Date(Date.parse(last.endAt)+86_400_000).toISOString():
-    new Date(wallToUtc(week,"11:00",zone)).toISOString();
+  const lastLocal=last?localParts(Date.parse(last.startAt),zone).date:null;
+  const nextDay=lastLocal?civilDateAdd(lastLocal,1):week;
+  // Never append a Sunday assignment into an eighth day by accident.
+  const localDay=nextDay>=week && nextDay<=civilDateAdd(week,6)?nextDay:week;
+  const start=wallToUtc(localDay,"09:00",zone);
+  const duration=last?Date.parse(last.endAt)-Date.parse(last.startAt):120*60_000;
+  const startAt=new Date(start).toISOString();
+  const endAt=new Date(start+duration).toISOString();
   return {employeeId,locationId,startAt,endAt,
     paidMinutes:(Date.parse(endAt)-Date.parse(startAt))/60_000,
     breaks:[],pinned:false};
