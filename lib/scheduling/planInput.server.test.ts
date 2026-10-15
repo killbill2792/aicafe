@@ -307,7 +307,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       employeeId:id(1),startAt:frozen.starts_at,paidMinutes:210,
       breaks:frozen.breaks,pinned:false,
     });
-    expect(result.input.replanAsOf).toMatch(/^\\d{4}-/);
+    expect(result.input.replanAsOf).toMatch(/^\d{4}-/);
     expect(()=>expandPlannerInput(result.input)).not.toThrow();
   });
   it("rejects source records changed between the first and last DB fingerprint",async()=>{
