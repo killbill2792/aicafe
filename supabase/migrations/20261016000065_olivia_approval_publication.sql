@@ -89,8 +89,12 @@ BEGIN
   SELECT * INTO v_revision FROM public.scheduling_plan_revisions
     WHERE business_id=p_business_id AND series_id=v_series.id
       AND id=p_revision_id AND revision=p_expected_revision FOR UPDATE;
-  IF NOT FOUND OR v_revision.status<>'draft' OR
-    v_revision.source_digest<>p_source_digest
+  IF NOT FOUND OR v_revision.source_digest<>p_source_digest
+    THEN RETURN jsonb_build_object('error','revision_conflict'); END IF;
+  IF v_revision.status='approved' AND v_revision.approved_by IS NOT NULL
+    THEN RETURN jsonb_build_object('revisionId',p_revision_id,
+      'revision',p_expected_revision,'status','approved','replayed',true); END IF;
+  IF v_revision.status<>'draft'
     THEN RETURN jsonb_build_object('error','revision_conflict'); END IF;
   IF (v_revision.scenario->>'completeCoverage') IS DISTINCT FROM 'true'
     OR (v_revision.scenario->>'hardConstraintsSatisfied') IS DISTINCT FROM 'true'
