@@ -264,8 +264,11 @@ export function effectiveAvailabilityForLocation(input: {
       r.day_of_week === day.getUTCDay() && activeOnDate(date, r)) ||
     exceptions.some(r => r.location_id === locationId &&
       r.confirmation === "owner_confirmed" && r.local_date === date &&
-      (r.exception_type === "replace_day" || r.exception_type === "add_available"))
+      r.exception_type === "replace_day")
   );
+  // Local add_available augments inherited hours; it cannot replace the
+  // general positive window set. Only a real replacement or recurring
+  // location-specific availability can establish a new positive basis.
   // Date-specific local *restrictions* (including partial unavailability
   // and leave) must subtract from the general fallback; they do not replace
   // general positive windows. Only confirmed positive local windows switch
