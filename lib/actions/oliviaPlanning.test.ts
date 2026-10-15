@@ -30,7 +30,7 @@ const input={
   coverage:[],
 };
 const saved={ok:true,businessId,input,sourceFingerprint:"b".repeat(64),locationNames:{loc:"Main Café"},
-  warnings:[],blockers:[]};
+  warnings:[],notices:[],blockers:[]};
 const args={week:"2026-10-12",objective:"balanced",
   expectedRevision:0,expectedSourceDigest:digest,requestKey};
 
@@ -70,9 +70,9 @@ describe("Olivia preview/draft server action safety",()=>{
     expect(mocks.draft).not.toHaveBeenCalled();
   });
   it("returns actionable missing-coverage blocker and never drafts",async()=>{
-    mocks.load.mockResolvedValue({...saved,blockers:["Set confirmed coverage."]});
+    mocks.load.mockResolvedValue({...saved,blockers:[{code:"no_coverage"}]});
     expect(await saveOliviaWeekDraft(args))
-      .toEqual({ok:false,error:"missing_coverage"});
+      .toEqual({ok:false,error:"missing_inputs"});
     expect(mocks.draft).not.toHaveBeenCalled();
   });
   it("previews a verifiable digest and display names without staff-record writes",async()=>{
@@ -85,9 +85,9 @@ describe("Olivia preview/draft server action safety",()=>{
     expect(mocks.draft).not.toHaveBeenCalled();
   });
   it("does not preview plans lacking required confirmed staffing data",async()=>{
-    mocks.load.mockResolvedValue({...saved,blockers:["Enter required coverage."]});
+    mocks.load.mockResolvedValue({...saved,blockers:[{code:"no_coverage"}]});
     expect(await previewOliviaWeek({week:"2026-10-12"}))
-      .toEqual({ok:false,error:"Enter required coverage."});
+      .toEqual({ok:false,error:"missing_inputs",blockers:[{code:"no_coverage"}]});
     expect(mocks.optimizer).not.toHaveBeenCalled();
   });
 });
