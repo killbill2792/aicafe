@@ -15,7 +15,8 @@ describe("Olivia co-owner conflict draft reconciliation",()=>{
     expect(draft[0].id).toBe("removed");
   });
   it("retains new unsaved windows on refresh",()=>{
-    expect(reconcileDeletedDraftIds([{start_local:"07:00"}],[]))
+    const draft: Array<{id?:string;start_local:string}>=[{start_local:"07:00"}];
+    expect(reconcileDeletedDraftIds(draft,[]))
       .toEqual([{start_local:"07:00"}]);
   });
 });
