@@ -231,6 +231,42 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     expect(missing.ok).toBe(true);
     if(missing.ok)expect(missing.input.ruleProfile).toBeUndefined();
   });
+  it("selects a compatible paid-rest grid and refuses unsupported reviewed durations",async()=>{
+    const profile={
+      verified:true,source:"Verified published jurisdiction rule reference",
+      jurisdictionByLocationId:{[id(800)]:"Region-specific code"},
+      classificationByEmployeeId:{[id(1)]:"Hourly employee"},
+      maxContinuousWorkMinutes:360,unpaidMealMinutes:30,
+      paidRestMinutes:10,minRestBetweenShiftsMinutes:600,
+      overtime:{verified:true,dailyAfterMinutes:480,weeklyAfterMinutes:2400,
+        multiplierNumerator:3,multiplierDenominator:2},
+    };
+    fixtures.tables.scheduling_labor_rule_reviews=[
+      {id:id(2000),revision:1,business_id:fixtures.businessId,profile},
+    ];
+    const ten=await loadOliviaWeekFromSavedStaff(week);
+    expect(ten.ok).toBe(true);
+    if(!ten.ok)return;
+    expect(ten.input.slotMinutes).toBe(10);
+    expect(ten.input.ruleProfile?.paidRestMinutes).toBe(10);
+    fixtures.tables.scheduling_coverage_requirements[0].min_overlap_minutes=15;
+    const five=await loadOliviaWeekFromSavedStaff(week);
+    expect(five.ok).toBe(true);
+    if(five.ok)expect(five.input.slotMinutes).toBe(5);
+    profile.paidRestMinutes=7;
+    const unsupported=await loadOliviaWeekFromSavedStaff(week);
+    expect(unsupported.ok).toBe(true);
+    if(unsupported.ok) {
+      expect(unsupported.input.ruleProfile).toBeUndefined();
+      expect(unsupported.notices.some(x=>x.code==="policy_unverified")).toBe(true);
+    }
+    profile.paidRestMinutes=0;
+    fixtures.tables.scheduling_coverage_requirements[0].min_overlap_minutes=0;
+    const zero=await loadOliviaWeekFromSavedStaff(week);
+    expect(zero.ok).toBe(true);
+    if(zero.ok)expect(zero.input.slotMinutes).toBe(30);
+  });
+
   it("rejects source records changed between the first and last DB fingerprint",async()=>{
     let calls=0;
     fixtures.owner.mockResolvedValueOnce({
