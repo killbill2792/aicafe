@@ -261,14 +261,19 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(result.best?.cost.cashWagesCents).toBe(3200);
   });
 
-  it("covers imperfect minimum-overlap multiples without a short trailing fragment",()=>{
+  it("cannot invent a 45-minute handoff when both employees have exhausted their hard caps",()=>{
     const a=employee("half-a",{maxDailyMinutes:60});
     const b=employee("half-b",{maxDailyMinutes:60});
     const result=optimizeOliviaWeek(input([a,b],[coverage("overlap",{
       start_local:"09:00",end_local:"11:00",minOverlapMinutes:45,
     })],{slotMinutes:15}));
-    expect(result.status).toBe("feasible");
-    expect(result.best?.shifts.map(s=>s.paidMinutes).sort((x,y)=>x-y)).toEqual([60,60]);
+    // Two one-hour shifts provide 120 staff-minutes, but the mandated
+    // 45-minute handoff requires an additional 45 concurrent staff-minutes.
+    // A planner must not label the zero-overlap roster feasible.
+    expect(result.status).toBe("unproven");
+    expect(result.best?.completeCoverage).toBe(false);
+    expect(result.best?.shifts.reduce((n,s)=>n+s.paidMinutes,0)).toBeLessThanOrEqual(120);
+    expect(result.best?.gaps.some(g=>g.reason==="handoff_overlap_missing")).toBe(true);
   });
 
   it("never upgrades legal review without jurisdiction and employee classification evidence",()=>{
