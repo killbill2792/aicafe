@@ -193,12 +193,14 @@ export const values = {
         "MENU_CHANGE","PROMOTION","COST_REDUCTION"]),
       status:z.enum(["recommended","accepted","rejected","executed","dismissed","review_later"]),
       confidence:z.enum(["low","medium","high"]),createdAt:z.string().datetime({offset:true}),
-    })).max(40),page:count.max(250),hasMore:z.boolean(),nextPage:count.max(250).nullable(),
-  }).refine(x=>x.nextPage===(x.hasMore?x.page+1:null)),
+    })).max(40),page:count.max(250),hasMore:z.boolean(),nextPage:count.max(250).nullable(),limitReached:z.boolean(),
+  }).refine(x=>x.limitReached===(x.hasMore&&x.page===250) &&
+    x.nextPage===(x.hasMore&&!x.limitReached?x.page+1:null)),
   "team.tasks": z.strictObject({
     items:z.array(task).max(40),page:count.max(250),hasMore:z.boolean(),
-    nextPage:count.max(250).nullable(),
-  }).refine(x=>x.nextPage===(x.hasMore?x.page+1:null)),
+    nextPage:count.max(250).nullable(),limitReached:z.boolean(),
+  }).refine(x=>x.limitReached===(x.hasMore&&x.page===250) &&
+    x.nextPage===(x.hasMore&&!x.limitReached?x.page+1:null)),
 } as const;
 
 export type SupportedId = keyof typeof values;
