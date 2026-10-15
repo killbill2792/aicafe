@@ -58,7 +58,7 @@ export function validateOliviaAssignments(input:PlannerInput,
       // calendar date must belong to the seven-day input snapshot.
       if(startDate<input.horizonStart || startDate>plan.horizonEnd)
         throw new Error("shift_outside_seven_day_horizon");
-      const breaks=shift.unpaidBreaks.map(b=>({
+      const breaks=shift.breaks.map(b=>({
         start:parseUtcInstant(b.startAt),end:parseUtcInstant(b.endAt),paid:b.paid,
       })).sort((a,b)=>a.start-b.start);
       let last=start,unpaid=0;
