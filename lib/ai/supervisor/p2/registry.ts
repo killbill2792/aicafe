@@ -65,6 +65,22 @@ export function schemaFingerprint(schema:z.ZodType):string {
   )).digest("hex");
 }
 
+/** Non-strict Zod objects can silently strip unreviewed output fields.
+ * Compare the raw reader shape against the parsed value recursively to reject
+ * discarded effect, approval or other unknown fields before trusting evidence.
+ */
+function discardedOutputKeys(raw:unknown,parsed:unknown):boolean {
+  if(Array.isArray(raw))return !Array.isArray(parsed) ||
+    raw.length!==parsed.length || raw.some((x,i)=>discardedOutputKeys(x,parsed[i]));
+  if(raw!==null && typeof raw==="object"){
+    if(parsed===null || typeof parsed!=="object" || Array.isArray(parsed))return true;
+    const output=parsed as Record<string,unknown>;
+    return Object.entries(raw).some(([key,value])=>
+      !Object.hasOwn(output,key) || discardedOutputKeys(value,output[key]));
+  }
+  return false;
+}
+
 function validateRegistration(def:P2Registration) {
   if(!/^[a-z][a-z0-9._-]{2,120}$/.test(def.id) || def.version!==1 ||
     !CAPABILITY_MODES.includes(def.mode) || !def.owner || !def.purpose ||
@@ -142,7 +158,8 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         const output=await Promise.race([read,timedOut]);
         // Unknown/forged effects, extra fields and malformed quality are not evidence.
         const validated=def.outputSchema.safeParse(output);
-        if(!validated.success)return unavailable("invalid_result");
+        if(!validated.success || discardedOutputKeys(output,validated.data))
+          return unavailable("invalid_result");
         const actual=validated.data as {
           status?:string;value?:unknown;reason?:unknown;
           provenance?:{sourceRevision?:unknown};
