@@ -1571,6 +1571,20 @@
     "ownerUnavailable": "No se pueden comparar las horas del propietario sin un vínculo verificado con el personal.",
     "feasible": "Propuesta viable",
     "infeasible": "No se puede cubrir la demanda requerida",
-    "unproven": "No se pudo demostrar la cobertura completa"
+    "unproven": "No se pudo demostrar la cobertura completa",
+    "noticeWage": "Revise la verificación del salario de {employee}; un salario desconocido no equivale a $0.",
+    "noticeAvailability": "Confirme la disponibilidad de {employee} antes de confiar en los turnos.",
+    "noticeLeave": "Ausencia o permiso sin confirmar de {employee}; revíselo antes de asignar un turno.",
+    "noticeCoverage": "Se excluyó la cobertura sin confirmar.",
+    "noticeNoStaff": "No hay empleados activos; agregue personal y disponibilidad.",
+    "noticeLimits": "No hay límites de horas ni preferencias confirmados; revíselos.",
+    "noticeLegacy": "Los turnos anteriores siguen separados y pueden entrar en conflicto; concílielos antes de publicar.",
+    "noticePolicy": "No se han verificado las normas laborales, los descansos, las horas extra ni la identidad del propietario.",
+    "noticeProvisional": "La información procede de varias consultas provisionales; debe validarse antes de aprobar y publicar.",
+    "blockerLocation": "Agregue una ubicación de la cafetería.",
+    "blockerCoverage": "Introduzca y confirme la cobertura necesaria para aperturas, cierres u otros turnos.",
+    "blockerLimits": "Límites de horas confirmados contradictorios para {employee}. Revise las fechas de vigencia.",
+    "missingInputs": "Faltan datos de programación obligatorios o hay contradicciones. Revise los formularios de personal.",
+    "partialDraftUnavailable": "Esta propuesta incompleta muestra las vacantes; no se puede guardar hasta validar la cobertura requerida."
   }
 }
