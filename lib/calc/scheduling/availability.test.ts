@@ -60,6 +60,16 @@ describe("Olivia PR1B: location-aware candidate availability", () => {
     expect(result.basis).toBe("general");
     expect(result.windows).toEqual([{start:540,end:660},{start:780,end:1020}]);
   });
+  it("local add_available augments confirmed general availability",()=>{
+    const result=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[{...recurring(3,"09:00","12:00"),location_id:null}],
+      exceptions:[{...exception("2026-10-14","add_available","14:00","16:00"),
+        location_id:"location-a"}],
+    });
+    expect(result.basis).toBe("general");
+    expect(result.windows).toEqual([{start:540,end:720},{start:840,end:960}]);
+  });
   it("local confirmed full absence closes its date even with general availability", () => {
     const result=effectiveAvailabilityForLocation({
       date:"2026-10-14",locationId:"location-a",
