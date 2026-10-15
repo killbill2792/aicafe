@@ -8,7 +8,7 @@ export type DemandUnit = {
   start: number; end: number; qualificationCode: string | null;
   priority: "required" | "advisory";
 };
-export type WorkUnit = { employeeId: string; locationId: string; start: number; end: number; pinned: boolean };
+export type WorkUnit = { employeeId: string; locationId: string; start: number; end: number; pinned: boolean; historical?: boolean };
 export type ExpandedPlan = {
   units: DemandUnit[]; pinned: WorkUnit[]; employees: PlannerEmployee[];
   locations: Map<string,PlannerLocation>; warnings: string[]; horizonEnd: string;
@@ -142,6 +142,41 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     for(let time=start;time<end;time+=slot*60000)
       pinned.push({employeeId:p.employeeId,locationId:p.locationId,
         start:time,end:time+slot*60000,pinned:true});
+  }
+  // Preserve authoritative started, published shifts as work segments;
+  // breaks provide no coverage, and the exact original shift is retained in
+  // PlannerInput for byte-for-byte publication/validation reconciliation.
+  if(input.startedPublishedShifts?.length){
+    const cutoff=input.replanAsOf==null?NaN:parseUtcInstant(input.replanAsOf);
+    assert(Number.isFinite(cutoff), "historical_snapshot_missing");
+    assert(input.startedPublishedShifts.length<=200, "historical_size");
+    for(const shift of input.startedPublishedShifts){
+      const location=locations.get(shift.locationId);
+      assert(location && input.employees.some(e=>e.id===shift.employeeId),
+        "historical_employee_or_location");
+      const start=parseUtcInstant(shift.startAt),end=parseUtcInstant(shift.endAt);
+      assert(start<=cutoff && end>start && end-start<=86_400_000 &&
+        (end-start)%(slot*60000)===0, "historical_time");
+      const localDate=localParts(start,location.timezone).date;
+      assert(localDate>=input.horizonStart && localDate<=endDate,"historical_horizon");
+      const sorted=shift.breaks.map(b=>({
+        start:parseUtcInstant(b.startAt),end:parseUtcInstant(b.endAt),paid:b.paid,
+      })).sort((a,b)=>a.start-b.start);
+      let last=start,unpaid=0;
+      for(const item of sorted){
+        assert(item.start>=last && item.end>item.start && item.end<=end &&
+          (item.start-start)%(slot*60000)===0 &&
+          (item.end-item.start)%(slot*60000)===0, "historical_break");
+        if(!item.paid)unpaid+=(item.end-item.start)/60000;
+        last=item.end;
+      }
+      assert(shift.paidMinutes===(end-start)/60000-unpaid,"historical_paid");
+      for(let t=start;t<end;t+=slot*60000){
+        if(sorted.some(item=>item.start<t+slot*60000 && item.end>t))continue;
+        pinned.push({employeeId:shift.employeeId,locationId:shift.locationId,
+          start:t,end:t+slot*60000,pinned:true,historical:true});
+      }
+    }
   }
   if(input.coverage.every(c=>c.priority==="advisory"))
     warnings.push("Coverage requirements are advisory; no hard demand was supplied");
