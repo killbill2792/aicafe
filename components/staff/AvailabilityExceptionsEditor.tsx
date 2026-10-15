@@ -105,64 +105,64 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
   return <section aria-label={t("dateExceptions")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
-    <h4 className="text-base font-bold">{t("dateExceptions")}</h4>
-    <p className="text-sm text-ink-muted">{t("exceptionExplainer")}</p>
-    <label className="flex flex-col gap-1 text-sm font-semibold">{t("date")}
+    <h4 className="text-[17px] font-bold">{t("dateExceptions")}</h4>
+    <p className="text-[17px] text-ink-muted">{t("exceptionExplainer")}</p>
+    <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("date")}
       <input type="date" className={field} value={date}
         onChange={e=>{setDateEdited(true);changeScope(setDate,e.target.value);}}/>
     </label>
-    <label className="flex flex-col gap-1 text-sm font-semibold">{t("location")}
+    <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("location")}
       <select className={field} value={locationId}
         onChange={e=>switchLocation(e.target.value)}>
         <option value="">{t("allLocations")}</option>
         {locations.map(l=><option value={l.id} key={l.id}>{l.name}</option>)}
       </select>
     </label>
-    {draft.length===0 && <p className="text-sm text-ink-muted">{t("noExceptions")}</p>}
+    {draft.length===0 && <p className="text-[17px] text-ink-muted">{t("noExceptions")}</p>}
     {draft.map((r,i)=><div key={r.id??`new-${i}`} className="flex flex-col gap-2 rounded-xl border border-line p-3">
-      <label className="flex flex-col gap-1 text-sm">{t("exceptionType")}
+      <label className="flex flex-col gap-1 text-[17px]">{t("exceptionType")}
         <select className={field} value={r.exception_type}
           onChange={e=>update(i,{exception_type:e.target.value as ExceptionType})}>
           {exceptionTypes.map(v=><option key={v} value={v}>{t(v)}</option>)}
         </select>
       </label>
-      {r.exception_type==="unavailable" && <label className="flex min-h-12 items-center gap-2 text-sm">
+      {r.exception_type==="unavailable" && <label className="flex min-h-12 items-center gap-2 text-[17px]">
         <input type="checkbox" checked={!r.start_local && !r.end_local}
           onChange={e=>update(i,e.target.checked
             ? {start_local:"",end_local:"",overnight:false}
             : {start_local:"09:00",end_local:"17:00",overnight:false})}/>
         {t("fullDay")}
       </label>}
-      {r.exception_type==="hours_cap" ? <label className="flex flex-col gap-1 text-sm">
+      {r.exception_type==="hours_cap" ? <label className="flex flex-col gap-1 text-[17px]">
         {t("maxMinutes")}
         <input type="number" min="0" max="1440" className={field}
           value={r.max_minutes} onChange={e=>update(i,{max_minutes:e.target.value})}/>
       </label> : r.exception_type!=="approved_leave" &&
         !(r.exception_type==="unavailable" && !r.start_local && !r.end_local) &&
         <div className="grid grid-cols-2 gap-2">
-        <label className="flex flex-col gap-1 text-sm">{t("start")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("start")}
           <input type="time" className={field} value={r.start_local}
             onChange={e=>update(i,{start_local:e.target.value})}/>
         </label>
-        <label className="flex flex-col gap-1 text-sm">{t("end")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("end")}
           <input type="time" className={field} value={r.end_local}
             onChange={e=>update(i,{end_local:e.target.value})}/>
         </label>
       </div>}
       {r.exception_type!=="hours_cap" && r.exception_type!=="approved_leave" &&
-       <label className="flex min-h-12 items-center gap-2 text-sm">
+       <label className="flex min-h-12 items-center gap-2 text-[17px]">
          <input type="checkbox" checked={r.overnight}
            onChange={e=>update(i,{overnight:e.target.checked})}/>{t("overnight")}
        </label>}
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-sm">{t("source")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("source")}
           <select className={field} value={r.source}
             onChange={e=>update(i,{source:e.target.value as ExceptionDraft["source"]})}>
             <option value="owner_direct">{t("ownerDirect")}</option>
             <option value="worker_reported_by_owner">{t("workerReported")}</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-sm">{t("confirmation")}
+        <label className="flex flex-col gap-1 text-[17px]">{t("confirmation")}
           <select className={field} value={r.confirmation}
             onChange={e=>update(i,{confirmation:e.target.value as ExceptionDraft["confirmation"]})}>
             <option value="unconfirmed">{t("unconfirmed")}</option>
@@ -177,24 +177,24 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       onClick={()=>touch([...draft,{exception_type:"unavailable",start_local:"",
         end_local:"",overnight:false,max_minutes:"",
         source:"owner_direct",confirmation:"unconfirmed"}])}>{t("addException")}</button>
-    <p className="text-sm text-ink-muted">{t("exceptionPrecedence")}</p>
-    {dirty && <p role="status" className="text-sm text-warn">{t("unsaved")}</p>}
-    {status==="saved" && <p role="status" className="text-sm text-good">{t("saved")}</p>}
+    <p className="text-[17px] text-ink-muted">{t("exceptionPrecedence")}</p>
+    {dirty && <p role="status" className="text-[17px] text-warn">{t("unsaved")}</p>}
+    {status==="saved" && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
     {status==="conflict" && <details open className="rounded-xl border border-line p-3">
       <summary className="font-semibold">{t("latestSaved")}</summary>
-      {scoped.map(r=><p key={r.id} className="text-sm">{t(r.exception_type as ExceptionType)}:
+      {scoped.map(r=><p key={r.id} className="text-[17px]">{t(r.exception_type as ExceptionType)}:
         {" "}{String(r.start_local??"")}–{String(r.end_local??"")}
         {" · "}#{r.revision}</p>)}
       {draft.some(d=>d.id && !scoped.some(r=>r.id===d.id)) &&
-        <p className="text-sm">{t("deletedDraftRecreate")}</p>}
-      {scoped.length===0 && <p className="text-sm">{t("notRecorded")}</p>}
+        <p className="text-[17px]">{t("deletedDraftRecreate")}</p>}
+      {scoped.length===0 && <p className="text-[17px]">{t("notRecorded")}</p>}
       <button type="button" className={secondary} onClick={()=>{
         if (!window.confirm(t("discardEdits"))) return;
         setDraftOverride(null);setDirty(false);setStatus("idle");
       }}>{t("useLatestSaved")}</button>
     </details>}
-    {status==="conflict" && <p role="alert" className="text-sm text-warn">{t("conflict")}</p>}
-    {status==="error" && <p role="alert" className="text-sm text-warn">{t("saveFailed")}</p>}
+    {status==="conflict" && <p role="alert" className="text-[17px] text-warn">{t("conflict")}</p>}
+    {status==="error" && <p role="alert" className="text-[17px] text-warn">{t("saveFailed")}</p>}
     <button type="button" className={primary} onClick={save} disabled={pending||!dirty}>
       {pending?t("saving"):t("saveExceptions")}
     </button>
