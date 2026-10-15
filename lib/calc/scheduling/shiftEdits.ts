@@ -18,7 +18,7 @@ export function oliviaLocalBoundaryValue(instant:string,zone:string):string {
 }
 export function setOliviaLocalBoundary(shift:PlannerShift,
   side:"startAt"|"endAt",value:string,zone:string):PlannerShift {
-  if(!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(value))
+  if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value))
     throw new Error("invalid_local_shift_time");
   const instant=wallToUtc(value.slice(0,10),value.slice(11),zone);
   const changed={...shift,[side]:new Date(instant).toISOString()};
