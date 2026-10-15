@@ -74,7 +74,7 @@ function syntheticRegistration(id="energy.meter.review.v1") {
   const def={
     id,version:1 as const,owner:"energy",mode:"read" as const,
     purpose:"Explain last authorized meter reading, do not treat it as invoiced usage.",
-    sourceIds:["energy.meter"],allowedPurposes:["meter_read"],
+    sourceIds:["energy.meter"],canonicalReaderIds:[],allowedPurposes:["meter_read"],
     inputSchema,outputSchema,schemaContract:{
       id:id+".v1",registrationId:id,version:1 as const,
       inputSchemaFingerprint:schemaFingerprint(inputSchema),
@@ -363,6 +363,49 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       });
       expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
     }
+  });
+  it("rejects transformed model inputs before invoking a canonical reader",async()=>{
+    const {def}=syntheticRegistration();
+    const inputSchema=z.strictObject({
+      id:z.literal(def.id),version:z.literal(1),purpose:z.literal("meter_read"),
+      selector:z.coerce.number().int(),
+    });
+    const read=vi.fn(async()=>({
+      status:"partial",value:{reading:7},
+      provenance:{sourceId:"energy.meter",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+      quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
+    }));
+    const coerced={...def,inputSchema,read,
+      schemaContract:{...def.schemaContract,inputSchemaFingerprint:schemaFingerprint(inputSchema)}};
+    const result=await createP2Registry([coerced]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",selector:"7",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_request"});
+    expect(read).not.toHaveBeenCalled();
+  });
+  it("rejects forged canonical reader identity even with a registered source ID",async()=>{
+    const {def}=syntheticRegistration();
+    const outputSchema=z.strictObject({
+      status:z.literal("partial"),value:z.strictObject({reading:z.number().int()}),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),
+        canonicalReaderId:z.string(),sourceRevision:z.string(),asOf:z.string()}),
+      quality:z.strictObject({missingInputs:z.array(z.string()),
+        estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
+    });
+    const read=vi.fn(async()=>({
+      status:"partial",value:{reading:7},
+      provenance:{sourceId:"energy.meter",canonicalReaderId:"invented.reader",
+        sourceRevision:"meter-r1",asOf:"2026-10-03"},
+      quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
+    }));
+    const tampered={...def,canonicalReaderIds:["energy.canonical.meter.v1"],
+      outputSchema,read,
+      schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(outputSchema)}};
+    const result=await createP2Registry([tampered]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+    expect(read).toHaveBeenCalledOnce();
   });
   it("fifth synthetic domain extends discovery and model execution without platform edits",async()=>{
     const {def,read}=syntheticRegistration();
