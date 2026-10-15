@@ -1669,6 +1669,7 @@
     "revisionPublished": "Published",
     "revisionSuperseded": "Superseded",
     "revisionUnknown": "Unknown status",
-    "invalidWallTime": "Choose an unambiguous valid local date and time. Daylight-saving transitions may make some times unavailable or repeated."
+    "invalidWallTime": "Choose an unambiguous valid local date and time. Daylight-saving transitions may make some times unavailable or repeated.",
+    "historyUnavailable": "Unable to load schedule versions. Refresh and try again."
   }
 }
