@@ -153,7 +153,7 @@ CREATE FUNCTION public.scheduling_pr3_publish(
 DECLARE v_series public.scheduling_plan_series%ROWTYPE;
   v_revision public.scheduling_plan_revisions%ROWTYPE;
   v_old_revision uuid;v_receipt public.scheduling_plan_request_receipts%ROWTYPE;
-  v_fingerprint text;v_result jsonb;v_claim integer;
+  v_fingerprint text;v_result jsonb;v_claim integer;v_min_rest integer;
 BEGIN
   IF p_actor_id IS NULL OR p_request_key IS NULL OR p_revision_id IS NULL OR
     p_expected_revision IS NULL OR p_expected_revision < 1 OR
@@ -206,11 +206,65 @@ BEGIN
     OR (v_revision.scenario->>'hardConstraintsSatisfied') IS DISTINCT FROM 'true'
     OR (v_revision.scenario->>'legalReview') IS DISTINCT FROM 'verified_profile'
     THEN RETURN jsonb_build_object('error','policy_unverified'); END IF;
-  IF EXISTS(
-    SELECT 1 FROM public.scheduling_plan_assignments a
-    WHERE a.business_id=p_business_id AND a.plan_revision_id=p_revision_id
-      AND a.starts_at<=now()
-  ) THEN RETURN jsonb_build_object('error','past_shift'); END IF;
+  -- Existing already-started commitments are historical promises. A new
+  -- publication must preserve them byte-for-byte, including breaks and pay
+  -- minutes; it may safely change only not-yet-started shifts. An initial
+  -- publication cannot backdate a new official schedule.
+  IF v_series.published_revision IS NULL THEN
+    IF EXISTS(
+      SELECT 1 FROM public.scheduling_plan_assignments a
+      WHERE a.business_id=p_business_id AND a.plan_revision_id=p_revision_id
+        AND a.starts_at<=now()
+    ) THEN RETURN jsonb_build_object('error','past_shift'); END IF;
+  ELSE
+    SELECT id INTO v_old_revision FROM public.scheduling_plan_revisions
+      WHERE business_id=p_business_id AND series_id=v_series.id
+        AND revision=v_series.published_revision AND status='published';
+    IF v_old_revision IS NULL THEN
+      RETURN jsonb_build_object('error','revision_conflict');
+    END IF;
+    IF EXISTS(
+      SELECT 1 FROM public.scheduling_plan_assignments old
+      WHERE old.business_id=p_business_id
+        AND old.plan_revision_id=v_old_revision AND old.starts_at<=now()
+        AND NOT EXISTS(
+          SELECT 1 FROM public.scheduling_plan_assignments current
+          WHERE current.business_id=p_business_id
+            AND current.plan_revision_id=p_revision_id
+            AND current.employee_id=old.employee_id
+            AND current.location_id=old.location_id
+            AND current.starts_at=old.starts_at
+            AND current.ends_at=old.ends_at
+            AND current.paid_minutes=old.paid_minutes
+            AND current.breaks=old.breaks
+            AND current.pinned=old.pinned
+        )
+    ) OR EXISTS(
+      SELECT 1 FROM public.scheduling_plan_assignments current
+      WHERE current.business_id=p_business_id
+        AND current.plan_revision_id=p_revision_id AND current.starts_at<=now()
+        AND NOT EXISTS(
+          SELECT 1 FROM public.scheduling_plan_assignments old
+          WHERE old.business_id=p_business_id
+            AND old.plan_revision_id=v_old_revision
+            AND old.employee_id=current.employee_id
+            AND old.location_id=current.location_id
+            AND old.starts_at=current.starts_at
+            AND old.ends_at=current.ends_at
+            AND old.paid_minutes=current.paid_minutes
+            AND old.breaks=current.breaks
+            AND old.pinned=current.pinned
+        )
+    ) THEN RETURN jsonb_build_object('error','past_shift'); END IF;
+  END IF;
+  -- The confirmed rule review supplies the rest interval between shifts.
+  -- This is verified owner input, not a built-in universal labor-law claim.
+  SELECT (profile->>'minRestBetweenShiftsMinutes')::integer
+    INTO v_min_rest FROM public.scheduling_labor_rule_reviews
+    WHERE business_id=p_business_id;
+  IF v_min_rest IS NULL OR v_min_rest<0 OR v_min_rest>1440 THEN
+    RETURN jsonb_build_object('error','policy_unverified');
+  END IF;
   -- One café-wide advisory lock serializes separate weekly publication even
   -- when a worker crosses a week boundary or changes locations.
   IF EXISTS(
@@ -218,8 +272,14 @@ BEGIN
     JOIN public.scheduling_plan_assignments prior
       ON incoming.business_id=prior.business_id
       AND incoming.employee_id=prior.employee_id
-      AND tstzrange(incoming.starts_at,incoming.ends_at,'[)') &&
+      AND (
+        tstzrange(incoming.starts_at,incoming.ends_at,'[)') &&
           tstzrange(prior.starts_at,prior.ends_at,'[)')
+        OR (incoming.starts_at>=prior.ends_at AND
+          incoming.starts_at<prior.ends_at+make_interval(mins=>v_min_rest))
+        OR (prior.starts_at>=incoming.ends_at AND
+          prior.starts_at<incoming.ends_at+make_interval(mins=>v_min_rest))
+      )
     JOIN public.scheduling_plan_revisions old_rev
       ON old_rev.id=prior.plan_revision_id AND old_rev.business_id=prior.business_id
     JOIN public.scheduling_plan_series old_series
