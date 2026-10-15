@@ -45,7 +45,7 @@ export default async function ManageStaffPage({ searchParams }: { searchParams: 
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6">
       <BackHeader title={t("title")} subtitle={t("subtitle")} backHref="/more" backLabel={tCommon("back")} />
       {enabled && process.env.SCHEDULING_PR3_DRAFTS_ENABLED === "true" &&
-        <OliviaPlanningPanel today={snapshot.todayDateStr} />}
+        <OliviaPlanningPanel today={snapshot.todayDateStr}\n          publicationEnabled={process.env.SCHEDULING_PR3_PUBLICATION_ENABLED==="true"} />}
       <ManageStaffPanel
         employees={employees}
         schedules={schedules}
