@@ -327,7 +327,8 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       employeeId:id(1),startAt:frozen.starts_at,paidMinutes:210,
       breaks:frozen.breaks,pinned:false,
     });
-    expect(result.input.historicalWageRates?.[id(1)]).toEqual({
+    expect(result.input.historicalShiftWageRates?.[
+      JSON.stringify([id(1),id(800),frozen.starts_at])]).toEqual({
       rateCentsPerHour:1800,salary:false,
     });
     expect(result.input.employees[0].wage.wage_amount_cents).toBe(2800);
