@@ -9,7 +9,7 @@ describe("P1 independent public surface inventory",()=>{
     const files=readdirSync(directory).filter(file=>file.endsWith(".ts") && !file.endsWith(".test.ts"));
     for(const file of files){
       const source=readFileSync(new URL(file,directory),"utf8");
-      const exports=[...source.matchAll(/\\bexport\\s+(?:async\\s+)?(?:function|class)\\s+([A-Za-z]\\w*)/g)]
+      const exports=[...source.matchAll(/\bexport\s+(?:async\s+)?(?:function|class)\s+([A-Za-z]\w*)/g)]
         .map(m=>m[1]);
       if(!exports.length)continue;
       const path="lib/data/"+file;
