@@ -1534,7 +1534,7 @@
   },
   "OliviaPlanning": {
     "title": "Programación semanal de Olivia",
-    "draftOnly": "Solo propuestas y borradores. La aprobación y publicación aún no están disponibles.",
+    "draftOnly": "Revise los turnos propuestos, guarde versiones y utilice los pasos separados de aprobación y publicación cuando estén habilitados.",
     "week": "Semana que comienza el lunes",
     "generate": "Generar propuesta de siete días",
     "status": "Estado del plan",
@@ -1587,7 +1587,7 @@
     "missingInputs": "Faltan datos de programación obligatorios o hay contradicciones. Revise los formularios de personal.",
     "partialDraftUnavailable": "Esta propuesta incompleta muestra las vacantes; no se puede guardar hasta validar la cobertura requerida.",
     "editTitle": "Editar turnos",
-    "editInstructions": "Los cambios crean un nuevo borrador. Se comprueban la disponibilidad, la cobertura y los límites antes de guardar. La publicación aún no está disponible.",
+    "editInstructions": "Las modificaciones crean un nuevo borrador. Antes de guardarlo se comprueban disponibilidad, cualificaciones, cobertura y límites horarios.",
     "shiftNumber": "Turno {number}",
     "removeShift": "Eliminar turno",
     "employee": "Empleado",
@@ -1644,6 +1644,21 @@
     "ruleLoadError": "No se pudo cargar la revisión.",
     "ruleSaveError": "No se pudo guardar la revisión. Compruebe los datos, la fuente y la versión.",
     "ruleReviewSaved": "Revisión laboral guardada como versión {revision}. Genere otra vez el horario.",
-    "saveRuleReview": "Guardar revisión"
+    "saveRuleReview": "Guardar revisión",
+    "previewInvalid": "Elija un lunes válido para comenzar la semana de programación.",
+    "previewDisabled": "La programación no está activada para esta cafetería.",
+    "previewUnavailable": "No se pudo cargar el calendario desde los datos guardados del personal. Actualice y vuelva a intentarlo.",
+    "gapNoStaff": "No hay personal activo",
+    "gapQualification": "Falta la cualificación requerida",
+    "gapAvailability": "No hay disponibilidad confirmada",
+    "gapCapacity": "Conflicto de capacidad o de turnos",
+    "gapRest": "Restricción de descanso",
+    "gapDaily": "Límite diario de horas",
+    "gapWeekly": "Límite semanal de horas",
+    "gapDateCap": "Límite de horas para la fecha",
+    "gapPinned": "Conflicto con un turno fijado",
+    "gapSolver": "Se alcanzó el límite del optimizador",
+    "gapHandoff": "Falta el solapamiento de relevo requerido",
+    "gapUnknown": "Requisito sin cubrir"
   }
 }
