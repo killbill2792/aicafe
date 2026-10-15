@@ -63,8 +63,8 @@ describe("P1 typed authorized dispatch",()=>{
         ...high,level:"medium" as const,estimatedInputs:["recurringBills"],
       },
     }))},bills);
-    expect(estimated).toMatchObject({status:"estimated",value:{totalCents:100},
-      actuality:"estimated",completeness:"partial"});
+    expect(estimated).toMatchObject({status:"partial",value:{totalCents:100},
+      actuality:"planned",completeness:"partial",quality:{estimatedInputs:["recurringBills"]}});
     const partial=await read({getProfitability:vi.fn(async()=>({
       available:true as const,
       value:{netSalesCents:10000,totalCostsCents:9000,ownerProfitCents:1000,
