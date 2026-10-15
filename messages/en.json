@@ -1515,6 +1515,7 @@
     "notLegalAdvice": "Zero cash cost needs specific owner evidence. This is not legal advice or verification of labor-law eligibility.",
     "saveEvidence": "Save cost evidence",
     "featureUnavailable": "Availability setup is not enabled for this café yet. Existing Staff tools still work.",
-    "chooseLocation": "Choose a location first."
+    "chooseLocation": "Choose a location first.",
+    "hours": "hours"
   }
 }
