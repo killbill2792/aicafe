@@ -306,7 +306,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
   });
   it("treats a missing POS/cost source as unavailable, never a verified zero",async()=>{
     const unavailableCosts={
-      ...costSummary,completeness:"unavailable",
+      ...costSummary,completeness:"unavailable" as const,
       observed:{ingredients:false,loadedStaff:false,cardFees:false,runningCosts:false},
       knownTotalCents:0,
       components:{ingredientsCents:0,loadedStaffCents:0,cardFeesCents:0,runningCostsCents:0},
