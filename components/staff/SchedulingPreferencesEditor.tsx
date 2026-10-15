@@ -21,6 +21,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const [selected,setSelected] = useState<string>(active[0]?.id??"");
   const [lastSaved,setLastSaved]=useState<{id:string;revision:number}|null>(
     active[0] ? {id:active[0].id,revision:active[0].revision} : null);
+  const [conflicted,setConflicted]=useState(false);
   const selectedRow = active.find(r=>r.id===selected);
   // The returned revision may be newer than props until router.refresh settles.
   const selectedVersion = lastSaved?.id===selected ? lastSaved : (selectedRow ?? null);
@@ -47,7 +48,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const preferenceRetry=useRef<PendingCreate>(null), windowRetry=useRef<PendingCreate>(null);
 
   function selectPreference(id:string) {
-    setSelected(id);const r=active.find(row=>row.id===id);
+    setConflicted(false);setSelected(id);const r=active.find(row=>row.id===id);
     setLastSaved(r ? {id:r.id,revision:r.revision} : null);
     setFrom(String(r?.effective_from??today));setTo(String(r?.effective_to??""));
     setMin(minutesToHourInput(Number(r?.min_weekly_minutes??0)));setDesired(minutesToHourInput(r?.desired_weekly_minutes as number | null | undefined));
@@ -59,6 +60,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     setSaved(false);setError("");
   }
   function savePreference() {
+    if(conflicted){setError(t("conflict"));return;}
     let a:number, b:number|null, c:number|null, dailyMinutes:number|null;
     try {
       a=hourInputToMinutes(min,10080,true)!;
@@ -83,7 +85,10 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
           {requestKey:stableCreateRequestKey(preferenceRetry,payload)}),
         data:payload,
       });
-      if(!result.ok){setError(t("saveFailed"));return;}
+      if(!result.ok){
+        if(result.error==="conflict_or_missing"){setConflicted(true);router.refresh();}
+        setError(t("saveFailed"));return;
+      }
       preferenceRetry.current=null;setSelected(result.id);
       setLastSaved({id:result.id,revision:result.revision});
       setError("");setSaved(true);router.refresh();
@@ -113,7 +118,13 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const days=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
     <h4 className="text-[17px] font-bold">{t("hourLimitsAndPreferences")}</h4>
-    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
+    {conflicted && <button type="button" className={secondary} onClick={()=>{
+      const fresh=active.find(r=>r.id===selected);
+      setLastSaved(fresh?{id:fresh.id,revision:fresh.revision}:null);
+      if(!fresh)setSelected("");
+      setConflicted(false);setError("");preferenceRetry.current=null;
+    }}>{t("applyAfterConflict")}</button>}
+    <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("existingPeriods")}
       <select className={field} value={selected} onChange={e=>selectPreference(e.target.value)}>
         <option value="">{t("newPeriod")}</option>
