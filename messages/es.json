@@ -1663,6 +1663,11 @@
     "viewRevision": "Ver versión",
     "reviewVersion": "Turnos de la versión {revision}",
     "closeRevision": "Cerrar detalles",
-    "historicalPlanOnly": "Solo turnos planificados históricos; no son registros de asistencia ni prueba de horas trabajadas."
+    "historicalPlanOnly": "Solo turnos planificados históricos; no son registros de asistencia ni prueba de horas trabajadas.",
+    "revisionDraft": "Borrador",
+    "revisionApproved": "Aprobado",
+    "revisionPublished": "Publicado",
+    "revisionSuperseded": "Sustituido",
+    "revisionUnknown": "Estado desconocido"
   }
 }
