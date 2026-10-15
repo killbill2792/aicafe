@@ -50,6 +50,13 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     touch(draft.map((r,j) => j===i ? {...r,...patch} : r));
   }
   function save() {
+    if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
+        !window.confirm(t("confirmRemove"))) return;
+    if (draft.some((r) => r.exception_type==="hours_cap" &&
+        (r.max_minutes.trim()==="" || !Number.isInteger(Number(r.max_minutes)) ||
+         Number(r.max_minutes)<0 || Number(r.max_minutes)>1440))) {
+      setStatus("error"); return;
+    }
     key.current ??= crypto.randomUUID();
     const desired = draft.map(r => ({
       ...(r.id ? {id:r.id} : {}),
