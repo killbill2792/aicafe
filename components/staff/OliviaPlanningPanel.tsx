@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useTranslations } from "next-intl";
+import { useRef, useState, useTransition } from "react";
+import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
+import { useLocale, useTranslations } from "next-intl";
 import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory } from "@/lib/actions/oliviaPlanning";
 import type { PlannerResult, PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 
@@ -12,16 +13,35 @@ function mondayOf(date: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+function nextMonday(date: string) {
+  const monday = new Date(mondayOf(date) + "T12:00:00Z");
+  if (Number.isNaN(monday.getTime())) return date;
+  monday.setUTCDate(monday.getUTCDate() + 7);
+  return monday.toISOString().slice(0, 10);
+}
+
+function localShiftTime(value: string, timezone: string, locale: string) {
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium", timeStyle: "short", timeZone: timezone,
+    }).format(new Date(value));
+  } catch { return value; }
+}
+
 /** Owner-facing proposal workspace only. No approval or publishing controls
  * until backend can independently revalidate and transactionally commit.
  */
 export default function OliviaPlanningPanel({ today }: { today: string }) {
   const t = useTranslations("OliviaPlanning");
-  const [week, setWeek] = useState(() => mondayOf(today));
+  const locale = useLocale();
+  const [week, setWeek] = useState(() => nextMonday(today));
   const [result, setResult] = useState<PlannerResult | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [employees, setEmployees] = useState<Record<string,string>>({});
   const [locations, setLocations] = useState<Record<string,string>>({});
+  const [locationNames, setLocationNames] = useState<Record<string,string>>({});
+  const [sourceDigest, setSourceDigest] = useState<string | null>(null);
+  const retry = useRef<PendingCreate>(null);
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
   const [currentRevision, setCurrentRevision] = useState(0);
   const [publishedRevision, setPublishedRevision] = useState<number | null>(null);
@@ -44,26 +64,43 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   }
 
   function preview() {
-    setError(""); setNotice(""); setResult(null);
+    setError(""); setNotice(""); setResult(null); setSourceDigest(null);
+    retry.current = null;
     startTransition(async () => {
-      const response = await previewOliviaWeek({ week });
+      const selectedWeek = week;
+      const response = await previewOliviaWeek({ week: selectedWeek });
       if (!response.ok) { setError(response.error); return; }
       setResult(response.plan);
       setWarnings(response.warnings);
       setEmployees(response.employees); setLocations(response.locations);
-      await loadHistory(week);
+      setLocationNames(response.locationNames);
+      setSourceDigest(response.sourceDigest);
+      await loadHistory(selectedWeek);
     });
   }
   function save() {
+    if (!sourceDigest || !scenario) { setError(t("previewRequired")); return; }
     setError(""); setNotice("");
+    const intent = { week, objective, expectedRevision: currentRevision,
+      expectedSourceDigest: sourceDigest };
+    const requestKey = stableCreateRequestKey(retry, intent);
     startTransition(async () => {
-      const response = await saveOliviaWeekDraft({
-        week, objective, expectedRevision: currentRevision,
-        requestKey: crypto.randomUUID(),
-      });
-      if (!response.ok) { setError(response.error); return; }
-      setNotice(t("savedRevision", { revision: response.revision }));
-      await loadHistory(week);
+      try {
+        const response = await saveOliviaWeekDraft({ ...intent, requestKey });
+        if (!response.ok) {
+          setError(response.error === "source_changed" ? t("sourceChanged") :
+            response.error === "conflict" ? t("revisionConflict") :
+            response.error === "capacity_exceeded" ? t("capacityExceeded") :
+            t("saveFailed"));
+          return;
+        }
+        retry.current = null;
+        setNotice(t("savedRevision", { revision: response.revision }));
+        await loadHistory(week);
+      } catch {
+        // Retain request identity for retry after a network timeout.
+        setError(t("saveFailed"));
+      }
     });
   }
 
@@ -75,9 +112,10 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
     </div>
     <label className="flex flex-col gap-1 text-base font-semibold">
       {t("week")}
-      <input type="date" value={week} onChange={e => {
+      <input type="date" value={week} disabled={pending} onChange={e => {
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
+        setSourceDigest(null); retry.current = null;
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
@@ -87,20 +125,21 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
     {error && <p role="alert" className="text-base text-warn">{error}</p>}
     {notice && <p role="status" className="text-base">{notice}</p>}
     {result && <>
-      <p className="text-sm text-ink-muted">{t("status")}: {result.status}</p>
+      <p className="text-sm text-ink-muted">{t("status")}: {t(result.status)}</p>
       <label className="flex flex-col gap-1 font-semibold">{t("scenario")}
         <select value={objective} onChange={e =>
           setObjective(e.target.value as PlannerScenario["objective"])}
           className="min-h-12 rounded-xl border border-line bg-paper px-3">
           <option value="balanced">{t("balanced")}</option>
           <option value="cash">{t("cash")}</option>
-          <option value="owner_time">{t("ownerTime")}</option>
+          <option value="owner_time" disabled>{t("ownerTime")}</option>
         </select>
       </label>
       {scenario && <div className="flex flex-col gap-3">
         <div className="rounded-xl border border-line p-3 text-sm">
           <p>{t("coverage")}: {scenario.completeCoverage ? t("complete") : t("incomplete")}</p>
-          <p>{t("ownerMinutes")}: {scenario.ownerMinutes}</p>
+          <p>{t("ownerMinutes")}: {t("unknown")}</p>
+          <p>{t("ownerUnavailable")}</p>
           <p>{t("cashCost")}: {scenario.cost.cashWagesCents === null ?
             t("unknown") : (scenario.cost.cashWagesCents / 100).toFixed(2)}</p>
           <p>{t("legalReview")}: {scenario.legalReview === "verified_profile" ?
@@ -111,16 +150,16 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
         {scenario.shifts.map((shift, i) => <div key={i}
           className="rounded-xl border border-line px-3 py-2 text-sm">
           <p className="font-semibold">{employees[shift.employeeId] ?? shift.employeeId}</p>
-          <p>{shift.startAt} — {shift.endAt}</p>
-          <p>{t("location")}: {locations[shift.locationId] ? `${shift.locationId} (${locations[shift.locationId]})` : shift.locationId}</p>
+          <p>{localShiftTime(shift.startAt, locations[shift.locationId] ?? "UTC", locale)} — {localShiftTime(shift.endAt, locations[shift.locationId] ?? "UTC", locale)}</p>
+          <p>{t("location")}: {locationNames[shift.locationId] ?? shift.locationId}</p>
           <p>{t("paidMinutes")}: {shift.paidMinutes}</p>
         </div>)}
         <h3 className="font-bold">{t("gaps")}</h3>
         {scenario.gaps.length === 0 && <p>{t("noGaps")}</p>}
         {scenario.gaps.map((gap, i) => <p key={i} className="text-sm text-warn">
-          {gap.startAt} — {gap.endAt}: {gap.reason} ({gap.missingHeadcount})
+          {localShiftTime(gap.startAt, locations[gap.locationId] ?? "UTC", locale)} — {localShiftTime(gap.endAt, locations[gap.locationId] ?? "UTC", locale)}: {gap.reason} ({gap.missingHeadcount})
         </p>)}
-        <button type="button" disabled={pending || !scenario.hardConstraintsSatisfied}
+        <button type="button" disabled={pending || !sourceDigest || !scenario.hardConstraintsSatisfied}
           onClick={save}
           className="min-h-12 rounded-full border border-ink px-4 font-bold disabled:opacity-50">
           {t("saveDraft")}
