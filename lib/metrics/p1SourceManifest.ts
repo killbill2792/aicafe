@@ -31,7 +31,7 @@ export const SOURCE_SURFACES = {
     getSnapshot:{restricted:"The broad mutable snapshot is intentionally projected through bounded P1 money/sales readers"},
   },
   "lib/data/getRecurringCosts.ts": {
-    getRecurringCosts:{capabilities:["money.monthly_bills"]},
+    getRecurringCosts:{capabilities:["money.monthly_bills","money.recurring_bill_rows"]},
   },
   "lib/data/getMonthCalendar.ts": {
     getMonthCalendar:{restricted:"Owner calendar view-model contains aggregate projections; source underlying registered money readers"},
