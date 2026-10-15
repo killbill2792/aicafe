@@ -143,6 +143,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
 
   return (
     <section aria-label={t("weeklyAvailability")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
+      <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
       <h4 className="text-[17px] font-bold">{t("weeklyAvailability")}</h4>
       <p className="text-[17px] text-ink-muted">{t("availabilityExplainer")}</p>
       <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("location")}
@@ -258,6 +259,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       <button type="button" className={schedulingPrimaryClass} disabled={pending || !dirty} onClick={save}>
         {pending ? t("saving") : t("saveAvailability")}
       </button>
+    </fieldset>
     </section>
   );
 }
