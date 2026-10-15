@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { saveSchedulingFoundationRecord, createSchedulingQualificationType } from "@/lib/actions/schedulingFoundation";
 import { type SchedulingRow, type SchedulingLocation,
  schedulingFieldClass as field, schedulingButtonClass as secondary,
  schedulingPrimaryClass as primary } from "./AvailabilityEditor";
@@ -14,7 +14,8 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   locations: SchedulingLocation[]; today: string;
 }) {
   const t=useTranslations("SchedulingAvailability"),router=useRouter();
-  const [newCode,setNewCode]=useState(""),[newName,setNewName]=useState("");
+  const [newName,setNewName]=useState("");
+  const [createdType,setCreatedType]=useState<{code:string;name:string}|null>(null);
   const [code,setCode]=useState(""),[locationId,setLocationId]=useState("");
   const [from,setFrom]=useState(today),[to,setTo]=useState("");
   const [dateEdited,setDateEdited]=useState(false);
@@ -26,15 +27,21 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   const mine=assignments.filter(r=>r.employee_id===employeeId);
   function issue(errorCode:string) {setError(errorCode);setSaved(false);}
   function addType() {
-    const payload={code:newCode.trim().toLowerCase(),display_name:newName.trim(),active:true};
+    const name=newName.trim();
+    if (!name) return;
+    const existing=types.find(row=>String(row.display_name).toLocaleLowerCase()===
+      name.toLocaleLowerCase());
+    if (existing) {
+      setCode(String(existing.code));setNewName("");setError("");return;
+    }
+    const payload={displayName:name};
     startTransition(async()=>{
-      const result=await saveSchedulingFoundationRecord({
-        kind:"qualification_type",action:"create",requestKey:stableCreateRequestKey(typeRetry,payload),
-        data:payload,
+      const result=await createSchedulingQualificationType({
+        ...payload,requestKey:stableCreateRequestKey(typeRetry,payload),
       });
       if(!result.ok){issue(t("saveFailed"));return;}
-      setError("");setSaved(true);setCode(newCode.trim().toLowerCase());
-      typeRetry.current=null;setNewCode("");setNewName("");router.refresh();
+      setCreatedType({code:result.code,name});setCode(result.code);
+      setError("");setSaved(true);typeRetry.current=null;setNewName("");router.refresh();
     });
   }
   function selectLocation(value:string) {
@@ -88,6 +95,8 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
       <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
         <option value="">{t("chooseQualification")}</option>
         {types.filter(r=>r.active!==false).map(r=><option key={r.id} value={String(r.code)}>{String(r.display_name)}</option>)}
+        {createdType && !types.some(r=>r.code===createdType.code) &&
+          <option value={createdType.code}>{createdType.name}</option>}
       </select>
     </label>
     <label className="flex flex-col gap-1 text-[17px]">{t("location")}
@@ -122,13 +131,10 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
     <details className="rounded-xl border border-line p-3">
       <summary className="min-h-12 cursor-pointer font-semibold">{t("createQualification")}</summary>
       <div className="mt-2 flex flex-col gap-2">
-        <label className="flex flex-col gap-1 text-[17px]">{t("qualificationCode")}
-          <input className={field} value={newCode} onChange={e=>setNewCode(e.target.value)} placeholder="opening"/>
-        </label>
         <label className="flex flex-col gap-1 text-[17px]">{t("qualificationName")}
           <input className={field} value={newName} onChange={e=>setNewName(e.target.value)}/>
         </label>
-        <button type="button" className={secondary} disabled={pending||!newCode||!newName} onClick={addType}>{t("createQualification")}</button>
+        <button type="button" className={secondary} disabled={pending||!newName.trim()} onClick={addType}>{t("createQualification")}</button>
       </div>
     </details>
     {error&&<p role="alert" className="text-[17px] text-warn">{error}</p>}
