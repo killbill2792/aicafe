@@ -1,7 +1,7 @@
 import "server-only";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getMenuItemsForEdit } from "@/lib/data/getMenuItemsForEdit";
-import { readSchedulingFoundation } from "@/lib/scheduling/foundation.server";
+import { foundationTables } from "@/lib/scheduling/foundationSchemas";
 
 type Scoped = {businessId:string};
 const q=(missingInputs:string[]=[],estimatedInputs:string[]=[])=>({
@@ -126,12 +126,22 @@ export async function readP1OwnerRules({businessId}:Scoped) {
  */
 export async function readP1SchedulingFoundation({businessId}:Scoped) {
   if(!businessId)return absent("scope_missing");
-  const result=await readSchedulingFoundation();
-  if(!result.ok)return absent(result.error==="disabled"?"scheduling_not_activated":"scheduling_unavailable");
-  const kinds=["availability_rule","availability_exception","preferences","preference_window",
-    "qualification_type","qualification","coverage","compensation"] as const;
+  if(process.env.SCHEDULING_FOUNDATION_ENABLED!=="true")
+    return absent("scheduling_not_activated");
+  const client=await createServerSupabaseClient();
+  // Count-only queries avoid loading the full foundation audit/worker roster
+  // merely to produce a P1 summary. All tables are RLS + tenant scoped.
+  const kinds=Object.keys(foundationTables) as Array<keyof typeof foundationTables>;
+  const counts=await Promise.all(kinds.map(async kind=>{
+    const {count,error}=await client.from(foundationTables[kind])
+      .select("id",{count:"exact",head:true}).eq("business_id",businessId);
+    return {kind,count,error};
+  }));
+  if(counts.some(result=>result.error||result.count===null||
+    !Number.isSafeInteger(result.count)||result.count<0))
+    return absent("scheduling_foundation_unavailable");
   return present({enabled:true,recordCounts:Object.fromEntries(
-    kinds.map(kind=>[kind,result.records[kind].length]),
+    counts.map(result=>[result.kind,result.count]),
   )},["foundation_summary_only_no_optimizer_or_accepted_schedule"]);
 }
 
