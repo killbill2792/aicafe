@@ -39,7 +39,7 @@ export function StaffAvailabilitySection({ employee, records, locations, today }
     <p className="py-2 text-sm text-ink-muted">{t("doesNotAssign")}</p>
     <div className="flex flex-col gap-3">
       <AvailabilityEditor employeeId={employee.id} rows={records.availability_rule}
-        locations={locations} today={today}/>
+        preferences={records.preferences} locations={locations} today={today}/>
       <AvailabilityExceptionsEditor employeeId={employee.id} rows={records.availability_exception}
         locations={locations} today={today}/>
       <SchedulingPreferencesEditor employeeId={employee.id} preferences={records.preferences}
