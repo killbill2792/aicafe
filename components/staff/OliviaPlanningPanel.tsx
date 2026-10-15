@@ -36,9 +36,14 @@ function localShiftTime(value: string, timezone: string, locale: string) {
 /** Owner-facing proposal workspace only. No approval or publishing controls
  * until backend can independently revalidate and transactionally commit.
  */
-export default function OliviaPlanningPanel({ today, publicationEnabled=false }: { today: string; publicationEnabled?: boolean }) {
+export default function OliviaPlanningPanel({ today, currency, publicationEnabled=false }: { today: string; currency: string | null; publicationEnabled?: boolean }) {
   const t = useTranslations("OliviaPlanning");
   const locale = useLocale();
+  const cashLabel=(cents:number|null)=>{
+    if(cents===null||!currency)return t("unknown");
+    try{return new Intl.NumberFormat(locale,{style:"currency",currency}).format(cents/100);}
+    catch{return t("unknown");}
+  };
   const [week, setWeek] = useState(() => nextMonday(today));
   const [result, setResult] = useState<PlannerResult | null>(null);
   const [notices, setNotices] = useState<OliviaNotice[]>([]);
@@ -274,8 +279,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
           <p>{t("coverage")}: {scenario.completeCoverage ? t("complete") : t("incomplete")}</p>
           <p>{t("ownerMinutes")}: {t("unknown")}</p>
           <p>{t("ownerUnavailable")}</p>
-          <p>{t("cashCost")}: {scenario.cost.cashWagesCents === null ?
-            t("unknown") : (scenario.cost.cashWagesCents / 100).toFixed(2)}</p>
+          <p>{t("cashCost")}: {cashLabel(scenario.cost.cashWagesCents)}</p>
           <p>{t("legalReview")}: {scenario.legalReview === "verified_profile" ?
             t("verified") : t("unverified")}</p>
         </div>
