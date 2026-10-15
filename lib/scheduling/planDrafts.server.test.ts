@@ -68,6 +68,12 @@ describe("Olivia PR3B internal-only draft persistence boundary",()=>{
       .toEqual({ok:false,error:"invalid_input"});
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it("does not create an unreadable revision 501 when the week is at 500",async()=>{
+    expect(await createOliviaDraftFromTrustedSnapshot({...opts,expectedRevision:500},
+      snapshot,businessId,sourceFingerprint))
+      .toEqual({ok:false,error:"invalid_input"});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("writes a deterministic source digest into the tenant-scoped draft RPC",async()=>{
     const result=await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint);
     expect(result).toMatchObject({ok:true,seriesId,revisionId,revision:1,replayed:false});
