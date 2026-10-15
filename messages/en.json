@@ -1546,7 +1546,7 @@
     "complete": "Complete",
     "incomplete": "Gaps remain",
     "ownerMinutes": "Owner minutes (only with verified owner-person link)",
-    "cashCost": "Modeled cash wages (USD)",
+    "cashCost": "Modeled cash wages",
     "unknown": "Unknown",
     "legalReview": "Labor-policy review",
     "verified": "Verified input profile",
