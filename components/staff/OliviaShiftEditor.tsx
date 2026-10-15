@@ -15,22 +15,31 @@ function local(value:string,zone:string,locale:string) {
 }
 
 export default function OliviaShiftEditor({shifts,onChange,employees,locations,
-  names,week,disabled}:{
+  names,week,disabled,frozenShiftKeys}:{
   shifts:PlannerShift[];onChange:(next:PlannerShift[])=>void;
   employees:Record<string,string>;locations:Record<string,string>;
   names:Record<string,string>;week:string;disabled:boolean;
+  frozenShiftKeys:string[];
 }) {
   const t=useTranslations("OliviaPlanning");
   const locale=useLocale();
   const [clockError,setClockError]=useState("");
+  const frozenKeys=new Set(frozenShiftKeys);
+  const isFrozen=(shift:PlannerShift)=>frozenKeys.has(JSON.stringify([
+    shift.employeeId,shift.locationId,shift.startAt,
+  ]));
+  const locked=(shift:PlannerShift)=>shift.pinned || isFrozen(shift);
   function update(index:number,change:Partial<PlannerShift>) {
+    if(locked(shifts[index]))return;
     onChange(shifts.map((s,i)=>i===index?{...s,...change}:s));
   }
   function time(index:number,side:"startAt"|"endAt",delta:number) {
     const shift=shifts[index];
+    if(locked(shift))return;
     onChange(shifts.map((s,i)=>i===index?moveOliviaBoundary(shift,side,delta):s));
   }
   function setLocalTime(index:number,side:"startAt"|"endAt",value:string) {
+    if(locked(shifts[index]))return;
     const zone=locations[shifts[index].locationId]??"UTC";
     try {
       const changed=setOliviaLocalBoundary(shifts[index],side,value,zone);
@@ -48,6 +57,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
   }
   function setUnpaidBreak(index:number,enabled:boolean){
     const shift=shifts[index];
+    if(locked(shift))return;
     onChange(shifts.map((s,i)=>i===index?setOliviaUnpaidBreak(shift,enabled):s));
   }
   return <section className="flex flex-col gap-3 rounded-xl border border-line p-3">
@@ -57,21 +67,22 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
       className="flex flex-col gap-2 rounded-xl bg-paper p-3">
       <div className="flex items-center justify-between gap-2">
         <strong>{t("shiftNumber",{number:index+1})}</strong>
-        <button type="button" disabled={disabled || shift.pinned}
+        {isFrozen(shift) && <span className="text-sm text-ink-muted">{t("editPinned")}</span>}
+        <button type="button" disabled={disabled || locked(shift)}
           className="min-h-12 px-3 underline disabled:opacity-50"
-          onClick={()=>onChange(shifts.filter((_,i)=>i!==index))}>
+          onClick={()=>{if(!locked(shift))onChange(shifts.filter((_,i)=>i!==index));}}>
           {t("removeShift")}
         </button>
       </div>
       <label className="flex flex-col gap-1">{t("employee")}
-        <select disabled={disabled || shift.pinned} value={shift.employeeId}
+        <select disabled={disabled || locked(shift)} value={shift.employeeId}
           className="min-h-12 rounded-lg border border-line bg-card px-3"
           onChange={e=>update(index,{employeeId:e.target.value})}>
           {Object.entries(employees).map(([id,name])=><option key={id} value={id}>{name}</option>)}
         </select>
       </label>
       <label className="flex flex-col gap-1">{t("location")}
-        <select disabled={disabled || shift.pinned} value={shift.locationId}
+        <select disabled={disabled || locked(shift)} value={shift.locationId}
           className="min-h-12 rounded-lg border border-line bg-card px-3"
           onChange={e=>update(index,{locationId:e.target.value})}>
           {Object.keys(locations).map(id=><option key={id} value={id}>{names[id]||id}</option>)}
@@ -80,16 +91,16 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
       {(["startAt","endAt"] as const).map(side=><div key={side} className="flex flex-col gap-1">
         <span>{t(side==="startAt"?"shiftStart":"shiftEnd")} ({locations[shift.locationId]||"UTC"})</span>
         <div className="flex items-center justify-between gap-2">
-          <button type="button" disabled={disabled || shift.pinned}
+          <button type="button" disabled={disabled || locked(shift)}
             className="min-h-12 min-w-12 rounded-full border border-line disabled:opacity-50"
             aria-label={t("earlier")} onClick={()=>time(index,side,-1)}>−30</button>
           <span className="text-sm text-center">{local(shift[side],
             locations[shift.locationId]||"UTC",locale)}</span>
-          <button type="button" disabled={disabled || shift.pinned}
+          <button type="button" disabled={disabled || locked(shift)}
             className="min-h-12 min-w-12 rounded-full border border-line disabled:opacity-50"
             aria-label={t("later")} onClick={()=>time(index,side,1)}>+30</button>
         </div>
-        <input type="datetime-local" disabled={disabled || shift.pinned}
+        <input type="datetime-local" disabled={disabled || locked(shift)}
           aria-label={t(side==="startAt"?"shiftStart":"shiftEnd")}
           value={oliviaLocalBoundaryValue(shift[side],locations[shift.locationId]??"UTC")}
           onChange={e=>setLocalTime(index,side,e.target.value)}
