@@ -6,7 +6,7 @@ import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
-import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, purposePolicies, readers, sourcePolicies, values,
+import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, metricUnits, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
 
 const limits = { maxOutputBytes: 100_000 } as const;
@@ -24,28 +24,44 @@ const provenance = z.strictObject({
   purpose:z.string().min(1).max(120), asOf:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone:z.string().min(1).max(100), sourceRevision:z.null(),
 });
-export const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
-  z.strictObject({
-    status:z.literal("verified"),id:z.literal(id),version:z.literal(1),
-    value:values[id],quality:resultQuality,provenance,completeness:z.literal("complete"),
-    actuality:z.literal("actual"),
-  }),
-  z.strictObject({
-    status:z.literal("estimated"),id:z.literal(id),version:z.literal(1),
-    value:values[id],quality:resultQuality,provenance,
-    completeness:z.enum(["complete","partial"]),actuality:z.literal("estimated"),
-  }),
-  z.strictObject({
-    status:z.literal("partial"),id:z.literal(id),version:z.literal(1),
-    value:values[id],quality:resultQuality,provenance,
-    completeness:z.literal("partial"),actuality:z.enum(["actual","estimated","planned","unknown"]),
-  }),
-  z.strictObject({status:z.literal("unavailable"),value:z.null(),reason:z.enum([
-    "unknown_capability","invalid_request","unsupported_period","unavailable_source",
-    "invalid_result","unauthorized","not_activated","unsupported","reader_failure",
-    "source_incomplete","output_limit",
-  ])}),
-]);
+export const outputFor = (id: SupportedId) => {
+  const unit=id in metricUnits?metricUnits[id as keyof typeof metricUnits]:"typed_record";
+  const valueKind=unit==="USD_cents"?"money_cents":unit==="ratio"?"decimal_ratio":"record";
+  const base={
+    id:z.literal(id),version:z.literal(1),
+    query:inputFor(id),
+    unit:z.literal(unit),valueKind:z.literal(valueKind),
+    quality:resultQuality,provenance,
+    freshness:z.strictObject({asOf:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      capturedAt:z.null(),stale:z.null()}),
+  };
+  return z.discriminatedUnion("status",[
+    z.strictObject({
+      ...base,status:z.literal("verified"),value:values[id],
+      completeness:z.literal("complete"),actuality:z.literal("actual"),
+    }),
+    z.strictObject({
+      ...base,status:z.literal("estimated"),value:values[id],
+      completeness:z.enum(["complete","partial"]),actuality:z.literal("estimated"),
+    }),
+    z.strictObject({
+      ...base,status:z.literal("partial"),value:values[id],
+      completeness:z.literal("partial"),
+      actuality:z.enum(["actual","estimated","planned","unknown"]),
+    }),
+    z.strictObject({status:z.literal("unavailable"),value:z.null(),reason:z.enum([
+      "unknown_capability","invalid_request","unsupported_period","unavailable_source",
+      "invalid_result","unauthorized","not_activated","unsupported","reader_failure",
+      "source_incomplete","output_limit",
+    ])}),
+  ]).superRefine((result,ctx)=>{
+    // A source with no revision cannot prove immutable complete actual/zero.
+    if(result.status==="verified" && result.provenance.sourceRevision===null)
+      ctx.addIssue({code:"custom",message:"Verified result lacks revisioned source"});
+    if(result.status==="estimated" && !result.quality.estimatedInputs.length)
+      ctx.addIssue({code:"custom",message:"Estimate must identify assumed input"});
+  });
+};
 
 /**
  * Compiled, allowlisted readers. No businessId, timezone or asOf from model args.
@@ -184,13 +200,16 @@ export async function executeP1Authorized(
   // observed subtotal but never upgrade it to a revision-proven verified figure.
   const output={
     status:incomplete?"partial":estimated?"estimated":"partial",
-    id,version:1,value:known.value,quality:q.data,
+    id,version:1,query:args,unit:id in metricUnits?metricUnits[id as keyof typeof metricUnits]:"typed_record",
+    valueKind:id in metricUnits ? (metricUnits[id as keyof typeof metricUnits]==="ratio"?"decimal_ratio":"money_cents") : "record",
+    value:known.value,quality:q.data,
     provenance:{
       canonicalReaderId:readers[id],readerContractVersion:1,
       selectorContractId:selected.selectorContractId,selectorContractVersion:1,
       purpose:args.purpose,asOf:identity.asOf,timezone:identity.timezone,
       sourceRevision:null,
     },
+    freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
     completeness:"partial",
     actuality:id==="labor.recurring_assignments"?"planned":estimated?"estimated":"actual",
   };
