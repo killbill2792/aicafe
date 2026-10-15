@@ -2,6 +2,7 @@
 
 import { useTranslations } from "next-intl";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
+import { summarizeStaffWeeklyAvailability } from "@/lib/scheduling/availabilitySummary";
 import AvailabilityEditor, { type SchedulingRow, type SchedulingLocation } from "./AvailabilityEditor";
 import AvailabilityExceptionsEditor from "./AvailabilityExceptionsEditor";
 import SchedulingPreferencesEditor from "./SchedulingPreferencesEditor";
@@ -28,13 +29,26 @@ export function StaffAvailabilitySection({ employee, records, locations, today }
   employee:EmployeeRow; records:SchedulingClientRecords; locations:SchedulingLocation[]; today:string;
 }) {
   const t=useTranslations("SchedulingAvailability");
-  const count=records.availability_rule.filter(r=>r.employee_id===employee.id).length;
-  const confirmed=records.availability_rule.filter(r=>
-    r.employee_id===employee.id && r.confirmation==="owner_confirmed").length;
+  const summary = summarizeStaffWeeklyAvailability(
+    records.availability_rule, records.preferences, employee.id, today,
+  );
+  const status = summary.confirmedNoWorkDays === 7
+    ? t("confirmedNoWorkWeek")
+    : [
+        summary.availableWindows > 0
+          ? t("windowCount", { count: summary.availableWindows }) : null,
+        summary.availableWindows > 0
+          ? t("confirmedCount", { count: summary.confirmedWindows }) : null,
+        summary.confirmedNoWorkDays > 0
+          ? t("noWorkDaysCount", { count: summary.confirmedNoWorkDays }) : null,
+        summary.unrecordedDays > 0
+          ? (summary.unrecordedDays === 7
+              ? t("notRecorded") : t("missingWeekdaysCount", { count: summary.unrecordedDays }))
+          : null,
+      ].filter(Boolean).join(" · ");
   return <details className="rounded-xl border border-line bg-paper p-3">
     <summary className="min-h-12 cursor-pointer text-[17px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2">
-      {t("title")} · {count>0?t("windowCount",{count}):t("notRecorded")}
-      {count>0&&` · ${t("confirmedCount",{count:confirmed})}`}
+      {t("title")} · {status}
     </summary>
     <p className="py-2 text-[17px] text-ink-muted">{t("doesNotAssign")}</p>
     <div className="flex flex-col gap-3">

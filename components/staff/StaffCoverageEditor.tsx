@@ -80,6 +80,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   return <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
     <h3 className="text-[17px] font-bold">{t("staffingNeeds")}</h3>
     <p className="text-[17px] text-ink-muted">{t("coverageExplainer")}</p>
+    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     {locations.length===0 && <p role="status" className="text-[17px] text-warn">{t("noLocations")}</p>}
     {rows.length===0&&<p className="text-[17px] text-ink-muted">{t("noCoverage")}</p>}
     {rows.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
@@ -172,5 +173,6 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     </button>
     {error&&<p role="alert" className="text-[17px] text-warn">{error}</p>}
     {saved&&<p role="status" className="text-[17px] text-good">{t("saved")}</p>}
+    </fieldset>
   </section>;
 }

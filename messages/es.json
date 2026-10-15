@@ -1400,6 +1400,9 @@
     "comparison": "Diferencia entre paquetes iguales"
   },
   "SchedulingAvailability": {
+    "confirmedNoWorkWeek": "Ningún día disponible — confirmado",
+    "noWorkDaysCount": "{count} días confirmados sin disponibilidad",
+    "missingWeekdaysCount": "{count} días de la semana sin registrar",
     "title": "Disponibilidad y preferencias",
     "weeklyAvailability": "Disponibilidad semanal",
     "windowCount": "{count} franjas",

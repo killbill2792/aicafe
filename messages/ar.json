@@ -1400,6 +1400,9 @@
     "comparison": "فرق سعر العبوات المتماثلة"
   },
   "SchedulingAvailability": {
+    "confirmedNoWorkWeek": "لا توجد أيام عمل متاحة — مؤكّد",
+    "noWorkDaysCount": "{count} أيام مؤكدة غير متاحة للعمل",
+    "missingWeekdaysCount": "{count} أيام من الأسبوع لم تُسجّل",
     "title": "التوفر والتفضيلات",
     "weeklyAvailability": "التوفر الأسبوعي",
     "windowCount": "{count} فترات",

@@ -1400,6 +1400,9 @@
     "comparison": "Latest matching-package difference"
   },
   "SchedulingAvailability": {
+    "confirmedNoWorkWeek": "No working days — confirmed",
+    "noWorkDaysCount": "{count} confirmed no-work days",
+    "missingWeekdaysCount": "{count} weekdays not recorded",
     "title": "Availability & preferences",
     "weeklyAvailability": "Weekly availability",
     "windowCount": "{count} windows",

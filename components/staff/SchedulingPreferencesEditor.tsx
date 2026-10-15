@@ -21,8 +21,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const [selected,setSelected] = useState<string>(active[0]?.id??"");
   const [lastSaved,setLastSaved]=useState<{id:string;revision:number}|null>(null);
   const selectedRow = active.find(r=>r.id===selected);
-  const selectedVersion = selectedRow ??
-    (lastSaved?.id===selected ? lastSaved : null);
+  // The returned revision may be newer than props until router.refresh settles.
+  const selectedVersion = lastSaved?.id===selected ? lastSaved : (selectedRow ?? null);
   const [from,setFrom] = useState(String(selectedRow?.effective_from??today));
   const [to,setTo] = useState(String(selectedRow?.effective_to??""));
   const [min,setMin] = useState(minutesToHourInput(Number(selectedRow?.min_weekly_minutes??0)));
@@ -111,6 +111,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const days=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
     <h4 className="text-[17px] font-bold">{t("hourLimitsAndPreferences")}</h4>
+    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("existingPeriods")}
       <select className={field} value={selected} onChange={e=>selectPreference(e.target.value)}>
         <option value="">{t("newPeriod")}</option>
@@ -203,5 +204,6 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     <button type="button" className={secondary} disabled={pending||!from} onClick={saveWindow}>{t("addPreference")}</button>
     {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
     {saved && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
+    </fieldset>
   </section>;
 }
