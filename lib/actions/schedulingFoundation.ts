@@ -6,6 +6,7 @@ import {
   requireSchedulingOwner,
 } from "@/lib/scheduling/foundation.server";
 import { saveAvailabilityBatch } from "@/lib/scheduling/availabilityBatch.server";
+import { localDateInZone } from "@/lib/scheduling/localDate";
 
 /**
  * Typed, owner-only manual scheduling foundation operations.
@@ -42,6 +43,18 @@ export async function getSchedulingLocationOptions() {
   if (locations.error || business.error || !locations.data || !business.data ||
       locations.count === null || locations.count > locations.data.length)
     return { ok: false as const, error: "storage_unavailable" as const };
-  return { ok: true as const, locations: locations.data,
-    businessTimezone: business.data.timezone as string };
+  try {
+    const timezone=business.data.timezone as string;
+    const now=new Date();
+    const businessTodayLocal=localDateInZone(now,timezone);
+    return { ok: true as const,
+      locations: locations.data.map(loc=>({
+        id:loc.id as string,name:loc.name as string,
+        timezone:loc.timezone as string|null,
+        todayLocal:localDateInZone(now,(loc.timezone as string|null)||timezone),
+      })),
+      businessTimezone:timezone,businessTodayLocal };
+  } catch {
+    return { ok:false as const,error:"storage_unavailable" as const };
+  }
 }
