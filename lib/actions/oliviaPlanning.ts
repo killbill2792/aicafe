@@ -34,7 +34,7 @@ export async function previewOliviaWeek(raw: unknown): Promise<
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames,
-      sourceDigest: oliviaSnapshotDigest(loaded.input) };
+      sourceDigest: oliviaSnapshotDigest(loaded.input, loaded.sourceFingerprint) };
   } catch {
     return { ok: false, error: "The saved scheduling inputs cannot yet form a valid plan. Review availability, coverage and location timezones." };
   }
@@ -61,7 +61,7 @@ export async function saveOliviaWeekDraft(raw: unknown) {
     objective: parsed.data.objective,
     expectedRevision: parsed.data.expectedRevision,
     requestKey: parsed.data.requestKey,
-  }, loaded.input, loaded.businessId);
+  }, loaded.input, loaded.businessId, loaded.sourceFingerprint);
 }
 
 export async function readOliviaPlanHistory(raw: unknown) {
