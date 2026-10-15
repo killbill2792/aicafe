@@ -201,8 +201,27 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
       try {
         const response=await saveOliviaWeekEdit({...intent,requestKey});
         if(!response.ok){
+          // Never show raw validation codes, employee IDs or UTC instants
+          // to an owner. The server remains authoritative for all validation.
+          const reasons:Record<string,string>={
+            outside_confirmed_availability:"editAvailability",
+            overlap_rest_or_hour_cap_violation:"editHours",
+            pinned_commitment_removed:"editPinned",
+            pinned_shift_changed:"editPinned",
+            unrecorded_paid_rest_break:"editBreaks",
+            unverified_paid_rest_break:"editBreaks",
+            invalid_unpaid_break:"editBreaks",
+            meal_shorter_than_configured_minimum:"editBreaks",
+            paid_minutes_mismatch:"editBreaks",
+            handoff_overlap_missing:"editCoverage",
+            coverage_matching_budget_exhausted:"editCoverage",
+            invalid_shift_interval:"editTime",
+            shift_outside_seven_day_horizon:"editTime",
+          };
+          const details=[...new Set((response.violations??[]).map(v=>
+            t(reasons[v.split(":")[0]]??"editInvalidGeneric")))].slice(0,4);
           setError(response.error==="invalid_shifts" ?
-            t("editInvalid",{details:response.violations?.join("; ")||""}) :
+            (details.length?details.join(" "):t("editInvalidGeneric")) :
             response.error==="source_changed" ? t("sourceChanged") :
             response.error==="revision_conflict" ? t("revisionConflict") : t("saveFailed"));
           return;
