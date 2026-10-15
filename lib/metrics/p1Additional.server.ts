@@ -43,18 +43,28 @@ export async function readP1BusinessProfile({businessId}:Scoped) {
  */
 export async function readP1Recipe({businessId}:Scoped,productId:string) {
   if(!businessId)return absent("scope_missing");
+  const client=await createServerSupabaseClient();
+  const {data:priceRow,error:priceError}=await client.from("menu_items")
+    .select("id,price_cents").eq("business_id",businessId)
+    .eq("id",productId).maybeSingle();
+  if(priceError||!priceRow||priceRow.id!==productId)
+    return absent("recipe_price_source_unavailable");
   const catalog=await getMenuItemsForEdit();
   if(catalog.items.length>MAX_RECORDS)return absent("menu_result_over_limit");
   const item=catalog.items.find(p=>p.id===productId);
   if(!item)return absent("product_not_found");
   if(item.recipe.length>200)return absent("recipe_result_over_limit");
-  return present({id:item.id,name:item.name,priceCents:item.priceCents,
+  return present({id:item.id,name:item.name,priceCents:priceRow.price_cents,
+    priceStatus:priceRow.price_cents===null?"unrecorded":"recorded",
     costStatus:item.costStatus,recipe:item.recipe.map(line=>({
       ingredientId:line.ingredientId,ingredientName:line.ingredientName,
       baseUnit:line.baseUnit,quantity:line.quantity,displayUnit:line.displayUnit,
       displayQuantity:line.displayQuantity,priceSource:line.priceSource,
     })),
-  },item.costStatus==="READY"?[]:["recipe_cost_incomplete"]);
+  },[
+    ...(item.costStatus==="READY"?[]:["recipe_cost_incomplete"]),
+    ...(priceRow.price_cents===null?["menu_item_price_unrecorded"]:[]),
+  ]);
 }
 
 export async function readP1Ingredients({businessId}:Scoped) {
