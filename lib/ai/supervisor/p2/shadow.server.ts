@@ -65,8 +65,16 @@ const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+
 /** A model's `complete=true` is not proof of coverage. Reject material
  * unmatched stretches of the original owner request without inferring any
  * specialist intent or adding a question-specific routing taxonomy.
- * Short connective/polite fragments are allowed; suspicious omissions fail closed.
+ * Permit only generic conversational framing; material omissions fail closed.
  */
+const opening=new Set(["can","could","would","will","you","please","kindly","tell","me","if","whether","what","did","were","our","we","review","check","inspect","examine","revisa","show","explain","look","at","do","does","is","are"]);
+const bridge=new Set(["and","or","also","then","tell","me","if","whether","please","could","you"]);
+const closing=new Set(["please","thanks","thank","you"]);
+function onlyFraming(segment:string,role:"opening"|"bridge"|"closing"):boolean {
+  const words=normalize(segment).match(/[\p{L}\p{N}]+/gu)??[];
+  const allowed=role==="opening"?opening:role==="bridge"?bridge:closing;
+  return words.every(word=>allowed.has(word));
+}
 export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boolean {
   const original=normalize(goal);
   const spans:Array<{start:number;end:number}>=[];
@@ -86,10 +94,8 @@ export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boole
     end=span.end;
   }
   unmatched.push(original.slice(end));
-  return unmatched.every(segment=>
-    // Only punctuation/whitespace may be omitted. Even short constraints
-    // such as "without understaffing" are material owner instructions.
-    !/[\p{L}\p{N}]/u.test(segment));
+  return unmatched.every((segment,i)=>onlyFraming(segment,
+    i===0?"opening":i===unmatched.length-1?"closing":"bridge"));
 }
 function responseText(response:unknown):string|null {
   if(!response||typeof response!=="object")return null;
@@ -167,6 +173,8 @@ export async function runP2ShadowWithScope(params:{
       "Split the owner's exact goal into EVERY independent semantic request, including unsupported work.",
       "Return each clause as an EXACT CONTIGUOUS SUBSTRING of the original question,",
       "without paraphrasing, invented facts, substitutions, or merging distinct goals.",
+      "Include all material outcome predicates, limitations and restrictions in clauses.",
+      "Only polite framing and connective words may be omitted.",
       "Set complete=false if you cannot preserve all clauses in at most five elements.",
       "Do not make any claim about café records or approved actions.",
     ].join(" "),
@@ -225,9 +233,10 @@ export async function runP2ShadowWithScope(params:{
         result:null,reason:"budget_exceeded"});
       continue;
     }
-    if(selected.reason || !selected.inputJson){
+    // Never let model-only no_data assertions bypass an authorized canonical read.
+    if(selected.reason==="missing_input" || !selected.inputJson){
       evidence.push({clause:selected.clause,capabilityId:id,status:"unavailable",
-        result:null,reason:selected.reason??"missing_input"});
+        result:null,reason:"missing_input"});
       continue;
     }
     let parsed:unknown;
