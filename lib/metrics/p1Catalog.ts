@@ -103,6 +103,12 @@ const person = z.strictObject({
   breakStatus:z.string(),isSchedulePrediction:z.boolean(),
 });
 export const values = {
+  "money.owner_profit_cents": money,
+  "sales.net_sales_cents": money,
+  "money.total_costs_cents": money,
+  "money.operating_margin_ratio": finite,
+  "money.recurring_monthly_bills_cents": money,
+  "money.recorded_spending_cents": money,
   "business.profile": z.strictObject({
     businessId:text,name:text,timezone:text,currency:text,openedOn:day.nullable(),
     locations:z.array(z.strictObject({id:text,name:text,addressLine1:text.nullable(),
@@ -185,6 +191,12 @@ export const PUBLIC_TOOL_METHODS = [
 ] as const satisfies readonly (keyof BusinessScopedCafeTools)[];
 
 export const readers = {
+  "money.owner_profit_cents":"getProfitability",
+  "sales.net_sales_cents":"getProfitability",
+  "money.total_costs_cents":"getProfitability",
+  "money.operating_margin_ratio":"getProfitability",
+  "money.recurring_monthly_bills_cents":"getMonthlyBills",
+  "money.recorded_spending_cents":"getRecordedExpenses",
   "business.profile":"readP1BusinessProfile",
   "menu.recipe":"readP1Recipe",
   "menu.ingredients":"readP1Ingredients",
@@ -232,6 +244,12 @@ export const additionalSurfaces = {
 
 const owners = {money:"leo",sales:"leo",menu:"alex",pricing:"alex",labor:"olivia",team:"supervisor",business:"supervisor",supplies:"maya"} as const;
 export const purposePolicies = {
+  "money.owner_profit_cents":["actual_period_owner_profit"],
+  "sales.net_sales_cents":["actual_period_net_sales"],
+  "money.total_costs_cents":["actual_period_total_costs"],
+  "money.operating_margin_ratio":["actual_period_operating_margin"],
+  "money.recurring_monthly_bills_cents":["recurring_monthly_obligation_metric"],
+  "money.recorded_spending_cents":["actual_expense_entries_total"],
   "business.profile":["selected_business_profile"],
   "menu.recipe":["owner_recipe_review"],
   "menu.ingredients":["owner_ingredient_catalog"],
@@ -260,10 +278,15 @@ export const purposePolicies = {
 } as const satisfies Record<SupportedId,readonly [string,...string[]]>;
 
 export type P1Kind = "metric" | "entity_read" | "analysis";
-export const metricIds = [
-  "money.profitability","money.business_costs","money.monthly_bills","money.recorded_spending",
-  "labor.attendance","money.break_even","labor.daily_costs",
-] as const;
+export const metricUnits = {
+  "money.owner_profit_cents":"USD_cents",
+  "sales.net_sales_cents":"USD_cents",
+  "money.total_costs_cents":"USD_cents",
+  "money.operating_margin_ratio":"ratio",
+  "money.recurring_monthly_bills_cents":"USD_cents",
+  "money.recorded_spending_cents":"USD_cents",
+} as const satisfies Partial<Record<SupportedId,"USD_cents"|"ratio"|"count">>;
+export const metricIds = Object.keys(metricUnits) as (keyof typeof metricUnits)[];
 export const analysisIds = ["pricing.recommendation"] as const;
 export function kindFor(id: SupportedId): P1Kind {
   return (analysisIds as readonly string[]).includes(id) ? "analysis"
@@ -284,9 +307,10 @@ export const sourcePolicies = Object.fromEntries((Object.keys(values) as Support
 }>>;
 export const inputFor = (id: SupportedId) => z.strictObject({
   id:z.literal(id), version:z.literal(1), purpose:z.enum(purposePolicies[id] as unknown as [string,...string[]]),
-  ...(new Set(["money.profitability","money.business_costs","sales.daily","money.expense_categories","money.expense_entries",
-    "money.recorded_spending","sales.item_units","sales.item_coverage","labor.attendance",
+  ...(new Set(["money.profitability","money.business_costs","money.owner_profit_cents","sales.net_sales_cents","money.total_costs_cents","money.operating_margin_ratio","sales.daily","money.expense_categories","money.expense_entries",
+    "money.recorded_spending","money.recorded_spending_cents","sales.item_units","sales.item_coverage","labor.attendance",
     "labor.recurring_assignments","labor.daily_costs"]).has(id) ? {period} : {}),
+  ...((id in metricUnits) ? {granularity:z.literal("period")} : {}),
   ...(new Set(["menu.product_economics","pricing.recommendation","menu.recipe"]).has(id) ? {productId:z.string().min(1).max(120)} : {}),
 });
 export function discoverP1() {
@@ -296,7 +320,7 @@ export function discoverP1() {
     selectorContractId:id+".selector",selectorContractVersion:1,
     temporalBasis:"business_local" as const,
     granularity: id==="sales.daily"||id==="labor.daily_costs" ? "day" : "aggregate",
-    unit: id==="money.monthly_bills"||id==="money.recorded_spending" ? "USD_cents" : "typed_record",
+    unit: id in metricUnits ? metricUnits[id as keyof typeof metricUnits] : "typed_record",
     sensitivity:id.startsWith("labor.")?"staff" as const:id.startsWith("money.")?"financial" as const:"normal" as const,
   }));
 }
