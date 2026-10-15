@@ -1659,6 +1659,10 @@
     "gapPinned": "Pinned shift conflict",
     "gapSolver": "Solver limit reached",
     "gapHandoff": "Required handoff overlap missing",
-    "gapUnknown": "Unfilled requirement"
+    "gapUnknown": "Unfilled requirement",
+    "viewRevision": "View version",
+    "reviewVersion": "Version {revision} assignments",
+    "closeRevision": "Close details",
+    "historicalPlanOnly": "Historical planned assignments only; these are not timecards or proof that shifts were worked."
   }
 }
