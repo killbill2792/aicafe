@@ -109,6 +109,9 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
         .eq("id", id as string)
         .eq("revision", expectedRevision as number)
         .select("id,revision").maybeSingle();
+      // Concurrent create/edit can also collide with another requirement
+      // or overlapping hour-limit policy during a revision-checked UPDATE.
+      if (error?.code === "23505") return { ok: false, error: "conflict_or_missing" };
       if (error) return { ok: false, error: "storage_unavailable" };
       if (!data) return { ok: false, error: "conflict_or_missing" };
       return { ok: true, id: data.id as string, revision: data.revision as number };
