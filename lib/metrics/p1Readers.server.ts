@@ -85,6 +85,20 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "labor.recurring_assignments":(t,a,ctx)=>t.getRecurringSchedule(a.period!,ctx.asOf),
   "money.break_even":t=>t.getBreakEven(),
   "labor.daily_costs":(t,a)=>t.getLaborMetrics(a.period!),
+  "team.signals":async(t)=>{
+    const rows=await t.getActiveSignals();
+    if(rows.length>100)throw new Error("signal_read_limit");
+    return {available:true,value:rows.map(r=>({
+      id:r.id,type:r.type,severity:r.severity,confidence:r.confidence,
+    })),quality:{level:"high",missingInputs:["signal_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
+  },
+  "team.decisions":async(t)=>{
+    const rows=await t.getDecisionHistory();
+    if(rows.length>100)throw new Error("decision_read_limit");
+    return {available:true,value:rows.map(r=>({
+      id:r.id,type:r.type,status:r.status,confidence:r.confidence,createdAt:r.createdAt.toISOString(),
+    })),quality:{level:"high",missingInputs:["decision_evidence_not_exposed"],estimatedInputs:[],staleInputs:[]}};
+  },
   "team.tasks":t=>t.getTeamTasks(),
 };
 export const registeredHandlerIds = Object.freeze(Object.keys(handlers));
