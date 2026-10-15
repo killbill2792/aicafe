@@ -54,6 +54,8 @@ export type PlannerRuleProfile = {
   source?: string;
   maxContinuousWorkMinutes?: number | null;
   unpaidMealMinutes?: number | null;
+  /** Verified paid rest break duration; without this no paid rest is invented. */
+  paidRestMinutes?: number | null;
   minRestBetweenShiftsMinutes?: number | null;
   overtime?: {
     verified: boolean;
@@ -77,7 +79,7 @@ export type PlannerInput = {
   /** Recorded evidence is never needed to run manual coverage. */
   hourlySalesEvidence?: null;
 };
-export type PlannerBreak = { startAt: string; endAt: string; paid: false };
+export type PlannerBreak = { startAt: string; endAt: string; paid: boolean };
 export type PlannerShift = {
   employeeId: string; locationId: string;
   startAt: string; endAt: string;
