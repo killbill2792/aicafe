@@ -65,6 +65,17 @@ const costs = z.strictObject({
     soldProductIds:z.array(text),missingProductCostIds:z.array(text),estimatedProductCostIds:z.array(text),
     missingFeeDays:count,missingOperatingCategories:z.array(z.strictObject({code:text,label:text})),
   }),
+}).superRefine((v,ctx)=>{
+  const anyObserved=Object.values(v.observed).some(Boolean);
+  if((v.completeness==="unavailable"&&anyObserved)||
+    (v.completeness!=="unavailable"&&!anyObserved)||
+    (v.completeness==="complete"&&v.missingInputs.length>0))
+    ctx.addIssue({code:"custom",message:"Conflicting business cost completeness"});
+  const componentTotal=Object.values(v.components).reduce((sum,n)=>sum+n,0);
+  if(!Number.isSafeInteger(componentTotal)||componentTotal!==v.knownTotalCents)
+    ctx.addIssue({code:"custom",message:"Business cost components do not reconcile"});
+  if(v.coverage.salesDays>v.coverage.expectedDays||v.coverage.laborDays>v.coverage.expectedDays)
+    ctx.addIssue({code:"custom",message:"Business cost coverage exceeds date range"});
 });
 const pricing = z.strictObject({
   productCostCents:money.nullable(),baselinePriceCents:money.nullable(),
@@ -125,10 +136,11 @@ export const values = {
     return row.wageKnown===known&&row.wageProvenance===(known?"recorded_positive":"unverified_zero_or_missing");
   })).max(500),
   "supplies.quotes": z.strictObject({
-    items:z.array(z.strictObject({id:text,supplierName:text,itemName:text,priceCents:money,
-      packageCount:count,packageUnit:z.enum(["each","oz","lb","kg","gal","liter","case"]),
+    items:z.array(z.strictObject({id:text,supplierName:text,itemName:text,
+      priceCents:money.positive(),packageCount:count.positive(),
+      packageUnit:z.enum(["each","oz","lb","kg","gal","liter","case"]),
       sourceKind:z.enum(["supplier_email","supplier_quote","public_listing"]),
-      sourceUrl:z.string().url().nullable(),quotedOn:day,
+      sourceUrl:z.string().url().refine(url=>url.startsWith("https://")).nullable(),quotedOn:day,
       evidenceStatus:z.literal("owner_reported"),createdAt:z.string().datetime({offset:true})})).max(40),
     truncated:z.boolean(),
   }),
