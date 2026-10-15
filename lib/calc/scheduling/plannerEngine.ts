@@ -98,7 +98,6 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     for(const state of frontier){
       const ranked=options.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
         .sort((a,b)=>a.score-b.score || a.id.localeCompare(b.id));
-      let produced=0;
       for(const {id,score} of ranked){
         if(nodes>=maxNodes){exhausted=true;break;}
         nodes++;
@@ -113,7 +112,6 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
         if(!hardValid(work,plan,input))continue;
         next.push({work,selected:[...state.selected,id],missing:state.missing,
           score:state.score+score});
-        produced++;
       }
       // Partial plans are evidence, never falsely declared fully feasible.
       // Advisory gaps remain separately visible without upgrading coverage.
@@ -133,7 +131,9 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     frontier=next.slice(0,beamWidth);
     if(frontier.length===0 || exhausted) {
       // Remaining demand is explicitly unresolved when search budget ends.
-      const tail=plan.units.slice(index+(exhausted?0:1));
+      // The current demand unit was already accounted for (assigned or
+      // marked missing). Never add it a second time on search exhaustion.
+      const tail=plan.units.slice(index+1);
       const state=frontier[0]??{work:plan.pinned,selected:[],missing:[],score:0};
       for(const rest of tail)state.missing.push({unit:rest,reason:"solver_budget"});
       frontier=[state];break;
@@ -150,7 +150,8 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
       hardConstraintsSatisfied:hardValid(best.work,plan,input),
       ownerMinutes:cost.ownerMinutes,cost,
       preferencePenalty:best.score,exploredNodes:nodes,
-      legalReview:input.ruleProfile?.verified?"verified_profile":"unverified_profile",
+      legalReview:input.ruleProfile?.verified &&
+        input.ruleProfile.overtime?.verified?"verified_profile":"unverified_profile",
     } satisfies PlannerScenario,
     exhausted,
   };
@@ -220,6 +221,8 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       loadedPayrollDifferenceCents:diff(a.cost.loadedPayrollCents,b.cost.loadedPayrollCents)});
   }
   const warnings=plan.warnings.slice();
+  if(status==="unproven" && !outputs.some(o=>o.exhausted))
+    warnings.push("Available workers exist, but no full roster satisfying all combined constraints was proven within bounded search");
   warnings.push("Bounded deterministic beam search yields verified feasible candidates, not a proof of globally minimum cost");
   if(outputs.some(o=>o.exhausted))warnings.push("Search budget exhausted; no global optimality or infeasibility proof");
   if(best && best.cost.missingWageEmployeeIds.length>0)
@@ -236,6 +239,7 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
     status,horizonStart:input.horizonStart,horizonEnd:plan.horizonEnd,
     scenarios,best,comparisons,warnings,
     proof:status==="feasible"?"complete_candidate_solution":
-      proofGap?"required_slot_has_no_eligible_worker":"search_budget_exhausted",
+      proofGap?"required_slot_has_no_eligible_worker":
+      outputs.some(o=>o.exhausted)?"search_budget_exhausted":"candidate_constraints_unresolved",
   };
 }
