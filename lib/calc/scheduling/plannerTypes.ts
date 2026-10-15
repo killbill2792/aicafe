@@ -39,6 +39,8 @@ export type PlannerEmployee = {
   provenance: CompensationProvenance;
   /** Only after an owner has verified the salary-hours conversion. */
   verifiedSalaryHourlyCents?: number | null;
+  /** Approved paid hours/week for canonical salary-to-hourly conversion. */
+  verifiedSalaryHoursPerWeek?: number | null;
   /** Explicitly attested wage eligibility, never inferred from a missing wage. */
   eligibleZeroVerified?: boolean;
 };
