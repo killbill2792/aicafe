@@ -10,6 +10,7 @@ on:
       - "lib/data/**"
       - "lib/operating/**"
       - ".github/workflows/supervisor-p1-verify.yml"
+      - "PROGRESS.md"
   workflow_dispatch:
 
 permissions:
