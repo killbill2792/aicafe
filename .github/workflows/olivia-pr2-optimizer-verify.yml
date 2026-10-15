@@ -1,0 +1,30 @@
+name: Olivia PR 2 Pure Optimizer Verification
+on:
+  pull_request:
+    paths:
+      - "lib/calc/scheduling/**"
+      - "lib/metrics/p1SourceManifest.ts"
+      - "PROGRESS.md"
+      - ".github/workflows/olivia-pr2-optimizer-verify.yml"
+  workflow_dispatch:
+jobs:
+  pure-optimizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Complete Vitest regressions
+        run: npm run test
+      - name: Strict TypeScript
+        run: npx tsc --noEmit
+      - name: Optimizer scoped ESLint
+        run: npx eslint "lib/calc/scheduling/planner*.ts"
+      - name: Next.js production build
+        run: npm run build
+      - name: Git patch whitespace
+        run: git diff --check origin/main...HEAD
