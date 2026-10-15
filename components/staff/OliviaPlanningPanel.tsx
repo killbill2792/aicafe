@@ -3,7 +3,9 @@
 import { useRef, useState, useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useLocale, useTranslations } from "next-intl";
-import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory,\n  readOliviaPlanRevision, saveOliviaWeekEdit } from "@/lib/actions/oliviaPlanning";\nimport OliviaShiftEditor from "./OliviaShiftEditor";
+import { previewOliviaWeek, saveOliviaWeekDraft, readOliviaPlanHistory,
+  readOliviaPlanRevision, saveOliviaWeekEdit } from "@/lib/actions/oliviaPlanning";
+import OliviaShiftEditor from "./OliviaShiftEditor";
 import type { PlannerResult, PlannerScenario, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 import type { OliviaNotice, OliviaBlocker } from "@/lib/scheduling/planInput.server";
 
@@ -46,7 +48,10 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
   const [currentRevision, setCurrentRevision] = useState(0);
   const [publishedRevision, setPublishedRevision] = useState<number | null>(null);
-  const [history, setHistory] = useState<Array<{ revision: number; status: string; id:string }>>([]);\n  const [editing, setEditing] = useState<{revision:number;id:string;objective:PlannerScenario["objective"]}|null>(null);\n  const [editedShifts, setEditedShifts] = useState<PlannerShift[]>([]);\n  const editRetry = useRef<PendingCreate>(null);
+  const [history, setHistory] = useState<Array<{ revision: number; status: string; id:string }>>([]);
+  const [editing, setEditing] = useState<{revision:number;id:string;objective:PlannerScenario["objective"]}|null>(null);
+  const [editedShifts, setEditedShifts] = useState<PlannerShift[]>([]);
+  const editRetry = useRef<PendingCreate>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [pending, startTransition] = useTransition();
@@ -178,7 +183,8 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
       <input type="date" value={week} disabled={pending} onChange={e => {
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
-        setSourceDigest(null); retry.current = null; setNotices([]);\n        setEditing(null); setEditedShifts([]); editRetry.current=null;
+        setSourceDigest(null); retry.current = null; setNotices([]);
+        setEditing(null); setEditedShifts([]); editRetry.current=null;
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
