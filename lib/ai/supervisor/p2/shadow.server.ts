@@ -61,7 +61,6 @@ const missing=(reason:string,usage:Usage,evidence:ShadowEvidence[]=[]):ShadowOut
   evidence,reason,usage:{...usage},executedEffects:0,
 });
 const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
-const quotedClause=(goal:string,part:string)=>normalize(goal).includes(normalize(part));
 
 /** A model's `complete=true` is not proof of coverage. Reject material
  * unmatched stretches of the original owner request without inferring any
