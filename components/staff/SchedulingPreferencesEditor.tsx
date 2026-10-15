@@ -19,7 +19,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const active = preferences.filter(r=>r.employee_id===employeeId);
   const prefWindows = windows.filter(r=>r.employee_id===employeeId);
   const [selected,setSelected] = useState<string>(active[0]?.id??"");
-  const [lastSaved,setLastSaved]=useState<{id:string;revision:number}|null>(null);
+  const [lastSaved,setLastSaved]=useState<{id:string;revision:number}|null>(
+    active[0] ? {id:active[0].id,revision:active[0].revision} : null);
   const selectedRow = active.find(r=>r.id===selected);
   // The returned revision may be newer than props until router.refresh settles.
   const selectedVersion = lastSaved?.id===selected ? lastSaved : (selectedRow ?? null);
@@ -46,7 +47,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const preferenceRetry=useRef<PendingCreate>(null), windowRetry=useRef<PendingCreate>(null);
 
   function selectPreference(id:string) {
-    setSelected(id);setLastSaved(null); const r=active.find(row=>row.id===id);
+    setSelected(id);const r=active.find(row=>row.id===id);
+    setLastSaved(r ? {id:r.id,revision:r.revision} : null);
     setFrom(String(r?.effective_from??today));setTo(String(r?.effective_to??""));
     setMin(minutesToHourInput(Number(r?.min_weekly_minutes??0)));setDesired(minutesToHourInput(r?.desired_weekly_minutes as number | null | undefined));
     setMax(minutesToHourInput(r?.max_weekly_minutes as number | null | undefined));setDaily(minutesToHourInput(r?.max_daily_minutes as number | null | undefined));
