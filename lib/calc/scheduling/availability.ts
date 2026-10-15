@@ -245,6 +245,11 @@ export function effectiveAvailabilityForLocation(input: {
   recurring: RecurringAvailability[];
   exceptions: AvailabilityException[];
   restrictions?: PreferenceWindow[];
+  hardUnavailability?: Array<{
+    effective_from: string; effective_to?: string | null;
+    unavailable_weekdays: number[];
+    confirmation: "unconfirmed" | "owner_confirmed";
+  }>;
 }): ReturnType<typeof effectiveAvailabilityForDate> & {
   basis: "general" | "location";
 } {
@@ -271,8 +276,24 @@ export function effectiveAvailabilityForLocation(input: {
     (r.location_id == null &&
       (!specific || r.exception_type === "unavailable" ||
        r.exception_type === "approved_leave" || r.exception_type === "hours_cap")));
+  // Explicitly attested hard-unavailable weekdays (on canonical dated
+  // preferences) close the requested local day and any affected overnight
+  // spillover into the following local calendar day. Unconfirmed reports
+  // never narrow the authoritative availability.
+  const hardExceptions: AvailabilityException[] = [];
+  for (const localDate of [date, new Date(day.getTime()+86400000).toISOString().slice(0,10)]) {
+    const weekday=new Date(localDate+"T00:00:00Z").getUTCDay();
+    if (input.hardUnavailability?.some(p =>
+      p.confirmation==="owner_confirmed" &&
+      activeOnDate(localDate,p) && p.unavailable_weekdays.includes(weekday))) {
+      hardExceptions.push({
+        local_date:localDate,exception_type:"unavailable",
+        start_local:null,end_local:null,confirmation:"owner_confirmed",
+      });
+    }
+  }
   const projection = effectiveAvailabilityForDate({
-    date, recurring: chosenRules, exceptions: chosenExceptions, restrictions,
+    date, recurring: chosenRules, exceptions: [...chosenExceptions,...hardExceptions], restrictions,
   });
   return { ...projection, basis: specific ? "location" : "general" };
 }
