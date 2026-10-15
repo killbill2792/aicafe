@@ -242,7 +242,7 @@ export const readers = {
   "labor.daily_costs":"getLaborMetrics",
   "team.signals":"getActiveSignals",
   "team.decisions":"getDecisionHistory",
-  "team.tasks":"getTeamTasks",
+  "team.tasks":"readP1TaskPage",
 } as const satisfies Record<SupportedId,string>;
 
 
@@ -274,7 +274,7 @@ export const canonicalSourcePaths = {
   getLaborMetrics:"lib/operating/cafeState.ts",
   getActiveSignals:"lib/ai/tools.ts",
   getDecisionHistory:"lib/operating/supabaseDecisionStore.ts",
-  getTeamTasks:"lib/data/operatingTasks.ts",
+  readP1TaskPage:"lib/metrics/p1Additional.server.ts",
 } as const satisfies Record<(typeof readers)[SupportedId],string>;
 
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
@@ -284,6 +284,7 @@ export const classified = {
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
+  getTeamTasks:{kind:"restricted",reason:"Legacy unbounded internal inbox includes private payload and evidence; P1 uses bounded readP1TaskPage"},
 } as const;
 export const additionalSurfaces = {
   "money.expense_categories":{kind:"restricted",source:"lib/operating/cafeState.ts",reason:"Source and actual/estimate evidence absent from canonical category projection"},
