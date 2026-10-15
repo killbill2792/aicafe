@@ -18,8 +18,10 @@ export type OliviaNotice = { code:
   | "legacy_schedules" | "policy_unverified" | "source_provisional";
   employeeName?: string };
 
+export type OliviaBlocker = {code: "no_location" | "no_coverage" | "conflicting_limits"; employeeName?: string};
+
 export type OliviaInputResult =
-  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: string[] }
+  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: OliviaBlocker[] }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_week" | "storage_unavailable" };
 
 const PAGE = 300;
@@ -101,12 +103,12 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       warnings.push(message);
       notices.push({code, ...(employeeName ? {employeeName} : {})});
     };
-    const blockers: string[] = [];
+    const blockers: OliviaBlocker[] = [];
 
     const locations: PlannerLocation[] = rows.locations.map(r => ({
       id: str(r.id), timezone: nullable(r.timezone) || str(business.data.timezone),
     }));
-    if (!locations.length) blockers.push("Add a café location before generating a schedule.");
+    if (!locations.length) blockers.push({code:"no_location"});
     const locationNames = Object.fromEntries(rows.locations.map(r => [str(r.id), str(r.name)]));
     const activeCodes = new Set(rows.scheduling_qualification_types
       .filter(r => r.active === true).map(r => str(r.code)));
@@ -119,9 +121,9 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         p.min_weekly_minutes, p.desired_weekly_minutes,
         p.max_weekly_minutes, p.max_daily_minutes,
       ])));
-      if (limitVariants.size > 1) blockers.push(
-        "Conflicting confirmed weekly work limits for " + str(r.display_name) +
-        ". Review the effective dates before generating a plan.");
+      if (limitVariants.size > 1) blockers.push({
+        code:"conflicting_limits",employeeName:str(r.display_name),
+      });
       const cap = (column: string): number | null => {
         const numbers = preferences.map(p => minutes(p[column])).filter((n): n is number => n != null);
         return numbers.length ? Math.min(...numbers) : null;
@@ -231,7 +233,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         priority: c.priority as "required" | "advisory",
       }));
     if (!coverage.some(c => c.priority === "required" && c.minHeadcount > 0))
-      blockers.push("Enter and confirm required opening/closing or other staff coverage for this week.");
+      blockers.push({code:"no_coverage"});
     if (rows.scheduling_coverage_requirements.some(c => !confirmed(c)))
       warn("coverage_unconfirmed", "Unconfirmed coverage records were excluded from this proposal.");
     if (!employees.length) warn("no_active_staff", "No active staff. Add employees and their confirmed availability.");
