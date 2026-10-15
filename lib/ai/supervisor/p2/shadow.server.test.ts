@@ -304,6 +304,66 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     });
     expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
   });
+  it("preserves a trusted platform timeout instead of re-parsing it as domain data",async()=>{
+    const {def}=syntheticRegistration();
+    const slow={...def,budgets:{...def.budgets,timeoutMs:5},
+      read:vi.fn(()=>new Promise<unknown>(()=>{}))};
+    const result=await createP2Registry([slow]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"reader_timeout"});
+  });
+  it("rejects output coercion of untrusted scalar amounts",async()=>{
+    const {def}=syntheticRegistration();
+    const coerced=z.strictObject({
+      status:z.literal("partial"),
+      value:z.strictObject({reading:z.coerce.number().int()}),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),
+        sourceRevision:z.string(),asOf:z.string()}),
+      quality:z.strictObject({missingInputs:z.array(z.string()),
+        estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
+    });
+    const attempted={...def,outputSchema:coerced,
+      schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(coerced)},
+      read:vi.fn(async()=>({
+        status:"partial",value:{reading:"7"},
+        provenance:{sourceId:"energy.meter",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+        quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
+      })),
+    };
+    const result=await createP2Registry([attempted]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    });
+    expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+  });
+  it("rejects verified results that also report missing or stale inputs",async()=>{
+    const {def}=syntheticRegistration();
+    const asserted=z.strictObject({
+      status:z.literal("verified"),value:z.number().int(),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),
+        sourceRevision:z.string(),asOf:z.string()}),
+      quality:z.strictObject({missingInputs:z.array(z.string()),
+        estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
+    });
+    for(const quality of [
+      {missingInputs:["unknown_wages"],estimatedInputs:[],staleInputs:[]},
+      {missingInputs:[],estimatedInputs:[],staleInputs:["old_meter_reading"]},
+      {missingInputs:[],estimatedInputs:["assumed_usage"],staleInputs:[]},
+    ]){
+      const forged={...def,outputSchema:asserted,
+        schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(asserted)},
+        read:vi.fn(async()=>({
+          status:"verified",value:7,
+          provenance:{sourceId:"energy.meter",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+          quality,
+        })),
+      };
+      const result=await createP2Registry([forged]).invoke(scope(),def.id,{
+        id:def.id,version:1,purpose:"meter_read",
+      });
+      expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+    }
+  });
   it("fifth synthetic domain extends discovery and model execution without platform edits",async()=>{
     const {def,read}=syntheticRegistration();
     const registry=createP2Registry([...buildP1P2Registrations(),def]);
