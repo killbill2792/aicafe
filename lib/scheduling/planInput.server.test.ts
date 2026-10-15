@@ -205,4 +205,43 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     });
     expect(result.input.employees[0].exceptions[0].confirmation).toBe("unconfirmed");
   });
+  it("reads a reviewed labor policy only when its worker/location coverage is complete",async()=>{
+    fixtures.tables.scheduling_labor_rule_reviews=[{
+      id:id(2000),revision:1,business_id:fixtures.businessId,
+      profile:{
+        verified:true,source:"Verified published jurisdiction rule reference",
+        jurisdictionByLocationId:{[id(800)]:"Region-specific code"},
+        classificationByEmployeeId:{[id(1)]:"Hourly employee"},
+        maxContinuousWorkMinutes:360,unpaidMealMinutes:30,paidRestMinutes:0,
+        minRestBetweenShiftsMinutes:600,
+        overtime:{verified:true,dailyAfterMinutes:480,
+          weeklyAfterMinutes:2400,multiplierNumerator:3,multiplierDenominator:2},
+      },
+    }];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok)return;
+    expect(result.input.ruleProfile?.verified).toBe(true);
+    expect(result.notices.some(n=>n.code==="policy_unverified")).toBe(false);
+    fixtures.tables.scheduling_labor_rule_reviews[0].profile={
+      ...(fixtures.tables.scheduling_labor_rule_reviews[0].profile as object),
+      classificationByEmployeeId:{},
+    };
+    const missing=await loadOliviaWeekFromSavedStaff(week);
+    expect(missing.ok).toBe(true);
+    if(missing.ok)expect(missing.input.ruleProfile).toBeUndefined();
+  });
+  it("rejects source records changed between the first and last DB fingerprint",async()=>{
+    let calls=0;
+    fixtures.owner.mockResolvedValueOnce({
+      businessId:fixtures.businessId,
+      supabase:{from:rowQuery,rpc:async()=>({
+        data:(++calls===1?"a":"b").repeat(32),error:null,
+      })},
+    });
+    expect(await loadOliviaWeekFromSavedStaff(week))
+      .toEqual({ok:false,error:"storage_unavailable"});
+    expect(calls).toBe(2);
+  });
+
 });
