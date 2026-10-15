@@ -184,9 +184,12 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
                   overnight: false, source: "owner_direct", confirmation: "unconfirmed",
                 }])}>{t("addWindow")}</button>
             </div>
-            {windows.length === 0 && <p className="py-2 text-sm text-ink-muted">
-              {confirmedUnavailableDays.has(day) ? t("confirmedUnavailableDay") : t("notRecorded")}
+            {confirmedUnavailableDays.has(day) && <p role="status" className="py-2 text-sm font-semibold text-warn">
+              {t("confirmedUnavailableDay")}
+              {windows.length>0 && ` · ${t("hardUnavailableConflict")}`}
             </p>}
+            {windows.length===0 && !confirmedUnavailableDays.has(day) &&
+              <p className="py-2 text-sm text-ink-muted">{t("notRecorded")}</p>}
             {windows.map(({ row, index }) => (
               <div key={row.id ?? `new-${index}`} className="mt-2 flex flex-col gap-2 rounded-xl bg-paper p-3">
                 <div className="grid grid-cols-2 gap-2">
