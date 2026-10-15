@@ -36,6 +36,25 @@ describe("Olivia sourced labor-policy review boundaries",()=>{
     expect(verifiedOliviaRuleProfile({...profile,
       classificationByEmployeeId:{}},people)).toBeNull();
   });
+  it("rejects owner-attested labor rules the planner cannot execute",async()=>{
+    const unbreakable={...profile,unpaidMealMinutes:0,paidRestMinutes:0};
+    expect(verifiedOliviaRuleProfile(unbreakable,people)).toBeNull();
+    const decreasingPremium={...profile,overtime:{...profile.overtime,
+      multiplierNumerator:1,multiplierDenominator:2}};
+    expect(verifiedOliviaRuleProfile(decreasingPremium,people)).toBeNull();
+    const indistinguishable={...profile,paidRestMinutes:30};
+    expect(verifiedOliviaRuleProfile(indistinguishable,people)).toBeNull();
+    expect(verifiedOliviaRuleProfile({...profile,paidRestMinutes:7},people))
+      .toBeNull();
+    expect(verifiedOliviaRuleProfile({...profile,paidRestMinutes:10},people)
+      ?.paidRestMinutes).toBe(10);
+    expect(verifiedOliviaRuleProfile({...profile,paidRestMinutes:0},people)
+      ?.paidRestMinutes).toBe(0);
+    expect(await saveOliviaRuleReview(
+      {...request,profile:decreasingPremium},people,biz))
+      .toEqual({ok:false,error:"incomplete_rules"});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("requires attestation and strict typed numeric constraints",async()=>{
     expect(await saveOliviaRuleReview({...request,attestation:false},people,biz))
       .toEqual({ok:false,error:"invalid_input"});
