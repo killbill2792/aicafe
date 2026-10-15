@@ -1659,6 +1659,10 @@
     "gapPinned": "Conflicto con un turno fijado",
     "gapSolver": "Se alcanzó el límite del optimizador",
     "gapHandoff": "Falta el solapamiento de relevo requerido",
-    "gapUnknown": "Requisito sin cubrir"
+    "gapUnknown": "Requisito sin cubrir",
+    "viewRevision": "Ver versión",
+    "reviewVersion": "Turnos de la versión {revision}",
+    "closeRevision": "Cerrar detalles",
+    "historicalPlanOnly": "Solo turnos planificados históricos; no son registros de asistencia ni prueba de horas trabajadas."
   }
 }
