@@ -1663,6 +1663,11 @@
     "viewRevision": "View version",
     "reviewVersion": "Version {revision} assignments",
     "closeRevision": "Close details",
-    "historicalPlanOnly": "Historical planned assignments only; these are not timecards or proof that shifts were worked."
+    "historicalPlanOnly": "Historical planned assignments only; these are not timecards or proof that shifts were worked.",
+    "revisionDraft": "Draft",
+    "revisionApproved": "Approved",
+    "revisionPublished": "Published",
+    "revisionSuperseded": "Superseded",
+    "revisionUnknown": "Unknown status"
   }
 }
