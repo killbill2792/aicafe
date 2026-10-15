@@ -1,7 +1,7 @@
 import { roundHalfUpToCent } from "../money";
 import { payrollTaxCents, staffCostLoadedCents } from "../staff";
 import { localParts, utcIso } from "./plannerClock";
-import { workerWageRate } from "./plannerCore";
+import { workerWageRate, historicalShiftWageKey } from "./plannerCore";
 import type { PlannerInput, PlannerShift, PlannerCost } from "./plannerTypes";
 import type { ExpandedPlan, WorkUnit } from "./plannerCore";
 
@@ -118,7 +118,8 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
       for(const brk of published.breaks.filter(b=>b.paid))
         billedRows.push({employeeId:e.id,locationId:published.locationId,
           start:Date.parse(brk.startAt),end:Date.parse(brk.endAt),
-          pinned:true,historical:true});
+          pinned:true,historical:true,
+          historicalShiftKey:historicalShiftWageKey(published)});
     }
     const restMinutes=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
     if(restMinutes!=null && restMinutes>0){
@@ -138,19 +139,19 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
       if(e.ownerOpportunityCentsPerHour==null)ownerUnknown=true;
       else ownerOpportunity+=money(total*e.ownerOpportunityCentsPerHour/60);
     }
-    const publishedRate=input.historicalWageRates?.[e.id];
     const presentRate=workerWageRate(e);
-    const hasOld=billedRows.some(w=>w.historical);
-    const hasNew=billedRows.some(w=>!w.historical);
-    // A missing historical wage is NOT permission to use today's rate.
-    if((hasOld && publishedRate?.rateCentsPerHour==null) ||
-       (hasNew && presentRate==null)){
+    const publishedRateFor=(w:WorkUnit)=>
+      input.historicalShiftWageRates?.[w.historicalShiftKey??""];
+    // One employee can have several immutable shifts at different original
+    // wages. Missing any saved rate makes total cost unavailable (not zero).
+    if(billedRows.some(w=>w.historical
+      ? publishedRateFor(w)?.rateCentsPerHour==null : presentRate==null)){
       missing.push(e.id);continue;
     }
     const rateFor=(w:WorkUnit)=>w.historical
-      ? publishedRate!.rateCentsPerHour! : presentRate!;
+      ? publishedRateFor(w)!.rateCentsPerHour! : presentRate!;
     const salaryFor=(w:WorkUnit)=>w.historical
-      ? publishedRate?.salary===true
+      ? publishedRateFor(w)?.salary===true
       : e.wage.wage_period==="month"||e.wage.wage_period==="year";
     // One base rounding per employee, even when old and new rates differ.
     let rawBase=0,rawSalary=0;
