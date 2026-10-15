@@ -8,6 +8,7 @@ import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
 import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
 import {transitionOliviaPlan} from "@/lib/scheduling/planPublication.server";
+import {laborReviewCommandSchema,readOliviaRuleReview,saveOliviaRuleReview} from "@/lib/scheduling/planPolicy.server";
 import type { PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 
 const args = z.object({
@@ -190,4 +191,29 @@ export async function readOliviaPublishedWeek(raw:unknown) {
     return {ok:false as const,error:"storage_unavailable" as const};
   return {ok:true as const,publishedRevision:revision.revision as number,
     assignments};
+}
+
+export async function readOliviaLaborRuleContext(raw:unknown){
+  const parsed=args.safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid_input" as const};
+  const loaded=await loadOliviaWeekFromSavedStaff(parsed.data.week);
+  if(!loaded.ok)return {ok:false as const,error:loaded.error};
+  const review=await readOliviaRuleReview();
+  if(!review.ok)return review;
+  return {ok:true as const,reviewRevision:review.revision,
+    profile:review.profile,reviewedAt:review.reviewedAt,
+    locations:loaded.input.locations.map(loc=>({
+      id:loc.id,name:loaded.locationNames[loc.id]??loc.id,
+    })),
+    employees:loaded.input.employees.map(e=>({id:e.id,name:e.displayName}))};
+}
+export async function saveOliviaLaborRuleReview(raw:unknown){
+  const parsed=z.object({week:args.shape.week,
+    review:laborReviewCommandSchema}).strict().safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid_input" as const};
+  const loaded=await loadOliviaWeekFromSavedStaff(parsed.data.week);
+  if(!loaded.ok)return {ok:false as const,error:loaded.error};
+  // Other missing coverage does not prevent a lawful review of this location
+  // or worker rule set; the user must still resolve it before publication.
+  return saveOliviaRuleReview(parsed.data.review,loaded.input,loaded.businessId);
 }
