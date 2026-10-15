@@ -1,7 +1,7 @@
 "use server";
 
 import { z } from "zod";
-import { loadOliviaWeekFromSavedStaff } from "@/lib/scheduling/planInput.server";
+import { loadOliviaWeekFromSavedStaff, type OliviaBlocker, type OliviaNotice } from "@/lib/scheduling/planInput.server";
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/lib/scheduling/planDrafts.server";
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
 import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
@@ -18,19 +18,19 @@ const saveArgs = args.extend({
 }).strict();
 
 export async function previewOliviaWeek(raw: unknown): Promise<
-  | { ok: true; plan: PlannerResult; warnings: string[]; blockers: string[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string }
-  | { ok: false; error: string }
+  | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string }
+  | { ok: false; error: string; blockers?: OliviaBlocker[] }
 > {
   const parsed = args.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "invalid_input" };
   const loaded = await loadOliviaWeekFromSavedStaff(parsed.data.week);
   if (!loaded.ok) return { ok: false, error: loaded.error };
   if (loaded.blockers.length) return {
-    ok: false, error: loaded.blockers.join(" "),
+    ok: false, error: "missing_inputs", blockers: loaded.blockers,
   };
   try {
     const plan = optimizeOliviaWeek(loaded.input);
-    return { ok: true, plan, warnings: loaded.warnings, blockers: loaded.blockers,
+    return { ok: true, plan, notices: loaded.notices, blockers: loaded.blockers,
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames,
@@ -48,7 +48,7 @@ export async function saveOliviaWeekDraft(raw: unknown) {
   if (!parsed.success) return { ok: false as const, error: "invalid_input" as const };
   const loaded = await loadOliviaWeekFromSavedStaff(parsed.data.week);
   if (!loaded.ok) return { ok: false as const, error: loaded.error };
-  if (loaded.blockers.length) return { ok: false as const, error: "missing_coverage" as const };
+  if (loaded.blockers.length) return { ok: false as const, error: "missing_inputs" as const };
   if (parsed.data.objective === "owner_time" &&
       !loaded.input.employees.some(employee => employee.isOwner === true))
     return { ok: false as const, error: "owner_link_missing" as const };
