@@ -47,6 +47,24 @@ jobs:
         run: |
           if [ ! -f supabase/config.toml ]; then supabase init --force; fi
           supabase start
+      - name: Check PR1B SQL test block delimiters
+        run: |
+          if grep -nE '^[[:space:]]*(DO \$|END \$;)
+      - name: Preserve PR1A tenant/compensation/RLS regressions
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr1a-rls.sql
+      - name: PR1B atomic availability/RLS regressions
+        run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr1b-rls.sql
+      - name: Concurrent independent PR1A create regression
+        run: bash scripts/olivia-pr1a-create-concurrency.sh
+      - name: Concurrent independent PR1B batch co-owners
+        run: bash scripts/olivia-pr1b-create-concurrency.sh
+      - name: Stop disposable database
+        if: always()
+        run: supabase stop --no-backup
+ scripts/olivia-pr1b-rls.sql; then
+            echo 'Broken anonymous SQL block delimiter' >&2
+            exit 1
+          fi
       - name: Replay ALL migrations in disposable Supabase
         run: supabase db reset --local --yes
       - name: Preserve PR1A tenant/compensation/RLS regressions
