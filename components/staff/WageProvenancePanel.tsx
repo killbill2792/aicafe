@@ -43,32 +43,32 @@ export default function WageProvenancePanel({ employee, records }: {
   const wagePeriod=employee.wagePeriod==="hour" ? staff("wagePeriodHour")
     : employee.wagePeriod==="month" ? staff("wagePeriodMonth") : staff("wagePeriodYear");
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
-    <h4 className="text-base font-bold">{t("wageProvenance")}</h4>
-    <p className="text-sm text-ink-muted">{t("wageExplanation")}</p>
+    <h4 className="text-[17px] font-bold">{t("wageProvenance")}</h4>
+    <p className="text-[17px] text-ink-muted">{t("wageExplanation")}</p>
     <p className="font-semibold">{t("recordedWage")}: {
       wageIsKnown
         ? new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(
           (employee.wageAmountCents??employee.defaultHourlyWageCents??0)/100)
         : t("wageUnknown")
     } {wageIsKnown&&`/ ${wagePeriod}`}</p>
-    <p className="text-sm font-semibold">{t("currentEvidence")}: {t(verified)}</p>
-    {existing?.eligibility_verified_at != null && <p className="text-sm text-ink-muted">
+    <p className="text-[17px] font-semibold">{t("currentEvidence")}: {t(verified)}</p>
+    {existing?.eligibility_verified_at != null && <p className="text-[17px] text-ink-muted">
       {t("confirmedAt")}: {String(existing.eligibility_verified_at)}
     </p>}
-    <label className="flex flex-col gap-1 text-sm">{t("cashState")}
+    <label className="flex flex-col gap-1 text-[17px]">{t("cashState")}
       <select className={field} value={status} onChange={e=>{setStatus(e.target.value as CashState);setSaved(false);}}>
         {(["unknown","known_paid","salary_conversion_pending","known_eligible_zero"] as CashState[]).map(s=>
           <option value={s} key={s}>{t(s)}</option>)}
       </select>
     </label>
-    {status==="known_eligible_zero" && <label className="flex flex-col gap-1 text-sm">
+    {status==="known_eligible_zero" && <label className="flex flex-col gap-1 text-[17px]">
       {t("eligibilityEvidenceRequired")}
-      <textarea className="min-h-24 rounded-xl border border-line p-3 text-base" value={evidence}
+      <textarea className="min-h-24 rounded-xl border border-line p-3 text-[17px]" value={evidence}
         onChange={e=>setEvidence(e.target.value)} maxLength={240}/>
     </label>}
-    <p className="text-sm text-ink-muted">{t("notLegalAdvice")}</p>
+    <p className="text-[17px] text-ink-muted">{t("notLegalAdvice")}</p>
     <button type="button" className={primary} disabled={pending} onClick={submit}>{t("saveEvidence")}</button>
-    {error && <p role="alert" className="text-sm text-warn">{error}</p>}
-    {saved && <p role="status" className="text-sm text-good">{t("saved")}</p>}
+    {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
+    {saved && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
   </section>;
 }
