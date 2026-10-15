@@ -388,6 +388,10 @@ type EntityReadDefinition<TInput,TOutput> = {
     precedencePolicyId:string; precedencePolicyRevision:number;
     minimumCoverage:"complete"|"partial_explicit";
     allowedActualities:readonly ("actual"|"estimated"|"forecast"|"planned")[];
+    allowedEvidenceStatuses:readonly ("verified"|"reported"|"unverified"|"estimated"|"unavailable")[];
+    // Evidence verification and temporal actuality are separate dimensions.
+    // Reported quotes are usable only as explicitly conditional assumptions,
+    // never as verified paid supplier costs or inventory.
   }>;
 };
 type EntityReadResult<T> =
@@ -421,6 +425,7 @@ type AnalysisSourceInput = {
   sourcePurpose:string;
   minimumCoverage:"complete"|"partial_explicit";
   allowedActualities:readonly ("actual"|"estimated"|"forecast"|"planned")[];
+  allowedEvidenceStatuses:readonly ("verified"|"reported"|"unverified"|"estimated"|"unavailable")[];
 };
 type AnalysisSourceRequirements =
   | {kind:"registered_sources";
@@ -994,7 +999,7 @@ These are **future tests**, not tests executed by this documentation change.
 | ANALYSIS-04 | Bind one analysis to unrelated same-mode capability with different input/output Zod schemas; reuse ID but wrong schemaContract version/fingerprint; remove bound registry key | Compile-time literal registry-key linkage fails incompatible types; startup rejects absent or mismatched input/output contract id/version/fingerprint, never coerces/forwards |
 | ANALYSIS-05 | Declare purpose union `payroll_actual` / `schedule_forecast` but configure only one source rule, an extra purpose, duplicate allowed purpose or stale selector | `Record<P,...>` compile-time fixture and strict registration own-key equality reject missing/extra/duplicate purpose; dispatcher has exact purpose-source/coverage/actuality rules or denies |
 | ANALYSIS-06 | Register intentionally source-free pure simulation with declared `no_external_sources` and empty inputs; try calling a reader, citing business facts or passing a nonempty hidden source list | Explicit source-free declaration accepted only for typed-input-only scenario; runtime blocks undeclared sources, unsupported verified real-world claims and bogus empty-coverage proofs; no fallback to another purpose |
-| ANALYSIS-08 | Register a `preauthorized_operands` purpose for the expression capability; supply independently validated versioned metric/entity source manifests, then attempt forged tenant/source refs, wrong purpose, stale reader/selector/policy revisions, incomplete coverage, missing evidence, swapped operand handles and mixed-tenant inputs | Valid source-bearing operands may compute without new evaluator reads; all invalid provenance/coverage/scope/revision cases fail closed before arithmetic; `no_external_sources` remains invalid for café-derived evidence; require both fixture and dispatcher integration tests |
+| ANALYSIS-08 | Register a `preauthorized_operands` purpose for the expression capability; supply independently validated versioned metric/entity source manifests, then attempt forged tenant/source refs, wrong purpose, stale reader/selector/policy revisions, incomplete coverage, missing evidence, reported/unverified supplier quotes improperly presented as verified paid costs, swapped operand handles and mixed-tenant inputs | Valid source-bearing operands may compute without new evaluator reads; all invalid provenance/coverage/scope/revision cases fail closed before arithmetic; `no_external_sources` remains invalid for café-derived evidence; require both fixture and dispatcher integration tests |
 | METRIC-01 | Register sales, labor and profit metrics with distinct Zod filter/dimension schemas, explicit purposes, granularities and source-selection rules | Dispatcher strictly parses entire request before calling reader; unknown filter, purpose, employee dimension, hourly inference, excessive date range or unauthorized role denied with **zero reader calls** |
 | METRIC-02 | Register fifth-domain metric with purpose/source selector, strict value/output schema and bounded rows/series/cost | No central branch; CI rejects missing schema/unit/type, unbounded read or wrong purpose-source map, result checked before analysis or cache |
 | METRIC-03 | Return money metric as fractional cents, NaN, Infinity, unsafe integer, numeric string, wrong unit/value kind, or mismatched metric ID/version/query | Strict metric value and output schemas reject before aggregation/cache/Supervisor; no coercion, rounding, zero fallback; safe unavailable and internal audit |
