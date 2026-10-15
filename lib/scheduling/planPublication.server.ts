@@ -143,7 +143,7 @@ export async function transitionOliviaPlan(raw:unknown,kind:Transition):
       .from("scheduling_plan_revisions").select("status,approved_by,published_by")
       .eq("business_id",loaded.businessId).eq("id",options.revisionId)
       .maybeSingle();
-    if(verifyError||verify?.status!==result.status||
+    if(verifyError||!verify||verify.status!==result.status||
        (kind==="approve"?verify.approved_by:verify.published_by)==null)
       return {ok:false,error:"storage_unavailable"};
     if(kind==="publish"){
