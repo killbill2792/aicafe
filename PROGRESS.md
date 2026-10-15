@@ -1,3 +1,11 @@
+## Olivia PR 2 — deterministic optimizer implementation (2026-10-15)
+
+- Started from main `34676404db51e1b1afd663d1bd558dc653968800`; verified merged PRs #72, #75, #73 and #76. Issue #74 tracks the independent PR2 gate. Owner approval of scheduling scope is already recorded in `docs/01-product.md`.
+- Phase boundary: pure seven-day manual-coverage optimizer/what-if only in `lib/calc/scheduling/planner*.ts`. Reuses PR1A effective availability, compensation provenance, and canonical `lib/calc/staff.ts` / `money.ts` functions. No new database table, mutation, Staff UI, Supervisor action, POS requirement, published shifts, payroll edits, actual timecard writes, feature flag or deploy.
+- Added typed snapshot/results; IANA civil clock resolving with reject-on-gap/repeat DST safety; recurring + exception + weekday availability; qualified/active/location-bound candidates; coverage including required headcount/skill/minimum overlap/overnight; pinned commitments, max daily/weekly/local-date caps, no multi-location double booking; verified configurable break/rest/overtime constraints; integer-cent wages/owner hours/burden states and missing-value distinctions; bounded deterministic beam scenarios with proven covered solution, gap/qualification evidence, and unproven status on search exhaustion.
+- Added pure Vitest realistic café scenarios (five employees, duplicate names, qualification, absence, multiple locations, split and overnight, daily caps, breaks, owner/hired alternatives, missing/salaried wages, DST, historical timecard non-mutation, repeatability and node bounds). Browser/mobile/EN-ES-AR UI unchanged because PR2 adds no UI.
+- Validation and merge gates: full Vitest, strict TS, scoped lint, production build, CI and whole-PR review must pass on final HEAD before marking PR2 ready. Production authorization and PR3 publishing remain separate. `docs/scheduling-architecture.md` remains the approved source; no architectural re-decision.
+
 ## Universal Supervisor Platform P1 — existing PR #76, final implementation review (2026-10-14)
 
 - Repository: `killbill2792/aicafe`, existing implementation PR #76, Issue #74, based on the merged Supervisor architecture in `main`. **No merge, deployment, feature activation, production migration, routing replacement, or Olivia PR #75 modification**.
