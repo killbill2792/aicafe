@@ -243,4 +243,20 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(unverified.best?.cost.cashWagesCents).toBeNull();
   });
 
+  it("preserves a valid pinned commitment and credits it toward required coverage",()=>{
+    const originalPinned={
+      employeeId:"pinned-worker",locationId:"a",
+      startAt:"2026-10-12T16:00:00.000Z",endAt:"2026-10-12T18:00:00.000Z",
+    };
+    const result=optimizeOliviaWeek(input([employee("pinned-worker")],[coverage("morning")],{
+      pinned:[originalPinned],
+    }));
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toHaveLength(1);
+    expect(result.best!.shifts[0]).toMatchObject({employeeId:"pinned-worker",
+      pinned:true,startAt:originalPinned.startAt,endAt:originalPinned.endAt,
+      paidMinutes:120});
+    expect(result.best?.cost.cashWagesCents).toBe(3200);
+  });
+
 });
