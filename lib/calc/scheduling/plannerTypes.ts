@@ -96,7 +96,11 @@ export type PlannerGap = {
 };
 export type PlannerCost = {
   /** Unknown means unavailable, NEVER $0. */
+  /** Total modeled hourly cash plus allocated salary equivalent; not a
+   * claim that scheduling a salaried employee incurs incremental payroll. */
   cashWagesCents: number | null;
+  /** Portion of cashWagesCents allocated from verified salary equivalents. */
+  allocatedSalaryCents: number | null;
   loadedPayrollCents: number | null;
   ownerOpportunityCents: number | null;
   ownerMinutes: number;
