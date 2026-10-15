@@ -44,6 +44,14 @@ export function verifiedOliviaRuleProfile(
   // The pure planner's smallest supported grid is five minutes. Refuse a
   // rest rule we cannot honor before saving an owner attestation.
   if(rules.paidRestMinutes!==0 && rules.paidRestMinutes%5!==0)return null;
+  // Honor the pure planner's invariant checks at the OWNER ATTESTATION gate,
+  // instead of accepting a profile that prevents all future previews.
+  if(rules.maxContinuousWorkMinutes>0 &&
+      rules.unpaidMealMinutes===0 && rules.paidRestMinutes===0)return null;
+  if(rules.paidRestMinutes>0 &&
+      rules.paidRestMinutes===rules.unpaidMealMinutes)return null;
+  if(rules.overtime.multiplierNumerator<
+      rules.overtime.multiplierDenominator)return null;
   if(!input.locations.every(location=>Boolean(rules.jurisdictionByLocationId[location.id]))||
      !input.employees.filter(e=>e.active).every(employee=>
        Boolean(rules.classificationByEmployeeId[employee.id])))
