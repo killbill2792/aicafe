@@ -67,7 +67,8 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     fixtures.rowCap=null;
     fixtures.owner.mockReset();
     fixtures.owner.mockImplementation(async () => ({
-      businessId:fixtures.businessId,supabase:{from:rowQuery},
+      businessId:fixtures.businessId,supabase:{from:rowQuery,
+        rpc:async()=>({data:"a".repeat(32),error:null})},
     }));
     process.env.SCHEDULING_FOUNDATION_ENABLED="true";
     process.env.SCHEDULING_PR3_DRAFTS_ENABLED="true";
@@ -78,6 +79,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     expect(output.ok).toBe(true);
     if(!output.ok) return;
     expect(output.businessId).toBe(fixtures.businessId);
+    expect(output.sourceToken).toBe("a".repeat(32));
     expect(output.blockers).toEqual([]);
     expect(output.notices.some(n=>n.code==="policy_unverified")).toBe(true);
     expect(output.locationNames[id(800)]).toBe("Downtown");
