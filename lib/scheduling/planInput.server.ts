@@ -21,7 +21,7 @@ export type OliviaNotice = { code:
 export type OliviaBlocker = {code: "no_location" | "no_coverage" | "conflicting_limits"; employeeName?: string};
 
 export type OliviaInputResult =
-  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: OliviaBlocker[] }
+  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; sourceToken: string; locationNames: Record<string, string>; warnings: string[]; notices: OliviaNotice[]; blockers: OliviaBlocker[] }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_week" | "storage_unavailable" };
 
 const PAGE = 300;
@@ -76,6 +76,11 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
   if (!owner) return { ok: false, error: "unauthorized" };
   const { supabase, businessId } = owner;
   try {
+    const {data:tokenBefore,error:tokenBeforeError}=await supabase.rpc(
+      "scheduling_owner_source_token",{p_business_id:businessId});
+    if(tokenBeforeError || typeof tokenBefore!=="string" ||
+      !/^[a-f0-9]{32}$/.test(tokenBefore))
+      throw new Error("Cannot verify scheduling source revision");
     const tables = [
       "employees", "locations", "staff_availability_rules",
       "staff_availability_exceptions", "staff_scheduling_preferences",
@@ -88,6 +93,10 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       supabase.from("businesses").select("timezone").eq("id", businessId).single(),
     ]);
     if (business.error || !business.data || !str(business.data.timezone)) throw new Error("Missing business timezone");
+    const {data:tokenAfter,error:tokenAfterError}=await supabase.rpc(
+      "scheduling_owner_source_token",{p_business_id:businessId});
+    if(tokenAfterError || tokenAfter!==tokenBefore)
+      throw new Error("Scheduling source changed during read");
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
     // Track *all* source records, including legacy commitments, attestation revisions,
     // and the business timezone. Input-only hashing can miss material changes.
@@ -248,7 +257,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     warn("policy_unverified", "Labor law, worker classifications, break/overtime settings and owner-worker identity are not verified; publication needs independent review.");
     warn("source_provisional", "This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
     return {
-      ok: true, businessId, sourceFingerprint, locationNames, input: { horizonStart: week, locations, employees, coverage,
+      ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         pinned: [], slotMinutes: 30, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
