@@ -40,6 +40,40 @@ BEGIN
  IF NOT FOUND AND TG_OP<>'DELETE' THEN
    RAISE EXCEPTION 'unknown availability employee' USING ERRCODE='23503';
  END IF;
+ -- Legacy per-record UPDATE must never move an unrelated row into
+ -- a scope which was already committed with a complete batch manifest.
+ -- Batch UPDATEs are bound to their existing scope and are unaffected.
+ IF TG_OP='UPDATE' AND (
+    OLD.employee_id IS DISTINCT FROM NEW.employee_id OR
+    OLD.location_id IS DISTINCT FROM NEW.location_id OR
+    (TG_TABLE_NAME='staff_availability_rules' AND (
+       OLD.effective_from IS DISTINCT FROM NEW.effective_from OR
+       OLD.effective_to IS DISTINCT FROM NEW.effective_to)) OR
+    (TG_TABLE_NAME='staff_availability_exceptions' AND
+       OLD.local_date IS DISTINCT FROM NEW.local_date)
+ ) THEN
+   IF EXISTS(
+    SELECT 1 FROM public.scheduling_availability_batch_receipts receipt
+    WHERE receipt.business_id=NEW.business_id
+      AND receipt.employee_id=NEW.employee_id
+      AND receipt.location_id IS NOT DISTINCT FROM NEW.location_id
+      AND receipt.kind=(CASE WHEN TG_TABLE_NAME='staff_availability_rules'
+        THEN 'availability_rule' ELSE 'availability_exception' END)
+      AND receipt.result IS NOT NULL
+      AND receipt.result->>'conflict' IS DISTINCT FROM 'true'
+      AND (
+        (TG_TABLE_NAME='staff_availability_rules'
+          AND receipt.edit_scope->>'effective_from'=NEW.effective_from::text
+          AND receipt.edit_scope->>'effective_to'
+              IS NOT DISTINCT FROM NEW.effective_to::text)
+        OR (TG_TABLE_NAME='staff_availability_exceptions'
+          AND receipt.edit_scope->>'local_date'=NEW.local_date::text)
+      )
+   ) THEN
+     RAISE EXCEPTION 'move into a manifest-managed availability scope denied'
+       USING ERRCODE='42501';
+   END IF;
+ END IF;
  -- ON DELETE CASCADE can run after the parent employee has been removed
  -- inside its existing transaction. That legitimate cleanup must survive;
  -- direct RLS DELETE remains scoped and audited as before.
@@ -270,7 +304,7 @@ GRANT EXECUTE ON FUNCTION public.scheduling_save_availability_batch(
 -- PR1A could already contain overlapping effective-dated preferences. A new
 -- write-only trigger does not repair those old ambiguities. Fail this manual
 -- migration transaction until the owner reviews and reconciles them in staging.
-DO $
+DO $$
 BEGIN
  IF EXISTS (
    SELECT 1 FROM public.staff_scheduling_preferences a
@@ -282,7 +316,7 @@ BEGIN
    RAISE EXCEPTION 'Existing overlapping Olivia hour-limit periods require owner reconciliation'
      USING ERRCODE='23505';
  END IF;
-END $;
+END $$;
 
 -- A worker must not have two simultaneously effective hour-limit policies.
 -- Enforce on every owner INSERT/UPDATE (including legacy per-record actions).
