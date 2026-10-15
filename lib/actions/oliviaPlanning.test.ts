@@ -29,7 +29,7 @@ const input={
   employees:[{id:"emp",displayName:"Sarah",isOwner:undefined}],
   coverage:[],
 };
-const saved={ok:true,businessId,input,locationNames:{loc:"Main Café"},
+const saved={ok:true,businessId,input,sourceFingerprint:"b".repeat(64),locationNames:{loc:"Main Café"},
   warnings:[],blockers:[]};
 const args={week:"2026-10-12",objective:"balanced",
   expectedRevision:0,expectedSourceDigest:digest,requestKey};
@@ -62,7 +62,7 @@ describe("Olivia preview/draft server action safety",()=>{
     expect(mocks.draft).toHaveBeenCalledWith({
       horizonStart:"2026-10-12",objective:"balanced",
       expectedRevision:0,requestKey,
-    },input,businessId);
+    },input,businessId,"b".repeat(64));
   });
   it("does not fabricate owner-hours savings for an unlinked owner",async()=>{
     expect(await saveOliviaWeekDraft({...args,objective:"owner_time"}))
