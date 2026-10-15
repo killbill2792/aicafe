@@ -78,8 +78,8 @@ export type PlannerInput = {
   pinned?: PlannerPinned[];
   ruleProfile?: PlannerRuleProfile | null;
   burden?: PlannerBurden | null;
-  /** 15/30/60 minute finite grid; no invented coverage outside entered ranges. */
-  slotMinutes?: 15 | 30 | 60;
+  /** 5/10/15/30/60 minute finite grid for verified break durations. */
+  slotMinutes?: 5 | 10 | 15 | 30 | 60;
   maxNodes?: number; beamWidth?: number;
   /** Recorded evidence is never needed to run manual coverage. */
   hourlySalesEvidence?: null;
