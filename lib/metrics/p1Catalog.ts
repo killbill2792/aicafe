@@ -103,6 +103,50 @@ const person = z.strictObject({
   breakStatus:z.string(),isSchedulePrediction:z.boolean(),
 });
 export const values = {
+  "business.profile": z.strictObject({
+    businessId:text,name:text,timezone:text,currency:text,openedOn:day.nullable(),
+    locations:z.array(z.strictObject({id:text,name:text,addressLine1:text.nullable(),
+      city:text.nullable(),region:text.nullable(),countryCode:text.nullable()})).max(100),
+  }),
+  "menu.recipe": z.strictObject({
+    id:text,name:text,priceCents:money,costStatus:z.enum(["READY","NO_RECIPE","MISSING_INGREDIENT_COST"]),
+    recipe:z.array(z.strictObject({ingredientId:text,ingredientName:text,
+      baseUnit:z.enum(["g","ml","each"]),quantity:finite.nonnegative(),
+      displayUnit:text.nullable(),displayQuantity:finite.nullable(),
+      priceSource:z.enum(["manual","receipt","statement","invoice"]).nullable()})).max(200),
+  }),
+  "menu.ingredients": z.array(z.strictObject({id:text,name:text,baseUnit:z.enum(["g","ml","each"])})).max(500),
+  "labor.employee_wages": z.array(z.strictObject({
+    id:text,name:text,role:text.nullable(),active:z.boolean(),
+    defaultHourlyWageCents:money.nullable(),wagePeriod:z.enum(["hour","month","year"]),
+    wageAmountCents:money.nullable(),wageKnown:z.boolean(),
+  }).refine(row=>row.wageKnown===(row.defaultHourlyWageCents!==null||row.wageAmountCents!==null))).max(500),
+  "supplies.quotes": z.strictObject({
+    items:z.array(z.strictObject({id:text,supplierName:text,itemName:text,priceCents:money,
+      packageCount:count,packageUnit:z.enum(["each","oz","lb","kg","gal","liter","case"]),
+      sourceKind:z.enum(["supplier_email","supplier_quote","public_listing"]),
+      sourceUrl:z.string().url().nullable(),quotedOn:day,
+      evidenceStatus:z.literal("owner_reported"),createdAt:z.string().datetime({offset:true})})).max(40),
+    truncated:z.boolean(),
+  }),
+  "team.owner_rules": z.strictObject({
+    rules:z.array(z.strictObject({id:text,agentId:z.enum(["supervisor","alex","olivia","maya","leo"]),
+      instruction:z.string().max(1000),status:z.literal("active"),version:count,
+      updatedAt:z.string().datetime({offset:true}),isExecutionAuthority:z.literal(false)})).max(20),
+    truncated:z.boolean(),
+  }),
+  "labor.availability_foundation": z.strictObject({
+    enabled:z.literal(true),
+    recordCounts:z.strictObject({
+      availability_rule:count,availability_exception:count,preferences:count,
+      preference_window:count,qualification_type:count,qualification:count,
+      coverage:count,compensation:count,
+    }),
+  }),
+  "money.expense_entries": z.array(z.strictObject({
+    id:text,spentOn:day,categoryCode:text,amountCents:money,
+    status:z.enum(["actual","estimated"]),source:text,
+  })).max(500),
   "money.profitability": profitability,
   "money.business_costs": costs,
   "menu.product_economics": product,
@@ -141,6 +185,14 @@ export const PUBLIC_TOOL_METHODS = [
 ] as const satisfies readonly (keyof BusinessScopedCafeTools)[];
 
 export const readers = {
+  "business.profile":"readP1BusinessProfile",
+  "menu.recipe":"readP1Recipe",
+  "menu.ingredients":"readP1Ingredients",
+  "labor.employee_wages":"readP1EmployeeWages",
+  "supplies.quotes":"readP1SupplierQuotes",
+  "team.owner_rules":"readP1OwnerRules",
+  "labor.availability_foundation":"readP1SchedulingFoundation",
+  "money.expense_entries":"readP1ExpenseEntries",
   "money.profitability":"getProfitability",
   "money.business_costs":"getBusinessCostSummary",
   "menu.product_economics":"getProductEconomics",
@@ -158,7 +210,7 @@ export const readers = {
   "money.break_even":"getBreakEven",
   "labor.daily_costs":"getLaborMetrics",
   "team.tasks":"getTeamTasks",
-} as const satisfies Record<SupportedId,typeof PUBLIC_TOOL_METHODS[number]>;
+} as const satisfies Record<SupportedId,string>;
 
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
@@ -170,12 +222,6 @@ export const classified = {
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
 } as const;
 export const additionalSurfaces = {
-  business_locations:{kind:"restricted",source:"lib/data/getCafeProfile.ts",reason:"Selected café details require a dedicated per-location schema"},
-  ingredients_recipes:{kind:"restricted",source:"lib/data/getMenuControlCenter.ts",reason:"Recipe cost internals require a dedicated bounded record projection"},
-  employee_wages:{kind:"restricted",source:"lib/data/getEmployees.ts",reason:"Named wage values require separate owner-only field policy"},
-  supplier_quotes:{kind:"restricted",source:"lib/ai/suppliers/contracts.ts",reason:"Owner supplier quote evidence requires separate scoped projection"},
-  owner_rules:{kind:"restricted",source:"lib/ai/policies/repository.server.ts",reason:"Private owner rules have a separate policy-owned auth boundary"},
-  scheduling_foundation:{kind:"unsupported",source:"lib/scheduling/foundation.server.ts",reason:"Requires staged migration and SCHEDULING_FOUNDATION_ENABLED activation"},
   orders_raw:{kind:"restricted",source:"lib/pos/square/adapter.ts",reason:"No authorized P1 raw-order service with complete coverage"},
   attachments_extraction:{kind:"unsupported",source:"lib/ai/conversations/attachments.ts",reason:"Attachment storage is not verified parsing"},
   bank_feed:{kind:"unsupported",source:"lib/operating/cafeState.ts",reason:"No consented bank feed"},
@@ -184,8 +230,16 @@ export const additionalSurfaces = {
   worker_acceptance:{kind:"unsupported",source:"lib/scheduling/foundation.server.ts",reason:"Schedule is not worker acceptance"},
 } as const;
 
-const owners = {money:"leo",sales:"leo",menu:"alex",pricing:"alex",labor:"olivia",team:"supervisor"} as const;
+const owners = {money:"leo",sales:"leo",menu:"alex",pricing:"alex",labor:"olivia",team:"supervisor",business:"supervisor",supplies:"maya"} as const;
 export const purposePolicies = {
+  "business.profile":["selected_business_profile"],
+  "menu.recipe":["owner_recipe_review"],
+  "menu.ingredients":["owner_ingredient_catalog"],
+  "labor.employee_wages":["authorized_owner_wage_review"],
+  "supplies.quotes":["owner_reported_quote_review"],
+  "team.owner_rules":["active_owner_guidance_read"],
+  "labor.availability_foundation":["activated_manual_staffing_foundation"],
+  "money.expense_entries":["recorded_expense_entry_review"],
   "money.profitability":["actual_period_financial_review"],
   "money.business_costs":["actual_period_cost_review"],
   "menu.product_economics":["current_recipe_cost_review"],
@@ -230,10 +284,10 @@ export const sourcePolicies = Object.fromEntries((Object.keys(values) as Support
 }>>;
 export const inputFor = (id: SupportedId) => z.strictObject({
   id:z.literal(id), version:z.literal(1), purpose:z.enum(purposePolicies[id] as unknown as [string,...string[]]),
-  ...(new Set(["money.profitability","money.business_costs","sales.daily","money.expense_categories",
+  ...(new Set(["money.profitability","money.business_costs","sales.daily","money.expense_categories","money.expense_entries",
     "money.recorded_spending","sales.item_units","sales.item_coverage","labor.attendance",
     "labor.recurring_assignments","labor.daily_costs"]).has(id) ? {period} : {}),
-  ...(new Set(["menu.product_economics","pricing.recommendation"]).has(id) ? {productId:z.string().min(1).max(120)} : {}),
+  ...(new Set(["menu.product_economics","pricing.recommendation","menu.recipe"]).has(id) ? {productId:z.string().min(1).max(120)} : {}),
 });
 export function discoverP1() {
   return (Object.keys(values) as SupportedId[]).map(id=>({
