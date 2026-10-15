@@ -3,7 +3,7 @@
 import { useRef,useState,useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
 import { type SchedulingRow, schedulingFieldClass as field,
   schedulingPrimaryClass as primary } from "./AvailabilityEditor";
@@ -14,7 +14,8 @@ type CashState = "unknown" | "known_paid" | "salary_conversion_pending" | "known
 export default function WageProvenancePanel({ employee, records }: {
   employee: EmployeeRow; records:SchedulingRow[];
 }) {
-  const t=useTranslations("SchedulingAvailability"), router=useRouter();
+  const t=useTranslations("SchedulingAvailability"), staff=useTranslations("ManageStaff");
+  const locale=useLocale(), router=useRouter();
   const existing=records.find(r=>r.employee_id===employee.id);
   const [status,setStatus]=useState<CashState>((existing?.cash_cost_state as CashState)??"unknown");
   const [evidence,setEvidence]=useState(String(existing?.eligibility_reference??""));
@@ -39,15 +40,17 @@ export default function WageProvenancePanel({ employee, records }: {
   }
   const verified = (existing?.cash_cost_state as CashState|undefined)??"unknown";
   const wageIsKnown = employee.wageAmountCents!==null || employee.defaultHourlyWageCents!==null;
+  const wagePeriod=employee.wagePeriod==="hour" ? staff("wagePeriodHour")
+    : employee.wagePeriod==="month" ? staff("wagePeriodMonth") : staff("wagePeriodYear");
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
     <h4 className="text-base font-bold">{t("wageProvenance")}</h4>
     <p className="text-sm text-ink-muted">{t("wageExplanation")}</p>
     <p className="font-semibold">{t("recordedWage")}: {
       wageIsKnown
-        ? new Intl.NumberFormat(undefined,{style:"currency",currency:"USD"}).format(
+        ? new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(
           (employee.wageAmountCents??employee.defaultHourlyWageCents??0)/100)
         : t("wageUnknown")
-    } {wageIsKnown&&`/ ${employee.wagePeriod}`}</p>
+    } {wageIsKnown&&`/ ${wagePeriod}`}</p>
     <p className="text-sm font-semibold">{t("currentEvidence")}: {t(verified)}</p>
     {existing?.eligibility_verified_at != null && <p className="text-sm text-ink-muted">
       {t("confirmedAt")}: {String(existing.eligibility_verified_at)}
