@@ -56,10 +56,13 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
       assert((r.unpaidMealMinutes!=null && r.unpaidMealMinutes>0) ||
         (r.paidRestMinutes!=null && r.paidRestMinutes>0), "rest_rule_missing");
     if(r.paidRestMinutes!=null){
-      assert(r.verified && r.paidRestMinutes>0 &&
+      // Zero explicitly means no paid-rest duration is configured. Positive
+      // paid rest must be representable on the selected verified grid.
+      assert(r.verified && r.paidRestMinutes>=0 &&
         r.paidRestMinutes%slot===0,"unverified_or_unaligned_paid_rest");
-      assert(r.paidRestMinutes!==r.unpaidMealMinutes,
-        "ambiguous_paid_and_unpaid_break");
+      if(r.paidRestMinutes>0)
+        assert(r.paidRestMinutes!==r.unpaidMealMinutes,
+          "ambiguous_paid_and_unpaid_break");
     }
     if(r.overtime) {
       for(const n of [r.overtime.dailyAfterMinutes,r.overtime.weeklyAfterMinutes,
