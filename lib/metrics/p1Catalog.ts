@@ -181,6 +181,21 @@ export const values = {
     dailyCostsToCoverCents:money,averageMoneyLeftPerDrinkCents:money,progressPercent:finite.nullable(),
   }),
   "labor.daily_costs": z.array(z.strictObject({date:day,wagesCents:money,staffTaxCents:money,loadedStaffCostCents:money})).max(366),
+  "team.signals": z.array(z.strictObject({
+    id:text,type:z.enum([
+      "INGREDIENT_COST_INCREASED","PRODUCT_COST_CHANGED","PRODUCT_PROFITABILITY_DECLINED",
+      "PRODUCT_HIGH_CONTRIBUTION","SALES_INCREASED","SALES_DECLINED","LABOR_COST_CHANGED",
+      "EXPENSE_INCREASED","OPERATING_MARGIN_DECLINED","PRICE_REVIEW_REQUIRED",
+      "INVENTORY_LOW","STOCKOUT_RISK","SUPPLIER_COST_CHANGED","DATA_INCOMPLETE",
+    ]),
+    severity:z.enum(["info","warning","critical"]),confidence:z.enum(["low","medium","high"]),
+  })).max(100),
+  "team.decisions": z.array(z.strictObject({
+    id:text,type:z.enum(["PRICE_CHANGE","INVENTORY_ORDER","STAFFING_CHANGE","SUPPLIER_CHANGE",
+      "MENU_CHANGE","PROMOTION","COST_REDUCTION"]),
+    status:z.enum(["recommended","accepted","rejected","executed","dismissed","review_later"]),
+    confidence:z.enum(["low","medium","high"]),createdAt:z.string().datetime({offset:true}),
+  })).max(100),
   "team.tasks": z.array(task).max(1000),
 } as const;
 
@@ -225,6 +240,8 @@ export const readers = {
   "labor.recurring_assignments":"getRecurringSchedule",
   "money.break_even":"getBreakEven",
   "labor.daily_costs":"getLaborMetrics",
+  "team.signals":"getActiveSignals",
+  "team.decisions":"getDecisionHistory",
   "team.tasks":"getTeamTasks",
 } as const satisfies Record<SupportedId,string>;
 
@@ -255,6 +272,8 @@ export const canonicalSourcePaths = {
   getRecurringSchedule:"lib/ai/conversations/domainProjections.ts",
   getBreakEven:"lib/ai/conversations/domainProjections.ts",
   getLaborMetrics:"lib/operating/cafeState.ts",
+  getActiveSignals:"lib/ai/tools.ts",
+  getDecisionHistory:"lib/operating/supabaseDecisionStore.ts",
   getTeamTasks:"lib/data/operatingTasks.ts",
 } as const satisfies Record<(typeof readers)[SupportedId],string>;
 
@@ -263,8 +282,6 @@ export const classified = {
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
-  getActiveSignals:{kind:"restricted",reason:"Raw signal evidence not a public typed record contract"},
-  getDecisionHistory:{kind:"restricted",reason:"Decision provenance may contain sensitive internal snapshots"},
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
 } as const;
 export const additionalSurfaces = {
@@ -308,6 +325,8 @@ export const purposePolicies = {
   "labor.recurring_assignments":["future_owner_assignment_review"],
   "money.break_even":["current_break_even_review"],
   "labor.daily_costs":["recorded_labor_cost_review"],
+  "team.signals":["observed_team_signal_status"],
+  "team.decisions":["read_only_decision_history"],
   "team.tasks":["owner_task_review"],
 } as const satisfies Record<SupportedId,readonly [string,...string[]]>;
 
