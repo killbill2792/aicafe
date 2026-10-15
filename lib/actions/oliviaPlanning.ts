@@ -54,7 +54,7 @@ export async function saveOliviaWeekDraft(raw: unknown) {
     return { ok: false as const, error: "owner_link_missing" as const };
   // A preview is informative, not authority. Refuse to save a different roster
   // after wages, availability, coverage or selected café facts have changed.
-  if (oliviaSnapshotDigest(loaded.input) !== parsed.data.expectedSourceDigest)
+  if (oliviaSnapshotDigest(loaded.input, loaded.sourceFingerprint) !== parsed.data.expectedSourceDigest)
     return { ok: false as const, error: "source_changed" as const };
   return createOliviaDraftFromTrustedSnapshot({
     horizonStart: parsed.data.week,
