@@ -237,4 +237,80 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     expect(result).toMatchObject({status:"unavailable",reason:"invalid_result"});
     expect(JSON.stringify(result)).not.toContain("knownTotalCents");
   });
+  it.each([
+    ["Could you examine what we spent from October 1 to October 3?",
+      "what we spent from October 1 to October 3"],
+    ["Were our recorded outlays complete between October 1 and October 3?",
+      "recorded outlays complete between October 1 and October 3"],
+    ["Revisa los costos del 1 al 3 de octubre",
+      "los costos del 1 al 3 de octubre"],
+  ])("selects the same canonical reader through unrelated paraphrase: %s",async(goal,part)=>{
+    const mock=transport({complete:true,clauses:[part]},select([part],[{
+      capabilityId:"leo.money.costs.v1",inputJson:JSON.stringify(args),reason:null,
+    }]));
+    const real=vi.fn(async()=>costSummary);
+    const result=await request(goal,mock.fn,{scope:scope({getBusinessCostSummary:real})});
+    expect(result.evidence[0]).toMatchObject({
+      status:"partial",result:{value:{knownTotalCents:400}},
+    });
+    expect(real).toHaveBeenCalledOnce();
+  });
+  it("treats a missing POS/cost source as unavailable, never a verified zero",async()=>{
+    const unavailableCosts={
+      ...costSummary,completeness:"unavailable",
+      observed:{ingredients:false,loadedStaff:false,cardFees:false,runningCosts:false},
+      knownTotalCents:0,
+      components:{ingredientsCents:0,loadedStaffCents:0,cardFeesCents:0,runningCostsCents:0},
+    };
+    const reg=createDefaultShadowRegistry();
+    const result=await reg.invoke(scope({getBusinessCostSummary:vi.fn(async()=>unavailableCosts)}),
+      "leo.money.costs.v1",args);
+    expect(result).toEqual({status:"unavailable",value:null,reason:"unavailable_source"});
+  });
+  it("honors bounded period length before calling canonical readers",async()=>{
+    const read=vi.fn(async()=>costSummary);
+    const result=await createDefaultShadowRegistry().invoke(
+      scope({getBusinessCostSummary:read}),"leo.money.costs.v1",{
+        ...args,period:{from:"2025-10-03",to:"2026-10-03"},
+      });
+    expect(result).toMatchObject({reason:"unsupported_period"});
+    expect(read).not.toHaveBeenCalled();
+  });
+  it("never upgrades a fabricated verified output without pinned source revision",async()=>{
+    const {def}=syntheticRegistration();
+    const outputSchema=z.strictObject({
+      status:z.literal("verified"),
+      provenance:z.strictObject({sourceRevision:z.null()}),
+      value:z.number().int(),
+    });
+    const spoof={
+      ...def,outputSchema,
+      schemaContract:{...def.schemaContract,
+        outputSchemaFingerprint:schemaFingerprint(outputSchema)},
+      read:vi.fn(async()=>({
+        status:"verified",provenance:{sourceRevision:null},value:0,
+      })),
+    };
+    const reg=createP2Registry([spoof]);
+    expect(await reg.invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    })).toMatchObject({status:"unavailable",reason:"invalid_result"});
+  });
+  it("disallows more than four business reads and keeps the fifth goal explicit",async()=>{
+    const {def,read}=syntheticRegistration();
+    const clauses=["alpha","bravo","charlie","delta","echo"];
+    const goal=clauses.join(" and ");
+    const mock=transport({complete:true,clauses},select(clauses,clauses.map(()=>({
+      capabilityId:def.id,inputJson:JSON.stringify({
+        id:def.id,version:1,purpose:"meter_read",
+      }),reason:null,
+    }))));
+    const result=await request(goal,mock.fn,{registry:createP2Registry([def])});
+    expect(result.evidence).toHaveLength(5);
+    expect(result.evidence[4]).toMatchObject({
+      status:"unavailable",reason:"budget_exceeded",
+    });
+    expect(read).toHaveBeenCalledTimes(4);
+  });
+
 });
