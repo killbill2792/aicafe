@@ -4,7 +4,7 @@ import { useRef,useState,useTransition } from "react";
 import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { getSchedulingFoundationRecords, saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
 import { type SchedulingRow, schedulingFieldClass as field,
   schedulingPrimaryClass as primary } from "./AvailabilityEditor";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
@@ -65,10 +65,16 @@ export default function WageProvenancePanel({ employee, records }: {
     {existing?.eligibility_verified_at != null && <p className="text-[17px] text-ink-muted">
       {t("confirmedAt")}: {String(existing.eligibility_verified_at)}
     </p>}
-    {conflicted && <button type="button" className={primary} onClick={()=>{
-      setSavedRecord(existing ? {id:existing.id,revision:existing.revision} : null);
-      setConflicted(false);setError("");retry.current=null;
-    }}>{t("applyAfterConflict")}</button>}
+    {conflicted && <button type="button" className={primary} disabled={pending} onClick={()=>run(async()=>{
+      // Refreshing the route is not a synchronization barrier. Rebase only
+      // from an authenticated live read; preserve the owner's draft fields.
+      const result=await getSchedulingFoundationRecords();
+      if(!result.ok){setError(t("compensationCannotVerify"));return;}
+      const fresh=(result.records.compensation as SchedulingRow[])
+        .find(r=>r.employee_id===employee.id);
+      setSavedRecord(fresh?{id:fresh.id,revision:fresh.revision}:null);
+      setConflicted(false);setError("");retry.current=null;router.refresh();
+    })}>{t("applyAfterConflict")}</button>}
     <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px]">{t("cashState")}
       <select className={field} value={status} onChange={e=>{setStatus(e.target.value as CashState);setSaved(false);}}>
