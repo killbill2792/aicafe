@@ -259,4 +259,14 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(result.best?.cost.cashWagesCents).toBe(3200);
   });
 
+  it("covers imperfect minimum-overlap multiples without a short trailing fragment",()=>{
+    const a=employee("half-a",{maxDailyMinutes:60});
+    const b=employee("half-b",{maxDailyMinutes:60});
+    const result=optimizeOliviaWeek(input([a,b],[coverage("overlap",{
+      start_local:"09:00",end_local:"11:00",minOverlapMinutes:45,
+    })],{slotMinutes:15}));
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts.map(s=>s.paidMinutes).sort((x,y)=>x-y)).toEqual([60,60]);
+  });
+
 });
