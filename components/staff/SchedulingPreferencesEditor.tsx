@@ -26,6 +26,10 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const [desired,setDesired] = useState(minutesToHourInput(selectedRow?.desired_weekly_minutes as number | null | undefined));
   const [max,setMax] = useState(minutesToHourInput(selectedRow?.max_weekly_minutes as number | null | undefined));
   const [daily,setDaily] = useState(minutesToHourInput(selectedRow?.max_daily_minutes as number | null | undefined));
+  const [hardUnavailableDays,setHardUnavailableDays] = useState<number[]>(
+    Array.isArray(selectedRow?.unavailable_weekdays)
+      ? (selectedRow.unavailable_weekdays as number[]) : [],
+  );
   const [source,setSource] = useState<"owner_direct"|"worker_reported_by_owner">(
     selectedRow?.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
   const [confirmation,setConfirmation] = useState<"unconfirmed"|"owner_confirmed">(
@@ -43,6 +47,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     setFrom(String(r?.effective_from??today));setTo(String(r?.effective_to??""));
     setMin(minutesToHourInput(Number(r?.min_weekly_minutes??0)));setDesired(minutesToHourInput(r?.desired_weekly_minutes as number | null | undefined));
     setMax(minutesToHourInput(r?.max_weekly_minutes as number | null | undefined));setDaily(minutesToHourInput(r?.max_daily_minutes as number | null | undefined));
+    setHardUnavailableDays(Array.isArray(r?.unavailable_weekdays)
+      ? r.unavailable_weekdays as number[] : []);
     setSource(r?.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
     setConfirmation(r?.confirmation==="owner_confirmed"?"owner_confirmed":"unconfirmed");
     setSaved(false);setError("");
@@ -63,7 +69,8 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     }
     const payload={employee_id:employeeId,effective_from:from,effective_to:to||null,
       min_weekly_minutes:a,desired_weekly_minutes:b,max_weekly_minutes:c,
-      max_daily_minutes:dailyMinutes,source,confirmation};
+      max_daily_minutes:dailyMinutes,
+      unavailable_weekdays:[...hardUnavailableDays].sort((a,b)=>a-b),source,confirmation};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"preferences",action:selectedRow?"update":"create",
@@ -121,6 +128,19 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
         <input className={field} type="number" inputMode="decimal" step="any" min="0" max={label===t("maximumDaily")?24:168}
           value={value} onChange={e=>fn(e.target.value)}/>
       </label>)}
+    <fieldset className="rounded-xl border border-line p-3">
+      <legend className="font-semibold">{t("hardUnavailableDays")}</legend>
+      <p className="text-sm text-ink-muted">{t("hardUnavailableDaysHelp")}</p>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[0,1,2,3,4,5,6].map(d=><label key={d}
+          className="flex min-h-12 items-center gap-2 rounded-xl border border-line px-2 text-sm">
+          <input type="checkbox" checked={hardUnavailableDays.includes(d)}
+            onChange={e=>setHardUnavailableDays(old=>e.target.checked
+              ? [...old,d] : old.filter(x=>x!==d))}/>
+          {t(["sun","mon","tue","wed","thu","fri","sat"][d])}
+        </label>)}
+      </div>
+    </fieldset>
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       <label className="flex flex-col gap-1 text-sm">{t("source")}
         <select className={field} value={source} onChange={e=>setSource(e.target.value as typeof source)}>
