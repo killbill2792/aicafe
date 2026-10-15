@@ -102,7 +102,7 @@ export function validateOliviaAssignments(input:PlannerInput,
   // compensable just because two separately authored shifts are adjacent.
   // Paid rest must appear explicitly in the proposed shift's break record.
   const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
-  if(paidRest!=null){
+  if(paidRest!=null && paidRest>0){
     const perWorker=new Map<string,WorkUnit[]>();
     for(const piece of work){
       const rows=perWorker.get(piece.employeeId)??[];
