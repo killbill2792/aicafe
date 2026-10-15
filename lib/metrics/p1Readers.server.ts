@@ -55,12 +55,12 @@ const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
 const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   period?:{from:string;to:string};productId?:string;
 },ctx:{asOf:string;timezone:string;businessId?:string})=>Promise<unknown>> = {
-  "money.owner_profit_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.ownerProfitCents}:r;},
-  "sales.net_sales_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.netSalesCents}:r;},
-  "money.total_costs_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.totalCostsCents}:r;},
-  "money.operating_margin_ratio":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:r.value.operatingMargin}:r;},
-  "money.recurring_monthly_bills_cents":async(t)=>{const r=await t.getMonthlyBills();return r.available?{...r,value:r.value.totalCents}:r;},
-  "money.recorded_spending_cents":async(t,a)=>{const r=await t.getRecordedExpenses(a.period!);return r.available?{...r,value:r.value.totalCents}:r;},
+  "money.owner_profit_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.ownerProfitCents:null}:r;},
+  "sales.net_sales_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.netSalesCents:null}:r;},
+  "money.total_costs_cents":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.totalCostsCents:null}:r;},
+  "money.operating_margin_ratio":async(t,a)=>{const r=await t.getProfitability(a.period!);return r.available?{...r,value:values['money.profitability'].safeParse(r.value).success?r.value.operatingMargin:null}:r;},
+  "money.recurring_monthly_bills_cents":async(t)=>{const r=await t.getMonthlyBills();return r.available?{...r,value:values['money.monthly_bills'].safeParse(r.value).success?r.value.totalCents:null}:r;},
+  "money.recorded_spending_cents":async(t,a)=>{const r=await t.getRecordedExpenses(a.period!);return r.available?{...r,value:values['money.recorded_spending'].safeParse(r.value).success?r.value.totalCents:null}:r;},
   "business.profile":(_t,_a,ctx)=>readP1BusinessProfile({businessId:ctx.businessId ?? ""}),
   "menu.recipe":(_t,a,ctx)=>readP1Recipe({businessId:ctx.businessId ?? ""},a.productId!),
   "menu.ingredients":(_t,_a,ctx)=>readP1Ingredients({businessId:ctx.businessId ?? ""}),
