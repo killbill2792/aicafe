@@ -25,6 +25,7 @@ function rowQuery(table:string) {
     limit: (n:number) => { max=n; return query; },
     gt: (_key:string, value:string) => { cursor=value; return query; },
     single: async () => ({data:{timezone:"America/Los_Angeles"},error:null}),
+    maybeSingle: async () => ({data:(fixtures.tables[table]??[])[0]??null,error:null}),
     then: (resolve:(value:unknown)=>unknown,reject?:(reason:unknown)=>unknown) => {
       const available=(fixtures.tables[table]??[])
         .filter(r => cursor===null || String(r.id)>cursor)
@@ -278,6 +279,37 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     }
   });
 
+  it("loads only already-started published assignments as immutable replan inputs, including inactive staff and breaks",async()=>{
+    const seriesId=id(3000),revId=id(3001);
+    fixtures.tables.scheduling_plan_series=[{id:seriesId,published_revision:1}];
+    fixtures.tables.scheduling_plan_revisions=[{id:revId,status:"published"}];
+    const frozen={
+      employee_id:id(1),location_id:id(800),
+      starts_at:"2026-10-12T15:00:00.000Z",ends_at:"2026-10-12T19:00:00.000Z",
+      paid_minutes:210,
+      breaks:[{startAt:"2026-10-12T17:00:00.000Z",
+        endAt:"2026-10-12T17:30:00.000Z",paid:false}],
+      pinned:false,
+    };
+    fixtures.tables.scheduling_plan_assignments=[
+      {id:id(3002),...frozen},
+      {id:id(3003),...frozen,starts_at:"2026-11-02T15:00:00.000Z",
+        ends_at:"2026-11-02T19:00:00.000Z"},
+    ];
+    fixtures.tables.employees=[employee(1,{active:false})];
+    const result=await loadOliviaWeekFromSavedStaff(week);
+    expect(result.ok).toBe(true);
+    if(!result.ok)return;
+    expect(result.input.employees).toHaveLength(1);
+    expect(result.input.employees[0].active).toBe(false);
+    expect(result.input.startedPublishedShifts).toHaveLength(1);
+    expect(result.input.startedPublishedShifts?.[0]).toMatchObject({
+      employeeId:id(1),startAt:frozen.starts_at,paidMinutes:210,
+      breaks:frozen.breaks,pinned:false,
+    });
+    expect(result.input.replanAsOf).toMatch(/^\\d{4}-/);
+    expect(()=>expandPlannerInput(result.input)).not.toThrow();
+  });
   it("rejects source records changed between the first and last DB fingerprint",async()=>{
     let calls=0;
     fixtures.owner.mockResolvedValueOnce({
