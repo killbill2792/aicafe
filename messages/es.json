@@ -1520,6 +1520,10 @@
     "hardUnavailableDays": "Días confirmados sin disponibilidad",
     "hardUnavailableDaysHelp": "Elige días en los que esta persona no puede trabajar. Solo la información confirmada por el propietario impide programar; un día sin franjas ni confirmación sigue sin registrar.",
     "confirmedUnavailableDay": "No disponible confirmado — sin horas de trabajo",
-    "hoursMinutes": "horas:minutos"
+    "hoursMinutes": "horas:minutos",
+    "latestSaved": "Últimos registros guardados — compáralos con tus cambios",
+    "useLatestSaved": "Usar la última versión guardada",
+    "applyAfterConflict": "Tus cambios podrían reemplazar los de otro propietario. ¿Quieres aplicar tu borrador después de comparar los datos nuevos?",
+    "fullDay": "Día completo (sin horas de inicio ni fin)"
   }
 }
