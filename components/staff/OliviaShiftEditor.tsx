@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import type { PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
-import {addOliviaShift,moveOliviaBoundary,setOliviaUnpaidBreak} from "@/lib/calc/scheduling/shiftEdits";
+import {addOliviaShift,moveOliviaBoundary,setOliviaUnpaidBreak,
+  oliviaLocalBoundaryValue,setOliviaLocalBoundary} from "@/lib/calc/scheduling/shiftEdits";
 
 function local(value:string,zone:string,locale:string) {
   try {
@@ -20,6 +22,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
 }) {
   const t=useTranslations("OliviaPlanning");
   const locale=useLocale();
+  const [clockError,setClockError]=useState("");
   function update(index:number,change:Partial<PlannerShift>) {
     onChange(shifts.map((s,i)=>i===index?{...s,...change}:s));
   }
@@ -27,10 +30,21 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
     const shift=shifts[index];
     onChange(shifts.map((s,i)=>i===index?moveOliviaBoundary(shift,side,delta):s));
   }
+  function setLocalTime(index:number,side:"startAt"|"endAt",value:string) {
+    const zone=locations[shifts[index].locationId]??"UTC";
+    try {
+      const changed=setOliviaLocalBoundary(shifts[index],side,value,zone);
+      setClockError("");
+      onChange(shifts.map((s,i)=>i===index?changed:s));
+    } catch {
+      setClockError(t("invalidWallTime"));
+    }
+  }
   function add() {
     const employeeId=Object.keys(employees)[0],locationId=Object.keys(locations)[0];
     if(!employeeId || !locationId || shifts.length>=200)return;
-    onChange([...shifts,addOliviaShift(week,shifts,employeeId,locationId)]);
+    onChange([...shifts,addOliviaShift(week,shifts,employeeId,locationId,
+      locations[locationId]??"UTC")]);
   }
   function setUnpaidBreak(index:number,enabled:boolean){
     const shift=shifts[index];
@@ -75,6 +89,11 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
             className="min-h-12 min-w-12 rounded-full border border-line disabled:opacity-50"
             aria-label={t("later")} onClick={()=>time(index,side,1)}>+30</button>
         </div>
+        <input type="datetime-local" disabled={disabled || shift.pinned}
+          aria-label={t(side==="startAt"?"shiftStart":"shiftEnd")}
+          value={oliviaLocalBoundaryValue(shift[side],locations[shift.locationId]??"UTC")}
+          onChange={e=>setLocalTime(index,side,e.target.value)}
+          className="min-h-12 rounded-lg border border-line bg-card px-3"/>
       </div>)}
       <label className="flex items-center gap-3">
         <input type="checkbox" disabled={disabled || shift.pinned || shift.breaks.length>1 || shift.breaks.some(b=>b.paid)}
@@ -86,6 +105,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
       {shift.breaks.length>1 && <p className="text-sm">{t("existingBreaks")}</p>}
       <p className="text-sm text-ink-muted">{t("paidMinutes")}: {shift.paidMinutes}</p>
     </div>)}
+    {clockError && <p role="alert" className="text-sm text-warn">{clockError}</p>}
     <button type="button" onClick={add}
       disabled={disabled || !Object.keys(employees).length || !Object.keys(locations).length ||
         shifts.length>=200}
