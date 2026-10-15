@@ -68,7 +68,7 @@ const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+
  * Permit only generic conversational framing; material omissions fail closed.
  */
 const opening=new Set(["can","could","would","will","you","please","kindly","tell","me","if","whether","what","did","were","our","we","review","check","inspect","examine","revisa","show","explain","look","at","do","does","is","are"]);
-const bridge=new Set(["and","or","also","then","tell","me","if","whether","please","could","you"]);
+const bridge=new Set(["and","or","also","then","tell","me","if","whether","please","could","you","review","check","inspect","examine"]);
 const closing=new Set(["please","thanks","thank","you"]);
 function onlyFraming(segment:string,role:"opening"|"bridge"|"closing"):boolean {
   const words=normalize(segment).match(/[\p{L}\p{N}]+/gu)??[];
@@ -77,23 +77,19 @@ function onlyFraming(segment:string,role:"opening"|"bridge"|"closing"):boolean {
 }
 export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boolean {
   const original=normalize(goal);
-  const spans:Array<{start:number;end:number}>=[];
+  // Clauses must match separate non-overlapping occurrences in original order.
+  // indexOf(part) alone can incorrectly reuse a substring of an earlier clause.
+  let cursor=0;
+  const unmatched:string[]=[];
   for(const c of clauses){
     const part=normalize(c);
     if(!part)return false;
-    const start=original.indexOf(part);
+    const start=original.indexOf(part,cursor);
     if(start<0)return false;
-    spans.push({start,end:start+part.length});
+    unmatched.push(original.slice(cursor,start));
+    cursor=start+part.length;
   }
-  spans.sort((a,b)=>a.start-b.start);
-  let end=0;
-  const unmatched:string[]=[];
-  for(const span of spans){
-    if(span.start<end)return false;
-    unmatched.push(original.slice(end,span.start));
-    end=span.end;
-  }
-  unmatched.push(original.slice(end));
+  unmatched.push(original.slice(cursor));
   return unmatched.every((segment,i)=>onlyFraming(segment,
     i===0?"opening":i===unmatched.length-1?"closing":"bridge"));
 }
@@ -181,8 +177,7 @@ export async function runP2ShadowWithScope(params:{
     input:{goal},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
-  if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses) ||
-    new Set(audit.clauses.map(normalize)).size!==audit.clauses.length)
+  if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses))
     return missing("scope_unverified",usage);
   const plan=await requestStructured({
     instructions:[
