@@ -9,6 +9,7 @@ on:
       - "lib/calc/scheduling/**"
       - "messages/**"
       - "supabase/migrations/20261014000061_olivia_availability_batch.sql"
+      - "supabase/migrations/20261014000062_olivia_coverage_concurrency.sql"
       - "scripts/olivia-pr1b-*"
       - ".github/workflows/olivia-pr1b-verify.yml"
   workflow_dispatch:
@@ -70,6 +71,8 @@ jobs:
         run: bash scripts/olivia-pr1a-create-concurrency.sh
       - name: Concurrent independent PR1B batch co-owners
         run: bash scripts/olivia-pr1b-create-concurrency.sh
+      - name: Concurrent equivalent coverage creates with different keys
+        run: python3 scripts/olivia-pr1b-coverage-concurrency.py
       - name: Stop disposable database
         if: always()
         run: supabase stop --no-backup
