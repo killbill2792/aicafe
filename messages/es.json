@@ -1516,6 +1516,9 @@
     "saveEvidence": "Guardar evidencia",
     "featureUnavailable": "La configuración de disponibilidad aún no está habilitada. Las herramientas de personal siguen funcionando.",
     "chooseLocation": "Elige primero una ubicación.",
-    "hours": "horas"
+    "hours": "horas",
+    "hardUnavailableDays": "Días confirmados sin disponibilidad",
+    "hardUnavailableDaysHelp": "Elige días en los que esta persona no puede trabajar. Solo la información confirmada por el propietario impide programar; un día sin franjas ni confirmación sigue sin registrar.",
+    "confirmedUnavailableDay": "No disponible confirmado — sin horas de trabajo"
   }
 }
