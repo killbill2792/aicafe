@@ -2,7 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
-import { inputFor, ownerFor, purposePolicies, readers, sourcePolicies, values,
+import { inputFor, kindFor, ownerFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId } from "./p1Catalog";
 import { authorizedOwnerP1, executeP1Authorized, outputFor } from "./p1Readers.server";
 
@@ -27,6 +27,29 @@ export const p1ReadCapabilities = Object.freeze({
 type ReadKey=keyof typeof p1ReadCapabilities;
 type Purpose<K extends ReadKey>=(typeof purposePolicies)[K][number];
 
+/** Prerequisites are actual registered entity/metric readers, not a circular
+ * "this analysis depends on itself" entry. These are reviewed source
+ * declarations, not extra claims of independently fetched or verified data.
+ * P1 does not orchestrate prerequisites; P3 will do that when enabled.
+ */
+export const p1ReadSourceDependencies={
+  "pricing.recommendation":[
+    {id:"menu.recipe",purpose:"owner_recipe_review"},
+    {id:"menu.product_economics",purpose:"current_recipe_cost_review"},
+  ],
+  "supplies.quotes":[{id:"supplies.quotes",purpose:"owner_reported_quote_review"}],
+  "money.business_costs":[
+    {id:"sales.daily",purpose:"actual_daily_sales"},
+    {id:"labor.daily_costs",purpose:"recorded_labor_cost_review"},
+    {id:"money.recurring_bill_rows",purpose:"owner_recurring_obligation_lines"},
+    {id:"sales.item_coverage",purpose:"item_sales_coverage_check"},
+  ],
+  "labor.availability_foundation":[
+    {id:"labor.availability_foundation",purpose:"activated_manual_staffing_foundation"},
+  ],
+} as const satisfies Record<ReadKey,readonly {id:SupportedId;purpose:string}[]>;
+
+
 function fingerprint(schema:z.ZodType) {
   // This fingerprint checks the exact serializable Zod JSON-schema contract.
   // The separate revision and semantic regression tests cover refine semantics.
@@ -36,25 +59,35 @@ function fingerprint(schema:z.ZodType) {
 function defineReadAnalysis<const K extends ReadKey>(id:string,key:K) {
   const capability=p1ReadCapabilities[key];
   const purposes=purposePolicies[key];
+  const prerequisites=p1ReadSourceDependencies[key];
   const sourceRequirementsByPurpose=Object.fromEntries(purposes.map(p=>[p,{
     kind:"registered_sources" as const,
-    inputs:[{metricIds:[] as string[],entityReadIds:[key],
-      readerId:readers[key],readerVersion:1,
-      selectorId:sourcePolicies[key][p].selectorContractId,
-      selectorVersion:sourcePolicies[key][p].selectorContractVersion,
-      precedencePolicyId:sourcePolicies[key][p].precedencePolicyId,
-      precedencePolicyRevision:sourcePolicies[key][p].precedencePolicyRevision,
-      sourcePurpose:p,minimumCoverage:"partial_explicit" as const,
-      allowedActualities:["actual","estimated","planned"] as const,
-    }],
+    inputs:prerequisites.map(source=>{
+      const policy=sourcePolicies[source.id][source.purpose];
+      if(!policy || kindFor(source.id)==="analysis")
+        throw new Error("Invalid read analysis source registration");
+      const metric=kindFor(source.id)==="metric";
+      return {
+        metricIds:metric?[source.id]:[],
+        entityReadIds:metric?[]:[source.id],
+        readerId:readers[source.id],readerVersion:policy.readerContractVersion,
+        selectorId:policy.selectorContractId,
+        selectorVersion:policy.selectorContractVersion,
+        precedencePolicyId:policy.precedencePolicyId,
+        precedencePolicyRevision:policy.precedencePolicyRevision,
+        sourcePurpose:source.purpose,
+        minimumCoverage:"partial_explicit" as const,
+        allowedActualities:["actual","estimated","planned","unknown"] as const,
+      };
+    }),
     minimumOverallCoverage:"partial_explicit" as const,
   }])) as unknown as Record<Purpose<K>,{
-    kind:"registered_sources";inputs:[{
+    kind:"registered_sources";inputs:Array<{
       metricIds:string[];entityReadIds:string[];readerId:string;readerVersion:number;
       selectorId:string;selectorVersion:number;precedencePolicyId:string;
       precedencePolicyRevision:number;sourcePurpose:string;minimumCoverage:"partial_explicit";
-      allowedActualities:readonly ["actual","estimated","planned"];
-    }];minimumOverallCoverage:"partial_explicit";
+      allowedActualities:readonly ["actual","estimated","planned","unknown"];
+    }>;minimumOverallCoverage:"partial_explicit";
   }>;
   const invocationSchema=z.strictObject({
     analysisId:z.literal(id),analysisVersion:z.literal(1),
@@ -130,24 +163,35 @@ export function validateP1Analyses() {
       if(!Object.hasOwn(def.sourceRequirementsByPurpose,p))return false;
       const selection=(def.sourceRequirementsByPurpose as unknown as Record<string,{
         kind:string;minimumOverallCoverage:string;inputs:Array<{
-          readerId:string;sourcePurpose:string;selectorId:string;selectorVersion:number;
-          precedencePolicyId:string;precedencePolicyRevision:number;entityReadIds:string[];allowedActualities:readonly string[];
+          metricIds:string[];entityReadIds:string[];readerId:string;readerVersion:number;
+          sourcePurpose:string;selectorId:string;selectorVersion:number;
+          precedencePolicyId:string;precedencePolicyRevision:number;
+          minimumCoverage:string;allowedActualities:readonly string[];
         }>;
       }>)[p];
-      if(!selection)return false;
-      const required=sourcePolicies[key][p];
-      return !!required && selection.kind==="registered_sources" &&
-        selection.minimumOverallCoverage==="partial_explicit" &&
-        selection.inputs.length===1 && selection.inputs[0].readerId===readers[key] &&
-        selection.inputs[0].sourcePurpose===p &&
-        selection.inputs[0].selectorId===required.selectorContractId &&
-        selection.inputs[0].selectorVersion===required.selectorContractVersion &&
-        selection.inputs[0].precedencePolicyId===required.precedencePolicyId &&
-        selection.inputs[0].precedencePolicyRevision===required.precedencePolicyRevision &&
-        selection.inputs[0].entityReadIds.length===1 &&
-        selection.inputs[0].entityReadIds[0]===key &&
-        JSON.stringify((selection.inputs[0] as {allowedActualities:readonly string[]}).allowedActualities)===
-          JSON.stringify(["actual","estimated","planned"]);
+      const requiredSources=p1ReadSourceDependencies[key] as readonly {id:SupportedId;purpose:string}[];
+      if(!selection||selection.kind!=="registered_sources"||
+        selection.minimumOverallCoverage!=="partial_explicit"||
+        selection.inputs.length!==requiredSources.length||!requiredSources.length)return false;
+      return requiredSources.every((source,i)=>{
+        const input=selection.inputs[i];
+        const policy=sourcePolicies[source.id][source.purpose];
+        const kind=kindFor(source.id);
+        if(!input||!policy||kind==="analysis")return false;
+        const expectedMetrics=kind==="metric"?[source.id]:[];
+        const expectedEntities=kind==="entity_read"?[source.id]:[];
+        return input.readerId===readers[source.id] &&
+          input.readerVersion===policy.readerContractVersion &&
+          input.sourcePurpose===source.purpose &&
+          input.selectorId===policy.selectorContractId &&
+          input.selectorVersion===policy.selectorContractVersion &&
+          input.precedencePolicyId===policy.precedencePolicyId &&
+          input.precedencePolicyRevision===policy.precedencePolicyRevision &&
+          input.minimumCoverage==="partial_explicit" &&
+          input.allowedActualities.length>0 &&
+          JSON.stringify(input.metricIds)===JSON.stringify(expectedMetrics) &&
+          JSON.stringify(input.entityReadIds)===JSON.stringify(expectedEntities);
+      });
     });
   });
 }
