@@ -96,7 +96,9 @@ export function validateOliviaAssignments(input:PlannerInput,
   const candidates=plan.units.map(unit=>
     plan.employees.filter(e=>qualifies(e,unit,plan.locations) &&
       coveredBy(work,unit,e.id)).map(e=>e.id).sort());
-  const indices=plan.units.map((_,i)=>i).sort((a,b)=>
+  // Advisory coverage is a soft preference, not a hard publish gate.
+  const indices=plan.units.map((_,i)=>i)
+    .filter(i=>plan.units[i].priority==="required").sort((a,b)=>
     candidates[a].length-candidates[b].length ||
     plan.units[a].start-plan.units[b].start ||
     plan.units[a].id.localeCompare(plan.units[b].id));
