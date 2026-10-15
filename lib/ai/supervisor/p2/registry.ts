@@ -112,7 +112,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       if(!scope.shadowEnabled || scope.role!=="owner" ||
          !scope.businessId || scope.businessId!==scope.identity.businessId ||
          scope.businessId==="11111111-1111-1111-1111-111111111111")return [];
-      return manifest.filter(d=>d.mode==="read" && d.availability==="shadow");
+      return manifest.filter(d=>d.mode==="read" && d.availability==="shadow").map(d=>structuredClone(d));
     },
     async invoke(scope:TrustedReadScope,id:string,rawInput:unknown) {
       if(!scope.shadowEnabled || scope.role!=="owner" || !scope.businessId ||
@@ -129,6 +129,10 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       const input=def.inputSchema.safeParse(rawInput);
       if(!input.success || !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
         return unavailable("invalid_request");
+      const period=(input.data as {period?:{from:string;to:string}}).period;
+      if(period && Number.isFinite(Date.parse(period.from)) && Number.isFinite(Date.parse(period.to)) &&
+        1+(Date.parse(period.to)-Date.parse(period.from))/86400000>def.budgets.maxRangeDays)
+        return unavailable("unsupported_period");
       let timer:ReturnType<typeof setTimeout>|undefined;
       try {
         const timedOut=new Promise<ReturnType<typeof unavailable>>(resolve=>{
@@ -139,6 +143,18 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         // Unknown/forged effects, extra fields and malformed quality are not evidence.
         const validated=def.outputSchema.safeParse(output);
         if(!validated.success)return unavailable("invalid_result");
+        const actual=validated.data as {
+          status?:string;provenance?:{sourceRevision?:unknown};
+          quality?:{estimatedInputs?:unknown};
+        };
+        if(actual.status==="verified" &&
+          (typeof actual.provenance?.sourceRevision!=="string" ||
+            !actual.provenance.sourceRevision))
+          return unavailable("invalid_result");
+        if(actual.status==="estimated" &&
+          (!Array.isArray(actual.quality?.estimatedInputs) ||
+            actual.quality.estimatedInputs.length===0))
+          return unavailable("invalid_result");
         if(Buffer.byteLength(JSON.stringify(validated.data))>def.budgets.maxResultBytes)
           return unavailable("output_limit");
         return validated.data;
