@@ -1519,6 +1519,7 @@
     "hours": "hours",
     "hardUnavailableDays": "Confirmed days with no availability",
     "hardUnavailableDaysHelp": "Select weekdays when this employee cannot work. Only owner-confirmed information blocks scheduling; unchecked days with no windows remain unrecorded.",
-    "confirmedUnavailableDay": "Confirmed unavailable — no working hours"
+    "confirmedUnavailableDay": "Confirmed unavailable — no working hours",
+    "hoursMinutes": "hours:minutes"
   }
 }
