@@ -87,7 +87,7 @@ export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boole
   }
   unmatched.push(original.slice(end));
   return unmatched.every(segment=>
-    (segment.match(/[\\p{L}\\p{N}]+/gu)?.length??0)<5);
+    (segment.match(/[\p{L}\p{N}]+/gu)?.length??0)<5);
 }
 function responseText(response:unknown):string|null {
   if(!response||typeof response!=="object")return null;
