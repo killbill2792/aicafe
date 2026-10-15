@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
+import { reconcileDeletedDraftIds } from "@/lib/scheduling/reconcileDraft";
 import { type SchedulingRow, type SchedulingLocation,
   schedulingFieldClass as field, schedulingButtonClass as secondary,
   schedulingPrimaryClass as primary } from "./AvailabilityEditor";
@@ -73,11 +74,8 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       setStatus("error"); return;
     }
     key.current ??= crypto.randomUUID();
-    const currentIds=new Set(scoped.map(r=>r.id));
-    const desired = draft.map(r => ({
-      // A deleted row is deliberately re-created only after the owner's
-      // explicit conflict comparison/reapply confirmation.
-      ...(r.id && currentIds.has(r.id) ? {id:r.id} : {}),
+    const desired = reconcileDeletedDraftIds(draft,scoped).map(r => ({
+      ...(r.id ? {id:r.id} : {}),
       data: {
         employee_id:employeeId, location_id:locationId||null, local_date:date,
         exception_type:r.exception_type, overnight:r.overnight,
