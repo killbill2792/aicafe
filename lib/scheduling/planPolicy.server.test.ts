@@ -39,6 +39,8 @@ describe("Olivia sourced labor-policy review boundaries",()=>{
   it("rejects owner-attested labor rules the planner cannot execute",async()=>{
     const unbreakable={...profile,unpaidMealMinutes:0,paidRestMinutes:0};
     expect(verifiedOliviaRuleProfile(unbreakable,people)).toBeNull();
+    expect(verifiedOliviaRuleProfile({...unbreakable,
+      maxContinuousWorkMinutes:0},people)).toBeNull();
     const decreasingPremium={...profile,overtime:{...profile.overtime,
       multiplierNumerator:1,multiplierDenominator:2}};
     expect(verifiedOliviaRuleProfile(decreasingPremium,people)).toBeNull();
