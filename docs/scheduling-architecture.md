@@ -27,6 +27,8 @@ Only clarify material uncertainty (two Alexes, unresolved locale/date/AM-PM, loc
 
 ## 2. Actual baseline code audit and reuse map
 
+**Historical-vs-current source note:** This reuse table reflects the original pre-PR-1A audit. With PR #72 merged, `lib/scheduling/foundation.server.ts`, `foundationSchemas.ts`, `lib/actions/schedulingFoundation.ts`, `lib/calc/scheduling/availability.ts` and additive migration `20261014000060_olivia_scheduling_foundation.sql` exist on `main`. The merged backend is **owner-only and default off** pending independently verified migration/activation; it does **not** ship the planner, publishing, Universal Supervisor adapter or worker messaging. Proposed DDL here is historical design, **not evidence of production migration**.
+
 | Existing source | Verified function and reuse | Limitation / action |
 | --- | --- | --- |
 | lib/operating/tasks.ts | AGENT_IDS includes olivia; agentForTask(staff_coverage) and labor-change signals route to her; staffCoverageTask, approveStaffCoverage and completeStaffCoverageApplication keep scheduleApplied false until verified | This is task metadata/response lifecycle, **not** a solver, worker delivery or applied roster |
@@ -120,6 +122,8 @@ The current app/api/cron/team-alerts/route.ts sends one opt-in owner WhatsApp te
 
 ## 8. Phased PRs, gates, acceptance and negative paths
 
+**Current delivery status:** PR #72 / PR 1A delivered the **backend portion** of the original PR 1 row; PR 1B Manage Staff UI and later pure optimizer, plan publication, Supervisor adapter and proactive operations still need their own reviewed implementation and staged activation. This historical phase table is a delivery specification, not a claim that its entire PR 1 row is active.
+
 Every PR is small, targets main, and ends with review. Dependencies: PR 0 → PR 1 → PR 2 → PR 3 → PR 4 → PR 5 → PR 6. If conversational parsing previews precede PR 3, they are strictly **read-only**, with no authoritative writes/approval buttons until PR 3 is reviewed. Further PR slicing by migrations/UI/test is permitted, but never skip a gate.
 
 | Stage | Changes (only this phase) and file impact | Acceptance / hard gates | Negative-path proof |
@@ -184,6 +188,8 @@ All phases: keep **all pure scheduling calculation tests in lib/calc/scheduling/
 12. **Published shift acceptance:** publishing is an owner commitment, **not** consent by a worker or actual attendance. If no verified worker accounts, keep acknowledgment pending.
 
 ## 10. Rollout, file impact and definition of done
+
+**Approved scope is not feature activation:** Product scope approval is already recorded in `docs/01-product.md`; actual database migration, flags, pilot consent, authorization/RLS, typed Supervisor approvals and verified effects remain independently controlled. See `docs/supervisor-platform-architecture.md` §13 for shared typed capability registration in the **same** Supervisor, not a scheduling-specific central router.
 
 Feature flags: separate default-off scheduling read, manual data editing, plan drafts, publishing, conversation commands and proactive evaluation (exact names chosen per phase); disable without deleting records. Migrate additive DDL on inspected production ledger **before** flag-enabled code; test against disposable Postgres + representative anonymized copies, add pilot tenant opt-in, verify old Staff/performance and Supervisor questions, then widen enrollment. Never mutate Vercel activation settings/cron, POS permissions, Supabase production, payroll history or historical data from PR 0. Existing Vercel PR previews may auto-run; keep commits small and avoid unnecessary pushes.
 
