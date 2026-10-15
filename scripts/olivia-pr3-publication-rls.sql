@@ -171,7 +171,7 @@ VALUES
 SELECT set_config('test.olivia3_s3',:'series3',true);
 SELECT set_config('test.olivia3_old3',:'old3',true);
 SELECT set_config('test.olivia3_new3',:'new3',true);
-DO $
+DO $$
 DECLARE
  b uuid:=current_setting('test.olivia3_biz')::uuid;
  actor uuid:=current_setting('test.olivia3_owner')::uuid;
@@ -200,7 +200,7 @@ VALUES(:'business',:'series3',3,'approved',repeat('a',64),
  :'owner',:'owner',now()) RETURNING id AS removed3 \gset
 UPDATE public.scheduling_plan_series SET current_revision=3 WHERE id=:'series3';
 SELECT set_config('test.olivia3_removed3',:'removed3',true);
-DO $
+DO $$
 DECLARE
  b uuid:=current_setting('test.olivia3_biz')::uuid;
  actor uuid:=current_setting('test.olivia3_owner')::uuid;
