@@ -177,7 +177,10 @@ export const values = {
   "money.recorded_spending": z.strictObject({totalCents:money}),
   "sales.item_units": z.array(z.strictObject({id:text,name:text,category:z.enum(["drink","food"]),units:count})).max(500),
   "sales.item_coverage": z.strictObject({covered:z.boolean(),sources:z.array(text).max(5),from:day.nullable(),through:day.nullable()}),
-  "menu.catalog": z.array(z.strictObject({id:text,name:text,category:z.enum(["drink","food"]),active:z.boolean(),priceCents:money})).max(500),
+  "menu.catalog": z.array(z.strictObject({
+    id:text,name:text,category:z.enum(["drink","food"]),active:z.boolean(),
+    priceCents:money.nullable(),priceStatus:z.enum(["recorded","unrecorded"]),
+  }).refine(row=>row.priceStatus===(row.priceCents===null?"unrecorded":"recorded"))).max(500),
   "labor.attendance": z.strictObject({timecardCount:count,onClockCount:count}).refine(v=>v.onClockCount<=v.timecardCount),
   "labor.current_staff": z.strictObject({count:count,asOf:z.string().datetime({offset:true}),people:z.array(person).max(15)}),
   "labor.recurring_assignments": z.strictObject({
@@ -251,7 +254,7 @@ export const readers = {
   "money.recorded_spending":"getRecordedExpenses",
   "sales.item_units":"getProductSales",
   "sales.item_coverage":"getItemSalesCoverage",
-  "menu.catalog":"getMenuCatalog",
+  "menu.catalog":"readP1MenuCatalog",
   "labor.attendance":"getStaffAttendance",
   "labor.current_staff":"getCurrentStaff",
   "labor.recurring_assignments":"getRecurringSchedule",
@@ -283,7 +286,7 @@ export const canonicalSourcePaths = {
   getRecordedExpenses:"lib/ai/supervisorFacts.server.ts",
   getProductSales:"lib/ai/supervisorFacts.server.ts",
   getItemSalesCoverage:"lib/ai/supervisorFacts.server.ts",
-  getMenuCatalog:"lib/ai/supervisorReads.server.ts",
+  readP1MenuCatalog:"lib/metrics/p1Additional.server.ts",
   getStaffAttendance:"lib/ai/supervisorReads.server.ts",
   getCurrentStaff:"lib/ai/conversations/domainProjections.ts",
   getRecurringSchedule:"lib/ai/conversations/domainProjections.ts",
@@ -297,6 +300,7 @@ export const canonicalSourcePaths = {
 /** Nonexposed surfaces cannot silently become "supported" or free model tools. */
 export const classified = {
   getCafeSummary:{kind:"restricted",reason:"Includes mixed personal and financial state; use bounded projections"},
+  getMenuCatalog:{kind:"restricted",reason:"Legacy menu projection coerces missing database price to $0; P1 uses a null-preserving bounded source"},
   getExpenseSummary:{kind:"restricted",reason:"Projected running-cost rows lack authoritative source and actual/estimated provenance; use recorded expense entries instead"},
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
