@@ -197,7 +197,7 @@ export async function readP1TaskPage({businessId}:Scoped,page:number=0) {
     id:row.id,agentId:row.agent_id,kind:row.kind,status:row.status,
     createdAt:row.created_at,resolvedAt:row.resolved_at,
   }));
-  return present({items,page,hasMore,nextPage:hasMore?page+1:null},
+  return present({items,page,hasMore,nextPage:hasMore&&page<250?page+1:null,limitReached:hasMore&&page===250},
     hasMore||page>0?["task_inbox_page_only"]:[]);
 }
 
@@ -218,6 +218,6 @@ export async function readP1DecisionPage({businessId}:Scoped,page:number=0) {
   const hasMore=data.length>size;
   return present({items:data.slice(0,size).map(r=>({
     id:r.id,type:r.type,status:r.status,confidence:r.confidence,createdAt:r.created_at,
-  })),page,hasMore,nextPage:hasMore?page+1:null},
+  })),page,hasMore,nextPage:hasMore&&page<250?page+1:null,limitReached:hasMore&&page===250},
   hasMore||page>0?["decision_history_page_only"]:[]);
 }
