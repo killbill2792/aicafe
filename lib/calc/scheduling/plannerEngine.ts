@@ -2,6 +2,7 @@ import { localParts, utcIso } from "./plannerClock";
 import { baselineGapReason, eligibleCandidates, expandPlannerInput,
   workerWageRate, type WorkUnit, type DemandUnit, type ExpandedPlan } from "./plannerCore";
 import { costForWork, hardValid, shiftsForWork } from "./plannerRules";
+import { validateOliviaAssignments } from "./plannerValidate";
 import type {
   PlannerInput, PlannerResult, PlannerScenario, PlannerComparison, PlannerGap,
 } from "./plannerTypes";
@@ -192,6 +193,14 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
   const signatures=new Set<string>();
   for(const output of outputs){
     const scenario=output.scenario;
+    // PR3 may receive independently edited drafts. Run the same independent
+    // public validator now: a generated candidate never bypasses full
+    // availability, headcount, skill, pinned and break rechecks.
+    const verified=validateOliviaAssignments(input,scenario.shifts);
+    if(!verified.valid || !verified.completeCoverage){
+      scenario.hardConstraintsSatisfied=false;
+      scenario.completeCoverage=false;
+    }
     const signature=scenario.shifts.map(s=>[s.employeeId,s.locationId,s.startAt,s.endAt].join(":"))
       .join("|")+"#"+scenario.gaps.map(g=>[g.coverageId,g.startAt,g.missingHeadcount].join(":")).join("|");
     if(!signatures.has(signature)){signatures.add(signature);scenarios.push(scenario);}
