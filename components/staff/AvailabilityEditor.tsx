@@ -60,6 +60,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
   const [pending, startTransition] = useTransition();
   const requestKey = useRef<string | null>(null);
   const draftManifest = useRef<{id:string;revision:number}[] | null>(null);
+  const [reapplyReady,setReapplyReady] = useState(false);
 
   const scoped = useMemo(() => rows.filter((row) =>
     row.employee_id === employeeId &&
@@ -99,13 +100,16 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
     setEffectiveFrom(scope?.from??(locations.find(l=>l.id===locationId)?.todayLocal??today));setEffectiveTo(scope?.to??"");
   }
   function save() {
+    if (conflicted && !reapplyReady) { router.refresh(); return; }
     if (conflicted && !window.confirm(t("applyAfterConflict"))) return;
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
         !window.confirm(t("confirmRemove"))) return;
     if (!effectiveFrom || (effectiveTo && effectiveTo < effectiveFrom)) {
       setError(t("checkDates")); return;
     }
-    const expected = draftManifest.current ?? scoped.map((row) => ({ id: row.id, revision: row.revision }));
+    const expected = conflicted && reapplyReady
+      ? scoped.map(row=>({id:row.id,revision:row.revision}))
+      : draftManifest.current ?? scoped.map(row=>({id:row.id,revision:row.revision}));
     const desired = reconcileDeletedDraftIds(draft,scoped).map((row) => ({
       ...(row.id ? { id: row.id } : {}),
       data: {
@@ -125,12 +129,12 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       });
       if (!result.ok) {
         if (result.error==="conflict") {
-          requestKey.current=null;setConflicted(true);router.refresh();
+          requestKey.current=null;setConflicted(true);setReapplyReady(false);router.refresh();
         }
         setError(result.error === "conflict" ? t("conflict") : t("saveFailed"));
         return;
       }
-      requestKey.current = null; draftManifest.current=null;setConflicted(false);setDraftOverride(null); setDirty(false); setSaved(true);
+      requestKey.current = null; draftManifest.current=null;setReapplyReady(false);setConflicted(false);setDraftOverride(null); setDirty(false); setSaved(true);
       router.refresh();
     });
   }
@@ -240,6 +244,8 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
         })}
       </div>
       <p className="text-[17px] text-ink-muted">{t("doesNotAssign")}</p>
+      {conflicted && !reapplyReady && <button type="button" className={schedulingButtonClass}
+        onClick={()=>{draftManifest.current=scoped.map(r=>({id:r.id,revision:r.revision}));setReapplyReady(true);}}>{t("applyAfterConflict")}</button>}
       {conflicted && <details open className="rounded-xl border border-line p-3">
         <summary className="font-semibold">{t("latestSaved")}</summary>
         <ul className="mt-2 text-[17px]">
