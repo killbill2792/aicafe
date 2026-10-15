@@ -27,6 +27,10 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
   onChanged:()=>Promise<void>;
 }){
   const t=useTranslations("OliviaPlanning"),locale=useLocale();
+  const revisionLabel=(status:string)=>t(({
+    draft:"revisionDraft",approved:"revisionApproved",
+    published:"revisionPublished",superseded:"revisionSuperseded",
+  } as Record<string,string>)[status]??"revisionUnknown");
   const [pending,start]=useTransition();
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
@@ -84,7 +88,7 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
       {t("publishNotReady")}
     </p>}
     <p className="text-sm">{t("latestVersion")}:
-      {latest? ` V${latest.revision} · ${latest.status}`:t("none")}</p>
+      {latest? ` V${latest.revision} · ${revisionLabel(latest.status)}`:t("none")}</p>
     {latest?.status==="draft" &&
       <button type="button" onClick={()=>transition("approve")}
         disabled={pending||!enabled}
