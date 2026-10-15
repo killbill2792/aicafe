@@ -84,9 +84,15 @@ describe("Platform P1 checked-in coverage manifest", () => {
     const contract=values["money.expense_entries"];
     expect(contract.safeParse([entry]).success).toBe(true);
     expect(contract.safeParse([{...entry,source:undefined}]).success).toBe(false);
+    expect(contract.safeParse([{...entry,source:"verified_by_ai"}]).success).toBe(false);
     expect(contract.safeParse([{...entry,status:undefined}]).success).toBe(false);
     expect(contract.safeParse([{...entry,status:"unknown"}]).success).toBe(false);
     expect(contract.safeParse([{...entry,amountCents:0.5}]).success).toBe(false);
+    const quotes=values["supplies.quotes"];
+    expect(quotes.safeParse({items:[{id:"q",supplierName:"Supplier",itemName:"Beans",
+      priceCents:0,packageCount:1,packageUnit:"each",sourceKind:"supplier_quote",
+      sourceUrl:null,quotedOn:"2026-10-01",evidenceStatus:"owner_reported",
+      createdAt:"2026-10-01T00:00:00Z"}],truncated:false}).success).toBe(false);
     expect(additionalSurfaces).toHaveProperty("money.expense_categories");
     expect(Object.hasOwn(values,"money.expense_categories")).toBe(false);
   });
