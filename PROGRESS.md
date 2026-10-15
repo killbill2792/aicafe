@@ -2480,3 +2480,17 @@ Verified repair outcomes:
 - [x] All **534 Vitest tests (77 files)**, TypeScript, changed-file ESLint, Next.js production build, and diff check pass on branch CI run `38072892356`. Tests include five server readiness scenarios. No new npm packages or SQL migrations.
 - [ ] Vercel environment values are not readable from the GitHub-only connection: actual Production and Preview `SUPABASE_SERVICE_ROLE_KEY` and `SUPERVISOR_CHAT_ENABLED` values must be confirmed in Vercel Settings and redeployed if changed.
 - [ ] Preview/prod sign-in test still required: owner opens Home, taps a suggestion, observes persisted Supervisor reply, tries another thread, and checks non-owner denial.
+
+
+## Olivia PR 1B — Staff availability inside Manage Staff (draft PR #75)
+
+Tracking: [Issue #74](https://github.com/killbill2792/aicafe/issues/74). Based on merged PR #72; Supervisor architecture PR #73 remains independent and documentation-only.
+
+- Staff availability/exception forms, preferences, qualifications, staffing coverage and wage evidence use canonical PR 1A tables and the existing employee identity, not assigned `staff_schedules` or historical `timecards`.
+- PR1B migration `20261014000061_olivia_availability_batch.sql` adds location timezone metadata, scoped transactional batch receipt/RPC, common employee locking across batch and individual PR1A mutations, and overlapping preference-policy protection. NO production migration, flag activation or deploy was performed by Codex.
+- Two explicit default-off flags: `SCHEDULING_FOUNDATION_ENABLED` and `SCHEDULING_AVAILABILITY_UI_ENABLED`; existing Staff works when disabled.
+- Scoped batch requires full expected ID/revision manifest, owner authorization, immutable request key/payload, complete rollback and audit, and co-owner conflict detection.
+- New unit, pure availability, disposable PostgreSQL/RLS/rollback and concurrent co-owner tests run through `.github/workflows/olivia-pr1b-verify.yml`; final run totals must be recorded after green CI.
+- Deferred PR2 deterministic planner and time-zone/DST instant feasibility; PR3 separately reviewed approval/publication + timecard bridge; Supervisor capability adapter after PR #73 platform readiness. No worker messaging, sales assumptions, POS writes or autonomous actions in PR1B.
+- [ ] Independent whole-PR Codex review completed with no substantive unresolved issues.
+- [ ] Owner-approved merge, manual production migration ledger review/application, and separate feature enablement.
