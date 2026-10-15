@@ -89,14 +89,13 @@ describe("P1 typed authorized dispatch",()=>{
     }))},schedule);
     expect(scheduled).toMatchObject({status:"partial",actuality:"planned"});
   });
-  it("never turns reader errors or malformed arrays into plausible empty facts",async()=>{
-    const q={id:"menu.catalog",version:1,purpose:"menu_catalog_review"};
-    const malformed=await read({getMenuCatalog:vi.fn(async()=>({
-      available:true as const,value:[{id:"x",name:"Coffee",category:"drink",active:true,priceCents:12.5}],
-      quality:high,
+  it("never passes malformed money or private source errors as facts",async()=>{
+    const q={id:"money.monthly_bills",version:1,purpose:"recurring_obligation_review"};
+    const malformed=await read({getMonthlyBills:vi.fn(async()=>({
+      available:true as const,value:{totalCents:"12"},quality:high,
     }))},q);
-    expect(malformed).toMatchObject({status:"unavailable",reason:"invalid_result"});
-    const exception=await read({getMenuCatalog:vi.fn(async()=>{throw Error("token=private");})},q);
+    expect(malformed).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+    const exception=await read({getMonthlyBills:vi.fn(async()=>{throw Error("token=private");})},q);
     expect(exception).toEqual({status:"unavailable",value:null,reason:"reader_failure"});
     expect(JSON.stringify(exception)).not.toContain("token");
   });
