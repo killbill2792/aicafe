@@ -8,6 +8,17 @@ import type {
 } from "./plannerTypes";
 
 type Objective = PlannerScenario["objective"];
+function hasReviewedLegalInputs(input:PlannerInput,plan:ExpandedPlan):boolean {
+  const profile=input.ruleProfile;
+  return Boolean(profile?.verified && profile.overtime?.verified &&
+    profile.source?.trim() && plan.locations.size>0 &&
+    [...plan.locations.keys()].every(id=>
+      typeof profile.jurisdictionByLocationId?.[id]==="string" &&
+      profile.jurisdictionByLocationId[id].trim().length>0) &&
+    plan.employees.filter(e=>e.active).every(e=>
+      typeof profile.classificationByEmployeeId?.[e.id]==="string" &&
+      profile.classificationByEmployeeId[e.id].trim().length>0));
+}
 type State = {
   work: WorkUnit[];
   selected: Array<string|null>;
@@ -177,8 +188,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
       hardConstraintsSatisfied:hardValid(best.work,plan,input),
       ownerMinutes:cost.ownerMinutes,cost,
       preferencePenalty:best.score,exploredNodes:nodes,
-      legalReview:input.ruleProfile?.verified &&
-        input.ruleProfile.overtime?.verified?"verified_profile":"unverified_profile",
+      legalReview:hasReviewedLegalInputs(input,plan)?"verified_profile":"unverified_profile",
     } satisfies PlannerScenario,
     exhausted,
   };
@@ -248,6 +258,8 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       loadedPayrollDifferenceCents:diff(a.cost.loadedPayrollCents,b.cost.loadedPayrollCents)});
   }
   const warnings=plan.warnings.slice();
+  if(!hasReviewedLegalInputs(input,plan))
+    warnings.push("Jurisdiction, worker classification or rule-source evidence is incomplete; legal compliance is not verified");
   if(status==="unproven" && !outputs.some(o=>o.exhausted))
     warnings.push("Available workers exist, but no full roster satisfying all combined constraints was proven within bounded search");
   warnings.push("Bounded deterministic beam search yields verified feasible candidates, not a proof of globally minimum cost");
