@@ -121,7 +121,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
         // A pending router refresh does not guarantee fresh props. Read the
         // currently authorized database records before allowing reapply.
         const result=await getSchedulingFoundationRecords();
-        if(!result.ok){setStatus("error");return;}
+        if(!result.ok){return;} // Keep the original conflict gate and draft; reapply may be retried.
         const current=(result.records.availability_exception as SchedulingRow[]).filter(r=>
           r.employee_id===employeeId && r.local_date===date &&
           (r.location_id??null)===(locationId||null));
