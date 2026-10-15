@@ -99,6 +99,7 @@ export const SOURCE_SURFACES = {
     SupabaseTeamRulesRepository:{capabilities:["team.owner_rules"]},
   },
   "lib/scheduling/foundation.server.ts": {
+    requireSchedulingOwner:{restricted:"Internal owner membership/session guard; not a model-visible read capability"},
     executeFoundationCommand:{restricted:"Scheduling foundation writes require independent enablement and cannot be model-executed"},
     readSchedulingFoundation:{capabilities:["labor.availability_foundation"]},
   },
