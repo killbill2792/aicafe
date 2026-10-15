@@ -27,6 +27,36 @@ export const p1ReadCapabilities = Object.freeze({
 type ReadKey=keyof typeof p1ReadCapabilities;
 type Purpose<K extends ReadKey>=(typeof purposePolicies)[K][number];
 
+/** Reviewed P1 contract hashes (Zod JSON Schema, node 22 / lockfile-pinned Zod).
+ * A changed request/result contract MUST receive an explicit version bump and
+ * reviewed regenerated hash; computing both sides at runtime was not protection.
+ */
+export const PINNED_P1_SCHEMA_CONTRACTS={
+  "pricing.recommendation":{
+    id:"pricing.recommendation.read.v1",version:1,
+    inputSchemaFingerprint:"901f1d60964aeb7da05d011f62c10970f5b3c9628aede9565e71872a18cc5f59",
+    outputSchemaFingerprint:"ff213b70e6226fc373f5410c2ee5fb1e17d7de5bc64e5e7a526d66bda003efe3",
+  },
+  "supplies.quotes":{
+    id:"supplies.quotes.read.v1",version:1,
+    inputSchemaFingerprint:"b8e3abdaf075fad2a8328049a35aac0253c1d5f574645778676cdad0fe206195",
+    outputSchemaFingerprint:"5198c5799e845e31090bd2ab4e74e90714965f7029fb5a3c931220e174d3679d",
+  },
+  "money.business_costs":{
+    id:"money.business_costs.read.v1",version:1,
+    inputSchemaFingerprint:"c179257f9b8e1fb6644d95c5e4174444549965dccee06db4d5cdcaec60e620b6",
+    outputSchemaFingerprint:"b67fccaf1ad341a490288098af28841903a649807d9b5b1ef01f4efc81340ee2",
+  },
+  "labor.availability_foundation":{
+    id:"labor.availability_foundation.read.v1",version:1,
+    inputSchemaFingerprint:"6e2fea9be116e677cf2957de8a039f0382f28093f9e90cbbd6edf88fdea3c5e6",
+    outputSchemaFingerprint:"3b7264253073bfcd9a57af39ab12bf19c3eec91d273beb02c9e338b2455a0bc8",
+  },
+} as const satisfies Record<ReadKey,{
+  id:string;version:1;inputSchemaFingerprint:string;outputSchemaFingerprint:string;
+}>;
+
+
 /** Prerequisites are actual registered entity/metric readers, not a circular
  * "this analysis depends on itself" entry. These are reviewed source
  * declarations, not extra claims of independently fetched or verified data.
@@ -103,6 +133,12 @@ function defineReadAnalysis<const K extends ReadKey>(id:string,key:K) {
     inputSchemaFingerprint:fingerprint(capability.inputSchema),
     outputSchemaFingerprint:fingerprint(capability.outputSchema),
   });
+  const pinned=PINNED_P1_SCHEMA_CONTRACTS[key];
+  if(schemaContract.id!==pinned.id||
+     schemaContract.version!==pinned.version||
+     schemaContract.inputSchemaFingerprint!==pinned.inputSchemaFingerprint||
+     schemaContract.outputSchemaFingerprint!==pinned.outputSchemaFingerprint)
+    throw new Error("P1 read analysis schema identity changed without review/version bump");
   return Object.freeze({
     kind:"analysis" as const,id,version:1 as const,domainOwner:ownerFor(key),
     boundCapabilityKey:key,boundCapabilityVersion:1 as const,boundCapabilityMode:"read" as const,
@@ -155,6 +191,8 @@ export function validateP1Analyses() {
       def.schemaContract.version!==cap.schemaContractVersion||
       def.schemaContract.inputSchemaFingerprint!==fingerprint(cap.inputSchema)||
       def.schemaContract.outputSchemaFingerprint!==fingerprint(cap.outputSchema)||
+      def.schemaContract.inputSchemaFingerprint!==PINNED_P1_SCHEMA_CONTRACTS[key].inputSchemaFingerprint||
+      def.schemaContract.outputSchemaFingerprint!==PINNED_P1_SCHEMA_CONTRACTS[key].outputSchemaFingerprint||
       !def.allowedPurposes.length||
       new Set(def.allowedPurposes).size!==def.allowedPurposes.length||
       Object.keys(def.sourceRequirementsByPurpose).length!==def.allowedPurposes.length)
