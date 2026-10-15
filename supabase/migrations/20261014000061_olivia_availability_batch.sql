@@ -23,6 +23,7 @@ CREATE TRIGGER scheduling_validate_location_timezone
 CREATE OR REPLACE FUNCTION public.scheduling_lock_availability_employee()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE v_old uuid; v_new uuid; v_business uuid;
+ v_scope_changed boolean; v_from text; v_to text; v_date text;
 BEGIN
  v_old:=CASE WHEN TG_OP<>'INSERT' THEN OLD.employee_id ELSE NULL END;
  v_new:=CASE WHEN TG_OP<>'DELETE' THEN NEW.employee_id ELSE NULL END;
@@ -43,32 +44,34 @@ BEGIN
  -- Legacy per-record UPDATE must never move an unrelated row into
  -- a scope which was already committed with a complete batch manifest.
  -- Batch UPDATEs are bound to their existing scope and are unaffected.
- IF TG_OP='UPDATE' AND (
-    OLD.employee_id IS DISTINCT FROM NEW.employee_id OR
-    OLD.location_id IS DISTINCT FROM NEW.location_id OR
-    (TG_TABLE_NAME='staff_availability_rules' AND (
-       OLD.effective_from IS DISTINCT FROM NEW.effective_from OR
-       OLD.effective_to IS DISTINCT FROM NEW.effective_to)) OR
-    (TG_TABLE_NAME='staff_availability_exceptions' AND
-       OLD.local_date IS DISTINCT FROM NEW.local_date)
- ) THEN
-   IF EXISTS(
-    SELECT 1 FROM public.scheduling_availability_batch_receipts receipt
-    WHERE receipt.business_id=NEW.business_id
-      AND receipt.employee_id=NEW.employee_id
-      AND receipt.location_id IS NOT DISTINCT FROM NEW.location_id
-      AND receipt.kind=(CASE WHEN TG_TABLE_NAME='staff_availability_rules'
-        THEN 'availability_rule' ELSE 'availability_exception' END)
-      AND receipt.result IS NOT NULL
-      AND receipt.result->>'conflict' IS DISTINCT FROM 'true'
-      AND (
-        (TG_TABLE_NAME='staff_availability_rules'
-          AND receipt.edit_scope->>'effective_from'=NEW.effective_from::text
-          AND receipt.edit_scope->>'effective_to'
-              IS NOT DISTINCT FROM NEW.effective_to::text)
+ IF TG_OP='UPDATE' THEN
+   v_scope_changed:=OLD.employee_id IS DISTINCT FROM NEW.employee_id
+      OR OLD.location_id IS DISTINCT FROM NEW.location_id;
+   IF TG_TABLE_NAME='staff_availability_rules' THEN
+     v_scope_changed:=v_scope_changed
+       OR OLD.effective_from IS DISTINCT FROM NEW.effective_from
+       OR OLD.effective_to IS DISTINCT FROM NEW.effective_to;
+     v_from:=NEW.effective_from::text;
+     v_to:=NEW.effective_to::text;
+   ELSE
+     v_scope_changed:=v_scope_changed
+       OR OLD.local_date IS DISTINCT FROM NEW.local_date;
+     v_date:=NEW.local_date::text;
+   END IF;
+   IF v_scope_changed AND EXISTS(
+     SELECT 1 FROM public.scheduling_availability_batch_receipts receipt
+     WHERE receipt.business_id=NEW.business_id
+       AND receipt.employee_id=NEW.employee_id
+       AND receipt.location_id IS NOT DISTINCT FROM NEW.location_id
+       AND receipt.kind=(CASE WHEN TG_TABLE_NAME='staff_availability_rules'
+         THEN 'availability_rule' ELSE 'availability_exception' END)
+       AND receipt.result IS NOT NULL
+       AND receipt.result->>'conflict' IS DISTINCT FROM 'true'
+       AND ((TG_TABLE_NAME='staff_availability_rules'
+         AND receipt.edit_scope->>'effective_from'=v_from
+         AND receipt.edit_scope->>'effective_to' IS NOT DISTINCT FROM v_to)
         OR (TG_TABLE_NAME='staff_availability_exceptions'
-          AND receipt.edit_scope->>'local_date'=NEW.local_date::text)
-      )
+         AND receipt.edit_scope->>'local_date'=v_date))
    ) THEN
      RAISE EXCEPTION 'move into a manifest-managed availability scope denied'
        USING ERRCODE='42501';
