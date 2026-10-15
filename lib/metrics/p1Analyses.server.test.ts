@@ -71,6 +71,7 @@ describe("P1 analysis-to-typed-read binding",()=>{
     const unknown=await executeP1AnalysisAuthorized(
       {getBusinessCostSummary:vi.fn(async()=>({
         ...costSummary,completeness:"unavailable",knownTotalCents:0,
+        components:{ingredientsCents:0,loadedStaffCents:0,cardFeesCents:0,runningCostsCents:0},
         observed:{ingredients:false,loadedStaff:false,cardFees:false,runningCosts:false},
       }))} as unknown as BusinessScopedCafeTools,identity,read);
     expect(unknown).toEqual({status:"unavailable",value:null,reason:"unavailable_source"});
