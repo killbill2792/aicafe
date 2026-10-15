@@ -234,7 +234,10 @@ export async function authorizedOwnerP1() {
   if(membership.error||!membership.data||membership.data.role!=="owner") throw new Error("Unauthorized");
   const raw=membership.data.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
   const business=Array.isArray(raw)?raw[0]:raw;
-  if(!business||business.is_demo)throw new Error("Unauthorized");
+  // Shared demo business ID is immutable even if a demo manager changes the
+  // mutable is_demo column. Never use that flag as the only authorization root.
+  if(businessId==="11111111-1111-1111-1111-111111111111" ||
+     !business || business.is_demo!==false)throw new Error("Unauthorized");
   const tools=await createAuthenticatedCafeTools();
   const identity=await readSupervisorCafeIdentity(businessId);
   return {tools,identity:{...identity,businessId}};
