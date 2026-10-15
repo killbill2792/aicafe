@@ -36,10 +36,13 @@ describe("P1 canonical business-cost evidence regression",()=>{
   });
   it("accepts partially observed nonzero subtotal, rejects contradictory complete/missing and incorrect period",async()=>{
     const partial=costs({knownTotalCents:1200,completeness:"partial",
+      components:{ingredientsCents:0,loadedStaffCents:1200,cardFeesCents:0,runningCostsCents:0},
       observed:{ingredients:false,loadedStaff:true,cardFees:false,runningCosts:false}});
     expect(await call(vi.fn(async()=>partial))).toMatchObject({
       status:"partial",value:{knownTotalCents:1200}});
     expect(await call(vi.fn(async()=>costs({...partial,completeness:"complete"}))))
+      .toMatchObject({status:"unavailable",reason:"invalid_result"});
+    expect(await call(vi.fn(async()=>costs({...partial,knownTotalCents:1201}))))
       .toMatchObject({status:"unavailable",reason:"invalid_result"});
     expect(await call(vi.fn(async()=>costs({...partial,period:{from:"2026-09-01",to:"2026-09-03"}}))))
       .toMatchObject({status:"unavailable",reason:"invalid_result"});
@@ -47,6 +50,7 @@ describe("P1 canonical business-cost evidence regression",()=>{
   it("permits precisely the canonical seven-day cross-month Money week",async()=>{
     const week={from:"2026-09-27",to:"2026-10-03"};
     const summary=costs({period:week,knownTotalCents:600,
+      components:{ingredientsCents:600,loadedStaffCents:0,cardFeesCents:0,runningCostsCents:0},
       completeness:"partial",observed:{ingredients:true,loadedStaff:false,cardFees:false,runningCosts:false},
       missingInputs:["priorMonthRunningCostCoverage"]});
     const reader=vi.fn(async()=>summary);
