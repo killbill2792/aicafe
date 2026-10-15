@@ -170,11 +170,11 @@ export function shiftsForWork(input:PlannerInput,plan:ExpandedPlan,
   for(const rows of byEmployee.values()){
     rows.sort((a,b)=>a.start-b.start);
     let first:WorkUnit|null=null,last:WorkUnit|null=null,paid=0,pinned=true;
-    let breaks:PlannerShift["unpaidBreaks"]=[];
+    let breaks:PlannerShift["breaks"]=[];
     function flush(){
       if(first && last)shifts.push({employeeId:first.employeeId,locationId:first.locationId,
         startAt:utcIso(first.start),endAt:utcIso(last.end),
-        paidMinutes:paid,unpaidBreaks:breaks,pinned});
+        paidMinutes:paid,breaks:breaks,pinned});
     }
     for(const w of rows){
       const gap=last?(w.start-last.end)/60000:Infinity;
