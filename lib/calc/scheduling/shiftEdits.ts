@@ -1,4 +1,5 @@
 import type {PlannerShift} from "./plannerTypes";
+import {localParts,wallToUtc} from "./plannerClock";
 
 const halfHour=30*60_000;
 function utcAfter(value:string,delta:number):string {
@@ -9,6 +10,19 @@ function paidMinutes(shift:PlannerShift):number {
     .reduce((sum,brk)=>sum+
       (Date.parse(brk.endAt)-Date.parse(brk.startAt))/60_000,0);
   return (Date.parse(shift.endAt)-Date.parse(shift.startAt))/60_000-unpaid;
+}
+function pad(value:number):string {return String(value).padStart(2,"0");}
+export function oliviaLocalBoundaryValue(instant:string,zone:string):string {
+  const part=localParts(Date.parse(instant),zone);
+  return `${part.date}T${pad(part.hour)}:${pad(part.minute)}`;
+}
+export function setOliviaLocalBoundary(shift:PlannerShift,
+  side:"startAt"|"endAt",value:string,zone:string):PlannerShift {
+  if(!/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$/.test(value))
+    throw new Error("invalid_local_shift_time");
+  const instant=wallToUtc(value.slice(0,10),value.slice(11),zone);
+  const changed={...shift,[side]:new Date(instant).toISOString()};
+  return {...changed,paidMinutes:paidMinutes(changed)};
 }
 /** Pure editor transformations; final validity is ALWAYS independently
  * checked by validateOliviaAssignments before the server saves any roster.
@@ -29,12 +43,12 @@ export function setOliviaUnpaidBreak(shift:PlannerShift,enabled:boolean):Planner
   return {...changed,paidMinutes:paidMinutes(changed)};
 }
 export function addOliviaShift(week:string,shifts:readonly PlannerShift[],
-  employeeId:string,locationId:string):PlannerShift {
+  employeeId:string,locationId:string,zone="UTC"):PlannerShift {
   const last=shifts[shifts.length-1];
   const startAt=last?new Date(Date.parse(last.startAt)+86_400_000).toISOString():
-    new Date(week+"T09:00:00.000Z").toISOString();
+    new Date(wallToUtc(week,"09:00",zone)).toISOString();
   const endAt=last?new Date(Date.parse(last.endAt)+86_400_000).toISOString():
-    new Date(week+"T11:00:00.000Z").toISOString();
+    new Date(wallToUtc(week,"11:00",zone)).toISOString();
   return {employeeId,locationId,startAt,endAt,
     paidMinutes:(Date.parse(endAt)-Date.parse(startAt))/60_000,
     breaks:[],pinned:false};
