@@ -32,7 +32,11 @@ export const foundationRecordSchemas = {
     employee_id: id, ...effectiveDates, min_weekly_minutes: minutesWeek,
     desired_weekly_minutes: minutesWeek.nullable().optional(),
     max_weekly_minutes: minutesWeek.nullable().optional(),
-    max_daily_minutes: minutesDay.nullable().optional(), ...attribution,
+    max_daily_minutes: minutesDay.nullable().optional(),
+    unavailable_weekdays: z.array(weekday).max(7).refine(
+      (days) => new Set(days).size === days.length, "Duplicate unavailable weekday",
+    ).default([]),
+    ...attribution,
   }).strict(),
   preference_window: z.object({
     employee_id: id, day_of_week: weekday, ...timeWindow, ...effectiveDates,
