@@ -27,7 +27,7 @@ describe("P1 independent public surface inventory",()=>{
     expect(names).toEqual(Object.keys(LEGACY_MODEL_TOOL_SURFACES).sort());
     for(const definition of Object.values(LEGACY_MODEL_TOOL_SURFACES)){
       if("capabilities" in definition)
-        for(const id of definition.capabilities)expect(values).toHaveProperty(id);
+        for(const id of definition.capabilities)expect(Object.hasOwn(values,id)).toBe(true);
       else expect(definition.restricted.length).toBeGreaterThan(5);
     }
   });
