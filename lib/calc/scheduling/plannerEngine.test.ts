@@ -343,8 +343,10 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
       end_local:"10:00",
     })]));
     expect(result.status).toBe("feasible");
-    expect(result.scenarios.find(s=>s.objective==="balanced")?.shifts[0].employeeId)
-      .toBe("beta");
+    // Identical objective outcomes are intentionally deduplicated. All
+    // returned feasible scenarios must respect the positive hours preference.
+    expect(result.scenarios.every(s=>s.shifts[0]?.employeeId==="beta"))
+      .toBe(true);
   });
 
 });
