@@ -334,4 +334,19 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     expect(JSON.stringify(response)).not.toContain("another-tenant");
   });
 
+  it("rejects a model's dishonest complete=true when substantive request words are omitted",async()=>{
+    const goal="Review labor costs and investigate whether drink margins shrank this month";
+    const mock=transport({complete:true,clauses:["labor costs"]},select(
+      ["labor costs"],[{capabilityId:"leo.money.costs.v1",
+        inputJson:JSON.stringify(args),reason:null}],
+    ));
+    const read=vi.fn(async()=>costSummary);
+    const result=await request(goal,mock.fn,{
+      scope:scope({getBusinessCostSummary:read}),
+    });
+    expect(result).toMatchObject({status:"unavailable",reason:"scope_unverified"});
+    expect(mock.fn).toHaveBeenCalledOnce();
+    expect(read).not.toHaveBeenCalled();
+  });
+
 });
