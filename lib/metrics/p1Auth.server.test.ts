@@ -64,6 +64,15 @@ describe("P1 production owner/tenant authorization",()=>{
       .toEqual({status:"unavailable",value:null,reason:"invalid_request"});
     expect(readBills).toHaveBeenCalledTimes(1);
   });
+  it("never trusts a mutable is_demo=false on the immutable shared demo café",async()=>{
+    mocks.activeId.mockResolvedValue("11111111-1111-1111-1111-111111111111");
+    membership.mockResolvedValue({data:{role:"owner",businesses:{is_demo:false}},error:null});
+    expect(await readAuthenticatedP1(query)).toEqual({
+      status:"unavailable",value:null,reason:"unauthorized",
+    });
+    expect(mocks.tools).not.toHaveBeenCalled();
+    expect(readBills).not.toHaveBeenCalled();
+  });
   it("restricts discovery itself and returns metadata only",async()=>{
     const defs=await discoverAuthenticatedP1();
     expect(defs.some(d=>d.id==="labor.employee_wages")).toBe(true);
