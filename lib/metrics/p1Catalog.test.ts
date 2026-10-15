@@ -27,8 +27,14 @@ describe("Platform P1 checked-in coverage manifest", () => {
       const purposes=purposePolicies[id] as readonly string[];
       expect(Object.keys(sourcePolicies[id]).sort()).toEqual([...purposes].sort());
       expect(definition.canonicalReader).toBe(readers[id]);
+      expect(definition.canonicalSourcePath).toMatch(/^lib\\/);
       expect(definition.selectorContractId).toBe(id+".selector");
       expect(definition.selectorContractVersion).toBe(1);
+      expect(definition.querySchemaContractId).toBe(id+".query");
+      expect(definition.resultSchemaContractId).toBe(id+".result");
+      expect(definition.querySchemaVersion).toBe(1);
+      expect(definition.resultSchemaVersion).toBe(1);
+      expect(definition.authorization).toBe("selected_business_owner_session_RLS");
       for(const purpose of purposes) {
         const policy=sourcePolicies[id][purpose];
         expect(policy.sourcePurpose).toBe(purpose);
