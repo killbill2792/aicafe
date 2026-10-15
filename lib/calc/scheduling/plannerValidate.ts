@@ -177,6 +177,41 @@ export function validateOliviaAssignments(input:PlannerInput,
         "simultaneous_qualified_coverage_unsatisfied");
     }
   }
+  // A staffing handoff requires a verified overlap of the old and new
+  // team, not merely a continuous headcount at adjacent slot boundaries.
+  // If enough qualified workers remain continuously assigned, no handoff
+  // occurs. Otherwise the incoming coverage cohort must already have worked
+  // together for the owner-configured minimum overlap interval.
+  for(const requirement of input.coverage){
+    if(requirement.priority!=="required" ||
+      (requirement.minOverlapMinutes??0)===0 || requirement.minHeadcount===0)
+      continue;
+    const byStart=new Map<number,number>();
+    for(let i=0;i<plan.units.length;i++){
+      const unit=plan.units[i];
+      if(unit.coverageId===requirement.id && !byStart.has(unit.start))
+        byStart.set(unit.start,i);
+    }
+    const ordered=[...byStart.values()].sort((a,b)=>plan.units[a].start-plan.units[b].start);
+    for(let i=1;i<ordered.length;i++){
+      const previous=plan.units[ordered[i-1]],current=plan.units[ordered[i]];
+      if(previous.end!==current.start)continue; // separate dates/periods
+      const before=new Set(candidates[ordered[i-1]]);
+      const after=new Set(candidates[ordered[i]]);
+      if(before.size===after.size && [...before].every(id=>after.has(id)))
+        continue; // same qualified team; no worker handoff
+      const overlapStart=current.start-requirement.minOverlapMinutes!*60_000;
+      const qualifiedDuringOverlap=candidates[ordered[i]].filter(id=>
+        coveredBy(work,{...current,start:overlapStart,end:current.start},id));
+      if(qualifiedDuringOverlap.length>=requirement.minHeadcount)continue;
+      const missing=requirement.minHeadcount-qualifiedDuringOverlap.length;
+      gaps.push({coverageId:requirement.id,locationId:requirement.locationId,
+        startAt:utcIso(overlapStart),endAt:utcIso(current.start),
+        qualificationCode:requirement.qualificationCode??null,
+        missingHeadcount:missing,reason:"handoff_overlap_missing"});
+      violations.push("handoff_overlap_missing:"+requirement.id+":"+utcIso(current.start));
+    }
+  }
   return {
     valid:violations.length===0 && satisfied,
     completeCoverage:satisfied && violations.length===0,
