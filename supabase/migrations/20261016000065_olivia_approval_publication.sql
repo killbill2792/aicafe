@@ -213,22 +213,19 @@ BEGIN
       AND old_series.published_revision=old_rev.revision
       AND old_rev.status='published'
   ) THEN RETURN jsonb_build_object('error','published_overlap'); END IF;
-  -- No silent legacy precedence: an existing recurring assignment for a
-  -- scheduled worker/date blocks opt-in publication pending owner resolution.
+  -- Conservatively block any active legacy recurring assignment for a
+  -- worker in the publishing week or immediately before it (overnight spill).
+  -- This avoids duplicating predicted legacy timecards and future Olivia plans
+  -- without altering the existing payroll/materializer source of truth.
   IF EXISTS(
     SELECT 1 FROM public.scheduling_plan_assignments a
-    JOIN public.locations loc ON loc.business_id=a.business_id AND loc.id=a.location_id
-    JOIN public.businesses b ON b.id=a.business_id
     JOIN public.staff_schedules legacy
       ON legacy.business_id=a.business_id AND legacy.employee_id=a.employee_id
         AND legacy.active=true
     WHERE a.business_id=p_business_id AND a.plan_revision_id=p_revision_id
-      AND legacy.effective_from <= (a.starts_at AT TIME ZONE
-        coalesce(loc.timezone,b.timezone))::date
-      AND (legacy.effective_to IS NULL OR legacy.effective_to >=
-        (a.starts_at AT TIME ZONE coalesce(loc.timezone,b.timezone))::date)
-      AND legacy.day_of_week=extract(dow FROM
-        (a.starts_at AT TIME ZONE coalesce(loc.timezone,b.timezone))::date)
+      AND legacy.effective_from <= v_series.horizon_start + 6
+      AND (legacy.effective_to IS NULL OR
+        legacy.effective_to >= v_series.horizon_start - 1)
   ) THEN RETURN jsonb_build_object('error','legacy_conflict'); END IF;
   v_fingerprint:=md5(jsonb_build_object(
     'action','publish','tenant',p_business_id,'actor',p_actor_id,
