@@ -36,7 +36,7 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
         const rest=input.ruleProfile?.minRestBetweenShiftsMinutes;
         const asMeal=meal!=null && gap===meal;
         const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
-        const asPaidRest=paidRest!=null && gap===paidRest &&
+        const asPaidRest=paidRest!=null && paidRest>0 && gap===paidRest &&
           previous.locationId===w.locationId;
         if(gap>0 && !asMeal && !asPaidRest && rest!=null && gap<rest)return false;
         if(gap>0 && (asMeal || asPaidRest || (rest!=null&&gap>=rest)))continuous=0;
@@ -95,7 +95,7 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
     // Only a verified configured rest duration may bridge two work segments.
     const billedRows=rows.slice();
     const restMinutes=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
-    if(restMinutes!=null){
+    if(restMinutes!=null && restMinutes>0){
       for(let i=1;i<rows.length;i++){
         const previous=rows[i-1],current=rows[i];
         if(previous.locationId===current.locationId &&
@@ -180,7 +180,7 @@ export function shiftsForWork(input:PlannerInput,plan:ExpandedPlan,
       const gap=last?(w.start-last.end)/60000:Infinity;
       const meal=input.ruleProfile?.unpaidMealMinutes;
       const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
-      const restBreak=paidRest!=null && gap===paidRest;
+      const restBreak=paidRest!=null && paidRest>0 && gap===paidRest;
       const sameShift=last && (gap===0 || (meal!=null&&gap===meal) || restBreak);
       if(!sameShift){
         flush();first=w;paid=0;pinned=true;breaks=[];
