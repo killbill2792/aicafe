@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireSchedulingOwner } from "./foundation.server";
 import { oliviaSnapshotDigest } from "./planDrafts.server";
 import { validateOliviaAssignments } from "@/lib/calc/scheduling/plannerValidate";
+import {isOliviaLegalReviewComplete} from "@/lib/calc/scheduling/legalReview";
 import type { PlannerInput, PlannerScenario, PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
 
 const uuid = z.string().uuid();
@@ -103,7 +104,8 @@ export async function saveOliviaEditedDraft(
     hardConstraintsSatisfied:validation.valid,
     cost:validation.cost,
     ownerMinutes:validation.cost.ownerMinutes,
-    legalReview:"unverified_profile",
+    legalReview:isOliviaLegalReviewComplete(input)?
+      "verified_profile":"unverified_profile",
     preferencePenalty:0,exploredNodes:0,
   };
   try {
