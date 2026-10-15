@@ -76,9 +76,12 @@ export async function readP1EmployeeWages({businessId}:Scoped) {
     id:row.id,name:row.display_name,role:row.role,active:row.active,
     defaultHourlyWageCents:row.default_hourly_wage_cents,
     wagePeriod:row.wage_period??"hour",wageAmountCents:row.wage_amount_cents,
-    wageKnown:row.wage_amount_cents!==null&&row.wage_amount_cents!==undefined ||
-      row.default_hourly_wage_cents!==null&&row.default_hourly_wage_cents!==undefined,
-  })),data.some(row=>row.wage_amount_cents==null&&row.default_hourly_wage_cents==null)
+    wageKnown:(typeof row.wage_amount_cents==="number"&&row.wage_amount_cents>0) ||
+      (typeof row.default_hourly_wage_cents==="number"&&row.default_hourly_wage_cents>0),
+    wageProvenance:(typeof row.wage_amount_cents==="number"&&row.wage_amount_cents>0) ||
+      (typeof row.default_hourly_wage_cents==="number"&&row.default_hourly_wage_cents>0)
+      ? "recorded_positive" : "unverified_zero_or_missing",
+  })),data.some(row=>(row.wage_amount_cents??0)<=0&&(row.default_hourly_wage_cents??0)<=0)
     ? ["missing_employee_wages"]:[]);
 }
 
