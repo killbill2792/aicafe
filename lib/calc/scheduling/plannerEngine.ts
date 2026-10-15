@@ -211,6 +211,7 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       loadedPayrollDifferenceCents:diff(a.cost.loadedPayrollCents,b.cost.loadedPayrollCents)});
   }
   const warnings=plan.warnings.slice();
+  warnings.push("Bounded deterministic beam search yields verified feasible candidates, not a proof of globally minimum cost");
   if(outputs.some(o=>o.exhausted))warnings.push("Search budget exhausted; no global optimality or infeasibility proof");
   if(best && best.cost.missingWageEmployeeIds.length>0)
     warnings.push("Unknown or unverified wages prevent trustworthy total cash labor comparison");
