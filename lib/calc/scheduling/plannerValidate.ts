@@ -63,15 +63,25 @@ export function validateOliviaAssignments(input:PlannerInput,
       })).sort((a,b)=>a.start-b.start);
       let last=start,unpaid=0;
       for(const brk of breaks){
-        if(brk.paid!==false || brk.start<last || brk.end<=brk.start ||
+        if(brk.start<last || brk.end<=brk.start ||
           brk.end>end || (brk.end-brk.start)%(interval*60000)!==0 ||
           (brk.start-start)%(interval*60000)!==0 ||
           (brk.end-start)%(interval*60000)!==0)
           throw new Error("invalid_unpaid_break");
-        last=brk.end;unpaid+=(brk.end-brk.start)/60000;
-        if(input.ruleProfile?.unpaidMealMinutes!=null &&
-          (brk.end-brk.start)/60000<input.ruleProfile.unpaidMealMinutes)
-          throw new Error("meal_shorter_than_configured_minimum");
+        last=brk.end;
+        const breakMinutes=(brk.end-brk.start)/60000;
+        if(brk.paid){
+          // Paid rest remains compensable, but supplies ZERO work coverage.
+          const rule=input.ruleProfile;
+          if(!rule?.verified || rule.paidRestMinutes==null ||
+            breakMinutes!==rule.paidRestMinutes)
+            throw new Error("unverified_paid_rest_break");
+        } else {
+          unpaid+=breakMinutes;
+          if(input.ruleProfile?.unpaidMealMinutes!=null &&
+            breakMinutes<input.ruleProfile.unpaidMealMinutes)
+            throw new Error("meal_shorter_than_configured_minimum");
+        }
       }
       if(!Number.isSafeInteger(shift.paidMinutes) ||
         shift.paidMinutes!==(end-start)/60000-unpaid)
