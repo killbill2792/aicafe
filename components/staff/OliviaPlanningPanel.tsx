@@ -271,7 +271,7 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
             {t("cancelEdit")}
           </button>
         </div>
-      </>
+      </>}
     </div>
   </section>;
 }
