@@ -12,6 +12,7 @@ vi.mock("@/lib/calc/scheduling/plannerValidate",()=>({validateOliviaAssignments:
 import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "./planDrafts.server";
 
 const businessId="10000000-0000-4000-8000-000000000001";
+const sourceFingerprint="b".repeat(64);
 const requestKey="20000000-0000-4000-8000-000000000002";
 const seriesId="30000000-0000-4000-8000-000000000003";
 const revisionId="40000000-0000-4000-8000-000000000004";
@@ -43,34 +44,34 @@ describe("Olivia PR3B internal-only draft persistence boundary",()=>{
   });
   it("never grants access with feature flags disabled",async()=>{
     process.env.SCHEDULING_PR3_DRAFTS_ENABLED="false";
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"disabled"});
     expect(mocks.owner).not.toHaveBeenCalled();
   });
   it("rejects lost owner access",async()=>{
     mocks.owner.mockResolvedValue(null);
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"unauthorized"});
   });
   it("rejects a selected-business change after loading staff facts",async()=>{
     mocks.owner.mockResolvedValue({businessId:seriesId,supabase:{rpc:mocks.rpc}});
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"tenant_changed"});
     expect(mocks.optimize).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it("rejects fraudulent options and unvalidated generated assignments",async()=>{
     expect(await createOliviaDraftFromTrustedSnapshot({...opts,
-      businessId},snapshot,businessId)).toEqual({ok:false,error:"invalid_input"});
+      businessId},snapshot,businessId,sourceFingerprint)).toEqual({ok:false,error:"invalid_input"});
     mocks.validate.mockReturnValueOnce({valid:false});
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"invalid_input"});
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it("writes a deterministic source digest into the tenant-scoped draft RPC",async()=>{
-    const result=await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId);
+    const result=await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint);
     expect(result).toMatchObject({ok:true,seriesId,revisionId,revision:1,replayed:false});
-    expect(oliviaSnapshotDigest(snapshot)).toMatch(/^[a-f0-9]{64}$/);
+    expect(oliviaSnapshotDigest(snapshot,sourceFingerprint)).toMatch(/^[a-f0-9]{64}$/);
     expect(mocks.rpc).toHaveBeenCalledWith("scheduling_create_plan_draft",{
       p_business_id:businessId,p_horizon_start:snapshot.horizonStart,
       p_expected_revision:0,p_source_digest:oliviaSnapshotDigest(snapshot),
@@ -86,16 +87,16 @@ describe("Olivia PR3B internal-only draft persistence boundary",()=>{
         paidMinutes:60,breaks:[],pinned:false,
       })),
     }]});
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"capacity_exceeded"});
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
   it("fails closed for SQL errors and corrupt RPC responses",async()=>{
     mocks.rpc.mockResolvedValueOnce({data:null,error:{code:"42501"}});
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"storage_unavailable"});
     mocks.rpc.mockResolvedValueOnce({data:{seriesId,revisionId,revision:0,replayed:false},error:null});
-    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId))
+    expect(await createOliviaDraftFromTrustedSnapshot(opts,snapshot,businessId,sourceFingerprint))
       .toEqual({ok:false,error:"storage_unavailable"});
   });
 });
