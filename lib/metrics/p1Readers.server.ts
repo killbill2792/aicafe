@@ -24,7 +24,7 @@ const provenance = z.strictObject({
   purpose:z.string().min(1).max(120), asOf:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone:z.string().min(1).max(100), sourceRevision:z.null(),
 });
-const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
+export const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
   z.strictObject({
     status:z.literal("verified"),id:z.literal(id),version:z.literal(1),
     value:values[id],quality:resultQuality,provenance,completeness:z.literal("complete"),
@@ -209,7 +209,7 @@ export async function executeP1Authorized(
 /** Only metadata that an authenticated owner is permitted to discover.
  * No unsanctioned external capabilities or private table names.
  */
-async function authorizedOwnerP1() {
+export async function authorizedOwnerP1() {
   const user=await requireOwnBusiness();
   if(!user) throw new Error("Unauthorized");
   const businessId=await getActiveBusinessId(user.id);
