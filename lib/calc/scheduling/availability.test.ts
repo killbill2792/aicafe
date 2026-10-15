@@ -69,6 +69,26 @@ describe("Olivia PR1B: location-aware candidate availability", () => {
     expect(result.basis).toBe("general");
     expect(result.windows).toEqual([]);
   });
+  it("explicit owner-confirmed no-work weekday overrides windows, but absent or unconfirmed day does not",()=>{
+    const base={date:"2026-10-14",locationId:"location-a",
+      recurring:[{...recurring(3,"09:00","17:00"),location_id:null}],exceptions:[]};
+    const policy={effective_from:"2026-10-01",effective_to:null,
+      unavailable_weekdays:[3],confirmation:"owner_confirmed" as const};
+    expect(effectiveAvailabilityForLocation({...base,hardUnavailability:[policy]}).windows).toEqual([]);
+    expect(effectiveAvailabilityForLocation({...base,hardUnavailability:[{
+      ...policy,confirmation:"unconfirmed" as const,
+    }]}).windows).toEqual([{start:540,end:1020}]);
+    expect(effectiveAvailabilityForLocation(base).windows).toEqual([{start:540,end:1020}]);
+  });
+  it("explicit next-day unavailability masks overnight spillover",()=>{
+    const base={date:"2026-10-14",locationId:null,
+      recurring:[{...recurring(3,"22:00","02:00"),overnight:true}],
+      exceptions:[],hardUnavailability:[{
+        effective_from:"2026-01-01",effective_to:null,
+        unavailable_weekdays:[4],confirmation:"owner_confirmed" as const,
+      }]};
+    expect(effectiveAvailabilityForLocation(base).windows).toEqual([{start:1320,end:1440}]);
+  });
   it("unconfirmed local reports do not displace confirmed general hours", () => {
     const output=effectiveAvailabilityForLocation({
       date:"2026-10-14",locationId:"location-a",
