@@ -38,6 +38,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const [status,setStatus] = useState<"idle"|"saved"|"error"|"conflict">("idle");
   const key = useRef<string | null>(null);
   const draftManifest = useRef<{id:string;revision:number}[] | null>(null);
+  const [reapplyReady,setReapplyReady] = useState(false);
   const scoped = useMemo(() => rows.filter(r => r.employee_id===employeeId &&
     r.local_date===date && (r.location_id??null)===(locationId||null)
   ),[rows,employeeId,date,locationId]);
@@ -60,6 +61,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     touch(draft.map((r,j) => j===i ? {...r,...patch} : r));
   }
   function save() {
+    if (status==="conflict" && !reapplyReady) {router.refresh();return;}
     if (status==="conflict" && !window.confirm(t("applyAfterConflict"))) return;
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
         !window.confirm(t("confirmRemove"))) return;
@@ -93,20 +95,24 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     startTransition(async () => {
       const result = await saveStaffAvailabilityBatch({
         kind:"availability_exception",employeeId,locationId:locationId||null,
-        scope:{local_date:date},expected:draftManifest.current ?? scoped.map(r=>({id:r.id,revision:r.revision})),
+        scope:{local_date:date},expected:status==="conflict" && reapplyReady
+          ? scoped.map(r=>({id:r.id,revision:r.revision}))
+          : draftManifest.current ?? scoped.map(r=>({id:r.id,revision:r.revision})),
         desired,requestKey:key.current,
       });
       if (!result.ok) {
-        if (result.error==="conflict") {key.current=null;router.refresh();}
+        if (result.error==="conflict") {key.current=null;setReapplyReady(false);router.refresh();}
         setStatus(result.error==="conflict"?"conflict":"error");return;
       }
-      key.current=null;draftManifest.current=null;setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
+      key.current=null;draftManifest.current=null;setReapplyReady(false);setDraftOverride(null);setDirty(false);setStatus("saved");router.refresh();
     });
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
   return <section aria-label={t("dateExceptions")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
       <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <h4 className="text-[17px] font-bold">{t("dateExceptions")}</h4>
+    {status==="conflict" && !reapplyReady && <button type="button" className={secondary}
+      onClick={()=>{draftManifest.current=scoped.map(r=>({id:r.id,revision:r.revision}));setReapplyReady(true);}}>{t("applyAfterConflict")}</button>}
     <p className="text-[17px] text-ink-muted">{t("exceptionExplainer")}</p>
     <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("date")}
       <input type="date" className={field} value={date}
