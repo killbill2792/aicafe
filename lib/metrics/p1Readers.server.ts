@@ -175,7 +175,7 @@ async function authorizedOwnerP1() {
     .select("role,businesses(is_demo)")
     .eq("user_id",user.id).eq("business_id",businessId).eq("role","owner")
     .maybeSingle();
-  if(membership.error||!membership.data) throw new Error("Unauthorized");
+  if(membership.error||!membership.data||membership.data.role!=="owner") throw new Error("Unauthorized");
   const raw=membership.data.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
   const business=Array.isArray(raw)?raw[0]:raw;
   if(!business||business.is_demo)throw new Error("Unauthorized");
