@@ -141,7 +141,8 @@ BEGIN
  SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'revision',revision)
    ORDER BY id::text),'[]'::jsonb)
  INTO expected FROM public.staff_availability_rules
- WHERE business_id=current_setting('test.pr1b_business')::uuid;
+ WHERE business_id=current_setting('test.pr1b_business')::uuid
+   AND effective_from='2026-10-14';
  SELECT count(*) INTO before_audits FROM public.scheduling_foundation_audit_events
   WHERE business_id=current_setting('test.pr1b_business')::uuid;
  BEGIN
