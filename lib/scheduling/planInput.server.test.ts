@@ -273,6 +273,14 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       expect(zero.input.slotMinutes).toBe(30);
       expect(()=>expandPlannerInput(zero.input)).not.toThrow();
     }
+    profile.unpaidMealMinutes=45;
+    const meal45=await loadOliviaWeekFromSavedStaff(week);
+    expect(meal45.ok).toBe(true);
+    if(meal45.ok){
+      expect(meal45.input.slotMinutes).toBe(15);
+      expect(()=>expandPlannerInput(meal45.input)).not.toThrow();
+    }
+    profile.unpaidMealMinutes=30;
     fixtures.tables.scheduling_coverage_requirements[0].end_local="08:45:00";
     const fortyFive=await loadOliviaWeekFromSavedStaff(week);
     expect(fortyFive.ok).toBe(true);
@@ -298,8 +306,8 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       employee_id:id(1),location_id:id(800),
       starts_at:"2026-10-12T15:00:00.000Z",ends_at:"2026-10-12T19:00:00.000Z",
       paid_minutes:210,
-      breaks:[{startAt:"2026-10-12T17:00:00.000Z",
-        endAt:"2026-10-12T17:30:00.000Z",paid:false}],
+      breaks:[{startAt:"2026-10-12T17:15:00.000Z",
+        endAt:"2026-10-12T17:45:00.000Z",paid:false}],
       pinned:false,
     };
     fixtures.tables.scheduling_plan_assignments=[
@@ -323,6 +331,7 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
       rateCentsPerHour:1800,salary:false,
     });
     expect(result.input.employees[0].wage.wage_amount_cents).toBe(2800);
+    expect(result.input.slotMinutes).toBe(15);
     expect(result.input.replanAsOf).toMatch(/^\d{4}-/);
     expect(()=>expandPlannerInput(result.input)).not.toThrow();
   });
