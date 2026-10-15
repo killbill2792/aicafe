@@ -32,6 +32,8 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const location=locations.find(l=>l.id===locationId);
   function select(id:string){
     setSelected(id);setSavedRecord(null);const r=rows.find(v=>v.id===id);
+    // Saved effective dates are never pristine proposed defaults.
+    setFromEdited(Boolean(r));
     if (!r) return;
     setLocationId(String(r.location_id));setDay(String(r.day_of_week??1));
     setSpecificDate(String(r.local_date??""));setFrom(String(r.effective_from??today));
