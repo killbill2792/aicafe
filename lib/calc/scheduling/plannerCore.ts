@@ -1,6 +1,6 @@
 import { effectiveAvailabilityForLocation, compensationProvenance } from "./availability";
-import { civilDateAdd, localParts, parseUtcInstant, utcIso, weekday, wallToUtc, windowUtc } from "./plannerClock";
-import type { PlannerCoverage, PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason } from "./plannerTypes";
+import { civilDateAdd, localParts, parseUtcInstant, weekday, wallToUtc, windowUtc } from "./plannerClock";
+import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason } from "./plannerTypes";
 
 export type DemandUnit = {
   id: string; coverageId: string; locationId: string;
@@ -129,7 +129,6 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
   return {units,pinned,employees:input.employees,locations,warnings,horizonEnd:endDate};
 }
 
-const availabilityCache=new Map<string,Array<{start:number;end:number}>>();
 /** Caller supplies its own cache per planning invocation; no cross-request
  * or cross-tenant data survives between planner calls.
  */
