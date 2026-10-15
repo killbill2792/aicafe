@@ -150,6 +150,8 @@ export async function runP2ShadowWithScope(params:{
   const plan=await requestStructured({
     instructions:[
       "Read-only capability selection for this independent shadow demonstration.",
+      "Recheck the ORIGINAL owner goal independently against the supplied clause list.",
+      "If any independently requested goal is missing, set complete=false.",
       "You MUST return exactly one choice per supplied audit clause in the same order,",
       "with the clause string copied character-for-character. Never silently drop one.",
       "Select a capability ID ONLY from the reviewed owner-visible server manifest.",
@@ -161,7 +163,9 @@ export async function runP2ShadowWithScope(params:{
       "Do not emit SQL, businessId, ownerId, effects, write requests or summaries.",
       "Selection is NOT evidence of a completed read or business outcome.",
     ].join(" "),
-    input:{clauses:audit.clauses,capabilities:discover.map(def=>({
+    input:{originalGoal:goal,localDate:params.scope.identity.asOf,
+      timezone:params.scope.identity.timezone,clauses:audit.clauses,
+      capabilities:discover.map(def=>({
       id:def.id,mode:def.mode,purpose:def.purpose,
       allowedPurposes:def.allowedPurposes,inputJsonSchema:def.inputJsonSchema,
       sources:def.sourceIds,availability:def.availability,
@@ -204,10 +208,11 @@ export async function runP2ShadowWithScope(params:{
     }
     const result=await params.registry.invoke(params.scope,id,parsed);
     const raw=result as {status?:ResultStatus;reason?:string};
-    const status=raw.status??"unavailable";
+    const accepted=raw.status==="verified" || raw.status==="estimated" || raw.status==="partial";
+    const status:ResultStatus=accepted?raw.status!:"unavailable";
     evidence.push({clause:selected.clause,capabilityId:id,status,
-      result:status==="unavailable"?null:result,
-      reason:status==="unavailable"?raw.reason??"unavailable_source":null});
+      result:accepted?result:null,
+      reason:accepted?null:raw.reason??raw.status??"unavailable_source"});
   }
   const successful=evidence.filter(e=>e.status!=="unavailable");
   const status:ShadowOutcome["status"]=successful.length===0?"unavailable":
