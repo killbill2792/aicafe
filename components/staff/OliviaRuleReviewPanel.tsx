@@ -8,7 +8,7 @@ import {stableCreateRequestKey,type PendingCreate}
   from "@/lib/scheduling/idempotencyClient";
 
 type Named={id:string;name:string};
-const integer=(value:string)=>Number(value);
+const integer=(value:string)=>value.trim()?Number(value):Number.NaN;
 
 export default function OliviaRuleReviewPanel({week,onChanged}:{
   week:string;onChanged:()=>Promise<void>;
@@ -23,10 +23,10 @@ export default function OliviaRuleReviewPanel({week,onChanged}:{
   const [classification,setClassification]=useState<Record<string,string>>({});
   const [source,setSource]=useState("");
   const [limits,setLimits]=useState({
-    maxContinuousWorkMinutes:"360",unpaidMealMinutes:"30",
-    paidRestMinutes:"0",minRestBetweenShiftsMinutes:"600",
-    dailyAfterMinutes:"480",weeklyAfterMinutes:"2400",
-    multiplierNumerator:"3",multiplierDenominator:"2",
+    maxContinuousWorkMinutes:"",unpaidMealMinutes:"",
+    paidRestMinutes:"",minRestBetweenShiftsMinutes:"",
+    dailyAfterMinutes:"",weeklyAfterMinutes:"",
+    multiplierNumerator:"",multiplierDenominator:"",
   });
   const [attested,setAttested]=useState(false);
   const [error,setError]=useState(""),[notice,setNotice]=useState("");
@@ -47,6 +47,12 @@ export default function OliviaRuleReviewPanel({week,onChanged}:{
         setClassification((classes&&typeof classes==="object")?
           classes as Record<string,string>:{});
         setSource(typeof profile?.source==="string"?profile.source:"");
+        const overtime=(profile?.overtime??{}) as Record<string,unknown>;
+        setLimits(prev=>Object.fromEntries(
+          Object.keys(prev).map(key=>[key,
+            typeof (key in overtime?overtime[key]:profile?.[key])==="number"?
+              String(key in overtime?overtime[key]:profile?.[key]):""]),
+        ) as typeof prev);
         setAttested(false);
         retry.current=null;
       }catch{setError(t("ruleLoadError"));}
