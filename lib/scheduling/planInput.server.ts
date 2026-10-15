@@ -266,8 +266,17 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     // rest and coverage handoff duration. A 10-minute paid rest MUST NOT be
     // passed to a 30-minute solver. Non-5-minute rests fail review earlier.
     const paidRest=ruleProfile?.paidRestMinutes??0;
+    const wallMinute=(wall:string)=>{
+      const [hour,minute]=wall.slice(0,5).split(":").map(Number);
+      return hour*60+minute;
+    };
     const slotMinutes=([30,15,10,5] as const).find(slot=>
-      paidRest%slot===0 && coverage.every(c=>(c.minOverlapMinutes??0)%slot===0))??5;
+      paidRest%slot===0 && coverage.every(c=>{
+        const start=wallMinute(c.start_local),end=wallMinute(c.end_local);
+        const duration=end-start+(c.overnight?1440:0);
+        return duration>0 && duration%slot===0 &&
+          (c.minOverlapMinutes??0)%slot===0;
+      }))??5;
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
         ...(ruleProfile ? {ruleProfile} : {}),
