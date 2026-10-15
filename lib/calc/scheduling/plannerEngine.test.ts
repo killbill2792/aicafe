@@ -288,4 +288,30 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(reviewed.best?.legalReview).toBe("verified_profile");
   });
 
+  it("places verified ten-minute PAID rest without counting it toward coverage",()=>{
+    const a=employee("long-worker",{recurring:[recurring(1,"09:00","09:50")]});
+    const backup=employee("rest-cover",{recurring:[recurring(1,"09:20","09:30")]});
+    const rules={verified:true,maxContinuousWorkMinutes:20,
+      unpaidMealMinutes:30,paidRestMinutes:10,
+      overtime:{verified:true,multiplierNumerator:3,multiplierDenominator:2}};
+    const args=input([a,backup],[coverage("five-chunks",{
+      start_local:"09:00",end_local:"09:50",
+    })],{slotMinutes:10,ruleProfile:rules,burden:{rate:0.12,status:"verified"}});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    const worker=result.best!.shifts.find(s=>s.employeeId==="long-worker")!;
+    expect(worker).toBeDefined();
+    expect(worker.paidMinutes).toBe(50); // 40 productive + 10 PAID rest
+    expect(worker.unpaidBreaks).toMatchObject([{
+      startAt:"2026-10-12T16:20:00.000Z",
+      endAt:"2026-10-12T16:30:00.000Z",paid:true,
+    }]);
+    // 50 + 10 = 60 paid minutes across both workers (one hour).
+    expect(result.best?.cost.cashWagesCents).toBe(1600);
+    const unable=optimizeOliviaWeek(input([a],[coverage("five-chunks",{
+      start_local:"09:00",end_local:"09:50",
+    })],{slotMinutes:10,ruleProfile:rules}));
+    expect(unable.status).toBe("unproven");
+  });
+
 });
