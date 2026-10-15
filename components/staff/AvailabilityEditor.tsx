@@ -34,8 +34,9 @@ function windowFromRecord(row: SchedulingRow): DraftWindow {
   };
 }
 
-export default function AvailabilityEditor({ employeeId, rows, locations, today }: {
-  employeeId: string; rows: SchedulingRow[]; locations: SchedulingLocation[]; today: string;
+export default function AvailabilityEditor({ employeeId, rows, preferences, locations, today }: {
+  employeeId: string; rows: SchedulingRow[]; preferences: SchedulingRow[];
+  locations: SchedulingLocation[]; today: string;
 }) {
   const t = useTranslations("SchedulingAvailability");
   const router = useRouter();
@@ -101,6 +102,13 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
       router.refresh();
     });
   }
+  const confirmedUnavailableDays = new Set(
+    preferences.filter(p => p.employee_id===employeeId &&
+        p.confirmation==="owner_confirmed" &&
+        String(p.effective_from)<=effectiveFrom &&
+        (p.effective_to == null || String(p.effective_to)>=effectiveFrom))
+      .flatMap(p=>Array.isArray(p.unavailable_weekdays)
+        ? (p.unavailable_weekdays as number[]) : []));
   const dayNames = [t("sun"), t("mon"), t("tue"), t("wed"), t("thu"), t("fri"), t("sat")];
 
   return (
@@ -144,7 +152,9 @@ export default function AvailabilityEditor({ employeeId, rows, locations, today 
                   overnight: false, source: "owner_direct", confirmation: "unconfirmed",
                 }])}>{t("addWindow")}</button>
             </div>
-            {windows.length === 0 && <p className="py-2 text-sm text-ink-muted">{t("notRecorded")}</p>}
+            {windows.length === 0 && <p className="py-2 text-sm text-ink-muted">
+              {confirmedUnavailableDays.has(day) ? t("confirmedUnavailableDay") : t("notRecorded")}
+            </p>}
             {windows.map(({ row, index }) => (
               <div key={row.id ?? `new-${index}`} className="mt-2 flex flex-col gap-2 rounded-xl bg-paper p-3">
                 <div className="grid grid-cols-2 gap-2">
