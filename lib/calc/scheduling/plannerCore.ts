@@ -20,7 +20,7 @@ function assert(condition: unknown, code: string): asserts condition {
 export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
   const endDate=civilDateAdd(input.horizonStart,6);
   const slot=input.slotMinutes??30;
-  assert([15,30,60].includes(slot), "slot_granularity");
+  assert([5,10,15,30,60].includes(slot), "slot_granularity");
   assert(input.locations.length>0, "no_locations");
   assert(input.employees.length<=250 && input.coverage.length<=2000, "size");
   assert(new Set(input.locations.map(x=>x.id)).size===input.locations.length, "duplicate_location");
@@ -49,10 +49,17 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
   }
   if (input.ruleProfile){
     const r=input.ruleProfile;
-    for(const n of [r.maxContinuousWorkMinutes,r.unpaidMealMinutes,r.minRestBetweenShiftsMinutes])
+    for(const n of [r.maxContinuousWorkMinutes,r.unpaidMealMinutes,r.paidRestMinutes,r.minRestBetweenShiftsMinutes])
       assert(n==null || (Number.isSafeInteger(n)&&n>=0 && n<=10080), "rule_minutes");
     if(r.maxContinuousWorkMinutes != null)
-      assert(r.unpaidMealMinutes!=null && r.unpaidMealMinutes>0, "meal_rule_missing");
+      assert((r.unpaidMealMinutes!=null && r.unpaidMealMinutes>0) ||
+        (r.paidRestMinutes!=null && r.paidRestMinutes>0), "rest_rule_missing");
+    if(r.paidRestMinutes!=null){
+      assert(r.verified && r.paidRestMinutes>0 &&
+        r.paidRestMinutes%slot===0,"unverified_or_unaligned_paid_rest");
+      assert(r.paidRestMinutes!==r.unpaidMealMinutes,
+        "ambiguous_paid_and_unpaid_break");
+    }
     if(r.overtime) {
       for(const n of [r.overtime.dailyAfterMinutes,r.overtime.weeklyAfterMinutes,
         r.overtime.multiplierNumerator,r.overtime.multiplierDenominator])
