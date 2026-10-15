@@ -1,6 +1,7 @@
 "use client";
 
-import { useState,useTransition } from "react";
+import { useRef,useState,useTransition } from "react";
+import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/idempotencyClient";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
@@ -18,19 +19,22 @@ export default function WageProvenancePanel({ employee, records }: {
   const [status,setStatus]=useState<CashState>((existing?.cash_cost_state as CashState)??"unknown");
   const [evidence,setEvidence]=useState(String(existing?.eligibility_reference??""));
   const [pending,run]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
+  const retry=useRef<PendingCreate>(null);
   function submit(){
     if(status==="known_eligible_zero" && evidence.trim().length<8){
       setError(t("eligibilityEvidenceRequired"));return;
     }
+    const payload={employee_id:employee.id,cash_cost_state:status,
+      eligibility_reference:status==="known_eligible_zero"?evidence.trim():null};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
         kind:"compensation",action:existing?"update":"create",
-        ...(existing?{id:existing.id,expectedRevision:existing.revision}:{requestKey:crypto.randomUUID()}),
-        data:{employee_id:employee.id,cash_cost_state:status,
-          eligibility_reference:status==="known_eligible_zero"?evidence.trim():null},
+        ...(existing?{id:existing.id,expectedRevision:existing.revision}:
+          {requestKey:stableCreateRequestKey(retry,payload)}),
+        data:payload,
       });
       if(!result.ok){setError(t("compensationCannotVerify"));return;}
-      setSaved(true);setError("");router.refresh();
+      retry.current=null;setSaved(true);setError("");router.refresh();
     });
   }
   const verified = (existing?.cash_cost_state as CashState|undefined)??"unknown";
