@@ -1668,6 +1668,7 @@
     "revisionApproved": "تمت الموافقة",
     "revisionPublished": "منشور",
     "revisionSuperseded": "تم استبداله",
-    "revisionUnknown": "حالة غير معروفة"
+    "revisionUnknown": "حالة غير معروفة",
+    "invalidWallTime": "اختر تاريخًا ووقتًا محليين صالحين وغير ملتبسين. قد يؤدي التوقيت الصيفي إلى إلغاء بعض الأوقات أو تكرارها."
   }
 }
