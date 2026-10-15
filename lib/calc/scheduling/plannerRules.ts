@@ -30,24 +30,31 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
     for(const w of rows){
       if(previous && w.start<previous.end)return false;
       const gap=previous?(w.start-previous.end)/60000:Infinity;
+      let paidGap:WorkUnit|null=null;
       if(previous){
         const meal=input.ruleProfile?.unpaidMealMinutes;
         const rest=input.ruleProfile?.minRestBetweenShiftsMinutes;
-        const asMeal=meal!=null && gap>=meal && gap<=meal;
-        if(gap>0 && !asMeal && rest!=null && gap<rest)return false;
-        if(gap>0 && (asMeal || (rest!=null&&gap>=rest)))continuous=0;
+        const asMeal=meal!=null && gap===meal;
+        const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
+        const asPaidRest=paidRest!=null && gap===paidRest &&
+          previous.locationId===w.locationId;
+        if(gap>0 && !asMeal && !asPaidRest && rest!=null && gap<rest)return false;
+        if(gap>0 && (asMeal || asPaidRest || (rest!=null&&gap>=rest)))continuous=0;
+        if(asPaidRest)paidGap={employeeId:id,locationId:w.locationId,
+          start:previous.end,end:w.start,pinned:false};
       }
       continuous+=minutes(w);
       if(input.ruleProfile?.maxContinuousWorkMinutes!=null &&
         continuous>input.ruleProfile.maxContinuousWorkMinutes)return false;
       previous=w;
-      week+=minutes(w);
+      week+=minutes(w)+(paidGap?minutes(paidGap):0);
       if(employee.maxWeeklyMinutes!=null && week>employee.maxWeeklyMinutes)return false;
-      const location=plan.locations.get(w.locationId)!;
       // A dated cap is for the calendar day WHERE EACH minute occurs.
       // Traverse minute boundaries to handle midnight, overnight, offset
       // changes and co-owners scheduling different location timezones.
-      for(let time=w.start;time<w.end;time+=60_000){
+      for(const portion of paidGap?[paidGap,w]:[w]){
+      const location=plan.locations.get(portion.locationId)!;
+      for(let time=portion.start;time<portion.end;time+=60_000){
         const p=localParts(time,location.timezone),day=p.date;
         const used=(daily.get(day)??0)+1;
         daily.set(day,used);
@@ -60,6 +67,7 @@ export function hardValid(works:readonly WorkUnit[], plan:ExpandedPlan, input:Pl
           caps.set(day,Math.min(caps.get(day)??Infinity,ex.max_minutes));
         }
         if(used>(caps.get(day)??Infinity))return false;
+      }
       }
     }
   }
@@ -83,7 +91,21 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
     const rows=byEmployee.get(e.id);
     if(!rows?.length)continue;
     rows.sort((a,b)=>a.start-b.start);
-    const total=rows.reduce((n,w)=>n+minutes(w),0);
+    // Paid rest minutes remain payable while they provide NO coverage.
+    // Only a verified configured rest duration may bridge two work segments.
+    const billedRows=rows.slice();
+    const restMinutes=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
+    if(restMinutes!=null){
+      for(let i=1;i<rows.length;i++){
+        const previous=rows[i-1],current=rows[i];
+        if(previous.locationId===current.locationId &&
+          (current.start-previous.end)/60000===restMinutes)
+          billedRows.push({employeeId:e.id,locationId:current.locationId,
+            start:previous.end,end:current.start,pinned:false});
+      }
+    }
+    billedRows.sort((a,b)=>a.start-b.start);
+    const total=billedRows.reduce((n,w)=>n+minutes(w),0);
     if(e.isOwner){
       ownerMinutes+=total;
       if(e.ownerOpportunityCentsPerHour==null)ownerUnknown=true;
@@ -98,7 +120,7 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
     if(overtime?.verified){
       let week=0, premiumMinutes=0;
       const daily=new Map<string,number>();
-      for(const w of rows){
+      for(const w of billedRows){
         const zone=plan.locations.get(w.locationId)!.timezone;
         for(let t=w.start;t<w.end;t+=60000){
           const d=localParts(t,zone).date;
@@ -157,11 +179,14 @@ export function shiftsForWork(input:PlannerInput,plan:ExpandedPlan,
     for(const w of rows){
       const gap=last?(w.start-last.end)/60000:Infinity;
       const meal=input.ruleProfile?.unpaidMealMinutes;
-      const sameShift=last && (gap===0 || (meal!=null&&gap===meal));
+      const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
+      const restBreak=paidRest!=null && gap===paidRest;
+      const sameShift=last && (gap===0 || (meal!=null&&gap===meal) || restBreak);
       if(!sameShift){
         flush();first=w;paid=0;pinned=true;breaks=[];
       } else if(gap>0 && last){
-        breaks.push({startAt:utcIso(last.end),endAt:utcIso(w.start),paid:false});
+        breaks.push({startAt:utcIso(last.end),endAt:utcIso(w.start),paid:restBreak});
+        if(restBreak)paid+=gap;
       }
       last=w;paid+=minutes(w);pinned=pinned&&w.pinned;
     }
