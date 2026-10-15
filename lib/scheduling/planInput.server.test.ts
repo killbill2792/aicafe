@@ -11,6 +11,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("./foundation.server", () => ({ requireSchedulingOwner: fixtures.owner }));
 
 import { loadOliviaWeekFromSavedStaff } from "./planInput.server";
+import {expandPlannerInput} from "@/lib/calc/scheduling/plannerCore";
 
 const id = (n:number) => `30000000-0000-4000-8000-${String(n).padStart(12,"0")}`;
 const week = "2026-10-12";
@@ -264,7 +265,17 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     fixtures.tables.scheduling_coverage_requirements[0].min_overlap_minutes=0;
     const zero=await loadOliviaWeekFromSavedStaff(week);
     expect(zero.ok).toBe(true);
-    if(zero.ok)expect(zero.input.slotMinutes).toBe(30);
+    if(zero.ok){
+      expect(zero.input.slotMinutes).toBe(30);
+      expect(()=>expandPlannerInput(zero.input)).not.toThrow();
+    }
+    fixtures.tables.scheduling_coverage_requirements[0].end_local="08:45:00";
+    const fortyFive=await loadOliviaWeekFromSavedStaff(week);
+    expect(fortyFive.ok).toBe(true);
+    if(fortyFive.ok){
+      expect(fortyFive.input.slotMinutes).toBe(15);
+      expect(()=>expandPlannerInput(fortyFive.input)).not.toThrow();
+    }
   });
 
   it("rejects source records changed between the first and last DB fingerprint",async()=>{
