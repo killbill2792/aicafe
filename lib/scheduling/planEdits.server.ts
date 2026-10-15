@@ -80,6 +80,16 @@ export async function saveOliviaEditedDraft(
   const baseline=base.scenario as PlannerScenario;
   if(baseline.objective!==edit.objective || !Array.isArray(baseline.shifts))
     return {ok:false,error:"invalid_input"};
+  // Pinned shifts are commitments, not a client-controlled visual marker.
+  // A caller must never unpin, delete, reassign, or move a saved pinned shift.
+  const originalPinned=baseline.shifts.filter(s=>s.pinned);
+  if(originalPinned.some(original=>!edit.shifts.some(candidate=>
+    candidate.pinned===true && candidate.employeeId===original.employeeId &&
+    candidate.locationId===original.locationId &&
+    candidate.startAt===original.startAt && candidate.endAt===original.endAt &&
+    candidate.paidMinutes===original.paidMinutes &&
+    JSON.stringify(candidate.breaks)===JSON.stringify(original.breaks))))
+    return {ok:false,error:"invalid_shifts",violations:["pinned_shift_changed"]};
 
   let validation:ReturnType<typeof validateOliviaAssignments>;
   try {
