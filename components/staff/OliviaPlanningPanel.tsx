@@ -89,7 +89,8 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         setPublishedRevision(r.publishedRevision);
         setHistory(r.revisions);
       } else {
-        setError(r.error);
+        setError(t(r.error==="unauthorized"?"ownerRequired":
+          r.error==="disabled"?"previewDisabled":"historyUnavailable"));
       }
     });
   }
