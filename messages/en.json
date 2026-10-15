@@ -1562,6 +1562,15 @@
     "refreshHistory": "Reload saved revisions",
     "officialVersion": "Official published revision",
     "none": "None",
-    "savedRevision": "Draft revision {revision} saved"
+    "savedRevision": "Draft revision {revision} saved",
+    "previewRequired": "Generate a current schedule proposal before saving.",
+    "sourceChanged": "Saved staff information changed since this preview. Generate a fresh plan before saving.",
+    "revisionConflict": "Another owner changed this week's draft. Refresh versions and generate again.",
+    "capacityExceeded": "Too many shifts to save in one draft. Adjust coverage and review the shift limit.",
+    "saveFailed": "Unable to save this draft. Try again; the same request will be safely retried.",
+    "ownerUnavailable": "Owner hours cannot be compared until a verified owner-to-staff link is configured.",
+    "feasible": "Feasible proposal",
+    "infeasible": "Required coverage cannot be filled",
+    "unproven": "Optimizer could not prove completeness"
   }
 }
