@@ -48,7 +48,7 @@ function defineReadAnalysis<const K extends ReadKey>(id:string,key:K) {
       allowedActualities:["actual","estimated","planned","unknown"] as const,
     }],
     minimumOverallCoverage:"partial_explicit" as const,
-  }])) as Record<Purpose<K>,{
+  }])) as unknown as Record<Purpose<K>,{
     kind:"registered_sources";inputs:[{
       metricIds:string[];entityReadIds:string[];readerId:string;readerVersion:number;
       selectorId:string;selectorVersion:number;precedencePolicyId:string;
@@ -128,7 +128,7 @@ export function validateP1Analyses() {
       return false;
     return def.allowedPurposes.every(p=>{
       if(!Object.hasOwn(def.sourceRequirementsByPurpose,p))return false;
-      const selection=def.sourceRequirementsByPurpose[p];
+      const selection=(def.sourceRequirementsByPurpose as Record<string,typeof def.sourceRequirementsByPurpose[keyof typeof def.sourceRequirementsByPurpose]>)[p];
       const required=sourcePolicies[key][p];
       return !!required && selection.kind==="registered_sources" &&
         selection.minimumOverallCoverage==="partial_explicit" &&
