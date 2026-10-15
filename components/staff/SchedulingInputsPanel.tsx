@@ -32,11 +32,11 @@ export function StaffAvailabilitySection({ employee, records, locations, today }
   const confirmed=records.availability_rule.filter(r=>
     r.employee_id===employee.id && r.confirmation==="owner_confirmed").length;
   return <details className="rounded-xl border border-line bg-paper p-3">
-    <summary className="min-h-12 cursor-pointer text-base font-bold focus-visible:outline-2 focus-visible:outline-offset-2">
+    <summary className="min-h-12 cursor-pointer text-[17px] font-bold focus-visible:outline-2 focus-visible:outline-offset-2">
       {t("title")} · {count>0?t("windowCount",{count}):t("notRecorded")}
       {count>0&&` · ${t("confirmedCount",{count:confirmed})}`}
     </summary>
-    <p className="py-2 text-sm text-ink-muted">{t("doesNotAssign")}</p>
+    <p className="py-2 text-[17px] text-ink-muted">{t("doesNotAssign")}</p>
     <div className="flex flex-col gap-3">
       <AvailabilityEditor employeeId={employee.id} rows={records.availability_rule}
         preferences={records.preferences} locations={locations} today={today}/>
@@ -61,7 +61,7 @@ export function StaffCoverageSection({records,locations,businessTimezone,today}:
 
 export function StaffAvailabilityUnavailable() {
   const t=useTranslations("SchedulingAvailability");
-  return <p role="status" className="rounded-xl bg-paper px-4 py-3 text-sm text-ink-muted">
+  return <p role="status" className="rounded-xl bg-paper px-4 py-3 text-[17px] text-ink-muted">
     {t("featureUnavailable")}
   </p>;
 }
