@@ -335,6 +335,26 @@ describe("Olivia PR3B canonical saved-staff input boundary", () => {
     expect(result.input.slotMinutes).toBe(15);
     expect(result.input.replanAsOf).toMatch(/^\d{4}-/);
     expect(()=>expandPlannerInput(result.input)).not.toThrow();
+    // After another publication, its input carries the FIRST publication's
+    // shift-scoped rate. The next replan must retain that, not the newer
+    // employee wage embedded in the intermediate published revision.
+    const prior=fixtures.tables.scheduling_plan_revisions[0].planner_input as {
+      employees:unknown[];
+    };
+    fixtures.tables.scheduling_plan_revisions[0].planner_input={
+      ...prior,
+      historicalShiftWageRates:{
+        [JSON.stringify([id(1),id(800),frozen.starts_at])]:{
+          rateCentsPerHour:1400,salary:false,
+        },
+      },
+    };
+    const secondReplan=await loadOliviaWeekFromSavedStaff(week);
+    expect(secondReplan.ok).toBe(true);
+    if(secondReplan.ok)expect(secondReplan.input.historicalShiftWageRates?.[
+      JSON.stringify([id(1),id(800),frozen.starts_at])]).toEqual({
+      rateCentsPerHour:1400,salary:false,
+    });
   });
   it("rejects source records changed between the first and last DB fingerprint",async()=>{
     let calls=0;
