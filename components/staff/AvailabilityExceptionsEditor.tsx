@@ -45,15 +45,18 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
   const draft = draftOverride ?? scoped.map(fromRow);
   function touch(next: ExceptionDraft[]) {
     draftManifest.current ??= scoped.map(r=>({id:r.id,revision:r.revision}));
-    setDraftOverride(next); setDirty(true); setStatus("idle"); key.current=null;
+    // Never dismiss a CAS conflict merely because the owner edits the
+    // preserved local draft. Explicit reapplication must use fresh revisions.
+    setDraftOverride(next); setDirty(true);
+    setStatus(current=>current==="conflict"?"conflict":"idle"); key.current=null;
   }
   function changeScope(fn: (value: string) => void, value: string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null); draftManifest.current=null; setDirty(false); setStatus("idle"); key.current=null; fn(value);
+    setDraftOverride(null); draftManifest.current=null; setDirty(false); setStatus("idle"); setReapplyReady(false); key.current=null; fn(value);
   }
   function switchLocation(value:string) {
     if (dirty && !window.confirm(t("discardEdits"))) return;
-    setDraftOverride(null);draftManifest.current=null;setDirty(false);setStatus("idle");key.current=null;
+    setDraftOverride(null);draftManifest.current=null;setDirty(false);setStatus("idle");setReapplyReady(false);key.current=null;
     setLocationId(value);
     if (!dateEdited) setDate(locations.find(l=>l.id===value)?.todayLocal??today);
   }
@@ -197,7 +200,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
       {scoped.length===0 && <p className="text-[17px]">{t("notRecorded")}</p>}
       <button type="button" className={secondary} onClick={()=>{
         if (!window.confirm(t("discardEdits"))) return;
-        setDraftOverride(null);setDirty(false);setStatus("idle");
+        setDraftOverride(null);draftManifest.current=null;setReapplyReady(false);setDirty(false);setStatus("idle");
       }}>{t("useLatestSaved")}</button>
     </details>}
     {status==="conflict" && <p role="alert" className="text-[17px] text-warn">{t("conflict")}</p>}
