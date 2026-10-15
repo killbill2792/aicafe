@@ -76,7 +76,8 @@ BEGIN
     public.staff_availability_exceptions,public.staff_scheduling_preferences,
     public.staff_preference_windows,public.scheduling_qualification_types,
     public.staff_qualifications,public.scheduling_coverage_requirements,
-    public.staff_scheduling_compensation,public.staff_schedules IN SHARE MODE;
+    public.staff_scheduling_compensation,public.staff_schedules,
+    public.scheduling_labor_rule_reviews IN SHARE MODE;
   IF public.scheduling_pr3_source_token_internal(p_business_id) IS DISTINCT FROM
     p_source_token THEN RETURN jsonb_build_object('error','source_changed'); END IF;
 
@@ -163,7 +164,8 @@ BEGIN
     public.staff_availability_exceptions,public.staff_scheduling_preferences,
     public.staff_preference_windows,public.scheduling_qualification_types,
     public.staff_qualifications,public.scheduling_coverage_requirements,
-    public.staff_scheduling_compensation,public.staff_schedules IN SHARE MODE;
+    public.staff_scheduling_compensation,public.staff_schedules,
+    public.scheduling_labor_rule_reviews IN SHARE MODE;
   IF public.scheduling_pr3_source_token_internal(p_business_id) IS DISTINCT FROM
     p_source_token THEN RETURN jsonb_build_object('error','source_changed'); END IF;
   SELECT s.* INTO v_series FROM public.scheduling_plan_series s
