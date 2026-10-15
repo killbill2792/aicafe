@@ -12,7 +12,8 @@ BEGIN
     'staff_availability_exceptions','staff_scheduling_preferences',
     'staff_preference_windows','scheduling_qualification_types',
     'staff_qualifications','scheduling_coverage_requirements',
-    'staff_scheduling_compensation','staff_schedules'
+    'staff_scheduling_compensation','staff_schedules',
+    'scheduling_labor_rule_reviews'
   ] LOOP
     EXECUTE format('SELECT coalesce(jsonb_agg(to_jsonb(r) ORDER BY r.id::text), ''[]''::jsonb)
                     FROM public.%I r WHERE r.business_id=$1', v_table)
