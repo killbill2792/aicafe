@@ -28,7 +28,7 @@ export function buildP1P2Registrations():readonly ReadRegistration[] {
     }).inputs.flatMap(source=>[...source.metricIds,...source.entityReadIds]),
     allowedPurposes:def.allowedPurposes,
     inputSchema:def.inputSchema,outputSchema:def.outputSchema,
-    schemaContract:def.schemaContract,
+    schemaContract:{...def.schemaContract,registrationId:def.id},
     requiredRole:"owner" as const,sensitivity:def.authorization.sensitivity,
     budgets:{
       maxOperations:1,timeoutMs:10000,maxResultBytes:100000,maxInputBytes:10000,
