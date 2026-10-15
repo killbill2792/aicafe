@@ -216,5 +216,25 @@ BEGIN
     WHERE id=current_setting('test.olivia3_s3')::uuid)<>2
     THEN RAISE EXCEPTION 'rejected edit changed official version'; END IF;
 END $$;
+-- Version 501 must be forbidden by the database, not merely by UI forms.
+DO $
+DECLARE
+  blocked_series boolean:=false;
+  blocked_revision boolean:=false;
+BEGIN
+  BEGIN
+    UPDATE public.scheduling_plan_series SET current_revision=501
+      WHERE id=current_setting('test.olivia3_s3')::uuid;
+  EXCEPTION WHEN check_violation THEN blocked_series:=true;
+  END;
+  BEGIN
+    UPDATE public.scheduling_plan_revisions SET revision=501
+      WHERE id=current_setting('test.olivia3_removed3')::uuid;
+  EXCEPTION WHEN check_violation THEN blocked_revision:=true;
+  END;
+  IF NOT blocked_series OR NOT blocked_revision THEN
+    RAISE EXCEPTION 'Olivia revision cap not enforced in PostgreSQL';
+  END IF;
+END $;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed
