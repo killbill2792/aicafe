@@ -4,6 +4,7 @@ import { useMemo, useRef, useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { useRouter } from "@/i18n/navigation";
 import { saveStaffAvailabilityBatch } from "@/lib/actions/schedulingFoundation";
+import { reconcileDeletedDraftIds } from "@/lib/scheduling/reconcileDraft";
 
 export type SchedulingRow = Record<string, unknown> & { id: string; revision: number };
 export type SchedulingLocation = { id: string; name: string; timezone: string | null; todayLocal?: string };
@@ -103,12 +104,8 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       setError(t("checkDates")); return;
     }
     const expected = scoped.map((row) => ({ id: row.id, revision: row.revision }));
-    const currentIds=new Set(scoped.map(row=>row.id));
-    const desired = draft.map((row) => ({
-      // A competing owner may have deleted this original ID. After the
-      // explicit conflict-confirmation, recreate that draft row as a new
-      // record instead of sending an ID absent from the fresh manifest.
-      ...(row.id && currentIds.has(row.id) ? { id: row.id } : {}),
+    const desired = reconcileDeletedDraftIds(draft,scoped).map((row) => ({
+      ...(row.id ? { id: row.id } : {}),
       data: {
         employee_id: employeeId, location_id: locationId || null,
         day_of_week: row.day_of_week, start_local: row.start_local,
