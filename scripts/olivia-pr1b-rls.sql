@@ -85,14 +85,20 @@ BEGIN
 END $$;
 -- Stale empty expected manifest cannot overwrite the saved two rows.
 DO $$
-DECLARE conflict jsonb;
+DECLARE conflict jsonb; again jsonb; stable_key uuid:=gen_random_uuid();
 BEGIN
  SELECT public.scheduling_save_availability_batch(
  current_setting('test.pr1b_business')::uuid,current_setting('test.pr1b_employee')::uuid,
  NULL,'availability_rule','{"effective_from":"2026-10-14","effective_to":null}'::jsonb,
- '[]'::jsonb,'[]'::jsonb,gen_random_uuid()) INTO conflict;
- IF conflict->>'conflict'<>'true' THEN RAISE EXCEPTION 'phantom batch overwrite'; END IF;
-END $$;
+ '[]'::jsonb,'[]'::jsonb,stable_key) INTO conflict;
+ SELECT public.scheduling_save_availability_batch(
+ current_setting('test.pr1b_business')::uuid,current_setting('test.pr1b_employee')::uuid,
+ NULL,'availability_rule','{"effective_from":"2026-10-14","effective_to":null}'::jsonb,
+ '[]'::jsonb,'[]'::jsonb,stable_key) INTO again;
+ IF conflict->>'conflict'<>'true' OR again->>'conflict'<>'true' THEN
+   RAISE EXCEPTION 'phantom batch overwrite/replayed conflict';
+ END IF;
+END $;
 -- A late invalid row must roll back earlier updates and their audit events.
 -- The SQL function's exception subtransaction preserves the original version.
 DO $
