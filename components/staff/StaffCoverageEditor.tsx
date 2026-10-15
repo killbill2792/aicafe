@@ -16,6 +16,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const t=useTranslations("SchedulingAvailability"),router=useRouter();
   const [selected,setSelected]=useState("");
   const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(null);
+  const [conflicted,setConflicted]=useState(false);
   const [locationId,setLocationId]=useState(locations[0]?.id??"");
   const [day,setDay]=useState("1"),[specificDate,setSpecificDate]=useState("");
   const [from,setFrom]=useState(locations[0]?.todayLocal??today),[to,setTo]=useState("");
@@ -31,7 +32,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const names=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   const location=locations.find(l=>l.id===locationId);
   function select(id:string){
-    setSelected(id);const r=rows.find(v=>v.id===id);
+    setConflicted(false);setSelected(id);const r=rows.find(v=>v.id===id);
     setSavedRecord(r ? {id:r.id,revision:r.revision} : null);
     // Saved effective dates are never pristine proposed defaults.
     setFromEdited(Boolean(r));
@@ -49,8 +50,9 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     if (!fromEdited) setFrom(locations.find(l=>l.id===value)?.todayLocal??today);
   }
   function save(){
+    if(conflicted){setError(t("conflict"));return;}
     if(!locationId){setError(t("chooseLocation"));return;}
-    const old=savedRecord?.id===selected ? savedRecord : rows.find(r=>r.id===selected);
+    const old=savedRecord?.id===selected ? savedRecord : null;
     const payload={location_id:locationId,day_of_week:specificDate?null:Number(day),
       local_date:specificDate||null,effective_from:specificDate?null:from,
       effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
@@ -63,7 +65,10 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
           {requestKey:stableCreateRequestKey(retry,payload)}),
         data:payload,
       });
-      if(!result.ok){setError(t("saveFailed"));return;}
+      if(!result.ok){
+        if(result.error==="conflict_or_missing"){setConflicted(true);router.refresh();}
+        setError(t("saveFailed"));return;
+      }
       retry.current=null;setSavedRecord({id:result.id,revision:result.revision});
       setSelected(result.id);setError("");setSaved(true);router.refresh();
     });
@@ -81,7 +86,13 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   return <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
     <h3 className="text-[17px] font-bold">{t("staffingNeeds")}</h3>
     <p className="text-[17px] text-ink-muted">{t("coverageExplainer")}</p>
-    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
+    {conflicted && <button type="button" className={secondary} onClick={()=>{
+      const fresh=rows.find(r=>r.id===selected);
+      setSavedRecord(fresh?{id:fresh.id,revision:fresh.revision}:null);
+      if(!fresh)setSelected("");
+      setConflicted(false);setError("");retry.current=null;
+    }}>{t("applyAfterConflict")}</button>}
+    <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     {locations.length===0 && <p role="status" className="text-[17px] text-warn">{t("noLocations")}</p>}
     {rows.length===0&&<p className="text-[17px] text-ink-muted">{t("noCoverage")}</p>}
     {rows.map(r=><div key={r.id} className="flex items-center justify-between gap-2 rounded-xl border border-line p-3">
