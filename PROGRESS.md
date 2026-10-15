@@ -1,3 +1,13 @@
+## Olivia scheduling — PR 1A universal manual foundation (review, 2026-10-14)
+
+Plan: reconcile the owner-approved scheduling exception in docs/01-product.md; add one additive scheduling-input migration with tenant-scoped owner RLS, audit and wage provenance; add strict typed owner-only server operations; place only pure availability/date-precedence calculations in lib/calc/scheduling and test them. Preserve existing Staff, assigned staff_schedules, timecards, payroll formulas, POS and Supervisor behavior. No production migration, merge or deployment.
+
+Implementation: new staff_availability_rules, staff_availability_exceptions, staff_scheduling_preferences, staff_preference_windows, scheduling_qualification_types, staff_qualifications, scheduling_coverage_requirements, staff_scheduling_compensation and append-only scheduling_foundation_audit_events. Date-specific replacement/leave priority and partial blocked intervals are pure lib/calc/scheduling code. Commands are default-off (SCHEDULING_FOUNDATION_ENABLED must be explicitly true after reviewed staging migrations), owner/café scoped, schema checked and revision guarded. No new npm dependencies.
+
+Verification gate: run Vitest, strict TypeScript, ESLint, build, diff check and disposable Supabase RLS/composite tenant/audit/compensation checks in .github/workflows/olivia-pr1a-verify.yml. Direct execution in this remote-only authoring session is unavailable without repository checkout/dependencies; do not mark CI passed until a run reports results. Worker acknowledgment, legal zero-pay eligibility, DST instant validation and actual schedule publication are not claimed. PR 1B should build the in-place Staff inputs only after PR 1A staging verification.
+
+---
+
 ## Toast Standard API — secure connector foundation (draft, 2026-10-12)
 
 1. Add service-role-only encrypted Toast credentials, tenant-safe location mappings, atomic mapping updates, per-business token refresh lease and narrow owner-only JSON setup/test routes.

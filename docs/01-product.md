@@ -23,6 +23,21 @@ Every feature must help answer that. If a feature only repeats what Square or To
 7. **POS connection**: Square OAuth (read-only). Toast and any other POS via CSV export upload in v1.
 8. **Onboarding**: connect POS, add monthly bills, add top recipes, choose language. Must be doable in 15 minutes sitting with the owner.
 
+## Approved core capability: Olivia owner-directed scheduling
+
+The owner has explicitly approved **Olivia scheduling** as a core AI CAFE capability.
+This is a narrow exception to the original scheduling exclusion below: the existing
+Supervisor assists with manual employee availability, coverage requirements, and
+later owner-approved labor-cost-aware planning, so owners can reclaim time and
+understand the staffing effect on true profit. It must work without a POS integration
+or employee account. Reuse the existing Staff records and Operations inbox.
+Preserve the historical distinction between proposed shifts, published shifts and
+actual timecards. PR 1A delivers additive backend data and owner-only commands
+only; it does not publish schedules, contact workers, or change payroll math.
+
+**Do not build** an unrelated standalone POS scheduling clone, duplicate Staff app,
+general payroll service, or automated POS write-back.
+
 ## Version 1.5
 9. "Why today was different": a plain-language explanation of what moved profit.
 10. Staff cost view: cost per minute now, per person today, staff cost per $1 by hour.
@@ -42,7 +57,7 @@ Every feature must help answer that. If a feature only repeats what Square or To
 - Standalone sales reports, item rankings, sales trends
 - Standalone void, overtime, or break alerts as a main feature (they may appear as supporting cards inside our screens)
 - A general "ask your data" chatbot
-- Scheduling, payroll, inventory counting
+- Unrelated standalone POS scheduling clone, payroll processing, inventory counting
 
 ## Success for the pilot
 - The owner opens it at least 4 days a week without being reminded.
