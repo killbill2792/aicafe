@@ -47,6 +47,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
   const [locationNames, setLocationNames] = useState<Record<string,string>>({});
   const [sourceDigest, setSourceDigest] = useState<string | null>(null);
   const retry = useRef<PendingCreate>(null);
+  const proposalHead = useRef<number|null>(null);
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
   const [currentRevision, setCurrentRevision] = useState(0);
   const [publishedRevision, setPublishedRevision] = useState<number | null>(null);
@@ -74,6 +75,10 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
     return readOliviaPlanHistory({ week: selectedWeek }).then(r => {
       if (r.ok) {
         setCurrentRevision(r.currentRevision);
+        if (proposalHead.current !== null && proposalHead.current !== r.currentRevision) {
+          setSourceDigest(null);
+          setError(t("revisionConflict"));
+        }
         setPublishedRevision(r.publishedRevision);
         setHistory(r.revisions);
       } else {
@@ -86,16 +91,24 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
     setError(""); setNotice(""); setResult(null); setSourceDigest(null);
     setNotices([]);
     retry.current = null;
+    proposalHead.current = null;
     startTransition(async () => {
       const selectedWeek = week;
       const response = await previewOliviaWeek({ week: selectedWeek });
       if (!response.ok) {
         setError(response.blockers?.length ? response.blockers.map(b =>
           t(blockerKeys[b.code], { employee: b.employeeName ?? "" })).join(" ") :
-          response.error);
+          t(({invalid_input:"previewInvalid",invalid_week:"previewInvalid",
+            unauthorized:"ownerRequired",disabled:"previewDisabled",
+            storage_unavailable:"previewUnavailable",
+            planner_unavailable:"previewUnavailable"} as Record<string,string>)[response.error]??
+            "previewUnavailable"));
         return;
       }
       setResult(response.plan);
+      proposalHead.current=response.previewRevision;
+      setObjective(response.plan.best?.objective ??
+        response.plan.scenarios[0]?.objective ?? "balanced");
       setNotices(response.notices);
       setEmployees(response.employees); setLocations(response.locations);
       setLocationNames(response.locationNames);
@@ -104,9 +117,14 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
     });
   }
   function save() {
-    if (!sourceDigest || !scenario) { setError(t("previewRequired")); return; }
+    if (!sourceDigest || !scenario || proposalHead.current === null) {
+      setError(t("previewRequired")); return;
+    }
+    if (proposalHead.current !== currentRevision) {
+      setError(t("revisionConflict")); return;
+    }
     setError(""); setNotice("");
-    const intent = { week, objective, expectedRevision: currentRevision,
+    const intent = { week, objective, expectedRevision: proposalHead.current,
       expectedSourceDigest: sourceDigest };
     const requestKey = stableCreateRequestKey(retry, intent);
     startTransition(async () => {
@@ -121,6 +139,9 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
           return;
         }
         retry.current = null;
+        proposalHead.current = null;
+        setSourceDigest(null);
+        setResult(null);
         setNotice(t("savedRevision", { revision: response.revision }));
         await loadHistory(week);
       } catch {
@@ -186,6 +207,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
         setSourceDigest(null); retry.current = null; setNotices([]);
+        proposalHead.current=null;
         setEditing(null); setEditedShifts([]); editRetry.current=null;
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
@@ -201,9 +223,10 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         <select value={objective} onChange={e =>
           setObjective(e.target.value as PlannerScenario["objective"])}
           className="min-h-12 rounded-xl border border-line bg-paper px-3">
-          <option value="balanced">{t("balanced")}</option>
-          <option value="cash">{t("cash")}</option>
-          <option value="owner_time" disabled>{t("ownerTime")}</option>
+          {result.scenarios.filter(s=>s.objective!=="owner_time").map(s=>
+            <option key={s.objective} value={s.objective}>
+              {t(s.objective==="cash"?"cash":"balanced")}
+            </option>)}
         </select>
       </label>
       {scenario && <div className="flex flex-col gap-3">
@@ -228,10 +251,17 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
         <h3 className="font-bold">{t("gaps")}</h3>
         {scenario.gaps.length === 0 && <p>{t("noGaps")}</p>}
         {scenario.gaps.map((gap, i) => <p key={i} className="text-sm text-warn">
-          {localShiftTime(gap.startAt, locations[gap.locationId] ?? "UTC", locale)} — {localShiftTime(gap.endAt, locations[gap.locationId] ?? "UTC", locale)}: {gap.reason} ({gap.missingHeadcount})
+          {localShiftTime(gap.startAt, locations[gap.locationId] ?? "UTC", locale)} — {localShiftTime(gap.endAt, locations[gap.locationId] ?? "UTC", locale)}: {t(({
+            no_active_staff:"gapNoStaff",qualification_missing:"gapQualification",
+            no_confirmed_availability:"gapAvailability",capacity_or_overlap:"gapCapacity",
+            break_or_rest_constraint:"gapRest",daily_hour_limit:"gapDaily",
+            weekly_hour_limit:"gapWeekly",date_specific_cap:"gapDateCap",
+            pinned_conflict:"gapPinned",solver_budget:"gapSolver",
+            handoff_overlap_missing:"gapHandoff",
+          } as Record<string,string>)[gap.reason]??"gapUnknown")} ({gap.missingHeadcount})
         </p>)}
         {!scenario.completeCoverage && <p className="text-sm text-warn">{t("partialDraftUnavailable")}</p>}
-        <button type="button" disabled={pending || !sourceDigest || !scenario.hardConstraintsSatisfied || !scenario.completeCoverage}
+        <button type="button" disabled={pending || !sourceDigest || proposalHead.current!==currentRevision || !scenario.hardConstraintsSatisfied || !scenario.completeCoverage}
           onClick={save}
           className="min-h-12 rounded-full border border-ink px-4 font-bold disabled:opacity-50">
           {t("saveDraft")}
