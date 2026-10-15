@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { classified, discoverP1, inputFor, metricIds, purposePolicies,
+import { classified, discoverP1, inputFor, metricIds, metricUnits, purposePolicies,
   PUBLIC_TOOL_METHODS, readers, sourcePolicies, values, additionalSurfaces } from "./p1Catalog";
 
 describe("Platform P1 checked-in coverage manifest", () => {
@@ -11,7 +11,7 @@ describe("Platform P1 checked-in coverage manifest", () => {
     const actual=[...methods].map(m=>m[1]).filter(m=>m!=="constructor").sort();
     expect(actual).toEqual([...PUBLIC_TOOL_METHODS].sort());
     const facadeMethods=new Set<string>(PUBLIC_TOOL_METHODS);
-    const exposed=Object.values(readers).filter(method=>facadeMethods.has(method));
+    const exposed=[...new Set(Object.values(readers).filter(method=>facadeMethods.has(method)))];
     expect([...exposed,...Object.keys(classified)].sort()).toEqual(actual);
   });
   it("has a strict value and request contract, exact source-purpose policy, handler and identity for each ID", () => {
@@ -41,6 +41,11 @@ describe("Platform P1 checked-in coverage manifest", () => {
       expect(values[id].safeParse(undefined).success).toBe(false);
     }
     expect(metricIds.length).toBeGreaterThan(0);
+    for(const metricId of metricIds){
+      expect(values[metricId].safeParse(metricUnits[metricId]==="ratio"?0.25:123).success).toBe(true);
+      expect(values[metricId].safeParse(metricUnits[metricId]==="ratio"?Infinity:1.5).success).toBe(false);
+      expect(inputFor(metricId).safeParse({id:metricId,version:1,purpose:purposePolicies[metricId][0],granularity:"hour",period:{from:"2026-10-01",to:"2026-10-10"}}).success).toBe(false);
+    }
     expect(Object.keys(additionalSurfaces).length).toBeGreaterThan(0);
   });
   it("disallows extra filters, SQL strings, fake versions, impossible dates and hourly inference", () => {
