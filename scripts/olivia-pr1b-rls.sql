@@ -73,6 +73,37 @@ BEGIN
    RAISE EXCEPTION 'batch replay duplicated record or audit';
  END IF;
 END $$;
+-- A stale PR1A single-record CREATE cannot append a phantom after the
+-- committed full-scope batch; a different untouched scope remains usable.
+DO $$
+BEGIN
+ BEGIN
+  PERFORM public.scheduling_create_foundation(
+   current_setting('test.pr1b_business')::uuid,'availability_rule',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.pr1b_employee'),
+    'day_of_week',3,'start_local','21:00','end_local','23:00',
+    'overnight',false,'effective_from','2026-10-14',
+    'source','owner_direct','confirmation','owner_confirmed'));
+  RAISE EXCEPTION 'legacy stale individual create bypassed batch scope';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ IF (SELECT count(*) FROM public.staff_availability_rules
+     WHERE business_id=current_setting('test.pr1b_business')::uuid
+       AND effective_from='2026-10-14')<>2 THEN
+   RAISE EXCEPTION 'phantom legacy record created';
+ END IF;
+ PERFORM public.scheduling_create_foundation(
+   current_setting('test.pr1b_business')::uuid,'availability_rule',gen_random_uuid(),
+   jsonb_build_object('employee_id',current_setting('test.pr1b_employee'),
+    'day_of_week',6,'start_local','08:00','end_local','12:00',
+    'overnight',false,'effective_from','2026-12-01',
+    'source','owner_direct','confirmation','owner_confirmed'));
+ IF NOT EXISTS(SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=current_setting('test.pr1b_business')::uuid
+     AND effective_from='2026-12-01') THEN
+   RAISE EXCEPTION 'legacy individual create blocked outside batch-managed scope';
+ END IF;
+END $$;
 -- Same key with different payload conflicts.
 DO $$
 DECLARE conflict jsonb;
