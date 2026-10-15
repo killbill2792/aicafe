@@ -17,6 +17,7 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
   const [newCode,setNewCode]=useState(""),[newName,setNewName]=useState("");
   const [code,setCode]=useState(""),[locationId,setLocationId]=useState("");
   const [from,setFrom]=useState(today),[to,setTo]=useState("");
+  const [dateEdited,setDateEdited]=useState(false);
   const [source,setSource]=useState<"owner_direct"|"worker_reported_by_owner">("owner_direct");
   const [confirmation,setConfirmation]=useState<"unconfirmed"|"owner_confirmed">("unconfirmed");
   const [error,setError]=useState(""),[saved,setSaved]=useState(false);
@@ -35,6 +36,10 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
       setError("");setSaved(true);setCode(newCode.trim().toLowerCase());
       typeRetry.current=null;setNewCode("");setNewName("");router.refresh();
     });
+  }
+  function selectLocation(value:string) {
+    setLocationId(value);
+    if (!dateEdited) setFrom(locations.find(l=>l.id===value)?.todayLocal??today);
   }
   function assign() {
     if (!code){issue(t("chooseQualification"));return;}
@@ -81,14 +86,14 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
       </select>
     </label>
     <label className="flex flex-col gap-1 text-sm">{t("location")}
-      <select className={field} value={locationId} onChange={e=>setLocationId(e.target.value)}>
+      <select className={field} value={locationId} onChange={e=>selectLocation(e.target.value)}>
         <option value="">{t("allLocations")}</option>
         {locations.map(l=><option key={l.id} value={l.id}>{l.name}</option>)}
       </select>
     </label>
     <div className="grid grid-cols-2 gap-2">
       <label className="flex flex-col gap-1 text-sm">{t("effectiveFrom")}
-        <input type="date" className={field} value={from} onChange={e=>setFrom(e.target.value)}/>
+        <input type="date" className={field} value={from} onChange={e=>{setDateEdited(true);setFrom(e.target.value);}}/>
       </label>
       <label className="flex flex-col gap-1 text-sm">{t("effectiveTo")}
         <input type="date" className={field} value={to} onChange={e=>setTo(e.target.value)}/>
