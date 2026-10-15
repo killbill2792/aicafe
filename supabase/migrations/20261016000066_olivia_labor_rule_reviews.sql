@@ -58,6 +58,12 @@ BEGIN
     WHERE m.business_id=p_business_id AND m.user_id=p_actor_id
       AND m.role='owner' AND b.is_demo=false
   ) THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
+  PERFORM 1 FROM public.memberships
+    WHERE business_id=p_business_id AND user_id=p_actor_id AND role='owner'
+    FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
+  PERFORM 1 FROM public.businesses WHERE id=p_business_id AND is_demo=false FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
   v_fingerprint:=md5(jsonb_build_object('action','labor_review',
     'tenant',p_business_id,'actor',p_actor_id,'expected',p_expected_revision,
