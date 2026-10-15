@@ -1603,6 +1603,26 @@
     "saveEditedDraft": "Guardar borrador editado",
     "cancelEdit": "Cancelar edición",
     "editLoadFailed": "No se pudo cargar la versión. Actualice e inténtelo de nuevo.",
-    "editInvalid": "No se puede guardar: falló la validación de turnos. {details}"
+    "editInvalid": "No se puede guardar: falló la validación de turnos. {details}",
+    "approvalTitle": "Aprobación y publicación",
+    "approvalExplanation": "La aprobación y la publicación son acciones independientes y auditadas. Solo pueden publicarse las versiones validadas y revisadas legalmente.",
+    "publishNotReady": "La publicación oficial no está habilitada. Primero deben verificarse las normas laborales y autorizarse el entorno de pruebas.",
+    "latestVersion": "Última versión",
+    "approveSchedule": "Aprobar esta versión",
+    "publishSchedule": "Publicar versión aprobada",
+    "confirmPublish": "¿Publicar este horario como oficial? No se contacta al personal ni se crean registros de asistencia.",
+    "approvedRevision": "Versión {revision} aprobada",
+    "publishedVersion": "Versión {revision} publicada",
+    "publishedNotAttendance": "Estos son turnos planificados, no aceptaciones ni horas trabajadas.",
+    "viewOfficial": "Ver turnos oficiales",
+    "noOfficialShifts": "Todavía no hay turnos publicados de Olivia.",
+    "publishPolicy": "No se puede aprobar ni publicar sin un perfil de normas laborales verificado y documentado para el personal y los centros.",
+    "notApproved": "Solo se puede publicar una versión aprobada.",
+    "legacyConflict": "Los turnos recurrentes existentes entran en conflicto. Resuélvalos antes de publicar.",
+    "publishedConflict": "El empleado ya tiene otro turno oficial superpuesto.",
+    "pastShift": "No se pueden publicar turnos pasados o ya iniciados.",
+    "publishError": "No se pudo verificar la publicación. Actualice e inténtelo de nuevo.",
+    "ownerRequired": "Esta acción requiere un propietario autenticado.",
+    "editInvalidGeneric": "Los turnos propuestos no pasan la validación."
   }
 }
