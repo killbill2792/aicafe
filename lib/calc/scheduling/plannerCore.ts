@@ -1,4 +1,5 @@
 import { effectiveAvailabilityForLocation, compensationProvenance } from "./availability";
+import { hourlyWageCentsFromSalary } from "../staff";
 import { civilDateAdd, localParts, parseUtcInstant, weekday, wallToUtc, windowUtc } from "./plannerClock";
 import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason } from "./plannerTypes";
 
@@ -34,7 +35,7 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     assert(e.id.length>0 && e.displayName.length>0, "employee");
     for(const number of [e.minWeeklyMinutes, e.desiredWeeklyMinutes,
       e.maxDailyMinutes,e.maxWeeklyMinutes,e.ownerOpportunityCentsPerHour,
-      e.verifiedSalaryHourlyCents]) {
+      e.verifiedSalaryHourlyCents, e.verifiedSalaryHoursPerWeek]) {
       assert(number==null || (Number.isSafeInteger(number) && number>=0), "employee_limits_or_cents");
     }
     assert(e.maxDailyMinutes==null || e.maxDailyMinutes<=1440, "max_daily_minutes");
@@ -187,6 +188,14 @@ export function workerWageRate(employee:PlannerEmployee):number|null {
   if(employee.wage.wage_period==="hour"){
     const cents=employee.wage.wage_amount_cents;
     return cents!=null && Number.isSafeInteger(cents) && cents>0 ? cents : null;
+  }
+  if(employee.verifiedSalaryHoursPerWeek!=null &&
+    employee.verifiedSalaryHoursPerWeek>0 &&
+    employee.wage.wage_amount_cents!=null){
+    const period=employee.wage.wage_period;
+    if(period==="month"||period==="year")
+      return hourlyWageCentsFromSalary(employee.wage.wage_amount_cents,
+        period, employee.verifiedSalaryHoursPerWeek);
   }
   return employee.verifiedSalaryHourlyCents != null &&
     Number.isSafeInteger(employee.verifiedSalaryHourlyCents) &&
