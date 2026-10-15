@@ -69,6 +69,14 @@ BEGIN
       AND m.role='owner' AND b.is_demo=false
   ) THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
 
+  -- Lock authority records too: membership revocation must not race
+  -- a publication that already checked the actor's owner role.
+  PERFORM 1 FROM public.memberships
+    WHERE business_id=p_business_id AND user_id=p_actor_id AND role='owner'
+    FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
+  PERFORM 1 FROM public.businesses WHERE id=p_business_id AND is_demo=false FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
   -- Hold source-table SHARE locks through commit so any concurrent staffing
   -- mutation cannot slip between token comparison and the approval update.
@@ -159,6 +167,14 @@ BEGIN
     WHERE m.user_id=p_actor_id AND m.business_id=p_business_id
       AND m.role='owner' AND b.is_demo=false
   ) THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
+  -- Lock authority records too: membership revocation must not race
+  -- a publication that already checked the actor's owner role.
+  PERFORM 1 FROM public.memberships
+    WHERE business_id=p_business_id AND user_id=p_actor_id AND role='owner'
+    FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
+  PERFORM 1 FROM public.businesses WHERE id=p_business_id AND is_demo=false FOR SHARE;
+  IF NOT FOUND THEN RETURN jsonb_build_object('error','unauthorized'); END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||p_business_id::text,0));
   LOCK TABLE public.employees,public.locations,public.staff_availability_rules,
     public.staff_availability_exceptions,public.staff_scheduling_preferences,
