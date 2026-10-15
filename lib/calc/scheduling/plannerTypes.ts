@@ -88,7 +88,7 @@ export type PlannerBreak = { startAt: string; endAt: string; paid: boolean };
 export type PlannerShift = {
   employeeId: string; locationId: string;
   startAt: string; endAt: string;
-  paidMinutes: number; unpaidBreaks: PlannerBreak[];
+  paidMinutes: number; breaks: PlannerBreak[];
   pinned: boolean;
 };
 export type PlannerGapReason =
