@@ -26,7 +26,7 @@ type Base<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> = {
   readonly allowedPurposes: readonly string[];
   readonly inputSchema: I; readonly outputSchema: O;
   readonly schemaContract: Readonly<{
-    id: string; version: 1; inputSchemaFingerprint: string; outputSchemaFingerprint: string;
+    id: string; registrationId:string; version: 1; inputSchemaFingerprint: string; outputSchemaFingerprint: string;
   }>;
   readonly requiredRole: "owner"; readonly sensitivity: "normal" | "staff" | "financial";
   readonly budgets: Limits;
@@ -76,7 +76,7 @@ function validateRegistration(def:P2Registration) {
     (def.mode!=="read" && "read" in def) ||
     (def.mode!=="read" && "execute" in def) ||
     ["simulate","evaluate","propose","approve","commit","execute"].some(k=>k in def) ||
-    def.schemaContract.version!==1 ||
+    def.schemaContract.version!==1 || def.schemaContract.registrationId!==def.id ||
     !def.schemaContract.id.endsWith(".v1") ||
     def.schemaContract.inputSchemaFingerprint!==schemaFingerprint(def.inputSchema) ||
     def.schemaContract.outputSchemaFingerprint!==schemaFingerprint(def.outputSchema) ||
