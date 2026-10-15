@@ -94,13 +94,23 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
         coverage.overnight,location.timezone);}
       catch(e){throw new Error(`invalid_coverage_wall_time:${coverage.id}:${String(e)}`);}
       const minutes=(interval.endAt-interval.startAt)/60000;
-      assert(minutes%chunk===0, "coverage_not_aligned");
-      for(let t=interval.startAt;t<interval.endAt;t+=chunk*60000){
+      assert(minutes%slot===0 && minutes>=chunk, "coverage_not_aligned");
+      // Distribute an imperfect multiple of required overlap across
+      // contiguous blocks, each AT LEAST the required overlap. E.g. a
+      // 120-minute shift with minimum 45-minute blocks becomes 60+60, not
+      // a rejected request or a final unsafe 30-minute fragment.
+      const unitsTotal=minutes/slot,minimumUnits=chunk/slot;
+      const parts=Math.floor(unitsTotal/minimumUnits);
+      const baseSize=Math.floor(unitsTotal/parts),extras=unitsTotal%parts;
+      let time=interval.startAt;
+      for(let piece=0;piece<parts;piece++){
+        const end=time+(baseSize+(piece<extras?1:0))*slot*60000;
         for(let seat=0;seat<coverage.minHeadcount;seat++)
-          units.push({id:`${coverage.id}@${date}:${t}:${seat}`,
+          units.push({id:`${coverage.id}@${date}:${time}:${seat}`,
             coverageId:coverage.id,locationId:coverage.locationId,
-            start:t,end:t+chunk*60000,
+            start:time,end,
             qualificationCode:coverage.qualificationCode??null,priority:coverage.priority});
+        time=end;
       }
     }
   }
