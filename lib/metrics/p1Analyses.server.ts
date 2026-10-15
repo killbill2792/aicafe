@@ -45,7 +45,7 @@ function defineReadAnalysis<const K extends ReadKey>(id:string,key:K) {
       precedencePolicyId:sourcePolicies[key][p].precedencePolicyId,
       precedencePolicyRevision:sourcePolicies[key][p].precedencePolicyRevision,
       sourcePurpose:p,minimumCoverage:"partial_explicit" as const,
-      allowedActualities:["actual","estimated","planned","unknown"] as const,
+      allowedActualities:["actual","estimated","planned"] as const,
     }],
     minimumOverallCoverage:"partial_explicit" as const,
   }])) as unknown as Record<Purpose<K>,{
@@ -53,7 +53,7 @@ function defineReadAnalysis<const K extends ReadKey>(id:string,key:K) {
       metricIds:string[];entityReadIds:string[];readerId:string;readerVersion:number;
       selectorId:string;selectorVersion:number;precedencePolicyId:string;
       precedencePolicyRevision:number;sourcePurpose:string;minimumCoverage:"partial_explicit";
-      allowedActualities:readonly ["actual","estimated","planned","unknown"];
+      allowedActualities:readonly ["actual","estimated","planned"];
     }];minimumOverallCoverage:"partial_explicit";
   }>;
   const invocationSchema=z.strictObject({
@@ -131,7 +131,7 @@ export function validateP1Analyses() {
       const selection=(def.sourceRequirementsByPurpose as unknown as Record<string,{
         kind:string;minimumOverallCoverage:string;inputs:Array<{
           readerId:string;sourcePurpose:string;selectorId:string;selectorVersion:number;
-          precedencePolicyId:string;precedencePolicyRevision:number;entityReadIds:string[];
+          precedencePolicyId:string;precedencePolicyRevision:number;entityReadIds:string[];allowedActualities:readonly string[];
         }>;
       }>)[p];
       if(!selection)return false;
@@ -145,7 +145,9 @@ export function validateP1Analyses() {
         selection.inputs[0].precedencePolicyId===required.precedencePolicyId &&
         selection.inputs[0].precedencePolicyRevision===required.precedencePolicyRevision &&
         selection.inputs[0].entityReadIds.length===1 &&
-        selection.inputs[0].entityReadIds[0]===key;
+        selection.inputs[0].entityReadIds[0]===key &&
+        JSON.stringify((selection.inputs[0] as {allowedActualities:readonly string[]}).allowedActualities)===
+          JSON.stringify(["actual","estimated","planned"]);
     });
   });
 }
@@ -170,6 +172,16 @@ export async function executeP1AnalysisAuthorized(
     frozen.selectedPurpose!==(frozen.input as {purpose:string}).purpose)
     return denied("invalid_analysis_invocation");
   const result=await executeP1Authorized(tools,identity,frozen.input);
+  // Do not promote an unknown/planned fact to an analysis purpose that does
+  // not explicitly authorize that actuality, even when shape validation passes.
+  const policy=(def.sourceRequirementsByPurpose as unknown as Record<string,{
+    inputs:Array<{allowedActualities:readonly string[]}>;
+  }>)[frozen.selectedPurpose];
+  if(!policy||policy.inputs.length!==1)return denied("invalid_analysis_contract");
+  if(result && typeof result==="object" && "actuality" in result &&
+     typeof result.actuality==="string" &&
+     !policy.inputs[0].allowedActualities.includes(result.actuality))
+    return denied("invalid_analysis_contract");
   // The bound capability owns the complete output schema and its safety gates.
   return def.outputSchema.safeParse(result).success?result:denied("invalid_analysis_contract");
 }
