@@ -97,7 +97,13 @@ export function hasP2ClauseCoverage(goal:string,clauses:readonly string[]):boole
     // Reject potential multi-intent clauses rather than letting one model
     // selection silently represent only the first of several owner goals.
     // Conservative in P2: an ambiguous conjunction is reported unverified.
-    if(/(?:^|[^\p{L}])(?:and|or|also|plus|y|e|además|también|و|ثم|وكذلك)(?:[^\p{L}]|$)/iu.test(part))
+    // Numeric date ranges (e.g. October 1 and October 3) are one filter,
+    // not two business goals. Do not reject a clause solely for that joiner.
+    const withoutDateJoiners=part.replace(
+      /\d{1,2}\s+(?:and|y|و)\s+(?:(?:[\p{L}]+\s+)?\d{1,2})/giu,
+      "date-range",
+    );
+    if(/(?:^|[^\p{L}])(?:and|or|also|plus|y|e|además|también|و|ثم|وكذلك)(?:[^\p{L}]|$)/iu.test(withoutDateJoiners))
       return false;
     const start=original.indexOf(part,cursor);
     if(start<0)return false;
