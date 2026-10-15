@@ -6,6 +6,8 @@ import { createOliviaDraftFromTrustedSnapshot, oliviaSnapshotDigest } from "@/li
 import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
 import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner } from "@/lib/scheduling/foundation.server";
+import { editDraftSchema, saveOliviaEditedDraft } from "@/lib/scheduling/planEdits.server";
+import type { PlannerScenario } from "@/lib/calc/scheduling/plannerTypes";
 
 const args = z.object({
   week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -93,4 +95,55 @@ export async function readOliviaPlanHistory(raw: unknown) {
     return { ok: false as const, error: "history_too_large_or_unavailable" as const };
   return { ok: true as const, currentRevision: series.current_revision as number,
     publishedRevision: series.published_revision as number | null, revisions };
+}
+
+/** The only new owner write here is an inert, validated, immutable draft.
+ * Approval and publication are intentionally absent until atomic DB gates exist.
+ */
+export async function saveOliviaWeekEdit(raw:unknown) {
+  const parsed=editDraftSchema.safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid_input" as const};
+  const loaded=await loadOliviaWeekFromSavedStaff(parsed.data.horizonStart);
+  if(!loaded.ok)return {ok:false as const,error:loaded.error};
+  if(loaded.blockers.length)return {ok:false as const,error:"missing_inputs" as const};
+  return saveOliviaEditedDraft(parsed.data,loaded.input,loaded.businessId,
+    loaded.sourceFingerprint);
+}
+
+const revisionArgs=args.extend({
+  revisionId:z.string().uuid(),
+}).strict();
+
+/** Owner-scoped read for selecting and editing an already-persisted draft.
+ * Never returns an approval or publication permission token.
+ */
+export async function readOliviaPlanRevision(raw:unknown) {
+  const parsed=revisionArgs.safeParse(raw);
+  if(!parsed.success)return {ok:false as const,error:"invalid_input" as const};
+  if(process.env.SCHEDULING_FOUNDATION_ENABLED!=="true" ||
+    process.env.SCHEDULING_PR3_DRAFTS_ENABLED!=="true")
+    return {ok:false as const,error:"disabled" as const};
+  const owner=await requireSchedulingOwner();
+  if(!owner)return {ok:false as const,error:"unauthorized" as const};
+  const {data:series,error:seriesError}=await owner.supabase
+    .from("scheduling_plan_series").select("id,current_revision,published_revision")
+    .eq("business_id",owner.businessId)
+    .eq("horizon_start",parsed.data.week).maybeSingle();
+  if(seriesError)return {ok:false as const,error:"storage_unavailable" as const};
+  if(!series)return {ok:false as const,error:"not_found" as const};
+  const {data:revision,error:revisionError}=await owner.supabase
+    .from("scheduling_plan_revisions")
+    .select("id,revision,status,scenario,source_digest")
+    .eq("business_id",owner.businessId)
+    .eq("series_id",series.id)
+    .eq("id",parsed.data.revisionId).maybeSingle();
+  if(revisionError)return {ok:false as const,error:"storage_unavailable" as const};
+  if(!revision)return {ok:false as const,error:"not_found" as const};
+  const scenario=revision.scenario as PlannerScenario | null;
+  if(!scenario || !Array.isArray(scenario.shifts))
+    return {ok:false as const,error:"invalid_record" as const};
+  return {ok:true as const,revision:revision.revision as number,
+    status:revision.status as string,currentRevision:series.current_revision as number,
+    publishedRevision:series.published_revision as number|null,
+    scenario,sourceDigest:revision.source_digest as string};
 }
