@@ -41,6 +41,7 @@ export function validateOliviaAssignments(input:PlannerInput,
   const violations:string[]=[];
   const gaps:PlannerGap[]=[];
   const work:WorkUnit[]=[];
+  const declaredPaidRest=new Set<string>();
   const interval=input.slotMinutes??30;
   if(proposal.length>2000)throw new Error("invalid_planner_input:too_many_shifts");
   for(const shift of proposal){
@@ -76,6 +77,8 @@ export function validateOliviaAssignments(input:PlannerInput,
           if(!rule?.verified || rule.paidRestMinutes==null ||
             breakMinutes!==rule.paidRestMinutes)
             throw new Error("unverified_paid_rest_break");
+          declaredPaidRest.add([shift.employeeId,shift.locationId,
+            brk.start,brk.end].join("|"));
         } else {
           unpaid+=breakMinutes;
           if(input.ruleProfile?.unpaidMealMinutes!=null &&
@@ -93,6 +96,28 @@ export function validateOliviaAssignments(input:PlannerInput,
       }
     }catch(error){
       violations.push(error instanceof Error?error.message:"invalid_shift");
+    }
+  }
+  // A gap exactly matching a paid rest duration cannot silently become
+  // compensable just because two separately authored shifts are adjacent.
+  // Paid rest must appear explicitly in the proposed shift's break record.
+  const paidRest=input.ruleProfile?.verified?input.ruleProfile.paidRestMinutes:null;
+  if(paidRest!=null){
+    const perWorker=new Map<string,WorkUnit[]>();
+    for(const piece of work){
+      const rows=perWorker.get(piece.employeeId)??[];
+      rows.push(piece);perWorker.set(piece.employeeId,rows);
+    }
+    for(const [employeeId,rows] of perWorker){
+      rows.sort((a,b)=>a.start-b.start||a.end-b.end);
+      for(let i=1;i<rows.length;i++){
+        const before=rows[i-1],after=rows[i];
+        if(before.locationId===after.locationId &&
+          (after.start-before.end)/60000===paidRest &&
+          !declaredPaidRest.has([employeeId,after.locationId,
+            before.end,after.start].join("|")))
+          violations.push("unrecorded_paid_rest_break:"+employeeId+":"+utcIso(before.end));
+      }
     }
   }
   const cache=new Map<string,Array<{start:number;end:number}>>();
