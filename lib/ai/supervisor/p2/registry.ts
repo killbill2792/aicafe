@@ -144,9 +144,22 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         const validated=def.outputSchema.safeParse(output);
         if(!validated.success)return unavailable("invalid_result");
         const actual=validated.data as {
-          status?:string;provenance?:{sourceRevision?:unknown};
+          status?:string;value?:unknown;reason?:unknown;
+          provenance?:{sourceRevision?:unknown};
           quality?:{estimatedInputs?:unknown};
         };
+        if(["proposal","approve","approval","commit","effect","executedEffects",
+          "applied","outbox"].some(k=>Object.hasOwn(actual,k)))return unavailable("invalid_result");
+        if(!["verified","estimated","partial","unavailable","failed","conflict",
+          "insufficient_evidence"].includes(actual.status??""))
+          return unavailable("invalid_result");
+        if(["unavailable","failed","conflict","insufficient_evidence"].includes(actual.status??"")){
+          if(actual.value!==null ||
+            typeof actual.reason!=="string" || actual.reason.length>100 ||
+            Object.keys(actual).some(k=>!["status","value","reason"].includes(k)))
+            return unavailable("invalid_result");
+        }else if(actual.value===null || actual.value===undefined)
+          return unavailable("invalid_result");
         if(actual.status==="verified" &&
           (typeof actual.provenance?.sourceRevision!=="string" ||
             !actual.provenance.sourceRevision))
