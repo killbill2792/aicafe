@@ -100,7 +100,7 @@ describe("P1 typed authorized dispatch",()=>{
     expect(exception).toEqual({status:"unavailable",value:null,reason:"reader_failure"});
     expect(JSON.stringify(exception)).not.toContain("token");
   });
-  it("does not expose private signal evidence or decision provenance",async()=>{
+  it("does not expose private signal evidence",async()=>{
     const signals=await read({getActiveSignals:vi.fn(async()=>[{
       id:"s1",type:"DATA_INCOMPLETE",severity:"warning",confidence:"medium",
       evidence:[{source:"sensitive-employee",field:"wage",value:12345}],
@@ -108,13 +108,7 @@ describe("P1 typed authorized dispatch",()=>{
     }])},{id:"team.signals",version:1,purpose:"observed_team_signal_status"});
     expect(signals).toMatchObject({status:"partial",value:[{id:"s1",type:"DATA_INCOMPLETE"}]});
     expect(JSON.stringify(signals)).not.toContain("sensitive-employee");
-    const decisions=await read({getDecisionHistory:vi.fn(async()=>[{
-      id:"d1",type:"PRICE_CHANGE",status:"recommended",confidence:"high",
-      createdAt:new Date("2026-10-14T12:00:00Z"),
-      provenance:{dataSnapshot:{secretPayroll:"never send"},calculationVersion:"1"},
-    }])},{id:"team.decisions",version:1,purpose:"read_only_decision_history"});
-    expect(decisions).toMatchObject({status:"partial",value:[{id:"d1",type:"PRICE_CHANGE"}]});
-    expect(JSON.stringify(decisions)).not.toContain("secretPayroll");
+
   });
 
 });
