@@ -98,10 +98,10 @@ BEGIN
  IF conflict->>'conflict'<>'true' OR again->>'conflict'<>'true' THEN
    RAISE EXCEPTION 'phantom batch overwrite/replayed conflict';
  END IF;
-END $;
+END $$;
 -- A late invalid row must roll back earlier updates and their audit events.
 -- The SQL function's exception subtransaction preserves the original version.
-DO $
+DO $$
 DECLARE before_rows jsonb; after_rows jsonb; expected jsonb; before_audits integer;
 BEGIN
  SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY id::text),'[]'::jsonb)
@@ -141,10 +141,10 @@ BEGIN
    WHERE business_id=current_setting('test.pr1b_business')::uuid) THEN
     RAISE EXCEPTION 'failed batch partially changed records or audit';
  END IF;
-END $;
+END $$;
 -- Effective-dated hour-limit policies may not overlap or ambiguously
 -- override each other, including via the pre-existing PR1A create RPC.
-DO $
+DO $$
 BEGIN
  PERFORM public.scheduling_create_foundation(
    current_setting('test.pr1b_business')::uuid,'preferences',gen_random_uuid(),
@@ -166,7 +166,7 @@ BEGIN
    WHERE business_id=current_setting('test.pr1b_business')::uuid)<>1 THEN
    RAISE EXCEPTION 'invalid preference overlap was persisted';
  END IF;
-END $;
+END $$;
 -- Manager cannot invoke the elevated transactional RPC.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
