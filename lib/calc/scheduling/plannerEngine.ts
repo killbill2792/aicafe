@@ -63,12 +63,39 @@ function choiceScore(employeeId:string,unit:DemandUnit,plan:ExpandedPlan,
   if(objective==="cash")return unknown+owner*2+preference*2+desiredPenalty;
   return unknown/20+owner*25+preference*4+desiredPenalty*4;
 }
-function chunkReason(unit:DemandUnit,plan:ExpandedPlan,
+function chunkReason(unit:DemandUnit,plan:ExpandedPlan,input:PlannerInput,
   options:readonly string[],work:readonly WorkUnit[]):PlannerGap["reason"] {
   if(options.length===0)return "no_confirmed_availability";
-  if(options.some(id=>work.some(w=>w.employeeId===id &&
-    w.start<unit.end && unit.start<w.end)))return "capacity_or_overlap";
-  return "break_or_rest_constraint";
+  const reasons=options.map((id):PlannerGap["reason"]=>{
+    const employee=plan.employees.find(e=>e.id===id)!;
+    const existing=work.filter(w=>w.employeeId===id);
+    if(existing.some(w=>w.start<unit.end && unit.start<w.end))
+      return "capacity_or_overlap";
+    const duration=(unit.end-unit.start)/60000;
+    const used=existing.reduce((n,w)=>n+(w.end-w.start)/60000,0);
+    if(employee.maxWeeklyMinutes!=null && used+duration>employee.maxWeeklyMinutes)
+      return "weekly_hour_limit";
+    const daily=new Map<string,number>();
+    for(const w of [...existing,{employeeId:id,locationId:unit.locationId,
+      start:unit.start,end:unit.end,pinned:false}]){
+      const zone=plan.locations.get(w.locationId)!.timezone;
+      for(let t=w.start;t<w.end;t+=60000){
+        const local=localParts(t,zone).date;
+        const minutes=(daily.get(local)??0)+1;
+        daily.set(local,minutes);
+        if(employee.maxDailyMinutes!=null && minutes>employee.maxDailyMinutes)
+          return "daily_hour_limit";
+        const cap=employee.exceptions.filter(ex=>
+          ex.confirmation==="owner_confirmed" &&
+          ex.exception_type==="hours_cap" && ex.local_date===local &&
+          (ex.location_id==null || ex.location_id===w.locationId) &&
+          ex.max_minutes!=null).reduce((min,ex)=>Math.min(min,ex.max_minutes!),Infinity);
+        if(minutes>cap)return "date_specific_cap";
+      }
+    }
+    return "break_or_rest_constraint";
+  });
+  return reasons.every(r=>r===reasons[0])?reasons[0]:"capacity_or_overlap";
 }
 function gapsFor(state:State):PlannerGap[] {
   const raw:PlannerGap[]=state.missing.map(({unit,reason})=>({
@@ -118,7 +145,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
       const reason=baselineGapReason(unit,plan,cache);
       next.push({work:state.work,selected:[...state.selected,null],
         missing:[...state.missing,{unit,reason:
-          reason==="capacity_or_overlap"?chunkReason(unit,plan,options,state.work):reason}],
+          reason==="capacity_or_overlap"?chunkReason(unit,plan,input,options,state.work):reason}],
         score:state.score+(unit.priority==="required"?1_000_000:1_000)});
       if(exhausted)break;
     }
