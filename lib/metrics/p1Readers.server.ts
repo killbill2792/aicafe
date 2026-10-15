@@ -4,7 +4,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries } from "./p1Additional.server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -75,6 +75,7 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "sales.daily":(t,a)=>t.getSalesTrend(a.period!),
   "pricing.recommendation":(t,a)=>t.getPricingRecommendation(a.productId!),
   "money.expense_categories":(t,a)=>t.getExpenseSummary(a.period!),
+  "money.recurring_bill_rows":(_t,_a,ctx)=>readP1RecurringBillRows({businessId:ctx.businessId ?? ""}),
   "money.monthly_bills":t=>t.getMonthlyBills(),
   "money.recorded_spending":(t,a)=>t.getRecordedExpenses(a.period!),
   "sales.item_units":(t,a)=>t.getProductSales(a.period!),
