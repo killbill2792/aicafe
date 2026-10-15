@@ -1515,6 +1515,7 @@
     "notLegalAdvice": "El costo cero necesita evidencia específica. Esto no es asesoramiento ni verificación legal.",
     "saveEvidence": "Guardar evidencia",
     "featureUnavailable": "La configuración de disponibilidad aún no está habilitada. Las herramientas de personal siguen funcionando.",
-    "chooseLocation": "Elige primero una ubicación."
+    "chooseLocation": "Elige primero una ubicación.",
+    "hours": "horas"
   }
 }
