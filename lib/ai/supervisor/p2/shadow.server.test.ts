@@ -68,7 +68,7 @@ function syntheticRegistration(id="energy.meter.review.v1") {
     purpose:"Explain last authorized meter reading, do not treat it as invoiced usage.",
     sourceIds:["energy.meter"],allowedPurposes:["meter_read"],
     inputSchema,outputSchema,schemaContract:{
-      id:id+".v1",version:1 as const,
+      id:id+".v1",registrationId:id,version:1 as const,
       inputSchemaFingerprint:schemaFingerprint(inputSchema),
       outputSchemaFingerprint:schemaFingerprint(outputSchema),
     },
@@ -217,6 +217,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     for(const mode of modes) {
       const inert={...def,id:"shadow."+mode+".v1",mode,
         availability:"disabled",read:undefined,
+        schemaContract:{...def.schemaContract,registrationId:"shadow."+mode+".v1"},
         requiresApproval:["propose","approve","commit"].includes(mode),
       };
       delete (inert as {read?:unknown}).read;
