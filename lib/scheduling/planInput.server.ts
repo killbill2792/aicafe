@@ -6,6 +6,7 @@ import { requireSchedulingOwner } from "./foundation.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import type { PlannerEmployee, PlannerInput, PlannerLocation } from "@/lib/calc/scheduling/plannerTypes";
 import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
+import {verifiedOliviaRuleProfile} from "./planPolicy.server";
 
 /**
  * Trusted owner-scoped input boundary. Never accepts employee, wage, shift,
@@ -87,6 +88,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       "staff_preference_windows", "scheduling_qualification_types",
       "staff_qualifications", "scheduling_coverage_requirements",
       "staff_scheduling_compensation", "staff_schedules",
+      "scheduling_labor_rule_reviews",
     ] as const;
     const [results, business] = await Promise.all([
       Promise.all(tables.map(table => scopedRows(supabase, table, businessId))),
@@ -252,12 +254,17 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
       str(s.effective_from) <= end && (s.effective_to == null || str(s.effective_to) >= week)))
       warn("legacy_schedules", "Legacy recurring shifts exist. Olivia proposals do not replace them or create attendance; reconcile both before publication.");
 
-    // The foundation has no verified per-jurisdiction labor-policy or owner-person
+    const ruleProfile=verifiedOliviaRuleProfile(
+      rows.scheduling_labor_rule_reviews[0]?.profile,{employees,locations});
+    // The foundation has no verified owner-to-worker identity; do not infer it.
+    // A rule profile exists only after an explicit documented owner review.
     // link. Never invent them, or mislabel a planner proposal as legally cleared.
-    warn("policy_unverified", "Labor law, worker classifications, break/overtime settings and owner-worker identity are not verified; publication needs independent review.");
+    if(!ruleProfile)warn("policy_unverified",
+      "Labor rules or classifications are unverified. An owner/legal policy review is required before approval and publication.");
     warn("source_provisional", "This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
     return {
       ok: true, businessId, sourceFingerprint, sourceToken:tokenAfter, locationNames, input: { horizonStart: week, locations, employees, coverage,
+        ...(ruleProfile ? {ruleProfile} : {}),
         pinned: [], slotMinutes: 30, maxNodes: 12000, beamWidth: 24 },
       warnings, notices, blockers,
     };
