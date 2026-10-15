@@ -2,16 +2,8 @@
 
 import { useLocale, useTranslations } from "next-intl";
 import type { PlannerShift } from "@/lib/calc/scheduling/plannerTypes";
+import {addOliviaShift,moveOliviaBoundary,setOliviaUnpaidBreak} from "@/lib/calc/scheduling/shiftEdits";
 
-const thirty=30*60_000;
-function move(value:string,delta:number):string {
-  return new Date(Date.parse(value)+delta*thirty).toISOString();
-}
-function compensated(shift:PlannerShift):number {
-  const unpaid=shift.breaks.filter(b=>!b.paid)
-    .reduce((n,b)=>n+(Date.parse(b.endAt)-Date.parse(b.startAt))/60000,0);
-  return (Date.parse(shift.endAt)-Date.parse(shift.startAt))/60000-unpaid;
-}
 function local(value:string,zone:string,locale:string) {
   try {
     return new Intl.DateTimeFormat(locale,{
@@ -33,27 +25,16 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
   }
   function time(index:number,side:"startAt"|"endAt",delta:number) {
     const shift=shifts[index];
-    const candidate={...shift,[side]:move(shift[side],delta)};
-    update(index,{[side]:candidate[side],paidMinutes:compensated(candidate)});
+    onChange(shifts.map((s,i)=>i===index?moveOliviaBoundary(shift,side,delta):s));
   }
   function add() {
     const employeeId=Object.keys(employees)[0],locationId=Object.keys(locations)[0];
     if(!employeeId || !locationId || shifts.length>=200)return;
-    const base=shifts[shifts.length-1];
-    const startAt=base?new Date(Date.parse(base.startAt)+86_400_000).toISOString():
-      new Date(week+"T09:00:00.000Z").toISOString();
-    const endAt=base?new Date(Date.parse(base.endAt)+86_400_000).toISOString():
-      new Date(week+"T11:00:00.000Z").toISOString();
-    onChange([...shifts,{employeeId,locationId,startAt,endAt,
-      paidMinutes:(Date.parse(endAt)-Date.parse(startAt))/60000,
-      breaks:[],pinned:false}]);
+    onChange([...shifts,addOliviaShift(week,shifts,employeeId,locationId)]);
   }
   function setUnpaidBreak(index:number,enabled:boolean){
     const shift=shifts[index];
-    const breaks=enabled?[{
-      startAt:move(shift.startAt,2),endAt:move(shift.startAt,3),paid:false,
-    }]:[];
-    update(index,{breaks,paidMinutes:compensated({...shift,breaks})});
+    onChange(shifts.map((s,i)=>i===index?setOliviaUnpaidBreak(shift,enabled):s));
   }
   return <section className="flex flex-col gap-3 rounded-xl border border-line p-3">
     <h3 className="font-bold">{t("editTitle")}</h3>
@@ -96,7 +77,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
         </div>
       </div>)}
       <label className="flex items-center gap-3">
-        <input type="checkbox" disabled={disabled || shift.pinned}
+        <input type="checkbox" disabled={disabled || shift.pinned || shift.breaks.length>1 || shift.breaks.some(b=>b.paid)}
           checked={shift.breaks.length===1 && !shift.breaks[0].paid}
           onChange={e=>setUnpaidBreak(index,e.target.checked)}
           className="size-5"/>
