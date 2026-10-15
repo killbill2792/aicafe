@@ -6,7 +6,7 @@ import { values, readers } from "./p1Catalog";
 
 const ctx={asOf:"2026-10-14",timezone:"America/Los_Angeles"};
 const high={level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]};
-const read=(t:Partial<BusinessScopedCafeTools>,query:unknown)=>
+const read=(t:Record<string, unknown>,query:unknown)=>
   executeP1Authorized(t as BusinessScopedCafeTools,ctx,query);
 const bills={id:"money.monthly_bills",version:1,purpose:"recurring_obligation_review"};
 const profit={id:"money.profitability",version:1,purpose:"actual_period_financial_review",
