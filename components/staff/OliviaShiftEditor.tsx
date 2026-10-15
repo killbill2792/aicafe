@@ -50,14 +50,14 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
         </button>
       </div>
       <label className="flex flex-col gap-1">{t("employee")}
-        <select disabled={disabled} value={shift.employeeId}
+        <select disabled={disabled || shift.pinned} value={shift.employeeId}
           className="min-h-12 rounded-lg border border-line bg-card px-3"
           onChange={e=>update(index,{employeeId:e.target.value})}>
           {Object.entries(employees).map(([id,name])=><option key={id} value={id}>{name}</option>)}
         </select>
       </label>
       <label className="flex flex-col gap-1">{t("location")}
-        <select disabled={disabled} value={shift.locationId}
+        <select disabled={disabled || shift.pinned} value={shift.locationId}
           className="min-h-12 rounded-lg border border-line bg-card px-3"
           onChange={e=>update(index,{locationId:e.target.value})}>
           {Object.keys(locations).map(id=><option key={id} value={id}>{names[id]||id}</option>)}
