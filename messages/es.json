@@ -1669,6 +1669,7 @@
     "revisionPublished": "Publicado",
     "revisionSuperseded": "Sustituido",
     "revisionUnknown": "Estado desconocido",
-    "invalidWallTime": "Elija una fecha y hora local válida y sin ambigüedad. Los cambios de horario de verano pueden hacer que algunas horas no existan o se repitan."
+    "invalidWallTime": "Elija una fecha y hora local válida y sin ambigüedad. Los cambios de horario de verano pueden hacer que algunas horas no existan o se repitan.",
+    "historyUnavailable": "No se pudieron cargar las versiones del calendario. Actualice y vuelva a intentarlo."
   }
 }
