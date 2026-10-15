@@ -1668,6 +1668,7 @@
     "revisionApproved": "Aprobado",
     "revisionPublished": "Publicado",
     "revisionSuperseded": "Sustituido",
-    "revisionUnknown": "Estado desconocido"
+    "revisionUnknown": "Estado desconocido",
+    "invalidWallTime": "Elija una fecha y hora local válida y sin ambigüedad. Los cambios de horario de verano pueden hacer que algunas horas no existan o se repitan."
   }
 }
