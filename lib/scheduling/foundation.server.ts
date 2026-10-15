@@ -83,10 +83,12 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
         p_request_key: command.data.requestKey,
         p_record: record,
       });
-      // A different co-owner request key may race to create equivalent
-      // coverage. PostgreSQL's NULLS NOT DISTINCT unique index is the
-      // authoritative conflict guard; never present this as a server outage.
-      if (error?.code === "23505" && kind === "coverage")
+      // Database uniqueness also guards initially missing compensation,
+      // policy periods and qualification types. A different co-owner's
+      // committed create is a stale-create conflict, not a server outage.
+      // Coverage equivalence is additionally protected by a PostgreSQL
+      // NULLS NOT DISTINCT unique index across different request keys.
+      if (error?.code === "23505")
         return { ok: false, error: "conflict_or_missing" };
       if (error || !data) return { ok: false, error: "storage_unavailable" };
       const result = data as { id?: unknown; revision?: unknown; conflict?: boolean };
