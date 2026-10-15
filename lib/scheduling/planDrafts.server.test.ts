@@ -74,7 +74,7 @@ describe("Olivia PR3B internal-only draft persistence boundary",()=>{
     expect(oliviaSnapshotDigest(snapshot,sourceFingerprint)).toMatch(/^[a-f0-9]{64}$/);
     expect(mocks.rpc).toHaveBeenCalledWith("scheduling_create_plan_draft",{
       p_business_id:businessId,p_horizon_start:snapshot.horizonStart,
-      p_expected_revision:0,p_source_digest:oliviaSnapshotDigest(snapshot),
+      p_expected_revision:0,p_source_digest:oliviaSnapshotDigest(snapshot,sourceFingerprint),
       p_planner_input:snapshot,p_scenario:scenario,p_shifts:[],
       p_request_key:requestKey,
     });
