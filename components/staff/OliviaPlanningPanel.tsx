@@ -51,6 +51,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
   const [locations, setLocations] = useState<Record<string,string>>({});
   const [locationNames, setLocationNames] = useState<Record<string,string>>({});
   const [sourceDigest, setSourceDigest] = useState<string | null>(null);
+  const [frozenShiftKeys,setFrozenShiftKeys]=useState<string[]>([]);
   const retry = useRef<PendingCreate>(null);
   const proposalHead = useRef<number|null>(null);
   const [objective, setObjective] = useState<PlannerScenario["objective"]>("balanced");
@@ -102,7 +103,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
 
   function preview() {
     setError(""); setNotice(""); setResult(null); setSourceDigest(null);
-    setNotices([]);
+    setNotices([]); setFrozenShiftKeys([]);
     retry.current = null;
     proposalHead.current = null;
     startTransition(async () => {
@@ -125,6 +126,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
       setNotices(response.notices);
       setEmployees(response.employees); setLocations(response.locations);
       setLocationNames(response.locationNames);
+      setFrozenShiftKeys(response.frozenShiftKeys);
       setSourceDigest(response.sourceDigest);
       await loadHistory(selectedWeek);
     });
@@ -250,7 +252,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
       <input type="date" value={week} disabled={pending} onChange={e => {
         setWeek(mondayOf(e.target.value)); setResult(null); setHistory([]);
         setCurrentRevision(0); setPublishedRevision(null); setError(""); setNotice("");
-        setSourceDigest(null); retry.current = null; setNotices([]);
+        setSourceDigest(null); setFrozenShiftKeys([]); retry.current = null; setNotices([]);
         proposalHead.current=null;
         setEditing(null); setEditedShifts([]); editRetry.current=null;
         setInspected(null);
@@ -355,7 +357,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
         <p role="status">{t("editingRevision",{revision:editing.revision})}</p>
         <OliviaShiftEditor shifts={editedShifts} onChange={setEditedShifts}
           employees={employees} locations={locations} names={locationNames}
-          week={week} disabled={pending}/>
+          week={week} disabled={pending} frozenShiftKeys={frozenShiftKeys}/>
         <div className="flex flex-wrap gap-3">
           <button type="button" disabled={pending} onClick={saveEdit}
             className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-50">
