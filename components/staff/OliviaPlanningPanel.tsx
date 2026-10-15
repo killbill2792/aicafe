@@ -218,7 +218,9 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
             invalid_shift_interval:"editTime",
             shift_outside_seven_day_horizon:"editTime",
           };
-          const details=[...new Set((response.violations??[]).map(v=>
+          const violations=("violations" in response && Array.isArray(response.violations))
+            ? response.violations : [];
+          const details=[...new Set(violations.map((v:string)=>
             t(reasons[v.split(":")[0]]??"editInvalidGeneric")))].slice(0,4);
           setError(response.error==="invalid_shifts" ?
             (details.length?details.join(" "):t("editInvalidGeneric")) :
