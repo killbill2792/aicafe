@@ -4,16 +4,14 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, inputFor, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
 
-const limits = { maxRows: 1000, maxOutputBytes: 100_000 } as const;
+const limits = { maxOutputBytes: 100_000 } as const;
 const validIds = new Set<string>(Object.keys(values));
 const unavailable = (reason: string) => ({status:"unavailable" as const,value:null,reason});
-const safeReasons = new Set(["unknown_capability","invalid_request","unsupported_period",
-  "unavailable_source","invalid_result","unauthorized","not_activated","unsupported",
-  "reader_failure","source_incomplete","output_limit"]);
 const resultQuality = z.strictObject({
   level:z.enum(["low","medium","high"]),
   missingInputs:z.array(z.string().max(500)).max(200),
@@ -56,7 +54,15 @@ const outputFor = (id: SupportedId) => z.discriminatedUnion("status", [
  */
 const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   period?:{from:string;to:string};productId?:string;
-},ctx:{asOf:string;timezone:string})=>Promise<unknown>> = {
+},ctx:{asOf:string;timezone:string;businessId?:string})=>Promise<unknown>> = {
+  "business.profile":(_t,_a,ctx)=>readP1BusinessProfile({businessId:ctx.businessId ?? ""}),
+  "menu.recipe":(_t,a,ctx)=>readP1Recipe({businessId:ctx.businessId ?? ""},a.productId!),
+  "menu.ingredients":(_t,_a,ctx)=>readP1Ingredients({businessId:ctx.businessId ?? ""}),
+  "labor.employee_wages":(_t,_a,ctx)=>readP1EmployeeWages({businessId:ctx.businessId ?? ""}),
+  "supplies.quotes":(_t,_a,ctx)=>readP1SupplierQuotes({businessId:ctx.businessId ?? ""}),
+  "team.owner_rules":(_t,_a,ctx)=>readP1OwnerRules({businessId:ctx.businessId ?? ""}),
+  "labor.availability_foundation":(_t,_a,ctx)=>readP1SchedulingFoundation({businessId:ctx.businessId ?? ""}),
+  "money.expense_entries":(_t,a,ctx)=>readP1ExpenseEntries({businessId:ctx.businessId ?? ""},a.period!),
   "money.profitability":(t,a)=>t.getProfitability(a.period!),
   "money.business_costs":(t,a)=>t.getBusinessCostSummary(a.period!),
   "menu.product_economics":(t,a)=>t.getProductEconomics(a.productId!),
@@ -92,7 +98,7 @@ function isPeriodAllowed(id:SupportedId, p:{from:string;to:string}|undefined,asO
  * No API/model can supply one; the production entrypoints authenticate first.
  */
 export async function executeP1Authorized(
-  tools:BusinessScopedCafeTools, identity:{asOf:string;timezone:string},
+  tools:BusinessScopedCafeTools, identity:{asOf:string;timezone:string;businessId?:string},
   request:unknown,
 ):Promise<unknown> {
   if(!identity.asOf || !identity.timezone ||
@@ -175,7 +181,7 @@ async function authorizedOwnerP1() {
   if(!business||business.is_demo)throw new Error("Unauthorized");
   const tools=await createAuthenticatedCafeTools();
   const identity=await readSupervisorCafeIdentity(businessId);
-  return {tools,identity};
+  return {tools,identity:{...identity,businessId}};
 }
 
 /** No sensitive definitions are discoverable to a non-owner or a demo member. */
@@ -190,6 +196,6 @@ export async function discoverAuthenticatedP1() {
 export async function readAuthenticatedP1(request:unknown):Promise<unknown> {
   try {
     const {tools,identity}=await authorizedOwnerP1();
-    return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone},request);
+    return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone,businessId:identity.businessId},request);
   }catch{return unavailable("unauthorized");}
 }
