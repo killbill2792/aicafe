@@ -40,6 +40,9 @@ SELECT public.scheduling_create_foundation('{business}'::uuid,'coverage','{key}'
  'effective_from','2026-11-01','start_local','08:00','end_local','12:00',
  'overnight',false,'min_headcount',{headcount},'min_overlap_minutes',0,
  'priority','required','source','{provenance}','confirmation','unconfirmed'));
+-- Hold the winning row/index key lock while the second real connection
+-- attempts its INSERT; do not merely run two sequential requests.
+SELECT pg_sleep(2);
 COMMIT;
 """, check=False)
 
