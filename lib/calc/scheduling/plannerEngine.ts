@@ -315,6 +315,17 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
     if(!verified.valid || !verified.completeCoverage){
       scenario.hardConstraintsSatisfied=false;
       scenario.completeCoverage=false;
+      // The independent validator can discover uncovered handoff periods
+      // or simultaneous qualified-headcount shortfalls invisible to the
+      // greedy candidate selector. Return those EXACT periods to the owner.
+      for(const gap of verified.gaps){
+        if(!scenario.gaps.some(existing=>existing.coverageId===gap.coverageId &&
+          existing.startAt===gap.startAt && existing.endAt===gap.endAt &&
+          existing.reason===gap.reason))
+          scenario.gaps.push(gap);
+      }
+      scenario.gaps.sort((a,b)=>a.startAt.localeCompare(b.startAt) ||
+        a.locationId.localeCompare(b.locationId) || a.reason.localeCompare(b.reason));
     }
     const signature=scenario.shifts.map(s=>[s.employeeId,s.locationId,s.startAt,s.endAt].join(":"))
       .join("|")+"#"+scenario.gaps.map(g=>[g.coverageId,g.startAt,g.missingHeadcount].join(":")).join("|");
