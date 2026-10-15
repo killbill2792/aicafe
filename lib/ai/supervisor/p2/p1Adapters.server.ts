@@ -22,9 +22,10 @@ export function buildP1P2Registrations():readonly ReadRegistration[] {
   if(!validateP1Analyses())throw new Error("P1 schema/reader/source contracts invalid");
   return Object.values(p1Analyses).map(def=>({
     id:def.id,version:1 as const,mode:"read" as const,availability:"shadow" as const,
-    owner:def.domainOwner,purpose:purposes[def.id],
-    sourceIds:def.sourceRequirementsByPurpose[def.allowedPurposes[0]].inputs
-      .flatMap(source=>[...source.metricIds,...source.entityReadIds]),
+    owner:def.domainOwner,purpose:purposes[def.id as keyof typeof purposes],
+    sourceIds:(Object.values(def.sourceRequirementsByPurpose)[0] as {
+      inputs:Array<{metricIds:string[];entityReadIds:string[]}>;
+    }).inputs.flatMap(source=>[...source.metricIds,...source.entityReadIds]),
     allowedPurposes:def.allowedPurposes,
     inputSchema:def.inputSchema,outputSchema:def.outputSchema,
     schemaContract:def.schemaContract,
