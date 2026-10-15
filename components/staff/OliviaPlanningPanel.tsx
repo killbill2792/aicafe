@@ -62,6 +62,10 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
   const [notice, setNotice] = useState("");
   const [pending, startTransition] = useTransition();
   const scenario = result?.scenarios.find(s => s.objective === objective);
+  const revisionLabel=(status:string)=>t(({
+    draft:"revisionDraft",approved:"revisionApproved",
+    published:"revisionPublished",superseded:"revisionSuperseded",
+  } as Record<string,string>)[status]??"revisionUnknown");
   const noticeKeys: Record<OliviaNotice["code"], string> = {
     wage_unknown:"noticeWage", availability_missing:"noticeAvailability",
     unconfirmed_absence:"noticeLeave", coverage_unconfirmed:"noticeCoverage",
@@ -296,7 +300,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
       <p className="text-sm">{t("officialVersion")}: {publishedRevision ?? t("none")}</p>
       {history.map(item => <div key={item.revision}
         className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-        <span>V{item.revision} · {item.status}</span>
+        <span>V{item.revision} · {revisionLabel(item.status)}</span>
         <button type="button" className="min-h-12 px-3 underline"
           disabled={pending}
           onClick={()=>inspectRevision(item.id)}>{t("viewRevision")}</button>
@@ -308,7 +312,7 @@ export default function OliviaPlanningPanel({ today, publicationEnabled=false }:
       {inspected && <section aria-label={t("viewRevision")}
         className="rounded-xl border border-line p-3 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <strong>{t("reviewVersion",{revision:inspected.revision})} · {inspected.status}</strong>
+          <strong>{t("reviewVersion",{revision:inspected.revision})} · {revisionLabel(inspected.status)}</strong>
           <button type="button" className="min-h-12 underline"
             onClick={()=>setInspected(null)}>{t("closeRevision")}</button>
         </div>
