@@ -181,9 +181,13 @@ export function qualifies(employee:PlannerEmployee, unit:DemandUnit,
   const loc=locations.get(unit.locationId);
   if(!loc)return false;
   const date=localParts(unit.start,loc.timezone).date;
+  const finalDate=localParts(unit.end-60_000,loc.timezone).date;
+  // Overnight work must remain qualified after local midnight, not only
+  // on the starting day of the requirement.
   return employee.qualifications.some(q=>q.confirmed && q.code===unit.qualificationCode &&
     (q.locationId==null || q.locationId===unit.locationId) &&
-    date>=q.validFrom && (q.validTo==null || date<=q.validTo));
+    date>=q.validFrom && finalDate>=q.validFrom &&
+    (q.validTo==null || (date<=q.validTo&&finalDate<=q.validTo)));
 }
 export function workerWageRate(employee:PlannerEmployee):number|null {
   const state=compensationProvenance({cash_cost_state:employee.provenance},employee.wage);
