@@ -22,7 +22,8 @@ const saveArgs = args.extend({
 }).strict();
 
 export async function previewOliviaWeek(raw: unknown): Promise<
-  | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number }
+  | { ok: true; plan: PlannerResult; notices: OliviaNotice[]; blockers: OliviaBlocker[]; employees: Record<string,string>; locations: Record<string,string>; locationNames: Record<string,string>; sourceDigest: string; previewRevision: number;
+      frozenShiftKeys:string[] }
   | { ok: false; error: string; blockers?: OliviaBlocker[] }
 > {
   const parsed = args.safeParse(raw);
@@ -51,6 +52,9 @@ export async function previewOliviaWeek(raw: unknown): Promise<
       employees: Object.fromEntries(loaded.input.employees.map(e => [e.id, e.displayName])),
       locations: Object.fromEntries(loaded.input.locations.map(l => [l.id, l.timezone])),
       locationNames: loaded.locationNames, previewRevision,
+      // Authoritative published commitments, not the shift's original pinned bit.
+      frozenShiftKeys: (loaded.input.startedPublishedShifts??[]).map(s =>
+        JSON.stringify([s.employeeId,s.locationId,s.startAt])),
       sourceDigest: oliviaSnapshotDigest(loaded.input, loaded.sourceFingerprint) };
   } catch {
     return { ok: false, error: "planner_unavailable" };
