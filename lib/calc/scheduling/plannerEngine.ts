@@ -214,6 +214,9 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
   if(outputs.some(o=>o.exhausted))warnings.push("Search budget exhausted; no global optimality or infeasibility proof");
   if(best && best.cost.missingWageEmployeeIds.length>0)
     warnings.push("Unknown or unverified wages prevent trustworthy total cash labor comparison");
+  if(scenarios.some(s=>s.cost.allocatedSalaryCents!=null &&
+    s.cost.allocatedSalaryCents>0))
+    warnings.push("Salaried workers use allocated hourly-equivalent costs; these are not proven incremental cash payroll savings");
   if(plan.employees.some(e=>e.isOwner&&e.ownerOpportunityCentsPerHour==null) &&
     scenarios.some(s=>s.ownerMinutes>0))
     warnings.push("Owner hours have no verified economic opportunity cost and are not free business savings");
