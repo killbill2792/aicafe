@@ -82,4 +82,35 @@ describe("Independent pure PR3-ready schedule validation",()=>{
     expect(result.valid).toBe(true);
     expect(result.completeCoverage).toBe(true);
   });
+  it("reports the exact conflicting required interval, not just a generic overlap",()=>{
+    const one=optimizeOliviaWeek({...input,coverage:[{
+      ...input.coverage[0],minHeadcount:1,
+    }]}).best!.shifts.filter(s=>s.employeeId==="staff-a");
+    const result=validateOliviaAssignments(input,one);
+    expect(result.valid).toBe(false);
+    expect(result.gaps[0]).toMatchObject({
+      coverageId:"opener",locationId:"a",missingHeadcount:1,
+      startAt:"2026-10-12T16:00:00.000Z",reason:"capacity_or_overlap",
+    });
+  });
+  it("rejects a shift outside the plan's seven local calendar days",()=>{
+    const roster:PlannerShift={employeeId:"staff-a",locationId:"a",
+      startAt:"2026-10-19T16:00:00.000Z",endAt:"2026-10-19T17:00:00.000Z",
+      paidMinutes:60,unpaidBreaks:[],pinned:false};
+    expect(validateOliviaAssignments(input,[roster]).violations)
+      .toContain("shift_outside_seven_day_horizon");
+  });
+  it("rejects a break whose endpoints are not on the scheduling grid",()=>{
+    const shift=optimizeOliviaWeek({...input,coverage:[{
+      ...input.coverage[0],minHeadcount:1,
+    }]}).best!.shifts[0];
+    const wrong:PlannerShift={...shift,paidMinutes:60,unpaidBreaks:[{
+      startAt:"2026-10-12T16:30:00.000Z",
+      endAt:"2026-10-12T17:30:00.000Z",paid:false,
+    }]};
+    expect(validateOliviaAssignments({...input,coverage:[{
+      ...input.coverage[0],minHeadcount:1,
+    }]},[wrong]).violations).toContain("invalid_unpaid_break");
+  });
+
 });
