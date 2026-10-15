@@ -129,7 +129,7 @@ function isPeriodAllowed(id:SupportedId,p:{from:string;to:string}|undefined,asOf
  * No API/model can supply one; the production entrypoints authenticate first.
  */
 export async function executeP1Authorized(
-  tools:BusinessScopedCafeTools, identity:{asOf:string;timezone:string;businessId?:string},
+  tools:BusinessScopedCafeTools, identity:{asOf:string;timezone:string;businessId?:string;currency?:string},
   request:unknown,
 ):Promise<unknown> {
   if(!identity.asOf || !identity.timezone ||
@@ -143,6 +143,20 @@ export async function executeP1Authorized(
     return unavailable("unknown_capability");
   }
   const id=raw.id as SupportedId;
+  // Money is stored in business-currency minor units. The current registered
+  // monetary unit is explicitly USD_cents; do not mislabel an EUR/GBP café's
+  // recorded cents as USD. Non-monetary metadata remains readable.
+  const moneyBearing=new Set<SupportedId>([
+    "money.owner_profit_cents","sales.net_sales_cents","money.total_costs_cents",
+    "money.operating_margin_ratio","money.recurring_monthly_bills_cents",
+    "money.recorded_spending_cents","money.profitability","money.business_costs",
+    "money.expense_entries","money.recurring_bill_rows","money.monthly_bills",
+    "money.recorded_spending","money.break_even","sales.daily","menu.recipe",
+    "menu.catalog","menu.product_economics","pricing.recommendation","supplies.quotes",
+    "labor.employee_wages","labor.daily_costs",
+  ]);
+  if(identity.currency && identity.currency!=="USD" && moneyBearing.has(id))
+    return unavailable("unsupported");
   const parsed=inputFor(id).safeParse(raw);
   if(!parsed.success)return unavailable("invalid_request");
   const args=parsed.data as {id:string;version:1;purpose:string;period?:{from:string;to:string};productId?:string;page?:number};
@@ -223,11 +237,11 @@ export async function authorizedOwnerP1() {
   const businessId=await getActiveBusinessId(user.id);
   const supabase=await createServerSupabaseClient();
   const membership=await supabase.from("memberships")
-    .select("role,businesses(is_demo)")
+    .select("role,businesses(is_demo,currency)")
     .eq("user_id",user.id).eq("business_id",businessId).eq("role","owner")
     .maybeSingle();
   if(membership.error||!membership.data||membership.data.role!=="owner") throw new Error("Unauthorized");
-  const raw=membership.data.businesses as unknown as {is_demo:boolean}|{is_demo:boolean}[]|null;
+  const raw=membership.data.businesses as unknown as {is_demo:boolean;currency:string}|{is_demo:boolean;currency:string}[]|null;
   const business=Array.isArray(raw)?raw[0]:raw;
   // Shared demo business ID is immutable even if a demo manager changes the
   // mutable is_demo column. Never use that flag as the only authorization root.
@@ -235,7 +249,8 @@ export async function authorizedOwnerP1() {
      !business || business.is_demo!==false)throw new Error("Unauthorized");
   const tools=await createAuthenticatedCafeTools();
   const identity=await readSupervisorCafeIdentity(businessId);
-  return {tools,identity:{...identity,businessId}};
+  if(typeof business.currency!=="string"||!business.currency)throw new Error("Unauthorized");
+  return {tools,identity:{...identity,businessId,currency:business.currency}};
 }
 
 /** No sensitive definitions are discoverable to a non-owner or a demo member. */
@@ -250,7 +265,7 @@ export async function discoverAuthenticatedP1() {
 export async function readAuthenticatedP1(request:unknown):Promise<unknown> {
   try {
     const {tools,identity}=await authorizedOwnerP1();
-    return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone,businessId:identity.businessId},request);
+    return executeP1Authorized(tools,{asOf:identity.asOf,timezone:identity.timezone,businessId:identity.businessId,currency:identity.currency},request);
   }catch{return unavailable("unauthorized");}
 }
 
