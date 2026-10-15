@@ -126,7 +126,7 @@ export const values = {
       baseUnit:z.enum(["g","ml","each"]),quantity:finite.nonnegative(),
       displayUnit:text.nullable(),displayQuantity:finite.nullable(),
       priceSource:z.enum(["manual","receipt","statement","invoice"]).nullable()})).max(200),
-  }),
+  }).refine(row=>row.priceStatus===(row.priceCents===null?"unrecorded":"recorded")),
   "menu.ingredients": z.array(z.strictObject({id:text,name:text,baseUnit:z.enum(["g","ml","each"])})).max(500),
   "labor.employee_wages": z.array(z.strictObject({
     id:text,name:text,role:text.nullable(),active:z.boolean(),
