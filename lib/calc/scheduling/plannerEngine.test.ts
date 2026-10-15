@@ -136,7 +136,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
       end_local:"14:00",
     })],{ruleProfile:rules}));
     expect(result.status).toBe("feasible");
-    expect(result.best!.shifts.some(s=>s.unpaidBreaks.length>0)).toBe(true);
+    expect(result.best!.shifts.some(s=>s.breaks.length>0)).toBe(true);
     expect(result.best!.shifts.every(s=>s.paidMinutes<=240)).toBe(true);
     const impossible=optimizeOliviaWeek(input([e],[coverage("meal",{
       end_local:"14:00",
@@ -302,7 +302,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     const worker=result.best!.shifts.find(s=>s.employeeId==="long-worker")!;
     expect(worker).toBeDefined();
     expect(worker.paidMinutes).toBe(50); // 40 productive + 10 PAID rest
-    expect(worker.unpaidBreaks).toMatchObject([{
+    expect(worker.breaks).toMatchObject([{
       startAt:"2026-10-12T16:20:00.000Z",
       endAt:"2026-10-12T16:30:00.000Z",paid:true,
     }]);
