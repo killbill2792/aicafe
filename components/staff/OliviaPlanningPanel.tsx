@@ -241,9 +241,31 @@ export default function OliviaPlanningPanel({ today }: { today: string }) {
         {t("refreshHistory")}
       </button>
       <p className="text-sm">{t("officialVersion")}: {publishedRevision ?? t("none")}</p>
-      {history.map(item => <p key={item.revision} className="text-sm">
-        V{item.revision} · {item.status}
-      </p>)}
+      {history.map(item => <div key={item.revision}
+        className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+        <span>V{item.revision} · {item.status}</span>
+        {item.revision===currentRevision &&
+          <button type="button" className="min-h-12 px-3 underline"
+            disabled={pending || !sourceDigest}
+            onClick={()=>startEditing(item.id)}>{t("editRevision")}</button>}
+      </div>)}
+      {editing && <>
+        <p role="status">{t("editingRevision",{revision:editing.revision})}</p>
+        <OliviaShiftEditor shifts={editedShifts} onChange={setEditedShifts}
+          employees={employees} locations={locations} names={locationNames}
+          week={week} disabled={pending}/>
+        <div className="flex flex-wrap gap-3">
+          <button type="button" disabled={pending} onClick={saveEdit}
+            className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-50">
+            {t("saveEditedDraft")}
+          </button>
+          <button type="button" disabled={pending}
+            className="min-h-12 rounded-full border border-line px-4"
+            onClick={()=>{setEditing(null);setEditedShifts([]);editRetry.current=null;}}>
+            {t("cancelEdit")}
+          </button>
+        </div>
+      </>
     </div>
   </section>;
 }
