@@ -15,6 +15,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
 }) {
   const t=useTranslations("SchedulingAvailability"),router=useRouter();
   const [selected,setSelected]=useState("");
+  const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(null);
   const [locationId,setLocationId]=useState(locations[0]?.id??"");
   const [day,setDay]=useState("1"),[specificDate,setSpecificDate]=useState("");
   const [from,setFrom]=useState(today),[to,setTo]=useState("");
@@ -29,7 +30,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const names=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   const location=locations.find(l=>l.id===locationId);
   function select(id:string){
-    setSelected(id);const r=rows.find(v=>v.id===id);
+    setSelected(id);setSavedRecord(null);const r=rows.find(v=>v.id===id);
     if (!r) return;
     setLocationId(String(r.location_id));setDay(String(r.day_of_week??1));
     setSpecificDate(String(r.local_date??""));setFrom(String(r.effective_from??today));
@@ -41,7 +42,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   }
   function save(){
     if(!locationId){setError(t("chooseLocation"));return;}
-    const old=rows.find(r=>r.id===selected);
+    const old=savedRecord?.id===selected ? savedRecord : rows.find(r=>r.id===selected);
     const payload={location_id:locationId,day_of_week:specificDate?null:Number(day),
       local_date:specificDate||null,effective_from:specificDate?null:from,
       effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
@@ -55,7 +56,8 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         data:payload,
       });
       if(!result.ok){setError(t("saveFailed"));return;}
-      retry.current=null;setError("");setSaved(true);router.refresh();
+      retry.current=null;setSavedRecord({id:result.id,revision:result.revision});
+      setSelected(result.id);setError("");setSaved(true);router.refresh();
     });
   }
   function remove(r:SchedulingRow){
@@ -87,6 +89,8 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     <label className="flex flex-col gap-1 text-sm">{t("existingRecords")}
       <select className={field} value={selected} onChange={e=>select(e.target.value)}>
         <option value="">{t("newRequirement")}</option>
+        {savedRecord && !rows.some(r=>r.id===savedRecord.id) &&
+          <option value={savedRecord.id}>{t("saved")}</option>}
         {rows.map(r=><option key={r.id} value={r.id}>
           {locations.find(l=>l.id===r.location_id)?.name} · {String(r.start_local)}–{String(r.end_local)}
         </option>)}
