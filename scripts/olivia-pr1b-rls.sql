@@ -103,7 +103,24 @@ BEGIN
      AND effective_from='2026-12-01') THEN
    RAISE EXCEPTION 'legacy individual create blocked outside batch-managed scope';
  END IF;
-END $$;
+ BEGIN
+   UPDATE public.staff_availability_rules
+    SET effective_from='2026-10-14', effective_to=NULL
+    WHERE business_id=current_setting('test.pr1b_business')::uuid
+      AND employee_id=current_setting('test.pr1b_employee')::uuid
+      AND effective_from='2026-12-01';
+   RAISE EXCEPTION 'legacy UPDATE moved a window into batch-managed scope';
+ EXCEPTION WHEN insufficient_privilege THEN NULL;
+ END;
+ IF (SELECT count(*) FROM public.staff_availability_rules
+      WHERE business_id=current_setting('test.pr1b_business')::uuid
+       AND effective_from='2026-10-14')<>2 OR
+    (SELECT count(*) FROM public.staff_availability_rules
+      WHERE business_id=current_setting('test.pr1b_business')::uuid
+       AND effective_from='2026-12-01')<>1 THEN
+   RAISE EXCEPTION 'scope-move bypass changed authoritative windows';
+ END IF;
+END $;
 -- Same key with different payload conflicts.
 DO $$
 DECLARE conflict jsonb;
