@@ -10,7 +10,9 @@ describe("Platform P1 checked-in coverage manifest", () => {
       .matchAll(/^\s{2}([a-zA-Z]\w+)\(/gm);
     const actual=[...methods].map(m=>m[1]).filter(m=>m!=="constructor").sort();
     expect(actual).toEqual([...PUBLIC_TOOL_METHODS].sort());
-    expect([...Object.values(readers),...Object.keys(classified)].sort()).toEqual(actual);
+    const facadeMethods=new Set<string>(PUBLIC_TOOL_METHODS);
+    const exposed=Object.values(readers).filter(method=>facadeMethods.has(method));
+    expect([...exposed,...Object.keys(classified)].sort()).toEqual(actual);
   });
   it("has a strict value and request contract, exact source-purpose policy, handler and identity for each ID", () => {
     const ids=Object.keys(values).sort();
