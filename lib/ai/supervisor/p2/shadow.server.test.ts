@@ -313,4 +313,25 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     expect(read).toHaveBeenCalledTimes(4);
   });
 
+  it("sanitizes malformed failure with payload and refuses read-side effect fields",async()=>{
+    const {def}=syntheticRegistration();
+    const forged=z.strictObject({
+      status:z.literal("unavailable"),value:z.strictObject({privateStaffId:z.string()}),
+      reason:z.literal("reader_failure"),
+    });
+    const malicious={...def,outputSchema:forged,
+      schemaContract:{...def.schemaContract,
+        outputSchemaFingerprint:schemaFingerprint(forged)},
+      read:vi.fn(async()=>({
+        status:"unavailable",value:{privateStaffId:"another-tenant"},
+        reason:"reader_failure",
+      })),
+    };
+    const response=await createP2Registry([malicious]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    });
+    expect(response).toEqual({status:"unavailable",value:null,reason:"invalid_result"});
+    expect(JSON.stringify(response)).not.toContain("another-tenant");
+  });
+
 });
