@@ -51,6 +51,24 @@ describe("Olivia PR1B: location-aware candidate availability", () => {
     ]});
     expect(closed.windows).toEqual([]);
   });
+  it("local partial unavailability subtracts from general fallback instead of discarding it", () => {
+    const result=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[{...recurring(3,"09:00","17:00"),location_id:null}],
+      exceptions:[{...exception("2026-10-14","unavailable","11:00","13:00"),location_id:"location-a"}],
+    });
+    expect(result.basis).toBe("general");
+    expect(result.windows).toEqual([{start:540,end:660},{start:780,end:1020}]);
+  });
+  it("local confirmed full absence closes its date even with general availability", () => {
+    const result=effectiveAvailabilityForLocation({
+      date:"2026-10-14",locationId:"location-a",
+      recurring:[{...recurring(3,"09:00","17:00"),location_id:null}],
+      exceptions:[{...exception("2026-10-14","approved_leave"),location_id:"location-a"}],
+    });
+    expect(result.basis).toBe("general");
+    expect(result.windows).toEqual([]);
+  });
   it("unconfirmed local reports do not displace confirmed general hours", () => {
     const output=effectiveAvailabilityForLocation({
       date:"2026-10-14",locationId:"location-a",
