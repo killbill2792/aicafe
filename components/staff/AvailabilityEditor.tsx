@@ -40,11 +40,17 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
 }) {
   const t = useTranslations("SchedulingAvailability");
   const router = useRouter();
-  const effectiveScopes = [...new Set(rows.filter((r) => r.employee_id === employeeId)
-    .map((r) => String(r.effective_from)))].sort().reverse();
-  const [effectiveFrom, setEffectiveFrom] = useState(effectiveScopes[0] ?? today);
-  const [effectiveTo, setEffectiveTo] = useState("");
   const [locationId, setLocationId] = useState("");
+  const savedScopes = rows.filter(r=>r.employee_id===employeeId &&
+      (r.location_id??null)===(locationId||null))
+    .map(r=>({from:String(r.effective_from),to:String(r.effective_to??"")}));
+  const effectiveScopes=[...new Map(savedScopes.map(v=>[`${v.from}|${v.to}`,v])).values()]
+    .sort((a,b)=>b.from.localeCompare(a.from)||b.to.localeCompare(a.to));
+  const globalScope=rows.filter(r=>r.employee_id===employeeId && r.location_id==null)
+    .map(r=>({from:String(r.effective_from),to:String(r.effective_to??"")}))
+    .sort((a,b)=>b.from.localeCompare(a.from))[0];
+  const [effectiveFrom, setEffectiveFrom] = useState(globalScope?.from ?? today);
+  const [effectiveTo, setEffectiveTo] = useState(globalScope?.to ?? "");
   const [draftOverride, setDraftOverride] = useState<DraftWindow[] | null>(null);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +75,13 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
     if (dirty && !window.confirm(t("discardEdits"))) return;
     setDraftOverride(null); setDirty(false); setError(null); setSaved(false);
     requestKey.current = null; setter(value);
+  }
+  function switchPeriod(value:string) {
+    if (dirty && !window.confirm(t("discardEdits"))) return;
+    const scope=effectiveScopes.find(p=>`${p.from}|${p.to}`===value);
+    setDraftOverride(null);setDirty(false);setError(null);setSaved(false);
+    requestKey.current=null;
+    setEffectiveFrom(scope?.from??today);setEffectiveTo(scope?.to??"");
   }
   function save() {
     if (scoped.some((row) => !draft.some((d) => d.id===row.id)) &&
@@ -128,10 +141,13 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
       </label>
       {effectiveScopes.length > 0 && <label className="flex flex-col gap-1 text-sm font-semibold">
         {t("existingPeriods")}
-        <select className={field} value={effectiveScopes.includes(effectiveFrom) ? effectiveFrom : ""}
-          onChange={(e) => switchScope(setEffectiveFrom, e.target.value)}>
+        <select className={field}
+          value={effectiveScopes.some(p=>p.from===effectiveFrom&&p.to===effectiveTo)
+            ? `${effectiveFrom}|${effectiveTo}` : ""}
+          onChange={(e) => switchPeriod(e.target.value)}>
           <option value="">{t("newPeriod")}</option>
-          {effectiveScopes.map((date) => <option key={date} value={date}>{date}</option>)}
+          {effectiveScopes.map((p) => <option key={`${p.from}|${p.to}`}
+            value={`${p.from}|${p.to}`}>{p.from} — {p.to||t("ongoing")}</option>)}
         </select>
       </label>}
       <label className="flex flex-col gap-1 text-sm font-semibold">{t("effectiveTo")}
