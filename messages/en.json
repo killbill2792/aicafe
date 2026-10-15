@@ -1603,6 +1603,26 @@
     "saveEditedDraft": "Save edited draft",
     "cancelEdit": "Cancel editing",
     "editLoadFailed": "Could not load the selected revision. Refresh and try again.",
-    "editInvalid": "Cannot save: scheduling validation failed. {details}"
+    "editInvalid": "Cannot save: scheduling validation failed. {details}",
+    "approvalTitle": "Owner approval and publishing",
+    "approvalExplanation": "Owner approval and publication are separate audited actions. Only validated, legally reviewed revisions can become official.",
+    "publishNotReady": "Official publication is not enabled. Verified labor rules and staging authorization are required first.",
+    "latestVersion": "Latest revision",
+    "approveSchedule": "Approve this version",
+    "publishSchedule": "Publish approved version",
+    "confirmPublish": "Publish this approved schedule as official? This does not contact workers or create timecards.",
+    "approvedRevision": "Version {revision} approved",
+    "publishedVersion": "Version {revision} published",
+    "publishedNotAttendance": "These are planned assignments, not employee acceptance or worked hours.",
+    "viewOfficial": "View official published shifts",
+    "noOfficialShifts": "No published Olivia shifts yet.",
+    "publishPolicy": "Cannot approve or publish until a verified, sourced labor-policy profile is configured for all relevant workers and locations.",
+    "notApproved": "Only an approved revision can be published.",
+    "legacyConflict": "Existing assigned recurring shifts conflict with this schedule. Resolve them before publishing.",
+    "publishedConflict": "A worker already has overlapping official shifts in another week or location.",
+    "pastShift": "Past or already-started shifts cannot be newly published.",
+    "publishError": "Unable to verify schedule publication. Refresh and retry.",
+    "ownerRequired": "Only an authenticated café owner can do this.",
+    "editInvalidGeneric": "Proposed shifts fail scheduling validation."
   }
 }
