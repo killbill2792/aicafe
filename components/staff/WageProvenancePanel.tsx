@@ -17,6 +17,9 @@ export default function WageProvenancePanel({ employee, records }: {
   const t=useTranslations("SchedulingAvailability"), staff=useTranslations("ManageStaff");
   const locale=useLocale(), router=useRouter();
   const existing=records.find(r=>r.employee_id===employee.id);
+  const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(null);
+  const currentRecord = existing && (!savedRecord || existing.id!==savedRecord.id ||
+    existing.revision>savedRecord.revision) ? existing : savedRecord;
   const [status,setStatus]=useState<CashState>((existing?.cash_cost_state as CashState)??"unknown");
   const [evidence,setEvidence]=useState(String(existing?.eligibility_reference??""));
   const [pending,run]=useTransition(),[error,setError]=useState(""),[saved,setSaved]=useState(false);
@@ -29,13 +32,14 @@ export default function WageProvenancePanel({ employee, records }: {
       eligibility_reference:status==="known_eligible_zero"?evidence.trim():null};
     run(async()=>{
       const result=await saveSchedulingFoundationRecord({
-        kind:"compensation",action:existing?"update":"create",
-        ...(existing?{id:existing.id,expectedRevision:existing.revision}:
+        kind:"compensation",action:currentRecord?"update":"create",
+        ...(currentRecord?{id:currentRecord.id,expectedRevision:currentRecord.revision}:
           {requestKey:stableCreateRequestKey(retry,payload)}),
         data:payload,
       });
       if(!result.ok){setError(t("compensationCannotVerify"));return;}
-      retry.current=null;setSaved(true);setError("");router.refresh();
+      retry.current=null;setSavedRecord({id:result.id,revision:result.revision});
+      setSaved(true);setError("");router.refresh();
     });
   }
   const verified = (existing?.cash_cost_state as CashState|undefined)??"unknown";
@@ -55,6 +59,7 @@ export default function WageProvenancePanel({ employee, records }: {
     {existing?.eligibility_verified_at != null && <p className="text-[17px] text-ink-muted">
       {t("confirmedAt")}: {String(existing.eligibility_verified_at)}
     </p>}
+    <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px]">{t("cashState")}
       <select className={field} value={status} onChange={e=>{setStatus(e.target.value as CashState);setSaved(false);}}>
         {(["unknown","known_paid","salary_conversion_pending","known_eligible_zero"] as CashState[]).map(s=>
@@ -70,5 +75,6 @@ export default function WageProvenancePanel({ employee, records }: {
     <button type="button" className={primary} disabled={pending} onClick={submit}>{t("saveEvidence")}</button>
     {error && <p role="alert" className="text-[17px] text-warn">{error}</p>}
     {saved && <p role="status" className="text-[17px] text-good">{t("saved")}</p>}
+    </fieldset>
   </section>;
 }
