@@ -19,7 +19,7 @@ const shiftSchema = z.object({
 }).strict();
 export const editDraftSchema = z.object({
   horizonStart:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  expectedRevision:z.number().int().min(1).max(500),
+  expectedRevision:z.number().int().min(1).max(499),
   baseRevisionId:uuid,
   objective:z.enum(["cash","owner_time","balanced"]),
   requestKey:uuid,
