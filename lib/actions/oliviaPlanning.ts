@@ -16,7 +16,7 @@ const args = z.object({
 }).strict();
 const saveArgs = args.extend({
   objective: z.enum(["cash", "owner_time", "balanced"]),
-  expectedRevision: z.number().int().min(0),
+  expectedRevision: z.number().int().min(0).max(499),
   requestKey: z.string().uuid(),
   expectedSourceDigest: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
