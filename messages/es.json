@@ -1623,6 +1623,27 @@
     "pastShift": "No se pueden publicar turnos pasados o ya iniciados.",
     "publishError": "No se pudo verificar la publicación. Actualice e inténtelo de nuevo.",
     "ownerRequired": "Esta acción requiere un propietario autenticado.",
-    "editInvalidGeneric": "Los turnos propuestos no pasan la validación."
+    "editInvalidGeneric": "Los turnos propuestos no pasan la validación.",
+    "ruleReviewTitle": "Revisar las normas laborales aplicables",
+    "ruleReviewCaution": "Introduzca solo normas verificadas para su cafetería, locales y tipos de trabajadores mediante fuentes oficiales o asesoramiento cualificado. AI CAFE no proporciona ni certifica leyes. Los cambios invalidan las aprobaciones anteriores.",
+    "loadRules": "Cargar revisión vigente",
+    "ruleReviewVersion": "Versión de la revisión",
+    "ruleSource": "Referencia legal/oficial comprobada y versión",
+    "ruleJurisdiction": "Jurisdicción aplicable a {name}",
+    "ruleClassification": "Clasificación confirmada para {name}",
+    "ruleContinuous": "Trabajo continuo máximo (minutos)",
+    "ruleMeal": "Descanso de comida no remunerado (minutos)",
+    "rulePaidRest": "Descanso remunerado verificado (minutos; 0 si no corresponde)",
+    "ruleShiftRest": "Descanso mínimo entre turnos (minutos)",
+    "ruleOvertimeDaily": "Umbral diario de horas extra (minutos)",
+    "ruleOvertimeWeekly": "Umbral semanal de horas extra (minutos)",
+    "ruleMultiplierNumerator": "Numerador del multiplicador de horas extra",
+    "ruleMultiplierDenominator": "Denominador del multiplicador de horas extra",
+    "ruleAttestation": "He confirmado estas reglas y clasificaciones según la fuente citada o asesoramiento jurídico cualificado. AI CAFE no verifica el cumplimiento legal.",
+    "ruleAttestRequired": "Revise las reglas y confirme su declaración.",
+    "ruleLoadError": "No se pudo cargar la revisión.",
+    "ruleSaveError": "No se pudo guardar la revisión. Compruebe los datos, la fuente y la versión.",
+    "ruleReviewSaved": "Revisión laboral guardada como versión {revision}. Genere otra vez el horario.",
+    "saveRuleReview": "Guardar revisión"
   }
 }
