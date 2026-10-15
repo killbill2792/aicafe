@@ -16,7 +16,7 @@ export type FoundationWriteResult =
   | { ok: true; id: string; revision: number }
   | { ok: false; error: "unauthorized" | "disabled" | "invalid_input" | "conflict_or_missing" | "storage_unavailable" };
 
-async function requireSchedulingOwner(): Promise<
+export async function requireSchedulingOwner(): Promise<
   { supabase: Client; businessId: string } | null
 > {
   if (!isSupabaseConfigured()) return null;
@@ -83,6 +83,13 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
         p_request_key: command.data.requestKey,
         p_record: record,
       });
+      // Database uniqueness also guards initially missing compensation,
+      // policy periods and qualification types. A different co-owner's
+      // committed create is a stale-create conflict, not a server outage.
+      // Coverage equivalence is additionally protected by a PostgreSQL
+      // NULLS NOT DISTINCT unique index across different request keys.
+      if (error?.code === "23505")
+        return { ok: false, error: "conflict_or_missing" };
       if (error || !data) return { ok: false, error: "storage_unavailable" };
       const result = data as { id?: unknown; revision?: unknown; conflict?: boolean };
       if (result.conflict === true) return { ok: false, error: "conflict_or_missing" };
@@ -102,6 +109,9 @@ export async function executeFoundationCommand(input: unknown): Promise<Foundati
         .eq("id", id as string)
         .eq("revision", expectedRevision as number)
         .select("id,revision").maybeSingle();
+      // Concurrent create/edit can also collide with another requirement
+      // or overlapping hour-limit policy during a revision-checked UPDATE.
+      if (error?.code === "23505") return { ok: false, error: "conflict_or_missing" };
       if (error) return { ok: false, error: "storage_unavailable" };
       if (!data) return { ok: false, error: "conflict_or_missing" };
       return { ok: true, id: data.id as string, revision: data.revision as number };

@@ -8,6 +8,9 @@ import { useRouter } from "@/i18n/navigation";
 import type { EmployeeRow } from "@/lib/data/getEmployees";
 import type { StaffScheduleRow } from "@/lib/data/getStaffSchedules";
 import { clearNewEmployeeGuidance, schedulesForMonth, summarizeStaffSchedule } from "@/lib/viewmodels/staffManagement";
+import { StaffAvailabilitySection, StaffCoverageSection, StaffAvailabilityUnavailable,
+  type SchedulingClientRecords } from "./SchedulingInputsPanel";
+import type { SchedulingLocation } from "./AvailabilityEditor";
 
 type WagePeriod = "hour" | "month" | "year";
 
@@ -83,6 +86,7 @@ type Labels = {
   reactivate: string;
   inactiveTag: string;
   wageSummary: string;
+  wageUnknown: string;
   daysSummary: string;
   variedTimes: string;
   variedBreaks: string;
@@ -111,6 +115,10 @@ export default function ManageStaffPanel({
   labels,
   focusEmployeeId,
   focusDate,
+  schedulingStatus,
+  schedulingRecords,
+  schedulingLocations,
+  schedulingBusinessTimezone,
 }: {
   employees: EmployeeRow[];
   schedules: StaffScheduleRow[];
@@ -118,6 +126,10 @@ export default function ManageStaffPanel({
   labels: Labels;
   focusEmployeeId: string | null;
   focusDate: string | null;
+  schedulingStatus: "ready" | "unavailable";
+  schedulingRecords: SchedulingClientRecords;
+  schedulingLocations: SchedulingLocation[];
+  schedulingBusinessTimezone: string;
 }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
@@ -223,6 +235,9 @@ export default function ManageStaffPanel({
               employee={emp}
               schedules={schedules.filter((s) => s.employeeId === emp.id)}
               todayDateStr={todayDateStr}
+              schedulingStatus={schedulingStatus}
+              schedulingRecords={schedulingRecords}
+              schedulingLocations={schedulingLocations}
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={newEmployeeId === emp.id}
@@ -242,6 +257,9 @@ export default function ManageStaffPanel({
               employee={emp}
               schedules={schedules.filter((s) => s.employeeId === emp.id)}
               todayDateStr={todayDateStr}
+              schedulingStatus={schedulingStatus}
+              schedulingRecords={schedulingRecords}
+              schedulingLocations={schedulingLocations}
               labels={labels}
               expanded={expanded.has(emp.id)}
               openScheduleInitially={false}
@@ -252,6 +270,10 @@ export default function ManageStaffPanel({
           ))}
         </section>
       )}
+      {schedulingStatus === "ready" ? (
+        <StaffCoverageSection records={schedulingRecords} locations={schedulingLocations}
+          businessTimezone={schedulingBusinessTimezone} today={todayDateStr}/>
+      ) : <StaffAvailabilityUnavailable/>}
     </div>
   );
 }
@@ -260,6 +282,9 @@ function EmployeeRowItem({
   employee,
   schedules,
   todayDateStr,
+  schedulingStatus,
+  schedulingRecords,
+  schedulingLocations,
   labels,
   expanded,
   openScheduleInitially,
@@ -270,6 +295,9 @@ function EmployeeRowItem({
   employee: EmployeeRow;
   schedules: StaffScheduleRow[];
   todayDateStr: string;
+  schedulingStatus: "ready" | "unavailable";
+  schedulingRecords: SchedulingClientRecords;
+  schedulingLocations: SchedulingLocation[];
   labels: Labels;
   expanded: boolean;
   openScheduleInitially: boolean;
@@ -344,7 +372,11 @@ function EmployeeRowItem({
           </span>
           {!employee.active && <span className="text-xs font-semibold text-warn">{labels.inactiveTag}</span>}
           <span className="text-sm text-ink-muted">
-            {labels.wageSummary.replace("{wage}", formatCents(employee.wageAmountCents ?? employee.defaultHourlyWageCents ?? 0)).replace("{period}", wagePeriodLabel(employee.wagePeriod, labels))}
+            {employee.wageAmountCents == null && employee.defaultHourlyWageCents == null
+  ? labels.wageUnknown
+  : labels.wageSummary.replace("{wage}",
+      formatCents(employee.wageAmountCents ?? employee.defaultHourlyWageCents ?? 0))
+      .replace("{period}", wagePeriodLabel(employee.wagePeriod, labels))}
           </span>
           <span className="text-sm text-ink-muted">
             {scheduleSummary(applicableSchedules, labels)}
@@ -442,6 +474,9 @@ function EmployeeRowItem({
           {activeEditor === "schedule" && <WeeklyScheduleEditor employee={employee} schedules={schedules} todayDateStr={todayDateStr} labels={labels} onSaved={() => { setActiveEditor(null); onScheduleSaved(); router.refresh(); onToggle(); }} />}
 
           {activeEditor === "day" && <DayEditor employee={employee} todayDateStr={focusDate ?? todayDateStr} labels={labels} />}
+          {schedulingStatus === "ready" &&
+            <StaffAvailabilitySection employee={employee} records={schedulingRecords}
+              locations={schedulingLocations} today={todayDateStr} />}
 
           <button type="button" onClick={handleToggleActive} disabled={isPending} className="min-h-12 rounded-full border border-line text-sm font-semibold text-ink-muted">
             {employee.active ? labels.deactivate : labels.reactivate}
