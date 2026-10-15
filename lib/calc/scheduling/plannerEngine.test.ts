@@ -110,6 +110,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     const plan=optimizeOliviaWeek(input([e],[coverage("four-hours",{end_local:"13:00"})]));
     expect(plan.best?.cost.ownerMinutes).toBe(0);
     expect(plan.best!.shifts.reduce((n,s)=>n+s.paidMinutes,0)).toBeLessThanOrEqual(120);
+    expect(plan.best!.gaps.some(g=>g.reason==="weekly_hour_limit")).toBe(true);
     const overnight=employee("capped",{recurring:[{
       ...recurring(1,"22:00","02:00"),overnight:true,
     }],exceptions:[{local_date:"2026-10-13",exception_type:"hours_cap",
@@ -121,6 +122,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
       .reduce((n,s)=>n+(Date.parse(s.endAt)-Math.max(Date.parse(s.startAt),
         Date.parse("2026-10-13T07:00:00.000Z")))/60000,0)??0;
     expect(tuesday).toBeLessThanOrEqual(60);
+    expect(result.best!.gaps.some(g=>g.reason==="date_specific_cap")).toBe(true);
   });
 
   it("places a real unpaid break only with alternate coverage and configured verified rules",()=>{
