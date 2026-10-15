@@ -101,6 +101,19 @@ describe("Olivia immutable owner schedule edit service",()=>{
         violations:["outside_confirmed_availability:worker"]});
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it("never removes, unpins or reassigns an existing pinned commitment",async()=>{
+    const pinned={employeeId:businessId,locationId:seriesId,
+      startAt:"2026-10-12T09:00:00.000Z",
+      endAt:"2026-10-12T10:00:00.000Z",
+      paidMinutes:60,breaks:[],pinned:true};
+    mocks.revision.mockResolvedValueOnce({data:{id:revisionId,status:"draft",
+      source_digest:digest,scenario:{...scenario,shifts:[pinned]}},error:null});
+    expect(await saveOliviaEditedDraft(edit,input,businessId,sourceFingerprint))
+      .toEqual({ok:false,error:"invalid_shifts",
+        violations:["pinned_shift_changed"]});
+    expect(mocks.validate).not.toHaveBeenCalled();
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("creates a new revision with server-calculated cost and exact CAS",async()=>{
     const output=await saveOliviaEditedDraft(edit,input,businessId,sourceFingerprint);
     expect(output).toMatchObject({ok:true,revision:2,replayed:false});
