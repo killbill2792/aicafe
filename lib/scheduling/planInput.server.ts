@@ -99,7 +99,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     // Only assignments that have already STARTED become frozen replan inputs.
     // The current published pointer is also fingerprinted, so an intervening
     // publication invalidates an old preview even when no shift has started.
-    const replanAsOf=new Date().toISOString();
+    // Stable canonical UTC-minute cutoff; the planner rejects sub-minute times.
+    const replanAsOf=new Date(Math.floor(Date.now()/60_000)*60_000).toISOString();
     const {data:publishedSeries,error:seriesError}=await supabase
       .from("scheduling_plan_series").select("id,published_revision")
       .eq("business_id",businessId).eq("horizon_start",week).maybeSingle();
