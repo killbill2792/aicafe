@@ -5,7 +5,7 @@ import { stableCreateRequestKey, type PendingCreate } from "@/lib/scheduling/ide
 import { minutesToHourInput, hourInputToMinutes } from "@/lib/scheduling/hourInput";
 import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
-import { saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
+import { getSchedulingFoundationRecords, saveSchedulingFoundationRecord } from "@/lib/actions/schedulingFoundation";
 import { type SchedulingRow, schedulingFieldClass as field,
   schedulingPrimaryClass as primary, schedulingButtonClass as secondary } from "./AvailabilityEditor";
 
@@ -118,12 +118,19 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
   const days=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
   return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
     <h4 className="text-[17px] font-bold">{t("hourLimitsAndPreferences")}</h4>
-    {conflicted && <button type="button" className={secondary} onClick={()=>{
-      const fresh=active.find(r=>r.id===selected);
+    {conflicted && <button type="button" className={secondary} disabled={pending} onClick={()=>run(async()=>{
+      // A sibling panel may refresh while this draft stays mounted. Pin
+      // revisions from the live owner-scoped read, never stale page props.
+      const result=await getSchedulingFoundationRecords();
+      if(!result.ok){setError(t("saveFailed"));return;}
+      const current=(result.records.preferences as SchedulingRow[])
+        .filter(r=>r.employee_id===employeeId);
+      const fresh=current.find(r=>r.id===selected)??current.find(r=>
+        r.effective_from===from && (r.effective_to??null)===(to||null));
       setLastSaved(fresh?{id:fresh.id,revision:fresh.revision}:null);
-      if(!fresh)setSelected("");
-      setConflicted(false);setError("");preferenceRetry.current=null;
-    }}>{t("applyAfterConflict")}</button>}
+      setSelected(fresh?.id??"");
+      setConflicted(false);setError("");preferenceRetry.current=null;router.refresh();
+    })}>{t("applyAfterConflict")}</button>}
     <fieldset disabled={pending || conflicted} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <label className="flex flex-col gap-1 text-[17px] font-semibold">{t("existingPeriods")}
       <select className={field} value={selected} onChange={e=>selectPreference(e.target.value)}>
