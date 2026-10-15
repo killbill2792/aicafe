@@ -25,7 +25,7 @@ beforeEach(()=>{
   mocks.supabase.mockResolvedValue(client);
   mocks.tools.mockResolvedValue({getMonthlyBills:readBills});
   mocks.identity.mockResolvedValue({asOf:"2026-10-14",timezone:"America/Los_Angeles"});
-  membership.mockResolvedValue({data:{role:"owner",businesses:{is_demo:false}},error:null});
+  membership.mockResolvedValue({data:{role:"owner",businesses:{is_demo:false,currency:"USD"}},error:null});
   eq.mockReturnValue({eq,maybeSingle:membership});
   from.mockReturnValue({select:()=>({eq})});
   readBills.mockResolvedValue({available:true,value:{totalCents:0},
@@ -80,4 +80,18 @@ describe("P1 production owner/tenant authorization",()=>{
     membership.mockResolvedValue({data:null,error:null});
     await expect(discoverAuthenticatedP1()).rejects.toThrow();
   });
+  it("does not mislabel non-USD business-cent values as USD_cents",async()=>{
+    membership.mockResolvedValue({data:{
+      role:"owner",businesses:{is_demo:false,currency:"EUR"},
+    },error:null});
+    const response=await readAuthenticatedP1({
+      id:"money.recurring_monthly_bills_cents",version:1,
+      purpose:"recurring_monthly_obligation_metric",granularity:"period",
+    });
+    expect(response).toEqual({status:"unavailable",value:null,reason:"unsupported"});
+    expect(readBills).not.toHaveBeenCalled();
+    const nonMoney=await readAuthenticatedP1({id:"unsupported_inventory",version:1});
+    expect(nonMoney).toMatchObject({status:"unavailable",value:null});
+  });
+
 });
