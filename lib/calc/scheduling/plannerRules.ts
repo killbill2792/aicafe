@@ -72,7 +72,7 @@ function money(value:number):number {
 }
 export function costForWork(input:PlannerInput, plan:ExpandedPlan,
   works:readonly WorkUnit[]):PlannerCost {
-  let wages=0,ownerMinutes=0,ownerOpportunity=0,ownerUnknown=false;
+  let wages=0,allocatedSalary=0,hasSalary=false,ownerMinutes=0,ownerOpportunity=0,ownerUnknown=false;
   const missing:string[]=[];
   const byEmployee=new Map<string,WorkUnit[]>();
   for(const w of works){
@@ -113,6 +113,11 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
         (overtime.multiplierNumerator-overtime.multiplierDenominator)/
         (60*overtime.multiplierDenominator));
     }
+    if(e.wage.wage_period==="month" || e.wage.wage_period==="year"){
+      // Salary is already owed according to employment terms. These cents
+      // are an allocated cost-equivalent, NOT incremental payroll savings.
+      hasSalary=true;allocatedSalary+=base;
+    }
     wages+=base;
   }
   const available=missing.length===0;
@@ -121,10 +126,11 @@ export function costForWork(input:PlannerInput, plan:ExpandedPlan,
     ?staffCostLoadedCents(wages,money(payrollTaxCents(wages,rate))):null;
   return {
     cashWagesCents:available?wages:null,
+    allocatedSalaryCents:available?allocatedSalary:null,
     loadedPayrollCents:loaded,
     ownerOpportunityCents:ownerUnknown?null:ownerOpportunity,
     ownerMinutes,
-    costState:!available?"unavailable" :
+    costState:!available?"unavailable" :hasSalary?"estimate" :
       input.burden?.status==="verified"&&input.ruleProfile?.verified&&
       input.ruleProfile.overtime?.verified?"verified":"estimate",
     missingWageEmployeeIds:missing,
