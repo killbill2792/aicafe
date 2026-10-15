@@ -131,7 +131,7 @@ BEGIN
  IF p_request_key IS NULL OR p_horizon_start IS NULL
    OR extract(isodow from p_horizon_start) <> 1
    OR p_expected_revision IS NULL OR p_expected_revision < 0
-   OR p_source_digest IS NULL OR p_source_digest !~ '^[a-f0-9]{64}
+   OR p_source_digest IS NULL OR p_source_digest !~ '^[a-f0-9]{64}$'
    OR jsonb_typeof(p_planner_input) <> 'object'
    OR jsonb_typeof(p_scenario) <> 'object'
    OR jsonb_typeof(p_shifts) <> 'array'
@@ -141,7 +141,7 @@ BEGIN
    OR pg_column_size(p_shifts) > 262144
    OR p_scenario->'shifts' IS DISTINCT FROM p_shifts
    OR p_planner_input->>'horizonStart' IS DISTINCT FROM p_horizon_start::text
-   OR p_scenario->>'objective' NOT IN ('cash','owner_time','balanced') THEN
+   OR coalesce(p_scenario->>'objective','') NOT IN ('cash','owner_time','balanced') THEN
    RAISE EXCEPTION 'invalid draft request' USING ERRCODE='22023';
  END IF;
  v_fingerprint := md5(jsonb_build_object(
@@ -177,8 +177,8 @@ BEGIN
      IF jsonb_typeof(v_shift)<>'object' THEN
        RAISE EXCEPTION 'invalid draft shift' USING ERRCODE='22023';
      END IF;
-     IF EXISTS(SELECT 1 FROM jsonb_object_keys(v_shift) key_name
-       WHERE key_name NOT IN ('employeeId','locationId','startAt','endAt',
+     IF EXISTS(SELECT 1 FROM jsonb_object_keys(v_shift) AS k(key_name)
+       WHERE k.key_name NOT IN ('employeeId','locationId','startAt','endAt',
          'paidMinutes','breaks','pinned')) OR
        NOT (v_shift ?& ARRAY['employeeId','locationId','startAt','endAt',
          'paidMinutes','breaks','pinned']) OR
@@ -199,90 +199,7 @@ BEGIN
        coalesce((v_shift->>'pinned')::boolean,false)
      );
    END LOOP;
-   -- Drafts are NOT verified/publishable records; only application-side
-   -- independent validation can produce reviewable scenarios. This SQL
-   -- intentionally has no transition to approved/published.
-   -- Defense in depth for even inert client-submitted drafts.
-   IF EXISTS (
-     SELECT 1 FROM public.scheduling_plan_assignments x
-     JOIN public.scheduling_plan_assignments y
-       ON x.business_id=y.business_id AND x.plan_revision_id=y.plan_revision_id
-       AND x.employee_id=y.employee_id AND x.id<y.id
-       AND tstzrange(x.starts_at,x.ends_at,'[)') &&
-           tstzrange(y.starts_at,y.ends_at,'[)')
-     WHERE x.business_id=p_business_id AND x.plan_revision_id=v_revision_id
-   ) THEN RAISE EXCEPTION 'overlapping draft shifts' USING ERRCODE='22023'; END IF;
-   UPDATE public.scheduling_plan_series
-     SET current_revision=v_revision,updated_at=now()
-     WHERE business_id=p_business_id AND id=v_series.id;
-   INSERT INTO public.scheduling_plan_audit
-     (business_id,series_id,revision_id,event,actor)
-   VALUES(p_business_id,v_series.id,v_revision_id,
-     CASE WHEN v_revision=1 THEN 'draft_created' ELSE 'draft_revised' END,auth.uid());
-   v_result:=jsonb_build_object('seriesId',v_series.id,
-     'revisionId',v_revision_id,'revision',v_revision);
- END IF;
- UPDATE public.scheduling_plan_request_receipts SET result=v_result
-   WHERE business_id=p_business_id AND request_key=p_request_key;
- RETURN v_result || jsonb_build_object('replayed',false);
-END $$;
-REVOKE ALL ON FUNCTION public.scheduling_create_plan_draft(
- uuid,date,integer,text,jsonb,jsonb,jsonb,uuid) FROM PUBLIC,anon;
-GRANT EXECUTE ON FUNCTION public.scheduling_create_plan_draft(
- uuid,date,integer,text,jsonb,jsonb,jsonb,uuid) TO authenticated;
-
-   OR jsonb_typeof(p_planner_input) <> 'object'
-   OR jsonb_typeof(p_scenario) <> 'object'
-   OR jsonb_typeof(p_shifts) <> 'array'
-   OR jsonb_array_length(p_shifts) > 200 THEN
-   RAISE EXCEPTION 'invalid draft request' USING ERRCODE='22023';
- END IF;
- v_fingerprint := md5(jsonb_build_object(
-   'week',p_horizon_start,'expected',p_expected_revision,'source',p_source_digest,
-   'input',p_planner_input,'scenario',p_scenario,'shifts',p_shifts)::text);
- INSERT INTO public.scheduling_plan_request_receipts
-   (business_id,request_key,fingerprint)
- VALUES(p_business_id,p_request_key,v_fingerprint)
- ON CONFLICT DO NOTHING;
- GET DIAGNOSTICS v_claim=ROW_COUNT;
- IF v_claim=0 THEN
-   SELECT * INTO v_receipt FROM public.scheduling_plan_request_receipts
-     WHERE business_id=p_business_id AND request_key=p_request_key;
-   IF v_receipt.fingerprint IS DISTINCT FROM v_fingerprint OR v_receipt.result IS NULL THEN
-     RETURN jsonb_build_object('conflict',true);
-   END IF;
-   RETURN v_receipt.result || jsonb_build_object('replayed',true);
- END IF;
- INSERT INTO public.scheduling_plan_series(business_id,horizon_start,created_by)
- VALUES(p_business_id,p_horizon_start,auth.uid())
- ON CONFLICT (business_id,horizon_start) DO NOTHING;
- SELECT * INTO v_series FROM public.scheduling_plan_series
-   WHERE business_id=p_business_id AND horizon_start=p_horizon_start FOR UPDATE;
- IF v_series.current_revision <> p_expected_revision THEN
-   v_result := jsonb_build_object('conflict',true);
- ELSE
-   v_revision := v_series.current_revision + 1;
-   INSERT INTO public.scheduling_plan_revisions(
-     business_id,series_id,revision,source_digest,planner_input,scenario,created_by
-   ) VALUES(p_business_id,v_series.id,v_revision,p_source_digest,
-     p_planner_input,p_scenario,auth.uid()) RETURNING id INTO v_revision_id;
-   FOR v_shift IN SELECT value FROM jsonb_array_elements(p_shifts) LOOP
-     IF jsonb_typeof(v_shift)<>'object' THEN
-       RAISE EXCEPTION 'invalid draft shift' USING ERRCODE='22023';
-     END IF;
-     v_employee := (v_shift->>'employeeId')::uuid;
-     v_location := (v_shift->>'locationId')::uuid;
-     INSERT INTO public.scheduling_plan_assignments (
-       business_id,plan_revision_id,employee_id,location_id,
-       starts_at,ends_at,paid_minutes,breaks,pinned
-     ) VALUES (
-       p_business_id,v_revision_id,v_employee,v_location,
-       (v_shift->>'startAt')::timestamptz,(v_shift->>'endAt')::timestamptz,
-       (v_shift->>'paidMinutes')::integer,
-       coalesce(v_shift->'breaks','[]'::jsonb),
-       coalesce((v_shift->>'pinned')::boolean,false)
-     );
-   END LOOP;
+   -- Drafts are NOT verified/publishable records; SQL has no approval transition.
    -- Defense in depth for even inert client-submitted drafts.
    IF EXISTS (
      SELECT 1 FROM public.scheduling_plan_assignments x
