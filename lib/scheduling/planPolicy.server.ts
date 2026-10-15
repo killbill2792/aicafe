@@ -3,7 +3,12 @@ import "server-only";
 import {z} from "zod";
 import {requireSchedulingOwner} from "./foundation.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
-import type {PlannerInput,PlannerRuleProfile} from "@/lib/calc/scheduling/plannerTypes";
+import type {PlannerInput,PlannerRuleProfile,PlannerEmployee} from "@/lib/calc/scheduling/plannerTypes";
+
+type ReviewRoster = {
+  locations: PlannerInput["locations"];
+  employees: Pick<PlannerEmployee,"id"|"active">[];
+};
 
 const integer=(max:number)=>z.number().int().min(0).max(max);
 const record=z.record(z.string().uuid(),z.string().trim().min(2).max(120));
@@ -31,7 +36,7 @@ export const laborReviewCommandSchema=z.object({
 }).strict();
 
 export function verifiedOliviaRuleProfile(
-  candidate:unknown, input:Pick<PlannerInput,"locations"|"employees">,
+  candidate:unknown, input:ReviewRoster,
 ):PlannerRuleProfile|null {
   const parsed=oliviaReviewedRuleProfileSchema.safeParse(candidate);
   if(!parsed.success)return null;
@@ -60,7 +65,7 @@ export async function readOliviaRuleReview(){
 }
 
 export async function saveOliviaRuleReview(raw:unknown,
-  input:Pick<PlannerInput,"locations"|"employees">,sourceBusinessId:string){
+  input:ReviewRoster,sourceBusinessId:string){
   if(process.env.SCHEDULING_FOUNDATION_ENABLED!=="true" ||
      process.env.SCHEDULING_PR3_DRAFTS_ENABLED!=="true")
     return {ok:false as const,error:"disabled" as const};
