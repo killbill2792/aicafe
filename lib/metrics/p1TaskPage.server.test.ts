@@ -50,6 +50,18 @@ describe("P1 bounded deterministic Team task pages",()=>{
     expect(await readP1TaskPage({businessId:"cafe-1"}))
       .toMatchObject({available:false,value:null});
   });
+  it("reports terminal page limit truthfully when more history exists",async()=>{
+    const tasks=await readP1TaskPage({businessId:"cafe-1"},250);
+    expect(range).toHaveBeenCalledWith(10000,10040);
+    expect(tasks).toMatchObject({available:true,value:{
+      page:250,hasMore:true,nextPage:null,limitReached:true,
+    }});
+    const decisions=await readP1DecisionPage({businessId:"cafe-1"},250);
+    expect(decisions).toMatchObject({available:true,value:{
+      page:250,hasMore:true,nextPage:null,limitReached:true,
+    }});
+    expect(tasks.available && tasks.quality.missingInputs).toContain("task_inbox_page_only");
+  });
   it("rejects invalid pages before accessing the database",async()=>{
     expect(await readP1TaskPage({businessId:"cafe-1"},-1)).toMatchObject({available:false});
     expect(await readP1TaskPage({businessId:"cafe-1"},999)).toMatchObject({available:false});
