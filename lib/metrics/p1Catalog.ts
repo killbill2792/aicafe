@@ -126,7 +126,11 @@ export const values = {
     id:text,name:text,role:text.nullable(),active:z.boolean(),
     defaultHourlyWageCents:money.nullable(),wagePeriod:z.enum(["hour","month","year"]),
     wageAmountCents:money.nullable(),wageKnown:z.boolean(),
-  }).refine(row=>row.wageKnown===(row.defaultHourlyWageCents!==null||row.wageAmountCents!==null))).max(500),
+    wageProvenance:z.enum(["recorded_positive","unverified_zero_or_missing"]),
+  }).refine(row=>{
+    const known=(row.defaultHourlyWageCents??0)>0||(row.wageAmountCents??0)>0;
+    return row.wageKnown===known&&row.wageProvenance===(known?"recorded_positive":"unverified_zero_or_missing");
+  })).max(500),
   "supplies.quotes": z.strictObject({
     items:z.array(z.strictObject({id:text,supplierName:text,itemName:text,priceCents:money,
       packageCount:count,packageUnit:z.enum(["each","oz","lb","kg","gal","liter","case"]),
