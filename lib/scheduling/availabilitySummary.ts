@@ -1,12 +1,5 @@
 /** Compact read-only weekly summary; never infer availability from an absent row. */
-export type AvailabilitySummaryRow = {
-  employee_id?: unknown;
-  effective_from?: unknown;
-  effective_to?: unknown;
-  day_of_week?: unknown;
-  confirmation?: unknown;
-  unavailable_weekdays?: unknown;
-};
+export type AvailabilitySummaryRow = Record<string, unknown>;
 
 export type StaffWeeklyAvailabilitySummary = {
   availableWindows: number;
