@@ -215,19 +215,30 @@ export async function executeP1AnalysisAuthorized(
   if(frozen.boundCapabilityKey!==def.boundCapabilityKey ||
     frozen.selectedPurpose!==(frozen.input as {purpose:string}).purpose)
     return denied("invalid_analysis_invocation");
-  const result=await executeP1Authorized(tools,identity,frozen.input);
-  // Do not promote an unknown/planned fact to an analysis purpose that does
-  // not explicitly authorize that actuality, even when shape validation passes.
-  const policy=(def.sourceRequirementsByPurpose as unknown as Record<string,{
-    inputs:Array<{allowedActualities:readonly string[]}>;
-  }>)[frozen.selectedPurpose];
-  if(!policy||policy.inputs.length!==1)return denied("invalid_analysis_contract");
-  if(result && typeof result==="object" && "actuality" in result &&
-     typeof result.actuality==="string" &&
-     !policy.inputs[0].allowedActualities.includes(result.actuality))
-    return denied("invalid_analysis_contract");
-  // The bound capability owns the complete output schema and its safety gates.
-  return def.outputSchema.safeParse(result).success?result:denied("invalid_analysis_contract");
+  // This is a strict response deadline. Underlying read-only Supabase
+  // requests cannot currently receive an abort signal, so timeout prevents
+  // publishing late evidence but does not assert database cancellation.
+  let timer:ReturnType<typeof setTimeout>|undefined;
+  try {
+    const deadline=new Promise<{status:"unavailable";value:null;reason:"reader_failure"}>(
+      resolve=>{timer=setTimeout(()=>resolve({
+        status:"unavailable",value:null,reason:"reader_failure",
+      }),def.resourceLimits.timeoutMs);}
+    );
+    const result=await Promise.race([
+      executeP1Authorized(tools,identity,frozen.input),deadline,
+    ]);
+    const policy=(def.sourceRequirementsByPurpose as unknown as Record<string,{
+      inputs:Array<{allowedActualities:readonly string[]}>;
+    }>)[frozen.selectedPurpose];
+    if(!policy||!policy.inputs.length)return denied("invalid_analysis_contract");
+    if(result && typeof result==="object" && "actuality" in result &&
+       typeof result.actuality==="string" &&
+       !policy.inputs.every(input=>input.allowedActualities.includes(result.actuality as string)))
+      return denied("invalid_analysis_contract");
+    // Timeout is also a strict unavailable result of the concrete read schema.
+    return def.outputSchema.safeParse(result).success?result:denied("invalid_analysis_contract");
+  }finally{if(timer!==undefined)clearTimeout(timer);}
 }
 export async function analyzeAuthenticatedP1(raw:unknown) {
   try {
