@@ -1,5 +1,7 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { requireSchedulingOwner } from "./foundation.server";
 import { normalizeSchedulingWallTime, compensationProvenance, type CompensationProvenance } from "@/lib/calc/scheduling/availability";
 import type { PlannerEmployee, PlannerInput, PlannerLocation } from "@/lib/calc/scheduling/plannerTypes";
@@ -11,7 +13,7 @@ import { civilDateAdd } from "@/lib/calc/scheduling/plannerClock";
  * Missing/unconfirmed facts are never silently promoted to verified facts.
  */
 export type OliviaInputResult =
-  | { ok: true; input: PlannerInput; businessId: string; locationNames: Record<string, string>; warnings: string[]; blockers: string[] }
+  | { ok: true; input: PlannerInput; businessId: string; sourceFingerprint: string; locationNames: Record<string, string>; warnings: string[]; blockers: string[] }
   | { ok: false; error: "disabled" | "unauthorized" | "invalid_week" | "storage_unavailable" };
 
 const PAGE = 300;
@@ -79,6 +81,11 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     ]);
     if (business.error || !business.data || !str(business.data.timezone)) throw new Error("Missing business timezone");
     const rows = Object.fromEntries(tables.map((table, i) => [table, results[i]])) as Record<typeof tables[number], Row[]>;
+    // Track *all* source records, including legacy commitments, attestation revisions,
+    // and the business timezone. Input-only hashing can miss material changes.
+    const sourceFingerprint = createHash("sha256").update(JSON.stringify({
+      businessId, businessTimezone: business.data.timezone, rows,
+    })).digest("hex");
     const end = civilDateAdd(week, 6);
     const extendedStart = civilDateAdd(week, -1);
     const extendedEnd = civilDateAdd(end, 1);
@@ -214,7 +221,7 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
     warnings.push("Labor law, worker classifications, break/overtime settings and owner-worker identity are not verified; publication needs independent review.");
     warnings.push("This is a provisional read across multiple database requests, not a transactionally consistent source snapshot. It must be revalidated before approval or publishing.");
     return {
-      ok: true, businessId, locationNames, input: { horizonStart: week, locations, employees, coverage,
+      ok: true, businessId, sourceFingerprint, locationNames, input: { horizonStart: week, locations, employees, coverage,
         pinned: [], slotMinutes: 30, maxNodes: 12000, beamWidth: 24 },
       warnings, blockers,
     };
