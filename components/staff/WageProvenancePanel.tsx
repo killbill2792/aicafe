@@ -17,7 +17,8 @@ export default function WageProvenancePanel({ employee, records }: {
   const t=useTranslations("SchedulingAvailability"), staff=useTranslations("ManageStaff");
   const locale=useLocale(), router=useRouter();
   const existing=records.find(r=>r.employee_id===employee.id);
-  const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(null);
+  const [savedRecord,setSavedRecord]=useState<{id:string;revision:number}|null>(
+    existing ? {id:existing.id,revision:existing.revision} : null);
   // Keep our submitted revision for CAS: newer props may belong to another owner.
   const currentRecord = savedRecord ?? existing;
   const [status,setStatus]=useState<CashState>((existing?.cash_cost_state as CashState)??"unknown");
