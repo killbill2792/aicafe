@@ -334,18 +334,19 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       const provider=vi.fn(async(_url:string,init:RequestInit)=>{
         const body=JSON.parse(String(init.body)) as Record<string,unknown>;
         requests.push(body);
-        return response([
-          {complete:true,clauses},
-          {complete:true,choices:clauses.map(clause=>({clause,
-            capabilityId:"p3.labor.employee_wages.v1",
-            inputJson:JSON.stringify(wageInput),reason:null}))},
-          {complete:true,plans:clauses.map((clause,i)=>({
-            coveredClauses:[clause],reason:null,
+        const phase=step++;
+        if(phase===0)return response({complete:true,clauses});
+        if(phase===1)return response({complete:true,choices:clauses.map(clause=>({
+          clause,capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null,
+        }))});
+        return response({complete:true,plans:clauses.map((clause,i)=>{
+          const worker=swapWorkers?(i===0?"ahmed":"sophie"):
+            (i===0?"sophie":"ahmed");
+          return {coveredClauses:[clause],reason:null,
             planJson:JSON.stringify(scenarioFor(
-              "labor.employee_wages:"+(swapWorkers?(i===0?"ahmed":"sophie"):
-                (i===0?"sophie":"ahmed"))+":defaultHourlyWageCents")),
-          }))},
-        ][step++]);
+              "labor.employee_wages:"+worker+":defaultHourlyWageCents"))};
+        })});
       });
       const output=await run(provider,request);
       const planning=JSON.parse(((requests[2].input as Array<{content:string}>)[0]).content) as
