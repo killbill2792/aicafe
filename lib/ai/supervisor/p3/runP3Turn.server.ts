@@ -189,8 +189,9 @@ export async function tryP3SupervisorReadOnly(input:{
   const shadow=await runP2ShadowWithScope({
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
-    allowSourceFree:true,history:(input.history??[]).map(h=>({
-      role:h.role,text:h.text,
+    allowSourceFree:true,history:(input.history??[]).slice(-6).map(h=>({
+      role:h.role==="owner"?"owner" as const:"assistant" as const,
+      text:h.text.slice(0,450),
     })),
   });
   const reported={
@@ -218,7 +219,10 @@ export async function tryP3SupervisorReadOnly(input:{
   input.onUsage?.({...reported});
   const completion=await modelComposition({
     goal:input.text,clauses,
-    history:(input.history??[]).map(h=>({role:h.role,text:h.text})),
+    history:(input.history??[]).slice(-6).map(h=>({
+      role:h.role==="owner"?"owner" as const:"assistant" as const,
+      text:h.text.slice(0,450),
+    })),
     model:input.model,apiKey:input.apiKey,
     transport:input.transport,
     operands:projection.choices.map(choice=>{
