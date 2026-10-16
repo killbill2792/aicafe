@@ -123,6 +123,75 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("COMPOSE-03: real Supervisor composes whole versus oat US-fl-oz cost from one snapshot",async()=>{
+    const milkInput={id:"menu.ingredients",version:1,
+      purpose:"owner_ingredient_catalog"};
+    const whole="whole-milk",oat="oat-milk";
+    const inventory=[
+      {id:whole,name:"whole milk",baseUnit:"ml"},
+      {id:oat,name:"oat milk",baseUnit:"ml"},
+    ];
+    const original=result(milkInput,inventory);
+    p1Reads.mockResolvedValue({...original,provenance:{
+      ...original.provenance,canonicalReaderId:readers["menu.ingredients"],
+    }});
+    atomicRead.mockResolvedValue({status:"available",snapshot:{
+      contract:"p1.authoritative_snapshot.v1",businessId:identity.businessId,
+      revision:"101",timezone:identity.timezone,currency:"USD",
+      payroll:{rate:0.12,status:"estimated",source:"system_estimate"},
+      sources:{
+        menu:[],recipes:[],employees:[],dailyRollups:[],expenses:[],
+        recurringCosts:[],imports:[],
+        ingredients:[
+          {id:whole,name:"whole milk",base_unit:"ml"},
+          {id:oat,name:"oat milk",base_unit:"ml"},
+        ],
+        ingredientPrices:[
+          {id:"price-whole",ingredient_id:whole,effective_from:identity.asOf,
+            cost_per_base_unit_micros:500000,source:"invoice"},
+          {id:"price-oat",ingredient_id:oat,effective_from:identity.asOf,
+            cost_per_base_unit_micros:600000,source:"invoice"},
+        ],
+      },
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},
+      coverage:"not_proven_by_revision",
+    }});
+    const clauses=["Compare oat milk","whole milk for 12 oz"];
+    const question=clauses.join(" and ");
+    const nodes=[
+      {op:"source",handle:"menu.ingredients:oat-milk:pricePerGallon"},
+      {op:"hypothetical",label:"milk fluid ounces",quotedNumber:"12",
+        value:12,unit:"US_fl_oz"},
+      {op:"multiply"},
+      {op:"source",handle:"menu.ingredients:whole-milk:pricePerGallon"},
+      {op:"hypothetical",label:"whole milk fluid ounces",quotedNumber:"12",
+        value:12,unit:"US_fl_oz"},
+      {op:"multiply"},{op:"scenario_delta"},
+    ];
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses},
+      {complete:true,choices:clauses.map(clause=>({
+        clause,capabilityId:"p3.menu.ingredients.v1",
+        inputJson:JSON.stringify(milkInput),reason:null,
+      }))},
+      {complete:true,plans:[{coveredClauses:clauses,
+        planJson:JSON.stringify({capabilityId:EXPRESSION_ID,version:1,
+          purpose:"preauthorized_operands",
+          description:"Recorded ingredient cost difference for 12 US fl oz",
+          nodes}),reason:null}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:35}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+    ]));
+    expect(output.reply.status).toBe("partial");
+    expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(output.usage.toolCallCount).toBeLessThanOrEqual(5);
+  });
   it("COMPOSE-01/05/08: real Supervisor entry uses only snapshot facts and epoch",async()=>{
     const atomic={
       contract:"p1.authoritative_snapshot.v1",businessId:identity.businessId,
