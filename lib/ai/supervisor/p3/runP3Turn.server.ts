@@ -12,6 +12,7 @@ import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
+import { rebaseQuotedOccurrence } from "./quoteOccurrences";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
@@ -309,6 +310,23 @@ export async function tryP3SupervisorReadOnly(input:{
     try{raw=JSON.parse(item.planJson);}catch{return null;}
     const plan=planSchema.safeParse(raw);
     if(!plan.success)return null;
+    // Model-supplied numeric occurrences refer to the ORIGINAL owner utterance.
+    // Rebase each value to precisely the covered audited clauses, denying any
+    // number whose original occurrence was in a different request clause.
+    const coveredOrdered=clauses.filter(clause=>
+      item.coveredClauses.includes(clause));
+    const scopedNodes:typeof plan.data.nodes=[];
+    for(const node of plan.data.nodes){
+      if(node.op==="hypothetical"&&node.occurrence!==undefined){
+        const local=rebaseQuotedOccurrence({
+          goal:input.text,allClauses:clauses,coveredClauses:coveredOrdered,
+          quotedNumber:node.quotedNumber,occurrence:node.occurrence,
+        });
+        if(local===null)return null;
+        scopedNodes.push({...node,occurrence:local});
+      }else scopedNodes.push(node);
+    }
+    const scopedPlan={...plan.data,nodes:scopedNodes};
     const pure=plan.data.purpose==="no_external_sources";
     // Source-free classification is PER CLAUSE, not per overall turn:
     // a café-backed clause may coexist with a pure quoted arithmetic clause.
@@ -334,11 +352,11 @@ export async function tryP3SupervisorReadOnly(input:{
     if(reported.toolCallCount>=5)return null;
     reported.toolCallCount++;
     input.onUsage?.({...reported});
-    const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
+    const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,scopedPlan,{
       // A hypothetical belongs to the clauses covered by THIS plan. Checking
       // the full owner turn would let a plan borrow another clause's number.
       businessId:identity.businessId,locationId:null,
-      ownerMessage:item.coveredClauses.join(" "),
+      ownerMessage:coveredOrdered.join(" "),
       currency:"USD",bindings:allowedBindings,
       operands:allowedOperands,
     });
@@ -347,7 +365,7 @@ export async function tryP3SupervisorReadOnly(input:{
     const outcome=checked.data as ExpressionOutcome;
     outcomes.push(outcome);
     calculationInputs.push({
-      plan:plan.data,
+      plan:scopedPlan,
       // Actual source values and revisions enter the opaque digest; no private
       // records or unverified values are exposed in the response identifier.
       sources:pure?[]:projection.operands.filter(o=>
