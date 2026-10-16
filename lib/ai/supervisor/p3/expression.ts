@@ -198,11 +198,13 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
         const stated=Number(node.quotedNumber);
-        const interpreted=node.unit.startsWith("USD_")?stated*100:stated;
+        const interpreted=node.unit.startsWith("USD_")||node.unit==="ratio_bps"
+          ?stated*100:stated;
         if(!Number.isSafeInteger(interpreted)||interpreted!==node.value)
           throw new Error("hypothetical_mismatch");
         stack.push({v:rat(BigInt(node.value)),u:node.unit,p:null,refs:new Set()});
-        assumptions.push(node.label+" ("+node.quotedNumber+" "+node.unit+")");
+        // Never publish the model's free-form label as an owner-verified fact.
+        assumptions.push(node.quotedNumber+" "+node.unit);
         formula.push("owner_hypothetical");
       }else if(node.op==="convert"){
         const a=stack.pop();if(!a)throw new Error("stack_underflow");
