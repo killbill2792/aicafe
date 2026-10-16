@@ -8,8 +8,16 @@ import type { OliviaReadResponse } from "./oliviaCapabilityContracts";
  * Pure intent-to-record reconciliation. Never constructs an employee or
  * overwrites a whole employee's availability when only one scope was edited.
  */
+function canonical(value:unknown):unknown {
+  if(Array.isArray(value))return value.map(canonical);
+  if(value!==null && typeof value==="object")
+    return Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))
+      .map(([key,entry])=>[key,canonical(entry)]));
+  return value;
+}
+/** Stable across JSON validation: Zod may reorder keys when it parses. */
 export function oliviaProposalDigest(proposal: OliviaPreparedAvailability): string {
-  return createHash("sha256").update(JSON.stringify(proposal)).digest("hex");
+  return createHash("sha256").update(JSON.stringify(canonical(proposal))).digest("hex");
 }
 
 type Employee = Extract<OliviaReadResponse, {ok:true;capability:"olivia.availability.read"}>["employees"][number];
