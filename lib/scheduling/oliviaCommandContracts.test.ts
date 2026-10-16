@@ -133,6 +133,25 @@ describe("Olivia PR4B-A strict scheduling commands",()=>{
       overnight:false,source:"owner_direct",confirmation:"owner_confirmed",
     }};
     expect(oliviaPrepareAvailabilitySchema.safeParse(model).success).toBe(false);
+    const invalidWindow=prepare();
+    invalidWindow.changes[0].operations[0]={action:"add",data:{
+      day_of_week:1,start_local:"08:00",end_local:"08:00",
+      overnight:false,source:"owner_direct",
+    }};
+    expect(oliviaPrepareAvailabilitySchema.safeParse(invalidWindow).success)
+      .toBe(false);
+    const missingExceptionHours=prepare();
+    missingExceptionHours.changes[1].operations[0]={action:"add",data:{
+      exception_type:"replace_day",overnight:false,source:"owner_direct",
+    }};
+    expect(oliviaPrepareAvailabilitySchema.safeParse(missingExceptionHours).success)
+      .toBe(false);
+    const invalidCap=prepare();
+    invalidCap.changes[1].operations[0]={action:"add",data:{
+      exception_type:"hours_cap",overnight:false,source:"owner_direct",
+    }};
+    expect(oliviaPrepareAvailabilitySchema.safeParse(invalidCap).success)
+      .toBe(false);
     expect(oliviaConfirmedCommitSchema.safeParse({
       capability:"olivia.availability.commit",version:1,requestKey:uuid(),
       proposalDigest:"1".repeat(64),proposal:{},confirmed:true,
