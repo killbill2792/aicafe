@@ -101,6 +101,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     vi.stubEnv("OPENAI_API_KEY","fixture-not-live");
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     vi.stubEnv("SUPERVISOR_P3_COMPOSITION_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_P3_ALLOWED_BUSINESS_IDS",identity.businessId);
     p1Auth.mockReset().mockResolvedValue({identity,tools:{} as BusinessScopedCafeTools});
     p1Reads.mockReset().mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
       const id=(raw as {id:SupportedId}).id;
