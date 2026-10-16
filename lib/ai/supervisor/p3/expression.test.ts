@@ -88,6 +88,22 @@ describe("P3 source-bound safe expression evaluator",()=>{
     expect(run(unrelated)).toMatchObject({status:"unavailable",
       reason:"invalid_loaded_labor_dimensions"});
   });
+  it("never multiplies a historical sourced period by a current unperioded source",()=>{
+    const historical:Operand={...price,period:{
+      from:"2026-10-01",to:"2026-10-03",timezone:"America/Los_Angeles"}};
+    const currentRate:Operand={...rate,unit:"ratio_bps",value:1200};
+    const mismatched=evaluateExpression(plan([
+      source(historical.handle),source(currentRate.handle),{op:"multiply"},
+    ]),context([historical,currentRate]));
+    expect(mismatched).toMatchObject({status:"unavailable",
+      reason:"incompatible_period"});
+    const attributed=evaluateExpression(plan([
+      source(historical.handle),hypot(25,"item","owner extra cups"),
+      {op:"multiply"},
+    ]),context([historical]));
+    expect(attributed).toMatchObject({status:"conditional",value:13125,
+      unit:"USD_cents"});
+  });
   it("supports exact US gallon-to-fluid-ounce ingredient cost arithmetic",()=>{
     const gallons:Operand={...price,handle:"milk-gallon",value:640,
       unit:"USD_cents_per_US_gallon"};
