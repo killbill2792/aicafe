@@ -186,6 +186,13 @@ describe("authoritative P3 source projection",()=>{
       "card_fee_status_unavailable_from_atomic_snapshot");
     expect(projection.missingInputs).toContain(
       "historical_ingredient_cost_coverage_not_proven");
+    // A daily wage zero has no proof that attendance and payroll have been
+    // completely imported; it must not become a real zero-cost operand.
+    const labor=extractAtomicSnapshot("labor.daily_costs",snap,
+      {period:{from:asOf,to:asOf}},asOf)!;
+    expect(labor.leaves).toEqual([]);
+    expect(labor.missingInputs).toContain(
+      "labor_attendance_and_wage_coverage_not_proven");
   });
   it("COMPOSE-04: unrelated old rollups truncated do not invalidate covered recent dates",()=>{
     const start=new Date("2026-10-15T12:00:00Z").getTime();
