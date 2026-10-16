@@ -7,7 +7,8 @@ import {
   oliviaPrepareAvailabilitySchema, oliviaConfirmedCommitSchema,
   oliviaCreateDraftSchema, oliviaSavedDraftCommandResponseSchema,
 } from "./oliviaCommandContracts";
-import { oliviaProposalDigest, reconcileOliviaAvailability } from "./oliviaAvailabilityProposal";
+import { oliviaProposalDigest, reconcileOliviaAvailability,
+  oliviaCanonicalJson } from "./oliviaAvailabilityProposal";
 import {
   consumeOliviaOwnerActionProof, type OliviaOwnerActionProof,
 } from "./oliviaOwnerAction.server";
@@ -210,7 +211,7 @@ export async function createOliviaScheduleDraftCommand(raw:unknown){
        persisted.source.businessId!==owner.businessId ||
        persisted.revision!==saved.revision ||
        persisted.sourceDigest!==input.expectedSourceDigest ||
-       JSON.stringify(persisted.scenario)!==JSON.stringify(saved.scenario) ||
+       oliviaCanonicalJson(persisted.scenario)!==oliviaCanonicalJson(saved.scenario) ||
        persisted.revisionStatus!=="draft")
       return fail("invalid_record");
     const scenario=persisted.scenario;
