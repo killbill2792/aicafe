@@ -2,6 +2,7 @@ import { describe,expect,it,vi } from "vitest";
 vi.mock("server-only",()=>({}));
 import pg from "pg";
 import { atomicP1SourceSchema } from "./p1AtomicSourceSnapshot.server";
+import { extractAtomicSnapshot } from "@/lib/ai/supervisor/p3/snapshotOperandSources";
 
 const enabled=process.env.P1_DISPOSABLE_DB==="1";
 const cafe="a12a12a1-1111-4111-8111-a12a12a12a12";
@@ -28,6 +29,24 @@ describe.skipIf(!enabled)("real PostgreSQL authoritative P1 snapshot schema",()=
       expect(data.sources.employees.find(e=>e.display_name==="Sophie")
         ?.default_hourly_wage_cents).toBe(1900);
       expect(data.sources.imports.some(job=>job.kind==="sales")).toBe(true);
+      // The same real SQL payload drives the P3 consumer: no independently
+      // selected menu, wage or pricing SELECT is injected into these values.
+      const item="a12a12a1-4444-4444-8444-a12a12a12a12";
+      const economics=extractAtomicSnapshot("menu.product_economics",
+        data,{productId:item},"2026-10-15");
+      expect(economics?.leaves).toEqual(expect.arrayContaining([
+        expect.objectContaining({field:"priceCents",value:600}),
+        expect.objectContaining({field:"ingredientsCentsToday",value:0}),
+      ]));
+      const wages=extractAtomicSnapshot("labor.employee_wages",data,{},"2026-10-15");
+      expect(wages?.leaves).toEqual(expect.arrayContaining([
+        expect.objectContaining({name:"Sophie",value:1900}),
+      ]));
+      const burden=extractAtomicSnapshot("labor.payroll_burden",data,{},"2026-10-15");
+      expect(burden?.leaves).toEqual(expect.arrayContaining([
+        expect.objectContaining({field:"rateBasisPoints",value:1300}),
+      ]));
+      expect(data.coverage).toBe("not_proven_by_revision");
       await client.query("ROLLBACK");
     }finally{await client.end();}
   });
