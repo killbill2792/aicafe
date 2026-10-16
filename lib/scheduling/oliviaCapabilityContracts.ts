@@ -105,7 +105,21 @@ const costSchema=z.object({
   ownerOpportunityCents:cents,ownerMinutes:nonnegative,
   costState:z.enum(["verified","estimate","unavailable"]),
   missingWageEmployeeIds:z.array(oliviaUuid).max(500),
-}).strict();
+}).strict().superRefine((cost,ctx)=>{
+  // Match PR2 costForWork: missing a wage makes every aggregate dependent on
+  // that wage unavailable, while owner opportunity cost is independent.
+  const missing=cost.missingWageEmployeeIds.length>0;
+  if((cost.costState==="unavailable")!==missing)
+    ctx.addIssue({code:"custom",message:"Cost state and missing wages contradict"});
+  if(missing && (cost.cashWagesCents!==null ||
+      cost.allocatedSalaryCents!==null || cost.loadedPayrollCents!==null))
+    ctx.addIssue({code:"custom",message:"Missing wages must yield unknown totals"});
+  if(!missing && (cost.cashWagesCents===null ||
+      cost.allocatedSalaryCents===null))
+    ctx.addIssue({code:"custom",message:"Known wages require explicit totals"});
+  if(cost.loadedPayrollCents!==null && cost.cashWagesCents===null)
+    ctx.addIssue({code:"custom",message:"Loaded cost needs a known wage base"});
+});
 export const oliviaScenarioSchema=z.object({
   objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
   gaps:z.array(z.object({
