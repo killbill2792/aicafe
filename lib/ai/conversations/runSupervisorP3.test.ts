@@ -336,6 +336,53 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage.modelCallCount).toBe(3);
     expect(p1Reads).toHaveBeenCalled();
   });
+  it("keeps identical sales fields separate for independent dated clauses",async()=>{
+    const dates=["2026-10-01","2026-10-08"];
+    const clauses=dates.map(date=>"Show sales on "+date);
+    const readInput=(date:string)=>({id:"sales.daily",version:1,
+      purpose:"actual_daily_sales",period:{from:date,to:date}});
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const selected=raw as ReturnType<typeof readInput>;
+      const date=selected.period.from;
+      const baseResult=result(selected,[{date,netSalesCents:date===dates[0]?1000:2000,
+        ordersCount:1,drinksCount:1,ingredientsCents:300,wagesCents:200,
+        staffTaxCents:0,cardFeesCents:50,voidsCents:0}]);
+      return {...baseResult,provenance:{...baseResult.provenance,
+        canonicalReaderId:readers["sales.daily"]}};
+    });
+    let step=0;
+    const provider=vi.fn(async(_url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body)) as {input?:Array<{content:string}>};
+      step++;
+      if(step===1)return response({complete:true,clauses});
+      if(step===2)return response({complete:true,choices:clauses.map((clause,i)=>({
+        clause,capabilityId:"p3.sales.daily.v1",
+        inputJson:JSON.stringify(readInput(dates[i])),reason:null,
+      }))});
+      const payload=JSON.parse(request.input?.[0]?.content??"{}") as {
+        authorizedOperandChoices:Array<{handle:string;field:string;matchedClause:string}>;
+      };
+      const sales=payload.authorizedOperandChoices.filter(x=>x.field==="netSalesCents");
+      expect(sales).toHaveLength(2);
+      expect(new Set(sales.map(x=>x.handle)).size).toBe(2);
+      for(let i=0;i<dates.length;i++)expect(sales[i]).toMatchObject({
+        matchedClause:clauses[i],handle:expect.stringContaining(dates[i]),
+      });
+      return response({complete:true,plans:sales.map(choice=>({
+        coveredClauses:[choice.matchedClause],reason:null,
+        planJson:JSON.stringify({capabilityId:EXPRESSION_ID,version:1,
+          purpose:"preauthorized_operands",description:"Recorded period sales",
+          nodes:[{op:"source",handle:choice.handle}]}),
+      }))});
+    });
+    const output=await run(provider,clauses.join(" and "));
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:1000}),
+      expect.objectContaining({type:"metric",valueCents:2000}),
+    ]));
+    expect(p1Reads).toHaveBeenCalledTimes(2);
+  });
   it("never borrows a different worker's wage across independent named clauses",async()=>{
     const clauses=["Sophie works 45 extra minutes","Ahmed works 30 extra minutes"];
     const request=clauses.join(" and ");
