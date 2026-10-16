@@ -141,6 +141,45 @@ function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boole
   }
   return [...expected.values()].every(v=>v===0);
 }
+/** A model may choose a canonical read, but may NOT choose its time range.
+ * Preserve only date windows directly established by the owner. Ambiguous
+ * natural-language ranges fail closed instead of silently displaying wrong days.
+ */
+function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
+  const dates=[...text.matchAll(/(?<![\\d])\\d{4}-\\d{2}-\\d{2}(?![\\d])/gu)].map(x=>x[0]);
+  if(dates.length===1)return {from:dates[0],to:dates[0]};
+  if(dates.length===2&&dates[0]<=dates[1])return {from:dates[0],to:dates[1]};
+  if(dates.length>2)return null;
+  const normalized=text.normalize("NFKC").toLocaleLowerCase();
+  if(/\\b(?:today|hoy)\\b|اليوم/u.test(normalized))
+    return {from:asOf,to:asOf};
+  if(/\\b(?:yesterday|ayer)\\b|أمس/u.test(normalized)){
+    const day=new Date(asOf+"T12:00:00Z");
+    if(Number.isNaN(day.getTime()))return null;
+    day.setUTCDate(day.getUTCDate()-1);
+    const date=day.toISOString().slice(0,10);
+    return {from:date,to:date};
+  }
+  return null;
+}
+function verifiedReaderPeriods(evidence:readonly {clause:string;result:unknown}[],
+  request:string,asOf:string):boolean{
+  const goal=quotedPeriod(request,asOf);
+  for(const item of evidence){
+    const envelope=item.result;
+    if(!envelope||typeof envelope!=="object"||Array.isArray(envelope))continue;
+    const q=(envelope as {query?:unknown}).query;
+    if(!q||typeof q!=="object"||Array.isArray(q))continue;
+    const p=(q as {period?:unknown}).period;
+    if(p===undefined)continue;
+    if(!p||typeof p!=="object"||Array.isArray(p))return false;
+    const chosen=p as {from?:unknown;to?:unknown};
+    const expected=quotedPeriod(item.clause,asOf)??goal;
+    if(!expected||chosen.from!==expected.from||chosen.to!==expected.to)
+      return false;
+  }
+  return true;
+}
 const labels={
   en:{conditional:"Conditional what-if, not a demand forecast or verified profit.",
     incomplete:"Some source records are missing, provisional or lack a stable revision.",
@@ -201,6 +240,8 @@ export async function tryP3SupervisorReadOnly(input:{
   };
   input.onUsage?.({...reported});
   if(!shadow.evidence.length)return null;
+  // A syntactically valid model-selected date range is not owner authorization.
+  if(!verifiedReaderPeriods(shadow.evidence,input.text,input.asOf))return null;
   // The read limit counts failed and rejected reader invocations too.
   const invokedReads=shadow.attemptedReads;
   const ownerHistory=(input.history??[]).filter(h=>h.role==="owner")
