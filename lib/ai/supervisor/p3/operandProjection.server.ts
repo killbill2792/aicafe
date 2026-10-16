@@ -146,6 +146,10 @@ export function projectP1Evidence(
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
+  // Distinct canonical reads of the same handle can race with an owner/POS update.
+  // Without revision-backed snapshots, conflicting values must be discarded,
+  // not silently assigned to every clause from the first matching read.
+  const conflictingHandles=new Set<string>();
   const currentGoal=ownerGoal;
   for(const item of evidence){
     if(operands.length>=12)break;
@@ -216,7 +220,17 @@ export function projectP1Evidence(
       // association so a plan cannot borrow it from an unrelated clause.
       const choice={handle,entityId:leaf.key,entityName:leaf.name,
         field:leaf.field,matchedClause:item.clause};
-      if(operands.some(o=>o.handle===handle)){
+      const previous=operands.find(o=>o.handle===handle);
+      if(previous){
+        if(previous.value!==leaf.value||previous.unit!==leaf.unit||
+          previous.sourcePurpose!==provenance.purpose||
+          previous.asOf!==provenance.asOf||
+          previous.actuality!==(result.actuality==="actual"?"actual":
+            result.actuality==="planned"?"planned":"estimated")){
+          conflictingHandles.add(handle);
+          missing.push("conflicting_source_snapshot:"+key);
+          continue;
+        }
         if(!choices.some(c=>c.handle===handle&&c.matchedClause===item.clause))
           choices.push(choice);
         continue;
@@ -240,5 +254,7 @@ export function projectP1Evidence(
     }
     if(!valuesForKey.length)missing.push("unprojectable:"+key);
   }
-  return {operands,bindings,choices,missing};
+  // A later matching read cannot reinstate a handle already found inconsistent.
+  return {operands:operands.filter(o=>!conflictingHandles.has(o.handle)),
+    bindings,choices:choices.filter(c=>!conflictingHandles.has(c.handle)),missing};
 }
