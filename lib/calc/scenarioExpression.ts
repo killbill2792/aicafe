@@ -150,7 +150,7 @@ export function normalizeScenarioNumber(s:string):string {
 function attributed(message:string,quoted:string):boolean{
   const normalized=normalizeScenarioNumber(quoted);
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(normalized))return false;
-  const values=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)?/g)??[];
+  const values:string[]=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)?/g)??[];
   return values.includes(normalized);
 }
 function rounded(v:Rat):number{
