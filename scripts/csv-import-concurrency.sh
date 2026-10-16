@@ -73,8 +73,8 @@ finalize > "$tmp1" &
 f1=$!
 finalize > "$tmp2" &
 f2=$!
-wait "$f1"
-wait "$f2"
+wait "$f1" || true
+wait "$f2" || true
 
 order_count=$("${db[@]}" -c "SELECT count(*) FROM orders WHERE business_id='$business' AND pos_order_id='csv-2026-08-22-Latte';")
 if [[ "$order_count" != "1" ]]; then

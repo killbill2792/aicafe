@@ -54,6 +54,9 @@ BEGIN
   RAISE EXCEPTION 'NOT_ALL_GROUPS_MARKED_PROMOTED';
  END IF;
 END $$;
+-- The RPC only promotes groups; the app layer (lib/actions/csvImport.ts's finalizeSalesImportJob)
+-- is what marks the job itself done — mirror that here so later sections see an accurate state.
+UPDATE csv_import_jobs SET status='done' WHERE id=:'job_id';
 
 -- A toast:-sourced order already covering the date must block a conflicting CSV group from being
 -- promoted — the symmetric check to Toast's own guard against non-toast orders (migration 46).
@@ -71,11 +74,12 @@ BEGIN
    AND pos_order_id='csv-2026-08-23-Mocha') THEN
   RAISE EXCEPTION 'CSV_DOUBLE_COUNTED_A_TOAST_COVERED_DATE';
  END IF;
- IF NOT EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE job_id=current_setting('test.conflict_job_id')::uuid
+ IF NOT EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE job_id=:'conflict_job_id'::uuid
    AND conflict_reason='toast_covers_date') THEN
   RAISE EXCEPTION 'TOAST_CONFLICT_NOT_FLAGGED';
  END IF;
 END $$;
+UPDATE csv_import_jobs SET status='needs_review' WHERE id=:'conflict_job_id';
 
 -- Labor: a row with a known wage promotes; a row with no wage evidence stays staged, never a
 -- fabricated $0 in canonical timecards (which keeps its NOT NULL hourly_wage_cents unchanged).
@@ -113,6 +117,7 @@ BEGIN
   RAISE EXCEPTION 'RETRY_FINALIZE_TOUCHED_ALREADY_PROMOTED_SHIFT';
  END IF;
 END $$;
+UPDATE csv_import_jobs SET status='done' WHERE id=:'labor_job_id';
 
 -- Database-level concurrency guard: a second 'processing' job for the same business+kind is
 -- rejected by the unique partial index, not merely discouraged by a disabled button.
@@ -155,15 +160,20 @@ BEGIN
  IF EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE business_id=current_setting('test.biz_a')::uuid) THEN
   RAISE EXCEPTION 'FOREIGN_OWNER_READ_GROUPS_ACCEPTED';
  END IF;
- BEGIN
-  PERFORM public.csv_finalize_sales_job(current_setting('test.job_id')::uuid);
-  IF EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE job_id=current_setting('test.job_id')::uuid AND promoted) THEN
-   NULL; -- already promoted by owner A earlier; re-finalize by a non-member is a safe no-op either way
-  END IF;
- EXCEPTION WHEN OTHERS THEN NULL;
- END;
+ -- RLS applies inside this security-invoker function too: as a non-member, its internal
+ -- UPDATE/INSERT statements affect zero rows for business A's job — a safe no-op, not a leak.
+ PERFORM public.csv_finalize_sales_job(:'job_id'::uuid);
 END $$;
 SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+-- Checked back as owner A (who can actually see biz_a's rows) — the foreign call above must not
+-- have changed the order that owner A's own earlier finalize already correctly wrote.
+DO $$
+BEGIN
+ IF (SELECT count(*) FROM orders WHERE business_id=current_setting('test.biz_a')::uuid
+     AND pos_order_id='csv-2026-08-22-Latte' AND net_sales_cents=1500) <> 1 THEN
+  RAISE EXCEPTION 'FOREIGN_OWNER_FINALIZE_CHANGED_ANOTHER_BUSINESS_DATA';
+ END IF;
+END $$;
 
 RESET ROLE;
 ROLLBACK;
