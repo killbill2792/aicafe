@@ -150,9 +150,9 @@ export function projectP1Evidence(
   // Without revision-backed snapshots, conflicting values must be discarded,
   // not silently assigned to every clause from the first matching read.
   const conflictingHandles=new Set<string>();
+  const readSignatures=new Map<string,string>();
   const currentGoal=ownerGoal;
   for(const item of evidence){
-    if(operands.length>=12)break;
     const capability=item.capabilityId;
     if(!capability?.startsWith("p3.")||!capability.endsWith(".v1")||
       !item.result||typeof item.result!=="object")continue;
@@ -160,6 +160,9 @@ export function projectP1Evidence(
     if(!(key in values))continue;
     const parsed=outputFor(key).safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
+    // Compare the entire validated envelope, not merely the number: a
+    // changed query, quality, coverage or provenance is a different snapshot.
+    const readSignature=JSON.stringify(parsed.data);
     const result=parsed.data as {
       status:"verified"|"estimated"|"partial";value:unknown;unit:string;
       actuality:string;quality:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]};
@@ -201,7 +204,6 @@ export function projectP1Evidence(
     const uniqueHistorical=namedCurrent.size===0&&namedElsewhere.size===0&&
       namedHistory.size===1;
     for(const leaf of valuesForKey){
-      if(operands.length>=12)break;
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
       if(leaf.field!=="value"&&leaf.key!=="aggregate"&&
@@ -222,11 +224,7 @@ export function projectP1Evidence(
         field:leaf.field,matchedClause:item.clause};
       const previous=operands.find(o=>o.handle===handle);
       if(previous){
-        if(previous.value!==leaf.value||previous.unit!==leaf.unit||
-          previous.sourcePurpose!==provenance.purpose||
-          previous.asOf!==provenance.asOf||
-          previous.actuality!==(result.actuality==="actual"?"actual":
-            result.actuality==="planned"?"planned":"estimated")){
+        if(readSignatures.get(handle)!==readSignature){
           conflictingHandles.add(handle);
           missing.push("conflicting_source_snapshot:"+key);
           continue;
@@ -235,6 +233,10 @@ export function projectP1Evidence(
           choices.push(choice);
         continue;
       }
+      // Keep reviewing repeated handles even after reaching the twelve-leaf
+      // exposure limit; otherwise a late conflicting read could go undetected.
+      if(operands.length>=12)continue;
+      readSignatures.set(handle,readSignature);
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
       choices.push(choice);
