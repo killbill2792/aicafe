@@ -10,7 +10,7 @@ import {
   oliviaStoredSchemas, oliviaScenarioSchema, oliviaShiftSchema,
   oliviaUuid, oliviaAvailabilityEmployeeSchema, oliviaRevisionStatusSchema,
   oliviaCapabilityBlockerSchema, OLIVIA_MAX_PREVIEW_BLOCKERS,
-  OLIVIA_MAX_GAPS_PER_SCENARIO,
+  OLIVIA_MAX_GAPS_PER_SCENARIO, OLIVIA_MAX_SAVED_SHIFTS,
   type OliviaReadCapability, type OliviaReadRequest,
   type OliviaReadResponse,
 } from "./oliviaCapabilityContracts";
@@ -210,9 +210,16 @@ async function readPreview(
     }
     return fromDomainError(capability,preview.error);
   }
-  if(preview.plan?.scenarios?.some(s=>
-      Array.isArray(s.gaps) && s.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO) ||
-     (preview.plan?.best?.gaps?.length??0)>OLIVIA_MAX_GAPS_PER_SCENARIO)
+  // PR2 can produce up to 2,000 provisional shifts, whereas PR3's
+  // persisted draft limit is 200. A larger valid preview is a known
+  // capability-capacity case, not corrupt data.
+  const oversized=(scenario:{
+    shifts:unknown[];gaps:unknown[];
+  })=>scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS ||
+    scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO;
+  if(preview.plan?.scenarios?.some(oversized) ||
+     (preview.plan?.best && oversized(preview.plan.best)) ||
+     (preview.plan?.warnings?.length??0)>100)
     return fail(capability,"capacity_exceeded");
   if(input.options?.expectedSourceDigest &&
       input.options.expectedSourceDigest!==preview.sourceDigest)
