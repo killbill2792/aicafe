@@ -71,6 +71,10 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"rpc_not_installed"});
     connect.mockResolvedValueOnce(fakeClient(null,{code:"42883",
+      message:"function public.p1_authoritative_source_snapshot(uuid) failed because missing inner function"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42883",
       message:"function public.internal_payroll_dependency(uuid) does not exist"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
