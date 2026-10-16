@@ -611,6 +611,41 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       }})).toMatchObject({ok:false,error:{code:"invalid_record"}});
     }
   });
+  it("cross-checks every planner comparison against the scenario order and actual costs",async()=>{
+    const cash={...scenario,objective:"cash",
+      cost:{...scenario.cost,missingWageEmployeeIds:[],costState:"estimate",
+        cashWagesCents:2000,allocatedSalaryCents:0,loadedPayrollCents:null}};
+    const balanced={...scenario,objective:"balanced",
+      cost:{...scenario.cost,missingWageEmployeeIds:[],costState:"estimate",
+        cashWagesCents:1700,allocatedSalaryCents:0,loadedPayrollCents:null}};
+    const good={left:"cash",right:"balanced",
+      ownerMinutesDifference:0,cashWagesDifferenceCents:-300,
+      loadedPayrollDifferenceCents:null};
+    const cases=[
+      [{...good,cashWagesDifferenceCents:300},false],
+      [{...good,cashWagesDifferenceCents:0},false],
+      [{...good,loadedPayrollDifferenceCents:0},false],
+      [{...good,left:"owner_time"},false],
+      [good,true],
+    ] as const;
+    for(const [comparison,valid] of cases){
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[cash,balanced],best:cash,comparisons:[comparison]},
+        notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject(valid?{ok:true}:{ok:false,error:{code:"invalid_record"}});
+    }
+    const unknown={...balanced,cost:{...scenario.cost}};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[cash,unknown],best:cash,comparisons:[good]},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
