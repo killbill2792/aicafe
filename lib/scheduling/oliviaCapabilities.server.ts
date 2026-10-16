@@ -280,11 +280,17 @@ async function readRevision(
   // Unlike PR3's lightweight draft-picker, this capability also checks the
   // actual persisted assignment rows against the revision scenario, so a
   // malformed/stale DB projection cannot be presented as an official plan.
-  const {data:rows,error}=await owner.supabase.from("scheduling_plan_assignments")
-    .select("employee_id,location_id,starts_at,ends_at,paid_minutes,breaks,pinned")
+  const {data:rows,error,count}=await owner.supabase.from("scheduling_plan_assignments")
+    .select("employee_id,location_id,starts_at,ends_at,paid_minutes,breaks,pinned",
+      {count:"exact"})
     .eq("business_id",owner.businessId)
     .eq("plan_revision_id",input.revisionId).limit(201);
-  if(error || !rows || rows.length>200)return fail(capability,"storage_unavailable");
+  if(error || !rows || count===null)return fail(capability,"storage_unavailable");
+  if(count>200)return fail(capability,"capacity_exceeded");
+  // Persisted evidence must be COMPLETE: an API row cap could otherwise
+  // return exactly the number of expected shifts while hiding extra rows.
+  if(rows.length!==count)return fail(capability,"storage_unavailable");
+  if(count!==scenario.data.shifts.length)return fail(capability,"invalid_record");
   const assignments=[];
   for(const r of rows){
     if(typeof r.starts_at!=="string"||typeof r.ends_at!=="string")
