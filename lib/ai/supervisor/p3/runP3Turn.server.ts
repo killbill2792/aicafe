@@ -306,6 +306,17 @@ export async function tryP3SupervisorReadOnly(input:{
       unsupportedReasons.add(item.reason);
       continue;
     }
+    // A multi-read clause may require more than one canonical source (e.g.
+    // wage AND employer burden). The model cannot turn its one successful
+    // source into a "complete" scenario after a second requested read fails.
+    // Keep other independent clauses eligible for separate, partial answers.
+    if(item.coveredClauses.some(clause=>shadow.evidence.some(read=>
+      read.clause===clause && read.capabilityId!==null &&
+      read.status==="unavailable"))){
+      unsupportedGoals+=item.coveredClauses.length;
+      unsupportedReasons.add("missing_input");
+      continue;
+    }
     let raw:unknown;
     try{raw=JSON.parse(item.planJson);}catch{return null;}
     const plan=planSchema.safeParse(raw);
