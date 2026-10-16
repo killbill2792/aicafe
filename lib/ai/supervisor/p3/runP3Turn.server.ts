@@ -9,7 +9,7 @@ import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { projectP1Evidence } from "./operandProjection.server";
-import { evaluateExpression,expressionPlan,type ExpressionOutcome } from "./expression";
+import { evaluateExpression,planSchema,type ExpressionOutcome } from "./expression";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
 const coverage=z.strictObject({
@@ -170,7 +170,7 @@ export async function tryP3SupervisorReadOnly(input:{
     if(!item.planJson)return null;
     let raw:unknown;
     try{raw=JSON.parse(item.planJson);}catch{return null;}
-    if(!expressionPlan.safeParse(raw).success)return null;
+    if(!planSchema.safeParse(raw).success)return null;
     const value=evaluateExpression(raw,{
       businessId:identity.businessId,locationId:null,ownerMessage:input.text,
       currency:"USD",bindings:projection.bindings,operands:projection.operands,
