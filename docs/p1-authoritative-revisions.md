@@ -126,7 +126,7 @@ numeric field is zero. It must remain unavailable until a separately reviewed
 and deployed status-preserving source contract exists. A successful `NULL`
 snapshot response is an invalid/absent authoritative ledger and fails
 closed; only specifically identified missing-function RPC errors
-(PGRST202/42883) may use the explicitly unversioned legacy conditional
+(PGRST202 naming the snapshot function) may use the explicitly unversioned legacy conditional
 route. Owner authorization, SQL, timeout, network and malformed/NULL RPC
 failures all fail closed; neither case fabricates an epoch.
 
@@ -143,3 +143,11 @@ Consequently `labor.daily_costs` does not project atomic monetary operands
 continues to use the recorded hourly employee wage and explicitly sourced
 employer burden with the canonical staff-cost engine. A future separately
 approved coverage contract would be needed to expose daily labor totals.
+
+The Toast pilot's per-date independent-review ledger is currently outside
+the single-statement P1 source snapshot. When the Toast pilot is enabled,
+P3 withholds atomic daily sales operands rather than treating a rollup
+marked `actual` as evidence that every selected Toast day was reviewed.
+A future additive source contract can safely restore this data with exact
+verified-date scope. No Toast records, feature flags or import pipelines are
+modified by this PR.
