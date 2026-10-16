@@ -13,7 +13,8 @@ const bounded=<T extends z.ZodType>(row:T,cap:number)=>z.array(row).max(cap);
 export const atomicP1SourceSchema=z.strictObject({
   contract:z.literal("p1.authoritative_snapshot.v1"),
   businessId:z.string().uuid(),
-  revision:z.string().regex(/^[1-9]\d{0,18}$/).refine(n=>BigInt(n)<=9223372036854775807n),
+  revision:z.string().regex(/^[1-9]\d{0,18}$/).refine(n=>
+    n.length<19 || n<="9223372036854775807"),
   timezone:z.string().min(1),currency:z.string().min(3).max(3),
   payroll:z.strictObject({
     rate:z.number().finite().min(0).max(1),
