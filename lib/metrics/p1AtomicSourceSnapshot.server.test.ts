@@ -66,9 +66,14 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       .toMatchObject({status:"unavailable",reason:"invalid_source_snapshot"});
   });
   it("allows fallback only for a specifically missing RPC, never an execution failure",async()=>{
-    connect.mockResolvedValueOnce(fakeClient(null,{code:"PGRST202",message:"RPC not found"}));
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"PGRST202",
+      message:"Could not find function public.p1_authoritative_source_snapshot in schema cache"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"rpc_not_installed"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42883",
+      message:"function public.internal_payroll_dependency(uuid) does not exist"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
     connect.mockResolvedValueOnce(fakeClient(null,{code:"42501",message:"permission denied"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
