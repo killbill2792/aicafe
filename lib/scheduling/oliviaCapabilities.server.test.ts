@@ -580,6 +580,36 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("rejects mismatched feasibility status, proof, and best scenario witness",async()=>{
+    const variants=[
+      {...plan,status:"feasible",best:null,scenarios:[],
+        proof:"complete_candidate_solution"},
+      {...plan,status:"feasible",proof:"complete_candidate_solution"},
+      {...plan,status:"unproven",proof:"complete_candidate_solution"},
+      {...plan,best:{...scenario,ownerMinutes:10}},
+      {...plan,best:null},
+      {...plan,status:"infeasible",proof:"candidate_constraints_unresolved"},
+    ];
+    for(const bad of variants){
+      m.preview.mockResolvedValueOnce({ok:true,plan:bad,notices:[],
+        blockers:[],employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},previewRevision:0,
+        sourceDigest:digest,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
+  it("rejects malformed trusted source digests and revisions before comparing stale tokens",async()=>{
+    for(const details of [{sourceDigest:"broken",previewRevision:2},
+      {sourceDigest:digest,previewRevision:-1}]){
+      m.preview.mockResolvedValueOnce({ok:true,plan,notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+        frozenShiftKeys:[],...details});
+      expect(await executeOliviaReadCapability({...preview(),options:{
+        expectedSourceDigest:"b".repeat(64),expectedRevision:3,
+      }})).toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
