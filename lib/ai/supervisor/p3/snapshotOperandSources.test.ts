@@ -100,6 +100,37 @@ describe("authoritative P3 source projection",()=>{
     expect(result).toMatchObject({status:"partial",value:8488,unit:"USD_cents",
       reason:"incomplete_evidence",executedEffects:0});
   });
+  it("COMPOSE-03: correctly costs whole, oat and almond milk in US gallons",()=>{
+    const oat="11111111-1111-4111-8111-111111111111";
+    const almond="22222222-2222-4222-8222-222222222222";
+    const priced=snapshot({sources:{...sources,
+      ingredients:[...sources.ingredients,
+        {id:oat,name:"oat milk",base_unit:"ml"},
+        {id:almond,name:"almond milk",base_unit:"ml"}],
+      ingredientPrices:[...sources.ingredientPrices,
+        {id:"33333333-3333-4333-8333-333333333333",
+          ingredient_id:oat,effective_from:"2026-10-15",
+          cost_per_base_unit_micros:600000,source:"invoice"},
+        {id:"44444444-4444-4444-8444-444444444444",
+          ingredient_id:almond,effective_from:"2026-10-15",
+          cost_per_base_unit_micros:700000,source:"invoice"}],
+    }});
+    const projected=extractAtomicSnapshot("menu.ingredients",priced,{},asOf)!;
+    expect(projected.leaves).toEqual(expect.arrayContaining([
+      expect.objectContaining({name:"whole milk",value:1893,
+        unit:"USD_cents_per_US_gallon"}),
+      expect.objectContaining({name:"oat milk",value:2271}),
+      expect.objectContaining({name:"almond milk",value:2650}),
+    ]));
+    expect(projected.missingInputs).toContain(
+      "ingredient_price_freshness_and_option_mix_unproven");
+    // Unrecorded customer choice counts, package prices and gram-to-volume
+    // assumptions cannot be derived from this ingredient-only snapshot.
+    const grams=snapshot({sources:{...sources,
+      ingredients:[{...sources.ingredients[0],base_unit:"g"}]}});
+    expect(extractAtomicSnapshot("menu.ingredients",grams,{},asOf)!.leaves)
+      .toEqual([]);
+  });
   it("COMPOSE-04: never invents a zero ingredient cost, a wage or a covered period",()=>{
     const absent=snapshot({sources:{...sources,ingredientPrices:[],
       employees:[{...sources.employees[0],default_hourly_wage_cents:null,
