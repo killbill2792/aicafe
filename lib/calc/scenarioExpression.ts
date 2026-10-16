@@ -83,6 +83,11 @@ const times=(a:Rat,b:Rat)=>rat(a.n*b.n,a.d*b.d);
 const divided=(a:Rat,b:Rat)=>rat(a.n*b.d,a.d*b.n);
 const equalPeriod=(a:Item,b:Item)=>JSON.stringify(a.p)===JSON.stringify(b.p);
 const mergeRefs=(a:Item,b:Item)=>new Set([...a.refs,...b.refs]);
+/** Two independent café sources must share an explicit comparable period;
+ * only an owner-stated hypothetical may inherit a sourced date window. */
+const sourcePeriodsClash=(a:Item,b:Item):boolean=>Boolean(
+  a.p&&b.p?!equalPeriod(a,b):
+    (a.p&&b.refs.size>0)||(!a.p&&b.p&&a.refs.size>0));
 function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,Operand>):Item{
   if(op==="loaded_labor"){
     // Canonical labor engine is authoritative; a declared employer burden
@@ -97,7 +102,7 @@ function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,O
           source.handle.startsWith("labor.daily_costs:aggregate:wagesCents:");
     };
     if(a.u!=="USD_cents"||b.u!=="ratio_bps"||
-      (a.p&&b.p&&!equalPeriod(a,b))||
+      sourcePeriodsClash(a,b)||
       [...a.refs].some(handle=>!wageOnly(handle))||
       [...b.refs].some(handle=>authorizedSources.get(handle)?.sourceId!==
         "labor.payroll_burden"))
@@ -121,8 +126,7 @@ function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,O
     // Owner-quoted hypotheticals have no source period and can modify or
     // compare with an observed period. They inherit that observation's period.
     // TWO sourced quantities may never hide a missing/mismatched period.
-    const periodsClash=a.p&&b.p?!equalPeriod(a,b):
-      (a.p&&!b.p&&b.refs.size>0)||(!a.p&&b.p&&a.refs.size>0);
+    const periodsClash=sourcePeriodsClash(a,b);
     if(a.u!==b.u||periodsClash)
       throw new Error("incompatible_units_or_period");
     if(op==="ratio"||op==="compare"){
@@ -135,7 +139,7 @@ function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,O
     return {v:op==="add"?plus(a.v,b.v):minus(a.v,b.v),u:a.u,p:a.p??b.p,
       refs:mergeRefs(a,b)};
   }
-  if(a.p&&b.p&&!equalPeriod(a,b))throw new Error("incompatible_period");
+  if(sourcePeriodsClash(a,b))throw new Error("incompatible_period");
   if(op==="multiply"){
     const lookup:Record<string,[Unit,bigint,bigint]>={
       "USD_cents_per_item*item":["USD_cents",BigInt("1"),BigInt("1")],
