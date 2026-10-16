@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { ownerQuotedUnitMatches } from "./scenarioUnitAttribution";
+import { payrollTaxCents,staffCostLoadedCents } from "./staff";
+import { roundHalfUpToCent } from "./money";
 
 /** P3 read-only, deterministic arithmetic. The model never supplies café evidence. */
 export const EXPRESSION_ID="platform.scenario.expression.v1" as const;
@@ -28,7 +30,7 @@ export const bindingSchema=z.strictObject({
 });
 export type Binding=z.infer<typeof bindingSchema>;
 const binary=z.strictObject({op:z.enum(["add","subtract","multiply","divide",
-  "ratio","scenario_delta","compare"])});
+  "ratio","scenario_delta","compare","loaded_labor"])});
 export const planSchema=z.strictObject({
   capabilityId:z.literal(EXPRESSION_ID),version:z.literal(1),
   purpose:z.enum(["preauthorized_operands","no_external_sources"]),
@@ -80,6 +82,27 @@ const divided=(a:Rat,b:Rat)=>rat(a.n*b.d,a.d*b.n);
 const equalPeriod=(a:Item,b:Item)=>JSON.stringify(a.p)===JSON.stringify(b.p);
 const mergeRefs=(a:Item,b:Item)=>new Set([...a.refs,...b.refs]);
 function binaryOp(a:Item,b:Item,op:string):Item{
+  if(op==="loaded_labor"){
+    // Canonical labor engine is authoritative; a declared employer burden
+    // percentage is indispensable. No model-invented tax or overtime rule.
+    if(a.u!=="USD_cents"||b.u!=="ratio_bps"||
+      (a.p&&b.p&&!equalPeriod(a,b)))
+      throw new Error("invalid_loaded_labor_dimensions");
+    if(b.v.n<BigInt(0)||b.v.n>b.v.d*BigInt(10_000))
+      throw new Error("invalid_employer_burden");
+    const wages=Number(a.v.n)/Number(a.v.d);
+    const burden=Number(b.v.n)/Number(b.v.d)/10_000;
+    if(!Number.isFinite(wages)||Math.abs(wages)>1_000_000_000_000||
+      !Number.isFinite(burden))
+      throw new Error("numeric_overflow");
+    const loaded=roundHalfUpToCent(
+      staffCostLoadedCents(wages,payrollTaxCents(wages,burden)));
+    if(!Number.isSafeInteger(loaded)||
+      Math.abs(loaded)>1_000_000_000_000)
+      throw new Error("numeric_overflow");
+    return {v:rat(BigInt(loaded)),u:"USD_cents",p:a.p??b.p,
+      refs:mergeRefs(a,b)};
+  }
   if(["add","subtract","scenario_delta","ratio","compare"].includes(op)){
     // Owner-quoted hypotheticals have no source period and can modify or
     // compare with an observed period. They inherit that observation's period.
