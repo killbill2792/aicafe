@@ -119,6 +119,8 @@ const costSchema=z.object({
     ctx.addIssue({code:"custom",message:"Known wages require explicit totals"});
   if(cost.loadedPayrollCents!==null && cost.cashWagesCents===null)
     ctx.addIssue({code:"custom",message:"Loaded cost needs a known wage base"});
+  if(cost.costState==="verified" && cost.loadedPayrollCents===null)
+    ctx.addIssue({code:"custom",message:"Verified payroll needs a loaded cost"});
 });
 export const oliviaScenarioSchema=z.object({
   objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
