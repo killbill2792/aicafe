@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -281,6 +281,7 @@ export async function startSalesImportJob(
   }
 
   const seedSummary: SalesImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, unmatchedItems: [], rejectedRows, skippedToastConflictDates: [] };
+  const { dateFrom, dateTo } = dateRange(groups.map((g) => g.date));
   const { data: job, error: jobError } = await supabase
     .from("csv_import_jobs")
     .insert({
@@ -291,7 +292,8 @@ export async function startSalesImportJob(
       rows_in_file: rowsInFile,
       group_count: groups.length,
       summary: seedSummary,
-      ...dateRange(groups.map((g) => g.date)),
+      date_from: dateFrom,
+      date_to: dateTo,
     })
     .select("id")
     .single();
@@ -567,6 +569,7 @@ export async function startLaborImportJob(
   }
 
   const seedSummary: LaborImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, rejectedRows, pendingWageReview: [] };
+  const { dateFrom, dateTo } = dateRange(rows.map((r) => r.clockIn.slice(0, 10)));
   const { data: job, error: jobError } = await supabase
     .from("csv_import_jobs")
     .insert({
@@ -577,7 +580,8 @@ export async function startLaborImportJob(
       rows_in_file: rowsInFile,
       group_count: rows.length,
       summary: seedSummary,
-      ...dateRange(rows.map((r) => r.clockIn.slice(0, 10))),
+      date_from: dateFrom,
+      date_to: dateTo,
     })
     .select("id")
     .single();
@@ -596,6 +600,14 @@ export async function startLaborImportJob(
   // Only now (lock held) do we touch shared employees roster state.
   const employeeNames = [...new Set(rows.map((r) => r.employee))];
   const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
+
+  // parseLaborCsv's clockIn/clockOut are naive business-local wall-clock strings (no offset) — a
+  // bare timestamp written straight into a `timestamptz` column is interpreted as UTC, silently
+  // shifting every shift by the business's UTC offset (e.g. 7:48 AM Pacific became 12:48 AM once
+  // read back and reformatted in the café's own timezone). Convert through the business's actual
+  // timezone first, same as every other POS-sync write path (lib/pos/sync.ts, lib/pos/toast/poll.ts).
+  const { data: businessRow } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
+  const timezone = businessRow?.timezone ?? "America/Los_Angeles";
 
   type StagingRow = {
     job_id: string;
@@ -630,8 +642,8 @@ export async function startLaborImportJob(
       business_id: businessId,
       employee_id: employeeId,
       pos_timecard_id: posTimecardId,
-      clock_in: row.clockIn,
-      clock_out: row.clockOut,
+      clock_in: fromZonedTime(row.clockIn, timezone).toISOString(),
+      clock_out: row.clockOut ? fromZonedTime(row.clockOut, timezone).toISOString() : null,
       hourly_wage_cents: row.hourlyWageCents,
       promoted: false,
     });
