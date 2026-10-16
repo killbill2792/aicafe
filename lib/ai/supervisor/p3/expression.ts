@@ -101,7 +101,13 @@ function binaryOp(a:Item,b:Item,op:string):Item{
       "ratio_bps*USD_cents":["USD_cents",BigInt("1"),BigInt("10000")],
     };
     const key=a.u+"*"+b.u;
-    const rule=lookup[key]??(a.u==="scalar"?[b.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:
+    const rule=lookup[key]??(
+      // Dimensionless percentages preserve the monetary rate's denominator.
+      a.u.startsWith("USD_")&&b.u==="ratio_bps"?
+        [a.u,BigInt("1"),BigInt("10000")] as [Unit,bigint,bigint]:
+      b.u.startsWith("USD_")&&a.u==="ratio_bps"?
+        [b.u,BigInt("1"),BigInt("10000")] as [Unit,bigint,bigint]:
+      a.u==="scalar"?[b.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:
       b.u==="scalar"?[a.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:null);
     if(!rule)throw new Error("unsupported_dimensions");
     return {v:times(times(a.v,b.v),rat(rule[1],rule[2])),
