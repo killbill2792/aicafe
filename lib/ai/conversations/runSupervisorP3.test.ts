@@ -248,6 +248,35 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(outcome.reply.status).toBe("partial");
     expect(p1Reads).toHaveBeenCalledTimes(2);
   });
+  it("never cites cafe-state evidence for pure owner-only money arithmetic",async()=>{
+    const question="What is 10% of $25?";
+    const phrase=[question];
+    const sourceFree={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Owner-only hypothetical percent",
+      nodes:[
+        {op:"hypothetical",label:"quoted dollars",quotedNumber:"25",
+          value:2500,unit:"USD_cents"},
+        {op:"hypothetical",label:"quoted percent",quotedNumber:"10",
+          value:1000,unit:"ratio_bps"},
+        {op:"multiply"},
+      ],
+    };
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:phrase},
+      {complete:true,choices:[{clause:question,capabilityId:"p3.menu.catalog.v1",
+        inputJson:JSON.stringify(menuInput),reason:null}]},
+      {complete:true,plans:[{coveredClauses:phrase,
+        planJson:JSON.stringify(sourceFree),reason:null}]},
+    ][step++]));
+    const outcome=await run(provider,question);
+    expect(outcome.reply.status).toBe("partial");
+    expect(outcome.reply.evidence).toEqual([]);
+    expect(outcome.reply.blocks.some(block=>block.type==="metric")).toBe(false);
+    expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
+    ]));
+  });
   it("COMPOSE-02/08: renders independently audited Spanish and Arabic scenario results",async()=>{
     for(const language of [
       {locale:"es" as const,question:"Vender 25 lattes y Sophie trabaja 45 minutos",
