@@ -234,8 +234,9 @@ async function readPreview(
        objectives.indexOf(s.objective)<=objectives.indexOf(p.scenarios[i-1].objective)))
     return fail(capability,"invalid_record");
   const best=p.best;
-  const bestPresent=best!==null && p.scenarios.some(s=>
-    JSON.stringify(s)===JSON.stringify(best));
+  const canonicalBest=p.scenarios.find(s=>
+    s.completeCoverage && s.hardConstraintsSatisfied)??p.scenarios[0]??null;
+  const bestPresent=JSON.stringify(canonicalBest)===JSON.stringify(best);
   const feasible=!!best && best.completeCoverage && best.hardConstraintsSatisfied;
   const statusConsistent=(
     (p.status==="feasible" && feasible &&
