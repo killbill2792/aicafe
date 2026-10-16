@@ -11,6 +11,10 @@ const connect=vi.mocked(createServerSupabaseClient);
 const cafe="a12a12a1-1111-4111-8111-a12a12a12a12";
 const keys=["menu","ingredients","ingredientPrices","recipes","employees",
   "dailyRollups","expenses","recurringCosts","imports"] as const;
+const fakeClient=(data:unknown,error:unknown=null)=>{
+  const value:unknown={rpc:vi.fn(async()=>({data,error}))};
+  return value as Awaited<ReturnType<typeof createServerSupabaseClient>>;
+};
 const base={
   contract:"p1.authoritative_snapshot.v1",businessId:cafe,revision:"25",
   timezone:"America/Los_Angeles",currency:"USD",
@@ -23,8 +27,7 @@ beforeEach(()=>{
   vi.resetAllMocks();
   owner.mockResolvedValue({identity:{businessId:cafe,timezone:base.timezone,
     currency:"USD"}} as Awaited<ReturnType<typeof authorizedOwnerP1>>);
-  connect.mockResolvedValue({rpc:vi.fn(async()=>({data:base,error:null}))}
-    as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>);
+  connect.mockResolvedValue(fakeClient(base));
 });
 describe("P1 authoritative source adapter never invents a DB revision",()=>{
   it("accepts one exact owner-authorized, revision-backed single-RPC observation",async()=>{
@@ -39,8 +42,7 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       {...base,timezone:"America/New_York"},
       {...base,currency:"EUR"},
     ]){
-      connect.mockResolvedValueOnce({rpc:vi.fn(async()=>({data,error:null}))}
-        as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>);
+      connect.mockResolvedValueOnce(fakeClient(data));
       expect(await readAuthorizedAtomicP1SourceSnapshot())
         .toMatchObject({status:"unavailable",reason:"invalid_source_snapshot"});
     }
@@ -59,9 +61,7 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
     }
   });
   it("treats a missing RPC or authorization failure as unavailable",async()=>{
-    connect.mockResolvedValueOnce({rpc:vi.fn(async()=>({
-      data:null,error:{message:"migration not applied"}}))}
-      as unknown as Awaited<ReturnType<typeof createServerSupabaseClient>>);
+    connect.mockResolvedValueOnce(fakeClient(null,{message:"migration not applied"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
     owner.mockRejectedValueOnce(new Error("foreign member"));
