@@ -184,9 +184,9 @@ INSERT INTO public.scheduling_plan_revisions
  (id,business_id,series_id,revision,source_digest,planner_input,scenario,
   created_by)
 VALUES ('{revision3}','{business}','{series3}',1,repeat('a',64),
-  '{"horizonStart":"2099-03-23"}'::jsonb,
-  '{"objective":"balanced","completeCoverage":true,
-    "hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}'::jsonb,
+  '{{"horizonStart":"2099-03-23"}}'::jsonb,
+  '{{"objective":"balanced","completeCoverage":true,
+    "hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}}'::jsonb,
   '{owner}');
 INSERT INTO public.scheduling_plan_assignments
  (business_id,plan_revision_id,employee_id,location_id,starts_at,ends_at,
