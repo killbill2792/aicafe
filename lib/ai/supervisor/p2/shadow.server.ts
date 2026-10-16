@@ -53,12 +53,14 @@ export type ShadowEvidence={
 export type ShadowOutcome={
   kind:"p2_read_only_shadow";status:"verified"|"estimated"|"partial"|"unavailable";
   evidence:ShadowEvidence[];reason:string|null;usage:Usage;
+  /** Actual registry read invocations, including failures; excludes model selections. */
+  attemptedReads:number;
   /** No business effects of any kind can be produced by this entry point. */
   executedEffects:0;
 };
 const missing=(reason:string,usage:Usage,evidence:ShadowEvidence[]=[]):ShadowOutcome=>({
   kind:"p2_read_only_shadow",status:evidence.length?"partial":"unavailable",
-  evidence,reason,usage:{...usage},executedEffects:0,
+  evidence,reason,usage:{...usage},attemptedReads:0,executedEffects:0,
 });
 const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 
@@ -279,7 +281,7 @@ export async function runP2ShadowWithScope(params:{
     evidence.some(e=>e.status==="estimated")?"estimated":"verified";
   return {kind:"p2_read_only_shadow",status,evidence,
     reason:successful.length===evidence.length?null:"some_goals_unavailable",usage,
-    executedEffects:0};
+    attemptedReads,executedEffects:0};
 }
 
 /** Off by default. Only an existing authenticated owner can call this isolated
