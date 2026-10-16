@@ -6,6 +6,7 @@ const m=vi.hoisted(()=>({
   assignments:[] as Array<Record<string,unknown>>,
   calls:[] as string[],
   failure:null as string|null,
+  staffRowCap:null as number|null,
 }));
 vi.mock("server-only",()=>({}));
 vi.mock("./foundation.server",()=>({
@@ -53,12 +54,13 @@ const provenance={source:"owner_direct",confirmation:"owner_confirmed"};
 const recurring={
   id:uid(100),revision:1,employee_id:employeeId,location_id:null,day_of_week:1,
   start_local:"09:00",end_local:"17:00",overnight:false,
-  effective_from:week,effective_to:null,...provenance,
+  effective_from:week,effective_to:null,business_id:businessId,...provenance,
 };
 const leave={
   id:uid(101),revision:1,employee_id:employeeId,location_id:null,
   local_date:"2026-10-14",exception_type:"approved_leave",
-  start_local:null,end_local:null,max_minutes:null,overnight:false,...provenance,
+  start_local:null,end_local:null,max_minutes:null,overnight:false,
+  business_id:businessId,...provenance,
 };
 const emptyRecords=()=>({
   availability_rule:[] as unknown[],availability_exception:[] as unknown[],
@@ -83,7 +85,8 @@ function client(){
           if(m.failure===table)throw new Error("provider details should remain private");
           const rows=(table==="employees"?m.staff:m.assignments).filter(r=>
             constraints.every(([field,value])=>r[field]===value));
-          return {data:rows.slice(0,max),error:null};
+          const rowCap=table==="employees"?m.staffRowCap??max:max;
+          return {data:rows.slice(0,Math.min(max,rowCap)),error:null,count:rows.length};
         },
       };
       return q;
@@ -94,7 +97,7 @@ function client(){
 describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   beforeEach(()=>{
     vi.resetAllMocks();
-    m.calls=[];m.failure=null;
+    m.calls=[];m.failure=null;m.staffRowCap=null;
     m.staff=[{id:employeeId,display_name:"Asha",active:true,business_id:businessId}];
     m.assignments=[{employee_id:employeeId,location_id:locationId,
       business_id:businessId,plan_revision_id:revisionId,
@@ -167,20 +170,77 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(availability()))
       .toMatchObject({ok:true,employees:[{state:"missing"}]});
   });
+  it("reports inactive employees and confirmed negative-only evidence as unavailable",async()=>{
+    m.staff=[{...m.staff[0],active:false}];
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:true,employees:[{active:false,state:"unavailable"}]});
+    m.staff=[{...m.staff[0],active:true}];
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_exception:[leave],
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:true,employees:[{
+        state:"unavailable",exceptions:[{exception_type:"approved_leave"}],
+      }]});
+  });
+  it("preserves verified source attribution and confirmation timestamps",async()=>{
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:[{
+        ...recurring,confirmed_at:iso,confirmed_by:uid(55),
+        created_at:iso,updated_at:iso,updated_by:uid(55),
+      }],
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:true,employees:[{
+        recurring:[{source:"owner_direct",confirmation:"owner_confirmed",
+          confirmed_at:iso,confirmed_by:uid(55),updated_at:iso}],
+      }]});
+  });
+  it("detects incomplete PostgREST staff lists instead of silently omitting employees",async()=>{
+    m.staff=[...m.staff,{id:uid(2),display_name:"Zara",active:true,
+      business_id:businessId}];
+    m.staffRowCap=1;
+    expect(await executeOliviaReadCapability({capability:"olivia.availability.read",
+      version:1})).toMatchObject({ok:false,error:{code:"storage_unavailable"}});
+    expect(m.foundation).not.toHaveBeenCalled();
+    m.staffRowCap=null;
+    expect(await executeOliviaReadCapability({capability:"olivia.availability.read",
+      version:1})).toMatchObject({ok:true,employees:[{},{}]});
+  });
+  it("rejects foreign or orphaned employee evidence even when it comes from an unexpected source read",async()=>{
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:[{...recurring,business_id:otherBusinessId}],
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:[{...recurring,employee_id:uid(99)}],
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects a capped employee count and transient employee-query errors",async()=>{
+    m.staff=Array.from({length:501},(_,i)=>({
+      id:uid(i+1),display_name:"Staff",active:true,business_id:businessId,
+    }));
+    expect(await executeOliviaReadCapability({capability:"olivia.availability.read",
+      version:1})).toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
+  });
   it("preserves confirmed hour caps, qualifications, and verified-zero vs unknown compensation",async()=>{
     const records={
       ...emptyRecords(),availability_rule:[recurring],
       preferences:[{id:uid(110),revision:1,employee_id:employeeId,
         effective_from:week,effective_to:null,min_weekly_minutes:0,
         desired_weekly_minutes:null,max_weekly_minutes:1200,max_daily_minutes:240,
-        unavailable_weekdays:[],...provenance}],
+        unavailable_weekdays:[],business_id:businessId,...provenance}],
       qualification:[{id:uid(111),revision:1,employee_id:employeeId,
         location_id:locationId,qualification_code:"barista",valid_from:week,
-        valid_to:null,...provenance}],
+        valid_to:null,business_id:businessId,...provenance}],
       compensation:[{id:uid(112),revision:1,employee_id:employeeId,
         cash_cost_state:"known_eligible_zero",
         eligibility_reference:"Verified compensation exception",
-        eligibility_verified_by:uid(50),eligibility_verified_at:iso}],
+        eligibility_verified_by:uid(50),eligibility_verified_at:iso,
+        business_id:businessId}],
     };
     m.foundation.mockResolvedValueOnce({ok:true,records,audit:[]});
     expect(await executeOliviaReadCapability(availability()))
@@ -252,6 +312,23 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     m.history.mockResolvedValueOnce({ok:true,currentRevision:2,
       publishedRevision:1,revisions:[{id:revisionId,revision:2,
         status:"draft",created_at:iso}]});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects incomplete immutable revision histories with a valid latest pointer",async()=>{
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:3,publishedRevision:1,
+      revisions:[
+        {id:uid(33),revision:3,status:"draft",created_at:iso},
+        {id:uid(32),revision:1,status:"published",created_at:iso},
+      ]});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:3,publishedRevision:1,
+      revisions:[
+        {id:uid(33),revision:3,status:"draft",created_at:iso},
+        {id:uid(34),revision:4,status:"superseded",created_at:iso},
+        {id:uid(32),revision:1,status:"published",created_at:iso},
+      ]});
     expect(await executeOliviaReadCapability(history()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
