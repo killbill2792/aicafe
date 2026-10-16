@@ -386,6 +386,16 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"unauthorized"}});
   });
+  it("blocks another café's missing-input evidence after mid-preview owner switch",async()=>{
+    m.owner.mockResolvedValueOnce({businessId,supabase:client()})
+      .mockResolvedValueOnce({businessId:otherBusinessId,supabase:client()});
+    m.preview.mockResolvedValueOnce({ok:false,error:"missing_inputs",
+      blockers:[{code:"conflicting_limits",employeeName:"Private Worker"}]});
+    const result=await executeOliviaReadCapability(preview());
+    expect(result).toMatchObject({ok:false,error:{code:"unauthorized"}});
+    expect(JSON.stringify(result)).not.toContain("Private Worker");
+    expect(JSON.stringify(result)).not.toContain("conflicting_limits");
+  });
   it("reports real revision history and separate official published pointer",async()=>{
     expect(await executeOliviaReadCapability(history())).toMatchObject({
       ok:true,currentRevision:2,publishedRevision:1,revisions:[
