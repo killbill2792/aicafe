@@ -121,6 +121,17 @@ const costSchema=z.object({
     ctx.addIssue({code:"custom",message:"Loaded cost needs a known wage base"});
   if(cost.costState==="verified" && cost.loadedPayrollCents===null)
     ctx.addIssue({code:"custom",message:"Verified payroll needs a loaded cost"});
+  // PR2 cash wages include the allocated salary equivalent (never vice
+  // versa), and loaded payroll adds only a nonnegative payroll burden.
+  if(cost.cashWagesCents!==null && cost.allocatedSalaryCents!==null &&
+     cost.allocatedSalaryCents>cost.cashWagesCents)
+    ctx.addIssue({code:"custom",message:"Allocated salary exceeds wages"});
+  if(cost.loadedPayrollCents!==null && cost.cashWagesCents!==null &&
+     cost.loadedPayrollCents<cost.cashWagesCents)
+    ctx.addIssue({code:"custom",message:"Loaded payroll is below cash wages"});
+  if(cost.allocatedSalaryCents!==null && cost.allocatedSalaryCents>0 &&
+     cost.costState!=="estimate")
+    ctx.addIssue({code:"custom",message:"Salary allocation requires estimate state"});
 });
 const scenarioBase=z.object({
   objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
