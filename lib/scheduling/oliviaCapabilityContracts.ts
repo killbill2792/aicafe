@@ -75,12 +75,31 @@ export const oliviaAvailabilityEmployeeSchema = z.object({
 }).strict();
 
 const utc = z.string().datetime({offset:true});
+const intervalBreak=z.object({startAt:utc,endAt:utc,paid:z.boolean()}).strict()
+  .refine(b=>Date.parse(b.endAt)>Date.parse(b.startAt),
+    "Break end must follow its start");
 export const oliviaShiftSchema = z.object({
   employeeId:oliviaUuid,locationId:oliviaUuid,startAt:utc,endAt:utc,
   paidMinutes:nonnegative.max(1440),
-  breaks:z.array(z.object({startAt:utc,endAt:utc,paid:z.boolean()}).strict()).max(24),
+  breaks:z.array(intervalBreak).max(24),
   pinned:z.boolean(),
-}).strict();
+}).strict().superRefine((s,ctx)=>{
+  const start=Date.parse(s.startAt),end=Date.parse(s.endAt);
+  if(end<=start){
+    ctx.addIssue({code:"custom",message:"Shift end must follow its start"});
+    return;
+  }
+  if(s.paidMinutes>(end-start)/60000)
+    ctx.addIssue({code:"custom",message:"Paid minutes exceed shift duration"});
+  const ordered=[...s.breaks].sort((x,y)=>Date.parse(x.startAt)-Date.parse(y.startAt));
+  for(let i=0;i<ordered.length;i++){
+    const current=ordered[i];
+    if(Date.parse(current.startAt)<start || Date.parse(current.endAt)>end)
+      ctx.addIssue({code:"custom",message:"Break must be within the shift"});
+    if(i>0 && Date.parse(ordered[i-1].endAt)>Date.parse(current.startAt))
+      ctx.addIssue({code:"custom",message:"Shift breaks must not overlap"});
+  }
+});
 const costSchema=z.object({
   cashWagesCents:cents,allocatedSalaryCents:cents,loadedPayrollCents:cents,
   ownerOpportunityCents:cents,ownerMinutes:nonnegative,
@@ -96,7 +115,8 @@ export const oliviaScenarioSchema=z.object({
       "capacity_or_overlap","break_or_rest_constraint","daily_hour_limit",
       "weekly_hour_limit","date_specific_cap","pinned_conflict","solver_budget",
       "handoff_overlap_missing"]),
-  }).strict()).max(OLIVIA_MAX_GAPS_PER_SCENARIO),
+  }).strict().refine(g=>Date.parse(g.endAt)>Date.parse(g.startAt),
+    "Coverage gap end must follow start")).max(OLIVIA_MAX_GAPS_PER_SCENARIO),
   completeCoverage:z.boolean(),hardConstraintsSatisfied:z.boolean(),
   ownerMinutes:nonnegative,cost:costSchema,preferencePenalty:z.number().finite(),
   exploredNodes:nonnegative,legalReview:z.enum(["verified_profile","unverified_profile"]),
