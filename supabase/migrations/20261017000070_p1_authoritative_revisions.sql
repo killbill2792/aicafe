@@ -25,7 +25,7 @@ SELECT id, 1 FROM public.businesses ON CONFLICT (business_id) DO NOTHING;
 
 CREATE FUNCTION public.p1_touch_business_epoch(p_business_id uuid, p_new_business boolean)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public AS $
+SET search_path = pg_catalog, public AS $p1_body$
 BEGIN
   IF p_business_id IS NULL THEN
     RAISE EXCEPTION 'source revision requires a scoped business' USING ERRCODE='23502';
@@ -49,7 +49,7 @@ BEGIN
     RAISE EXCEPTION 'authoritative source revision missing for business'
       USING ERRCODE='23514';
   END IF;
-END $;
+END $p1_body$;
 REVOKE ALL ON FUNCTION public.p1_touch_business_epoch(uuid,boolean)
   FROM PUBLIC, anon, authenticated;
 
@@ -112,11 +112,11 @@ REVOKE ALL ON FUNCTION public.p1_track_source_statement()
 -- accept a stale epoch after a privileged bulk-clear or cascading truncate.
 CREATE FUNCTION public.p1_reject_canonical_truncate()
 RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public AS $
+SET search_path = pg_catalog, public AS $p1_body$
 BEGIN
   RAISE EXCEPTION 'canonical source TRUNCATE bypasses authoritative revision; use DELETE'
     USING ERRCODE='23514';
-END $;
+END $p1_body$;
 REVOKE ALL ON FUNCTION public.p1_reject_canonical_truncate()
   FROM PUBLIC, anon, authenticated;
 
