@@ -15,6 +15,12 @@ describe("P3 authenticated entity mention matching",()=>{
       .toBe(true);
     expect(isWholeNamedEntity("What does oat cost?","oat",candidates))
       .toBe(true);
+    expect(isWholeNamedEntity("Sell 25 more lattes","latte",[
+      {id:"latte",name:"latte"}],true)).toBe(true);
+    expect(isWholeNamedEntity("Sell 25 more lattes","latte",[
+      {id:"latte",name:"latte"}])).toBe(false);
+    expect(isWholeNamedEntity("Compare oat milks","oat",candidates,true))
+      .toBe(false);
   });
   it("fails closed on duplicate names and supports Unicode owner wording",()=>{
     const duplicate=[{id:"a",name:"Sophie"},{id:"b",name:"Sophie"}];
