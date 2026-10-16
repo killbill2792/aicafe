@@ -77,14 +77,15 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
   "money.business_costs":v=>{
     if(!isObject(v)||!integer(v.knownTotalCents)||!isObject(v.components))
       return [];
+    const components=v.components;
     const fields=["ingredientsCents","loadedStaffCents",
       "cardFeesCents","runningCostsCents"] as const;
-    if(fields.some(f=>!integer(v.components[f])))return [];
+    if(fields.some(f=>!integer(components[f])))return [];
     return [
       {key:"aggregate",name:"known business costs",
         field:"knownTotalCents",value:v.knownTotalCents,unit:"USD_cents" as const},
       ...fields.map(f=>({key:"aggregate",name:"known cost component",
-        field:f,value:v.components[f] as number,unit:"USD_cents" as const})),
+        field:f,value:components[f] as number,unit:"USD_cents" as const})),
     ];
   },
   "menu.product_economics":v=>{
