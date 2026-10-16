@@ -125,5 +125,13 @@ project `cardFeesCents` as an atomic daily source operand, even when the
 numeric field is zero. It must remain unavailable until a separately reviewed
 and deployed status-preserving source contract exists. A successful `NULL`
 snapshot response is an invalid/absent authoritative ledger and fails
-closed; only an actual unavailable-RPC error may use the explicitly
-unversioned legacy conditional route. Neither case fabricates an epoch.
+closed; only specifically identified missing-function RPC errors
+(PGRST202/42883) may use the explicitly unversioned legacy conditional
+route. Owner authorization, SQL, timeout, network and malformed/NULL RPC
+failures all fail closed; neither case fabricates an epoch.
+
+P3 withholds historical daily ingredient-cost totals because this SQL
+snapshot does not prove item-level historical recipe and price coverage.
+A bounded snapshot truncated outside the requested recent period can still
+support that period when *every selected day* is present uniquely and has
+the required source status; selected date gaps remain unavailable.
