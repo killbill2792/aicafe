@@ -82,9 +82,13 @@ function daily(snapshot:AtomicP1SourceSnapshot,
     return blocked("sales_missing_for_selected_dates");
   const fields=labor?
     ["staff_wages_cents","staff_tax_cents"] as const:
-    ["net_sales_cents","ingredients_cents","card_fees_cents"] as const;
+    // The authoritative RPC currently omits card_fees_status. A recorded
+    // numeric zero could mean missing/estimated rather than a known $0 fee.
+    // Withhold card fees until an additive, status-preserving snapshot contract
+    // is reviewed; never silently classify them as actual.
+    ["net_sales_cents","ingredients_cents"] as const;
   const names=labor?["wagesCents","staffTaxCents"] as const:
-    ["netSalesCents","ingredientsCents","cardFeesCents"] as const;
+    ["netSalesCents","ingredientsCents"] as const;
   const leaves:SnapshotLeaf[]=[];
   for(let i=0;i<fields.length;i++){
     // Each SQL cent is an integer; preserve exactness even when an
@@ -108,7 +112,8 @@ function daily(snapshot:AtomicP1SourceSnapshot,
   }
   const estimate=labor&&rows.some(row=>row.staff_tax_status==="estimated");
   return result(leaves,[labor?"labor_coverage_not_proven":
-    "pos_import_date_and_item_coverage_not_proven"],
+    "pos_import_date_and_item_coverage_not_proven",
+    "card_fee_status_unavailable_from_atomic_snapshot"],
     estimate?["estimated_payroll_tax"]:[]);
 }
 
