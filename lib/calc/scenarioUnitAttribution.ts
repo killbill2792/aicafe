@@ -11,7 +11,7 @@ const ounces=/\b(?:oz|ounces?|fl\s*oz|onzas?)\b|أونص(?:ة|ات)/iu;
 const gallons=/\b(?:gallons?|gal|galones?)\b|غالون/iu;
 const ratio=/%|٪|\b(?:percent|percentage|por ciento|porcentaje)\b|بالمئة|بالمائة|في المئة/iu;
 const money=/[$€£]|\b(?:dollars?|dólares?|dolares?|cents?|centavos?)\b|دولار|سنت/iu;
-const items=/\b(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|beverages?|bebidas?|tazas?|unidades?|productos?)\b|أكواب|كوب|مشروبات|وحدات/iu;
+const items=/\b(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|beverages?|bebidas?|tazas?|unidades?|productos?)\b|أكواب|كوب|مشروب|مشروبات|وحدات/iu;
 const word=/[\p{L}\p{N}]/u;
 export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string):boolean{
   const text=normalize(message),number=normalize(quoted);
@@ -44,6 +44,24 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     // explicit dimension always takes precedence over incidental nouns.
     if(found.size===0&&(items.test(nearby)||genericPlural.test(after)))
       found.add("item");
+    // A unit immediately following this number takes precedence over a
+    // previous operand in the same sentence: "10% of 25 items".
+    const direct=new Set<string>();
+    if(minutes.test(after))direct.add("minute");
+    if(hours.test(after))direct.add("hour");
+    if(ounces.test(after))direct.add("US_fl_oz");
+    if(gallons.test(after))direct.add("US_gallon");
+    if(ratio.test(after))direct.add("ratio_bps");
+    if(money.test(after))direct.add("money");
+    if(direct.size===0&&(items.test(after)||genericPlural.test(after)))
+      direct.add("item");
+    if(direct.size===1){
+      found.clear();
+      for(const dimension of direct)found.add(dimension);
+    }
+    if(/[$€£]\\s*$/u.test(before)){
+      found.clear();found.add("money");
+    }
     hits.push(found);
   }
   const expected=unit.startsWith("USD_")?"money":unit;
