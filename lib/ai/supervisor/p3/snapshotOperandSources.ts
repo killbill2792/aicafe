@@ -69,7 +69,9 @@ function product(snapshot:AtomicP1SourceSnapshot,id:string,asOf:string):
 
 function daily(snapshot:AtomicP1SourceSnapshot,
   period:{from:string;to:string}|undefined,labor:boolean):SnapshotExtraction{
-  if(!period||snapshot.truncated.dailyRollups)return blocked("snapshot_daily_source_truncated_or_unselected");
+  // Old rows outside a completely selected recent period may be truncated.
+  // Validate exact requested-date coverage below; never invent absent days.
+  if(!period)return blocked("snapshot_daily_source_unselected");
   const start=Date.parse(period.from+"T12:00:00Z"),end=Date.parse(period.to+"T12:00:00Z");
   if(!Number.isFinite(start)||!Number.isFinite(end)||end<start||
     (end-start)/86400000>365)return blocked("invalid_snapshot_period");
@@ -86,9 +88,11 @@ function daily(snapshot:AtomicP1SourceSnapshot,
     // numeric zero could mean missing/estimated rather than a known $0 fee.
     // Withhold card fees until an additive, status-preserving snapshot contract
     // is reviewed; never silently classify them as actual.
-    ["net_sales_cents","ingredients_cents"] as const;
+    // Historical ingredient costs lack proved item-level coverage in this RPC.
+    // Only recorded net sales may be projected from this daily source.
+    ["net_sales_cents"] as const;
   const names=labor?["wagesCents","staffTaxCents"] as const:
-    ["netSalesCents","ingredientsCents"] as const;
+    ["netSalesCents"] as const;
   const leaves:SnapshotLeaf[]=[];
   for(let i=0;i<fields.length;i++){
     // Each SQL cent is an integer; preserve exactness even when an
@@ -113,7 +117,8 @@ function daily(snapshot:AtomicP1SourceSnapshot,
   const estimate=labor&&rows.some(row=>row.staff_tax_status==="estimated");
   return result(leaves,[labor?"labor_coverage_not_proven":
     "pos_import_date_and_item_coverage_not_proven",
-    "card_fee_status_unavailable_from_atomic_snapshot"],
+    "card_fee_status_unavailable_from_atomic_snapshot",
+    "historical_ingredient_cost_coverage_not_proven"],
     estimate?["estimated_payroll_tax"]:[]);
 }
 
