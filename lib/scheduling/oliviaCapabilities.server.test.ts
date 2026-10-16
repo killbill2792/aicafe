@@ -383,6 +383,30 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
   });
+  it("distinguishes oversized valid planner output from malformed over-cap evidence",async()=>{
+    const tooMany=Array.from({length:201},(_,i)=>({...shift,employeeId:uid(i+1)}));
+    const malformed={...scenario,shifts:tooMany,cost:{
+      ...scenario.cost,cashWagesCents:-1,
+    }};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[malformed],best:malformed},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:2,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    const gap=scenario.gaps[0];
+    const invalidGaps={...scenario,gaps:Array.from({length:20_001},(_,i)=>({
+      ...gap,...(i===20_000?{startAt:"not-datetime"}:{}),
+    }))};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[invalidGaps],best:invalidGaps},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:2,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("rejects stale source digests and revision conflicts without any write",async()=>{
     expect(await executeOliviaReadCapability({...preview(),options:{
       expectedSourceDigest:"b".repeat(64)}})).toMatchObject({
@@ -447,6 +471,29 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("verifies the official published pointer and requested row in revision readback",async()=>{
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,publishedRevision:1,
+      revisions:[
+        {id:revisionId,revision:2,status:"draft",created_at:iso},
+        {id:uid(32),revision:1,status:"draft",created_at:iso},
+      ]});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,publishedRevision:2,
+      revisions:[
+        {id:revisionId,revision:2,status:"published",created_at:iso},
+        {id:uid(32),revision:1,status:"superseded",created_at:iso},
+      ]});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"revision_conflict"}});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,publishedRevision:1,
+      revisions:[
+        {id:uid(33),revision:2,status:"draft",created_at:iso},
+        {id:uid(32),revision:1,status:"published",created_at:iso},
+      ]});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("rejects truncated persisted assignments even if returned shifts match the scenario",async()=>{
     m.assignments.push({
       ...m.assignments[0],employee_id:uid(2),
@@ -483,11 +530,21 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   it("distinguishes persisted approved and published versions without running transitions",async()=>{
     m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"approved",
       currentRevision:2,publishedRevision:1,scenario,sourceDigest:digest});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,publishedRevision:1,
+      revisions:[
+        {id:revisionId,revision:2,status:"approved",created_at:iso},
+        {id:uid(32),revision:1,status:"published",created_at:iso},
+      ]});
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:true,status:"ok",revisionStatus:"approved",
         disposition:"stored_read_only"});
     m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"published",
       currentRevision:2,publishedRevision:2,scenario,sourceDigest:digest});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,publishedRevision:2,
+      revisions:[
+        {id:revisionId,revision:2,status:"published",created_at:iso},
+        {id:uid(32),revision:1,status:"superseded",created_at:iso},
+      ]});
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:true,status:"ok",revisionStatus:"published",
         publishedRevision:2});
