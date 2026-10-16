@@ -14,6 +14,7 @@ const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "netSales", required: true },
   { key: "category", required: false },
   { key: "processingFee", required: false },
+  { key: "voided", required: false },
 ];
 
 type Stage = "idle" | "working" | "done" | "error";

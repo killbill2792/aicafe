@@ -53,6 +53,24 @@ describe("parseSalesCsv", () => {
     expect(result.rejected).toEqual([{ reason: "invalid_date", count: 1 }]);
   });
 
+  it("excludes a voided row from sales instead of counting a cancelled transaction as real revenue", () => {
+    const rows = [
+      { Date: "08/22/2026", Item: "Latte", Qty: "1", Sales: "8.50", "Void?": "true" },
+      { Date: "08/22/2026", Item: "Americano", Qty: "1", Sales: "5.00", "Void?": "false" },
+      { Date: "08/22/2026", Item: "Mocha", Qty: "1", Sales: "6.00", "Void?": "" },
+    ];
+    const result = parseSalesCsv(rows, { date: "Date", item: "Item", quantity: "Qty", netSales: "Sales", voided: "Void?" });
+    expect(result.valid.map((r) => r.item)).toEqual(["Americano", "Mocha"]);
+    expect(result.rejected).toEqual([{ reason: "voided", count: 1 }]);
+  });
+
+  it("does not look for void status at all when no voided column is mapped", () => {
+    const rows = [{ Date: "08/22/2026", Item: "Latte", Qty: "1", Sales: "8.50" }];
+    const result = parseSalesCsv(rows, { date: "Date", item: "Item", quantity: "Qty", netSales: "Sales" });
+    expect(result.valid).toHaveLength(1);
+    expect(result.rejected).toEqual([]);
+  });
+
   it("rejects a shape-valid but nonexistent calendar date (Feb 31, month 13) instead of staging it for Postgres to reject the whole batch", () => {
     const rows = [
       { Date: "02/31/2026", Item: "Latte", Qty: "1", Sales: "$5.50" },

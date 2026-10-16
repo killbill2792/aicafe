@@ -7,6 +7,7 @@ export type SalesColumnMapping = {
   netSales: string;
   category?: string;
   processingFee?: string;
+  voided?: string;
 };
 
 export type NormalizedSalesRow = {
@@ -19,7 +20,9 @@ export type NormalizedSalesRow = {
   processingFeeStatus: "actual" | "missing";
 };
 
-export type SalesRejectReason = "missing_item" | "missing_date" | "invalid_date" | "invalid_quantity" | "invalid_net_sales";
+export type SalesRejectReason = "missing_item" | "missing_date" | "invalid_date" | "invalid_quantity" | "invalid_net_sales" | "voided";
+
+const TRUTHY = new Set(["true", "yes", "y", "1", "x"]);
 
 export type ParseSalesCsvResult = {
   valid: NormalizedSalesRow[];
@@ -44,6 +47,12 @@ function parseOptionalFee(raw: string): { processingFeeCents: number; processing
  * Rows are never silently dropped into a default value: a missing item/date skips the row, and an
  * unparseable date/quantity/net-sales value is rejected with a reason rather than coerced to 0 or
  * today's date, so the owner-facing summary can say exactly what wasn't imported and why.
+ *
+ * A mapped `voided` column excludes a row from sales entirely — a voided/cancelled sale is not
+ * money the café kept, matching how the Toast API adapter (lib/pos/toast/adapter.ts) already
+ * zeroes out voided selections and how lib/pos/rollup.ts and period/menu stat queries already
+ * filter on `order_lines.voided`. Counted as a rejected row (reason "voided"), not silently
+ * omitted, so the owner sees exactly how many voided rows were excluded and why.
  */
 export function parseSalesCsv(rows: Record<string, string>[], mapping: SalesColumnMapping): ParseSalesCsvResult {
   const valid: NormalizedSalesRow[] = [];
@@ -51,6 +60,11 @@ export function parseSalesCsv(rows: Record<string, string>[], mapping: SalesColu
   const reject = (reason: SalesRejectReason) => rejectedCounts.set(reason, (rejectedCounts.get(reason) ?? 0) + 1);
 
   for (const row of rows) {
+    if (mapping.voided && TRUTHY.has((row[mapping.voided] ?? "").trim().toLowerCase())) {
+      reject("voided");
+      continue;
+    }
+
     const item = (row[mapping.item] ?? "").trim();
     const dateRaw = (row[mapping.date] ?? "").trim();
     if (!item) {
