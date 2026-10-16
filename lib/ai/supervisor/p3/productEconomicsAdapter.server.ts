@@ -27,7 +27,7 @@ export async function enrichResolvedProductEconomics(input:{
       if(readCount>=input.remainingReads)break;
       if(!product.active||!product.name||!product.id||
         product.id.length>120||chosen.has(product.id)||
-        !isWholeNamedEntity(names,product.name,catalog.data))
+        !isWholeNamedEntity(names,product.name,catalog.data,true))
         continue;
       chosen.add(product.id);
       const read=await input.registry.invoke(input.scope,
