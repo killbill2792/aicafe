@@ -531,6 +531,42 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage.modelCallCount).toBe(3);
     expect(p1Reads).toHaveBeenCalled();
   });
+  it("reuses a quoted number in independent clauses using global occurrence indexes",async()=>{
+    const clauses=["Use 10 hours","Calculate 10 percent"];
+    const question=clauses.join(" and ");
+    const plans=[
+      {coveredClauses:[clauses[0]],reason:null,planJson:JSON.stringify({
+        capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+        description:"Hours stated by the owner",
+        nodes:[{op:"hypothetical",label:"owner hours",quotedNumber:"10",
+          occurrence:0,value:10,unit:"hour"}],
+      })},
+      {coveredClauses:[clauses[1]],reason:null,planJson:JSON.stringify({
+        capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+        description:"Percentage stated by the owner",
+        nodes:[{op:"hypothetical",label:"owner percent",quotedNumber:"10",
+          occurrence:1,value:1000,unit:"ratio_bps"}],
+      })},
+    ];
+    let step=0;
+    const provider=vi.fn(async()=>{
+      const phase=step++;
+      if(phase===0)return response({complete:true,clauses});
+      if(phase===1)return response({complete:true,choices:clauses.map(clause=>({
+        clause,capabilityId:null,inputJson:null,reason:"source_free",
+      }))});
+      return response({complete:true,plans});
+    });
+    const out=await run(provider,question);
+    expect(out.reply.status).toBe("partial");
+    expect(out.reply.evidence).toHaveLength(0);
+    const texts=out.reply.blocks.filter(b=>b.type==="text")
+      .map(b=>b.text).join(" ");
+    expect(texts).toContain("10 hours");
+    expect(texts).toContain("10%");
+    expect(out.usage).toMatchObject({modelCallCount:3,toolCallCount:2});
+    expect(p1Reads).not.toHaveBeenCalled();
+  });
   it("never borrows a hypothetical quantity from another audited clause",async()=>{
     const clauses=["Increase by 25 items","Increase by 30 items"];
     const question=clauses.join(" and ");
