@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
-import { parseSalesCsv, type SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
+import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
+import { aggregateSalesRows } from "@/lib/pos/csv/aggregateSalesRows";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
-import { saveMapping, importSalesRows, type SalesImportSummary } from "@/lib/actions/csvImport";
+import { saveMapping, startSalesImportJob, finalizeSalesImportJob, cancelStuckImportJob, type SalesImportSummary, type ImportErrorCode } from "@/lib/actions/csvImport";
 
 const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "date", required: true },
@@ -14,6 +15,13 @@ const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "category", required: false },
   { key: "processingFee", required: false },
 ];
+
+type Stage = "idle" | "working" | "done" | "error";
+
+function interpolate(template: string, params?: Record<string, string | number>): string {
+  if (!params) return template;
+  return Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), template);
+}
 
 export default function SalesCsvImporter({
   initialMapping,
@@ -34,22 +42,37 @@ export default function SalesCsvImporter({
     unmatchedWarningTitle: string;
     unmatchedWarningHint: string;
     unmatchedRowsCount: string;
+    reviewRowsInFile: string;
+    rejectedTitle: string;
+    rejectedReasons: Record<SalesRejectReason, string>;
+    statusStarting: string;
+    statusFinalizing: string;
+    duplicateNotice: string;
+    skippedToastTitle: string;
+    skippedToastHint: string;
+    tryAgain: string;
+    cancelStuckImport: string;
+    errors: Record<ImportErrorCode, string>;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Partial<SalesColumnMapping>>(initialMapping ?? {});
   const [isPending, startTransition] = useTransition();
-  const [status, setStatus] = useState<"idle" | "imported">("idle");
-  const [count, setCount] = useState(0);
+  const [stage, setStage] = useState<Stage>("idle");
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [summary, setSummary] = useState<SalesImportSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [stuckJobId, setStuckJobId] = useState<string | null>(null);
 
   async function handleFile(file: File) {
     const text = await readUploadedFileAsCsvText(file);
     const { headers: h, rows: r } = detectCsvColumns(text);
     setHeaders(h);
     setRows(r);
+    setStage("idle");
+    setSummary(null);
+    setError(null);
     // Auto-apply the saved mapping only if every column it references still exists.
     if (initialMapping && Object.values(initialMapping).every((v) => !v || h.includes(v))) {
       setMapping(initialMapping);
@@ -57,20 +80,59 @@ export default function SalesCsvImporter({
   }
 
   const complete = FIELDS.filter((f) => f.required).every((f) => mapping[f.key]);
-  const parsedRows = complete ? parseSalesCsv(rows, mapping as SalesColumnMapping) : [];
+  const parsed = useMemo(() => (complete ? parseSalesCsv(rows, mapping as SalesColumnMapping) : { valid: [], rejected: [] }), [complete, rows, mapping]);
+  const groups = useMemo(() => aggregateSalesRows(parsed.valid), [parsed.valid]);
+
+  async function runFinalize(jobId: string, attempt = 1) {
+    setStatusMessage(labels.statusFinalizing);
+    const result = await finalizeSalesImportJob(jobId);
+    if (result.ok) {
+      setStage("done");
+      setSummary(result.summary ?? null);
+      return;
+    }
+    if (attempt < 3) {
+      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      await runFinalize(jobId, attempt + 1);
+      return;
+    }
+    setStage("error");
+    setStuckJobId(jobId);
+    setError(result.errorCode ? interpolate(labels.errors[result.errorCode], result.errorParams) : null);
+  }
 
   function handleImport() {
-    if (!complete) return;
+    if (!complete || parsed.valid.length === 0) return;
     setError(null);
+    setStuckJobId(null);
     startTransition(async () => {
       await saveMapping("sales", mapping as SalesColumnMapping, "Sales / product mix export");
-      const result = await importSalesRows(parsedRows);
+      setStage("working");
+      setStatusMessage(labels.statusStarting);
+      const started = await startSalesImportJob(groups, rows.length, parsed.rejected);
+      if (!started.ok) {
+        setStage("error");
+        setStuckJobId(started.blockingJobId ?? null);
+        setError(started.errorCode ? interpolate(labels.errors[started.errorCode], started.errorParams) : null);
+        return;
+      }
+      if (started.duplicate || !started.jobId) {
+        setStage("done");
+        setSummary(started.summary ?? null);
+        return;
+      }
+      await runFinalize(started.jobId);
+    });
+  }
+
+  function handleCancelStuck() {
+    if (!stuckJobId) return;
+    startTransition(async () => {
+      const result = await cancelStuckImportJob(stuckJobId);
+      setError(result.ok ? null : result.errorCode ? interpolate(labels.errors[result.errorCode]) : null);
       if (result.ok) {
-        setStatus("imported");
-        setCount(result.imported);
-        setSummary(result.summary ?? null);
-      } else {
-        setError(result.error ?? null);
+        setStage("idle");
+        setStuckJobId(null);
       }
     });
   }
@@ -116,17 +178,50 @@ export default function SalesCsvImporter({
         ))}
       </section>
 
-      {complete && status === "idle" && (
-        <p className="px-2 text-sm text-ink-muted">{labels.preview.replace("{count}", String(parsedRows.length))}</p>
+      {complete && stage === "idle" && (
+        <section className="flex flex-col gap-1.5 rounded-card-lg bg-card p-4">
+          <p className="text-[17px] text-ink-muted">{labels.reviewRowsInFile.replace("{count}", String(rows.length))}</p>
+          <p className="text-[17px] text-ink-muted">{labels.preview.replace("{count}", String(groups.length))}</p>
+          {parsed.rejected.length > 0 && (
+            <div className="mt-1 flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
+              <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
+              {parsed.rejected.map((r) => (
+                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                  {labels.rejectedReasons[r.reason]} ({r.count})
+                </span>
+              ))}
+            </div>
+          )}
+        </section>
       )}
+
+      {stage === "working" && statusMessage && <p className="px-2 text-[17px] font-semibold text-ink-muted">{statusMessage}</p>}
 
       {summary && (
         <section className="flex flex-col gap-2 rounded-card-lg bg-card p-4">
-          <p className="text-sm font-semibold text-good">
+          {summary.duplicate && <p className="text-[17px] font-semibold text-ink-muted">{labels.duplicateNotice}</p>}
+          <p className="text-[17px] font-semibold text-good">
             {summary.dateFrom && summary.dateTo
               ? labels.resultSummary.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile)).replace("{dateFrom}", summary.dateFrom).replace("{dateTo}", summary.dateTo)
               : labels.resultSummaryNoDates.replace("{imported}", String(summary.imported)).replace("{rowsInFile}", String(summary.rowsInFile))}
           </p>
+          {summary.rejectedRows.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
+              <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
+              {summary.rejectedRows.map((r) => (
+                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                  {labels.rejectedReasons[r.reason]} ({r.count})
+                </span>
+              ))}
+            </div>
+          )}
+          {summary.skippedToastConflictDates.length > 0 && (
+            <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
+              <span className="text-[17px] font-bold text-warn">{labels.skippedToastTitle}</span>
+              <p className="text-[17px] text-[#6E2A07]">{labels.skippedToastHint}</p>
+              <span className="text-[17px] text-[#6E2A07]">{summary.skippedToastConflictDates.join(", ")}</span>
+            </div>
+          )}
           {summary.unmatchedItems.length > 0 && (
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-sm font-bold text-warn">{labels.unmatchedWarningTitle}</span>
@@ -142,15 +237,24 @@ export default function SalesCsvImporter({
         </section>
       )}
 
-      {error && <p className="px-2 text-sm text-warn">{error}</p>}
+      {error && (
+        <div className="flex flex-col gap-2 px-2">
+          <p className="text-[17px] text-warn">{error}</p>
+          {stuckJobId && (
+            <button type="button" onClick={handleCancelStuck} disabled={isPending} className="inline-flex min-h-12 items-center self-start px-3 text-[17px] font-semibold text-ink underline">
+              {labels.cancelStuckImport}
+            </button>
+          )}
+        </div>
+      )}
 
       <button
         type="button"
         onClick={handleImport}
-        disabled={!complete || isPending}
+        disabled={!complete || parsed.valid.length === 0 || isPending || stage === "working"}
         className="h-14 rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-40"
       >
-        {status === "imported" ? `${labels.imported} (${count})` : labels.import}
+        {stage === "done" ? `${labels.imported} (${summary?.imported ?? 0})` : stage === "error" ? labels.tryAgain : labels.import}
       </button>
     </div>
   );

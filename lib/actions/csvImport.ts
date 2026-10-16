@@ -1,5 +1,6 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { formatInTimeZone } from "date-fns-tz";
@@ -10,10 +11,10 @@ import { recomputeDailyRollup } from "@/lib/pos/rollup";
 import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
-import { salesCsvSyntheticOrderId, type NormalizedSalesRow } from "@/lib/pos/csv/parseSalesCsv";
-import type { NormalizedLaborRow } from "@/lib/pos/csv/parseLaborCsv";
-import type { SalesColumnMapping } from "@/lib/pos/csv/parseSalesCsv";
-import type { LaborColumnMapping } from "@/lib/pos/csv/parseLaborCsv";
+import { toCents } from "@/lib/pos/csv/csvUtils";
+import type { AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
+import type { SalesColumnMapping, SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
+import type { NormalizedLaborRow, LaborColumnMapping, LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
 import { processingFeeTotalsByDate, type NormalizedProcessingFeeRow, type ProcessingFeeColumnMapping } from "@/lib/pos/csv/parseProcessingFeesCsv";
 import { setProcessingFeeCandidateEligibility, upsertProcessingFeeDailyFact } from "@/lib/pos/processingFees";
@@ -22,16 +23,61 @@ type Kind = "sales" | "labor" | "ingredients" | "processing_fees";
 type AnyMapping = SalesColumnMapping | LaborColumnMapping | IngredientCostColumnMapping | ProcessingFeeColumnMapping;
 type SupabaseServerClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
+// Sensible bounds so an unreasonable file fails fast and clearly instead of timing out silently.
+const MAX_SOURCE_ROWS = 50_000;
+const MAX_SALES_GROUPS = 5_000;
+const MAX_LABOR_ROWS = 10_000;
+const GROUP_INSERT_CHUNK_SIZE = 300;
+
+/** Stable, localizable error identifiers — server actions never return English prose for an
+ * owner-facing error; the UI looks each code up in next-intl message files (CsvImport.error*). */
+export type ImportErrorCode =
+  | "not_signed_in"
+  | "row_limit_source"
+  | "row_limit_groups"
+  | "row_limit_shifts"
+  | "no_valid_rows"
+  | "already_processing_duplicate"
+  | "already_running"
+  | "create_job_failed"
+  | "staging_failed"
+  | "job_not_found"
+  | "finalize_failed"
+  | "wage_invalid"
+  | "wage_update_failed"
+  | "still_within_window";
+
+type ActionError = { errorCode: ImportErrorCode; errorParams?: Record<string, string | number>; blockingJobId?: string };
+
+function err(errorCode: ImportErrorCode, errorParams?: Record<string, string | number>, blockingJobId?: string): { ok: false } & ActionError {
+  return { ok: false, errorCode, errorParams, blockingJobId };
+}
+
+export type RejectedRowSummary<R extends string> = { reason: R; count: number };
+type LaborSummaryRejectReason = LaborRejectReason | "employee_creation_failed" | "duplicate_shift_in_file";
+
 export type SalesImportSummary = {
   rowsInFile: number;
   imported: number;
   dateFrom: string | null;
   dateTo: string | null;
   unmatchedItems: { name: string; rows: number }[];
+  rejectedRows: RejectedRowSummary<SalesRejectReason>[];
+  skippedToastConflictDates: string[];
+  duplicate?: boolean;
 };
-export type LaborImportSummary = { rowsInFile: number; imported: number; dateFrom: string | null; dateTo: string | null };
+export type LaborImportSummary = {
+  rowsInFile: number;
+  imported: number;
+  dateFrom: string | null;
+  dateTo: string | null;
+  rejectedRows: RejectedRowSummary<LaborSummaryRejectReason>[];
+  pendingWageReview: { rowId: string; employee: string; clockInLabel: string; clockOutLabel: string | null }[];
+  duplicate?: boolean;
+};
 export type IngredientImportSummary = { rowsInFile: number; imported: number; newIngredients: string[] };
 export type ProcessingFeeImportSummary = { rowsInFile: number; importedDates: number; invalidRows: number; dateFrom: string | null; dateTo: string | null };
+
 const processingFeeRowsSchema = z.array(z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   actualProcessingFeeCents: z.number().int().nonnegative(),
@@ -45,6 +91,19 @@ function dateRange(dates: string[]): { dateFrom: string | null; dateTo: string |
 
 function csvSlug(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+/** Deterministic content fingerprint — same aggregated content always hashes the same, regardless
+ * of row order in the source file, so a rolling-window re-export that overlaps a prior upload is
+ * recognized as the same work rather than reprocessed or double-counted. */
+function contentFingerprint(kind: Kind, payload: unknown): string {
+  return createHash("sha256").update(kind).update(JSON.stringify(payload)).digest("hex");
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
 }
 
 async function context() {
@@ -65,34 +124,68 @@ export async function getSavedMapping(kind: Kind): Promise<AnyMapping | null> {
   return (data?.column_mapping as AnyMapping) ?? null;
 }
 
-export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?: string): Promise<{ ok: boolean; error?: string }> {
+export async function saveMapping(kind: Kind, mapping: AnyMapping, sourceLabel?: string): Promise<{ ok: boolean; errorCode?: ImportErrorCode }> {
   const ctx = await context();
-  if (!ctx) return { ok: false, error: "Sign in first." };
+  if (!ctx) return { ok: false, errorCode: "not_signed_in" };
   const { error } = await ctx.supabase
     .from("csv_import_mappings")
     .upsert({ business_id: ctx.businessId, kind, column_mapping: mapping, source_label: sourceLabel }, { onConflict: "business_id,kind" });
-  return error ? { ok: false, error: error.message } : { ok: true };
+  return error ? { ok: false, errorCode: "staging_failed" } : { ok: true };
 }
 
-/** One synthetic order per item per day (docs/06-integrations.md) — `pos_order_id` is prefixed
- * "csv-" so it's distinguishable from a real register's own order ids; `orders` has no separate
- * provider column (see PROGRESS.md decisions). Idempotent by *content* (date + item), not by the
- * row's position in the file — an owner re-exporting a rolling window (e.g. "last 30 days," every
- * day) will have the same calendar day land at a different row index in each day's file, so a
- * position-based key would silently double-count every day the two uploads overlap on. Keying on
- * date+item alone means the same day's row always upserts in place no matter where in the file it
- * lands or how many overlapping uploads it's been through. */
-export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok: boolean; imported: number; error?: string; summary?: SalesImportSummary }> {
-  const ctx = await context();
-  if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
-  const { supabase, businessId } = ctx;
+async function findDuplicateJob(supabase: SupabaseServerClient, businessId: string, kind: Kind, fingerprint: string) {
+  const { data } = await supabase
+    .from("csv_import_jobs")
+    .select("id, status, summary")
+    .eq("business_id", businessId)
+    .eq("kind", kind)
+    .eq("content_fingerprint", fingerprint)
+    .neq("status", "failed")
+    .maybeSingle();
+  return data;
+}
 
-  const { data: locationRow } = await supabase.from("locations").select("id").eq("business_id", businessId).limit(1).maybeSingle();
+async function findActiveJobId(supabase: SupabaseServerClient, businessId: string, kind: Kind): Promise<string | undefined> {
+  const { data } = await supabase.from("csv_import_jobs").select("id").eq("business_id", businessId).eq("kind", kind).eq("status", "processing").maybeSingle();
+  return data?.id;
+}
+
+/** The DB atomically updates both the job status and its Upload History row. A failed
+ * insert/link/update throws so the caller cannot report successful completion with stale history. */
+async function upsertUploadHistory(
+  supabase: SupabaseServerClient,
+  job: { id: string; business_id: string; upload_id: string | null },
+  uploadKind: "sales_csv" | "labor_csv",
+  status: "done" | "needs_review",
+  summary: SalesImportSummary | LaborImportSummary,
+): Promise<void> {
+  const jobStatus = status === "done" ? "done" : uploadKind === "labor_csv" ? "needs_wage_review" : "needs_review";
+  const { error } = await supabase.rpc("csv_complete_import_with_history", {
+    p_job_id: job.id,
+    p_upload_kind: uploadKind,
+    p_job_status: jobStatus,
+    p_summary: summary,
+  });
+  if (error) throw error;
+}
+
+/** Resolves each distinct item name to a menu_item (lib/pos/catalogMatching.ts, unchanged), run
+ * once over the aggregated (deduped) item set rather than once per source row. Mutates
+ * menu_items/pos_catalog_matches, so callers must only invoke this AFTER the job's active-unique
+ * lock row is already inserted — otherwise a losing concurrent call could still mutate the catalog
+ * even though its own import never started. */
+async function resolveMenuItemIds(
+  supabase: SupabaseServerClient,
+  businessId: string,
+  groups: AggregatedSalesRow[],
+): Promise<{ menuItemIdByName: Map<string, string>; unmatchedItems: { name: string; rows: number }[] }> {
   const { data: menuItems } = await supabase.from("menu_items").select("id, name, size_label, price_cents, category, pos_item_id").eq("business_id", businessId);
   const candidates = (menuItems ?? []).map((item) => ({ id: item.id, name: item.name, sizeLabel: item.size_label, priceCents: item.price_cents, category: item.category, posItemId: item.pos_item_id }));
   const menuItemIdByName = new Map<string, string>();
-  for (const name of [...new Set(rows.map((row) => row.item))]) {
-    const sample = rows.find((row) => row.item === name)!;
+  const unmatchedRowsByName = new Map<string, number>();
+
+  for (const name of [...new Set(groups.map((g) => g.item))]) {
+    const sample = groups.find((g) => g.item === name)!;
     const priceCents = sample.quantity > 0 ? Math.round(sample.netSalesCents / sample.quantity) : null;
     const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
     const match = matchCatalogItem({ posItemId, name, priceCents, category: null }, candidates);
@@ -104,50 +197,183 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
       if (created) menuItemIdByName.set(name.toLowerCase(), created.id);
     } else {
       await supabase.from("pos_catalog_matches").upsert({ business_id: businessId, provider: "csv", pos_item_id: posItemId, imported_name: name, imported_price_cents: priceCents, suggested_menu_item_id: match.candidateId, match_score: match.score, status: "needs_review" }, { onConflict: "business_id,provider,pos_item_id" });
+      const rows = groups.filter((g) => g.item === name).reduce((s, g) => s + g.sourceRowCount, 0);
+      unmatchedRowsByName.set(name, rows);
     }
   }
 
-  let imported = 0;
-  const affectedDates = new Set<string>();
+  return { menuItemIdByName, unmatchedItems: [...unmatchedRowsByName.entries()].map(([name, rows]) => ({ name, rows })) };
+}
+
+/** When a duplicate (identical-content) sales upload matches a `needs_review` job that still has
+ * unmatched items, re-checks whether those item names now resolve (the owner may have matched them
+ * through Menu's import-review screen since the first upload) and, if so, backfills BOTH the
+ * staged group and the already-promoted canonical `order_lines` directly — the previous row-by-row
+ * importer effectively did this for free by fully rewriting order_lines on every re-upload; the new
+ * duplicate short-circuit must not silently remove that recovery path. */
+async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, businessId: string, job: { id: string; summary: unknown }) {
+  const summary = job.summary as SalesImportSummary | null;
+  if (!summary || summary.unmatchedItems.length === 0) return summary;
+
+  const { data: unresolvedGroups } = await supabase.from("csv_sales_import_groups").select("item_name").eq("job_id", job.id).is("menu_item_id", null);
+  const stillUnmatchedNames = [...new Set((unresolvedGroups ?? []).map((g) => g.item_name as string))];
+  if (stillUnmatchedNames.length === 0) return summary;
+
+  const { data: menuItems } = await supabase.from("menu_items").select("id, name, pos_item_id").eq("business_id", businessId);
+  const byPosItemId = new Map((menuItems ?? []).map((m) => [m.pos_item_id, m.id]));
+
+  const { data: csvOrders } = await supabase.from("orders").select("id").eq("business_id", businessId).like("pos_order_id", "csv-%");
+  const csvOrderIds = (csvOrders ?? []).map((o) => o.id);
+
+  const resolvedNames = new Set<string>();
+  for (const name of stillUnmatchedNames) {
+    const posItemId = `csv-item-${csvSlug(name)}`.slice(0, 120);
+    const menuItemId = byPosItemId.get(posItemId);
+    if (!menuItemId) continue;
+    await supabase.from("csv_sales_import_groups").update({ menu_item_id: menuItemId }).eq("job_id", job.id).eq("item_name", name).is("menu_item_id", null);
+    if (csvOrderIds.length > 0) {
+      await supabase.from("order_lines").update({ menu_item_id: menuItemId }).eq("name", name).is("menu_item_id", null).in("order_id", csvOrderIds);
+    }
+    resolvedNames.add(name);
+  }
+  if (resolvedNames.size === 0) return summary;
+
+  const unmatchedItems = summary.unmatchedItems.filter((u) => !resolvedNames.has(u.name));
+  const updatedSummary: SalesImportSummary = { ...summary, unmatchedItems };
+  const finalStatus = unmatchedItems.length === 0 && summary.skippedToastConflictDates.length === 0 && summary.rejectedRows.length === 0 ? "done" : "needs_review";
+  const { data: fullJob } = await supabase.from("csv_import_jobs").select("id, business_id, upload_id").eq("id", job.id).single();
+  if (fullJob) await upsertUploadHistory(supabase, fullJob, "sales_csv", finalStatus, updatedSummary);
+  revalidatePath("/menu");
+  revalidatePath("/money");
+  return updatedSummary;
+}
+
+/** Starts a sales import job: acquires the one-active-job lock, THEN resolves menu items over the
+ * deduped item set (so a losing concurrent call never mutates the catalog), then stages the bounded
+ * group list. Takes already-aggregated groups (lib/pos/csv/aggregateSalesRows.ts, run client-side
+ * BEFORE this call) rather than raw per-selection rows — the point of aggregating client-side is to
+ * keep this request's payload bounded by distinct (date, item, category) groups, not by a
+ * potentially-thousands-of-rows source file; aggregating again server-side from the full row array
+ * would defeat that and risk the request body limit on a large file. Returns a jobId for
+ * `finalizeSalesImportJob` to promote atomically — split from this step so neither call does
+ * unbounded row-by-row DB work. */
+export async function startSalesImportJob(
+  groups: AggregatedSalesRow[],
+  rowsInFile: number,
+  rejectedRows: RejectedRowSummary<SalesRejectReason>[],
+): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: SalesImportSummary } & Partial<ActionError>> {
+  const ctx = await context();
+  if (!ctx) return err("not_signed_in");
+  const { supabase, businessId } = ctx;
+
+  if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
+  if (groups.length > MAX_SALES_GROUPS) return err("row_limit_groups", { count: groups.length, limit: MAX_SALES_GROUPS });
+  if (groups.length === 0) return err("no_valid_rows");
+
+  // Rejected-row content is part of the job's identity: a corrected re-upload that fixes malformed
+  // rows but keeps the same valid sales groups must not be treated as the exact same prior upload.
+  const fingerprint = contentFingerprint("sales", { groups, rowsInFile, rejectedRows });
+  const existingJob = await findDuplicateJob(supabase, businessId, "sales", fingerprint);
+  if (existingJob) {
+    if (existingJob.status === "processing") return err("already_processing_duplicate");
+    const reconciled = existingJob.status === "needs_review" ? await reconcileUnresolvedSalesItems(supabase, businessId, existingJob) : (existingJob.summary as SalesImportSummary | null);
+    return { ok: true, duplicate: true, jobId: existingJob.id, summary: reconciled ? { ...reconciled, duplicate: true } : undefined };
+  }
+
+  const seedSummary: SalesImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, unmatchedItems: [], rejectedRows, skippedToastConflictDates: [] };
+  const { data: job, error: jobError } = await supabase
+    .from("csv_import_jobs")
+    .insert({
+      business_id: businessId,
+      kind: "sales",
+      status: "processing",
+      content_fingerprint: fingerprint,
+      rows_in_file: rowsInFile,
+      group_count: groups.length,
+      summary: seedSummary,
+      ...dateRange(groups.map((g) => g.date)),
+    })
+    .select("id")
+    .single();
+
+  if (jobError || !job) {
+    if (jobError?.code === "23505" && jobError.message.includes("csv_import_jobs_active_unique")) {
+      return err("already_running", undefined, await findActiveJobId(supabase, businessId, "sales"));
+    }
+    if (jobError?.code === "23505") {
+      const retry = await findDuplicateJob(supabase, businessId, "sales", fingerprint);
+      if (retry) return { ok: true, duplicate: true, jobId: retry.id, summary: retry.summary as SalesImportSummary };
+    }
+    return err("create_job_failed");
+  }
+
+  // Only now (lock held) do we touch shared catalog state.
+  const { data: locationRow } = await supabase.from("locations").select("id").eq("business_id", businessId).limit(1).maybeSingle();
+  const { menuItemIdByName, unmatchedItems } = await resolveMenuItemIds(supabase, businessId, groups);
+
+  const stagingRows = groups.map((g) => ({
+    job_id: job.id,
+    business_id: businessId,
+    location_id: locationRow?.id ?? null,
+    business_date: g.date,
+    item_name: g.item,
+    category: g.category,
+    menu_item_id: menuItemIdByName.get(g.item.toLowerCase()) ?? null,
+    quantity: g.quantity,
+    net_sales_cents: g.netSalesCents,
+    processing_fee_cents: g.processingFeeCents,
+    processing_fee_status: g.processingFeeStatus,
+    source_row_count: g.sourceRowCount,
+  }));
+
+  for (const batch of chunk(stagingRows, GROUP_INSERT_CHUNK_SIZE)) {
+    const { error } = await supabase.from("csv_sales_import_groups").insert(batch);
+    if (error) {
+      await supabase.from("csv_import_jobs").update({ status: "failed", error_message: error.message, updated_at: new Date().toISOString() }).eq("id", job.id);
+      return err("staging_failed");
+    }
+  }
+
+  await supabase.from("csv_import_jobs").update({ summary: { ...seedSummary, unmatchedItems }, updated_at: new Date().toISOString() }).eq("id", job.id);
+
+  return { ok: true, jobId: job.id, summary: { ...seedSummary, unmatchedItems } };
+}
+
+/** Promotes every staged group for a job into canonical orders/order_lines in one atomic SQL
+ * transaction (`csv_finalize_sales_job`), then recomputes fees/rollups/alerts for affected dates —
+ * the exact same per-date logic the old row-by-row importer used, just run once the atomic write
+ * is already done rather than interleaved with it. Safe to call again if a prior call failed
+ * partway (status `failed`) or is still `processing`: the RPC only processes groups not yet marked
+ * `promoted`. A `done`/`needs_review` job (already fully finalized) short-circuits to its stored
+ * result instead of re-running — but `failed` never does, so a genuine failure is always retryable. */
+export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boolean; imported?: number; summary?: SalesImportSummary } & Partial<ActionError>> {
+  const ctx = await context();
+  if (!ctx) return err("not_signed_in");
+  const { supabase, businessId } = ctx;
+
+  const { data: job } = await supabase.from("csv_import_jobs").select("*").eq("id", jobId).eq("business_id", businessId).single();
+  if (!job) return { ok: false, imported: 0, errorCode: "job_not_found" };
+  if (job.status === "done" || job.status === "needs_review") {
+    return { ok: true, imported: (job.summary as SalesImportSummary | null)?.imported ?? 0, summary: job.summary as SalesImportSummary };
+  }
+
+  const { error: rpcError } = await supabase.rpc("csv_finalize_sales_job", { p_job_id: jobId });
+  if (rpcError) {
+    await supabase.from("csv_import_jobs").update({ status: "failed", error_message: rpcError.message, updated_at: new Date().toISOString() }).eq("id", jobId);
+    return { ok: false, imported: 0, errorCode: "finalize_failed" };
+  }
+
+  const { data: groupRows } = await supabase.from("csv_sales_import_groups").select("business_date, item_name, menu_item_id, source_row_count, conflict_reason").eq("job_id", jobId);
+  const groups = groupRows ?? [];
+  const promotedGroups = groups.filter((g) => g.conflict_reason !== "toast_covers_date");
+  const affectedDates = [...new Set(promotedGroups.map((g) => g.business_date as string))];
+  const skippedToastConflictDates = [...new Set(groups.filter((g) => g.conflict_reason === "toast_covers_date").map((g) => g.business_date as string))];
+
   const unmatchedCounts = new Map<string, number>();
-  for (const row of rows) {
-    const posOrderId = salesCsvSyntheticOrderId(row);
-    const { data: order, error } = await supabase
-      .from("orders")
-      .upsert(
-        {
-          business_id: businessId,
-          location_id: locationRow?.id ?? null,
-          pos_order_id: posOrderId,
-          closed_at: `${row.date}T12:00:00Z`,
-          business_date: row.date,
-          gross_sales_cents: row.netSalesCents,
-          net_sales_cents: row.netSalesCents,
-          processing_fee_cents: row.processingFeeCents,
-          processing_fee_status: row.processingFeeStatus,
-          processing_fee_provider: "csv",
-        },
-        { onConflict: "business_id,pos_order_id" },
-      )
-      .select("id")
-      .single();
-    if (error || !order) continue;
-
-    const menuItemId = menuItemIdByName.get(row.item.toLowerCase()) ?? null;
-    if (!menuItemId) unmatchedCounts.set(row.item, (unmatchedCounts.get(row.item) ?? 0) + 1);
-
-    await supabase.from("order_lines").delete().eq("order_id", order.id);
-    await supabase.from("order_lines").insert({
-      order_id: order.id,
-      menu_item_id: menuItemId,
-      name: row.item,
-      quantity: row.quantity,
-      net_sales_cents: row.netSalesCents,
-      modifiers: [],
-      voided: false,
-    });
-    affectedDates.add(row.date);
-    imported += 1;
+  for (const g of groups) {
+    if (!g.menu_item_id && g.conflict_reason !== "toast_covers_date") {
+      unmatchedCounts.set(g.item_name as string, (unmatchedCounts.get(g.item_name as string) ?? 0) + (g.source_row_count as number));
+    }
   }
 
   for (const date of affectedDates) {
@@ -169,36 +395,31 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
         sourceReference: `sales-csv:${date}`,
       });
     } else {
-      // The product-mix CSV candidate is only valid when every attributable fee row for that
-      // date is actual. Invalidate this candidate without disturbing a separate manual fee report.
-      await setProcessingFeeCandidateEligibility(supabase, {
-        businessId,
-        businessDate: date,
-        sourceType: "manual_actual",
-        provider: "csv",
-        eligible: false,
-      });
+      await setProcessingFeeCandidateEligibility(supabase, { businessId, businessDate: date, sourceType: "manual_actual", provider: "csv", eligible: false });
     }
-    // The sales file explicitly covers this date. Even a legitimate $0-sales export is known
-    // zero, not missing. Labor-only recomputes do not pass this override.
     await recomputeDailyRollup(supabase, businessId, date, { salesDataStatus: "actual" });
   }
 
-  const unmatchedItems = [...unmatchedCounts.entries()].map(([name, count]) => ({ name, rows: count }));
-  const summary: SalesImportSummary = { rowsInFile: rows.length, imported, ...dateRange([...affectedDates]), unmatchedItems };
+  const unmatchedItems = [...unmatchedCounts.entries()].map(([name, rows]) => ({ name, rows }));
+  const rejectedRows = (job.summary as SalesImportSummary | null)?.rejectedRows ?? [];
+  const summary: SalesImportSummary = {
+    rowsInFile: job.rows_in_file,
+    imported: promotedGroups.length,
+    ...dateRange(affectedDates),
+    unmatchedItems,
+    rejectedRows,
+    skippedToastConflictDates,
+  };
 
-  await supabase.from("uploads").insert({
-    business_id: businessId,
-    kind: "sales_csv",
-    status: unmatchedItems.length > 0 ? "needs_review" : "done",
-    summary,
-  });
+  const hasIssues = unmatchedItems.length > 0 || skippedToastConflictDates.length > 0 || rejectedRows.length > 0;
+  const finalStatus = hasIssues ? "needs_review" : "done";
+  try {
+    await upsertUploadHistory(supabase, job, "sales_csv", finalStatus, summary);
+  } catch {
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", jobId).eq("business_id", businessId);
+    return err("finalize_failed");
+  }
 
-  // Sales still count toward the day's total either way (daily_rollups sums order_lines
-  // regardless of menu_item_id) — but an unmatched item's quantity/cost is invisible to Menu's
-  // per-drink numbers until she adds or renames the item, so this needs her attention even though
-  // nothing technically failed. Deduped by the exact set of unmatched names so a re-upload of the
-  // same (or an overlapping) file doesn't spam a new alert for a problem she hasn't fixed yet.
   if (unmatchedItems.length > 0) {
     const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");
     if (!(await hasOpenAlert(supabase, businessId, "unmatched_sales_items", dedupeKey))) {
@@ -216,7 +437,39 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
   revalidatePath("/menu");
   revalidatePath("/more/alerts");
   revalidatePath("/more/uploads/history");
-  return { ok: true, imported, summary };
+  return { ok: true, imported: promotedGroups.length, summary };
+}
+
+// How long a job must sit untouched before it's considered abandoned rather than genuinely still
+// running. This is a wall-clock floor on `updated_at`, not real liveness evidence (there is no
+// heartbeat/lease — each finalize call only touches the row at the very start and very end of its
+// own work) — widened well past this import's normal bounded runtime (seconds, by design: staging
+// and promotion are both bounded by group/row count, not raw file size) specifically so this can't
+// plausibly race a call that is still actually in flight.
+const STUCK_JOB_THRESHOLD_MS = 30 * 60 * 1000;
+
+/** Cancels an import job that's sat in `processing` untouched for 30+ minutes — the recovery path
+ * when a browser closed or crashed between `startSalesImportJob`/`startLaborImportJob` and the
+ * matching finalize call, which would otherwise hold the one-active-job-per-business+kind lock
+ * forever. Checks `updated_at`, not `created_at` — a prior failed attempt that got partway and was
+ * retried bumps `updated_at`, so this measures time since the row was LAST touched, not since the
+ * job was first created. */
+export async function cancelStuckImportJob(jobId: string): Promise<{ ok: boolean } & Partial<ActionError>> {
+  const ctx = await context();
+  if (!ctx) return err("not_signed_in");
+  const { supabase, businessId } = ctx;
+  const { data, error } = await supabase
+    .from("csv_import_jobs")
+    .update({ status: "failed", error_message: "Cancelled after being stuck in processing.", updated_at: new Date().toISOString() })
+    .eq("id", jobId)
+    .eq("business_id", businessId)
+    .eq("status", "processing")
+    .lt("updated_at", new Date(Date.now() - STUCK_JOB_THRESHOLD_MS).toISOString())
+    .select("id")
+    .maybeSingle();
+  if (error) return err("staging_failed");
+  if (!data) return err("still_within_window");
+  return { ok: true };
 }
 
 /** Resolves each distinct CSV employee name to a real `employees.id`, in three tiers — never
@@ -228,7 +481,9 @@ export async function importSalesRows(rows: NormalizedSalesRow[]): Promise<{ ok:
  *  3. Ambiguous (zero or 2+ name matches, e.g. "Jose" vs. "Jose Sanchez," or two people both named
  *     "Jose"): use `employeeChoices[name]` (an existing id, or `NEW_EMPLOYEE`) from the owner's
  *     review step — same backfill either way, so this name is remembered going forward too.
- * Returns the resolved id per original (non-lowercased) name. */
+ * Returns the resolved id per original (non-lowercased) name; a name missing from the result means
+ * its `employees` insert failed and the caller must treat those rows as rejected, not silently
+ * dropped. */
 async function resolveEmployeeIds(
   supabase: SupabaseServerClient,
   businessId: string,
@@ -272,59 +527,233 @@ async function resolveEmployeeIds(
   return resolved;
 }
 
-export async function importLaborRows(
+/** Starts a labor import job. Each row is a distinct shift (no aggregation, unlike sales) staged
+ * with its resolved employee and — when the file has no wage column, or a row's wage cell is
+ * blank/unparseable — a null `hourlyWageCents`. A null wage never blocks staging the shift's actual
+ * clock-in/out evidence; it only blocks that one row from promoting into payroll-affecting
+ * `timecards` until the owner supplies a rate (`resolveLaborImportWage`). Employee resolution (and
+ * its `employeeChoices` corrections) runs AFTER the job lock is acquired, and any name whose
+ * `employees` row could not be created is tracked as a rejected row instead of silently vanishing
+ * from the staged count. */
+export async function startLaborImportJob(
   rows: NormalizedLaborRow[],
-  employeeChoices: Record<string, string> = {},
-): Promise<{ ok: boolean; imported: number; error?: string; summary?: LaborImportSummary }> {
+  employeeChoices: Record<string, string>,
+  rowsInFile: number,
+  rejectedRows: RejectedRowSummary<LaborRejectReason>[],
+): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: LaborImportSummary } & Partial<ActionError>> {
   const ctx = await context();
-  if (!ctx) return { ok: false, imported: 0, error: "Sign in first." };
+  if (!ctx) return err("not_signed_in");
   const { supabase, businessId } = ctx;
+
+  if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
+  if (rows.length > MAX_LABOR_ROWS) return err("row_limit_shifts", { count: rows.length, limit: MAX_LABOR_ROWS });
+  if (rows.length === 0) return err("no_valid_rows");
+
+  // employeeChoices is part of the identity: correcting an ambiguous name's match and re-uploading
+  // the same rows must not be treated as the same prior (possibly wrong) result. rowsInFile and
+  // rejectedRows are included too — a corrected re-upload that fixes malformed rows but keeps the
+  // same valid shifts must not be treated as the exact same prior upload.
+  const fingerprintPayload = {
+    rows: [...rows].sort((a, b) => (a.employee === b.employee ? a.clockIn.localeCompare(b.clockIn) : a.employee.localeCompare(b.employee))),
+    employeeChoices: Object.fromEntries(Object.entries(employeeChoices).sort(([a], [b]) => a.localeCompare(b))),
+    rowsInFile,
+    rejectedRows,
+  };
+  const fingerprint = contentFingerprint("labor", fingerprintPayload);
+  const existingJob = await findDuplicateJob(supabase, businessId, "labor", fingerprint);
+  if (existingJob) {
+    if (existingJob.status === "processing") return err("already_processing_duplicate");
+    return { ok: true, duplicate: true, jobId: existingJob.id, summary: existingJob.summary ? { ...(existingJob.summary as LaborImportSummary), duplicate: true } : undefined };
+  }
+
+  const seedSummary: LaborImportSummary = { rowsInFile, imported: 0, dateFrom: null, dateTo: null, rejectedRows, pendingWageReview: [] };
+  const { data: job, error: jobError } = await supabase
+    .from("csv_import_jobs")
+    .insert({
+      business_id: businessId,
+      kind: "labor",
+      status: "processing",
+      content_fingerprint: fingerprint,
+      rows_in_file: rowsInFile,
+      group_count: rows.length,
+      summary: seedSummary,
+      ...dateRange(rows.map((r) => r.clockIn.slice(0, 10))),
+    })
+    .select("id")
+    .single();
+
+  if (jobError || !job) {
+    if (jobError?.code === "23505" && jobError.message.includes("csv_import_jobs_active_unique")) {
+      return err("already_running", undefined, await findActiveJobId(supabase, businessId, "labor"));
+    }
+    if (jobError?.code === "23505") {
+      const retry = await findDuplicateJob(supabase, businessId, "labor", fingerprint);
+      if (retry) return { ok: true, duplicate: true, jobId: retry.id, summary: retry.summary as LaborImportSummary };
+    }
+    return err("create_job_failed");
+  }
+
+  // Only now (lock held) do we touch shared employees roster state.
+  const employeeNames = [...new Set(rows.map((r) => r.employee))];
+  const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
+
+  type StagingRow = {
+    job_id: string;
+    business_id: string;
+    employee_id: string;
+    pos_timecard_id: string;
+    clock_in: string;
+    clock_out: string | null;
+    hourly_wage_cents: number | null;
+    promoted: boolean;
+  };
+  // Deduped by (business_id, pos_timecard_id) — the same key the table's unique index and the
+  // upsert's onConflict target use — BEFORE batching. A single `INSERT ... ON CONFLICT DO UPDATE`
+  // cannot affect the same conflict target twice, so two rows sharing an employee+clock-in within
+  // one batch (a duplicated source row, or two overlapping exports) would otherwise fail the whole
+  // batch and the whole job, repeatably, on every retry of the unchanged file. The later occurrence
+  // wins, consistent with this importer's "latest upload corrects the record" convention elsewhere.
+  const stagingByKey = new Map<string, StagingRow>();
+  let employeeResolutionFailures = 0;
+  let duplicateShiftsInFile = 0;
+  for (const row of rows) {
+    const employeeId = employeeIdByName.get(row.employee);
+    if (!employeeId) {
+      employeeResolutionFailures += 1;
+      continue;
+    }
+    const posTimecardId = `csv-${row.employee}-${row.clockIn}`.slice(0, 120);
+    const key = `${businessId}:${posTimecardId}`;
+    if (stagingByKey.has(key)) duplicateShiftsInFile += 1;
+    stagingByKey.set(key, {
+      job_id: job.id,
+      business_id: businessId,
+      employee_id: employeeId,
+      pos_timecard_id: posTimecardId,
+      clock_in: row.clockIn,
+      clock_out: row.clockOut,
+      hourly_wage_cents: row.hourlyWageCents,
+      promoted: false,
+    });
+  }
+  const stagingRows = [...stagingByKey.values()];
+
+  // Upsert, not plain insert: the same shift (business_id, pos_timecard_id) may already be staged
+  // — unresolved — from an earlier upload of an overlapping date range. Re-staging it under this
+  // job (and resetting `promoted` to false) lets the newest upload's clock-out/wage correct it and
+  // makes it eligible for this job's finalize, rather than failing on the old unique constraint.
+  for (const batch of chunk(stagingRows, GROUP_INSERT_CHUNK_SIZE)) {
+    const { error } = await supabase.from("csv_labor_import_rows").upsert(batch, { onConflict: "business_id,pos_timecard_id" });
+    if (error) {
+      await supabase.from("csv_import_jobs").update({ status: "failed", error_message: error.message, updated_at: new Date().toISOString() }).eq("id", job.id);
+      return err("staging_failed");
+    }
+  }
+
+  const finalRejectedRows: RejectedRowSummary<LaborSummaryRejectReason>[] = [...rejectedRows];
+  if (employeeResolutionFailures > 0) finalRejectedRows.push({ reason: "employee_creation_failed", count: employeeResolutionFailures });
+  if (duplicateShiftsInFile > 0) finalRejectedRows.push({ reason: "duplicate_shift_in_file", count: duplicateShiftsInFile });
+  const summary: LaborImportSummary = { ...seedSummary, rejectedRows: finalRejectedRows };
+  await supabase.from("csv_import_jobs").update({ summary, updated_at: new Date().toISOString() }).eq("id", job.id);
+
+  return { ok: true, jobId: job.id, summary };
+}
+
+async function pendingWageReviewRows(supabase: SupabaseServerClient, jobId: string, timezone: string) {
+  const { data } = await supabase
+    .from("csv_labor_import_rows")
+    .select("id, clock_in, clock_out, employees(display_name)")
+    .eq("job_id", jobId)
+    .eq("promoted", false)
+    .is("hourly_wage_cents", null);
+  return (data ?? []).map((r) => ({
+    rowId: r.id as string,
+    employee: ((r as { employees?: { display_name?: string } | null }).employees?.display_name as string) ?? "",
+    // Formatted server-side in the café's own timezone — the owner reviewing this shift cares what
+    // time it was at the café, not what time it was on whatever device/timezone they're using now.
+    clockInLabel: formatInTimeZone(new Date(r.clock_in as string), timezone, "EEE MMM d, h:mm a"),
+    clockOutLabel: r.clock_out ? formatInTimeZone(new Date(r.clock_out as string), timezone, "EEE MMM d, h:mm a") : null,
+  }));
+}
+
+/** Promotes every staged labor row with a known wage into canonical `timecards` in one atomic SQL
+ * transaction (`csv_finalize_labor_job`). Rows with no wage evidence stay staged and are returned
+ * as `pendingWageReview` for the owner to resolve via `resolveLaborImportWage` — never promoted
+ * with a fabricated rate. Runs the RPC whenever the job isn't already fully `done` — covering
+ * `processing` (first finalize), `needs_wage_review` (re-finalize after a wage is resolved, which
+ * previously skipped the RPC entirely and left the corrected row unpromoted) and `failed` (retry) —
+ * only a job already `done` short-circuits. */
+export async function finalizeLaborImportJob(jobId: string): Promise<{ ok: boolean; imported?: number; summary?: LaborImportSummary } & Partial<ActionError>> {
+  const ctx = await context();
+  if (!ctx) return err("not_signed_in");
+  const { supabase, businessId } = ctx;
+
+  const { data: job } = await supabase.from("csv_import_jobs").select("*").eq("id", jobId).eq("business_id", businessId).single();
+  if (!job) return { ok: false, imported: 0, errorCode: "job_not_found" };
+  if (job.status === "done") {
+    return { ok: true, imported: (job.summary as LaborImportSummary | null)?.imported ?? 0, summary: job.summary as LaborImportSummary };
+  }
 
   const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
   const timezone = business?.timezone ?? "America/Los_Angeles";
 
-  const employeeNames = [...new Set(rows.map((r) => r.employee))];
-  const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
-
-  let imported = 0;
-  const affectedDates = new Set<string>();
-  // Keyed on employee + clock-in timestamp alone (both content, not file position) — same
-  // idempotency reasoning as importSalesRows above: a shift's actual start time already
-  // identifies it uniquely, so a rolling-window re-upload upserts the same shift in place
-  // instead of minting a duplicate every time it shifts position in the file.
-  for (const row of rows) {
-    const employeeId = employeeIdByName.get(row.employee);
-    if (!employeeId) continue;
-    const posTimecardId = `csv-${row.employee}-${row.clockIn}`.slice(0, 120);
-    const { error } = await supabase.from("timecards").upsert(
-      {
-        business_id: businessId,
-        employee_id: employeeId,
-        pos_timecard_id: posTimecardId,
-        source_type: "imported",
-        source_provider: "CSV",
-        clock_in: row.clockIn,
-        clock_out: row.clockOut,
-        hourly_wage_cents: row.hourlyWageCents,
-        breaks: [],
-      },
-      { onConflict: "business_id,pos_timecard_id" },
-    );
-    if (!error) {
-      imported += 1;
-      affectedDates.add(formatInTimeZone(new Date(row.clockIn), timezone, "yyyy-MM-dd"));
-    }
+  const { error: rpcError } = await supabase.rpc("csv_finalize_labor_job", { p_job_id: jobId });
+  if (rpcError) {
+    await supabase.from("csv_import_jobs").update({ status: "failed", error_message: rpcError.message, updated_at: new Date().toISOString() }).eq("id", jobId);
+    return { ok: false, imported: 0, errorCode: "finalize_failed" };
   }
 
+  const { data: allRows } = await supabase.from("csv_labor_import_rows").select("clock_in, promoted").eq("job_id", jobId);
+  const promoted = (allRows ?? []).filter((r) => r.promoted);
+  const affectedDates = [...new Set(promoted.map((r) => formatInTimeZone(new Date(r.clock_in as string), timezone, "yyyy-MM-dd")))];
   for (const date of affectedDates) await recomputeDailyRollup(supabase, businessId, date);
 
-  const summary: LaborImportSummary = { rowsInFile: rows.length, imported, ...dateRange([...affectedDates]) };
-  await supabase.from("uploads").insert({ business_id: businessId, kind: "labor_csv", status: "done", summary });
+  const pending = await pendingWageReviewRows(supabase, jobId, timezone);
+  const rejectedRows = (job.summary as LaborImportSummary | null)?.rejectedRows ?? [];
+  const summary: LaborImportSummary = { rowsInFile: job.rows_in_file, imported: promoted.length, ...dateRange(affectedDates), rejectedRows, pendingWageReview: pending };
+
+  const hasIssues = pending.length > 0 || rejectedRows.length > 0;
+  const finalStatus = hasIssues ? "needs_wage_review" : "done";
+  try {
+    await upsertUploadHistory(supabase, job, "labor_csv", finalStatus === "needs_wage_review" ? "needs_review" : "done", summary);
+  } catch {
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", jobId).eq("business_id", businessId);
+    return err("finalize_failed");
+  }
 
   revalidatePath("/");
   revalidatePath("/money");
   revalidatePath("/more/uploads/history");
-  return { ok: true, imported, summary };
+  return { ok: true, imported: promoted.length, summary };
+}
+
+/** The owner supplies a wage for one staged shift that had none, then that single row (and any
+ * other now-resolvable rows in the same job) is promoted into canonical `timecards`. The raw
+ * dollars-and-cents string is parsed and validated here (`toCents`, the same tested parser the CSV
+ * importer itself uses) rather than trusting a client-computed cents value, so the UI is never the
+ * authority for money math. Never infers the rate from the employee's current default wage
+ * automatically — this is always an explicit, reviewed owner action establishing the rate for this
+ * specific historical shift. */
+export async function resolveLaborImportWage(jobId: string, rowId: string, rawWage: string): Promise<{ ok: boolean; summary?: LaborImportSummary } & Partial<ActionError>> {
+  const ctx = await context();
+  if (!ctx) return err("not_signed_in");
+  const { supabase, businessId } = ctx;
+  const hourlyWageCents = toCents(rawWage);
+  if (!Number.isInteger(hourlyWageCents) || hourlyWageCents <= 0) return err("wage_invalid");
+
+  const { data: updated, error: updateError } = await supabase
+    .from("csv_labor_import_rows")
+    .update({ hourly_wage_cents: hourlyWageCents })
+    .eq("id", rowId)
+    .eq("job_id", jobId)
+    .eq("business_id", businessId)
+    .eq("promoted", false)
+    .select("id")
+    .maybeSingle();
+  // An ID from an old review must never succeed if its staged shift was moved or deleted.
+  if (updateError || !updated) return err("wage_update_failed");
+
+  return finalizeLaborImportJob(jobId);
 }
 
 export type IngredientCostImportRow = NormalizedIngredientCostRow & { baseUnitForNew: "g" | "ml" | "each" };
@@ -406,10 +835,6 @@ export async function importIngredientCostRows(rows: IngredientCostImportRow[]):
     const { error } = await supabase.from("ingredient_prices").insert({
       ingredient_id: ingredientId,
       effective_from: row.effectiveFrom,
-      // cents -> micros: itemIngredientCostCents (lib/calc/ingredients.ts) divides quantity ×
-      // micros by 1,000,000 to get cents back, so this must be the inverse of that, not ×10,000
-      // (see lib/calc/ingredients.test.ts and scripts/seed/demoData.mjs's ingredientPriceMicros
-      // for the same ×1,000,000 convention — this line was off by 100x until now).
       cost_per_base_unit_micros: row.costPerUnitCents * 1_000_000,
       source: "invoice",
     });

@@ -1,0 +1,57 @@
+name: CSV Import Reliability Verification
+on:
+  pull_request:
+    paths:
+      - "lib/actions/csvImport.ts"
+      - "lib/pos/csv/**"
+      - "components/uploads/SalesCsvImporter.tsx"
+      - "components/uploads/LaborCsvImporter.tsx"
+      - "app/**/more/uploads/**"
+      - "supabase/migrations/20261017000068_csv_import_reliability.sql"
+      - "scripts/csv-import-rls.sql"
+      - "scripts/csv-import-concurrency.sh"
+      - ".github/workflows/csv-import-reliability-verify.yml"
+  workflow_dispatch:
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Vitest suite
+        run: npm run test
+      - name: TypeScript strict
+        run: npx tsc --noEmit
+      - name: CSV import changed-code lint
+        run: npx eslint lib/actions/csvImport.ts lib/pos/csv/aggregateSalesRows.ts lib/pos/csv/aggregateSalesRows.test.ts lib/pos/csv/parseSalesCsv.ts lib/pos/csv/parseSalesCsv.test.ts lib/pos/csv/parseLaborCsv.ts components/uploads/SalesCsvImporter.tsx components/uploads/LaborCsvImporter.tsx
+      - name: Build
+        run: npm run build
+      - name: Diff whitespace
+        run: git diff --check origin/main...HEAD
+  disposable-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with: { version: latest }
+      - name: Start disposable local Supabase
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Apply ALL migrations to disposable database
+        run: supabase db reset --local --yes
+      - name: Verify RLS, atomic promotion, Toast-conflict guard and wage-review staging
+        run: |
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -v ON_ERROR_STOP=1 -f scripts/csv-import-rls.sql
+      - name: Verify concurrent job-start exclusivity and idempotent re-finalize
+        run: bash scripts/csv-import-concurrency.sh
+      - name: Stop local database
+        if: always()
+        run: supabase stop --no-backup
