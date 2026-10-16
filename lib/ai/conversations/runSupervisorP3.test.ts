@@ -180,6 +180,14 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const output=await run(transport.calls).catch(e=>e);
     expect(output?.reply?.blocks?.some((v:{valueCents?:number})=>v.valueCents===11775))
       .not.toBe(true);
+    // Three P3 model attempts and all three canonical reads remain charged.
+    // A failed simulation cannot restart the legacy path with a fresh budget.
+    expect(transport.calls).toHaveBeenCalledTimes(3);
+    expect(output?.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
+    expect(output?.reply).toMatchObject({status:"unavailable"});
+    expect(output?.reply?.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"SUPERVISOR_TURN_BUDGET"}),
+    ]));
   });
   it("COMPOSE-08: rejects provider failure without executing domain effects",async()=>{
     const transport=makeTransport({providerFailure:true});
