@@ -34,7 +34,7 @@ function dailySums(value:unknown,fields:readonly {
   for(const field of fields)totals.set(field.field,0);
   for(const row of value){
     if(!isObject(row)||typeof row.date!=="string"||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date)||seen.has(row.date))return [];
+      !/^\d{4}-\d{2}-\d{2}$/.test(row.date)||seen.has(row.date))return [];
     seen.add(row.date);
     for(const field of fields){
       const amount=row[field.field];
