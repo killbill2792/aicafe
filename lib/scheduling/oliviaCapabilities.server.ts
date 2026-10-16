@@ -236,6 +236,26 @@ async function readPreview(
   if((best!==null && !bestPresent) ||
      (best===null && p.scenarios.length!==0) ||
      !statusConsistent)return fail(capability,"invalid_record");
+  // PR2 always compares every scenario after index 0 with that baseline.
+  // Deltas are evidence, not independent prices: never invent labor savings
+  // when either underlying total is missing or the claimed delta differs.
+  const delta=(left:number|null,right:number|null)=>
+    left===null || right===null?null:right-left;
+  const baseline=p.scenarios[0];
+  if(p.comparisons.length!==Math.max(0,p.scenarios.length-1))
+    return fail(capability,"invalid_record");
+  for(let i=0;i<p.comparisons.length;i++){
+    const comparison=p.comparisons[i],right=p.scenarios[i+1];
+    if(!baseline || !right ||
+       comparison.left!==baseline.objective ||
+       comparison.right!==right.objective ||
+       comparison.ownerMinutesDifference!==right.ownerMinutes-baseline.ownerMinutes ||
+       comparison.cashWagesDifferenceCents!==delta(
+         baseline.cost.cashWagesCents,right.cost.cashWagesCents) ||
+       comparison.loadedPayrollDifferenceCents!==delta(
+         baseline.cost.loadedPayrollCents,right.cost.loadedPayrollCents))
+      return fail(capability,"invalid_record");
+  }
   // Validate source tokens BEFORE the client's expected token comparisons:
   // invalid provider evidence must never be presented as a stale source.
   if(!z.string().regex(/^[a-f0-9]{64}$/).safeParse(preview.sourceDigest).success ||
