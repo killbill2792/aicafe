@@ -57,12 +57,12 @@ const unavailable=(reason:string):ExpressionOutcome=>({
 });
 type Rat={n:bigint;d:bigint};
 type Item={v:Rat;u:Unit;p:Operand["period"];refs:Set<string>};
-const abs=(v:bigint)=>v<0n?-v:v;
-function rat(n:bigint,d:bigint=1n):Rat{
-  if(d===0n)throw new Error("division_by_zero");
-  if(d<0n){n=-n;d=-d;}
+const abs=(v:bigint)=>v<BigInt("0")?-v:v;
+function rat(n:bigint,d:bigint=BigInt("1")):Rat{
+  if(d===BigInt("0"))throw new Error("division_by_zero");
+  if(d<BigInt("0")){n=-n;d=-d;}
   let a=abs(n),b=d;
-  while(b!==0n){const x=a%b;a=b;b=x;}
+  while(b!==BigInt("0")){const x=a%b;a=b;b=x;}
   return {n:n/a,d:d/a};
 }
 const plus=(a:Rat,b:Rat)=>rat(a.n*b.d+b.n*a.d,a.d*b.d);
@@ -75,10 +75,10 @@ function binaryOp(a:Item,b:Item,op:string):Item{
   if(["add","subtract","scenario_delta","ratio","compare"].includes(op)){
     if(a.u!==b.u||!equalPeriod(a,b))throw new Error("incompatible_units_or_period");
     if(op==="ratio"||op==="compare"){
-      if(op==="ratio"&&b.v.n===0n)throw new Error("division_by_zero");
+      if(op==="ratio"&&b.v.n===BigInt("0"))throw new Error("division_by_zero");
       const difference=a.v.n*b.v.d-b.v.n*a.v.d;
-      return {v:op==="ratio"?times(divided(a.v,b.v),rat(10000n)):
-        rat(difference===0n?0n:difference>0n?1n:-1n),
+      return {v:op==="ratio"?times(divided(a.v,b.v),rat(BigInt("10000"))):
+        rat(difference===BigInt("0")?BigInt("0"):difference>BigInt("0")?BigInt("1"):-BigInt("1")),
       u:op==="ratio"?"ratio_bps":"comparison",p:a.p,refs:mergeRefs(a,b)};
     }
     return {v:op==="add"?plus(a.v,b.v):minus(a.v,b.v),u:a.u,p:a.p,
@@ -87,28 +87,28 @@ function binaryOp(a:Item,b:Item,op:string):Item{
   if(a.p&&b.p&&!equalPeriod(a,b))throw new Error("incompatible_period");
   if(op==="multiply"){
     const lookup:Record<string,[Unit,bigint,bigint]>={
-      "USD_cents_per_item*item":["USD_cents",1n,1n],
-      "item*USD_cents_per_item":["USD_cents",1n,1n],
-      "USD_cents_per_hour*hour":["USD_cents",1n,1n],
-      "hour*USD_cents_per_hour":["USD_cents",1n,1n],
-      "USD_cents_per_hour*minute":["USD_cents",1n,60n],
-      "minute*USD_cents_per_hour":["USD_cents",1n,60n],
-      "USD_cents_per_US_gallon*US_fl_oz":["USD_cents",1n,128n],
-      "US_fl_oz*USD_cents_per_US_gallon":["USD_cents",1n,128n],
-      "USD_cents_per_US_fl_oz*US_fl_oz":["USD_cents",1n,1n],
-      "US_fl_oz*USD_cents_per_US_fl_oz":["USD_cents",1n,1n],
-      "USD_cents*ratio_bps":["USD_cents",1n,10000n],
-      "ratio_bps*USD_cents":["USD_cents",1n,10000n],
+      "USD_cents_per_item*item":["USD_cents",BigInt("1"),BigInt("1")],
+      "item*USD_cents_per_item":["USD_cents",BigInt("1"),BigInt("1")],
+      "USD_cents_per_hour*hour":["USD_cents",BigInt("1"),BigInt("1")],
+      "hour*USD_cents_per_hour":["USD_cents",BigInt("1"),BigInt("1")],
+      "USD_cents_per_hour*minute":["USD_cents",BigInt("1"),BigInt("60")],
+      "minute*USD_cents_per_hour":["USD_cents",BigInt("1"),BigInt("60")],
+      "USD_cents_per_US_gallon*US_fl_oz":["USD_cents",BigInt("1"),BigInt("128")],
+      "US_fl_oz*USD_cents_per_US_gallon":["USD_cents",BigInt("1"),BigInt("128")],
+      "USD_cents_per_US_fl_oz*US_fl_oz":["USD_cents",BigInt("1"),BigInt("1")],
+      "US_fl_oz*USD_cents_per_US_fl_oz":["USD_cents",BigInt("1"),BigInt("1")],
+      "USD_cents*ratio_bps":["USD_cents",BigInt("1"),BigInt("10000")],
+      "ratio_bps*USD_cents":["USD_cents",BigInt("1"),BigInt("10000")],
     };
     const key=a.u+"*"+b.u;
-    const rule=lookup[key]??(a.u==="scalar"?[b.u,1n,1n] as [Unit,bigint,bigint]:
-      b.u==="scalar"?[a.u,1n,1n] as [Unit,bigint,bigint]:null);
+    const rule=lookup[key]??(a.u==="scalar"?[b.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:
+      b.u==="scalar"?[a.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:null);
     if(!rule)throw new Error("unsupported_dimensions");
     return {v:times(times(a.v,b.v),rat(rule[1],rule[2])),
       u:rule[0],p:a.p??b.p,refs:mergeRefs(a,b)};
   }
   if(op==="divide"){
-    if(b.v.n===0n)throw new Error("division_by_zero");
+    if(b.v.n===BigInt("0"))throw new Error("division_by_zero");
     let result:Unit|null=null;
     if(a.u===b.u)result="scalar";
     else if(b.u==="scalar")result=a.u;
@@ -124,10 +124,10 @@ function binaryOp(a:Item,b:Item,op:string):Item{
 function convert(a:Item,to:Unit):Item {
   if(a.u===to)return a;
   const rules:Record<string,[bigint,bigint]>={
-    "minute:hour":[1n,60n],"hour:minute":[60n,1n],
-    "US_gallon:US_fl_oz":[128n,1n],"US_fl_oz:US_gallon":[1n,128n],
-    "USD_cents_per_US_gallon:USD_cents_per_US_fl_oz":[1n,128n],
-    "USD_cents_per_US_fl_oz:USD_cents_per_US_gallon":[128n,1n],
+    "minute:hour":[BigInt("1"),BigInt("60")],"hour:minute":[BigInt("60"),BigInt("1")],
+    "US_gallon:US_fl_oz":[BigInt("128"),BigInt("1")],"US_fl_oz:US_gallon":[BigInt("1"),BigInt("128")],
+    "USD_cents_per_US_gallon:USD_cents_per_US_fl_oz":[BigInt("1"),BigInt("128")],
+    "USD_cents_per_US_fl_oz:USD_cents_per_US_gallon":[BigInt("128"),BigInt("1")],
   };
   const rule=rules[a.u+":"+to];
   if(!rule)throw new Error("unsupported_conversion");
@@ -135,11 +135,12 @@ function convert(a:Item,to:Unit):Item {
 }
 function attributed(message:string,quoted:string):boolean{
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(quoted))return false;
-  return (message.match(/-?\d+(?:\.\d+)?/g)??[]).includes(quoted);
+  const values:string[]=message.match(/-?\d+(?:\.\d+)?/g)??[];
+  return values.some(value=>value===quoted);
 }
 function rounded(v:Rat):number{
-  const amount=(abs(v.n)*2n+v.d)/(v.d*2n);
-  const signed=v.n<0n?-amount:amount;
+  const amount=(abs(v.n)*BigInt("2")+v.d)/(v.d*BigInt("2"));
+  const signed=v.n<BigInt("0")?-amount:amount;
   if(abs(signed)>BigInt(Number.MAX_SAFE_INTEGER))throw new Error("integer_overflow");
   return Number(signed);
 }
@@ -202,7 +203,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }
       if(stack.length>12)throw new Error("stack_budget");
       const top=stack.at(-1);
-      if(top && abs(top.v.n)>1_000_000_000_000_000n*top.v.d)
+      if(top && abs(top.v.n)>BigInt("1000000000000000")*top.v.d)
         throw new Error("numeric_overflow");
     }
     if(stack.length!==1)throw new Error("invalid_stack");
