@@ -126,4 +126,58 @@ describe("Olivia PR3 guarded approval and publishing",()=>{
     expect(await transitionOliviaPlan(payload,"approve"))
       .toEqual({ok:false,error:"source_changed"});
   });
+
+  it("accepts equivalent persisted JSONB breaks regardless of object key ordering",async()=>{
+    const employeeId="60000000-0000-4000-8000-000000000006";
+    const locationId="70000000-0000-4000-8000-000000000007";
+    const shift={
+      employeeId,locationId,startAt:"2026-10-12T17:00:00.000Z",
+      endAt:"2026-10-12T21:00:00.000Z",paidMinutes:210,pinned:false,
+      breaks:[{startAt:"2026-10-12T19:00:00.000Z",
+        endAt:"2026-10-12T19:30:00.000Z",paid:false}],
+    };
+    mocks.revision.mockReset().mockResolvedValueOnce({data:{
+      id:revisionId,revision:2,status:"draft",
+      scenario:{...scenario,shifts:[shift]},source_digest:digest,
+    },error:null});
+    mocks.assignments.mockResolvedValueOnce({data:[{
+      employee_id:employeeId,location_id:locationId,
+      starts_at:"2026-10-12T17:00:00+00:00",
+      ends_at:"2026-10-12T21:00:00+00:00",paid_minutes:210,pinned:false,
+      // PostgreSQL jsonb may return these keys in a different order.
+      breaks:[{paid:false,endAt:"2026-10-12T19:30:00.000Z",
+        startAt:"2026-10-12T19:00:00.000Z"}],
+    }],error:null});
+    expect(await transitionOliviaPlan(payload,"approve")).toEqual({
+      ok:true,status:"approved",revisionId,revision:2,replayed:false,
+    });
+    expect(mocks.validate).toHaveBeenCalledWith(input,[shift]);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it("rejects malformed persisted break data without privileged RPC",async()=>{
+    const employeeId="60000000-0000-4000-8000-000000000006";
+    const locationId="70000000-0000-4000-8000-000000000007";
+    const shift={
+      employeeId,locationId,startAt:"2026-10-12T17:00:00.000Z",
+      endAt:"2026-10-12T21:00:00.000Z",paidMinutes:210,pinned:false,
+      breaks:[{startAt:"2026-10-12T19:00:00.000Z",
+        endAt:"2026-10-12T19:30:00.000Z",paid:false}],
+    };
+    mocks.revision.mockReset().mockResolvedValueOnce({data:{
+      id:revisionId,revision:2,status:"draft",
+      scenario:{...scenario,shifts:[shift]},source_digest:digest,
+    },error:null});
+    mocks.assignments.mockResolvedValueOnce({data:[{
+      employee_id:employeeId,location_id:locationId,
+      starts_at:"2026-10-12T17:00:00+00:00",
+      ends_at:"2026-10-12T21:00:00+00:00",paid_minutes:210,pinned:false,
+      breaks:[{paid:"false",endAt:"2026-10-12T19:30:00.000Z",
+        startAt:"2026-10-12T19:00:00.000Z"}],
+    }],error:null});
+    expect(await transitionOliviaPlan(payload,"publish"))
+      .toEqual({ok:false,error:"not_approved"});
+    expect(await transitionOliviaPlan(payload,"approve"))
+      .toEqual({ok:false,error:"invalid_shifts"});
+    expect(mocks.admin).not.toHaveBeenCalled();
+  });
 });
