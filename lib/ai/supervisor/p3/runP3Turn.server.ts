@@ -9,6 +9,7 @@ import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { projectP1Evidence } from "./operandProjection.server";
+import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 
@@ -156,7 +157,12 @@ export async function tryP3SupervisorReadOnly(input:{
     apiKey:input.apiKey,model:input.model,transport:input.transport,
   });
   if(!shadow.evidence.length)return null;
-  const projection=projectP1Evidence(shadow.evidence,identity.businessId,input.text);
+  const invokedReads=shadow.evidence.filter(x=>x.capabilityId&&x.result!==null).length;
+  const expanded=await enrichResolvedProductEconomics({
+    goal:input.text,scope,registry:capabilityRegistry,evidence:shadow.evidence,
+    remainingReads:Math.max(0,4-invokedReads),
+  });
+  const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text);
   // Validated pure owner-hypothetical arithmetic may need no café source.
   // It must declare no_external_sources; it can never be labeled observed.
   const clauses=shadow.evidence.map(x=>x.clause);
@@ -218,7 +224,7 @@ export async function tryP3SupervisorReadOnly(input:{
   return {kind:"p3_read_only_conditional",executedEffects:0,
     reply:{intent:"profitability",status:"partial",evidence:refs,blocks},
     usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
-      toolCallCount:shadow.evidence.filter(x=>x.result!==null).length,
+      toolCallCount:invokedReads+expanded.readCount,
       inputTokens:shadow.usage.inputTokens+completion.tokens.input,
       outputTokens:shadow.usage.outputTokens+completion.tokens.output},
   };
