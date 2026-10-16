@@ -9,7 +9,8 @@ import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { projectP1Evidence } from "./operandProjection.server";
-import { evaluateExpression,planSchema,type ExpressionOutcome } from "./expression";
+import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
+import { simulationOutputSchema } from "./simulateRegistration.server";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
 const coverage=z.strictObject({
@@ -147,8 +148,11 @@ export async function tryP3SupervisorReadOnly(input:{
   if(!identity.businessId||!input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
+  const capabilityRegistry=createP3ReadRegistry();
+  if(!capabilityRegistry.discoverSimulations(scope).some(x=>x.id===EXPRESSION_ID))
+    return null;
   const shadow=await runP2ShadowWithScope({
-    goal:input.text,scope,registry:createP3ReadRegistry(),
+    goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
   });
   if(!shadow.evidence.length)return null;
@@ -171,12 +175,13 @@ export async function tryP3SupervisorReadOnly(input:{
     let raw:unknown;
     try{raw=JSON.parse(item.planJson);}catch{return null;}
     if(!planSchema.safeParse(raw).success)return null;
-    const value=evaluateExpression(raw,{
+    const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
       businessId:identity.businessId,locationId:null,ownerMessage:input.text,
       currency:"USD",bindings:projection.bindings,operands:projection.operands,
     });
-    if(value.status==="unavailable")return null;
-    outcomes.push(value);
+    const checked=simulationOutputSchema.safeParse(simulated);
+    if(!checked.success||checked.data.status==="unavailable")return null;
+    outcomes.push(checked.data as ExpressionOutcome);
   }
   const locale=labels[input.locale],blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
