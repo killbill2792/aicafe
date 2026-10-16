@@ -104,7 +104,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
           aria-label={t(side==="startAt"?"shiftStart":"shiftEnd")}
           value={oliviaLocalBoundaryValue(shift[side],locations[shift.locationId]??"UTC")}
           onChange={e=>setLocalTime(index,side,e.target.value)}
-          className="min-h-12 rounded-lg border border-line bg-card px-3"/>
+          className="min-h-12 min-w-0 w-full rounded-lg border border-line bg-card px-3"/>
       </div>)}
       <label className="flex items-center gap-3">
         <input type="checkbox" disabled={disabled || locked(shift) || shift.breaks.length>1 || shift.breaks.some(b=>b.paid)}
