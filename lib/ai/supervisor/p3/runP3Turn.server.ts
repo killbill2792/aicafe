@@ -238,7 +238,7 @@ export async function tryP3SupervisorReadOnly(input:{
     if(!plan.success)return null;
     const pure=plan.data.purpose==="no_external_sources";
     // A source-free expression may not follow canonical café reads.
-    if(pure&&reported.toolCallCount>0)return null;
+    if(pure&&(invokedReads+expanded.readCount)>0)return null;
     // All registered simulations consume the same five-tool turn budget.
     if(reported.toolCallCount>=5)return null;
     reported.toolCallCount++;
