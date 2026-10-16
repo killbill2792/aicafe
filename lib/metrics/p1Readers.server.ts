@@ -221,12 +221,12 @@ export async function executeP1Authorized(
       selectorContractId:selected.selectorContractId,selectorContractVersion:1,
       purpose:args.purpose,asOf:identity.asOf,timezone:identity.timezone,
       sourceRevision:null,
-      observedContentHash:fingerprintP1Observation({
-        businessId:identity.businessId??"",readerId:readers[id],
+      ...(identity.businessId?{observedContentHash:fingerprintP1Observation({
+        businessId:identity.businessId,readerId:readers[id],
         selectorId:selected.selectorContractId,
         selectorVersion:selected.selectorContractVersion,purpose:args.purpose,
         query:args,value:known.value,quality:q.data,
-      }),
+      })}:{}),
     },
     freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
     completeness:"partial",
