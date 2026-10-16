@@ -52,7 +52,7 @@ describe("Phase 4 privileged reply validation", () => {
       ...pure, blocks: [{type: "text", text: "Unverified financial claim"}],
     })).toThrow("requires trusted evidence");
     expect(() => validateGroundedReply({
-      ...pure, intent: "sales",
+      ...pure, intent: "unknown",
     })).toThrow("requires trusted evidence");
     expect(() => validateGroundedReply({
       ...pure, blocks: [...pure.blocks, {type: "metric",label: "Profit",
