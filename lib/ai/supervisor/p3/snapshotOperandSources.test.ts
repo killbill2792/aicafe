@@ -194,6 +194,20 @@ describe("authoritative P3 source projection",()=>{
     expect(labor.missingInputs).toContain(
       "labor_attendance_and_wage_coverage_not_proven");
   });
+  it("COMPOSE-05: active Toast pilot never promotes unreviewed daily sales to actual",()=>{
+    const day={business_date:asOf,net_sales_cents:9000,orders_count:5,
+      drinks_count:5,ingredients_cents:0,staff_wages_cents:0,
+      staff_tax_cents:0,card_fees_cents:0,sales_data_status:"actual",
+      staff_tax_status:"estimated"} as const;
+    const selected=snapshot({sources:{...sources,dailyRollups:[day]}});
+    try{
+      vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+      const out=extractAtomicSnapshot("sales.daily",selected,
+        {period:{from:asOf,to:asOf}},asOf);
+      expect(out).toMatchObject({leaves:[],
+        missingInputs:["toast_independent_sales_review_not_in_snapshot"]});
+    }finally{vi.unstubAllEnvs();}
+  });
   it("COMPOSE-04: unrelated old rollups truncated do not invalidate covered recent dates",()=>{
     const start=new Date("2026-10-15T12:00:00Z").getTime();
     const daily=Array.from({length:367},(_,i)=>({
