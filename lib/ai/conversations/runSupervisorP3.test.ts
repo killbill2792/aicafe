@@ -3,6 +3,7 @@ vi.mock("server-only",()=>({}));
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { runSupervisorTurn } from "./runSupervisorTurn.server";
 import { EXPRESSION_ID } from "@/lib/ai/supervisor/p3/expression";
+import { verifiedReaderPeriods } from "@/lib/ai/supervisor/p3/runP3Turn.server";
 import { readers,type SupportedId } from "@/lib/metrics/p1Catalog";
 
 const identity={businessId:"cafe-test",asOf:"2026-10-15",
@@ -484,6 +485,22 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
   });
 
 
+  it("refuses a reader period that differs from the exact owner date window",()=>{
+    const chosen=(from:string,to:string,clause:string)=>[{
+      clause,result:{query:{period:{from,to}}},
+    }];
+    const requested="Compare costs from 2026-10-01 to 2026-10-07";
+    expect(verifiedReaderPeriods(chosen("2026-10-08","2026-10-14",requested),
+      requested,identity.asOf)).toBe(false);
+    expect(verifiedReaderPeriods(chosen("2026-10-01","2026-10-07",requested),
+      requested,identity.asOf)).toBe(true);
+    expect(verifiedReaderPeriods(chosen("2026-10-01","2026-10-07","labor on those dates"),
+      requested+" and labor on those dates",identity.asOf)).toBe(true);
+    expect(verifiedReaderPeriods(chosen("2026-10-10","2026-10-11","Costs last week"),
+      "Costs last week",identity.asOf)).toBe(false);
+    expect(verifiedReaderPeriods(chosen("2026-10-14","2026-10-14","Sales yesterday"),
+      "Sales yesterday","2026-10-15")).toBe(true);
+  });
   /**
    * Blind extension acceptance: new wording, item identities, units, dates and
    * combinations that were not part of the original latte/milk/wage fixtures.
@@ -502,7 +519,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     {name:"pistachio muffin",id:"muffin-900",prior:46,added:19},
   ])("general pipeline composes unseen sold-item count for $name",async(fixture)=>{
     const question="Increase the recorded count for "+fixture.name+
-      "s by "+fixture.added+" items";
+      "s from 2026-10-10 to 2026-10-11 by "+fixture.added+" items";
     const read={id:"sales.item_units" as SupportedId,version:1,purpose:"covered_item_sales",period};
     p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
       const input=raw as typeof read;
@@ -553,7 +570,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(JSON.stringify(messages[2])).not.toContain('"value":'+fixture.prior);
   });
   it("composes unseen sales, payment fees and loaded labor across a shared date range",async()=>{
-    const salesClause="Take net sales less card fees for October 10 to 11";
+    const salesClause="Take net sales less card fees from 2026-10-10 to 2026-10-11";
     const laborClause="subtract loaded staff cost for those dates";
     const question=salesClause+" and "+laborClause;
     const salesInput={id:"sales.daily" as SupportedId,version:1,
@@ -615,7 +632,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(p1Reads).toHaveBeenCalledTimes(2);
   });
   it("explains genuinely missing numeric inputs without inventing business totals",async()=>{
-    const question="Increase recorded cinnamon rolls by 37 items";
+    const question="Increase recorded cinnamon rolls from 2026-10-10 to 2026-10-11 by 37 items";
     const read={id:"sales.item_units" as SupportedId,version:1,
       purpose:"covered_item_sales",period};
     p1Reads.mockImplementation(async()=>p1Envelope(read,[]));
