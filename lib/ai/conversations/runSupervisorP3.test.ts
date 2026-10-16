@@ -395,6 +395,15 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(inconsistent.choices).toHaveLength(0);
     expect(inconsistent.missing).toContain(
       "conflicting_source_snapshot:labor.employee_wages");
+    // Equal values are not a stable snapshot when completeness or staleness changed.
+    const differentQuality={...sameResult,
+      quality:{...sameResult.quality,staleInputs:["wage_changed"]}};
+    const changedQuality=projectP1Evidence([
+      asEvidence(sameResult,clauses[0]),
+      asEvidence(differentQuality,clauses[1]),
+    ],identity.businessId,clauses.join(" and "));
+    expect(changedQuality.operands).toHaveLength(0);
+    expect(changedQuality.choices).toHaveLength(0);
     // A third read equal to the first must not rehabilitate the conflicted leaf.
     const threeReads=projectP1Evidence([
       asEvidence(sameResult,clauses[0]),
