@@ -111,7 +111,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     vi.stubEnv("SUPERVISOR_P3_COMPOSITION_ENABLED","true");
     vi.stubEnv("SUPERVISOR_P3_ALLOWED_BUSINESS_IDS",identity.businessId);
     atomicRead.mockReset().mockResolvedValue({
-      status:"unavailable",reason:"unauthorized_or_unconfigured",
+      status:"unavailable",reason:"rpc_not_installed",
     });
     p1Auth.mockReset().mockResolvedValue({identity,tools:{} as BusinessScopedCafeTools});
     p1Reads.mockReset().mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
@@ -123,6 +123,17 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
+    atomicRead.mockResolvedValueOnce({
+      status:"unavailable",reason:"unauthorized_or_unconfigured",
+    });
+    const provider=makeTransport();
+    const output=await run(provider.calls).catch(e=>e);
+    expect(atomicRead).toHaveBeenCalledTimes(1);
+    expect(provider.calls.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(output?.reply?.blocks?.some((b:{type:string})=>b.type==="metric"))
+      .not.toBe(true);
+  });
   it("COMPOSE-05: invalid authoritative RPC payload never downgrades to unversioned numerics",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"invalid_source_snapshot",
