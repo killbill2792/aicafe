@@ -281,7 +281,8 @@ export async function tryP3SupervisorReadOnly(input:{
         outcome.sourceHandles.includes(o.handle)),
     });
   }
-  if(!outcomes.length && !unsupportedGoals)return null;
+  // A warning without any evaluated expression is not a partial calculation.
+  if(!outcomes.length)return null;
   const locale=labels[input.locale],blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
   ];
