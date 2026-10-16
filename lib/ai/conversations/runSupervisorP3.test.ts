@@ -2,6 +2,7 @@ import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { runSupervisorTurn } from "./runSupervisorTurn.server";
+import { validateGroundedReply } from "./replyValidation";
 import { EXPRESSION_ID } from "@/lib/ai/supervisor/p3/expression";
 import { verifiedReaderPeriods } from "@/lib/ai/supervisor/p3/runP3Turn.server";
 import { readers,type SupportedId } from "@/lib/metrics/p1Catalog";
@@ -292,6 +293,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const outcome=await run(provider,question);
     expect(outcome.reply.status).toBe("partial");
     expect(outcome.reply.evidence).toEqual([]);
+    // This is the same mandatory gate used by persistGroundedSupervisorReply.
+    expect(validateGroundedReply(outcome.reply)).toEqual(outcome.reply);
     expect(p1Reads).not.toHaveBeenCalled();
     expect(outcome.usage.toolCallCount).toBe(1);
     expect(outcome.reply.blocks.some(block=>block.type==="metric")).toBe(false);
