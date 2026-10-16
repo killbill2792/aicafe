@@ -12,7 +12,7 @@ const auditSchema=z.strictObject({
 const choice=z.strictObject({
   clause,capabilityId:z.string().max(120).nullable(),
   inputJson:z.string().max(3000).nullable(),
-  reason:z.enum(["missing_input","unsupported","no_data"]).nullable(),
+  reason:z.enum(["missing_input","unsupported","no_data","source_free"]).nullable(),
 });
 const planSchema=z.strictObject({
   complete:z.boolean(),choices:z.array(choice).min(1).max(5),
@@ -35,7 +35,7 @@ export const P2_PLAN_SCHEMA={
       properties:{
         clause:{type:"string"},capabilityId:{type:["string","null"]},
         inputJson:{type:["string","null"]},
-        reason:{type:["string","null"],enum:["missing_input","unsupported","no_data",null]},
+        reason:{type:["string","null"],enum:["missing_input","unsupported","no_data","source_free",null]},
       },
     }},
   },
@@ -179,6 +179,7 @@ async function requestStructured<T>(params:{
 export async function runP2ShadowWithScope(params:{
   goal:string;scope:TrustedReadScope;transport:Transport;registry:ShadowRegistry;
   apiKey:string;model:string;
+  allowSourceFree?:boolean;history?:readonly {role:"owner"|"assistant";text:string}[];
 }):Promise<ShadowOutcome> {
   const usage:Usage={model:params.model,modelCalls:0,inputTokens:0,outputTokens:0};
   const validGoal=z.string().trim().min(3).max(3000).safeParse(params.goal);
@@ -192,6 +193,7 @@ export async function runP2ShadowWithScope(params:{
       "Split the owner's exact goal into EVERY independent semantic request, including unsupported work.",
       "Do not combine independent goals joined by and/or/y/و into one clause.",
       "Preserve standalone conjunctions outside individually addressable clauses.",
+      "Use recent conversation context only to understand references, never to replace the current message.",
       "Return each clause as an EXACT CONTIGUOUS SUBSTRING of the original question,",
       "without paraphrasing, invented facts, substitutions, or merging distinct goals.",
       "Include all material outcome predicates, limitations and restrictions in clauses.",
@@ -199,7 +201,9 @@ export async function runP2ShadowWithScope(params:{
       "Set complete=false if you cannot preserve all clauses in at most five elements.",
       "Do not make any claim about café records or approved actions.",
     ].join(" "),
-    input:{goal},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
+    input:{goal,recentConversationContext:(params.history??[]).slice(-6).map(h=>({
+      role:h.role,text:h.text.slice(0,450),
+    }))},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
   if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses))
@@ -219,8 +223,15 @@ export async function runP2ShadowWithScope(params:{
       "For unsupported changes, approvals, purchases, publish or payroll: choose null and unsupported.",
       "Do not emit SQL, businessId, ownerId, effects, write requests or summaries.",
       "Selection is NOT evidence of a completed read or business outcome.",
+      ...(params.allowSourceFree?[ 
+        "For independently owner-stated arithmetic with no cafe records needed,",
+        "select null capability, null inputJson and reason source_free; never read cafe data.",
+      ]:[]),
     ].join(" "),
     input:{originalGoal:goal,localDate:params.scope.identity.asOf,
+      recentConversationContext:(params.history??[]).slice(-6).map(h=>({
+        role:h.role,text:h.text.slice(0,450),
+      })),
       timezone:params.scope.identity.timezone,clauses:audit.clauses,
       capabilities:discover.map(def=>({
       id:def.id,mode:def.mode,purpose:def.purpose,
@@ -239,8 +250,15 @@ export async function runP2ShadowWithScope(params:{
   for(const selected of plan.choices){
     const id=selected.capabilityId;
     if(!id) {
+      const sourceFree=selected.reason==="source_free" && params.allowSourceFree;
       evidence.push({clause:selected.clause,capabilityId:null,status:"unavailable",
-        result:null,reason:selected.reason??"unsupported"});
+        result:null,reason:sourceFree?"source_free":
+          selected.reason==="source_free"?"unsupported":selected.reason??"unsupported"});
+      continue;
+    }
+    if(selected.reason==="source_free"){
+      evidence.push({clause:selected.clause,capabilityId:id,status:"unavailable",
+        result:null,reason:"invalid_request"});
       continue;
     }
     if(!supportedIds.has(id)){
