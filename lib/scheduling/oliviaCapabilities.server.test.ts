@@ -505,6 +505,37 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
+    const invalidShifts=[
+      {...shift,startAt:to,endAt:iso},
+      {...shift,startAt:iso,endAt:iso},
+      {...shift,paidMinutes:300},
+      {...shift,breaks:[{startAt:to,endAt:iso,paid:false}]},
+      {...shift,breaks:[{startAt:"2026-10-12T08:00:00.000Z",
+        endAt:"2026-10-12T09:15:00.000Z",paid:false}]},
+      {...shift,breaks:[{startAt:"2026-10-12T10:00:00.000Z",
+        endAt:"2026-10-12T11:00:00.000Z",paid:false},{
+        startAt:"2026-10-12T10:30:00.000Z",
+        endAt:"2026-10-12T11:30:00.000Z",paid:false}]},
+    ];
+    for(const bad of invalidShifts){
+      const invalidScenario={...scenario,shifts:[bad]};
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[invalidScenario],best:invalidScenario},
+        notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+    const badScenario={...scenario,gaps:[{...scenario.gaps[0],startAt:to,endAt:iso}]};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[badScenario],best:badScenario},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("fails closed on malformed read payloads and unavailable provider without leaking internals",async()=>{
     m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
       scenarios:[{...scenario,cost:{...scenario.cost,cashWagesCents:-1}}]},
