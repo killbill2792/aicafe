@@ -115,6 +115,19 @@ export const oliviaPlanSchema=z.object({
   proof:z.enum(["complete_candidate_solution","required_slot_has_no_eligible_worker",
     "search_budget_exhausted","candidate_constraints_unresolved"]),
 }).strict();
+/** PR2's read-only planner may produce more than PR3 can persist. Validate
+ * every field/element before classifying a valid overflow as capacity; only
+ * the original bounded schemas are permitted for a successful capability.
+ */
+export const oliviaOverflowScenarioSchema=oliviaScenarioSchema.extend({
+  shifts:z.array(oliviaShiftSchema),
+  gaps:z.array(oliviaScenarioSchema.shape.gaps.element),
+});
+export const oliviaOverflowPlanSchema=oliviaPlanSchema.extend({
+  scenarios:z.array(oliviaOverflowScenarioSchema).max(3),
+  best:oliviaOverflowScenarioSchema.nullable(),
+  warnings:z.array(z.string().max(1000)),
+});
 export const oliviaRevisionStatusSchema=z.enum(["draft","approved","published","superseded"]);
 const source=z.object({
   owner:z.literal("olivia"),businessId:oliviaUuid,
