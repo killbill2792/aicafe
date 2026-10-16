@@ -214,6 +214,11 @@ async function readPreview(
     }
     return fromDomainError(capability,preview.error);
   }
+  // PR3 never returns a successful plan with unresolved setup blockers.
+  // A contradictory success must fail closed, rather than implying that
+  // missing locations, coverage or limits are already acceptable.
+  if(!Array.isArray(preview.blockers) || preview.blockers.length!==0)
+    return fail(capability,"invalid_record");
   // PR2 can produce up to 2,000 provisional shifts, whereas PR3's
   // persisted draft limit is 200. A larger valid preview is a known
   // capability-capacity case, not corrupt data.
