@@ -327,7 +327,8 @@ export async function runSupervisorTurn(input: {
     try{
       const composed=await tryP3SupervisorReadOnly({
         text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
-        apiKey:key,model,transport:trackedTransport,onUsage:recordUsage,
+        apiKey:key,model,history:input.history.slice(-6),
+        transport:trackedTransport,onUsage:recordUsage,
       });
       if(composed){
         recordUsage(composed.usage);
