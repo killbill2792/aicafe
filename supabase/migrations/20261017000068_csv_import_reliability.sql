@@ -68,6 +68,47 @@ alter table locations add constraint locations_id_business_unique unique (id, bu
 alter table menu_items add constraint menu_items_id_business_unique unique (id, business_id);
 alter table employees add constraint employees_id_business_unique unique (id, business_id);
 
+-- One transactional completion step: the job status, canonical Upload History entry,
+-- and job-to-upload link must commit together or all roll back. Never report an import
+-- complete when a history write failed or leave an orphan history entry on link failure.
+create function csv_complete_import_with_history(
+  p_job_id uuid, p_upload_kind text, p_job_status text, p_summary jsonb
+) returns void language plpgsql security invoker set search_path = public as $
+declare
+  v_job csv_import_jobs%rowtype;
+  v_upload_id uuid;
+  v_history_status text;
+begin
+  select * into v_job from csv_import_jobs where id = p_job_id for update;
+  if not found then raise exception 'Import job is missing or unauthorized'; end if;
+  if (v_job.kind = 'sales' and p_upload_kind <> 'sales_csv')
+     or (v_job.kind = 'labor' and p_upload_kind <> 'labor_csv') then
+    raise exception 'Import history kind does not match job';
+  end if;
+  if p_job_status not in ('done', 'needs_review', 'needs_wage_review')
+     or (v_job.kind = 'sales' and p_job_status = 'needs_wage_review')
+     or (v_job.kind = 'labor' and p_job_status = 'needs_review') then
+    raise exception 'Invalid import completion state';
+  end if;
+  v_history_status := case when p_job_status = 'done' then 'done' else 'needs_review' end;
+  if v_job.upload_id is not null then
+    update uploads set status = v_history_status, summary = p_summary
+      where id = v_job.upload_id and business_id = v_job.business_id;
+    if not found then raise exception 'Import history update failed'; end if;
+  else
+    insert into uploads(business_id, kind, status, summary)
+      values (v_job.business_id, p_upload_kind, v_history_status, p_summary)
+      returning id into v_upload_id;
+  end if;
+  update csv_import_jobs
+    set upload_id = coalesce(v_job.upload_id, v_upload_id),
+        status = p_job_status, summary = p_summary, updated_at = now()
+    where id = p_job_id and business_id = v_job.business_id;
+  if not found then raise exception 'Import job completion update failed'; end if;
+end;
+$;
+grant execute on function csv_complete_import_with_history(uuid,text,text,jsonb) to authenticated;
+
 -- Staged, aggregated sales groups for one job. menu_item_id is resolved once per distinct item
 -- (lib/pos/catalogMatching.ts) before staging, not re-resolved per promotion call.
 create table csv_sales_import_groups (
