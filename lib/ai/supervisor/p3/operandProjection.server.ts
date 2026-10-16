@@ -61,7 +61,7 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
 /** Exact recognized source, purpose and reader binding precede every projection. */
 export function projectP1Evidence(
   evidence:readonly ShadowEvidence[],businessId:string,ownerGoal:string,
-  locationId:string|null=null,
+  locationId:string|null=null,ownerHistory:readonly string[]=[],
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
@@ -100,14 +100,20 @@ export function projectP1Evidence(
         canonicalReaderId:readers[key],sourceIds:[key],
         purposes:[...purposePolicies[key]],sensitivity:key.startsWith("labor.")?"staff":
           key.startsWith("money.")||key.startsWith("sales.")?"financial":"normal"});
+    const named=valuesForKey.map(v=>({id:v.key,name:v.name}));
+    const plural=key.startsWith("menu.")||key==="supplies.quotes";
+    const namedCurrent=new Set(named.filter(v=>
+      isWholeNamedEntity(ownerQuestion,v.name,named,plural)).map(v=>v.id));
+    const previousOwnerWords=ownerHistory.slice(-3).join(" ");
+    const namedHistory=new Set(named.filter(v=>
+      isWholeNamedEntity(previousOwnerWords,v.name,named,plural)).map(v=>v.id));
+    const uniqueHistorical=namedCurrent.size===0&&namedHistory.size===1;
     for(const leaf of valuesForKey){
       if(operands.length>=12)break;
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
-      if(leaf.field!=="value"&&
-        !isWholeNamedEntity(ownerQuestion,leaf.name,
-          valuesForKey.map(v=>({id:v.key,name:v.name})),
-          key.startsWith("menu.")||key==="supplies.quotes"))
+      if(leaf.field!=="value"&&!namedCurrent.has(leaf.key)&&
+        !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
       if(operands.some(o=>o.handle===handle))continue;
