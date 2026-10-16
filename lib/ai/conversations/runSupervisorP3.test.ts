@@ -192,6 +192,23 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       expect.objectContaining({type:"warning",code:"SUPERVISOR_TURN_BUDGET"}),
     ]));
   });
+  it("never exceeds the three-call model budget on a legacy retry after P3",async()=>{
+    const question="How much would this cost?";
+    let calls=0;
+    const transport=vi.fn(async()=>{
+      calls++;
+      if(calls===1)return response({complete:true,clauses:[question]});
+      if(calls===2)return response({complete:false,choices:[]});
+      if(calls===3)return new Response(JSON.stringify({status:"incomplete",
+        model:"gpt-6-luna",usage:{input_tokens:10,output_tokens:2},output:[]}),
+        {status:200});
+      throw Error("Budget violation: forbidden fourth model attempt");
+    });
+    const output=await run(transport,question).catch(error=>error);
+    expect(output).not.toHaveProperty("reply");
+    expect(transport).toHaveBeenCalledTimes(3);
+    expect(p1Reads).not.toHaveBeenCalled();
+  });
   it("COMPOSE-08: rejects provider failure without executing domain effects",async()=>{
     const transport=makeTransport({providerFailure:true});
     const output=await run(transport.calls).catch(e=>e);
