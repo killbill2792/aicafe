@@ -307,6 +307,48 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
     expect(p1Reads).toHaveBeenCalledTimes(2);
   });
+  it("does not publish partial wage arithmetic as a complete loaded-labor scenario after the required employer read fails",async()=>{
+    const clause="Sophie works 45 extra paid minutes including employer payroll burden";
+    const burdenInput={id:"labor.payroll_burden",version:1,
+      purpose:"authorized_owner_employer_cost_review"};
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>
+      (raw as {id:string}).id==="labor.employee_wages"?
+        result(wageInput,workers):
+        {status:"unavailable",value:null,reason:"unavailable_source"});
+    let step=0;
+    const provider=vi.fn(async()=>{
+      const phase=step++;
+      if(phase===0)return response({complete:true,clauses:[clause]});
+      if(phase===1)return response({complete:true,choices:[
+        {clause,capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+        {clause,capabilityId:"p3.labor.payroll_burden.v1",
+          inputJson:JSON.stringify(burdenInput),reason:null},
+      ]});
+      // Deliberately malicious/incomplete plan ignores the failed burden read.
+      return response({complete:true,plans:[{
+        coveredClauses:[clause],reason:null,planJson:JSON.stringify({
+          capabilityId:EXPRESSION_ID,version:1,
+          purpose:"preauthorized_operands",
+          description:"Wages dishonestly presented as loaded pay",
+          nodes:[
+            {op:"source",handle:"labor.employee_wages:sophie:defaultHourlyWageCents"},
+            {op:"hypothetical",label:"paid minutes",quotedNumber:"45",
+              value:45,unit:"minute"},
+            {op:"multiply"},
+          ],
+        }),
+      }]});
+    });
+    const output=await run(provider,clause);
+    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    expect(output.reply.blocks.some(block=>block.type==="metric")).toBe(false);
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:2});
+    expect(p1Reads).toHaveBeenCalledTimes(2);
+  });
   it("COMPOSE-01/02/03/04: uses previously unseen model expression, both P1 source domains and exact cents",async()=>{
     const transport=makeTransport();
     const outcome=await run(transport.calls);
