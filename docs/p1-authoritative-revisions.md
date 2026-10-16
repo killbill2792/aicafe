@@ -151,3 +151,10 @@ marked `actual` as evidence that every selected Toast day was reviewed.
 A future additive source contract can safely restore this data with exact
 verified-date scope. No Toast records, feature flags or import pipelines are
 modified by this PR.
+
+**Toast reviewed-date gate:** With `TOAST_PILOT_IMPORT_ENABLED=true`,
+P3 withholds *all* atomic `sales.daily` amounts because the existing MVCC
+RPC does not include the independent Toast review status that the authorized
+historical sales reader enforces. It must not promote an unreviewed imported
+Toast date to observed sales. A future reviewed-date source contract is a
+separate prerequisite; no pilot flags or customer import records were changed.
