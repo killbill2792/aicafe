@@ -27,13 +27,34 @@ const edit = <T extends z.ZodTypeAny>(data: T) => z.discriminatedUnion("action",
 const window = z.object({
   day_of_week: z.number().int().min(0).max(6), start_local: wall,
   end_local: wall, overnight: z.boolean(), source,
-}).strict();
+}).strict().refine(v=>v.start_local!==v.end_local &&
+  v.overnight===(v.end_local<v.start_local),"Inconsistent recurring hours");
 const exception = z.object({
   exception_type: z.enum(["unavailable", "approved_leave", "replace_day", "add_available", "hours_cap"]),
   start_local: wall.nullable().optional(), end_local: wall.nullable().optional(),
   overnight: z.boolean(), max_minutes: z.number().int().min(0).max(1440).nullable().optional(),
   source,
-}).strict();
+}).strict().superRefine((v,ctx)=>{
+  const hasStart=v.start_local!=null;
+  const hasEnd=v.end_local!=null;
+  const hasHours=hasStart && hasEnd;
+  const hasCap=v.max_minutes!=null;
+  const invalid=(message:string)=>ctx.addIssue({code:"custom",message});
+  if(hasStart!==hasEnd)invalid("Both exception times are required together");
+  if(v.exception_type==="hours_cap"){
+    if(!hasCap || hasStart || hasEnd)invalid("Hours cap needs minutes, not clock times");
+  }else if(v.exception_type==="approved_leave"){
+    if(hasCap || hasStart || hasEnd)invalid("Approved leave must be all-day");
+  }else if(v.exception_type==="unavailable"){
+    if(hasCap)invalid("Unavailability cannot set a daily hours cap");
+  }else if(!hasHours || hasCap){
+    invalid("Available exception requires an exact window, not an hours cap");
+  }
+  if(hasHours && (v.start_local===v.end_local ||
+      v.overnight!==(v.end_local!<v.start_local!)))
+    invalid("Inconsistent exception hours");
+  if(!hasHours && v.overnight)invalid("All-day exception cannot be overnight");
+});
 const recurringScope = z.object({
   effective_from: date, effective_to: date.nullable(),
 }).strict().refine(v => v.effective_to === null || v.effective_to >= v.effective_from,
