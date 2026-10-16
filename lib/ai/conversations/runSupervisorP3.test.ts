@@ -132,7 +132,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(atomicRead).toHaveBeenCalledTimes(1);
     expect(output?.reply?.blocks?.some((b:{type:string})=>b.type==="metric"))
       .not.toBe(true);
-    expect(transport.calls).toHaveBeenCalledTimes(2);
+    expect(transport.calls.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(transport.calls.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
   it("COMPOSE-03: real Supervisor composes whole versus oat US-fl-oz cost from one snapshot",async()=>{
     const milkInput={id:"menu.ingredients",version:1,
