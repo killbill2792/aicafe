@@ -13,7 +13,7 @@ const ratio=/%|٪|\b(?:percent|percentage|por ciento|porcentaje)\b|بالمئة|
 const money=/[$€£]|\b(?:dollars?|dólares?|dolares?|cents?|centavos?)\b|دولار|سنت/iu;
 const items=/\b(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|beverages?|bebidas?|tazas?|unidades?|productos?)\b|أكواب|كوب|مشروب|مشروبات|وحدات/iu;
 const word=/[\p{L}\p{N}]/u;
-const multiplier=/\b(?:times?|twice|double|multiply|multiplied|multiplier|factor|veces|multiplicar|multiplicado)\b|ضعف|مرات|مرة/iu;
+const multiplier=/\b(?:times?|twice|double|multiply|multiplied|multiplier|factor|divide|divided|dividing|divisor|halve|halved|veces|multiplicar|multiplicado|dividir|dividido|división|division|entre)\b|ضعف|مرات|مرة|قسمة|اقسم|قسّم|تقسيم/iu;
 export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string):boolean{
   const text=normalize(message),number=normalize(quoted);
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(number))return false;
@@ -96,8 +96,14 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
       .split(/\b(?:and|or|but|plus|y|e|pero)\b|\s+و(?=\s|[$€£]|\d)|[;,.،!؟]/iu).at(-1)??"";
     const after=text.slice(end,end+65).split(/(?:\b(?:and|but|then|y|pero)\b|[;,.،!?؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
     // Never convert an owner-quoted non-USD amount into dollars.
-    if(/[€£]\s*$/u.test(previous)||
-      /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after))return false;
+    // USD is the ONLY canonical money unit. Reject explicit foreign dollar
+    // qualifiers as well as euros and pounds; never silently convert them.
+    // Scope these checks to this quoted number, not another clause's amount.
+    const foreignDollarPrefix=/(?:^|[^\\p{L}])(?:ca|c|cad|a|au|aud|nz|nzd|sg|sgd|hk|hkd)\\s*\\$\\s*$/iu;
+    const foreignDollarWord=/(?:\\b(?:canadian|australian|new\\s+zealand|singapore|hong\\s+kong)\\s+dollars?\\b|\\b(?:cad|aud|nzd|sgd|hkd)\\b|\\bd[oó]lares?\\s+(?:canadienses?|australianos?|neozelandeses?)\\b)/iu;
+    if(/[€£]\\s*$/u.test(previous)||foreignDollarPrefix.test(previous)||
+      /^\\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after)||
+      foreignDollarWord.test(previous)||foreignDollarWord.test(after))return false;
     const phrase=(previous+" "+after).toLocaleLowerCase();
     const dimensions=new Set<string>();
     if(/(?:\b(?:per|por|each|every|لكل)\s*(?:paid\s*)?(?:hours?|hrs?|horas?|hora)\b|\bhourly\b|بالساعة|لكل\s*ساعة)/iu.test(phrase))
