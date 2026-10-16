@@ -65,6 +65,17 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
     expect(await readAuthorizedAtomicP1SourceSnapshot())
       .toMatchObject({status:"unavailable",reason:"invalid_source_snapshot"});
   });
+  it("allows fallback only for a specifically missing RPC, never an execution failure",async()=>{
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"PGRST202",message:"RPC not found"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"rpc_not_installed"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42501",message:"permission denied"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"57014",message:"query canceled"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+  });
   it("treats a missing RPC or authorization failure as unavailable",async()=>{
     connect.mockResolvedValueOnce(fakeClient(null,{message:"migration not applied"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
