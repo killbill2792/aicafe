@@ -59,7 +59,7 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
       found.clear();
       for(const dimension of direct)found.add(dimension);
     }
-    if(/[$€£]\\s*$/u.test(before)){
+    if(/[$€£]\s*$/u.test(before)){
       found.clear();found.add("money");
     }
     hits.push(found);
