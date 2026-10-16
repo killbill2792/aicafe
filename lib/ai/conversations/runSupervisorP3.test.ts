@@ -10,6 +10,8 @@ const identity={businessId:"cafe-test",asOf:"2026-10-15",
 const menuInput={id:"menu.catalog",version:1,purpose:"menu_catalog_review"};
 const wageInput={id:"labor.employee_wages",version:1,
   purpose:"authorized_owner_wage_review"};
+const productInput={id:"menu.product_economics",version:1,
+  purpose:"current_recipe_cost_review",productId:"latte"};
 const quality={level:"low",missingInputs:["unversioned_source"],
   estimatedInputs:[],staleInputs:[]};
 const menu=[{id:"latte",name:"latte",category:"drink",
@@ -17,12 +19,17 @@ const menu=[{id:"latte",name:"latte",category:"drink",
 const workers=[{id:"sophie",name:"Sophie",role:"barista",active:true,
   defaultHourlyWageCents:1800,wagePeriod:"hour",wageAmountCents:1800,
   wageKnown:true,wageProvenance:"recorded_positive"}];
+const economics={id:"latte",name:"latte",category:"drink",active:true,
+  priceCents:525,prepSeconds:85,ingredientsCentsToday:125,hasRecipe:true,
+  costStatus:"READY",costSource:"recipe",recipeCostCents:125,
+  recipeCostStatus:"READY",ownerTotalCostCents:null,costDifferenceCents:null,
+  costQuality:"actual",quantitySoldLast28Days:10};
 const result=(input:{id:string;version:number;purpose:string},value:unknown)=>({
   id:input.id,version:1,query:input,unit:"typed_record",valueKind:"record",
   status:"partial",completeness:"partial",actuality:"actual",
   value,quality,provenance:{
     canonicalReaderId:input.id==="menu.catalog"?"readP1MenuCatalog":
-      "readP1EmployeeWages",readerContractVersion:1,
+      input.id==="menu.product_economics"?"getProductEconomics":"readP1EmployeeWages",readerContractVersion:1,
     selectorContractId:input.id+".selector",selectorContractVersion:1,
     purpose:input.purpose,asOf:identity.asOf,timezone:identity.timezone,
     sourceRevision:null,
@@ -42,7 +49,9 @@ const compositionPlan={
   capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
   description:"Extra revenue less paid labor cost, excluding unknown ingredients",
   nodes:[
-    {op:"source",handle:"menu.catalog:latte:priceCents"},
+    {op:"source",handle:"menu.product_economics:latte:priceCents"},
+    {op:"source",handle:"menu.product_economics:latte:ingredientsCentsToday"},
+    {op:"subtract"},
     {op:"hypothetical",label:"additional lattes",quotedNumber:"25",value:25,unit:"item"},
     {op:"multiply"},
     {op:"source",handle:"labor.employee_wages:sophie:defaultHourlyWageCents"},
@@ -96,6 +105,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       const id=(raw as {id:SupportedId}).id;
       if(id==="menu.catalog")return result(menuInput,menu);
       if(id==="labor.employee_wages")return result(wageInput,workers);
+      if(id==="menu.product_economics")return result(productInput,economics);
       throw Error("Unsupported fixture source");
     });
   });
@@ -105,14 +115,14 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const outcome=await run(transport.calls);
     expect(outcome.reply.status).toBe("partial");
     expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({type:"metric",valueCents:11775}),
+      expect.objectContaining({type:"metric",valueCents:8650}),
       expect.objectContaining({type:"warning",code:"P3_CONDITIONAL"}),
     ]));
     expect(outcome.reply.blocks).not.toContainEqual(expect.objectContaining({
       type:"task_card",
     }));
-    expect(p1Reads).toHaveBeenCalledTimes(2);
-    expect(outcome.usage).toMatchObject({modelCallCount:3,toolCallCount:2});
+    expect(p1Reads).toHaveBeenCalledTimes(3);
+    expect(outcome.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
     expect(transport.requests.every(req=>req.store===false)).toBe(true);
     expect(transport.requests.every(req=>!JSON.stringify(req).includes("525")))
       .toBe(true);
