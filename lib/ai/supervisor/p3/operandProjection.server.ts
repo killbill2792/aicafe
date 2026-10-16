@@ -5,6 +5,7 @@ import { metricUnits,purposePolicies,readers,sourcePolicies,
 import type { ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { Operand,Binding } from "./expression";
 import { isWholeNamedEntity } from "./entityMatch";
+import { fingerprintP1Observation } from "@/lib/metrics/p1ReadFingerprint";
 
 export type OperandChoice={handle:string;entityId:string;entityName:string;
   field:string;matchedClause:string};
@@ -175,10 +176,16 @@ export function projectP1Evidence(
       actuality:string;quality:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]};
       provenance:{canonicalReaderId:string;readerContractVersion:1;
         selectorContractId:string;selectorContractVersion:1;purpose:string;
-        sourceRevision:null;observedContentHash?:string;asOf:string;timezone:string};
+        sourceRevision:null;asOf:string;timezone:string};
       query:{period?:{from:string;to:string}};
     };
     const provenance=result.provenance;
+    const observedContentHash=fingerprintP1Observation({
+      businessId,readerId:readers[key],selectorId:provenance.selectorContractId,
+      selectorVersion:provenance.selectorContractVersion,
+      purpose:provenance.purpose,query:result.query,
+      value:result.value,quality:result.quality,
+    });
     const source=sourcePolicies[key]?.[provenance.purpose];
     if(!source||source.canonicalReaderId!==readers[key]||
       provenance.canonicalReaderId!==readers[key]||
@@ -250,8 +257,7 @@ export function projectP1Evidence(
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,sourceRevision:null,
-        ...(provenance.observedContentHash?{
-          observedContentHash:provenance.observedContentHash}:{}),
+        observedContentHash,
         selectorContractId:provenance.selectorContractId,selectorContractVersion:1,
         businessId,locationId,asOf:provenance.asOf,
         period:p?{from:p.from,to:p.to,timezone:provenance.timezone}:null,
