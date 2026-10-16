@@ -226,11 +226,12 @@ BEGIN
   IF v_id IS NULL THEN
     RAISE EXCEPTION 'missing scheduling source café' USING ERRCODE='23502';
   END IF;
-  -- DML can already own a row/ROW EXCLUSIVE table lock when this trigger
-  -- runs. Waiting for PR3's advisory lock could deadlock against its existing
-  -- table-wide SHARE lock. Fail fast, transactionally, rather than waiting.
-  -- A caller can safely retry after the competing scheduling transaction.
-  IF NOT pg_try_advisory_xact_lock(hashtextextended('olivia-'||v_id::text,0)) THEN
+  -- Multiple ordinary writers take compatible SHARED locks: preserve PR1B
+  -- concurrent create/CAS behavior. Olivia PR3/PR4B takes EXCLUSIVE lock.
+  -- DML may already hold row/table locks at this point, so fail fast instead
+  -- of waiting for PR3's table SHARE lock (which could otherwise deadlock).
+  -- The whole failed source write rolls back; callers can retry safely.
+  IF NOT pg_try_advisory_xact_lock_shared(hashtextextended('olivia-'||v_id::text,0)) THEN
     RAISE EXCEPTION 'Olivia scheduling source is busy; retry'
       USING ERRCODE='55P03';
   END IF;
