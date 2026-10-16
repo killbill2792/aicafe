@@ -99,7 +99,8 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
     // USD is the ONLY canonical money unit. Reject explicit foreign dollar
     // qualifiers as well as euros and pounds; never silently convert them.
     // Scope these checks to this quoted number, not another clause's amount.
-    const foreignDollarPrefix=/(?:^|[^\p{L}])(?:ca|c|cad|a|au|aud|nz|nzd|sg|sgd|hk|hkd)\s*\$\s*$/iu;
+    // Single-letter A$/C$ must be attached; "and a $30 total" is NOT AUD.
+    const foreignDollarPrefix=/(?:^|[^\p{L}])(?:(?:ca|cad|au|aud|nz|nzd|sg|sgd|hk|hkd)\s*\$|(?:a|c)\$)\s*$/iu;
     const foreignDollarWord=/(?:\b(?:canadian|australian|new\s+zealand|singapore|hong\s+kong)\s+dollars?\b|\b(?:cad|aud|nzd|sgd|hkd)\b|\bd[oó]lares?\s+(?:canadienses?|australianos?|neozelandeses?)\b)/iu;
     if(/[€£]\s*$/u.test(previous)||foreignDollarPrefix.test(previous)||
       /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after)||
