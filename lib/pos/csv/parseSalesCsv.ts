@@ -28,10 +28,6 @@ export type ParseSalesCsvResult = {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function salesCsvSyntheticOrderId(row: Pick<NormalizedSalesRow, "date" | "item">): string {
-  return `csv-${row.date}-${row.item}`.slice(0, 120);
-}
-
 function parseOptionalFee(raw: string): { processingFeeCents: number; processingFeeStatus: "actual" | "missing" } {
   const trimmed = raw.trim();
   if (!trimmed || !Number.isFinite(Number(trimmed.replace(/[$,()\s]/g, "")))) return { processingFeeCents: 0, processingFeeStatus: "missing" };

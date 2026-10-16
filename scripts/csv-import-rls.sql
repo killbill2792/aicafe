@@ -13,7 +13,8 @@ INSERT INTO businesses(id,name,is_demo) VALUES (:'biz_a','CSV Import Test A',fal
 INSERT INTO memberships(business_id,user_id,role) VALUES (:'biz_a',:'owner_a','owner'),(:'biz_b',:'owner_b','owner');
 INSERT INTO employees(id,business_id,display_name,active) VALUES (:'employee_a',:'biz_a','Alex A',true),(:'employee_b',:'biz_b','Alex B',true);
 SELECT set_config('test.biz_a',:'biz_a',true),set_config('test.biz_b',:'biz_b',true),
-       set_config('test.employee_a',:'employee_a',true),set_config('test.owner_a',:'owner_a',true);
+       set_config('test.employee_a',:'employee_a',true),set_config('test.employee_b',:'employee_b',true),
+       set_config('test.owner_a',:'owner_a',true);
 
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
@@ -180,6 +181,53 @@ BEGIN
  IF (SELECT count(*) FROM orders WHERE business_id=current_setting('test.biz_a')::uuid
      AND pos_order_id='csv-2026-08-22-Latte' AND net_sales_cents=1500) <> 1 THEN
   RAISE EXCEPTION 'FOREIGN_OWNER_FINALIZE_CHANGED_ANOTHER_BUSINESS_DATA';
+ END IF;
+END $$;
+
+-- Composite FKs: a staged row cannot claim business A's business_id while pointing at business
+-- B's job/employee. A member of two cafés (or a bug in the app layer) must not be able to make the
+-- security-invoker finalizer write a canonical record that cross-references another tenant.
+SELECT set_config('request.jwt.claim.sub',:'owner_b',true);
+INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
+VALUES (gen_random_uuid(),:'biz_b','labor','processing','fp-rls-test-biz-b',1,1)
+RETURNING id \gset biz_b_job_
+SELECT set_config('test.biz_b_job_id',:'biz_b_job_id',true);
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
+DO $$
+BEGIN
+ BEGIN
+  INSERT INTO csv_sales_import_groups(job_id,business_id,business_date,item_name,quantity,net_sales_cents,source_row_count)
+  VALUES (current_setting('test.biz_b_job_id')::uuid,current_setting('test.biz_a')::uuid,'2026-08-24','Cross-tenant',1,100,1);
+  RAISE EXCEPTION 'CROSS_TENANT_JOB_REFERENCE_ACCEPTED';
+ EXCEPTION WHEN foreign_key_violation THEN NULL;
+ END;
+ BEGIN
+  INSERT INTO csv_labor_import_rows(job_id,business_id,employee_id,pos_timecard_id,clock_in,hourly_wage_cents)
+  VALUES (current_setting('test.job_id')::uuid,current_setting('test.biz_a')::uuid,current_setting('test.employee_b')::uuid,'csv-cross-tenant','2026-08-24T09:00:00Z',1500);
+  RAISE EXCEPTION 'CROSS_TENANT_EMPLOYEE_REFERENCE_ACCEPTED';
+ EXCEPTION WHEN foreign_key_violation THEN NULL;
+ END;
+END $$;
+
+-- Two groups sharing a date+item but differing only by category must land as two distinct
+-- canonical orders (summing separately), not one upsert silently overwriting the other's lines.
+INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count,date_from,date_to)
+VALUES (gen_random_uuid(),:'biz_a','sales','processing','fp-rls-test-category',2,2,'2026-08-25','2026-08-25')
+RETURNING id \gset category_job_
+INSERT INTO csv_sales_import_groups(job_id,business_id,business_date,item_name,category,quantity,net_sales_cents,source_row_count)
+VALUES
+ (:'category_job_id',:'biz_a','2026-08-25','Chai','Hot Drinks',1,400,1),
+ (:'category_job_id',:'biz_a','2026-08-25','Chai','Iced Drinks',1,450,1);
+SELECT * FROM csv_finalize_sales_job(:'category_job_id'::uuid);
+DO $$
+BEGIN
+ IF (SELECT count(*) FROM orders WHERE business_id=current_setting('test.biz_a')::uuid
+     AND business_date='2026-08-25' AND pos_order_id LIKE 'csv-2026-08-25-Chai%') <> 2 THEN
+  RAISE EXCEPTION 'CATEGORY_DISTINCT_GROUPS_COLLAPSED_INTO_ONE_ORDER';
+ END IF;
+ IF (SELECT sum(net_sales_cents) FROM orders WHERE business_id=current_setting('test.biz_a')::uuid
+     AND business_date='2026-08-25' AND pos_order_id LIKE 'csv-2026-08-25-Chai%') <> 850 THEN
+  RAISE EXCEPTION 'CATEGORY_DISTINCT_GROUPS_LOST_A_TOTAL';
  END IF;
 END $$;
 

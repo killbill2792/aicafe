@@ -49,17 +49,26 @@ create policy "members read" on csv_import_jobs for select using (is_member(busi
 create policy "members write" on csv_import_jobs for all using (is_member(business_id)) with check (is_member(business_id));
 grant select, insert, update, delete on csv_import_jobs to authenticated;
 
+-- Composite-FK anchor so a staged row's job_id/location_id/menu_item_id/employee_id can be
+-- constrained to belong to the SAME business_id the row claims (see the composite FKs below) —
+-- the same idiom as Olivia's employee/location composite FKs (20261014000060). Each of these is
+-- always-satisfiable (id is already a unique primary key) and purely additive.
+alter table csv_import_jobs add constraint csv_import_jobs_id_business_unique unique (id, business_id);
+alter table locations add constraint locations_id_business_unique unique (id, business_id);
+alter table menu_items add constraint menu_items_id_business_unique unique (id, business_id);
+alter table employees add constraint employees_id_business_unique unique (id, business_id);
+
 -- Staged, aggregated sales groups for one job. menu_item_id is resolved once per distinct item
 -- (lib/pos/catalogMatching.ts) before staging, not re-resolved per promotion call.
 create table csv_sales_import_groups (
   id uuid primary key default gen_random_uuid(),
-  job_id uuid not null references csv_import_jobs on delete cascade,
+  job_id uuid not null,
   business_id uuid not null references businesses on delete cascade,
-  location_id uuid references locations on delete set null,
+  location_id uuid,
   business_date date not null,
   item_name text not null,
   category text,
-  menu_item_id uuid references menu_items on delete set null,
+  menu_item_id uuid,
   quantity numeric(12, 2) not null,
   net_sales_cents bigint not null,
   processing_fee_cents bigint not null default 0,
@@ -70,7 +79,19 @@ create table csv_sales_import_groups (
   -- a date; this is the symmetric check so CSV never silently double-counts the same sales facts
   -- Toast already promoted.
   conflict_reason text,
-  promoted boolean not null default false
+  promoted boolean not null default false,
+  -- Composite FKs: job_id/location_id/menu_item_id must belong to the SAME business_id as this
+  -- row, not merely exist somewhere. Without this, a member of two cafés could stage a row with
+  -- this business's id but another business's job/location/menu item, and the security-invoker
+  -- finalizer would write a canonical order referencing the wrong tenant's catalog. No ON DELETE
+  -- SET NULL on the location/menu_item FKs: for a composite key, SET NULL would null out
+  -- business_id too (it's part of the key), which can't happen — business_id is NOT NULL here —
+  -- so these stay the default NO ACTION, which only matters for a location/menu item deleted while
+  -- a staging row still references it (staging rows are short-lived and normally promoted or
+  -- discarded well before that).
+  constraint csv_sales_import_groups_job_fk foreign key (job_id, business_id) references csv_import_jobs (id, business_id) on delete cascade,
+  constraint csv_sales_import_groups_location_fk foreign key (location_id, business_id) references locations (id, business_id),
+  constraint csv_sales_import_groups_menu_item_fk foreign key (menu_item_id, business_id) references menu_items (id, business_id)
 );
 create index csv_sales_import_groups_job_idx on csv_sales_import_groups (job_id);
 
@@ -84,14 +105,16 @@ grant select, insert, update, delete on csv_sales_import_groups to authenticated
 -- stays staged, out of payroll, until the owner explicitly supplies a rate. Never a fabricated $0.
 create table csv_labor_import_rows (
   id uuid primary key default gen_random_uuid(),
-  job_id uuid not null references csv_import_jobs on delete cascade,
+  job_id uuid not null,
   business_id uuid not null references businesses on delete cascade,
-  employee_id uuid not null references employees on delete cascade,
+  employee_id uuid not null,
   pos_timecard_id text not null,
   clock_in timestamptz not null,
   clock_out timestamptz,
   hourly_wage_cents bigint,
-  promoted boolean not null default false
+  promoted boolean not null default false,
+  constraint csv_labor_import_rows_job_fk foreign key (job_id, business_id) references csv_import_jobs (id, business_id) on delete cascade,
+  constraint csv_labor_import_rows_employee_fk foreign key (employee_id, business_id) references employees (id, business_id) on delete cascade
 );
 create unique index csv_labor_import_rows_timecard_unique on csv_labor_import_rows (business_id, pos_timecard_id);
 create index csv_labor_import_rows_job_idx on csv_labor_import_rows (job_id);
@@ -119,6 +142,15 @@ declare
   v_pos_order_id text;
 begin
   for g in select * from csv_sales_import_groups where job_id = p_job_id and not promoted loop
+    -- Serializes against OTHER CSV finalize calls for the same business+date (a second job or a
+    -- concurrent retry of this one) before the conflict check below, so two CSV callers can never
+    -- both pass it and both write. Toast's own toast_promote_reconciled_day (20261012000046) does
+    -- not take this same lock — it is Toast-specific code this PR must not modify — so this closes
+    -- the CSV-vs-CSV race completely but only narrows, rather than eliminates, a true concurrent
+    -- CSV-vs-Toast promotion of the identical business+date; that residual gap is a documented
+    -- follow-up for whoever owns the Toast promotion path.
+    perform pg_advisory_xact_lock(hashtextextended(g.business_id::text || ':' || g.business_date::text, 0));
+
     if exists (
       select 1 from orders o
       where o.business_id = g.business_id
@@ -130,7 +162,10 @@ begin
       continue;
     end if;
 
-    v_pos_order_id := left('csv-' || g.business_date::text || '-' || g.item_name, 120);
+    -- Category is part of the id when present so two groups that share a date+item but differ
+    -- only by category (aggregateSalesRows deliberately keeps them separate) land as two distinct
+    -- canonical orders instead of the second upsert silently overwriting the first's order_lines.
+    v_pos_order_id := left('csv-' || g.business_date::text || '-' || g.item_name || coalesce('|' || g.category, ''), 120);
 
     insert into orders (
       business_id, location_id, pos_order_id, closed_at, business_date,

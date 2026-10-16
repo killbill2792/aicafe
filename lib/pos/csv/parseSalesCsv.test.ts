@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectCsvColumns } from "./csvUtils";
-import { parseSalesCsv, salesCsvSyntheticOrderId } from "./parseSalesCsv";
+import { parseSalesCsv } from "./parseSalesCsv";
 import { parseLaborCsv } from "./parseLaborCsv";
 import { parseProcessingFeesCsv, processingFeeTotalsByDate } from "./parseProcessingFeesCsv";
 
@@ -28,12 +28,6 @@ describe("parseSalesCsv", () => {
       { date: "2026-10-02", item: "Latte", quantity: 1, netSalesCents: 550, category: null, processingFeeCents: 19, processingFeeStatus: "actual" },
       { date: "2026-10-02", item: "Tea", quantity: 1, netSalesCents: 400, category: null, processingFeeCents: 0, processingFeeStatus: "missing" },
     ]);
-  });
-
-  it("keeps repeated product-mix uploads idempotent with the same content key", () => {
-    const row = { date: "2026-10-02", item: "Latte" };
-    expect(salesCsvSyntheticOrderId(row)).toBe(salesCsvSyntheticOrderId({ ...row }));
-    expect(salesCsvSyntheticOrderId(row)).toBe("csv-2026-10-02-Latte");
   });
 
   it("rejects rows missing an item or date instead of silently dropping them unaccounted for", () => {

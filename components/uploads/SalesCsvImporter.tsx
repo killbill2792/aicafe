@@ -5,7 +5,7 @@ import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseSalesCsv, type SalesColumnMapping, type SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
 import { aggregateSalesRows } from "@/lib/pos/csv/aggregateSalesRows";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
-import { saveMapping, startSalesImportJob, finalizeSalesImportJob, cancelStuckImportJob, type SalesImportSummary } from "@/lib/actions/csvImport";
+import { saveMapping, startSalesImportJob, finalizeSalesImportJob, cancelStuckImportJob, type SalesImportSummary, type ImportErrorCode } from "@/lib/actions/csvImport";
 
 const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
   { key: "date", required: true },
@@ -17,6 +17,11 @@ const FIELDS: { key: keyof SalesColumnMapping; required: boolean }[] = [
 ];
 
 type Stage = "idle" | "working" | "done" | "error";
+
+function interpolate(template: string, params?: Record<string, string | number>): string {
+  if (!params) return template;
+  return Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), template);
+}
 
 export default function SalesCsvImporter({
   initialMapping,
@@ -47,6 +52,7 @@ export default function SalesCsvImporter({
     skippedToastHint: string;
     tryAgain: string;
     cancelStuckImport: string;
+    errors: Record<ImportErrorCode, string>;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
@@ -92,7 +98,7 @@ export default function SalesCsvImporter({
     }
     setStage("error");
     setStuckJobId(jobId);
-    setError(result.error ?? null);
+    setError(result.errorCode ? interpolate(labels.errors[result.errorCode], result.errorParams) : null);
   }
 
   function handleImport() {
@@ -106,7 +112,8 @@ export default function SalesCsvImporter({
       const started = await startSalesImportJob(parsed.valid, rows.length, parsed.rejected);
       if (!started.ok) {
         setStage("error");
-        setError(started.error ?? null);
+        setStuckJobId(started.blockingJobId ?? null);
+        setError(started.errorCode ? interpolate(labels.errors[started.errorCode], started.errorParams) : null);
         return;
       }
       if (started.duplicate || !started.jobId) {
@@ -122,7 +129,7 @@ export default function SalesCsvImporter({
     if (!stuckJobId) return;
     startTransition(async () => {
       const result = await cancelStuckImportJob(stuckJobId);
-      setError(result.ok ? null : result.error ?? null);
+      setError(result.ok ? null : result.errorCode ? interpolate(labels.errors[result.errorCode]) : null);
       if (result.ok) {
         setStage("idle");
         setStuckJobId(null);

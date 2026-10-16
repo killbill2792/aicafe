@@ -44,6 +44,7 @@ export default async function LaborCsvPage() {
             missing_employee: t("rejectedMissingEmployee"),
             missing_clock_in: t("rejectedMissingClockIn"),
             invalid_date: t("rejectedInvalidDate"),
+            employee_creation_failed: t("rejectedEmployeeCreationFailed"),
           },
           statusStarting: t("statusStarting"),
           statusFinalizing: t("statusFinalizing"),
@@ -54,6 +55,22 @@ export default async function LaborCsvPage() {
           wageReviewHint: t("wageReviewHint"),
           wageReviewSave: t("wageReviewSave"),
           wageReviewPlaceholder: t("wageReviewPlaceholder"),
+          errors: {
+            not_signed_in: t("errorNotSignedIn"),
+            row_limit_source: t("errorRowLimitSource"),
+            row_limit_groups: t("errorRowLimitGroups"),
+            row_limit_shifts: t("errorRowLimitShifts"),
+            no_valid_rows: t("errorNoValidRows"),
+            already_processing_duplicate: t("errorAlreadyProcessingDuplicate"),
+            already_running: t("errorAlreadyRunning"),
+            create_job_failed: t("errorCreateJobFailed"),
+            staging_failed: t("errorStagingFailed"),
+            job_not_found: t("errorJobNotFound"),
+            finalize_failed: t("errorFinalizeFailed"),
+            wage_invalid: t("errorWageInvalid"),
+            wage_update_failed: t("errorWageUpdateFailed"),
+            still_within_window: t("errorStillWithinWindow"),
+          },
         }}
       />
     </PageShell>

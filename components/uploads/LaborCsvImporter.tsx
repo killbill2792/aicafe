@@ -4,7 +4,15 @@ import { useMemo, useState, useTransition } from "react";
 import { detectCsvColumns } from "@/lib/pos/csv/csvUtils";
 import { parseLaborCsv, type LaborColumnMapping, type LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import { readUploadedFileAsCsvText, UPLOAD_FILE_ACCEPT } from "@/lib/pos/csv/readUploadedFile";
-import { saveMapping, startLaborImportJob, finalizeLaborImportJob, resolveLaborImportWage, cancelStuckImportJob, type LaborImportSummary } from "@/lib/actions/csvImport";
+import {
+  saveMapping,
+  startLaborImportJob,
+  finalizeLaborImportJob,
+  resolveLaborImportWage,
+  cancelStuckImportJob,
+  type LaborImportSummary,
+  type ImportErrorCode,
+} from "@/lib/actions/csvImport";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 
 const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
@@ -16,6 +24,12 @@ const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
 ];
 
 type Stage = "idle" | "working" | "done" | "error";
+type LaborRejectedReasonLabels = Record<LaborRejectReason, string> & { employee_creation_failed: string };
+
+function interpolate(template: string, params?: Record<string, string | number>): string {
+  if (!params) return template;
+  return Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), template);
+}
 
 export default function LaborCsvImporter({
   initialMapping,
@@ -41,7 +55,7 @@ export default function LaborCsvImporter({
     noWageColumnHint: string;
     reviewRowsInFile: string;
     rejectedTitle: string;
-    rejectedReasons: Record<LaborRejectReason, string>;
+    rejectedReasons: LaborRejectedReasonLabels;
     statusStarting: string;
     statusFinalizing: string;
     duplicateNotice: string;
@@ -51,6 +65,7 @@ export default function LaborCsvImporter({
     wageReviewHint: string;
     wageReviewSave: string;
     wageReviewPlaceholder: string;
+    errors: Record<ImportErrorCode, string>;
   };
 }) {
   const [headers, setHeaders] = useState<string[] | null>(null);
@@ -117,7 +132,7 @@ export default function LaborCsvImporter({
     }
     setStage("error");
     setStuckJobId(id);
-    setError(result.error ?? null);
+    setError(result.errorCode ? interpolate(labels.errors[result.errorCode], result.errorParams) : null);
   }
 
   function handleImport() {
@@ -132,15 +147,16 @@ export default function LaborCsvImporter({
       const started = await startLaborImportJob(parsed.valid, choices, rows.length, parsed.rejected);
       if (!started.ok) {
         setStage("error");
-        setError(started.error ?? null);
+        setStuckJobId(started.blockingJobId ?? null);
+        setError(started.errorCode ? interpolate(labels.errors[started.errorCode], started.errorParams) : null);
         return;
       }
+      setJobId(started.jobId ?? null);
       if (started.duplicate || !started.jobId) {
         setStage("done");
         setSummary(started.summary ?? null);
         return;
       }
-      setJobId(started.jobId);
       await runFinalize(started.jobId);
     });
   }
@@ -149,7 +165,7 @@ export default function LaborCsvImporter({
     if (!stuckJobId) return;
     startTransition(async () => {
       const result = await cancelStuckImportJob(stuckJobId);
-      setError(result.ok ? null : result.error ?? null);
+      setError(result.ok ? null : result.errorCode ? interpolate(labels.errors[result.errorCode]) : null);
       if (result.ok) {
         setStage("idle");
         setStuckJobId(null);
@@ -160,11 +176,15 @@ export default function LaborCsvImporter({
   function handleSaveWage(rowId: string) {
     if (!jobId) return;
     const raw = wageDrafts[rowId];
-    const cents = Math.round(Number(raw) * 100);
-    if (!raw || !Number.isFinite(cents) || cents <= 0) return;
+    if (!raw) return;
     startTransition(async () => {
-      const result = await resolveLaborImportWage(jobId, rowId, cents);
-      if (result.ok) setSummary(result.summary ?? null);
+      const result = await resolveLaborImportWage(jobId, rowId, raw);
+      if (result.ok) {
+        setSummary(result.summary ?? null);
+        setError(null);
+      } else {
+        setError(result.errorCode ? interpolate(labels.errors[result.errorCode]) : null);
+      }
     });
   }
 
@@ -281,7 +301,7 @@ export default function LaborCsvImporter({
           {summary.pendingWageReview.map((row) => (
             <div key={row.rowId} className="flex items-center justify-between gap-2 text-sm font-semibold">
               <span className="min-w-0 flex-1 truncate">
-                {row.employee} — {new Date(row.clockIn).toLocaleString()}
+                {row.employee} — {row.clockInLabel}
               </span>
               <input
                 type="number"
@@ -290,9 +310,14 @@ export default function LaborCsvImporter({
                 placeholder={labels.wageReviewPlaceholder}
                 value={wageDrafts[row.rowId] ?? ""}
                 onChange={(e) => setWageDrafts((d) => ({ ...d, [row.rowId]: e.target.value }))}
-                className="h-11 w-[90px] shrink-0 rounded-xl border border-line px-2 text-sm"
+                className="h-12 w-[96px] shrink-0 rounded-xl border border-line px-2 text-base"
               />
-              <button type="button" onClick={() => handleSaveWage(row.rowId)} disabled={isPending} className="h-11 shrink-0 rounded-xl bg-ink px-3 text-xs font-bold text-paper disabled:opacity-40">
+              <button
+                type="button"
+                onClick={() => handleSaveWage(row.rowId)}
+                disabled={isPending}
+                className="h-12 shrink-0 rounded-xl bg-ink px-4 text-base font-bold text-paper disabled:opacity-40"
+              >
                 {labels.wageReviewSave}
               </button>
             </div>
