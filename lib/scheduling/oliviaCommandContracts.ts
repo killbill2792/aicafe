@@ -60,7 +60,21 @@ export const oliviaPreparedAvailabilitySchema = z.object({
   sourceToken,
   batches: z.array(availabilityBatchSchema).min(1).max(40),
   disposition: z.literal("requires_separate_authenticated_owner_action"),
-}).strict();
+}).strict().superRefine((proposal,ctx)=>{
+  // PR1B updates only the columns present in each JSON record. A replacement
+  // omitting a nullable exception column would silently retain the old value.
+  // Never commit a proposal that cannot express explicit field clearing.
+  for(const [i,batch] of proposal.batches.entries()){
+    if(batch.kind!=="availability_exception")continue;
+    for(const [j,item] of batch.desired.entries()){
+      for(const key of ["start_local","end_local","max_minutes"] as const){
+        if(!Object.prototype.hasOwnProperty.call(item.data,key))
+          ctx.addIssue({code:"custom",message:"Missing explicit nullable field",
+            path:["batches",i,"desired",j,"data",key]});
+      }
+    }
+  }
+});
 export const oliviaConfirmedCommitSchema = z.object({
   capability: z.literal("olivia.availability.commit"),
   version: z.literal(1),
