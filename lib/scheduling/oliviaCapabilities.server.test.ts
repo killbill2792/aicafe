@@ -257,7 +257,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   });
   it("checks revision assignments against stored scenario before claiming a draft/approved/published state",async()=>{
     expect(await executeOliviaReadCapability(revision())).toMatchObject({
-      ok:true,revisionId,status:"draft",disposition:"stored_read_only",
+      ok:true,revisionId,revisionStatus:"draft",disposition:"stored_read_only",
       assignments:[{employeeId,paidMinutes:240}]});
     m.assignments=[{...m.assignments[0],paid_minutes:0}];
     expect(await executeOliviaReadCapability(revision()))
