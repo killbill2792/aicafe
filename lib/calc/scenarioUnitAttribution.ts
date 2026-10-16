@@ -32,7 +32,9 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(ratio.test(nearby))found.add("ratio_bps");
     if(money.test(nearby))found.add("money");
     const genericPlural=/^\s*(?:(?:more|additional|extra|paid|new|más|mas|أكثر|إضافية)\s+){0,3}[\p{L}]+s\b/iu;
-    if(items.test(nearby)||genericPlural.test(after)&&found.size===0)
+    // "fluid ounces per cup" is volume, not a count of cups. An
+    // explicit dimension always takes precedence over incidental nouns.
+    if(found.size===0&&(items.test(nearby)||genericPlural.test(after)))
       found.add("item");
     hits.push(found);
   }
