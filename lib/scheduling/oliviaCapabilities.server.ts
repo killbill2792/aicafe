@@ -11,6 +11,7 @@ import {
   oliviaUuid, oliviaAvailabilityEmployeeSchema, oliviaRevisionStatusSchema,
   oliviaCapabilityBlockerSchema, OLIVIA_MAX_PREVIEW_BLOCKERS,
   OLIVIA_MAX_GAPS_PER_SCENARIO, OLIVIA_MAX_SAVED_SHIFTS,
+  oliviaOverflowPlanSchema,
   type OliviaReadCapability, type OliviaReadRequest,
   type OliviaReadResponse,
 } from "./oliviaCapabilityContracts";
@@ -213,15 +214,15 @@ async function readPreview(
   // PR2 can produce up to 2,000 provisional shifts, whereas PR3's
   // persisted draft limit is 200. A larger valid preview is a known
   // capability-capacity case, not corrupt data.
+  const parsedPlan=oliviaOverflowPlanSchema.safeParse(preview.plan);
+  if(!parsedPlan.success)return fail(capability,"invalid_record");
   const oversized=(scenario:{
-    shifts:unknown;gaps:unknown;
-  })=>(Array.isArray(scenario.shifts) &&
-      scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS) ||
-    (Array.isArray(scenario.gaps) &&
-      scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO);
-  if(preview.plan?.scenarios?.some(oversized) ||
-     (preview.plan?.best && oversized(preview.plan.best)) ||
-     (preview.plan?.warnings?.length??0)>100)
+    shifts:readonly unknown[];gaps:readonly unknown[];
+  })=>scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS ||
+    scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO;
+  if(parsedPlan.data.scenarios.some(oversized) ||
+     (parsedPlan.data.best && oversized(parsedPlan.data.best)) ||
+     parsedPlan.data.warnings.length>100)
     return fail(capability,"capacity_exceeded");
   if(input.options?.expectedSourceDigest &&
       input.options.expectedSourceDigest!==preview.sourceDigest)
@@ -231,8 +232,8 @@ async function readPreview(
     return fail(capability,"revision_conflict");
   const candidate=oliviaScenarioSchema.safeParse(
     input.options?.objective
-      ? preview.plan.scenarios.find(x=>x.objective===input.options?.objective)??null
-      : preview.plan.best);
+      ? parsedPlan.data.scenarios.find(x=>x.objective===input.options?.objective)??null
+      : parsedPlan.data.best);
   // A requested objective without a feasible scenario is a documented null,
   // not an invented alternative or a false coverage claim.
   const selected=candidate.success?candidate.data:null;
@@ -240,7 +241,7 @@ async function readPreview(
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"trusted_preview",
       consistency:"provisional",sourceDigest:preview.sourceDigest},
-    plan:preview.plan,selectedScenario:selected,
+    plan:parsedPlan.data,selectedScenario:selected,
     previewRevision:preview.previewRevision,
     notices:preview.notices,blockers:preview.blockers,
     employeeNames:preview.employees,locationNames:preview.locationNames,
