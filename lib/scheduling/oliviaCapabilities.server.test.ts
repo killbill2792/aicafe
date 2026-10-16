@@ -505,6 +505,49 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("does not hide corrupt or cross-tenant overflow records as capacity errors",async()=>{
+    const bulk=Array.from({length:5001},(_,i)=>({
+      ...recurring,id:uid(i+1000),
+    }));
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:bulk,
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
+    bulk[5000]={...bulk[5000],business_id:otherBusinessId};
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:bulk,
+    },audit:[]});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    bulk[5000]={...bulk[5000],business_id:businessId,employee_id:uid(997)};
+    m.foundation.mockResolvedValueOnce({ok:true,records:{
+      ...emptyRecords(),availability_rule:bulk,
+    },audit:[]});
+    expect(await executeOliviaReadCapability({
+      capability:"olivia.availability.read",version:1,
+    })).toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects internally contradictory planner cost states instead of trusting false zero or certainty",async()=>{
+    const invalid=[
+      {...scenario.cost,costState:"verified"},
+      {...scenario.cost,cashWagesCents:0},
+      {...scenario.cost,allocatedSalaryCents:0},
+      {...scenario.cost,loadedPayrollCents:0},
+      {...scenario.cost,costState:"estimate",missingWageEmployeeIds:[]},
+      {...scenario.cost,costState:"unavailable",missingWageEmployeeIds:[]},
+    ];
+    for(const cost of invalid){
+      const corrupted={...scenario,cost};
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[corrupted],best:corrupted},
+        notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
