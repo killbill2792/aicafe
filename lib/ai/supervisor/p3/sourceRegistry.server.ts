@@ -2,6 +2,7 @@ import "server-only";
 import { createP2Registry,schemaFingerprint,unavailable,type ReadRegistration,
   type TrustedReadScope } from "@/lib/ai/supervisor/p2/registry";
 import { executeP1Authorized,outputFor } from "@/lib/metrics/p1Readers.server";
+import { registerExpressionSimulation } from "./simulateRegistration.server";
 import { inputFor,purposePolicies,readers,sourcePolicies,values,
   metricUnits,type SupportedId } from "@/lib/metrics/p1Catalog";
 
@@ -44,5 +45,7 @@ export function buildP3P1Registrations():readonly ReadRegistration[] {
     };
   });
 }
-export const createP3ReadRegistry=()=>createP2Registry(buildP3P1Registrations());
+export const createP3ReadRegistry=()=>createP2Registry([
+  ...buildP3P1Registrations(),registerExpressionSimulation(),
+]);
 
