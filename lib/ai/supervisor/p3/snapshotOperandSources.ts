@@ -72,6 +72,11 @@ function daily(snapshot:AtomicP1SourceSnapshot,
   // Old rows outside a completely selected recent period may be truncated.
   // Validate exact requested-date coverage below; never invent absent days.
   if(!period)return blocked("snapshot_daily_source_unselected");
+  // The Toast pilot's independently reviewed-date ledger is not part of the
+  // atomic SQL snapshot. Without that proof, even sales_data_status=actual
+  // can contain unreviewed Toast imports. Never expose those as actual sales.
+  if(!labor&&process.env.TOAST_PILOT_IMPORT_ENABLED==="true")
+    return blocked("toast_sales_review_coverage_unavailable_in_snapshot");
   const start=Date.parse(period.from+"T12:00:00Z"),end=Date.parse(period.to+"T12:00:00Z");
   if(!Number.isFinite(start)||!Number.isFinite(end)||end<start||
     (end-start)/86400000>365)return blocked("invalid_snapshot_period");
