@@ -226,7 +226,10 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     ]));
     expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:5});
     expect(p1Reads).toHaveBeenCalledTimes(4);
-    expect(JSON.stringify(output.reply)).not.toMatch(/verified profit|predicted demand/i);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_CONDITIONAL"}),
+      expect.objectContaining({type:"warning",code:"P3_BASELINE"}),
+    ]));
   });
   it("does not invent a payroll burden when no canonical payroll rate is available",async()=>{
     const clauses=["Sophie works 45 more minutes","show employer payroll burden"];
