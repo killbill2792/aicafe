@@ -301,8 +301,14 @@ BEGIN
 END $$;
 
 -- Even a user who belongs to BOTH cafés must not link a history record from B to a job in A.
+-- memberships has no authenticated-role INSERT policy at all (provisioning is a trusted/service
+-- path, never a self-service RLS write) -- this fixture insert needs the superuser connection,
+-- same as the very first membership rows above before SET LOCAL ROLE authenticated.
+RESET ROLE;
 INSERT INTO memberships(business_id,user_id,role)
 VALUES (:'biz_b',:'owner_a','owner');
+SET LOCAL ROLE authenticated;
+SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
 DO $$
 DECLARE other_upload uuid;
 BEGIN
