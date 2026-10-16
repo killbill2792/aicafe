@@ -57,7 +57,11 @@ export async function enrichResolvedProductEconomics(input:{
       const economics=values["menu.product_economics"].safeParse(parsedEconomics.data.value);
       if(!economics.success||economics.data.id!==product.id||
         economics.data.name.normalize("NFKC").toLocaleLowerCase()!==
-          product.name.normalize("NFKC").toLocaleLowerCase())
+          product.name.normalize("NFKC").toLocaleLowerCase()||
+        // P1 currently lacks a shared database source revision. Two canonical
+        // reads with conflicting prices cannot be composed as one snapshot.
+        product.priceStatus!=="recorded"||
+        product.priceCents!==economics.data.priceCents)
         continue;
       const value=parsedEconomics.data as {status?:string;reason?:string};
       const enriched:ShadowEvidence={
