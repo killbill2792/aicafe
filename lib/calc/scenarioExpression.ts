@@ -37,6 +37,9 @@ export const planSchema=z.strictObject({
     z.strictObject({op:z.literal("source"),handle:id}),
     z.strictObject({op:z.literal("hypothetical"),label:z.string().min(2).max(160),
       quotedNumber:z.string().min(1).max(30),value:bounded,unit,
+      // Zero-based occurrence among whole matches of this quoted number in the
+      // owner message. Required when identical numbers have different units.
+      occurrence:z.number().int().min(0).max(30).optional(),
       // Scaled integer quantity preserves exact fractional hours/volumes.
       quantityScale:z.enum(["whole","hundredth"]).optional(),
       // Quoted money may explicitly be cents, not just dollars.
@@ -170,13 +173,15 @@ function attributed(message:string,quoted:string):boolean{
 /** A cent-denominated interpretation requires the owner's own nearby word
  * or symbol; the model is never allowed to reinterpret stated dollars as cents.
  */
-function ownerQuotedCents(message:string,quoted:string):boolean{
+function ownerQuotedCents(message:string,quoted:string,occurrence?:number):boolean{
   const raw=normalizeScenarioNumber(message).toLocaleLowerCase();
   const number=normalizeScenarioNumber(quoted);
   const token=/[\p{L}\p{N}]/u;
+  let validOccurrence=0;
   for(let start=raw.indexOf(number);start>=0;start=raw.indexOf(number,start+1)){
     const prev=raw[start-1]??"",next=raw[start+number.length]??"";
     if((prev&&token.test(prev))||(next&&token.test(next)))continue;
+    if(occurrence!==undefined && validOccurrence++!==occurrence)continue;
     const after=raw.slice(start+number.length,start+number.length+24);
     const before=raw.slice(Math.max(0,start-6),start);
     if(/^\s*(?:¢|cents?\b|centavos?\b|سنت(?:ات)?|سنتيم(?:ات)?)/u.test(after)||
@@ -256,10 +261,10 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else if(node.op==="hypothetical"){
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
-        if(!ownerQuotedUnitMatches(context.ownerMessage,node.quotedNumber,node.unit))
+        if(!ownerQuotedUnitMatches(context.ownerMessage,node.quotedNumber,node.unit,node.occurrence))
           throw new Error("hypothetical_unit_mismatch");
         const isMoney=node.unit.startsWith("USD_");
-        const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber);
+        const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber,node.occurrence);
         if((!isMoney&&node.quotedDenomination!==undefined)||
           (isMoney&&node.quantityScale==="hundredth")||
           (isMoney && (node.quotedDenomination==="cents")!==ownerSaidCents))
