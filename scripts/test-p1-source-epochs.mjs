@@ -140,6 +140,15 @@ try{
  const permissions=(await admin.query("SELECT has_table_privilege('authenticated','public.p1_business_source_epochs','SELECT') AS read,has_table_privilege('authenticated','public.p1_business_source_epochs','UPDATE') AS write,has_function_privilege('authenticated','public.p1_touch_business_epoch(uuid)','EXECUTE') AS touch")).rows[0];
  check(!permissions.read&&!permissions.write&&!permissions.touch,
    "clients cannot mutate authoritative revision ledger");
+ // Simulate a privileged legacy import that linked a menu item to another
+ // tenant's ingredient despite RLS. Never leak the foreign ingredient ID.
+ const foreignIngredient="b12b12b1-5555-4555-8555-b12b12b12b12";
+ await admin.query("INSERT INTO public.ingredients(id,business_id,name,base_unit) VALUES($1,$2,'Foreign-only milk','ml')",[foreignIngredient,B]);
+ await admin.query("INSERT INTO public.recipe_lines(menu_item_id,ingredient_id,quantity) VALUES($1,$2,10)",[menu,foreignIngredient]);
+ check(await snapshot(A)===null,"corrupt cross-tenant recipe relationship denies entire source snapshot");
+ await admin.query("DELETE FROM public.recipe_lines WHERE menu_item_id=$1 AND ingredient_id=$2",[menu,foreignIngredient]);
+ check(await snapshot(A)!==null,"repaired local recipe scope returns valid source snapshot");
+
  await admin.query("DELETE FROM public.businesses WHERE id=$1",[B]);
  check((await admin.query("SELECT count(*)::int AS count FROM public.p1_business_source_epochs WHERE business_id=$1",[B])).rows[0].count===0,
    "deleting a café cascades its ledger without resurrecting epoch rows");
