@@ -204,7 +204,13 @@ export function projectP1Evidence(
         !namedCurrent.has(leaf.key)&&
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
-      const handle=key+":"+leaf.key+":"+leaf.field;
+      // Period-bounded P1 reads are distinct canonical source selections. Two
+      // clauses for different date windows must NEVER reuse a first clause's
+      // value just because the domain, entity and field names are identical.
+      const p=result.query.period;
+      const handle=key+":"+leaf.key+":"+leaf.field+
+        (p?":"+p.from+":"+p.to:"");
+      if(handle.length>120)continue;
       // Same registered handle can legitimately be mentioned by several
       // clauses. Keep one trusted numeric operand but preserve EVERY clause
       // association so a plan cannot borrow it from an unrelated clause.
@@ -215,7 +221,6 @@ export function projectP1Evidence(
           choices.push(choice);
         continue;
       }
-      const p=result.query.period;
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
       choices.push(choice);
