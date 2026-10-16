@@ -128,7 +128,7 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
   });
   it("normalizes Arabic decimal separators but rejects ambiguous groupings",()=>{
     expect(evaluateExpression(plan("١٢٫٥",1250,"USD_cents_per_item"),
-      scope("سعر الحليب ١٢٫٥ دولار")))
+      scope("سعر الحليب لكل كوب ١٢٫٥ دولار")))
       .toMatchObject({status:"conditional",value:1250});
     expect(evaluateExpression(plan("1,000",100000,"USD_cents_per_item"),
       scope("¿Y si 1,000?"))).toMatchObject({
