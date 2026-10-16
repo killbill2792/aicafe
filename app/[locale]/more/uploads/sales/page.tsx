@@ -34,6 +34,22 @@ export default async function SalesCsvPage() {
           unmatchedWarningTitle: t("unmatchedWarningTitle"),
           unmatchedWarningHint: t("unmatchedWarningHint"),
           unmatchedRowsCount: t("unmatchedRowsCount"),
+          reviewRowsInFile: t("reviewRowsInFile"),
+          rejectedTitle: t("rejectedTitle"),
+          rejectedReasons: {
+            missing_item: t("rejectedMissingItem"),
+            missing_date: t("rejectedMissingDate"),
+            invalid_date: t("rejectedInvalidDate"),
+            invalid_quantity: t("rejectedInvalidQuantity"),
+            invalid_net_sales: t("rejectedInvalidNetSales"),
+          },
+          statusStarting: t("statusStarting"),
+          statusFinalizing: t("statusFinalizing"),
+          duplicateNotice: t("duplicateNotice"),
+          skippedToastTitle: t("skippedToastTitle"),
+          skippedToastHint: t("skippedToastHint"),
+          tryAgain: t("tryAgain"),
+          cancelStuckImport: t("cancelStuckImport"),
         }}
       />
     </PageShell>

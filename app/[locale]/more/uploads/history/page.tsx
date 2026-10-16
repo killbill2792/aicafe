@@ -43,8 +43,18 @@ export default async function UploadHistoryPage() {
                     <span className="text-base font-bold">{kindLabel(upload.kind)}</span>
                     <span className="text-xs text-ink-muted">{new Date(upload.createdAt).toLocaleString()}</span>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${upload.status === "needs_review" ? "bg-warn-tint text-warn" : "bg-good-tint text-good"}`}>
-                    {upload.status === "needs_review" ? t("statusNeedsReview") : t("statusDone")}
+                  <span
+                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      upload.status === "done" ? "bg-good-tint text-good" : upload.status === "processing" ? "bg-paper text-ink-muted" : "bg-warn-tint text-warn"
+                    }`}
+                  >
+                    {upload.status === "needs_review"
+                      ? t("statusNeedsReview")
+                      : upload.status === "processing"
+                        ? t("statusProcessing")
+                        : upload.status === "failed"
+                          ? t("statusFailed")
+                          : t("statusDone")}
                   </span>
                 </div>
                 {summary && (

@@ -37,6 +37,23 @@ export default async function LaborCsvPage() {
           matchStaffTitle: t("matchStaffTitle"),
           matchStaffHint: t("matchStaffHint"),
           addAsNewEmployee: t("addAsNewEmployee"),
+          noWageColumnHint: t("noWageColumnHint"),
+          reviewRowsInFile: t("reviewRowsInFile"),
+          rejectedTitle: t("rejectedTitle"),
+          rejectedReasons: {
+            missing_employee: t("rejectedMissingEmployee"),
+            missing_clock_in: t("rejectedMissingClockIn"),
+            invalid_date: t("rejectedInvalidDate"),
+          },
+          statusStarting: t("statusStarting"),
+          statusFinalizing: t("statusFinalizing"),
+          duplicateNotice: t("duplicateNotice"),
+          tryAgain: t("tryAgain"),
+          cancelStuckImport: t("cancelStuckImport"),
+          wageReviewTitle: t("wageReviewTitle"),
+          wageReviewHint: t("wageReviewHint"),
+          wageReviewSave: t("wageReviewSave"),
+          wageReviewPlaceholder: t("wageReviewPlaceholder"),
         }}
       />
     </PageShell>
