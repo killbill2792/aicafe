@@ -61,7 +61,6 @@ function verified<T extends OliviaReadResponse>(
   const result=oliviaReadResponseSchema.safeParse(body);
   return result.success?result.data:fail(capability,"invalid_record");
 }
-type Owner = NonNullable<Awaited<ReturnType<typeof requireSchedulingOwner>>>;
 async function stillOwner(businessId:string):Promise<boolean> {
   const current=await requireSchedulingOwner();
   return !!current && current.businessId===businessId;
@@ -162,6 +161,8 @@ async function readPreview(
   const capability=input.capability;
   // PR3's action authenticates, loads trusted staff/coverage/wages, binds the
   // source digest and head revision, and calls the PR2 pure optimizer.
+  const initialOwner=await requireSchedulingOwner();
+  if(!initialOwner)return fail(capability,"unauthorized");
   const preview=await previewOliviaWeek({week:input.week});
   if(!preview.ok)return fromDomainError(capability,preview.error);
   if(input.options?.expectedSourceDigest &&
@@ -171,7 +172,8 @@ async function readPreview(
       input.options.expectedRevision!==preview.previewRevision)
     return fail(capability,"revision_conflict");
   const owner=await requireSchedulingOwner();
-  if(!owner)return fail(capability,"unauthorized");
+  if(!owner || owner.businessId!==initialOwner.businessId)
+    return fail(capability,"unauthorized");
   const candidate=oliviaScenarioSchema.safeParse(
     input.options?.objective
       ? preview.plan.scenarios.find(x=>x.objective===input.options?.objective)??null
@@ -195,10 +197,13 @@ async function readHistory(
   input:Extract<OliviaReadRequest,{capability:"olivia.schedule.history.read"}>,
 ):Promise<OliviaReadResponse> {
   const capability=input.capability;
+  const initialOwner=await requireSchedulingOwner();
+  if(!initialOwner)return fail(capability,"unauthorized");
   const history=await readOliviaPlanHistory({week:input.week});
   if(!history.ok)return fromDomainError(capability,history.error);
   const owner=await requireSchedulingOwner();
-  if(!owner)return fail(capability,"unauthorized");
+  if(!owner || owner.businessId!==initialOwner.businessId)
+    return fail(capability,"unauthorized");
   const seen=new Set<number>();
   for(const row of history.revisions){
     if(seen.has(row.revision))return fail(capability,"invalid_record");
@@ -226,6 +231,8 @@ async function readRevision(
   input:Extract<OliviaReadRequest,{capability:"olivia.schedule.revision.read"}>,
 ):Promise<OliviaReadResponse> {
   const capability=input.capability;
+  const initialOwner=await requireSchedulingOwner();
+  if(!initialOwner)return fail(capability,"unauthorized");
   const revision=await readOliviaPlanRevision({week:input.week,revisionId:input.revisionId});
   if(!revision.ok)return fromDomainError(capability,revision.error);
   const scenario=oliviaScenarioSchema.safeParse(revision.scenario);
@@ -233,7 +240,8 @@ async function readRevision(
      (revision.status==="published" && revision.publishedRevision!==revision.revision))
     return fail(capability,"invalid_record");
   const owner=await requireSchedulingOwner();
-  if(!owner)return fail(capability,"unauthorized");
+  if(!owner || owner.businessId!==initialOwner.businessId)
+    return fail(capability,"unauthorized");
   // Unlike PR3's lightweight draft-picker, this capability also checks the
   // actual persisted assignment rows against the revision scenario, so a
   // malformed/stale DB projection cannot be presented as an official plan.
