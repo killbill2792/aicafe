@@ -46,12 +46,12 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
     conflict:"revisionConflict",
   };
   function load(){
-    setError("");start(async()=>{
+    setError("");setRows(null);start(async()=>{
       try {
         const response=await readOliviaPublishedWeek({week});
-        if(!response.ok){setError(t("publishError"));return;}
+        if(!response.ok){setRows(null);setError(t("publishError"));return;}
         setRows(response.assignments as PublishedRow[]);
-      }catch{setError(t("publishError"));}
+      }catch{setRows(null);setError(t("publishError"));}
     });
   }
   function transition(kind:"approve"|"publish"){
@@ -75,10 +75,14 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
         }));
         await onChanged();
         if(kind==="publish"){
+          // Never present a stale official version after a successful commit.
+          // If readback fails, show a retriable error instead of old rows.
+          setRows(null);
           const check=await readOliviaPublishedWeek({week});
           if(check.ok)setRows(check.assignments as PublishedRow[]);
+          else setError(t("publishError"));
         }
-      }catch{setError(t("publishError"));}
+      }catch{setRows(null);setError(t("publishError"));}
     });
   }
   return <section className="flex flex-col gap-3 rounded-xl border border-line p-3">
