@@ -178,12 +178,34 @@ describe("authoritative P3 source projection",()=>{
       {period:{from:asOf,to:asOf}},asOf)!;
     expect(projection.leaves).toEqual(expect.arrayContaining([
       expect.objectContaining({field:"netSalesCents",value:1000}),
-      expect.objectContaining({field:"ingredientsCents",value:180}),
+
     ]));
-    expect(projection.leaves.some(x=>x.field==="cardFeesCents"))
-      .toBe(false);
+    expect(projection.leaves.some(x=>x.field==="cardFeesCents"||
+      x.field==="ingredientsCents")).toBe(false);
     expect(projection.missingInputs).toContain(
       "card_fee_status_unavailable_from_atomic_snapshot");
+    expect(projection.missingInputs).toContain(
+      "historical_ingredient_cost_coverage_not_proven");
+  });
+  it("COMPOSE-04: unrelated old rollups truncated do not invalidate covered recent dates",()=>{
+    const start=new Date("2026-10-15T12:00:00Z").getTime();
+    const daily=Array.from({length:367},(_,i)=>({
+      business_date:new Date(start-i*86400000).toISOString().slice(0,10),
+      net_sales_cents:1000,orders_count:2,drinks_count:2,
+      ingredients_cents:0,staff_wages_cents:100,
+      staff_tax_cents:12,card_fees_cents:0,
+      sales_data_status:"actual",staff_tax_status:"actual",
+    }));
+    const recent=snapshot({sources:{...sources,dailyRollups:daily},
+      truncated:{...truncated,dailyRollups:true}});
+    const available=extractAtomicSnapshot("sales.daily",recent,
+      {period:{from:asOf,to:asOf}},asOf);
+    expect(available?.leaves).toEqual(expect.arrayContaining([
+      expect.objectContaining({field:"netSalesCents",value:1000}),
+    ]));
+    const absent=extractAtomicSnapshot("sales.daily",recent,
+      {period:{from:"2025-01-01",to:"2025-01-01"}},asOf);
+    expect(absent?.leaves).toEqual([]);
   });
   it("COMPOSE-05: foreign snapshots, truncation and mismatched epochs fail closed",()=>{
     const clause="Sophie works 45 paid minutes";
