@@ -139,10 +139,19 @@ function convert(a:Item,to:Unit):Item {
   if(!rule)throw new Error("unsupported_conversion");
   return {...a,v:times(a.v,rat(rule[0],rule[1])),u:to};
 }
+/** Localized numeric quoting is validated against the owner's exact input,
+ * then canonicalized for arithmetic; grouping ambiguity fails closed. */
+export function normalizeScenarioNumber(s:string):string {
+  return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/gu,c=>{
+    const code=c.codePointAt(0)!;
+    return String(code>=0x6f0?code-0x6f0:code-0x660);
+  }).replace(/(?<=\d)[,\u066B](?=\d)/gu,".");
+}
 function attributed(message:string,quoted:string):boolean{
-  if(!/^-?\d+(?:\.\d{1,2})?$/.test(quoted))return false;
-  const values:string[]=message.match(/-?\d+(?:\.\d+)?/g)??[];
-  return values.some(value=>value===quoted);
+  const normalized=normalizeScenarioNumber(quoted);
+  if(!/^-?\d+(?:\.\d{1,2})?$/.test(normalized))return false;
+  const values=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)?/g)??[];
+  return values.includes(normalized);
 }
 function rounded(v:Rat):number{
   const amount=(abs(v.n)*BigInt("2")+v.d)/(v.d*BigInt("2"));
@@ -203,7 +212,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else if(node.op==="hypothetical"){
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
-        const stated=Number(node.quotedNumber);
+        const stated=Number(normalizeScenarioNumber(node.quotedNumber));
         const interpreted=node.unit.startsWith("USD_")||node.unit==="ratio_bps"
           ?stated*100:stated;
         if(!Number.isSafeInteger(interpreted)||interpreted!==node.value)
