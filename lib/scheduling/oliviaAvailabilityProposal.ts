@@ -50,9 +50,10 @@ export function reconcileOliviaAvailability(
   const descriptions:Extract<ProposalResult,{ok:true}>["changes"]=[];
   const seenScopes=new Set<string>();
   for(const change of request.changes){
-    const matched=("employeeId" in change.employee)
-      ? employees.filter(e=>e.employeeId===change.employee.employeeId)
-      : employees.filter(e=>identity(e.displayName)===identity(change.employee.exactDisplayName));
+    const selector=change.employee;
+    const matched=("employeeId" in selector)
+      ? employees.filter(e=>e.employeeId===selector.employeeId)
+      : employees.filter(e=>identity(e.displayName)===identity(selector.exactDisplayName));
     if(!matched.length)return {ok:false,error:"not_found"};
     if(matched.length!==1)return {ok:false,error:"ambiguous_employee"};
     const person=matched[0];
