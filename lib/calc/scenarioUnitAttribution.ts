@@ -33,6 +33,12 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(gallons.test(nearby))found.add("US_gallon");
     if(ratio.test(nearby))found.add("ratio_bps");
     if(money.test(nearby))found.add("money");
+    // A currency sign immediately adjacent to THIS quoted amount is
+    // authoritative; a preceding percentage belongs to another operand.
+    if(/[$€£]\s*$/u.test(before)){
+      found.clear();
+      found.add("money");
+    }
     const genericPlural=/^\s*(?:(?:more|additional|extra|paid|new|más|mas|أكثر|إضافية)\s+){0,3}[\p{L}]+s\b/iu;
     // "fluid ounces per cup" is volume, not a count of cups. An
     // explicit dimension always takes precedence over incidental nouns.
