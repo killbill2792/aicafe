@@ -95,7 +95,7 @@ describe("Olivia PR4B-A strict scheduling commands",()=>{
         scope:{effective_from:"2026-02-30",effective_to:null}}],
     }).success).toBe(false);
     const model=prepare();
-    model.changes[0].operations[0]={action:"add",data:{
+    (model.changes[0].operations as unknown[])[0]={action:"add",data:{
       day_of_week:1,start_local:"sometime",end_local:"15:00",
       overnight:false,source:"owner_direct",confirmation:"owner_confirmed",
     }};
