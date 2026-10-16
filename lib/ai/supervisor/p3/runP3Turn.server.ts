@@ -146,7 +146,12 @@ export async function tryP3SupervisorReadOnly(input:{
   apiKey:string;model:string;transport:Transport;
 }):Promise<P3Result|null>{
   const {tools,identity}=await authorizedOwnerP1();
-  if(!identity.businessId||!input.apiKey||identity.currency!=="USD")return null;
+  const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
+    .split(",").map(id=>id.trim()).filter(Boolean);
+  // Compatibility requires BOTH the default-off feature flag at the caller
+  // and an explicit authenticated selected-business allowlist.
+  if(!identity.businessId||!allowed.includes(identity.businessId)||
+    !input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
   const capabilityRegistry=createP3ReadRegistry();
