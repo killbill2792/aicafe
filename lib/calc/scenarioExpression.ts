@@ -150,12 +150,14 @@ export function normalizeScenarioNumber(s:string):string {
   return s.replace(/[\u0660-\u0669\u06F0-\u06F9]/gu,c=>{
     const code=c.codePointAt(0)!;
     return String(code>=0x6f0?code-0x6f0:code-0x660);
-  }).replace(/(?<=\d)[,\u066B](?=\d)/gu,".");
+  }).replace(/(?<=\d)[,\u066B\u066C](?=\d)/gu,".");
 }
 function attributed(message:string,quoted:string):boolean{
   const normalized=normalizeScenarioNumber(quoted);
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(normalized))return false;
-  const values:string[]=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)?/g)??[];
+  // Consume the WHOLE numeric token, including repeated separators; never
+  // attribute a fragment of a grouped or malformed quantity.
+  const values:string[]=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)*/g)??[];
   return values.includes(normalized);
 }
 /** A cent-denominated interpretation requires the owner's own nearby word
@@ -174,6 +176,19 @@ function ownerQuotedCents(message:string,quoted:string):boolean{
       /¢\s*$/u.test(before))return true;
   }
   return false;
+}
+/** Avoid IEEE-754 multiplication when converting owner decimals to cents
+ * or hundredth units; the integer interpretation is computed from digits.
+ */
+function scaledOwnerNumber(quoted:string,factor:number):bigint|null{
+  const match=/^(-?)([0-9]+)(?:\\.([0-9]{1,2}))?$/.exec(
+    normalizeScenarioNumber(quoted));
+  if(!match)return null;
+  const whole=BigInt(match[2]),part=BigInt((match[3]??"").padEnd(2,"0")||"0");
+  const numerator=(whole*BigInt("100")+part)*BigInt(factor);
+  if(numerator%BigInt("100")!==BigInt("0"))return null;
+  const signed=numerator/BigInt("100");
+  return match[1]? -signed:signed;
 }
 function rounded(v:Rat):number{
   const amount=(abs(v.n)*BigInt("2")+v.d)/(v.d*BigInt("2"));
@@ -234,7 +249,6 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else if(node.op==="hypothetical"){
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
-        const stated=Number(normalizeScenarioNumber(node.quotedNumber));
         const isMoney=node.unit.startsWith("USD_");
         const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber);
         if((!isMoney&&node.quotedDenomination!==undefined)||
@@ -244,8 +258,8 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
         const quantityScale=node.quantityScale==="hundredth"?100:1;
         const factor=isMoney?(node.quotedDenomination==="cents"?1:100):
           node.unit==="ratio_bps"?100:quantityScale;
-        const interpreted=stated*factor;
-        if(!Number.isSafeInteger(interpreted)||interpreted!==node.value)
+        const interpreted=scaledOwnerNumber(node.quotedNumber,factor);
+        if(interpreted===null||interpreted!==BigInt(node.value))
           throw new Error("hypothetical_mismatch");
         stack.push({v:rat(BigInt(node.value),BigInt(
           isMoney||node.unit==="ratio_bps"?1:quantityScale)),
