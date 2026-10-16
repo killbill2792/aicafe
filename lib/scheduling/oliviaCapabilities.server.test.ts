@@ -216,8 +216,9 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     m.foundation.mockResolvedValueOnce({ok:true,records:{
       ...emptyRecords(),availability_rule:[{...recurring,employee_id:uid(99)}],
     },audit:[]});
-    expect(await executeOliviaReadCapability(availability()))
-      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    expect(await executeOliviaReadCapability({
+      capability:"olivia.availability.read",version:1,
+    })).toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
   it("rejects a capped employee count and transient employee-query errors",async()=>{
     m.staff=Array.from({length:501},(_,i)=>({
