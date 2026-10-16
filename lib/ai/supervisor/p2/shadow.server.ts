@@ -209,6 +209,12 @@ export async function runP2ShadowWithScope(params:{
   });
   if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses))
     return missing("scope_unverified",usage);
+  // Identically worded repeated clauses have different text occurrences, but
+  // a multi-read plan names only clause text. Fail closed rather than merge
+  // two owner goals through an ambiguous text key. Legacy P2 remains unchanged.
+  if(params.allowMultipleReadsPerClause &&
+    new Set(audit.clauses).size!==audit.clauses.length)
+    return missing("ambiguous_duplicate_clauses",usage);
   const plan=await requestStructured({
     instructions:[
       "Read-only capability selection for this independent shadow demonstration.",
