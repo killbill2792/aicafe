@@ -87,8 +87,18 @@ function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,O
   if(op==="loaded_labor"){
     // Canonical labor engine is authoritative; a declared employer burden
     // percentage is indispensable. No model-invented tax or overtime rule.
+    // Wage-only inputs may be burdened. Never tax an already-loaded staff
+    // cost, menu revenue or another domain's money a second time.
+    const wageOnly=(handle:string)=>{
+      const source=authorizedSources.get(handle);
+      return source?.sourceId==="labor.employee_wages"&&
+          source.handle.endsWith(":defaultHourlyWageCents")||
+        source?.sourceId==="labor.daily_costs"&&
+          source.handle.startsWith("labor.daily_costs:aggregate:wagesCents:");
+    };
     if(a.u!=="USD_cents"||b.u!=="ratio_bps"||
       (a.p&&b.p&&!equalPeriod(a,b))||
+      [...a.refs].some(handle=>!wageOnly(handle))||
       [...b.refs].some(handle=>authorizedSources.get(handle)?.sourceId!==
         "labor.payroll_burden"))
       throw new Error("invalid_loaded_labor_dimensions");
