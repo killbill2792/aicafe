@@ -303,6 +303,20 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(m.calls).toEqual(["scheduling_plan_assignments",
       "scheduling_plan_assignments"]);
   });
+  it("fails closed on forged official pointers and marks multi-request reads provisional",async()=>{
+    expect(await executeOliviaReadCapability(history())).toMatchObject({
+      ok:true,source:{consistency:"provisional"}});
+    expect(await executeOliviaReadCapability(revision())).toMatchObject({
+      ok:true,source:{consistency:"provisional"}});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:1,publishedRevision:2,
+      revisions:[{id:revisionId,revision:1,status:"draft",created_at:iso}]});
+    expect(await executeOliviaReadCapability(history())).toMatchObject({
+      ok:false,error:{code:"invalid_record"}});
+    m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"approved",
+      currentRevision:2,publishedRevision:2,scenario,sourceDigest:digest});
+    expect(await executeOliviaReadCapability(revision())).toMatchObject({
+      ok:false,error:{code:"invalid_record"}});
+  });
   it("rejects a selected café switch during history read",async()=>{
     m.owner.mockResolvedValueOnce({businessId,supabase:client()})
       .mockResolvedValueOnce({businessId:otherBusinessId,supabase:client()});
