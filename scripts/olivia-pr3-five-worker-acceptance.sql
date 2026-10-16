@@ -36,6 +36,9 @@ BEGIN
    VALUES(b,'Olivia five-worker disposable acceptance',false,'America/Los_Angeles');
  INSERT INTO public.memberships(business_id,user_id,role)
    VALUES(b,actor,'owner'),(b,stranger,'manager');
+ -- Foundation attestation triggers source the confirming actor from auth.uid.
+ -- Merely supplying confirmed_by in an INSERT is intentionally insufficient.
+ PERFORM set_config('request.jwt.claim.sub',actor::text,true);
  INSERT INTO public.locations(id,business_id,name,timezone)
    VALUES(loc_a,b,'Morning cafe','America/Los_Angeles'),
          (loc_b,b,'Evening cafe','America/Los_Angeles');
