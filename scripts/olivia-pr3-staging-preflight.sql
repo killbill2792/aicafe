@@ -51,8 +51,7 @@ function_check AS (
         ELSE has_function_privilege('authenticated',p.oid,'EXECUTE') END
      AS authenticated_execute
  FROM functions f
- LEFT JOIN pg_proc p ON p.pronamespace='public'::regnamespace
-   AND p.proname=f.name AND pg_get_function_identity_arguments(p.oid)=f.args
+ LEFT JOIN pg_proc p ON p.oid=to_regprocedure('public.'||f.name||'('||f.args||')')
 )
 SELECT jsonb_pretty(jsonb_build_object(
  'environment',jsonb_build_object(
