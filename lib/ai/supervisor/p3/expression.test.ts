@@ -49,6 +49,45 @@ describe("P3 source-bound safe expression evaluator",()=>{
     expect(outcome.assumptions).toHaveLength(2);
     expect(outcome.proposal).toBeNull();
   });
+  it("loads wage-only costs but rejects applying employer burden to an already-loaded total",()=>{
+    const dailyBinding:Binding={
+      capabilityId:"olivia.daily-costs.v1",canonicalReaderId:"labor.daily_costs.read.v1",
+      sourceIds:["labor.daily_costs"],purposes:["recorded_labor_cost_review"],
+      sensitivity:"staff",
+    };
+    const burdenBinding:Binding={
+      capabilityId:"olivia.payroll-burden.v1",canonicalReaderId:"labor.burden.read.v1",
+      sourceIds:["labor.payroll_burden"],
+      purposes:["authorized_owner_employer_cost_review"],sensitivity:"staff",
+    };
+    const cash:Operand={...basic,
+      handle:"labor.daily_costs:aggregate:wagesCents:2026-10-01:2026-10-03",
+      capabilityId:dailyBinding.capabilityId,canonicalReaderId:dailyBinding.canonicalReaderId,
+      sourceId:"labor.daily_costs",sourcePurpose:"recorded_labor_cost_review",
+      value:1350,unit:"USD_cents"};
+    const preloaded:Operand={...cash,
+      handle:"labor.daily_costs:aggregate:loadedStaffCostCents:2026-10-01:2026-10-03",
+      value:1512};
+    const tax:Operand={...basic,
+      handle:"labor.payroll_burden:aggregate:rateBasisPoints",
+      capabilityId:burdenBinding.capabilityId,
+      canonicalReaderId:burdenBinding.canonicalReaderId,
+      sourceId:"labor.payroll_burden",
+      sourcePurpose:"authorized_owner_employer_cost_review",
+      value:1200,unit:"ratio_bps",currency:null};
+    const run=(wage:Operand)=>evaluateExpression(plan([
+      source(wage.handle),source(tax.handle),{op:"loaded_labor"},
+    ]),{...context([wage,tax]),
+      bindings:[dailyBinding,burdenBinding]});
+    expect(run(cash)).toMatchObject({status:"conditional",value:1512,
+      unit:"USD_cents"});
+    expect(run(preloaded)).toMatchObject({status:"unavailable",
+      reason:"invalid_loaded_labor_dimensions"});
+    const unrelated:Operand={...cash,sourceId:"labor.daily_costs",
+      handle:"labor.daily_costs:aggregate:cardFeesCents:2026-10-01:2026-10-03"};
+    expect(run(unrelated)).toMatchObject({status:"unavailable",
+      reason:"invalid_loaded_labor_dimensions"});
+  });
   it("supports exact US gallon-to-fluid-ounce ingredient cost arithmetic",()=>{
     const gallons:Operand={...price,handle:"milk-gallon",value:640,
       unit:"USD_cents_per_US_gallon"};
