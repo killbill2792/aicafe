@@ -9,6 +9,8 @@ import {
   OLIVIA_CAPABILITY_VERSION, oliviaReadRequestSchema, oliviaReadResponseSchema,
   oliviaStoredSchemas, oliviaScenarioSchema, oliviaShiftSchema,
   oliviaUuid, oliviaAvailabilityEmployeeSchema, oliviaRevisionStatusSchema,
+  oliviaCapabilityBlockerSchema, OLIVIA_MAX_PREVIEW_BLOCKERS,
+  OLIVIA_MAX_GAPS_PER_SCENARIO,
   type OliviaReadCapability, type OliviaReadRequest,
   type OliviaReadResponse,
 } from "./oliviaCapabilityContracts";
@@ -42,10 +44,14 @@ const messages:Record<ErrorCode,string>={
   planner_unavailable:"A verified scheduling preview is unavailable.",
   capacity_exceeded:"Scheduling read exceeds the supported safe limit.",
 };
-function fail(capability:OliviaReadCapability|"invalid_request",code:ErrorCode):OliviaReadResponse {
+function fail(
+  capability:OliviaReadCapability|"invalid_request",code:ErrorCode,
+  blockers?:Array<z.infer<typeof oliviaCapabilityBlockerSchema>>,
+):OliviaReadResponse {
   return {ok:false,capability,version:OLIVIA_CAPABILITY_VERSION,status:"error",
     error:{code,retryable:["storage_unavailable","planner_unavailable"].includes(code),
-      message:messages[code]}};
+      message:messages[code]},
+    ...(blockers ? {blockers} : {})};
 }
 function fromDomainError(capability:OliviaReadCapability,error:unknown):OliviaReadResponse {
   switch(error){
@@ -187,7 +193,22 @@ async function readPreview(
   const initialOwner=await requireSchedulingOwner();
   if(!initialOwner)return fail(capability,"unauthorized");
   const preview=await previewOliviaWeek({week:input.week});
-  if(!preview.ok)return fromDomainError(capability,preview.error);
+  if(!preview.ok){
+    if(preview.error==="missing_inputs"){
+      // Trusted PR3 provides actionable source-grounded setup blockers.
+      // Validate before returning; never emit provider details or invented
+      // setup instructions in the generic failure response.
+      const blockers=z.array(oliviaCapabilityBlockerSchema)
+        .min(1).max(OLIVIA_MAX_PREVIEW_BLOCKERS).safeParse(preview.blockers);
+      if(!blockers.success)return fail(capability,"invalid_record");
+      return fail(capability,"missing_inputs",blockers.data);
+    }
+    return fromDomainError(capability,preview.error);
+  }
+  if(preview.plan?.scenarios?.some(s=>
+      Array.isArray(s.gaps) && s.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO) ||
+     (preview.plan?.best?.gaps?.length??0)>OLIVIA_MAX_GAPS_PER_SCENARIO)
+    return fail(capability,"capacity_exceeded");
   if(input.options?.expectedSourceDigest &&
       input.options.expectedSourceDigest!==preview.sourceDigest)
     return fail(capability,"source_changed");
