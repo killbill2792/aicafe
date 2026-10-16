@@ -116,6 +116,54 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("COMPOSE-02: a single owner clause safely selects wages AND employer burden",async()=>{
+    const clause="Sophie works 45 extra minutes including employer burden";
+    const burden={id:"labor.payroll_burden",version:1,
+      purpose:"authorized_owner_employer_cost_review"};
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const key=(raw as {id:string}).id;
+      if(key==="labor.employee_wages")return result(wageInput,workers);
+      if(key==="labor.payroll_burden"){
+        const envelope=result(burden,{
+          rateBasisPoints:1200,status:"confirmed",source:"owner_confirmed"});
+        return {...envelope,provenance:{...envelope.provenance,
+          canonicalReaderId:readers["labor.payroll_burden"]}};
+      }
+      throw Error("unauthorized extra read");
+    });
+    let step=0;
+    const provider=vi.fn(async()=>{
+      const n=step++;
+      if(n===0)return response({complete:true,clauses:[clause]});
+      if(n===1)return response({complete:true,choices:[
+        {clause,capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+        {clause,capabilityId:"p3.labor.payroll_burden.v1",
+          inputJson:JSON.stringify(burden),reason:null},
+      ]});
+      return response({complete:true,plans:[{
+        coveredClauses:[clause],reason:null,planJson:JSON.stringify({
+          capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
+          description:"Canonical wage plus recorded employer burden",
+          nodes:[
+            {op:"source",handle:"labor.employee_wages:sophie:defaultHourlyWageCents"},
+            {op:"hypothetical",label:"paid minutes",quotedNumber:"45",value:45,
+              unit:"minute"},
+            {op:"multiply"},
+            {op:"source",handle:"labor.payroll_burden:aggregate:rateBasisPoints"},
+            {op:"loaded_labor"},
+          ],
+        }),
+      }]});
+    });
+    const output=await run(provider,clause);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:1512}),
+    ]));
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
+    expect(p1Reads).toHaveBeenCalledTimes(2);
+  });
   it("COMPOSE-01/07: calculates loaded labor via an authorized employer-rate read, not model tax",async()=>{
     const clauses=["Sophie works 45 more minutes","show employer payroll burden"];
     const request=clauses.join(" and ");
