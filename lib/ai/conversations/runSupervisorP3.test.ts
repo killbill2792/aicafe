@@ -283,8 +283,10 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const transport=makeTransport();
     const output=await run(transport.calls);
     expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(transport.calls).toHaveBeenCalledTimes(3);
     expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
-    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
+      blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
   });
   it("COMPOSE-02: a single owner clause safely selects wages AND employer burden",async()=>{
     const clause="Sophie works 45 extra minutes including employer burden";
