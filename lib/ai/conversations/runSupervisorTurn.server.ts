@@ -12,6 +12,7 @@ import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcil
   coversRequestedGoal, fallbackCallForGoal, goalLabel, unavailableGoalText,
   type RequestedGoal } from "./requestScope";
 import type { SupervisorToolCall } from "./toolRegistry.server";
+import { tryP3SupervisorReadOnly } from "@/lib/ai/supervisor/p3/runP3Turn.server";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
@@ -296,6 +297,30 @@ export async function runSupervisorTurn(input: {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  // P3 is a default-OFF, owner-authorized compatibility route, never production
+  // activation. Its typed simulator cannot write, approve, publish or propose.
+  // On incomplete evidence/model failure, preserve the established Supervisor.
+  if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
+    try {
+      const composed=await tryP3SupervisorReadOnly({
+        text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
+        apiKey:key,model,transport,
+      });
+      if (composed) {
+        const simulatedUsage:SupervisorUsage={
+          model:composed.usage.model,inputTokens:composed.usage.inputTokens,
+          outputTokens:composed.usage.outputTokens,
+          modelCallCount:composed.usage.modelCallCount,
+          toolCallCount:composed.usage.toolCallCount,
+        };
+        input.onUsage?.({...simulatedUsage});
+        return {reply:composed.reply,usage:simulatedUsage};
+      }
+    } catch {
+      // No P3 exception, unverifiable source or provider output may become
+      // an owner-visible fact; legacy reads still use their own guardrails.
+    }
+  }
   // No implicit fallback. Only an explicitly configured, different model may be tried.
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
   let fallbackAttempted = false;
