@@ -67,6 +67,25 @@ describe("COMPOSE registration and source binding",()=>{
     expect(daily([{date:"not-an-ISO-date",netSalesCents:20,ingredientsCents:5,cardFeesCents:1}])).toEqual([]);
     expect(daily([{date:"2026-10-14",netSalesCents:Infinity,ingredientsCents:5,cardFeesCents:1}])).toEqual([]);
   });
+  it("never projects unknown zero placeholders as trusted business costs",()=>{
+    const extract=extractors["money.business_costs"]!;
+    const costs={completeness:"partial",knownTotalCents:2500,
+      components:{ingredientsCents:0,loadedStaffCents:2500,
+        cardFeesCents:0,runningCostsCents:0},
+      observed:{ingredients:true,loadedStaff:true,cardFees:true,runningCosts:true},
+      missingInputs:["historicalIngredientCostCoverage"],
+      coverage:{salesDays:2,laborDays:2,expectedDays:2,
+        itemSalesCovered:true,historicalIngredientCostsProven:false,
+        missingProductCostCount:0,missingFeeDays:1,
+        missingOperatingCategories:[{code:"utilities",label:"Utilities"}]},
+    };
+    const projected=extract(costs);
+    expect(projected).toEqual([expect.objectContaining({
+      field:"loadedStaffCents",value:2500,
+    })]);
+    expect(projected.some(x=>x.field==="ingredientsCents"&&x.value===0)).toBe(false);
+    expect(projected.some(x=>x.field==="knownTotalCents")).toBe(false);
+  });
   it("registers a synthetic fifth domain without changing central orchestration",async()=>{
     const registry=createP2Registry([
       ...buildP3P1Registrations(),meter,registerExpressionSimulation(),
