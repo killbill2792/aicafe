@@ -235,7 +235,8 @@ export async function tryP3SupervisorReadOnly(input:{
   const shadow=await runP2ShadowWithScope({
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
-    allowSourceFree:true,history:(input.history??[]).slice(-6).map(h=>({
+    allowSourceFree:true,allowMultipleReadsPerClause:true,
+    history:(input.history??[]).slice(-6).map(h=>({
       role:h.role==="owner"?"owner" as const:"assistant" as const,
       text:h.text.slice(0,450),
     })),
@@ -263,7 +264,9 @@ export async function tryP3SupervisorReadOnly(input:{
     null,ownerHistory);
   // Validated pure owner-hypothetical arithmetic may need no café source.
   // It must declare no_external_sources; it can never be labeled observed.
-  const clauses=shadow.evidence.map(x=>x.clause);
+  // P3 permits multiple independently authorized readers for ONE semantic
+  // clause. Composition completeness counts owner goals, not reader count.
+  const clauses=[...new Set(shadow.evidence.map(x=>x.clause))];
   // Count even provider failures/invalid JSON as consumed model attempts;
   // the caller never restarts a fresh full-budget legacy turn after P3.
   reported.modelCallCount++;
