@@ -87,7 +87,15 @@ function daily(snapshot:AtomicP1SourceSnapshot,
     ["netSalesCents","ingredientsCents","cardFeesCents"] as const;
   const leaves:SnapshotLeaf[]=[];
   for(let i=0;i<fields.length;i++){
-    const value=rows.reduce((sum,row)=>sum+row[fields[i]],0);
+    // Each SQL cent is an integer; preserve exactness even when an
+    // intermediate sum is larger than MAX_SAFE_INTEGER and later negative
+    // adjustments bring the final period total back into range.
+    const exact=rows.reduce((sum,row)=>
+      sum+BigInt(row[fields[i]]),BigInt(0));
+    if(exact>BigInt("1000000000000")||
+      exact<BigInt("-1000000000000"))
+      return blocked("daily_total_out_of_range");
+    const value=Number(exact);
     if(!safe(value))return blocked("daily_total_out_of_range");
     leaves.push({key:"aggregate",name:"daily rows",field:names[i],
       value,unit:"USD_cents"});
