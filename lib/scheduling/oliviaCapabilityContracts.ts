@@ -8,7 +8,10 @@ import { foundationRecordSchemas } from "./foundationSchemas";
 export const OLIVIA_CAPABILITY_VERSION = 1 as const;
 export const oliviaUuid = z.string().uuid();
 const nonnegative = z.number().int().min(0);
-const cents = nonnegative.nullable();
+// Cents must remain exact: JavaScript loses integer precision above MAX_SAFE_INTEGER.
+const cents = nonnegative.max(Number.MAX_SAFE_INTEGER).nullable();
+const signedCents = z.number().int().min(-Number.MAX_SAFE_INTEGER)
+  .max(Number.MAX_SAFE_INTEGER).nullable();
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
   const time = Date.parse(value + "T00:00:00Z");
   return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
@@ -100,8 +103,8 @@ export const oliviaPlanSchema=z.object({
   best:oliviaScenarioSchema.nullable(),
   comparisons:z.array(z.object({
     left:objective,right:objective,ownerMinutesDifference:z.number().int(),
-    cashWagesDifferenceCents:z.number().int().nullable(),
-    loadedPayrollDifferenceCents:z.number().int().nullable(),
+    cashWagesDifferenceCents:signedCents,
+    loadedPayrollDifferenceCents:signedCents,
   }).strict()).max(6),
   warnings:z.array(z.string().max(1000)).max(100),
   proof:z.enum(["complete_candidate_solution","required_slot_has_no_eligible_worker",
@@ -120,6 +123,10 @@ export const oliviaAvailabilityResponseSchema=header.extend({
   capability:z.literal("olivia.availability.read"),
   employees:z.array(oliviaAvailabilityEmployeeSchema).max(500),
 }).strict();
+// PR3's source loader can emit up to three notices per employee, plus six
+// global notices. Each scanned source table permits 20,000 rows. Preserving all
+// notices avoids incorrectly rejecting a valid preview with >100 warnings.
+const MAX_PREVIEW_NOTICES = 3 * 20_000 + 6;
 const notice=z.object({code:z.enum(["wage_unknown","availability_missing","unconfirmed_absence",
   "coverage_unconfirmed","no_active_staff","limits_missing","legacy_schedules",
   "policy_unverified","source_provisional"]),employeeName:z.string().optional()}).strict();
@@ -129,7 +136,7 @@ export const oliviaPreviewResponseSchema=header.extend({
   capability:z.literal("olivia.schedule.preview"),plan:oliviaPlanSchema,
   selectedScenario:oliviaScenarioSchema.nullable(),
   previewRevision:nonnegative.max(500),
-  notices:z.array(notice).max(100),blockers:z.array(blocker).max(100),
+  notices:z.array(notice).max(MAX_PREVIEW_NOTICES),blockers:z.array(blocker).max(100),
   employeeNames:z.record(oliviaUuid,z.string().max(240)),
   locationNames:z.record(oliviaUuid,z.string().max(240)),
   frozenShiftKeys:z.array(z.string().max(500)).max(200),
