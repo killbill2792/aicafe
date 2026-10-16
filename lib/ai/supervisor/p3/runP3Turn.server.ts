@@ -130,15 +130,27 @@ const labels={
   en:{conditional:"Conditional what-if, not a demand forecast or verified profit.",
     incomplete:"Some source records are missing, provisional or lack a stable revision.",
     money:"Conditional scenario change",number:"Calculated scenario result",
-    unsupported:"This request needs additional authorized data or later-stage approval."},
+    unsupported:"This request needs additional authorized data or later-stage approval.",
+    baseline:"Baseline totals and source revisions are not independently established.",
+    assumptions:"Owner-stated hypothetical quantities",
+    formula:"Vetted calculation steps",
+    missing:"Unverified input codes"},
   es:{conditional:"Escenario condicional, no pronóstico de demanda ni beneficio verificado.",
     incomplete:"Faltan datos, son provisionales o no tienen revisión verificable.",
     money:"Cambio condicional del escenario",number:"Resultado calculado del escenario",
-    unsupported:"Se necesitan más datos autorizados o aprobación en una fase posterior."},
+    unsupported:"Se necesitan más datos autorizados o aprobación en una fase posterior.",
+    baseline:"No se han verificado los totales de referencia ni las revisiones de origen.",
+    assumptions:"Cantidades hipotéticas dadas por el propietario",
+    formula:"Pasos del cálculo validado",
+    missing:"Datos pendientes de verificación"},
   ar:{conditional:"سيناريو مشروط، وليس توقعًا للطلب أو ربحًا مؤكّدًا.",
     incomplete:"بعض السجلات مفقودة أو مؤقتة أو دون مراجعة موثوقة.",
     money:"التغيّر المشروط في السيناريو",number:"نتيجة السيناريو المحسوبة",
-    unsupported:"يلزم توفر بيانات مأذون بها أو موافقة في مرحلة لاحقة."},
+    unsupported:"يلزم توفر بيانات مأذون بها أو موافقة في مرحلة لاحقة.",
+    baseline:"لم يتم التحقق من القيم الأساسية أو مراجعات المصادر.",
+    assumptions:"الكميات الافتراضية التي ذكرها المالك",
+    formula:"خطوات الحساب المعتمدة",
+    missing:"مدخلات لم يتم التحقق منها"},
 };
 /** A server-authenticated owner read path only, off by default at its caller. */
 export async function tryP3SupervisorReadOnly(input:{
@@ -221,9 +233,22 @@ export async function tryP3SupervisorReadOnly(input:{
       blocks.push({type:"metric",label:locale.money,valueCents:v.value,source:evidence});
     else if(v.value!==null&&v.unit)
       blocks.push({type:"text",text:locale.number+": "+String(v.value)+" "+v.unit});
-    if(v.missingInputs.length)blocks.push({
-      type:"warning",code:"P3_SOURCE_LIMITATIONS",text:locale.incomplete,
-    });
+    // Server-created explanation: no model-authored labels or untrusted
+    // source-record prose is rendered as a verified business fact.
+    const formula=v.formula.map(step=>step.startsWith("source(")?"source":step)
+      .join(" → ");
+    blocks.push({type:"text",text:(locale.formula+": "+formula).slice(0,1100)});
+    if(v.assumptions.length)blocks.push({type:"text",
+      text:(locale.assumptions+": "+v.assumptions.slice(0,6).join("; ")).slice(0,1100)});
+    if(v.missingInputs.length){
+      const codes=[...new Set(v.missingInputs)].slice(0,5).map(code=>
+        code.startsWith("unverified:")?"unverified_source":
+        code.startsWith("unversioned_source:")?"unversioned_source":
+        /^[a-zA-Z][a-zA-Z0-9_:.-]{0,70}$/.test(code)?code:"unverified_input");
+      blocks.push({type:"warning",code:"P3_SOURCE_LIMITATIONS",
+        text:(locale.incomplete+" "+locale.missing+": "+codes.join(", ")).slice(0,1100)});
+      blocks.push({type:"warning",code:"P3_BASELINE",text:locale.baseline});
+    }
   }
   if(blocks.length>30)return null;
   return {kind:"p3_read_only_conditional",executedEffects:0,
