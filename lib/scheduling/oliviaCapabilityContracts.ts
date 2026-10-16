@@ -140,7 +140,7 @@ export const oliviaHistoryResponseSchema=header.extend({
 export const oliviaRevisionResponseSchema=header.extend({
   capability:z.literal("olivia.schedule.revision.read"),
   revisionId:oliviaUuid,revision:z.number().int().min(1).max(500),
-  status:oliviaRevisionStatusSchema,currentRevision:nonnegative.max(500),
+  revisionStatus:oliviaRevisionStatusSchema,currentRevision:nonnegative.max(500),
   publishedRevision:nonnegative.max(500).nullable(),
   sourceDigest:z.string().regex(/^[a-f0-9]{64}$/),
   scenario:oliviaScenarioSchema,
