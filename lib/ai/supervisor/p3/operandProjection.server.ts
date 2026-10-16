@@ -181,7 +181,8 @@ export function projectP1Evidence(
     };
     const provenance=result.provenance;
     const observedContentHash=fingerprintP1Observation({
-      businessId,readerId:readers[key],selectorId:provenance.selectorContractId,
+      businessId,asOf:provenance.asOf,timezone:provenance.timezone,
+      readerId:readers[key],selectorId:provenance.selectorContractId,
       selectorVersion:provenance.selectorContractVersion,
       purpose:provenance.purpose,query:result.query,
       value:result.value,quality:result.quality,
