@@ -69,7 +69,7 @@ export async function prepareOliviaAvailabilityCommand(raw:unknown){
     const result=reconcileOliviaAvailability(
       input.data,saved.employees,owner.businessId,after);
     if(!result.ok)return fail(result.error);
-    return {ok:true as const,version:1 as const,status:"prepared" as const,
+    return {version:1 as const,status:"prepared" as const,
       ...result,requiresOwnerAction:true as const};
   }catch{return fail("storage_unavailable");}
 }
