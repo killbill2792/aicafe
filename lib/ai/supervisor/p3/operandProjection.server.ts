@@ -106,7 +106,8 @@ export function projectP1Evidence(
       // otherwise a model could select another employee or product by mistake.
       if(leaf.field!=="value"&&
         !isWholeNamedEntity(ownerQuestion,leaf.name,
-          valuesForKey.map(v=>({id:v.key,name:v.name}))))
+          valuesForKey.map(v=>({id:v.key,name:v.name})),
+          key.startsWith("menu.")||key==="supplies.quotes"))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
       if(operands.some(o=>o.handle===handle))continue;
