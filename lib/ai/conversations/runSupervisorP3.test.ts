@@ -264,14 +264,16 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     let step=0;
     const provider=vi.fn(async()=>response([
       {complete:true,clauses:phrase},
-      {complete:true,choices:[{clause:question,capabilityId:"p3.menu.catalog.v1",
-        inputJson:JSON.stringify(menuInput),reason:null}]},
+      {complete:true,choices:[{clause:question,capabilityId:null,
+        inputJson:null,reason:"source_free"}]},
       {complete:true,plans:[{coveredClauses:phrase,
         planJson:JSON.stringify(sourceFree),reason:null}]},
     ][step++]));
     const outcome=await run(provider,question);
     expect(outcome.reply.status).toBe("partial");
     expect(outcome.reply.evidence).toEqual([]);
+    expect(p1Reads).not.toHaveBeenCalled();
+    expect(outcome.usage.toolCallCount).toBe(1);
     expect(outcome.reply.blocks.some(block=>block.type==="metric")).toBe(false);
     expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
