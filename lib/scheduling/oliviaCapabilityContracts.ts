@@ -50,7 +50,7 @@ export const oliviaStoredSchemas = {
 const recordLimit = 5000;
 export const oliviaAvailabilityEmployeeSchema = z.object({
   employeeId:oliviaUuid,displayName:z.string().min(1).max(240),active:z.boolean(),
-  state:z.enum(["confirmed","unconfirmed","missing"]),
+  state:z.enum(["confirmed","unconfirmed","missing","unavailable"]),
   recurring:z.array(oliviaStoredSchemas.recurring).max(recordLimit),
   exceptions:z.array(oliviaStoredSchemas.exception).max(recordLimit),
   hourLimits:z.array(oliviaStoredSchemas.hours).max(recordLimit),
