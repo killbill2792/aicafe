@@ -8,6 +8,7 @@ business_a=$(uuid)
 business_b=$(uuid)
 owner=$(uuid)
 employee_a=$(uuid)
+employee_c=$(uuid)
 employee_b=$(uuid)
 workdir=$(mktemp -d)
 holder_pid=''
@@ -28,6 +29,7 @@ INSERT INTO public.memberships(business_id,user_id,role)
 VALUES ('$business_a','$owner','owner'),('$business_b','$owner','owner');
 INSERT INTO public.employees(id,business_id,display_name,active)
 VALUES ('$employee_a','$business_a','Test A',true),
+       ('$employee_c','$business_a','Test A other worker',true),
        ('$employee_b','$business_b','Test B',true);
 SQL
 
@@ -62,27 +64,39 @@ timeout 5s "${PSQL[@]}" >"$workdir/other.log" 2>&1 <<SQL || { cat "$workdir/othe
 BEGIN;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','$owner',true);
-INSERT INTO public.staff_availability_rules(
- business_id,employee_id,location_id,day_of_week,start_local,end_local,
- overnight,effective_from,effective_to,source,confirmation)
-VALUES ('$business_b','$employee_b',NULL,1,'08:00','12:00',false,
- '2026-11-02',NULL,'owner_direct','unconfirmed');
-UPDATE public.employees SET display_name='Test B updated' WHERE id='$employee_b';
+SELECT public.scheduling_save_availability_batch(
+ '$business_b'::uuid,'$employee_b'::uuid,NULL::uuid,
+ 'availability_rule',
+ jsonb_build_object('effective_from','2026-11-02','effective_to',NULL),
+ '[]'::jsonb,
+ jsonb_build_array(jsonb_build_object('data',jsonb_build_object(
+   'employee_id','$employee_b','location_id',NULL,'day_of_week',1,
+   'start_local','08:00','end_local','12:00','overnight',false,
+   'effective_from','2026-11-02','effective_to',NULL,
+   'source','owner_direct','confirmation','unconfirmed'))),
+ gen_random_uuid());
 COMMIT;
 SQL
 
-# Session C: ordinary same-café availability INSERT must not slip into the
+# Session C: normal owner PR1B batch for a DIFFERENT worker in the same café
+# must not slip into the
 # protected source window. A short lock_timeout fails deliberately.
 if "${PSQL[@]}" >"$workdir/same.log" 2>&1 <<SQL
 BEGIN;
 SET LOCAL ROLE authenticated;
 SET LOCAL lock_timeout='500ms';
 SELECT set_config('request.jwt.claim.sub','$owner',true);
-INSERT INTO public.staff_availability_rules(
- business_id,employee_id,location_id,day_of_week,start_local,end_local,
- overnight,effective_from,effective_to,source,confirmation)
-VALUES ('$business_a','$employee_a',NULL,2,'08:00','12:00',false,
- '2026-11-02',NULL,'owner_direct','unconfirmed');
+SELECT public.scheduling_save_availability_batch(
+ '$business_a'::uuid,'$employee_c'::uuid,NULL::uuid,
+ 'availability_rule',
+ jsonb_build_object('effective_from','2026-11-02','effective_to',NULL),
+ '[]'::jsonb,
+ jsonb_build_array(jsonb_build_object('data',jsonb_build_object(
+   'employee_id','$employee_c','location_id',NULL,'day_of_week',2,
+   'start_local','08:00','end_local','12:00','overnight',false,
+   'effective_from','2026-11-02','effective_to',NULL,
+   'source','owner_direct','confirmation','unconfirmed'))),
+ gen_random_uuid());
 COMMIT;
 SQL
 then
@@ -100,11 +114,17 @@ holder_pid=''
 BEGIN;
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','$owner',true);
-INSERT INTO public.staff_availability_rules(
- business_id,employee_id,location_id,day_of_week,start_local,end_local,
- overnight,effective_from,effective_to,source,confirmation)
-VALUES ('$business_a','$employee_a',NULL,2,'08:00','12:00',false,
- '2026-11-02',NULL,'owner_direct','unconfirmed');
+SELECT public.scheduling_save_availability_batch(
+ '$business_a'::uuid,'$employee_c'::uuid,NULL::uuid,
+ 'availability_rule',
+ jsonb_build_object('effective_from','2026-11-02','effective_to',NULL),
+ '[]'::jsonb,
+ jsonb_build_array(jsonb_build_object('data',jsonb_build_object(
+   'employee_id','$employee_c','location_id',NULL,'day_of_week',2,
+   'start_local','08:00','end_local','12:00','overnight',false,
+   'effective_from','2026-11-02','effective_to',NULL,
+   'source','owner_direct','confirmation','unconfirmed'))),
+ gen_random_uuid());
 COMMIT;
 SQL
 echo 'Olivia PR4B-A concurrent two-session source locking: same café serialized, other café progressed'
