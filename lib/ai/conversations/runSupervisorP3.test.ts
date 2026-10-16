@@ -500,7 +500,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
   ])("general pipeline composes unseen sold-item count for $name",async(fixture)=>{
     const question="Increase the recorded count for "+fixture.name+
       "s by "+fixture.added+" items";
-    const read={id:"sales.item_units",version:1,purpose:"covered_item_sales",period};
+    const read={id:"sales.item_units" as SupportedId,version:1,purpose:"covered_item_sales",period};
     p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
       const input=raw as typeof read;
       if(input.id!=="sales.item_units")throw Error("unexpected source");
