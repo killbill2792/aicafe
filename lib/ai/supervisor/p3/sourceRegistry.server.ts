@@ -1,5 +1,4 @@
 import "server-only";
-import { z } from "zod";
 import { createP2Registry,schemaFingerprint,unavailable,type ReadRegistration,
   type TrustedReadScope } from "@/lib/ai/supervisor/p2/registry";
 import { executeP1Authorized,outputFor } from "@/lib/metrics/p1Readers.server";
@@ -47,13 +46,3 @@ export function buildP3P1Registrations():readonly ReadRegistration[] {
 }
 export const createP3ReadRegistry=()=>createP2Registry(buildP3P1Registrations());
 
-export const sourceOutput=z.strictObject({
-  id:z.string(),version:z.literal(1),status:z.enum(["verified","partial","estimated"]),
-  value:z.unknown(),unit:z.string(),query:z.unknown(),
-  provenance:z.strictObject({
-    canonicalReaderId:z.string(),sourceRevision:z.null(),
-    readerContractVersion:z.literal(1),selectorContractId:z.string(),
-    selectorContractVersion:z.literal(1),purpose:z.string(),
-    asOf:z.string(),timezone:z.string(),
-  }).passthrough(),
-}).passthrough();
