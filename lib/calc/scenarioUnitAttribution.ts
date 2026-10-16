@@ -13,6 +13,7 @@ const ratio=/%|٪|\b(?:percent|percentage|por ciento|porcentaje)\b|بالمئة|
 const money=/[$€£]|\b(?:dollars?|dólares?|dolares?|cents?|centavos?)\b|دولار|سنت/iu;
 const items=/\b(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|beverages?|bebidas?|tazas?|unidades?|productos?)\b|أكواب|كوب|مشروب|مشروبات|وحدات/iu;
 const word=/[\p{L}\p{N}]/u;
+const multiplier=/\b(?:times?|twice|double|multiply|multiplied|multiplier|factor|veces|multiplicar|multiplicado)\b|ضعف|مرات|مرة/iu;
 export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string):boolean{
   const text=normalize(message),number=normalize(quoted);
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(number))return false;
@@ -33,6 +34,11 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(gallons.test(nearby))found.add("US_gallon");
     if(ratio.test(nearby))found.add("ratio_bps");
     if(money.test(nearby))found.add("money");
+    const scalarContext=text.slice(Math.max(0,start-75),start)
+      .split(/\d+(?:\.\d+)?/u).at(-1)??"";
+    const scalarWords=scalarContext.split(/\b(?:and|or|but|y|pero)\b|[;,.،!؟]/iu).at(-1)??"";
+    if(found.size===0 && (multiplier.test(scalarWords)||multiplier.test(after)))
+      found.add("scalar");
     // A currency sign immediately adjacent to THIS quoted amount is
     // authoritative; a preceding percentage belongs to another operand.
     if(/[$€£]\s*$/u.test(before)){
@@ -53,6 +59,7 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(gallons.test(after))direct.add("US_gallon");
     if(ratio.test(after))direct.add("ratio_bps");
     if(money.test(after))direct.add("money");
+    if(direct.size===0&&multiplier.test(after))direct.add("scalar");
     if(direct.size===0&&(items.test(after)||genericPlural.test(after)))
       direct.add("item");
     if(direct.size===1){
@@ -80,7 +87,8 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
     if(start>0&&(word.test(text[start-1])||/[.,\u066b\u066c]/iu.test(text[start-1]))||
       end<text.length&&(word.test(text[end])||/[.,\u066b\u066c]/iu.test(text[end])))continue;
     const rawBefore=text.slice(Math.max(0,start-80),start);
-    const previous=rawBefore.split(/\d+(?:\.\d+)?/u).at(-1)??"";
+    const previous=(rawBefore.split(/\d+(?:\.\d+)?/u).at(-1)??"")
+      .split(/\b(?:and|or|but|plus|y|e|pero)\b|[;,.،!؟]/iu).at(-1)??"";
     const after=text.slice(end,end+65).split(/(?:\b(?:and|but|then|y|pero)\b|[;,.،!?؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
     // Never convert an owner-quoted non-USD amount into dollars.
     if(/[€£]\s*$/u.test(previous)||
