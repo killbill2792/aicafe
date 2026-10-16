@@ -228,7 +228,7 @@ export async function tryP3SupervisorReadOnly(input:{
       // Actual source values and revisions enter the opaque digest; no private
       // records or unverified values are exposed in the response identifier.
       sources:pure?[]:projection.operands.filter(o=>
-        checked.data.sourceHandles.includes(o.handle)),
+        outcome.sourceHandles.includes(o.handle)),
     });
   }
   if(!outcomes.length && !unsupportedGoals)return null;
