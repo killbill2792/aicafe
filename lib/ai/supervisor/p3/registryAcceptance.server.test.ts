@@ -1,0 +1,101 @@
+import {describe,expect,it,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+import { z } from "zod";
+import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
+import { createP2Registry,schemaFingerprint } from "@/lib/ai/supervisor/p2/registry";
+import { buildP3P1Registrations } from "./sourceRegistry.server";
+import { registerExpressionSimulation } from "./simulateRegistration.server";
+import { EXPRESSION_ID } from "./expression";
+
+const source="energy.meter",reader="energy.canonical.reader.v1";
+const capability="energy.meter.read.v1";
+const readInput=z.strictObject({id:z.literal(capability),version:z.literal(1),
+  purpose:z.literal("meter_observation")});
+const readOutput=z.strictObject({
+  status:z.literal("partial"),value:z.number().int(),
+  provenance:z.strictObject({
+    sourceId:z.literal(source),canonicalReaderId:z.literal(reader),
+    sourceRevision:z.string(),asOf:z.string(),purpose:z.literal("meter_observation"),
+  }),
+  quality:z.strictObject({
+    missingInputs:z.array(z.string()),estimatedInputs:z.array(z.string()),
+    staleInputs:z.array(z.string()),
+  }),
+});
+const meterRead=vi.fn(async()=>({
+  status:"partial",value:100,
+  provenance:{sourceId:source,canonicalReaderId:reader,
+    sourceRevision:"meter-rev",asOf:"2026-10-15",purpose:"meter_observation"},
+  quality:{missingInputs:["meter_calibration"],estimatedInputs:[],staleInputs:[]},
+}));
+const meter={
+  id:capability,version:1 as const,mode:"read" as const,
+  availability:"shadow" as const,owner:"fifth-specialist",
+  purpose:"Observed energy consumption",sourceIds:[source],
+  canonicalReaderIds:[reader],allowedPurposes:["meter_observation"],
+  inputSchema:readInput,outputSchema:readOutput,
+  schemaContract:{id:capability+".v1",registrationId:capability,version:1 as const,
+    inputSchemaFingerprint:schemaFingerprint(readInput),
+    outputSchemaFingerprint:schemaFingerprint(readOutput)},
+  requiredRole:"owner" as const,sensitivity:"normal" as const,
+  budgets:{maxOperations:1,timeoutMs:1000,maxResultBytes:10000,
+    maxInputBytes:3000,maxRangeDays:365},
+  requiresApproval:false as const,effectPolicy:"deny" as const,read:meterRead,
+};
+const scope={
+  role:"owner" as const,businessId:"cafe-fixture",
+  identity:{businessId:"cafe-fixture",asOf:"2026-10-15",
+    timezone:"America/Los_Angeles",currency:"USD"},
+  tools:{} as BusinessScopedCafeTools,shadowEnabled:true,
+};
+describe("COMPOSE registration and source binding",()=>{
+  it("registers a synthetic fifth domain without changing central orchestration",async()=>{
+    const registry=createP2Registry([
+      ...buildP3P1Registrations(),meter,registerExpressionSimulation(),
+    ]);
+    const catalog=registry.discover(scope);
+    expect(catalog.some(x=>x.id===capability&&x.mode==="read")).toBe(true);
+    expect(registry.discoverSimulations(scope))
+      .toEqual(expect.arrayContaining([expect.objectContaining({
+        id:EXPRESSION_ID,mode:"simulate",effectPolicy:"deny",
+      })]));
+    expect(await registry.invoke(scope,capability,{
+      id:capability,version:1,purpose:"meter_observation",
+    })).toMatchObject({status:"partial",value:100});
+    expect(meterRead).toHaveBeenCalled();
+  });
+  it("dispatches a pure, source-free what-if only in registered simulate mode",async()=>{
+    const registry=createP2Registry([
+      ...buildP3P1Registrations(),registerExpressionSimulation(),
+    ]);
+    const plan={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Addition of owner hypotheticals",
+      nodes:[
+        {op:"hypothetical",label:"additional items",quotedNumber:"25",value:25,unit:"item"},
+        {op:"hypothetical",label:"second scenario",quotedNumber:"45",value:45,unit:"item"},
+        {op:"add"},
+      ],
+    };
+    const context={businessId:scope.businessId,locationId:null,currency:"USD",
+      ownerMessage:"Add 25 items and 45 items",bindings:[],operands:[]};
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,plan,context))
+      .toMatchObject({status:"conditional",value:70,unit:"item",
+        mode:"simulate",executedEffects:0,proposal:null});
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,{
+      ...plan,effect:"publish_schedule",
+    },context)).toMatchObject({status:"unavailable",reason:"invalid_request"});
+    expect(await registry.invoke(scope,EXPRESSION_ID,plan))
+      .toMatchObject({status:"unavailable",reason:"mode_disabled"});
+  });
+  it("never upgrades missing or foreign-biz evidence under the six-mode dispatcher",async()=>{
+    const registry=createP2Registry([registerExpressionSimulation()]);
+    const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+      description:"One owner hypothetical",nodes:[{
+        op:"hypothetical",label:"quantity",quotedNumber:"25",value:25,unit:"item",
+      }]};
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,plan,{
+      businessId:"another-cafe",locationId:null,currency:"USD",
+      ownerMessage:"25 items",bindings:[],operands:[],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+  });
+});
