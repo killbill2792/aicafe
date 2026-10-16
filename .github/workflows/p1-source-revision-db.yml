@@ -8,6 +8,10 @@ on:
       - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.db.test.ts"
+      - "lib/ai/supervisor/p3/**"
+      - "lib/ai/conversations/runSupervisorP3.test.ts"
+      - "lib/calc/ingredients.ts"
+      - "lib/calc/scenarioExpression.ts"
       - ".github/workflows/p1-source-revision-db.yml"
   workflow_dispatch:
 
