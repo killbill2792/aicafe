@@ -65,7 +65,7 @@ export function projectP1Evidence(
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
-  const ownerQuestion=ownerGoal;
+  const currentGoal=ownerGoal;
   for(const item of evidence){
     if(operands.length>=12)break;
     const capability=item.capabilityId;
@@ -102,12 +102,18 @@ export function projectP1Evidence(
           key.startsWith("money.")||key.startsWith("sales.")?"financial":"normal"});
     const named=valuesForKey.map(v=>({id:v.key,name:v.name}));
     const plural=key.startsWith("menu.")||key==="supplies.quotes";
+    // Each read result is scoped to its OWN audited semantic clause. Looking
+    // for names across the entire turn could attach another worker's wage to
+    // this clause, even with an authentic and correct P1 source record.
     const namedCurrent=new Set(named.filter(v=>
-      isWholeNamedEntity(ownerQuestion,v.name,named,plural)).map(v=>v.id));
+      isWholeNamedEntity(item.clause,v.name,named,plural)).map(v=>v.id));
+    const namedElsewhere=new Set(named.filter(v=>
+      isWholeNamedEntity(currentGoal,v.name,named,plural)).map(v=>v.id));
     const previousOwnerWords=ownerHistory.slice(-3).join(" ");
     const namedHistory=new Set(named.filter(v=>
       isWholeNamedEntity(previousOwnerWords,v.name,named,plural)).map(v=>v.id));
-    const uniqueHistorical=namedCurrent.size===0&&namedHistory.size===1;
+    const uniqueHistorical=namedCurrent.size===0&&namedElsewhere.size===0&&
+      namedHistory.size===1;
     for(const leaf of valuesForKey){
       if(operands.length>=12)break;
       // Names in record-valued sources must be anchored in the owner's question;
@@ -116,12 +122,20 @@ export function projectP1Evidence(
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
-      if(operands.some(o=>o.handle===handle))continue;
+      // Same registered handle can legitimately be mentioned by several
+      // clauses. Keep one trusted numeric operand but preserve EVERY clause
+      // association so a plan cannot borrow it from an unrelated clause.
+      const choice={handle,entityId:leaf.key,entityName:leaf.name,
+        field:leaf.field,matchedClause:item.clause};
+      if(operands.some(o=>o.handle===handle)){
+        if(!choices.some(c=>c.handle===handle&&c.matchedClause===item.clause))
+          choices.push(choice);
+        continue;
+      }
       const p=result.query.period;
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
-      choices.push({handle,entityId:leaf.key,entityName:leaf.name,
-        field:leaf.field,matchedClause:item.clause});
+      choices.push(choice);
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,sourceRevision:null,
