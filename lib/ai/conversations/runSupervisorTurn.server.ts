@@ -370,7 +370,8 @@ export async function runSupervisorTurn(input: {
     const request=JSON.stringify(buildSupervisorScopeAuditRequest({
       model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
     }));
-    for(let attempt=0;attempt<2 && usage.modelCallCount<MAX_ROUNDS;attempt++){
+    for(let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
+      usage.modelCallCount<MAX_ROUNDS);attempt++){
       const attemptNumber=attempt+1,controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:1,attempt:attemptNumber,
@@ -473,7 +474,8 @@ export async function runSupervisorTurn(input: {
     ar:"لم أتمكن من تحديد جميع أجزاء السؤال بثقة. يُرجى طرح كل جزء على حدة حتى لا يفوتني شيء.",
   }[input.locale];
 
-  for (let round=0;round<MAX_ROUNDS && usage.modelCallCount<MAX_ROUNDS;round++) {
+  for (let round=0;round<MAX_ROUNDS && (priorUsage.modelCallCount===0 ||
+    usage.modelCallCount<MAX_ROUNDS);round++) {
     let payload: Record<string,unknown> | null = null;
     for (let attempt=0;attempt<2;attempt++) {
       const roundNumber=round+1, attemptNumber=attempt+1;
