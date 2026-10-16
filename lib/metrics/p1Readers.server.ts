@@ -1,6 +1,5 @@
 import "server-only";
 import { z } from "zod";
-import { fingerprintP1Observation } from "./p1ReadFingerprint";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
@@ -24,8 +23,6 @@ const provenance = z.strictObject({
   selectorContractId:z.string().min(1).max(160), selectorContractVersion:z.literal(1),
   purpose:z.string().min(1).max(120), asOf:z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   timezone:z.string().min(1).max(100), sourceRevision:z.null(),
-  // Content proof cannot replace a canonical database revision.
-  observedContentHash:z.string().regex(/^sha256:[0-9a-f]{64}$/).optional(),
 });
 export const outputFor = (id: SupportedId) => {
   const unit=id in metricUnits?metricUnits[id as keyof typeof metricUnits]:"typed_record";
@@ -221,12 +218,6 @@ export async function executeP1Authorized(
       selectorContractId:selected.selectorContractId,selectorContractVersion:1,
       purpose:args.purpose,asOf:identity.asOf,timezone:identity.timezone,
       sourceRevision:null,
-      ...(identity.businessId?{observedContentHash:fingerprintP1Observation({
-        businessId:identity.businessId,readerId:readers[id],
-        selectorId:selected.selectorContractId,
-        selectorVersion:selected.selectorContractVersion,purpose:args.purpose,
-        query:args,value:known.value,quality:q.data,
-      })}:{}),
     },
     freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
     completeness:"partial",
