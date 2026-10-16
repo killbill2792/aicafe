@@ -4,6 +4,7 @@ import { metricUnits,purposePolicies,readers,sourcePolicies,
   values,type SupportedId } from "@/lib/metrics/p1Catalog";
 import type { ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { Operand,Binding } from "./expression";
+import { isWholeNamedEntity } from "./entityMatch";
 
 export type OperandChoice={handle:string;entityId:string;entityName:string;
   field:string;matchedClause:string};
@@ -64,7 +65,7 @@ export function projectP1Evidence(
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
-  const normalized=ownerGoal.normalize("NFKC").toLocaleLowerCase();
+  const ownerQuestion=ownerGoal;
   for(const item of evidence){
     if(operands.length>=12)break;
     const capability=item.capabilityId;
@@ -104,7 +105,8 @@ export function projectP1Evidence(
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
       if(leaf.field!=="value"&&
-        (!leaf.name||!normalized.includes(leaf.name.normalize("NFKC").toLocaleLowerCase())))
+        !isWholeNamedEntity(ownerQuestion,leaf.name,
+          valuesForKey.map(v=>({id:v.key,name:v.name}))))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
       if(operands.some(o=>o.handle===handle))continue;
