@@ -175,7 +175,7 @@ export function projectP1Evidence(
       actuality:string;quality:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]};
       provenance:{canonicalReaderId:string;readerContractVersion:1;
         selectorContractId:string;selectorContractVersion:1;purpose:string;
-        sourceRevision:null;asOf:string;timezone:string};
+        sourceRevision:null;observedContentHash?:string;asOf:string;timezone:string};
       query:{period?:{from:string;to:string}};
     };
     const provenance=result.provenance;
@@ -250,6 +250,8 @@ export function projectP1Evidence(
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,sourceRevision:null,
+        ...(provenance.observedContentHash?{
+          observedContentHash:provenance.observedContentHash}:{}),
         selectorContractId:provenance.selectorContractId,selectorContractVersion:1,
         businessId,locationId,asOf:provenance.asOf,
         period:p?{from:p.from,to:p.to,timezone:provenance.timezone}:null,
