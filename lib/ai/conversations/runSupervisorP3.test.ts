@@ -563,24 +563,27 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(forged.reply.evidence).toEqual([]);
     expect(forged.usage.modelCallCount).toBe(3);
   });
-  it("preserves a content observation fingerprint without inventing a DB revision",()=>{
+  it("binds a validated P1 read digest without changing the pinned P1 output schema",()=>{
     const clause="Sophie works 45 extra minutes";
     const original=result(wageInput,workers);
-    const hashed={...original,provenance:{
-      ...original.provenance,observedContentHash:"sha256:"+"a".repeat(64)}};
     const make=(resultEnvelope:unknown)=>[{
       clause,capabilityId:"p3.labor.employee_wages.v1",
       status:"partial" as const,result:resultEnvelope,reason:null,
     }];
-    const projection=projectP1Evidence(
-      make(hashed),identity.businessId,clause);
+    const projection=projectP1Evidence(make(original),identity.businessId,clause);
     expect(projection.operands).toHaveLength(1);
     expect(projection.operands[0]).toMatchObject({
-      sourceRevision:null,observedContentHash:"sha256:"+"a".repeat(64),
-      status:"partial",evidenceStatus:"unverified",
+      sourceRevision:null,status:"partial",evidenceStatus:"unverified",
+      observedContentHash:expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
     });
-    expect(projectP1Evidence(make({...hashed,provenance:{
-      ...hashed.provenance,observedContentHash:"forged-revision"}}),
+    const changed=projectP1Evidence(
+      make(result(wageInput,[{...workers[0],defaultHourlyWageCents:2200,
+        wageAmountCents:2200}])),identity.businessId,clause);
+    expect(changed.operands[0].observedContentHash).not.toBe(
+      projection.operands[0].observedContentHash);
+    // P1's pinned envelope does not permit untrusted additional provenance.
+    expect(projectP1Evidence(make({...original,provenance:{
+      ...original.provenance,observedContentHash:"forged-revision"}}),
       identity.businessId,clause).operands).toHaveLength(0);
   });
   it("discards a repeated canonical handle when its readings conflict within one turn",()=>{
