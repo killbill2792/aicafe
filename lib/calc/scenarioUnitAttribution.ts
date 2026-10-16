@@ -99,10 +99,10 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
     // USD is the ONLY canonical money unit. Reject explicit foreign dollar
     // qualifiers as well as euros and pounds; never silently convert them.
     // Scope these checks to this quoted number, not another clause's amount.
-    const foreignDollarPrefix=/(?:^|[^\\p{L}])(?:ca|c|cad|a|au|aud|nz|nzd|sg|sgd|hk|hkd)\\s*\\$\\s*$/iu;
-    const foreignDollarWord=/(?:\\b(?:canadian|australian|new\\s+zealand|singapore|hong\\s+kong)\\s+dollars?\\b|\\b(?:cad|aud|nzd|sgd|hkd)\\b|\\bd[oó]lares?\\s+(?:canadienses?|australianos?|neozelandeses?)\\b)/iu;
-    if(/[€£]\\s*$/u.test(previous)||foreignDollarPrefix.test(previous)||
-      /^\\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after)||
+    const foreignDollarPrefix=/(?:^|[^\p{L}])(?:ca|c|cad|a|au|aud|nz|nzd|sg|sgd|hk|hkd)\s*\$\s*$/iu;
+    const foreignDollarWord=/(?:\b(?:canadian|australian|new\s+zealand|singapore|hong\s+kong)\s+dollars?\b|\b(?:cad|aud|nzd|sgd|hkd)\b|\bd[oó]lares?\s+(?:canadienses?|australianos?|neozelandeses?)\b)/iu;
+    if(/[€£]\s*$/u.test(previous)||foreignDollarPrefix.test(previous)||
+      /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after)||
       foreignDollarWord.test(previous)||foreignDollarWord.test(after))return false;
     const phrase=(previous+" "+after).toLocaleLowerCase();
     const dimensions=new Set<string>();
