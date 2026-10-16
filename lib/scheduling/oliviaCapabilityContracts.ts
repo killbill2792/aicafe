@@ -132,12 +132,16 @@ const costSchema=z.object({
   if(cost.allocatedSalaryCents!==null && cost.allocatedSalaryCents>0 &&
      cost.costState!=="estimate")
     ctx.addIssue({code:"custom",message:"Salary allocation requires estimate state"});
+  // When no owner hours were worked, PR2 has no unverified owner rate to
+  // estimate and must produce an exact zero opportunity cost.
+  if(cost.ownerMinutes===0 && cost.ownerOpportunityCents!==0)
+    ctx.addIssue({code:"custom",message:"Zero owner hours require zero owner cost"});
 });
 const scenarioBase=z.object({
   objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
   gaps:z.array(z.object({
     coverageId:oliviaUuid,locationId:oliviaUuid,startAt:utc,endAt:utc,
-    qualificationCode:z.string().nullable(),missingHeadcount:nonnegative,
+    qualificationCode:z.string().nullable(),missingHeadcount:z.number().int().positive(),
     reason:z.enum(["no_active_staff","qualification_missing","no_confirmed_availability",
       "capacity_or_overlap","break_or_rest_constraint","daily_hour_limit",
       "weekly_hour_limit","date_specific_cap","pinned_conflict","solver_budget",
