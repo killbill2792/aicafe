@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { availabilityBatchSchema } from "./availabilityBatchSchemas";
-import { oliviaUuid, oliviaWeek } from "./oliviaCapabilityContracts";
+import { oliviaUuid, oliviaWeek, oliviaScenarioSchema, oliviaShiftSchema,
+  oliviaPreviewResponseSchema } from "./oliviaCapabilityContracts";
 
 /** Olivia PR4B-A only: strict domain wire shapes. Not a Supervisor tool. */
 export const OLIVIA_COMMAND_VERSION = 1 as const;
@@ -76,6 +77,39 @@ export const oliviaCreateDraftSchema = z.object({
   expectedRevision: z.number().int().min(0).max(499),
   requestKey: oliviaUuid,
 }).strict();
+
+
+/** Contract for an independently verified persisted draft, never a publication. */
+export const oliviaSavedDraftCommandResponseSchema = z.object({
+  ok:z.literal(true),version:z.literal(1),status:z.literal("saved_draft"),
+  businessId:oliviaUuid,week:oliviaWeek,
+  seriesId:oliviaUuid,revisionId:oliviaUuid,
+  revision:z.number().int().min(1).max(500),
+  revisionStatus:z.literal("draft"),replayed:z.boolean(),
+  sourceDigest:hash,objective:z.enum(["cash","owner_time","balanced"]),
+  assignments:z.array(oliviaShiftSchema).max(200),
+  coverage:z.object({
+    complete:z.boolean(),gaps:oliviaScenarioSchema.shape.gaps,
+    hardConstraintsSatisfied:z.boolean(),
+  }).strict(),
+  costs:oliviaScenarioSchema.shape.cost,
+  missingInputs:oliviaPreviewResponseSchema.shape.notices,
+  missingQualifications:oliviaScenarioSchema.shape.gaps,
+  warnings:oliviaPreviewResponseSchema.shape.plan.shape.warnings,
+  notices:oliviaPreviewResponseSchema.shape.notices,
+  legalReview:z.enum(["verified_profile","unverified_profile"]),
+  readyForOwnerApproval:z.boolean(),readyForPublication:z.literal(false),
+  disposition:z.literal("persisted_draft_only"),
+}).strict().superRefine((value,ctx)=>{
+  if(value.readyForOwnerApproval && (
+    !value.coverage.complete || !value.coverage.hardConstraintsSatisfied ||
+    value.coverage.gaps.length>0 || value.costs.costState==="unavailable" ||
+    value.missingInputs.length>0 || value.legalReview!=="verified_profile"
+  ))ctx.addIssue({code:"custom",message:"Incomplete draft cannot be approval-ready"});
+  if(value.missingQualifications.some(g=>g.reason!=="qualification_missing" ||
+    !value.coverage.gaps.some(x=>JSON.stringify(x)===JSON.stringify(g))))
+    ctx.addIssue({code:"custom",message:"Qualification gaps must be grounded"});
+});
 
 export type OliviaPrepareAvailability = z.infer<typeof oliviaPrepareAvailabilitySchema>;
 export type OliviaPreparedAvailability = z.infer<typeof oliviaPreparedAvailabilitySchema>;
