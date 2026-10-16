@@ -146,7 +146,7 @@ try{
  check(await snapshot(A,ownerB)===null,"cross-business owner B denied");
  check(await snapshot(A,manager)===null,"manager denied owner-only read");
  check(await snapshot(A,ownerA)!==null,"authorized owner remains able to read");
- const permissions=(await admin.query("SELECT has_table_privilege('authenticated','public.p1_business_source_epochs','SELECT') AS read,has_table_privilege('authenticated','public.p1_business_source_epochs','UPDATE') AS write,has_function_privilege('authenticated','public.p1_touch_business_epoch(uuid)','EXECUTE') AS touch")).rows[0];
+ const permissions=(await admin.query("SELECT has_table_privilege('authenticated','public.p1_business_source_epochs','SELECT') AS read,has_table_privilege('authenticated','public.p1_business_source_epochs','UPDATE') AS write,has_function_privilege('authenticated','public.p1_touch_business_epoch(uuid,boolean)','EXECUTE') AS touch")).rows[0];
  check(!permissions.read&&!permissions.write&&!permissions.touch,
    "clients cannot mutate authoritative revision ledger");
  let truncateBlocked=false;
