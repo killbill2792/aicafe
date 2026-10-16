@@ -135,6 +135,34 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(transport.requests.every(req=>!JSON.stringify(req).includes("525")))
       .toBe(true);
   });
+  it.each([
+    {field:"id",value:"unrelated-product"},
+    {field:"name",value:"unrelated product"},
+  ])("rejects product-economics enrichment when canonical $field differs from the selected menu product",async({field,value})=>{
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const id=(raw as {id:SupportedId}).id;
+      if(id==="menu.catalog")return result(menuInput,menu);
+      if(id==="labor.employee_wages")return result(wageInput,workers);
+      if(id==="menu.product_economics")return result(productInput,{
+        ...economics,[field]:value,
+      });
+      throw Error("Unsupported fixture source");
+    });
+    const transport=makeTransport();
+    await run(transport.calls).catch(()=>null);
+    expect(p1Reads).toHaveBeenCalledWith(expect.anything(),expect.anything(),
+      expect.objectContaining({productId:"latte"}));
+    // The model must never receive pricing/cost operands from the swapped
+    // economics record, even though its schema and recipe costs are valid.
+    const composition=transport.requests[2];
+    expect(composition).toBeDefined();
+    const message=(composition.input as Array<{content:string}>)[0].content;
+    const {authorizedOperandChoices}=JSON.parse(message) as {
+      authorizedOperandChoices:Array<{handle:string}>;
+    };
+    expect(authorizedOperandChoices.some(operand=>
+      operand.handle.startsWith("menu.product_economics:"))).toBe(false);
+  });
   it("COMPOSE-05/06/07: forged source handle never produces a numerical fact",async()=>{
     const transport=makeTransport({tamper:true});
     // An invalid P3 plan must not be passed through as trusted numbers.
