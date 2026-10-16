@@ -65,6 +65,39 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     hits.push(found);
   }
   const expected=unit.startsWith("USD_")?"money":unit;
-  return hits.some(x=>x.size===1&&x.has(expected))&&
+  const named=hits.some(x=>x.size===1&&x.has(expected))&&
     hits.every(x=>x.size===0||(x.size===1&&x.has(expected)));
+  return named&&(!unit.startsWith("USD_")||
+    ownerQuotedMoneyDimensionMatches(text,number,unit));
+}
+/** A dollar total and a dollar rate are different typed quantities.
+ * Require an explicit matching per-unit qualifier for a monetary rate.
+ */
+function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string):boolean{
+  const resolved:boolean[]=[];
+  for(let start=text.indexOf(number);start>=0;start=text.indexOf(number,start+1)){
+    const end=start+number.length;
+    if(start>0&&(word.test(text[start-1])||/[.,\u066b\u066c]/iu.test(text[start-1]))||
+      end<text.length&&(word.test(text[end])||/[.,\u066b\u066c]/iu.test(text[end])))continue;
+    const rawBefore=text.slice(Math.max(0,start-80),start);
+    const previous=rawBefore.split(/\d+(?:\.\d+)?/u).at(-1)??"";
+    const after=text.slice(end,end+65).split(/(?:\b(?:and|but|then|y|pero)\b|[;,.،!?؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
+    // Never convert an owner-quoted non-USD amount into dollars.
+    if(/[€£]\s*$/u.test(previous)||
+      /^\s*(?:euros?|pounds?|libras?|يورو|جنيه)/iu.test(after))return false;
+    const phrase=(previous+" "+after).toLocaleLowerCase();
+    const dimensions=new Set<string>();
+    if(/(?:\b(?:per|por|each|every|لكل)\s*(?:paid\s*)?(?:hours?|hrs?|horas?|hora)\b|\bhourly\b|بالساعة|لكل\s*ساعة)/iu.test(phrase))
+      dimensions.add("USD_cents_per_hour");
+    if(/(?:\b(?:per|por|each|every)\s*(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|bebidas?|tazas?)\b|لكل\s*(?:كوب|مشروب|وحدة))/iu.test(phrase))
+      dimensions.add("USD_cents_per_item");
+    if(/(?:\b(?:per|por)\s*(?:us\s*)?(?:gallons?|galones?)\b|لكل\s*غالون)/iu.test(phrase))
+      dimensions.add("USD_cents_per_US_gallon");
+    if(/(?:\b(?:per|por)\s*(?:fluid\s*)?(?:ounces?|oz|onzas?)\b|لكل\s*أونصة)/iu.test(phrase))
+      dimensions.add("USD_cents_per_US_fl_oz");
+    const observed=dimensions.size===0?"USD_cents":
+      dimensions.size===1?[...dimensions][0]:null;
+    resolved.push(observed===unit);
+  }
+  return resolved.length>0&&resolved.every(Boolean);
 }
