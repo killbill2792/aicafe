@@ -249,6 +249,25 @@ async function readPreview(
     disposition:"proposal_only",
   });
 }
+function completeHistory(history:{
+  currentRevision:number;publishedRevision:number|null;
+  revisions:readonly {revision:number;status:string}[];
+}):boolean {
+  const seen=new Set<number>();
+  for(const row of history.revisions){
+    if(seen.has(row.revision))return false;
+    seen.add(row.revision);
+  }
+  // All immutable revisions must be present; an official published pointer
+  // only exists when its exact revision is recorded as published.
+  return history.revisions.length===history.currentRevision &&
+    [...seen].every(v=>v>=1 && v<=history.currentRevision) &&
+    (history.publishedRevision===null ||
+      (history.publishedRevision<=history.currentRevision &&
+       history.revisions.some(x=>x.revision===history.publishedRevision &&
+         x.status==="published"))) &&
+    (history.currentRevision===0 || seen.has(history.currentRevision));
+}
 async function readHistory(
   input:Extract<OliviaReadRequest,{capability:"olivia.schedule.history.read"}>,
 ):Promise<OliviaReadResponse> {
@@ -260,24 +279,7 @@ async function readHistory(
   const owner=await requireSchedulingOwner();
   if(!owner || owner.businessId!==initialOwner.businessId)
     return fail(capability,"unauthorized");
-  const seen=new Set<number>();
-  for(const row of history.revisions){
-    if(seen.has(row.revision))return fail(capability,"invalid_record");
-    seen.add(row.revision);
-  }
-  // Draft revisions are created consecutively and are immutable. A response
-  // missing any intermediate version is incomplete, even if it contains HEAD.
-  // This also detects silent PostgREST pagination truncation in PR3's reader.
-  if(history.revisions.length!==history.currentRevision ||
-     [...seen].some(v=>v<1 || v>history.currentRevision) ||
-     (history.currentRevision===0 && history.revisions.length!==0) ||
-     (history.publishedRevision!==null &&
-       history.publishedRevision>history.currentRevision) ||
-     (history.currentRevision>0 && !seen.has(history.currentRevision)) ||
-     (history.publishedRevision!==null &&
-      !history.revisions.some(x=>x.revision===history.publishedRevision &&
-        x.status==="published")))
-    return fail(capability,"invalid_record");
+  if(!completeHistory(history))return fail(capability,"invalid_record");
   return verified(capability,{
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"stored_revisions",
@@ -310,6 +312,19 @@ async function readRevision(
   const owner=await requireSchedulingOwner();
   if(!owner || owner.businessId!==initialOwner.businessId)
     return fail(capability,"unauthorized");
+  // A stored revision read also carries the official published pointer.
+  // Independently resolve the history for this same owner/café/week and
+  // verify the pointed revision's published state and this row's identity.
+  const history=await readOliviaPlanHistory({week:input.week});
+  if(!(await stillOwner(owner.businessId)))return fail(capability,"unauthorized");
+  if(!history.ok)return fromDomainError(capability,history.error);
+  if(!completeHistory(history))return fail(capability,"invalid_record");
+  if(history.currentRevision!==revision.currentRevision ||
+     history.publishedRevision!==revision.publishedRevision)
+    return fail(capability,"revision_conflict");
+  if(!history.revisions.some(x=>x.id===input.revisionId &&
+       x.revision===revision.revision && x.status===revision.status))
+    return fail(capability,"invalid_record");
   // Unlike PR3's lightweight draft-picker, this capability also checks the
   // actual persisted assignment rows against the revision scenario, so a
   // malformed/stale DB projection cannot be presented as an official plan.
