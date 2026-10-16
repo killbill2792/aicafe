@@ -138,10 +138,13 @@ BEGIN
  EXCEPTION WHEN unique_violation THEN NULL;
  END;
 END $$;
--- A terminal (non-processing) job for the same kind does not block a new attempt.
+-- A terminal (non-processing) job for the same kind does not block a new attempt. Immediately
+-- marked done again so it doesn't itself become the lingering "active" job that later sections
+-- (the category-distinct-order test, the composite-FK test) would otherwise collide with.
 UPDATE csv_import_jobs SET status='done' WHERE id=:'active_id';
 INSERT INTO csv_import_jobs(business_id,kind,status,content_fingerprint,rows_in_file,group_count)
 VALUES (:'biz_a','sales','processing','fp-rls-test-after-done',1,1);
+UPDATE csv_import_jobs SET status='done' WHERE business_id=:'biz_a' AND content_fingerprint='fp-rls-test-after-done';
 
 -- Exact-duplicate content (same fingerprint) is rejected once a job exists for it, except when
 -- that prior attempt failed — a genuine failure must always be retryable with the same file.
