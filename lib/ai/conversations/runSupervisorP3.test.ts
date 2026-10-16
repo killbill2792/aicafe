@@ -134,6 +134,16 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(transport.requests.every(req=>req.store===false)).toBe(true);
     expect(transport.requests.every(req=>!JSON.stringify(req).includes("525")))
       .toBe(true);
+    const submitted=(transport.requests[2].input as Array<{content:string}>)[0].content;
+    const ownerChoices=(JSON.parse(submitted) as {authorizedOperandChoices:Array<{
+      handle:string;entityName:string;entityId:string;matchedClause:string;
+    }>}).authorizedOperandChoices;
+    expect(ownerChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({handle:"labor.employee_wages:sophie:defaultHourlyWageCents",
+        entityName:"Sophie",entityId:"sophie",matchedClause:secondClause}),
+      expect.objectContaining({handle:"menu.product_economics:latte:priceCents",
+        entityName:"latte",entityId:"latte",matchedClause:firstClause}),
+    ]));
   });
   it.each([
     {field:"id",value:"unrelated-product"},
