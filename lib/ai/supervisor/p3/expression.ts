@@ -144,6 +144,16 @@ function rounded(v:Rat):number{
   if(abs(signed)>BigInt(Number.MAX_SAFE_INTEGER))throw new Error("integer_overflow");
   return Number(signed);
 }
+function resultValue(item:Item):number{
+  if(["hour","US_gallon","US_fl_oz","scalar"].includes(item.u)){
+    const value=Number(item.v.n)/Number(item.v.d);
+    if(!Number.isFinite(value)||Math.abs(value)>1_000_000_000_000)
+      throw new Error("numeric_overflow");
+    return value;
+  }
+  // Monetary results remain integer cents; no intermediate rounding.
+  return rounded(item.v);
+}
 /** All supplied source operands must come from already authorized P1 reads. */
 export function evaluateExpression(raw:unknown,context:TrustedContext):ExpressionOutcome {
   const p=planSchema.safeParse(raw);
@@ -211,7 +221,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
     const answer=stack[0];
     return {status:missing.size?"partial":"conditional",
       capabilityId:EXPRESSION_ID,version:1,mode:"simulate",proposal:null,
-      value:rounded(answer.v),unit:answer.u,
+      value:resultValue(answer),unit:answer.u,
       currency:answer.u.startsWith("USD_")?"USD":null,
       formula,assumptions,sourceHandles:[...answer.refs],missingInputs:[...missing],
       reason:missing.size?"incomplete_evidence":null,executedEffects:0};
