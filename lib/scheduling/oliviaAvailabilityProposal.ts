@@ -16,8 +16,11 @@ function canonical(value:unknown):unknown {
   return value;
 }
 /** Stable across JSON validation: Zod may reorder keys when it parses. */
+export function oliviaCanonicalJson(value:unknown):string {
+  return JSON.stringify(canonical(value));
+}
 export function oliviaProposalDigest(proposal: OliviaPreparedAvailability): string {
-  return createHash("sha256").update(JSON.stringify(canonical(proposal))).digest("hex");
+  return createHash("sha256").update(oliviaCanonicalJson(proposal)).digest("hex");
 }
 
 type Employee = Extract<OliviaReadResponse, {ok:true;capability:"olivia.availability.read"}>["employees"][number];
