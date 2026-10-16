@@ -262,7 +262,7 @@ VALUES(:'business',:'legacy_revision',:'employee',:'location',
 SELECT set_config('test.olivia3_legacy_series',:'legacy_series',true);
 SELECT set_config('test.olivia3_legacy_revision',:'legacy_revision',true);
 SELECT set_config('test.olivia3_legacy_schedule',:'legacy_schedule',true);
-DO $
+DO $$
 DECLARE
  b uuid:=current_setting('test.olivia3_biz')::uuid;
  actor uuid:=current_setting('test.olivia3_owner')::uuid;
@@ -294,6 +294,6 @@ BEGIN
       WHERE business_id=b AND revision_id=r AND event='published')<>0 THEN
    RAISE EXCEPTION 'legacy publication blocker mutated schedule or attendance';
  END IF;
-END $;
+END $$;
 ROLLBACK;
 \echo Olivia PR3 disposable approval/publication/RLS tests passed
