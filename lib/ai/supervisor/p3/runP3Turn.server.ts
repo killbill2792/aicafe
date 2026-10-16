@@ -166,6 +166,7 @@ const labels={
 export async function tryP3SupervisorReadOnly(input:{
   text:string;locale:"en"|"es"|"ar";asOf:string;timezone:string;
   apiKey:string;model:string;transport:Transport;
+  onUsage?:(usage:P3Usage)=>void;
 }):Promise<P3Result|null>{
   const {tools,identity}=await authorizedOwnerP1();
   const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
@@ -183,6 +184,12 @@ export async function tryP3SupervisorReadOnly(input:{
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
   });
+  const reported={
+    model:input.model,modelCallCount:shadow.usage.modelCalls,
+    toolCallCount:shadow.attemptedReads,
+    inputTokens:shadow.usage.inputTokens,outputTokens:shadow.usage.outputTokens,
+  };
+  input.onUsage?.({...reported});
   if(!shadow.evidence.length)return null;
   // The read limit counts failed and rejected reader invocations too.
   const invokedReads=shadow.attemptedReads;
@@ -190,10 +197,16 @@ export async function tryP3SupervisorReadOnly(input:{
     goal:input.text,scope,registry:capabilityRegistry,evidence:shadow.evidence,
     remainingReads:Math.max(0,4-invokedReads),
   });
+  reported.toolCallCount+=expanded.readCount;
+  input.onUsage?.({...reported});
   const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text);
   // Validated pure owner-hypothetical arithmetic may need no café source.
   // It must declare no_external_sources; it can never be labeled observed.
   const clauses=shadow.evidence.map(x=>x.clause);
+  // Count even provider failures/invalid JSON as consumed model attempts;
+  // the caller never restarts a fresh full-budget legacy turn after P3.
+  reported.modelCallCount++;
+  input.onUsage?.({...reported});
   const completion=await modelComposition({
     goal:input.text,clauses,model:input.model,apiKey:input.apiKey,
     transport:input.transport,
@@ -203,6 +216,11 @@ export async function tryP3SupervisorReadOnly(input:{
         sourceQuality:v.status+(v.sourceRevision?"":"_revision_unavailable")};
     }),
   });
+  if(completion){
+    reported.inputTokens+=completion.tokens.input;
+    reported.outputTokens+=completion.tokens.output;
+    input.onUsage?.({...reported});
+  }
   if(!completion?.plan.complete||
     !exactCoverage(clauses,completion.plan.plans))return null;
   const outcomes:ExpressionOutcome[]=[];
