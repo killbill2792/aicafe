@@ -164,14 +164,14 @@ function attributed(message:string,quoted:string):boolean{
 function ownerQuotedCents(message:string,quoted:string):boolean{
   const raw=normalizeScenarioNumber(message).toLocaleLowerCase();
   const number=normalizeScenarioNumber(quoted);
-  const token=/[\\p{L}\\p{N}]/u;
+  const token=/[\p{L}\p{N}]/u;
   for(let start=raw.indexOf(number);start>=0;start=raw.indexOf(number,start+1)){
     const prev=raw[start-1]??"",next=raw[start+number.length]??"";
     if((prev&&token.test(prev))||(next&&token.test(next)))continue;
     const after=raw.slice(start+number.length,start+number.length+24);
     const before=raw.slice(Math.max(0,start-6),start);
-    if(/^\\s*(?:¢|cents?\\b|centavos?\\b|سنت(?:ات)?\\b|سنتيم(?:ات)?\\b)/u.test(after)||
-      /¢\\s*$/u.test(before))return true;
+    if(/^\s*(?:¢|cents?\b|centavos?\b|سنت(?:ات)?|سنتيم(?:ات)?)/u.test(after)||
+      /¢\s*$/u.test(before))return true;
   }
   return false;
 }
