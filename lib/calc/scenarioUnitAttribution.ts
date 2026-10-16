@@ -22,7 +22,9 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(start>0&&(word.test(text[start-1])||/[.,\u066b\u066c]/iu.test(text[start-1]))||
       end<text.length&&(word.test(text[end])||/[.,\u066b\u066c]/iu.test(text[end])))continue;
     const before=text.slice(Math.max(0,start-12),start).split(/[;,.،!؟]/u).at(-1)??"";
-    const after=text.slice(end,end+66).split(/(?:\b(?:and|but|while|then|y|pero)\b|[;,.،!؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
+    const after=(text.slice(end,end+66).split(/(?:\b(?:and|but|while|then|y|pero)\b|[;,.،!؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"")
+      // "$" attached to the NEXT number is not this number's currency.
+      .replace(/[$€£]\s*$/u,"");
     const nearby=before+" "+after;
     const found=new Set<string>();
     if(minutes.test(nearby))found.add("minute");
