@@ -1,5 +1,6 @@
 import "server-only";
 import { outputFor } from "@/lib/metrics/p1Readers.server";
+import { values } from "@/lib/metrics/p1Catalog";
 import type { ShadowEvidence,ShadowRegistry } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { TrustedReadScope,ResultStatus } from "@/lib/ai/supervisor/p2/registry";
 
@@ -19,7 +20,9 @@ export async function enrichResolvedProductEconomics(input:{
     if(item.capabilityId!=="p3.menu.catalog.v1"||readCount>=input.remainingReads)continue;
     const parsed=outputFor("menu.catalog").safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
-    for(const product of parsed.data.value){
+    const catalog=values["menu.catalog"].safeParse(parsed.data.value);
+    if(!catalog.success)continue;
+    for(const product of catalog.data){
       if(readCount>=input.remainingReads)break;
       if(!product.active||!product.name||!product.id||
         product.id.length>120||chosen.has(product.id)||
