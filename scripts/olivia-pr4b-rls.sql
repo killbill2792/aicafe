@@ -138,6 +138,65 @@ BEGIN
    ) THEN RAISE EXCEPTION 'partial multi-employee write survived conflict'; END IF;
 END $$;
 
+-- Clearing a prior timed exception must not inherit stale start/end columns
+-- from PR1B's column-selective batch updater.
+DO $
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ c uuid:=current_setting('test.pr4b_employee_b')::uuid;
+ old_row record; token text; batches jsonb; result jsonb;
+BEGIN
+ SELECT id,revision,start_local,end_local INTO old_row
+ FROM public.staff_availability_exceptions
+ WHERE business_id=b AND employee_id=c AND local_date='2026-10-22';
+ IF old_row.id IS NULL OR old_row.start_local IS NULL OR old_row.end_local IS NULL
+ THEN RAISE EXCEPTION 'missing timed exception fixture'; END IF;
+ token:=public.scheduling_owner_source_token(b);
+ batches:=jsonb_build_array(jsonb_build_object(
+   'kind','availability_exception','employeeId',c,'locationId',NULL,
+   'scope',jsonb_build_object('local_date','2026-10-22'),
+   'expected',jsonb_build_array(jsonb_build_object(
+     'id',old_row.id,'revision',old_row.revision)),
+   'requestKey',gen_random_uuid(),
+   'desired',jsonb_build_array(jsonb_build_object('id',old_row.id,
+     'data',jsonb_build_object(
+       'employee_id',c,'location_id',NULL,'local_date','2026-10-22',
+       'exception_type','unavailable','start_local',NULL,'end_local',NULL,
+       'overnight',false,'max_minutes',NULL,'source','owner_direct',
+       'confirmation','owner_confirmed')))));
+ result:=public.scheduling_olivia_commit_availability(
+   b,token,gen_random_uuid(),batches);
+ IF result->>'replayed'<>'false' OR NOT EXISTS(
+   SELECT 1 FROM public.staff_availability_exceptions
+   WHERE business_id=b AND id=old_row.id AND revision=old_row.revision+1
+     AND exception_type='unavailable' AND start_local IS NULL
+     AND end_local IS NULL AND max_minutes IS NULL) THEN
+   RAISE EXCEPTION 'old timed exception columns were retained';
+ END IF;
+END $;
+
+-- Invalid nested UUID values must be rejected before the function casts them,
+-- without reserving a receipt or touching any employee scope.
+DO $
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ token text; example jsonb; result jsonb; before_count integer;
+BEGIN
+ token:=public.scheduling_owner_source_token(b);
+ SELECT count(*) INTO before_count FROM public.scheduling_olivia_command_receipts
+ WHERE business_id=b;
+ example:=jsonb_build_array(jsonb_build_object(
+   'kind','availability_exception','employeeId','not-a-uuid',
+   'locationId',NULL,'scope',jsonb_build_object('local_date','2026-10-25'),
+   'expected','[]'::jsonb,'desired','[]'::jsonb,
+   'requestKey',gen_random_uuid()));
+ result:=public.scheduling_olivia_commit_availability(
+   b,token,gen_random_uuid(),example);
+ IF result->>'error'<>'invalid_input' OR
+   (SELECT count(*) FROM public.scheduling_olivia_command_receipts
+      WHERE business_id=b)<>before_count THEN
+   RAISE EXCEPTION 'invalid nested employee UUID not rejected cleanly';
+ END IF;
+END $;
+
 -- Tenant RLS, role authorization and unprotected receipt access are denied.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
