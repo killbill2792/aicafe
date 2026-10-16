@@ -7,7 +7,7 @@
 CREATE OR REPLACE FUNCTION public.scheduling_save_availability_batch(
  p_business_id uuid, p_employee_id uuid, p_location_id uuid, p_kind text,
  p_scope jsonb, p_expected jsonb, p_desired jsonb, p_request_key uuid
-) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE
  v_table text; v_keys text[];
  v_affected int; v_receipt public.scheduling_availability_batch_receipts%ROWTYPE;
@@ -203,13 +203,13 @@ BEGIN
  UPDATE public.scheduling_availability_batch_receipts
  SET result=v_result WHERE business_id=p_business_id AND request_key=p_request_key;
  RETURN jsonb_build_object('replayed',false,'records',v_result);
-END $;
+END $$;
 
 -- Every table contributing to the PR3 scheduling source token obtains the
 -- same café-scoped advisory transaction lock on writes. PR4B can then check
 -- its source token without holding a table-wide SHARE lock across all cafés.
 CREATE FUNCTION public.scheduling_olivia_source_write_guard()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 DECLARE v_id uuid;
 BEGIN
   IF TG_OP='INSERT' THEN
@@ -228,11 +228,11 @@ BEGIN
   END IF;
   PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||v_id::text,0));
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
-END $;
+END $$;
 REVOKE ALL ON FUNCTION public.scheduling_olivia_source_write_guard()
   FROM PUBLIC,anon,authenticated;
 
-DO $
+DO $$
 DECLARE v_table text;
 BEGIN
   FOREACH v_table IN ARRAY ARRAY[
@@ -249,7 +249,7 @@ BEGIN
        FOR EACH ROW EXECUTE FUNCTION public.scheduling_olivia_source_write_guard()',
       v_table);
   END LOOP;
-END $;
+END $$;
 
 CREATE TABLE public.scheduling_olivia_command_receipts (
   business_id uuid NOT NULL REFERENCES public.businesses(id) ON DELETE CASCADE,
