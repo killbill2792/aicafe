@@ -35,7 +35,11 @@ export const planSchema=z.strictObject({
   nodes:z.array(z.union([
     z.strictObject({op:z.literal("source"),handle:id}),
     z.strictObject({op:z.literal("hypothetical"),label:z.string().min(2).max(160),
-      quotedNumber:z.string().min(1).max(30),value:bounded,unit}),
+      quotedNumber:z.string().min(1).max(30),value:bounded,unit,
+      // Scaled integer quantity preserves exact fractional hours/volumes.
+      quantityScale:z.enum(["whole","hundredth"]).optional(),
+      // Quoted money may explicitly be cents, not just dollars.
+      quotedDenomination:z.enum(["dollars","cents"]).optional()}),
     z.strictObject({op:z.literal("convert"),to:unit}),binary,
   ])).min(1).max(30),
 });
@@ -154,6 +158,23 @@ function attributed(message:string,quoted:string):boolean{
   const values:string[]=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)?/g)??[];
   return values.includes(normalized);
 }
+/** A cent-denominated interpretation requires the owner's own nearby word
+ * or symbol; the model is never allowed to reinterpret stated dollars as cents.
+ */
+function ownerQuotedCents(message:string,quoted:string):boolean{
+  const raw=normalizeScenarioNumber(message).toLocaleLowerCase();
+  const number=normalizeScenarioNumber(quoted);
+  const token=/[\\p{L}\\p{N}]/u;
+  for(let start=raw.indexOf(number);start>=0;start=raw.indexOf(number,start+1)){
+    const prev=raw[start-1]??"",next=raw[start+number.length]??"";
+    if((prev&&token.test(prev))||(next&&token.test(next)))continue;
+    const after=raw.slice(start+number.length,start+number.length+24);
+    const before=raw.slice(Math.max(0,start-6),start);
+    if(/^\\s*(?:¢|cents?\\b|centavos?\\b|سنت(?:ات)?\\b|سنتيم(?:ات)?\\b)/u.test(after)||
+      /¢\\s*$/u.test(before))return true;
+  }
+  return false;
+}
 function rounded(v:Rat):number{
   const amount=(abs(v.n)*BigInt("2")+v.d)/(v.d*BigInt("2"));
   const signed=v.n<BigInt("0")?-amount:amount;
@@ -214,13 +235,24 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
         const stated=Number(normalizeScenarioNumber(node.quotedNumber));
-        const interpreted=node.unit.startsWith("USD_")||node.unit==="ratio_bps"
-          ?stated*100:stated;
+        const isMoney=node.unit.startsWith("USD_");
+        const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber);
+        if((!isMoney&&node.quotedDenomination!==undefined)||
+          (isMoney&&node.quantityScale==="hundredth")||
+          (isMoney && (node.quotedDenomination==="cents")!==ownerSaidCents))
+          throw new Error("denomination_mismatch");
+        const quantityScale=node.quantityScale==="hundredth"?100:1;
+        const factor=isMoney?(node.quotedDenomination==="cents"?1:100):
+          node.unit==="ratio_bps"?100:quantityScale;
+        const interpreted=stated*factor;
         if(!Number.isSafeInteger(interpreted)||interpreted!==node.value)
           throw new Error("hypothetical_mismatch");
-        stack.push({v:rat(BigInt(node.value)),u:node.unit,p:null,refs:new Set()});
+        stack.push({v:rat(BigInt(node.value),BigInt(
+          isMoney||node.unit==="ratio_bps"?1:quantityScale)),
+          u:node.unit,p:null,refs:new Set()});
         // Never publish the model's free-form label as an owner-verified fact.
-        assumptions.push(node.quotedNumber+" "+node.unit);
+        assumptions.push(node.quotedNumber+" "+
+          (node.quotedDenomination==="cents"?"cents":node.unit));
         formula.push("owner_hypothetical");
       }else if(node.op==="convert"){
         const a=stack.pop();if(!a)throw new Error("stack_underflow");
