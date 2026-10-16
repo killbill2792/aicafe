@@ -32,7 +32,7 @@ create table csv_import_jobs (
   -- (never re-inserted) on every later finalize — resolving a staged wage or backfilling a catalog
   -- match must make Upload History show the CURRENT status/summary, not the pending snapshot from
   -- the moment the job first reached a review state.
-  upload_id uuid references uploads on delete set null,
+  upload_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -59,6 +59,11 @@ grant select, insert, update, delete on csv_import_jobs to authenticated;
 -- the same idiom as Olivia's employee/location composite FKs (20261014000060). Each of these is
 -- always-satisfiable (id is already a unique primary key) and purely additive.
 alter table csv_import_jobs add constraint csv_import_jobs_id_business_unique unique (id, business_id);
+-- Protect upload history against a member of multiple cafés linking another café's row.
+alter table uploads add constraint uploads_id_business_unique unique (id, business_id);
+alter table csv_import_jobs add constraint csv_import_jobs_upload_business_fk
+  foreign key (upload_id, business_id) references uploads (id, business_id)
+  on delete set null (upload_id);
 alter table locations add constraint locations_id_business_unique unique (id, business_id);
 alter table menu_items add constraint menu_items_id_business_unique unique (id, business_id);
 alter table employees add constraint employees_id_business_unique unique (id, business_id);
@@ -123,6 +128,23 @@ create table csv_labor_import_rows (
 );
 create unique index csv_labor_import_rows_timecard_unique on csv_labor_import_rows (business_id, pos_timecard_id);
 create index csv_labor_import_rows_job_idx on csv_labor_import_rows (job_id);
+
+-- An overlapping CSV must never steal a staged shift awaiting the first job's owner wage
+-- review: the original UI holds that row ID. Fail the second staging operation atomically
+-- rather than reassigning its job_id and silently dropping the pending owner task.
+create function csv_preserve_pending_labor_review()
+returns trigger language plpgsql set search_path = public as $
+begin
+  if OLD.job_id is distinct from NEW.job_id and NOT OLD.promoted then
+    raise exception using errcode='23514', message='Unresolved labor review belongs to another import job';
+  end if;
+  return NEW;
+end;
+$;
+create trigger csv_preserve_pending_labor_review_before_update
+  before update of job_id on csv_labor_import_rows
+  for each row execute function csv_preserve_pending_labor_review();
+
 
 alter table csv_labor_import_rows enable row level security;
 create policy "members read" on csv_labor_import_rows for select using (is_member(business_id));
