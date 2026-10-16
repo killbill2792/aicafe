@@ -323,8 +323,8 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           if(!p || typeof p.asOf!=="string" ||
             !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
             !canonicalReader || !sourceValid || !readerValid ||
-            (p.purpose!==undefined &&
-              p.purpose!==(input.data as {purpose?:string}).purpose) ||
+            typeof p.purpose!=="string" ||
+            p.purpose!==(input.data as {purpose?:string}).purpose ||
             !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))
