@@ -34,7 +34,14 @@ export type OliviaReadRequest = z.infer<typeof oliviaReadRequestSchema>;
 export type OliviaReadCapability = OliviaReadRequest["capability"];
 
 const record = <T extends z.ZodRawShape>(shape:T) =>
-  z.object({id:oliviaUuid,revision:z.number().int().positive(),...shape}).strip();
+  z.object({
+    id:oliviaUuid,revision:z.number().int().positive(),...shape,
+    created_at:z.string().datetime({offset:true}).optional(),
+    updated_at:z.string().datetime({offset:true}).optional(),
+    updated_by:oliviaUuid.nullable().optional(),
+    confirmed_at:z.string().datetime({offset:true}).nullable().optional(),
+    confirmed_by:oliviaUuid.nullable().optional(),
+  }).strip();
 export const oliviaStoredSchemas = {
   recurring:record(foundationRecordSchemas.availability_rule.shape),
   exception:record(foundationRecordSchemas.availability_exception.shape),
