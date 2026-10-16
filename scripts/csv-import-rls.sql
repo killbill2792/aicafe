@@ -122,7 +122,12 @@ END $$;
 UPDATE csv_import_jobs SET status='done' WHERE id=:'labor_job_id';
 
 -- Database-level concurrency guard: a second 'processing' job for the same business+kind is
--- rejected by the unique partial index, not merely discouraged by a disabled button.
+-- rejected by the unique partial index, not merely discouraged by a disabled button. job_id and
+-- conflict_job_id are already 'done'/'needs_review' by this point, so this section creates its
+-- own currently-active job to collide against.
+INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
+VALUES (gen_random_uuid(),:'biz_a','sales','processing','fp-rls-test-active-1',1,1)
+RETURNING id \gset active_
 DO $$
 BEGIN
  BEGIN
@@ -133,6 +138,7 @@ BEGIN
  END;
 END $$;
 -- A terminal (non-processing) job for the same kind does not block a new attempt.
+UPDATE csv_import_jobs SET status='done' WHERE id=:'active_id';
 INSERT INTO csv_import_jobs(business_id,kind,status,content_fingerprint,rows_in_file,group_count)
 VALUES (:'biz_a','sales','processing','fp-rls-test-after-done',1,1);
 
