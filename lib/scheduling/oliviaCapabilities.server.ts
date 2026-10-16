@@ -125,8 +125,7 @@ async function readAvailability(
   };
   for(const kind of Object.keys(rowTypes) as Kind[]){
     const raw=found.records[kind];
-    if(!Array.isArray(raw) || raw.length>5000)
-      return fail(capability,"capacity_exceeded");
+    if(!Array.isArray(raw))return fail(capability,"invalid_record");
     for(const value of raw){
       // readSchedulingFoundation is independently authenticated; reject
       // source records from any changed/mismatching tenant before projecting
@@ -147,6 +146,9 @@ async function readAvailability(
       target.push(parsed.data);
       grouped[kind].set(id,target);
     }
+    // Do not mask malformed/orphaned/foreign evidence as harmless overflow.
+    // Every source row is validated first, including those past the output cap.
+    if(raw.length>5000)return fail(capability,"capacity_exceeded");
   }
   const at=(kind:Kind,id:string)=>grouped[kind].get(id)??[];
   const employees=staff.map(employee=>{
