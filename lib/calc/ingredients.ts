@@ -129,3 +129,17 @@ export function resolveProductCost(
     differenceCents: null,
   };
 }
+
+/**
+ * One US liquid gallon is EXACTLY 3,785.411784 mL. Ingredient prices are
+ * integer micro-cents per mL; round only after converting the whole gallon,
+ * half up to a cent. Never use this for ingredients priced per gram (density
+ * is not known) or for unrecorded package/size modifiers.
+ */
+export function ingredientUsdUsGallonCents(microCentsPerMl:number):number|null {
+  if(!Number.isSafeInteger(microCentsPerMl)||microCentsPerMl<0)return null;
+  const total=BigInt(microCentsPerMl)*BigInt("3785411784");
+  const cents=(total+BigInt("500000000000"))/BigInt("1000000000000");
+  if(cents>BigInt(Number.MAX_SAFE_INTEGER))return null;
+  return Number(cents);
+}

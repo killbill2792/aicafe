@@ -83,3 +83,78 @@ Owner approval is required before merging this foundation, running
 migration 70 in production, changing P1/P3 provenance contracts or
 enabling Supervisor P3 feature flags. Never count a draft migration or
 green CI as proof of an applied production schema.
+
+
+## P3 source consumer — PR #94 (read-only, review pending)
+
+The P3 consumer reads the authorized PostgreSQL snapshot through
+`readAuthorizedAtomicP1SourceSnapshot()`; source-backed operands are projected
+from the *same* response, with exact tenant, timezone, selector, purpose,
+registered reader and epoch. Legacy P1 shadow calls still establish model-
+selected **selectors**, not an authoritative snapshot or numerical source for
+revision-backed operands. For successful atomic projection the observation
+content hash is deliberately null; the epoch belongs to PostgreSQL.
+
+The allowlisted P3 snapshot adapters currently cover active menu item price,
+available recipe-line/ingredient prices, hourly wages (not inferred salary
+conversions), recorded payroll burden, selected-day daily rollups, and
+compatible per-mL ingredient prices converted to US gallon cost with the pure
+calculation library. They do not prove historical POS completeness, option-mix,
+substitution entitlement, overtime rates, full staffing requirements, supplier
+freshness, expense categorization completeness, or net profit. Those remain
+unavailable/partial/conditional, even if an epoch is present. Estimated burden
+and price freshness are not upgraded to verified.
+
+The expression engine rejects mixed epochs. The Supervisor rechecks an epoch
+before returning a result and discards an answer after a concurrent source
+update. If the owner-only RPC is missing or inaccessible, P3 retains only the
+legacy **explicitly partial and unversioned** conditional path; it never
+assigns a fabricated revision or borrows the epoch for an independent read.
+This is not evidence that migration 70 has been deployed to production.
+
+Executable gates: `lib/ai/supervisor/p3/snapshotOperandSources.test.ts`,
+`lib/ai/conversations/runSupervisorP3.test.ts` and real, disposable
+PostgreSQL verification of the P3 adapters via
+`lib/metrics/p1AtomicSourceSnapshot.db.test.ts`. P3 changes now trigger
+`.github/workflows/p1-source-revision-db.yml`. Separate owner-controlled
+migration, staged café rollout and browser acceptance remain release gates.
+
+**Status-preserving safety gate (Codex P1):** The current SQL snapshot contract
+does not include `daily_rollups.card_fees_status`. P3 therefore does **not**
+project `cardFeesCents` as an atomic daily source operand, even when the
+numeric field is zero. It must remain unavailable until a separately reviewed
+and deployed status-preserving source contract exists. A successful `NULL`
+snapshot response is an invalid/absent authoritative ledger and fails
+closed; only specifically identified missing-function RPC errors
+(PGRST202 naming the snapshot function) may use the explicitly unversioned legacy conditional
+route. Owner authorization, SQL, timeout, network and malformed/NULL RPC
+failures all fail closed; neither case fabricates an epoch.
+
+P3 withholds historical daily ingredient-cost totals because this SQL
+snapshot does not prove item-level historical recipe and price coverage.
+A bounded snapshot truncated outside the requested recent period can still
+support that period when *every selected day* is present uniquely and has
+the required source status; selected date gaps remain unavailable.
+
+**Daily labor completeness hold:** The snapshot does not establish actual
+attendance or wage-coverage status for each `daily_rollups` staff amount.
+Consequently `labor.daily_costs` does not project atomic monetary operands
+(including a displayed zero). The supported incremental-labor scenario
+continues to use the recorded hourly employee wage and explicitly sourced
+employer burden with the canonical staff-cost engine. A future separately
+approved coverage contract would be needed to expose daily labor totals.
+
+The Toast pilot's per-date independent-review ledger is currently outside
+the single-statement P1 source snapshot. When the Toast pilot is enabled,
+P3 withholds atomic daily sales operands rather than treating a rollup
+marked `actual` as evidence that every selected Toast day was reviewed.
+A future additive source contract can safely restore this data with exact
+verified-date scope. No Toast records, feature flags or import pipelines are
+modified by this PR.
+
+**Toast reviewed-date gate:** With `TOAST_PILOT_IMPORT_ENABLED=true`,
+P3 withholds *all* atomic `sales.daily` amounts because the existing MVCC
+RPC does not include the independent Toast review status that the authorized
+historical sales reader enforces. It must not promote an unreviewed imported
+Toast date to observed sales. A future reviewed-date source contract is a
+separate prerequisite; no pilot flags or customer import records were changed.

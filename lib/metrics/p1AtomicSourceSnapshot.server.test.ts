@@ -60,6 +60,31 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       expect(atomicP1SourceSchema.safeParse(data).success).toBe(false);
     }
   });
+  it("treats successful NULL snapshots as integrity failures, never legacy eligibility",async()=>{
+    connect.mockResolvedValueOnce(fakeClient(null));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"invalid_source_snapshot"});
+  });
+  it("allows fallback only for a specifically missing RPC, never an execution failure",async()=>{
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"PGRST202",
+      message:"Could not find function public.p1_authoritative_source_snapshot in schema cache"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"rpc_not_installed"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42883",
+      message:"function public.p1_authoritative_source_snapshot(uuid) failed because missing inner function"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42883",
+      message:"function public.internal_payroll_dependency(uuid) does not exist"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"42501",message:"permission denied"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+    connect.mockResolvedValueOnce(fakeClient(null,{code:"57014",message:"query canceled"}));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"unauthorized_or_unconfigured"});
+  });
   it("treats a missing RPC or authorization failure as unavailable",async()=>{
     connect.mockResolvedValueOnce(fakeClient(null,{message:"migration not applied"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())

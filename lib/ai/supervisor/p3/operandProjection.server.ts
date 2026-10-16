@@ -6,6 +6,8 @@ import type { ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { Operand,Binding } from "./expression";
 import { isWholeNamedEntity } from "./entityMatch";
 import { fingerprintP1Observation } from "@/lib/metrics/p1ReadFingerprint";
+import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
+import { extractAtomicSnapshot } from "./snapshotOperandSources";
 
 export type OperandChoice={handle:string;entityId:string;entityName:string;
   field:string;matchedClause:string};
@@ -151,6 +153,7 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
 export function projectP1Evidence(
   evidence:readonly ShadowEvidence[],businessId:string,ownerGoal:string,
   locationId:string|null=null,ownerHistory:readonly string[]=[],
+  atomicSnapshot?:AtomicP1SourceSnapshot,
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
@@ -160,6 +163,11 @@ export function projectP1Evidence(
   const conflictingHandles=new Set<string>();
   const readSignatures=new Map<string,string>();
   const currentGoal=ownerGoal;
+  // A revision is trusted ONLY alongside the same owner-scoped SQL snapshot.
+  // Never label independently obtained shadow reads with that revision.
+  if(atomicSnapshot && (atomicSnapshot.businessId!==businessId||
+    atomicSnapshot.currency!=="USD"))
+    return {operands:[],bindings:[],choices:[],missing:["snapshot_scope_conflict"]};
   for(const item of evidence){
     const capability=item.capabilityId;
     if(!capability?.startsWith("p3.")||!capability.endsWith(".v1")||
@@ -170,7 +178,7 @@ export function projectP1Evidence(
     if(!parsed.success||parsed.data.status==="unavailable")continue;
     // Compare the entire validated envelope, not merely the number: a
     // changed query, quality, coverage or provenance is a different snapshot.
-    const readSignature=JSON.stringify(parsed.data);
+    const independentSignature=JSON.stringify(parsed.data);
     const result=parsed.data as {
       status:"verified"|"estimated"|"partial";value:unknown;unit:string;
       actuality:string;quality:{missingInputs:string[];estimatedInputs:string[];staleInputs:string[]};
@@ -193,11 +201,26 @@ export function projectP1Evidence(
       source.selectorContractId!==provenance.selectorContractId||
       source.selectorContractVersion!==provenance.selectorContractVersion||
       !purposePolicies[key].includes(provenance.purpose as never))continue;
+    // The atomic branch uses the earlier authorized read ONLY as a typed
+    // selector/purpose. No independent number, status or content hash enters
+    // the final calculation. Unsupported atomic domains expose NO operands.
+    if(atomicSnapshot && provenance.timezone!==atomicSnapshot.timezone)continue;
+    const snapshotValue=atomicSnapshot?extractAtomicSnapshot(key,atomicSnapshot,
+      result.query,provenance.asOf):null;
+    if(atomicSnapshot && !snapshotValue){
+      missing.push("not_projectable_from_atomic_snapshot:"+key);
+      continue;
+    }
     const unit=metricUnits[key as keyof typeof metricUnits];
-    const valuesForKey:Extracted[]=
+    const valuesForKey:Extracted[]=atomicSnapshot?
+      (snapshotValue?.leaves??[]):
       unit==="USD_cents" && integer(result.value)?
         [{key:"value",name:key,field:"value",value:result.value,unit:"USD_cents"}]:
       extractors[key]?.(result.value)??[];
+    const readSignature=atomicSnapshot?
+      JSON.stringify({revision:atomicSnapshot.revision,key,query:result.query,
+        leaves:valuesForKey,missing:snapshotValue?.missingInputs,
+        stale:snapshotValue?.staleInputs}):independentSignature;
     if(!bindings.some(b=>b.capabilityId===capability))
       bindings.push({capabilityId:capability,
         canonicalReaderId:readers[key],sourceIds:[key],
@@ -257,16 +280,21 @@ export function projectP1Evidence(
       choices.push(choice);
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
-        sourceId:key,sourcePurpose:provenance.purpose,sourceRevision:null,
-        observedContentHash,
+        sourceId:key,sourcePurpose:provenance.purpose,
+        sourceRevision:atomicSnapshot?.revision??null,
+        observedContentHash:atomicSnapshot?null:observedContentHash,
         selectorContractId:provenance.selectorContractId,selectorContractVersion:1,
         businessId,locationId,asOf:provenance.asOf,
         period:p?{from:p.from,to:p.to,timezone:provenance.timezone}:null,
         status:"partial",actuality:result.actuality==="actual"?"actual":
           result.actuality==="planned"?"planned":"estimated",
         evidenceStatus:"unverified",
-        missingInputs:[...result.quality.missingInputs,"unversioned_source"],
-        staleInputs:[...result.quality.staleInputs],unit:leaf.unit,
+        missingInputs:atomicSnapshot?
+          [...new Set(["coverage_not_proven_by_revision",
+            ...(snapshotValue?.missingInputs??[])])].slice(0,20):
+          [...result.quality.missingInputs,"unversioned_source"].slice(0,20),
+        staleInputs:(atomicSnapshot?snapshotValue?.staleInputs:
+          result.quality.staleInputs)?.slice(0,20)??[],unit:leaf.unit,
         currency:"USD",value:leaf.value,
       });
     }

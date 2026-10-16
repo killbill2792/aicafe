@@ -6,6 +6,8 @@ import type { GroundedSupervisorReply,EvidenceReference,SupervisorReplyBlock } f
 import { SUPERVISOR_ENDPOINT,supervisorModelProfile } from
   "@/lib/ai/conversations/supervisorRequest.mjs";
 import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
+import { readAuthorizedAtomicP1SourceSnapshot } from
+  "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { projectP1Evidence } from "./operandProjection.server";
@@ -261,8 +263,31 @@ export async function tryP3SupervisorReadOnly(input:{
   });
   reported.toolCallCount+=expanded.readCount;
   input.onUsage?.({...reported});
+  // The one-statement SQL RPC supplies ALL cross-domain numeric operands.
+  // Preceding independent P1 reads only discover/authorize selectors. When
+  // migration 70 is missing, retain conservative unversioned conditional
+  // behavior; NEVER assign an invented epoch or mix both operand sources.
+  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
+  // Only a specifically recognized absent RPC can use legacy unversioned
+  // conditional behavior. Authorization revocation, permission errors,
+  // timeout, SQL failure and malformed/NULL RPC results all fail closed.
+  // Integrity failures must terminate the turn. Returning null invokes the
+  // legacy compatibility reader, which could reuse stale shadow evidence.
+  const sourceIntegrityFailure=()=>({
+    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
+    reply:{intent:"profitability" as const,status:"unavailable" as const,
+      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
+        text:labels[input.locale].unsupported}]},
+    usage:{...reported},
+  });
+  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
+    return sourceIntegrityFailure();
+  if(atomic.status==="available" &&
+    (atomic.snapshot.businessId!==identity.businessId||
+      atomic.snapshot.currency!==identity.currency||
+      atomic.snapshot.timezone!==identity.timezone))return sourceIntegrityFailure();
   const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text,
-    null,ownerHistory);
+    null,ownerHistory,atomic.status==="available"?atomic.snapshot:undefined);
   // Validated pure owner-hypothetical arithmetic may need no café source.
   // It must declare no_external_sources; it can never be labeled observed.
   // P3 permits multiple independently authorized readers for ONE semantic
@@ -461,6 +486,15 @@ export async function tryP3SupervisorReadOnly(input:{
     }
   }
   if(blocks.length>30)return null;
+  if(atomic.status==="available"){
+    // Concurrent owner/import updates must not silently make this answer
+    // appear current. A second single-statement RPC checks the epoch only;
+    // no facts from that later statement are mixed with the first snapshot.
+    const latest=await readAuthorizedAtomicP1SourceSnapshot();
+    if(latest.status!=="available"||
+      latest.snapshot.businessId!==atomic.snapshot.businessId||
+      latest.snapshot.revision!==atomic.snapshot.revision)return sourceIntegrityFailure();
+  }
   return {kind:"p3_read_only_conditional",executedEffects:0,
     reply:{intent:"profitability",status:"partial",evidence:refs,blocks},
     usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
