@@ -143,7 +143,6 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   });
   it("reads confirmed recurring windows and confirmed leave without treating leave as available",async()=>{
     const result=await executeOliviaReadCapability(availability());
-    console.log("PR4A availability diagnostic",JSON.stringify(result));
     expect(result).toMatchObject({ok:true,status:"ok",version:1,
       source:{businessId,kind:"stored_availability"},
       employees:[{employeeId,state:"confirmed",recurring:[{day_of_week:1,
@@ -206,7 +205,6 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     locations:{[locationId]:"UTC"},locationNames:{[locationId]:"Main"},
     previewRevision:0,sourceDigest:digest,frozenShiftKeys:[]});
     const result=await executeOliviaReadCapability(preview());
-    console.log("PR4A preview diagnostic",JSON.stringify(result));
     expect(result).toMatchObject({ok:true,disposition:"proposal_only",
       plan:{status:"unproven",scenarios:[{shifts:[
         {},{},{},{},{}],gaps:[{reason:"qualification_missing",
@@ -248,7 +246,6 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       .toMatchObject({ok:false,error:{code:"unauthorized"}});
   });
   it("reports real revision history and separate official published pointer",async()=>{
-    console.log("PR4A history diagnostic",JSON.stringify(await executeOliviaReadCapability(history())));
     expect(await executeOliviaReadCapability(history())).toMatchObject({
       ok:true,currentRevision:2,publishedRevision:1,revisions:[
         {status:"draft"},{status:"published"}]});
