@@ -166,6 +166,68 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
     expect(p1Reads).toHaveBeenCalledTimes(2);
   });
+  it("COMPOSE-01: item contribution minus canonical loaded paid minutes uses five or fewer operations",async()=>{
+    const clauses=["Sell 25 more lattes","Sophie works 45 more minutes",
+      "show employer payroll burden"];
+    const question=clauses.join(" and ");
+    const burdenInput={id:"labor.payroll_burden",version:1,
+      purpose:"authorized_owner_employer_cost_review"};
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const id=(raw as {id:string}).id;
+      if(id==="menu.catalog")return result(menuInput,menu);
+      if(id==="menu.product_economics")return result(productInput,economics);
+      if(id==="labor.employee_wages")return result(wageInput,workers);
+      if(id==="labor.payroll_burden"){
+        const base=result(burdenInput,{
+          rateBasisPoints:1200,status:"confirmed",source:"owner_confirmed"});
+        return {...base,provenance:{...base.provenance,
+          canonicalReaderId:readers["labor.payroll_burden"]}};
+      }
+      throw Error("unexpected source");
+    });
+    const nodes=[
+      {op:"source",handle:"menu.product_economics:latte:priceCents"},
+      {op:"source",handle:"menu.product_economics:latte:ingredientsCentsToday"},
+      {op:"subtract"},
+      {op:"hypothetical",label:"extra drinks",quotedNumber:"25",value:25,unit:"item"},
+      {op:"multiply"},
+      {op:"source",handle:"labor.employee_wages:sophie:defaultHourlyWageCents"},
+      {op:"hypothetical",label:"paid minutes",quotedNumber:"45",value:45,unit:"minute"},
+      {op:"multiply"},
+      {op:"source",handle:"labor.payroll_burden:aggregate:rateBasisPoints"},
+      {op:"loaded_labor"},{op:"scenario_delta"},
+    ];
+    let step=0;
+    const provider=vi.fn(async()=>{
+      const phase=step++;
+      if(phase===0)return response({complete:true,clauses});
+      if(phase===1)return response({complete:true,choices:[
+        {clause:clauses[0],capabilityId:"p3.menu.catalog.v1",
+          inputJson:JSON.stringify(menuInput),reason:null},
+        {clause:clauses[1],capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+        {clause:clauses[2],capabilityId:"p3.labor.payroll_burden.v1",
+          inputJson:JSON.stringify(burdenInput),reason:null},
+      ]});
+      return response({complete:true,plans:[{
+        coveredClauses:clauses,reason:null,planJson:JSON.stringify({
+          capabilityId:EXPRESSION_ID,version:1,
+          purpose:"preauthorized_operands",
+          description:"Extra gross contribution less loaded paid labor, without unrelated net-profit claims",
+          nodes,
+        }),
+      }]});
+    });
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:8488}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+    ]));
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:5});
+    expect(p1Reads).toHaveBeenCalledTimes(4);
+    expect(JSON.stringify(output.reply)).not.toMatch(/verified profit|predicted demand/i);
+  });
   it("does not invent a payroll burden when no canonical payroll rate is available",async()=>{
     const clauses=["Sophie works 45 more minutes","show employer payroll burden"];
     const request=clauses.join(" and ");
