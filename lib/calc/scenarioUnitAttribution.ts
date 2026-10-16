@@ -14,10 +14,12 @@ const money=/[$€£]|\b(?:dollars?|dólares?|dolares?|cents?|centavos?)\b|دو�
 const items=/\b(?:items?|units?|products?|drinks?|cups?|lattes?|coffees?|beverages?|bebidas?|tazas?|unidades?|productos?)\b|أكواب|كوب|مشروب|مشروبات|وحدات/iu;
 const word=/[\p{L}\p{N}]/u;
 const multiplier=/\b(?:times?|twice|double|multiply|multiplied|multiplier|factor|divide|divided|dividing|divisor|halve|halved|veces|multiplicar|multiplicado|dividir|dividido|división|division|entre)\b|ضعف|مرات|مرة|قسمة|اقسم|قسّم|تقسيم/iu;
-export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string):boolean{
+export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string,
+  occurrence?:number):boolean{
   const text=normalize(message),number=normalize(quoted);
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(number))return false;
   const hits:Set<string>[]=[];
+  let validOccurrence=0;
   for(let start=text.indexOf(number);start>=0;start=text.indexOf(number,start+1)){
     const end=start+number.length;
     if(start>0&&(word.test(text[start-1])||/[.,\u066b\u066c]/iu.test(text[start-1]))||
@@ -72,19 +74,22 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(/[$€£]\s*$/u.test(before)){
       found.clear();found.add("money");
     }
-    hits.push(found);
+    if(occurrence===undefined||validOccurrence===occurrence)hits.push(found);
+    validOccurrence++;
   }
   const expected=unit.startsWith("USD_")?"money":unit;
   const named=hits.some(x=>x.size===1&&x.has(expected))&&
     hits.every(x=>x.size===0||(x.size===1&&x.has(expected)));
   return named&&(!unit.startsWith("USD_")||
-    ownerQuotedMoneyDimensionMatches(text,number,unit));
+    ownerQuotedMoneyDimensionMatches(text,number,unit,occurrence));
 }
 /** A dollar total and a dollar rate are different typed quantities.
  * Require an explicit matching per-unit qualifier for a monetary rate.
  */
-function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string):boolean{
+function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string,
+  occurrence?:number):boolean{
   const resolved:boolean[]=[];
+  let validOccurrence=0;
   for(let start=text.indexOf(number);start>=0;start=text.indexOf(number,start+1)){
     const end=start+number.length;
     if(start>0&&(word.test(text[start-1])||/[.,\u066b\u066c]/iu.test(text[start-1]))||
@@ -117,7 +122,9 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
       dimensions.add("USD_cents_per_US_fl_oz");
     const observed=dimensions.size===0?"USD_cents":
       dimensions.size===1?[...dimensions][0]:null;
-    resolved.push(observed===unit);
+    if(occurrence===undefined||validOccurrence===occurrence)
+      resolved.push(observed===unit);
+    validOccurrence++;
   }
   return resolved.length>0&&resolved.every(Boolean);
 }
