@@ -88,9 +88,10 @@ const makeTransport=(opts:{tamper?:boolean;providerFailure?:boolean}={})=>{
   });
   return {calls,requests};
 };
-const run=(transport:ReturnType<typeof makeTransport>["calls"])=>
+const run=(transport:ReturnType<typeof makeTransport>["calls"],
+  question:string=goal,locale:"en"|"es"|"ar"="en")=>
   runSupervisorTurn({
-    text:goal,locale:"en",asOf:identity.asOf,timezone:identity.timezone,
+    text:question,locale,asOf:identity.asOf,timezone:identity.timezone,
     cafeName:"Fixture Cafe",history:[],
     tools:{} as BusinessScopedCafeTools,readRules:async()=>[],
   },transport);
@@ -142,4 +143,86 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       .not.toBe(true);
     expect(p1Reads).not.toHaveBeenCalled();
   });
+  it("COMPOSE-03: compares actual recorded supplier quotes using US gallon/fluid-ounce units",async()=>{
+    const quoteInput={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    const quotes={items:[
+      {id:"oat-quote",supplierName:"Supplier A",itemName:"oat milk",
+        priceCents:480,packageCount:1,packageUnit:"gal",
+        sourceKind:"supplier_quote",sourceUrl:null,quotedOn:"2026-10-01",
+        evidenceStatus:"owner_reported",createdAt:"2026-10-01T00:00:00Z"},
+      {id:"whole-quote",supplierName:"Supplier B",itemName:"whole milk",
+        priceCents:384,packageCount:1,packageUnit:"gal",
+        sourceKind:"supplier_quote",sourceUrl:null,quotedOn:"2026-10-01",
+        evidenceStatus:"owner_reported",createdAt:"2026-10-01T00:00:00Z"},
+    ],truncated:false};
+    p1Reads.mockImplementation(async()=>{
+      return {...result(quoteInput,quotes),actuality:"unknown",provenance:{
+        canonicalReaderId:"readP1SupplierQuotes",readerContractVersion:1,
+        selectorContractId:"supplies.quotes.selector",selectorContractVersion:1,
+        purpose:quoteInput.purpose,asOf:identity.asOf,
+        timezone:identity.timezone,sourceRevision:null,
+      }};
+    });
+    const sourceRequest="Compare oat milk and whole milk for 12 oz";
+    const sections=["Compare oat milk","whole milk for 12 oz"];
+    const plan={
+      capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
+      description:"Compare quoted milk cost for one 12-ounce use",
+      nodes:[
+        {op:"source",handle:"supplies.quotes:oat-quote:pricePerGallon"},
+        {op:"hypothetical",label:"oat milk ounces",quotedNumber:"12",
+          value:12,unit:"US_fl_oz"},{op:"multiply"},
+        {op:"source",handle:"supplies.quotes:whole-quote:pricePerGallon"},
+        {op:"hypothetical",label:"whole milk ounces",quotedNumber:"12",
+          value:12,unit:"US_fl_oz"},{op:"multiply"},{op:"scenario_delta"},
+      ],
+    };
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:sections},
+      {complete:true,choices:sections.map(clause=>({
+        clause,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(quoteInput),reason:null,
+      }))},
+      {complete:true,plans:[{coveredClauses:sections,
+        planJson:JSON.stringify(plan),reason:null}]},
+    ][step++]));
+    const outcome=await run(provider,sourceRequest);
+    expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:9}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+    ]));
+    expect(outcome.reply.status).toBe("partial");
+    expect(p1Reads).toHaveBeenCalledTimes(2);
+  });
+  it("COMPOSE-02/08: renders independently audited Spanish and Arabic scenario results",async()=>{
+    for(const language of [
+      {locale:"es" as const,question:"Vender 25 lattes y Sophie trabaja 45 minutos",
+        clauses:["Vender 25 lattes","Sophie trabaja 45 minutos"]},
+      {locale:"ar" as const,question:"بيع 25 latte و Sophie تعمل 45 دقيقة",
+        clauses:["بيع 25 latte","Sophie تعمل 45 دقيقة"]},
+    ]){
+      p1Reads.mockClear();
+      let step=0;
+      const provider=vi.fn(async()=>response([
+        {complete:true,clauses:language.clauses},
+        {complete:true,choices:language.clauses.map((clause,i)=>({
+          clause,capabilityId:i===0?"p3.menu.catalog.v1":
+            "p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(i===0?menuInput:wageInput),reason:null,
+        }))},
+        {complete:true,plans:[{coveredClauses:language.clauses,
+          planJson:JSON.stringify(compositionPlan),reason:null}]},
+      ][step++]));
+      const outcome=await run(provider,language.question,language.locale);
+      expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
+        expect.objectContaining({type:"metric",valueCents:8650}),
+        expect.objectContaining({type:"warning",code:"P3_CONDITIONAL"}),
+      ]));
+      const text=JSON.stringify(outcome.reply.blocks);
+      expect(language.locale==="es"?text.includes("condicional"):
+        text.includes("مشروط")).toBe(true);
+    }
+  });
+
 });
