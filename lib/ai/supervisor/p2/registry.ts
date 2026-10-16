@@ -178,6 +178,56 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       if(!input.success || discardedOutputKeys(rawInput,input.data) ||
          !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
         return unavailable("invalid_request");
+      // Source bindings must correspond to THIS compiled six-mode registry.
+      // The orchestrator cannot create a fifth reader simply by passing a
+      // plausible binding object, and the model never controls this manifest.
+      const sourceContext=trustedSourceContext as {
+        bindings?:unknown;operands?:unknown;
+      }|null;
+      if(!sourceContext||!Array.isArray(sourceContext.bindings)||
+         !Array.isArray(sourceContext.operands)||
+         sourceContext.bindings.length>100||sourceContext.operands.length>12)
+        return unavailable("invalid_source_context");
+      const bindings=new Map<string,{
+        canonicalReaderId:string;sourceIds:string[];purposes:string[];
+        sensitivity:string;
+      }>();
+      for(const raw of sourceContext.bindings){
+        if(!raw||typeof raw!=="object")return unavailable("invalid_source_context");
+        const b=raw as {capabilityId?:unknown;canonicalReaderId?:unknown;
+          sourceIds?:unknown;purposes?:unknown;sensitivity?:unknown};
+        if(typeof b.capabilityId!=="string"||typeof b.canonicalReaderId!=="string"||
+           !Array.isArray(b.sourceIds)||!Array.isArray(b.purposes)||
+           typeof b.sensitivity!=="string"||bindings.has(b.capabilityId))
+          return unavailable("invalid_source_context");
+        const registered=byId.get(b.capabilityId);
+        const matches=(actual:readonly string[],claimed:unknown[]) =>
+          actual.length===claimed.length &&
+          actual.every(id=>claimed.includes(id)) &&
+          claimed.every(id=>typeof id==="string");
+        if(!registered||registered.mode!=="read"||registered.availability!=="shadow"||
+           !registered.canonicalReaderIds.includes(b.canonicalReaderId)||
+           !matches(registered.sourceIds,b.sourceIds)||
+           !matches(registered.allowedPurposes,b.purposes)||
+           registered.sensitivity!==b.sensitivity)
+          return unavailable("invalid_source_context");
+        bindings.set(b.capabilityId,b as {
+          canonicalReaderId:string;sourceIds:string[];purposes:string[];
+          sensitivity:string;
+        });
+      }
+      for(const raw of sourceContext.operands){
+        if(!raw||typeof raw!=="object")return unavailable("invalid_source_context");
+        const o=raw as {capabilityId?:unknown;canonicalReaderId?:unknown;
+          sourceId?:unknown;sourcePurpose?:unknown};
+        if(typeof o.capabilityId!=="string"||!bindings.has(o.capabilityId))
+          return unavailable("invalid_source_context");
+        const b=bindings.get(o.capabilityId)!;
+        if(o.canonicalReaderId!==b.canonicalReaderId||
+           typeof o.sourceId!=="string"||!b.sourceIds.includes(o.sourceId)||
+           typeof o.sourcePurpose!=="string"||!b.purposes.includes(o.sourcePurpose))
+          return unavailable("invalid_source_context");
+      }
       let timer:ReturnType<typeof setTimeout>|undefined;
       try {
         const deadline=new Promise<{timeout:true}>(resolve=>{
