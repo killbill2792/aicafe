@@ -123,6 +123,12 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(outcome.reply.blocks).not.toContainEqual(expect.objectContaining({
       type:"task_card",
     }));
+    expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_BASELINE"}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("Vetted calculation steps")}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("Owner-stated hypothetical")}),
+    ]));
     expect(p1Reads).toHaveBeenCalledTimes(3);
     expect(outcome.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
     expect(transport.requests.every(req=>req.store===false)).toBe(true);
