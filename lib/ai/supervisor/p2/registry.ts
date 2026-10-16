@@ -90,7 +90,7 @@ function validateRegistration(def:P2Registration) {
   if(!/^[a-z][a-z0-9._-]{2,120}$/.test(def.id) || def.version!==1 ||
     !CAPABILITY_MODES.includes(def.mode) || !def.owner || !def.purpose ||
     !Array.isArray(def.sourceIds) || !def.sourceIds.length ||
-    !Array.isArray(def.canonicalReaderIds) ||
+    !Array.isArray(def.canonicalReaderIds) || !def.canonicalReaderIds.length ||
     def.canonicalReaderIds.some(id=>typeof id!=="string"||!id.trim()) ||
     !Array.isArray(def.allowedPurposes) || !def.allowedPurposes.length ||
     def.requiredRole!=="owner" || def.effectPolicy!=="deny" ||
@@ -209,7 +209,9 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           const arrays=[q?.missingInputs,q?.estimatedInputs,q?.staleInputs];
           if(!p || typeof p.asOf!=="string" ||
             !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
-            (!registeredSource && !canonicalReader) || !sourceValid || !readerValid ||
+            !canonicalReader || !sourceValid || !readerValid ||
+            (p.purpose!==undefined &&
+              p.purpose!==(input.data as {purpose?:string}).purpose) ||
             !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))
