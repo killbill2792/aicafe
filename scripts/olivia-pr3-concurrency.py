@@ -16,7 +16,7 @@ DB = ["psql", "-h", "127.0.0.1", "-p", "54322", "-U", "postgres",
 ENV = {**os.environ, "PGPASSWORD": "postgres"}
 business, other_business = str(uuid4()), str(uuid4())
 owner, coowner, outsider = str(uuid4()), str(uuid4()), str(uuid4())
-employee, location, other_location = str(uuid4()), str(uuid4()), str(uuid4())
+employee, location, alternate_location, other_location = (str(uuid4()) for _ in range(4))
 series1, series2, revision1, revision2 = (str(uuid4()) for _ in range(4))
 week1, week2 = "2099-03-02", "2099-03-09"
 source = ""
@@ -62,6 +62,7 @@ INSERT INTO public.memberships(business_id,user_id,role) VALUES
  ('{other_business}','{outsider}','owner');
 INSERT INTO public.locations(id,business_id,name,timezone) VALUES
  ('{location}','{business}','Location A','America/Los_Angeles'),
+ ('{alternate_location}','{business}','Location A2','America/Los_Angeles'),
  ('{other_location}','{other_business}','Location B','America/Los_Angeles');
 INSERT INTO public.employees(id,business_id,display_name,active) VALUES
  ('{employee}','{business}','Parallel employee',true);
@@ -71,7 +72,8 @@ INSERT INTO public.scheduling_labor_rule_reviews
  'source','Reviewed disposable concurrency rule profile',
  'minRestBetweenShiftsMinutes',600,
  'overtime',jsonb_build_object('verified',true),
- 'jurisdictionByLocationId',jsonb_build_object('{location}','Test region'),
+ 'jurisdictionByLocationId',jsonb_build_object('{location}','Test region',
+  '{alternate_location}','Test region'),
  'classificationByEmployeeId',jsonb_build_object('{employee}','Hourly')),
  '{owner}');
 INSERT INTO public.scheduling_plan_series
@@ -96,9 +98,16 @@ INSERT INTO public.scheduling_plan_assignments
   starts_at,ends_at,paid_minutes,breaks,pinned) VALUES
  ('{business}','{revision1}','{employee}','{location}',
   '2099-03-09T07:00:00Z','2099-03-09T09:00:00Z',120,'[]',false),
- ('{business}','{revision2}','{employee}','{location}',
+ ('{business}','{revision2}','{employee}','{alternate_location}',
   '2099-03-09T15:00:00Z','2099-03-09T17:00:00Z',120,'[]',false);
+INSERT INTO public.timecards
+ (business_id,employee_id,pos_timecard_id,clock_in,clock_out,
+  hourly_wage_cents,breaks,source_type,source_provider)
+VALUES ('{business}','{employee}','csv-pr3-concurrency-actual',
+ '2099-03-01T17:00:00Z','2099-03-01T21:00:00Z',1800,'[]',
+ 'imported','CSV');
 """)
+    original_attendance = sql(f"SELECT to_jsonb(t) FROM public.timecards t WHERE t.business_id='{business}';")
     source = sql(
         f"SELECT public.scheduling_pr3_source_token_internal('{business}'::uuid);")
     assert len(source) == 32, "Missing authoritative source token"
@@ -159,7 +168,9 @@ INSERT INTO public.scheduling_plan_assignments
          WHERE id='{winner_series}'),
        (SELECT published_revision FROM public.scheduling_plan_series
          WHERE id='{loser_series}') IS NULL;""")
-    assert counters == "1|1|0|0|1|t", f"Duplicate or non-atomic publication: {counters}"
+    assert counters == "1|1|1|0|1|t", f"Duplicate or non-atomic publication: {counters}"
+    actual_after = sql(f"SELECT to_jsonb(t) FROM public.timecards t WHERE t.business_id='{business}';")
+    assert actual_after == original_attendance, "Imported actual attendance changed"
 
     # A valid café owner sees their own schedule, not a different tenant's.
     tenant_read = sql(f"""
@@ -170,7 +181,7 @@ SELECT count(*) FROM public.scheduling_plan_series WHERE business_id='{business}
 COMMIT;""")
     assert tenant_read.splitlines()[-1] == "0", f"Cross-tenant schedule leak: {tenant_read}"
     print("PASS: concurrent co-owner approvals, cross-week publication race, "
-          "different-key and timeout retries, exactly-once audit, tenant RLS, "
+          "different-key and timeout retries, cross-location rest, immutable imported attendance, exactly-once audit, tenant RLS, "
           "no payroll or legacy writes")
 finally:
     # Each test creates unique disposable identities; deleting the businesses
