@@ -41,11 +41,13 @@ export function formatScenarioValue(value:number,unit:Unit,locale:Locale,
 export function formatScenarioAssumption(raw:string,locale:Locale):string{
   const split=raw.lastIndexOf(" ");
   if(split<1)return "";
-  const quoted=raw.slice(0,split),unit=raw.slice(split+1) as Unit;
+  const quoted=raw.slice(0,split),unit=raw.slice(split+1) as Unit|"cents";
+  const value=Number(normalizeScenarioNumber(quoted));
+  if(unit==="cents"&&Number.isFinite(value))
+    return formatScenarioValue(value,"USD_cents",locale);
   const validUnits:readonly string[]=["USD_cents","USD_cents_per_item",
     "USD_cents_per_hour","USD_cents_per_US_gallon","USD_cents_per_US_fl_oz",
     "item","minute","hour","US_gallon","US_fl_oz","scalar","ratio_bps","comparison"];
-  const value=Number(normalizeScenarioNumber(quoted));
   return validUnits.includes(unit)&&Number.isFinite(value)?
     formatScenarioValue(value,unit,locale,true):"";
 }
