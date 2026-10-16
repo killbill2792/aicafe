@@ -310,7 +310,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const output=await run(provider,question);
     expect(output.reply.status).toBe("partial");
     expect(output.reply.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({type:"metric",valueCents:125}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("$1.25 per item")}),
       expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
     ]));
     expect(output.reply.evidence).toHaveLength(1);
@@ -373,7 +373,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
           metric:"monthly_bills",period:"month_to_date",from:null,to:null,
         },"bills-call"),
       ]);
-      return providerReply(body({headline:"Recorded monthly bills",summary:"From the café",
+      return providerReply(body({headline:"Here is the recorded picture",summary:"Based on the available café records",
         fact_ids:["t1:bills"],task_ids:[],insight_ids:[],evidence_refs:[]}));
     });
     const billReader=vi.fn(async()=>({
