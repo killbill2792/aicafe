@@ -95,6 +95,36 @@ export async function readP1EmployeeWages({businessId}:Scoped) {
     ? ["missing_employee_wages"]:[]);
 }
 
+/** Employer-cost rate is scoped to the authenticated café. A system-estimated
+ * default must NOT be treated as a confirmed owner's payroll burden.
+ * Return integral basis points only when the stored rate is representable
+ * exactly; never coerce missing/malformed finance settings into 12%.
+ */
+export async function readP1PayrollBurden({businessId}:Scoped) {
+  if(!businessId)return absent("scope_missing");
+  const client=await createServerSupabaseClient();
+  const {data,error}=await client.from("businesses")
+    .select("id,payroll_tax_rate,payroll_tax_rate_status,payroll_tax_rate_source")
+    .eq("id",businessId).single();
+  if(error||!data||data.id!==businessId)return absent("payroll_burden_unavailable");
+  const rate=data.payroll_tax_rate;
+  if(typeof rate!=="number"||!Number.isFinite(rate)||rate<0||rate>1)
+    return absent("payroll_burden_rate_missing");
+  const basisPoints=rate*10_000;
+  if(!Number.isSafeInteger(Math.round(basisPoints))||
+    Math.abs(basisPoints-Math.round(basisPoints))>1e-7)
+    return absent("payroll_burden_precision_unsupported");
+  const confirmed=data.payroll_tax_rate_status==="confirmed";
+  const estimated=data.payroll_tax_rate_status==="estimated";
+  if(!confirmed&&!estimated)return absent("payroll_burden_status_missing");
+  const source=data.payroll_tax_rate_source;
+  if(typeof source!=="string"||!source.trim())
+    return absent("payroll_burden_source_missing");
+  return present({rateBasisPoints:Math.round(basisPoints),status:confirmed?
+    "confirmed" as const:"estimated" as const,source:source.slice(0,500)},
+    [],confirmed?[]:["payroll_burden_rate_estimated"]);
+}
+
 /** Supplier quote = owner-reported evidence, never live inventory or verified purchase. */
 export async function readP1SupplierQuotes({businessId}:Scoped) {
   if(!businessId)return absent("scope_missing");
