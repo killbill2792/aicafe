@@ -385,6 +385,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
   it.each([
     {field:"id",value:"unrelated-product"},
     {field:"name",value:"unrelated product"},
+    {field:"priceCents",value:530},
   ])("rejects product-economics enrichment when canonical $field differs from the selected menu product",async({field,value})=>{
     p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
       const id=(raw as {id:SupportedId}).id;
