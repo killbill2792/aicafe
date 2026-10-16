@@ -181,7 +181,7 @@ function ownerQuotedCents(message:string,quoted:string):boolean{
  * or hundredth units; the integer interpretation is computed from digits.
  */
 function scaledOwnerNumber(quoted:string,factor:number):bigint|null{
-  const match=/^(-?)([0-9]+)(?:\\.([0-9]{1,2}))?$/.exec(
+  const match=/^(-?)([0-9]+)(?:\.([0-9]{1,2}))?$/.exec(
     normalizeScenarioNumber(quoted));
   if(!match)return null;
   const whole=BigInt(match[2]),part=BigInt((match[3]??"").padEnd(2,"0")||"0");
