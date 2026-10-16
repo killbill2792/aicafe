@@ -123,6 +123,17 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("COMPOSE-05: invalid authoritative RPC payload never downgrades to unversioned numerics",async()=>{
+    atomicRead.mockResolvedValueOnce({
+      status:"unavailable",reason:"invalid_source_snapshot",
+    });
+    const transport=makeTransport();
+    const output=await run(transport.calls).catch(e=>e);
+    expect(atomicRead).toHaveBeenCalledTimes(1);
+    expect(output?.reply?.blocks?.some((b:{type:string})=>b.type==="metric"))
+      .not.toBe(true);
+    expect(transport.calls).toHaveBeenCalledTimes(2);
+  });
   it("COMPOSE-03: real Supervisor composes whole versus oat US-fl-oz cost from one snapshot",async()=>{
     const milkInput={id:"menu.ingredients",version:1,
       purpose:"owner_ingredient_catalog"};
