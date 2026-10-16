@@ -212,7 +212,10 @@ async function readHistory(
     if(seen.has(row.revision))return fail(capability,"invalid_record");
     seen.add(row.revision);
   }
-  if((history.currentRevision>0 && !seen.has(history.currentRevision)) ||
+  if((history.currentRevision===0 && history.revisions.length!==0) ||
+     (history.publishedRevision!==null &&
+       history.publishedRevision>history.currentRevision) ||
+     (history.currentRevision>0 && !seen.has(history.currentRevision)) ||
      (history.publishedRevision!==null &&
       !history.revisions.some(x=>x.revision===history.publishedRevision &&
         x.status==="published")))
@@ -220,7 +223,7 @@ async function readHistory(
   return verified(capability,{
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"stored_revisions",
-      consistency:"stored"},
+      consistency:"provisional"},
     currentRevision:history.currentRevision,
     publishedRevision:history.publishedRevision,revisions:history.revisions,
   });
@@ -242,6 +245,8 @@ async function readRevision(
   const revisionStatus=oliviaRevisionStatusSchema.safeParse(revision.status);
   if(!scenario.success || !revisionStatus.success ||
      revision.revision>revision.currentRevision ||
+     (revision.publishedRevision===revision.revision &&
+       revision.status!=="published") ||
      (revision.status==="published" && revision.publishedRevision!==revision.revision))
     return fail(capability,"invalid_record");
   const owner=await requireSchedulingOwner();
@@ -275,7 +280,7 @@ async function readRevision(
   return verified(capability,{
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"stored_revision",
-      consistency:"stored",sourceDigest:revision.sourceDigest},
+      consistency:"provisional",sourceDigest:revision.sourceDigest},
     revisionId:input.revisionId,revision:revision.revision,revisionStatus:revisionStatus.data,
     currentRevision:revision.currentRevision,publishedRevision:revision.publishedRevision,
     sourceDigest:revision.sourceDigest,scenario:scenario.data,
