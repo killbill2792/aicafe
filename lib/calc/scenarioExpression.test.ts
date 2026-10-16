@@ -136,6 +136,29 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
     expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(text)))
       .toMatchObject({status:"conditional",value:2000,unit:"USD_cents_per_hour"});
   });
+  it("denies Canadian and Australian dollar hypotheticals as USD",()=>{
+    for(const words of ["Pay CA$20 per hour","Pay A$20 per hour",
+      "Pay 20 Canadian dollars per hour","Pay 20 Australian dollars per hour",
+      "Pay 20 dólares canadienses por hora"]){
+      expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(words)))
+        .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    }
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+      scope("Pay $20 per hour"))).toMatchObject({status:"conditional",value:2000});
+  });
+  it("attributes explicit scalar division in English, Spanish and Arabic",()=>{
+    for(const words of ["Divide the recorded cost by 2",
+      "Dividir el costo entre 2"]){
+      expect(evaluateExpression(plan("2",2,"scalar"),scope(words)))
+        .toMatchObject({status:"conditional",value:2,unit:"scalar"});
+    }
+    expect(evaluateExpression(plan("٢",2,"scalar"),
+      scope("اقسم تكلفة المقهى على ٢")))
+      .toMatchObject({status:"conditional",value:2,unit:"scalar"});
+    expect(evaluateExpression(plan("2",2,"scalar"),
+      scope("Two employees each worked 2 hours")))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+  });
   it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
     const quoted=plan("١",1,"item");
     expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
