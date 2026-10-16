@@ -8,6 +8,7 @@ on:
       - "lib/scheduling/oliviaCommands.server*"
       - "supabase/migrations/20261017000069_olivia_multi_availability_command.sql"
       - "scripts/olivia-pr4b-rls.sql"
+      - "scripts/olivia-pr4b-concurrency.sh"
       - ".github/workflows/olivia-pr4b-verify.yml"
   workflow_dispatch:
 jobs:
@@ -44,6 +45,8 @@ jobs:
         run: supabase db reset --local --yes
       - name: Olivia PR4B-A tenant, CAS, replay and atomicity regressions
         run: PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -v ON_ERROR_STOP=1 -f scripts/olivia-pr4b-rls.sql
+      - name: Real two-session same-café and cross-café lock regression
+        run: bash scripts/olivia-pr4b-concurrency.sh
       - name: Stop disposable Supabase
         if: always()
         run: supabase stop --no-backup
