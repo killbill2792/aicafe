@@ -12,7 +12,7 @@ const period=z.strictObject({from:z.string().date(),to:z.string().date(),
   timezone:z.string().min(1).max(100)});
 export const operandSchema=z.strictObject({
   handle:id,capabilityId:id,canonicalReaderId:id,sourceId:id,sourcePurpose:id,
-  sourceRevision:id,selectorContractId:id,selectorContractVersion:z.literal(1),
+  sourceRevision:id.nullable(),selectorContractId:id,selectorContractVersion:z.literal(1),
   businessId:id,locationId:id.nullable(),asOf:z.string().date(),
   period:period.nullable(),status:z.enum(["verified","partial","estimated"]),
   actuality:z.enum(["actual","planned","estimated","forecast"]),
@@ -166,7 +166,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       context.locationId!==null&&o.locationId!==context.locationId||
       !b||b.canonicalReaderId!==o.canonicalReaderId||
       !b.sourceIds.includes(o.sourceId)||!b.purposes.includes(o.sourcePurpose)||
-      o.status==="verified"&&(o.actuality!=="actual"||
+      o.status==="verified"&&(!o.sourceRevision||o.actuality!=="actual"||
         o.evidenceStatus!=="verified"||o.missingInputs.length>0||o.staleInputs.length>0)||
       o.unit.startsWith("USD_")&&o.currency!=="USD")
       return unavailable("invalid_source");
@@ -180,6 +180,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
         if(!v)throw new Error("unregistered_operand");
         if(v.status!=="verified"||v.evidenceStatus!=="verified"||
           v.actuality!=="actual")missing.add("unverified:"+v.handle);
+        if(!v.sourceRevision)missing.add("unversioned_source:"+v.handle);
         for(const s of [...v.missingInputs,...v.staleInputs])missing.add(s);
         stack.push({v:rat(BigInt(v.value)),u:v.unit,p:v.period,refs:new Set([v.handle])});
         formula.push("source("+v.handle+")");
