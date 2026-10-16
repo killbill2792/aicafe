@@ -8,6 +8,7 @@ vi.mock("@/lib/actions/oliviaPlanning",()=>({saveOliviaWeekDraft:m.save}));
 import { prepareOliviaAvailabilityCommand, commitOliviaConfirmedAvailability,
   createOliviaScheduleDraftCommand } from "./oliviaCommands.server";
 import { attestOliviaOwnerActionFromTrustedUI } from "./oliviaOwnerAction.server";
+import { oliviaConfirmedCommitSchema } from "./oliviaCommandContracts";
 
 const id=(n:number)=>"10000000-0000-4000-8000-"+String(n).padStart(12,"0");
 const cafe=id(90),otherCafe=id(91),employee=id(1),second=id(2),location=id(3);
@@ -83,6 +84,8 @@ describe("Olivia PR4B-A authorized domain commands",()=>{
       requestKey:key};
     expect(await commitOliviaConfirmedAvailability({...cmd,confirmed:true},{} as never))
       .toMatchObject({ok:false,error:"invalid_input"});
+    const validated=oliviaConfirmedCommitSchema.safeParse(cmd);
+    if(!validated.success) throw Error(JSON.stringify(validated.error.issues));
     expect(await commitOliviaConfirmedAvailability(cmd,{} as never))
       .toMatchObject({ok:false,error:"unauthorized"});
     expect(m.rpc.mock.calls.some(x=>x[0]==="scheduling_olivia_commit_availability"))
@@ -95,6 +98,8 @@ describe("Olivia PR4B-A authorized domain commands",()=>{
     const cmd={capability:"olivia.availability.commit",version:1,
       proposal:prepared.proposal,proposalDigest:prepared.proposalDigest,
       requestKey:key};
+    const validated=oliviaConfirmedCommitSchema.safeParse(cmd);
+    if(!validated.success) throw Error(JSON.stringify(validated.error.issues));
     const attestation=await attestOliviaOwnerActionFromTrustedUI({
       proposalDigest:prepared.proposalDigest,requestKey:key});
     if(!attestation.ok)throw Error("expected authenticated owner proof");
