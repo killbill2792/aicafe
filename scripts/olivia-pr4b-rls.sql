@@ -205,6 +205,9 @@ BEGIN
  THEN RAISE EXCEPTION 'invalid command stranded its idempotency key'; END IF;
 END $$;
 
+-- Seed legacy recurring fixtures as the database owner: authenticated owners
+-- normally write these protected tables through the PR1B SECURITY DEFINER RPC.
+RESET ROLE;
 -- Full recurring scope has three windows. PR4B must update ONLY the edited
 -- row: the other two preserve revisions, confirmation metadata and audit counts.
 DO $$
@@ -304,6 +307,7 @@ BEGIN
  END IF;
 END $$;
 
+SET ROLE authenticated;
 -- Tenant RLS, role authorization and unprotected receipt access are denied.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
