@@ -271,19 +271,21 @@ export async function tryP3SupervisorReadOnly(input:{
   // Only a specifically recognized absent RPC can use legacy unversioned
   // conditional behavior. Authorization revocation, permission errors,
   // timeout, SQL failure and malformed/NULL RPC results all fail closed.
-  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed"){
-    // Returning null would permit the compatibility caller to retry through
-    // legacy read tools after owner access was revoked mid-turn. End this
-    // request with NO evidence or numeric claims instead.
-    return {kind:"p3_read_only_conditional",executedEffects:0,
-      reply:{intent:"profitability",status:"unavailable",evidence:[],
-        blocks:[{type:"warning",code:"P3_SOURCE_INTEGRITY",
-          text:labels[input.locale].unsupported}]},usage:{...reported}};
-  }
+  // Integrity failures must terminate the turn. Returning null invokes the
+  // legacy compatibility reader, which could reuse stale shadow evidence.
+  const sourceIntegrityFailure=()=>({
+    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
+    reply:{intent:"profitability" as const,status:"unavailable" as const,
+      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
+        text:labels[input.locale].unsupported}]},
+    usage:{...reported},
+  });
+  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
+    return sourceIntegrityFailure();
   if(atomic.status==="available" &&
     (atomic.snapshot.businessId!==identity.businessId||
       atomic.snapshot.currency!==identity.currency||
-      atomic.snapshot.timezone!==identity.timezone))return null;
+      atomic.snapshot.timezone!==identity.timezone))return sourceIntegrityFailure();
   const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text,
     null,ownerHistory,atomic.status==="available"?atomic.snapshot:undefined);
   // Validated pure owner-hypothetical arithmetic may need no café source.
@@ -491,7 +493,7 @@ export async function tryP3SupervisorReadOnly(input:{
     const latest=await readAuthorizedAtomicP1SourceSnapshot();
     if(latest.status!=="available"||
       latest.snapshot.businessId!==atomic.snapshot.businessId||
-      latest.snapshot.revision!==atomic.snapshot.revision)return null;
+      latest.snapshot.revision!==atomic.snapshot.revision)return sourceIntegrityFailure();
   }
   return {kind:"p3_read_only_conditional",executedEffects:0,
     reply:{intent:"profitability",status:"partial",evidence:refs,blocks},
