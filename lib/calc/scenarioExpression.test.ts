@@ -55,6 +55,33 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
         status:"conditional",value:2000,unit:"USD_cents_per_item",
       });
   });
+  it("does not borrow a previous amount's rate across a conjunction or comma",()=>{
+    for(const words of [
+      "Pay rate $20 per hour and a $30 total",
+      "Pay rate $20 per hour, a $30 total",
+    ]){
+      expect(evaluateExpression(plan("30",3000,"USD_cents_per_hour"),scope(words)))
+        .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+      expect(evaluateExpression(plan("30",3000,"USD_cents"),scope(words)))
+        .toMatchObject({status:"conditional",value:3000,unit:"USD_cents"});
+      expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(words)))
+        .toMatchObject({status:"conditional",value:2000,unit:"USD_cents_per_hour"});
+    }
+  });
+  it("recognizes explicit scalar multipliers without reinterpreting money or time",()=>{
+    expect(evaluateExpression(plan("2",2,"scalar"),
+      scope("Multiply the recorded cost by 2")))
+      .toMatchObject({status:"conditional",value:2,unit:"scalar"});
+    expect(evaluateExpression(plan("2",2,"scalar"),
+      scope("Use 2 times the current amount")))
+      .toMatchObject({status:"conditional",value:2,unit:"scalar"});
+    expect(evaluateExpression(plan("2",2,"scalar"),
+      scope("Sophie works 2 hours")))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("2",2,"scalar"),
+      scope("We sold 2 lattes")))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+  });
   it("rejects euro and pound hypotheticals instead of assuming dollars",()=>{
     expect(evaluateExpression(plan("20",2000,"USD_cents"),
       scope("What is 10% of €20?"))).toMatchObject({
