@@ -19,6 +19,10 @@ tables(name) AS (
  VALUES ('scheduling_plan_series'),('scheduling_plan_revisions'),
         ('scheduling_plan_assignments'),('scheduling_plan_audit'),
         ('scheduling_plan_request_receipts'),
+        ('scheduling_foundation_audit_events'),
+        ('scheduling_foundation_create_receipts'),
+        ('scheduling_availability_batch_receipts'),
+        ('scheduling_labor_rule_review_audit'),
         ('staff_availability_rules'),('staff_availability_exceptions'),
         ('staff_scheduling_preferences'),('staff_preference_windows'),
         ('scheduling_qualification_types'),('staff_qualifications'),
@@ -74,7 +78,7 @@ SELECT jsonb_pretty(jsonb_build_object(
 -- Division by zero is intentional here only when an unsafe state is detected.
 1 / CASE WHEN
     (SELECT count(*) FROM migration_check WHERE present)=8
-    AND (SELECT count(*) FROM table_check WHERE exists AND rls_enabled)=14
+    AND (SELECT count(*) FROM table_check WHERE exists AND rls_enabled)=18
     AND (SELECT count(*) FROM function_check WHERE exists AND security_definer)=4
     AND (SELECT count(*) FROM function_check
          WHERE name IN ('scheduling_pr3_approve','scheduling_pr3_publish')
