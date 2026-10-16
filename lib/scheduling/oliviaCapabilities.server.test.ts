@@ -279,6 +279,36 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(result).toMatchObject({ok:false,error:{code:"storage_unavailable"}});
     expect(JSON.stringify(result)).not.toContain("provider details");
   });
+  it("uses only read surfaces and never touches attendance, payroll, or legacy schedules",async()=>{
+    expect((await executeOliviaReadCapability(availability())).ok).toBe(true);
+    expect((await executeOliviaReadCapability(preview())).ok).toBe(true);
+    expect((await executeOliviaReadCapability(history())).ok).toBe(true);
+    expect((await executeOliviaReadCapability(revision())).ok).toBe(true);
+    expect(m.calls).toEqual(["employees","scheduling_plan_assignments"]);
+    expect(m.calls).not.toContain("timecards");
+    expect(m.calls).not.toContain("staff_schedules");
+    expect(m.calls).not.toContain("payroll");
+  });
+  it("distinguishes persisted approved and published versions without running transitions",async()=>{
+    m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"approved",
+      currentRevision:2,publishedRevision:1,scenario,sourceDigest:digest});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:true,status:"ok",revisionStatus:"approved",
+        disposition:"stored_read_only"});
+    m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"published",
+      currentRevision:2,publishedRevision:2,scenario,sourceDigest:digest});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:true,status:"ok",revisionStatus:"published",
+        publishedRevision:2});
+    expect(m.calls).toEqual(["scheduling_plan_assignments",
+      "scheduling_plan_assignments"]);
+  });
+  it("rejects a selected café switch during history read",async()=>{
+    m.owner.mockResolvedValueOnce({businessId,supabase:client()})
+      .mockResolvedValueOnce({businessId:otherBusinessId,supabase:client()});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+  });
   it("keeps future owner action contracts declarative and never dispatchable",async()=>{
     expect(futureOliviaOwnerIntentSchemas.publish.safeParse({
       capability:"olivia.schedule.publish",version:1,week,revisionId,
