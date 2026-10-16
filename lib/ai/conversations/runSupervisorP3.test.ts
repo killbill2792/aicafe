@@ -317,6 +317,52 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage.modelCallCount).toBe(3);
     expect(p1Reads).toHaveBeenCalled();
   });
+  it("never borrows a different worker's wage across independent named clauses",async()=>{
+    const clauses=["Sophie works 45 extra minutes","Ahmed works 30 extra minutes"];
+    const request=clauses.join(" and ");
+    const wages=[...workers,{...workers[0],id:"ahmed",name:"Ahmed",
+      defaultHourlyWageCents:2200,wageAmountCents:2200}];
+    p1Reads.mockImplementation(async()=>result(wageInput,wages));
+    const scenarioFor=(handle:string)=>({
+      capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
+      description:"A source-backed named worker wage",
+      nodes:[{op:"source",handle}],
+    });
+    const runCase=async(swapWorkers:boolean)=>{
+      let step=0;
+      const requests:Array<Record<string,unknown>>=[];
+      const provider=vi.fn(async(_url:string,init:RequestInit)=>{
+        const body=JSON.parse(String(init.body)) as Record<string,unknown>;
+        requests.push(body);
+        return response([
+          {complete:true,clauses},
+          {complete:true,choices:clauses.map(clause=>({clause,
+            capabilityId:"p3.labor.employee_wages.v1",
+            inputJson:JSON.stringify(wageInput),reason:null}))},
+          {complete:true,plans:clauses.map((clause,i)=>({
+            coveredClauses:[clause],reason:null,
+            planJson:JSON.stringify(scenarioFor(
+              "labor.employee_wages:"+(swapWorkers?(i===0?"ahmed":"sophie"):
+                (i===0?"sophie":"ahmed"))+":defaultHourlyWageCents")),
+          }))},
+        ][step++]);
+      });
+      const output=await run(provider,request);
+      const planning=JSON.parse(((requests[2].input as Array<{content:string}>)[0]).content)
+        as {authorizedOperandChoices:Array<{entityName:string;matchedClause:string}>};
+      expect(planning.authorizedOperandChoices.filter(c=>c.entityName==="Sophie")
+        .every(c=>c.matchedClause===clauses[0])).toBe(true);
+      expect(planning.authorizedOperandChoices.filter(c=>c.entityName==="Ahmed")
+        .every(c=>c.matchedClause===clauses[1])).toBe(true);
+      return output;
+    };
+    const valid=await runCase(false);
+    expect(valid.reply.status).toBe("partial");
+    expect(valid.reply.evidence).toHaveLength(2);
+    const swapped=await runCase(true);
+    expect(swapped.reply.status).toBe("unavailable");
+    expect(swapped.reply.blocks.some(v=>v.type==="metric")).toBe(false);
+  });
   it("resolves a single owner-history product for a contextual follow-up",async()=>{
     const question="Sell 30 more drinks and Sophie works 45 more minutes";
     const phrases=["Sell 30 more drinks","Sophie works 45 more minutes"];
