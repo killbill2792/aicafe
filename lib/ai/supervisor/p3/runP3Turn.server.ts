@@ -244,12 +244,14 @@ export async function tryP3SupervisorReadOnly(input:{
   const outcomes:ExpressionOutcome[]=[];
   const calculationInputs:unknown[]=[];
   let unsupportedGoals=0;
+  const unsupportedReasons=new Set<"unsupported"|"missing_input"|"unsupported_action">();
   const plannedSimulations=completion.plan.plans.filter(p=>p.planJson!==null).length;
   if(reported.toolCallCount+plannedSimulations>5)return null;
   for(const item of completion.plan.plans){
     if(!item.planJson){
       if(!item.reason)return null;
       unsupportedGoals+=item.coveredClauses.length;
+      unsupportedReasons.add(item.reason);
       continue;
     }
     let raw:unknown;
@@ -298,13 +300,41 @@ export async function tryP3SupervisorReadOnly(input:{
         outcome.sourceHandles.includes(o.handle)),
     });
   }
-  // A warning without any evaluated expression is not a partial calculation.
-  if(!outcomes.length)return null;
-  const locale=labels[input.locale],blocks:SupervisorReplyBlock[]=[
+  const locale=labels[input.locale];
+  const reasonText={
+    en:{unsupported:"The requested information is not supported by a registered read capability.",
+      missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
+      unsupported_action:"This action requires an authorized, separate approval workflow; nothing was changed."},
+    es:{unsupported:"No existe una capacidad de lectura registrada para esta información.",
+      missing_input:"Faltan registros o datos necesarios para un cálculo fiable.",
+      unsupported_action:"Esta acción requiere un flujo separado de aprobación; no se ha cambiado nada."},
+    ar:{unsupported:"لا توجد قدرة قراءة مسجلة لهذه المعلومات.",
+      missing_input:"البيانات أو السجلات المطلوبة ناقصة، ولا يمكن حساب نتيجة موثوقة.",
+      unsupported_action:"يتطلب هذا الإجراء مسار موافقة منفصلًا؛ لم يتم تغيير أي شيء."},
+  }[input.locale];
+  // A complete audit of an unsupported or incomplete request is an honest
+  // answer, not a reason to exhaust the legacy model budget and hallucinate.
+  // A request with no successful computation must never claim a scenario result.
+  if(!outcomes.length){
+    if(unsupportedGoals!==clauses.length)return null;
+    return {kind:"p3_read_only_conditional",executedEffects:0,
+      reply:{intent:"unknown",status:"unavailable",evidence:[],
+        blocks:[...unsupportedReasons].map(reason=>({
+          type:"warning" as const,code:"P3_"+reason.toUpperCase(),
+          text:reasonText[reason],
+        }))},
+      usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
+        toolCallCount:reported.toolCallCount,
+        inputTokens:shadow.usage.inputTokens+completion.tokens.input,
+        outputTokens:shadow.usage.outputTokens+completion.tokens.output},
+    };
+  }
+  const blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
   ];
-  if(unsupportedGoals)blocks.push({type:"warning",code:"P3_UNSUPPORTED",
-    text:locale.unsupported});
+  for(const reason of unsupportedReasons)blocks.push({
+    type:"warning",code:"P3_"+reason.toUpperCase(),text:reasonText[reason],
+  });
   const refs:EvidenceReference[]=[];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(
