@@ -218,6 +218,7 @@ export async function createOliviaScheduleDraftCommand(raw:unknown){
     const missingInputs=preview.notices.filter(n=>[
       "wage_unknown","availability_missing","unconfirmed_absence",
       "limits_missing","policy_unverified","coverage_unconfirmed",
+      "legacy_schedules",
     ].includes(n.code));
     const readyForOwnerApproval=scenario.completeCoverage &&
       scenario.hardConstraintsSatisfied && scenario.gaps.length===0 &&
