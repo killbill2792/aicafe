@@ -116,6 +116,14 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       allowMultipleReadsPerClause:true,allowSourceFree:true});
     expect(rejected.reason).toBe("scope_unverified");
     expect(rejected.attemptedReads).toBe(0);
+    const duplicated="Review wages and Review wages";
+    const duplicateAudit=transport({complete:true,
+      clauses:["Review wages","Review wages"]});
+    const ambiguousRepeated=await request(duplicated,duplicateAudit.fn,{
+      allowMultipleReadsPerClause:true});
+    expect(ambiguousRepeated.reason).toBe("ambiguous_duplicate_clauses");
+    expect(ambiguousRepeated.attemptedReads).toBe(0);
+    expect(duplicateAudit.fn).toHaveBeenCalledTimes(1);
   });
   it("publishes four real P1 readers, preserving exact versioned schema/source/role contracts",()=>{
     const manifest=createDefaultShadowRegistry().discover(scope());
