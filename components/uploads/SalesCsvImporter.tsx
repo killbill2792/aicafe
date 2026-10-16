@@ -241,7 +241,7 @@ export default function SalesCsvImporter({
         <div className="flex flex-col gap-2 px-2">
           <p className="text-sm text-warn">{error}</p>
           {stuckJobId && (
-            <button type="button" onClick={handleCancelStuck} disabled={isPending} className="self-start text-sm font-semibold text-ink underline">
+            <button type="button" onClick={handleCancelStuck} disabled={isPending} className="inline-flex min-h-12 items-center self-start px-3 text-[17px] font-semibold text-ink underline">
               {labels.cancelStuckImport}
             </button>
           )}
