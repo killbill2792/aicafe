@@ -268,11 +268,9 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
     expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
       purpose:"no_external_sources",description:"Missing employer rate",nodes},
       scope(missingTax))).toMatchObject({status:"unavailable"});
-    const invalidUnits={...nodes,0:{op:"hypothetical",label:"hours",
-      quotedNumber:"13.50",value:1350,unit:"hour"}};
     expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
       purpose:"no_external_sources",description:"Wrong dimensions",
-      nodes:[invalidUnits[0],nodes[1],nodes[2]]},scope(source)))
+      nodes:[{...nodes[0],unit:"hour"},nodes[1],nodes[2]]},scope(source)))
       .toMatchObject({status:"unavailable"});
   });
   it("normalizes Arabic decimal separators but rejects ambiguous groupings",()=>{
