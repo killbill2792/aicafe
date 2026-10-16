@@ -90,7 +90,11 @@ export async function readAuthorizedAtomicP1SourceSnapshot():Promise<SnapshotOut
       // Missing migration is a narrow compatibility case. Permission denied,
       // schema corruption, network errors and RPC execution failures are NOT.
       const code=(error as {code?:unknown}).code;
-      if(code==="PGRST202"||code==="42883")
+      const message=String((error as {message?:unknown}).message??"").toLowerCase();
+      // An undefined dependency INSIDE an installed RPC may also be 42883.
+      // Downgrade only when the missing function is THIS precise RPC.
+      if((code==="PGRST202"||code==="42883")&&
+        message.includes("p1_authoritative_source_snapshot"))
         return {status:"unavailable",reason:"rpc_not_installed"};
       return {status:"unavailable",reason:"unauthorized_or_unconfigured"};
     }
