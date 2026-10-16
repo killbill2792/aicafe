@@ -135,3 +135,11 @@ snapshot does not prove item-level historical recipe and price coverage.
 A bounded snapshot truncated outside the requested recent period can still
 support that period when *every selected day* is present uniquely and has
 the required source status; selected date gaps remain unavailable.
+
+**Daily labor completeness hold:** The snapshot does not establish actual
+attendance or wage-coverage status for each `daily_rollups` staff amount.
+Consequently `labor.daily_costs` does not project atomic monetary operands
+(including a displayed zero). The supported incremental-labor scenario
+continues to use the recorded hourly employee wage and explicitly sourced
+employer burden with the canonical staff-cost engine. A future separately
+approved coverage contract would be needed to expose daily labor totals.
