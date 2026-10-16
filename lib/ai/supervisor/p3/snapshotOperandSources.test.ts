@@ -148,6 +148,26 @@ describe("authoritative P3 source projection",()=>{
     expect(extractAtomicSnapshot("labor.payroll_burden",estimated,{},asOf))
       .toMatchObject({missingInputs:["estimated_employer_burden"]});
   });
+  it("preserves exact cents through large offsetting daily values (Codex P2 regression)",()=>{
+    const row=(date:string,sales:number)=>({
+      business_date:date,net_sales_cents:sales,orders_count:0,
+      drinks_count:0,ingredients_cents:0,staff_wages_cents:0,
+      staff_tax_cents:0,card_fees_cents:0,sales_data_status:"actual",
+      staff_tax_status:"actual",
+    });
+    const data=snapshot({sources:{...sources,dailyRollups:[
+      row("2026-10-13",Number.MAX_SAFE_INTEGER),
+      row("2026-10-14",2),
+      row("2026-10-15",-Number.MAX_SAFE_INTEGER),
+    ]}});
+    const selected=extractAtomicSnapshot("sales.daily",data,{
+      period:{from:"2026-10-13",to:"2026-10-15"}},asOf);
+    expect(selected?.leaves).toEqual(expect.arrayContaining([
+      expect.objectContaining({field:"netSalesCents",value:2}),
+    ]));
+    expect(selected?.missingInputs).toContain(
+      "pos_import_date_and_item_coverage_not_proven");
+  });
   it("COMPOSE-05: foreign snapshots, truncation and mismatched epochs fail closed",()=>{
     const clause="Sophie works 45 paid minutes";
     const row=read("labor.employee_wages",clause);
