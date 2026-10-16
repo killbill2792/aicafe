@@ -668,6 +668,24 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         .toMatchObject({ok:false,error:{code:"invalid_record"}});
     }
   });
+  it("rejects preceding Sunday starts crossing into the requested week",async()=>{
+    for(const bad of [
+      {...scenario,shifts:[{...shift,
+        startAt:"2026-10-11T23:30:00.000Z",
+        endAt:"2026-10-12T01:30:00.000Z"}]},
+      {...scenario,gaps:[{...scenario.gaps[0],
+        startAt:"2026-10-11T23:30:00.000Z",
+        endAt:"2026-10-12T01:30:00.000Z"}]},
+    ]){
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
+        ...plan,scenarios:[bad],best:bad},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
   it("accepts a normal overnight Sunday shift ending after the week boundary",async()=>{
     const overnight={...scenario,shifts:[{...shift,
       startAt:"2026-10-19T03:00:00.000Z",
