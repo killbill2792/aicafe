@@ -130,7 +130,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       expect.objectContaining({type:"text",text:expect.stringContaining("Owner-stated hypothetical")}),
     ]));
     expect(p1Reads).toHaveBeenCalledTimes(3);
-    expect(outcome.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
+    expect(outcome.usage).toMatchObject({modelCallCount:3,toolCallCount:4});
     expect(transport.requests.every(req=>req.store===false)).toBe(true);
     expect(transport.requests.every(req=>!JSON.stringify(req).includes("525")))
       .toBe(true);
@@ -183,7 +183,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     // Three P3 model attempts and all three canonical reads remain charged.
     // A failed simulation cannot restart the legacy path with a fresh budget.
     expect(transport.calls).toHaveBeenCalledTimes(3);
-    expect(output?.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
+    expect(output?.usage).toMatchObject({modelCallCount:3,toolCallCount:4});
     expect(output?.reply).toMatchObject({status:"unavailable"});
     expect(output?.reply?.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"warning",code:"SUPERVISOR_TURN_BUDGET"}),
