@@ -548,6 +548,38 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         .toMatchObject({ok:false,error:{code:"invalid_record"}});
     }
   });
+  it("requires a loaded payroll total when planner labels costs verified",async()=>{
+    const incomplete={...scenario,cost:{
+      ...scenario.cost,costState:"verified",missingWageEmployeeIds:[],
+      cashWagesCents:0,allocatedSalaryCents:0,loadedPayrollCents:null,
+    }};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[incomplete],best:incomplete},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects orphaned or multiple published history statuses without a matching unique pointer",async()=>{
+    const entries=[
+      {id:revisionId,revision:2,status:"draft",created_at:iso},
+      {id:uid(32),revision:1,status:"published",created_at:iso},
+    ];
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,
+      publishedRevision:null,revisions:entries});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,
+      publishedRevision:1,revisions:entries.map(x=>({...x,status:"published"}))});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"draft",
+      currentRevision:2,publishedRevision:null,scenario,sourceDigest:digest});
+    m.history.mockResolvedValueOnce({ok:true,currentRevision:2,
+      publishedRevision:null,revisions:entries});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
