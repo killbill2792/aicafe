@@ -234,6 +234,85 @@ BEGIN
  END IF;
 END $$;
 
+-- A completed import's status, history row and link are atomic and idempotent.
+-- A malformed cross-kind request must not touch either table.
+DO $
+DECLARE j uuid := gen_random_uuid(); h uuid; first_upload uuid;
+BEGIN
+  INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
+    VALUES (j,current_setting('test.biz_a')::uuid,'sales','processing','fp-atomic-history',1,1);
+  BEGIN
+    PERFORM csv_complete_import_with_history(j,'labor_csv','done','{}'::jsonb);
+    RAISE EXCEPTION 'CROSS_KIND_HISTORY_ACCEPTED';
+  EXCEPTION WHEN raise_exception THEN
+    IF (SELECT status FROM csv_import_jobs WHERE id=j) <> 'processing' THEN
+      RAISE EXCEPTION 'INVALID_HISTORY_CHANGED_JOB';
+    END IF;
+  END;
+  PERFORM csv_complete_import_with_history(j,'sales_csv','needs_review','{"rejectedRows":[{"reason":"test","count":1}]}'::jsonb);
+  SELECT upload_id INTO first_upload FROM csv_import_jobs WHERE id=j;
+  IF first_upload IS NULL OR (SELECT status FROM csv_import_jobs WHERE id=j) <> 'needs_review'
+     OR (SELECT status FROM uploads WHERE id=first_upload) <> 'needs_review' THEN
+    RAISE EXCEPTION 'HISTORY_NOT_ATOMICALLY_CREATED';
+  END IF;
+  PERFORM csv_complete_import_with_history(j,'sales_csv','done','{"imported":1}'::jsonb);
+  IF (SELECT upload_id FROM csv_import_jobs WHERE id=j) <> first_upload
+     OR (SELECT status FROM csv_import_jobs WHERE id=j) <> 'done'
+     OR (SELECT status FROM uploads WHERE id=first_upload) <> 'done'
+     OR (SELECT count(*) FROM uploads WHERE id=first_upload) <> 1 THEN
+    RAISE EXCEPTION 'HISTORY_REFINALIZE_NOT_IDEMPOTENT';
+  END IF;
+END $;
+
+-- Prevent a second overlapping import stealing an old pending wage-review row. The first
+-- job's review row ID remains valid until its wage is supplied.
+DO $
+DECLARE first_job uuid := gen_random_uuid(); second_job uuid := gen_random_uuid(); pending_id uuid;
+BEGIN
+  INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
+  VALUES (first_job,current_setting('test.biz_a')::uuid,'labor','needs_wage_review','fp-pending-job-a',1,1),
+         (second_job,current_setting('test.biz_a')::uuid,'labor','needs_wage_review','fp-pending-job-b',1,1);
+  INSERT INTO csv_labor_import_rows(job_id,business_id,employee_id,pos_timecard_id,clock_in,hourly_wage_cents)
+  VALUES (first_job,current_setting('test.biz_a')::uuid,current_setting('test.employee_a')::uuid,
+          'csv-pending-collision','2026-08-26T10:00:00Z',null)
+  RETURNING id INTO pending_id;
+  BEGIN
+    INSERT INTO csv_labor_import_rows(job_id,business_id,employee_id,pos_timecard_id,clock_in,hourly_wage_cents)
+    VALUES (second_job,current_setting('test.biz_a')::uuid,current_setting('test.employee_a')::uuid,
+            'csv-pending-collision','2026-08-26T10:00:00Z',1900)
+    ON CONFLICT (business_id,pos_timecard_id) DO UPDATE SET
+      job_id=excluded.job_id, hourly_wage_cents=excluded.hourly_wage_cents, promoted=false;
+    RAISE EXCEPTION 'PENDING_REVIEW_ROW_STOLEN';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  IF (SELECT job_id FROM csv_labor_import_rows WHERE id=pending_id) <> first_job
+     OR (SELECT hourly_wage_cents FROM csv_labor_import_rows WHERE id=pending_id) IS NOT NULL THEN
+    RAISE EXCEPTION 'PENDING_REVIEW_ROW_MISSING';
+  END IF;
+  UPDATE csv_labor_import_rows SET hourly_wage_cents=1800 WHERE id=pending_id AND job_id=first_job;
+  PERFORM csv_finalize_labor_job(first_job);
+  IF NOT EXISTS (SELECT 1 FROM timecards WHERE pos_timecard_id='csv-pending-collision' AND hourly_wage_cents=1800) THEN
+    RAISE EXCEPTION 'ORIGINAL_PENDING_WAGE_NOT_PROMOTED';
+  END IF;
+END $;
+
+-- Even a user who belongs to BOTH cafés must not link a history record from B to a job in A.
+INSERT INTO memberships(business_id,user_id,role)
+VALUES (:'biz_b',:'owner_a','owner');
+DO $
+DECLARE other_upload uuid;
+BEGIN
+  INSERT INTO uploads(business_id,kind,status,summary)
+  VALUES (current_setting('test.biz_b')::uuid,'sales_csv','done','{}'::jsonb)
+  RETURNING id INTO other_upload;
+  BEGIN
+    UPDATE csv_import_jobs SET upload_id=other_upload
+    WHERE business_id=current_setting('test.biz_a')::uuid AND content_fingerprint='fp-atomic-history';
+    RAISE EXCEPTION 'CROSS_BUSINESS_HISTORY_LINK_ACCEPTED';
+  EXCEPTION WHEN foreign_key_violation THEN NULL;
+  END;
+END $;
+
 RESET ROLE;
 ROLLBACK;
 \echo CSV import reliability RLS/atomicity/concurrency tests passed (rolled back)
