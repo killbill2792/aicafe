@@ -177,7 +177,11 @@ export function extractAtomicSnapshot(
         snapshot.payroll.status==="estimated"?["estimated_employer_burden"]:[]);
     }
     case "sales.daily":return daily(snapshot,query.period,false);
-    case "labor.daily_costs":return daily(snapshot,query.period,true);
+    // Daily staff cents have no attendance/wage coverage status in the atomic
+    // RPC. A zero may mean missing labor rather than an observed zero.
+    // Use source-bound employee wages + burden for what-if labor instead.
+    case "labor.daily_costs":
+      return blocked("labor_attendance_and_wage_coverage_not_proven");
     default:return null;
   }
 }
