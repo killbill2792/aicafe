@@ -93,7 +93,7 @@ export async function readAuthorizedAtomicP1SourceSnapshot():Promise<SnapshotOut
       const message=String((error as {message?:unknown}).message??"").toLowerCase();
       // An undefined dependency INSIDE an installed RPC may also be 42883.
       // Downgrade only when the missing function is THIS precise RPC.
-      if((code==="PGRST202"||code==="42883")&&
+      if(code==="PGRST202"&&
         message.includes("p1_authoritative_source_snapshot"))
         return {status:"unavailable",reason:"rpc_not_installed"};
       return {status:"unavailable",reason:"unauthorized_or_unconfigured"};
