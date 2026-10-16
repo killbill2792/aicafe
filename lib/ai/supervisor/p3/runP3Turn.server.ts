@@ -391,11 +391,19 @@ export async function tryP3SupervisorReadOnly(input:{
     // A pure owner-only hypothetical is not a café-state observation.
     // Never attach a business-evidence reference to source-free arithmetic.
     const usesCafeSource=v.sourceHandles.length>0;
+    // An observed period is part of the source selection, not a display-only
+    // attribute. Expose the trusted read window beside each calculated value
+    // so multi-period requests cannot confuse one period's result for another.
+    const periodKeys=[...new Set(projection.operands.filter(o=>
+      v.sourceHandles.includes(o.handle)&&o.period).map(o=>
+        o.period!.from+" / "+o.period!.to))];
+    const periodLabel=periodKeys.length===1?" ("+periodKeys[0]+")":"";
     if(usesCafeSource)refs.push(evidence);
     if(usesCafeSource&&v.unit==="USD_cents"&&v.value!==null)
-      blocks.push({type:"metric",label:locale.money,valueCents:v.value,source:evidence});
+      blocks.push({type:"metric",label:locale.money+periodLabel,
+        valueCents:v.value,source:evidence});
     else if(v.value!==null&&v.unit)
-      blocks.push({type:"text",text:locale.number+": "+
+      blocks.push({type:"text",text:locale.number+periodLabel+": "+
         formatScenarioValue(v.value,v.unit,input.locale)});
     // Server-created explanation: no model-authored labels or untrusted
     // source-record prose is rendered as a verified business fact.
