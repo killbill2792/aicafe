@@ -378,7 +378,9 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     }))};
     m.preview.mockResolvedValueOnce({ok:true,plan:{
       ...plan,scenarios:[large],best:large},
-      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      notices:[],blockers:[],
+      employees:Object.fromEntries(Array.from({length:201},(_,i)=>
+        [uid(i+1),`Worker ${i+1}`])),
       locationNames:{[locationId]:"Main"},previewRevision:2,
       sourceDigest:digest,frozenShiftKeys:[]});
     expect(await executeOliviaReadCapability(preview()))
