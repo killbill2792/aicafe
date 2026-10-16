@@ -37,6 +37,34 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
       scope("Sell 25 more lattes")))
       .toMatchObject({status:"conditional",value:25,unit:"item"});
   });
+  it("never upgrades a dollar total to an hourly or per-item rate",()=>{
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+      scope("A total of $20"))).toMatchObject({
+        status:"unavailable",reason:"hypothetical_unit_mismatch",
+      });
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_item"),
+      scope("The total is $20"))).toMatchObject({
+        status:"unavailable",reason:"hypothetical_unit_mismatch",
+      });
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+      scope("Pay rate $20 per hour"))).toMatchObject({
+        status:"conditional",value:2000,unit:"USD_cents_per_hour",
+      });
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_item"),
+      scope("Price $20 per drink"))).toMatchObject({
+        status:"conditional",value:2000,unit:"USD_cents_per_item",
+      });
+  });
+  it("rejects euro and pound hypotheticals instead of assuming dollars",()=>{
+    expect(evaluateExpression(plan("20",2000,"USD_cents"),
+      scope("What is 10% of €20?"))).toMatchObject({
+        status:"unavailable",reason:"hypothetical_unit_mismatch",
+      });
+    expect(evaluateExpression(plan("20",2000,"USD_cents"),
+      scope("What is 10% of £20?"))).toMatchObject({
+        status:"unavailable",reason:"hypothetical_unit_mismatch",
+      });
+  });
   it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
     const quoted=plan("١",1,"item");
     expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
