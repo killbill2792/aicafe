@@ -297,6 +297,8 @@ export async function runSupervisorTurn(input: {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
+  let p3AccessFallback=false;
   const priorUsage:SupervisorUsage={
     model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
   };
@@ -304,9 +306,11 @@ export async function runSupervisorTurn(input: {
   // reader invocation consumes the SAME bounded turn budget as legacy fallback.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
+    let firstP3ModelDenied=false;
     const trackedTransport:Transport=async(url,init)=>{
       attemptedModels++;
       const response=await transport(url,init);
+      if(attemptedModels===1 && response.status===403)firstP3ModelDenied=true;
       try{
         const json:unknown=await response.clone().json();
         const billed=(json && typeof json==="object"?
@@ -340,19 +344,32 @@ export async function runSupervisorTurn(input: {
     }finally{
       priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,attemptedModels);
       if(attemptedModels||priorUsage.toolCallCount)input.onUsage?.({...priorUsage});
+      // If the very first P3 preflight was rejected for model access, there
+      // was no model result or café-read evidence. Switch to the configured
+      // legacy access fallback rather than retrying the inaccessible model.
+      // Count the rejected request, with exactly one exceptional extra model
+      // slot so the legacy tool + scope audit + answer still fit the turn.
+      if(firstP3ModelDenied && attemptedModels===1 && priorUsage.toolCallCount===0 &&
+        fallbackModel && fallbackModel!==model){
+        p3AccessFallback=true;
+        input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,
+          toModel:fallbackModel,triggerHttpStatus:403,
+          modelCallCount:priorUsage.modelCallCount,toolCallCount:0});
+        model=fallbackModel;
+      }
     }
   }
+  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:0);
   const usage:SupervisorUsage={...priorUsage};
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
     ar:"يحتاج السيناريو إلى مدخلات موثوقة إضافية أو طلب جديد."};
-  if(usage.modelCallCount>=MAX_ROUNDS||usage.toolCallCount>=MAX_TOOLS)
+  if(usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
     return {reply:{intent:"unknown",status:"unavailable",evidence:[],
       blocks:[{type:"warning",code:"SUPERVISOR_TURN_BUDGET",text:remaining[input.locale]}]},
       usage};
   // No implicit provider-model fallback. Only a separately configured model.
-  const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
-  let fallbackAttempted = false;
+  let fallbackAttempted = p3AccessFallback;
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
   const executed: SupervisorToolCall[] = [];
@@ -372,7 +389,7 @@ export async function runSupervisorTurn(input: {
       model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
     }));
     for(let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
-      usage.modelCallCount<MAX_ROUNDS);attempt++){
+      usage.modelCallCount<maxModelAttempts);attempt++){
       const attemptNumber=attempt+1,controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:1,attempt:attemptNumber,
@@ -476,7 +493,7 @@ export async function runSupervisorTurn(input: {
   }[input.locale];
 
   for (let round=0;round<MAX_ROUNDS && (priorUsage.modelCallCount===0 ||
-    usage.modelCallCount<MAX_ROUNDS);round++) {
+    usage.modelCallCount<maxModelAttempts);round++) {
     let payload: Record<string,unknown> | null = null;
     for (let attempt=0;attempt<2;attempt++) {
       const roundNumber=round+1, attemptNumber=attempt+1;
