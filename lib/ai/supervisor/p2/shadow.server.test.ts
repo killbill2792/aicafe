@@ -56,7 +56,7 @@ function syntheticRegistration(id="energy.meter.review.v1") {
   const inputSchema=z.strictObject({id:z.literal(id),version:z.literal(1),
     purpose:z.literal("meter_read")});
   const provenance=z.strictObject({
-    sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),sourceRevision:z.string(),asOf:z.string(),
+    sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),purpose:z.literal("meter_read"),sourceRevision:z.string(),asOf:z.string(),
   });
   const evidenceQuality=z.strictObject({
     missingInputs:z.array(z.string()),estimatedInputs:z.array(z.string()),
@@ -68,7 +68,7 @@ function syntheticRegistration(id="energy.meter.review.v1") {
   });
   const read=vi.fn(async()=>({
     status:"partial" as const,value:{reading:7},
-    provenance:{sourceId:"energy.meter" as const,canonicalReaderId:"energy.canonical.meter.v1",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+    provenance:{sourceId:"energy.meter" as const,canonicalReaderId:"energy.canonical.meter.v1",purpose:"meter_read",sourceRevision:"meter-r1",asOf:"2026-10-03"},
     quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
   }));
   const def={
@@ -168,7 +168,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     const {def}=syntheticRegistration();
     const loose=z.object({
       status:z.literal("partial"),value:z.object({reading:z.number().int()}),
-      provenance:z.object({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),sourceRevision:z.string(),
+      provenance:z.object({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),purpose:z.literal("meter_read"),sourceRevision:z.string(),
         asOf:z.string()}),
       quality:z.object({missingInputs:z.array(z.string()),
         estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
@@ -177,7 +177,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(loose)},
       read:vi.fn(async()=>({
         status:"partial",value:{reading:7,approval:"publish_schedule"},
-        provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+        provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",purpose:"meter_read",sourceRevision:"meter-r1",asOf:"2026-10-03"},
         quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
         effect:{kind:"publish_schedule"},
       })),
@@ -327,7 +327,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
       schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(coerced)},
       read:vi.fn(async()=>({
         status:"partial",value:{reading:"7"},
-        provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+        provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",purpose:"meter_read",sourceRevision:"meter-r1",asOf:"2026-10-03"},
         quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
       })),
     };
@@ -354,7 +354,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
         schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(asserted)},
         read:vi.fn(async()=>({
           status:"verified",value:7,
-          provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+          provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",purpose:"meter_read",sourceRevision:"meter-r1",asOf:"2026-10-03"},
           quality,
         })),
       };
@@ -372,7 +372,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     });
     const read=vi.fn(async()=>({
       status:"partial",value:{reading:7},
-      provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",sourceRevision:"meter-r1",asOf:"2026-10-03"},
+      provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",purpose:"meter_read",sourceRevision:"meter-r1",asOf:"2026-10-03"},
       quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
     }));
     const coerced={...def,inputSchema,read,
@@ -382,6 +382,28 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     });
     expect(result).toEqual({status:"unavailable",value:null,reason:"invalid_request"});
     expect(read).not.toHaveBeenCalled();
+  });
+  it("rejects a valid reader result missing its purpose even if reader and source IDs match",async()=>{
+    const {def}=syntheticRegistration();
+    const outputSchema=z.strictObject({
+      status:z.literal("partial"),value:z.strictObject({reading:z.number().int()}),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),
+        canonicalReaderId:z.string(),sourceRevision:z.string(),asOf:z.string()}),
+      quality:z.strictObject({missingInputs:z.array(z.string()),
+        estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
+    });
+    const read=vi.fn(async()=>({
+      status:"partial",value:{reading:7},
+      provenance:{sourceId:"energy.meter",canonicalReaderId:"energy.canonical.meter.v1",
+        sourceRevision:"meter-r1",asOf:"2026-10-03"},
+      quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
+    }));
+    const missingPurpose={...def,outputSchema,read,
+      schemaContract:{...def.schemaContract,outputSchemaFingerprint:schemaFingerprint(outputSchema)}};
+    expect(await createP2Registry([missingPurpose]).invoke(scope(),def.id,{
+      id:def.id,version:1,purpose:"meter_read",
+    })).toMatchObject({status:"unavailable",reason:"invalid_result"});
+    expect(read).toHaveBeenCalledOnce();
   });
   it("does not accept source-only provenance for a registered canonical reader",async()=>{
     const {def}=syntheticRegistration();
@@ -438,13 +460,13 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     const outputSchema=z.strictObject({
       status:z.literal("partial"),value:z.strictObject({reading:z.number().int()}),
       provenance:z.strictObject({sourceId:z.literal("energy.meter"),
-        canonicalReaderId:z.string(),sourceRevision:z.string(),asOf:z.string()}),
+        canonicalReaderId:z.string(),purpose:z.literal("meter_read"),sourceRevision:z.string(),asOf:z.string()}),
       quality:z.strictObject({missingInputs:z.array(z.string()),
         estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
     });
     const read=vi.fn(async()=>({
       status:"partial",value:{reading:7},
-      provenance:{sourceId:"energy.meter",canonicalReaderId:"invented.reader",
+      provenance:{sourceId:"energy.meter",canonicalReaderId:"invented.reader",purpose:"meter_read",
         sourceRevision:"meter-r1",asOf:"2026-10-03"},
       quality:{missingInputs:[],estimatedInputs:["meter_read"],staleInputs:[]},
     }));
