@@ -89,10 +89,11 @@ const makeTransport=(opts:{tamper?:boolean;providerFailure?:boolean}={})=>{
   return {calls,requests};
 };
 const run=(transport:ReturnType<typeof makeTransport>["calls"],
-  question:string=goal,locale:"en"|"es"|"ar"="en")=>
+  question:string=goal,locale:"en"|"es"|"ar"="en",
+  history:Array<{role:"owner"|"supervisor";text:string}>=[])=>
   runSupervisorTurn({
     text:question,locale,asOf:identity.asOf,timezone:identity.timezone,
-    cafeName:"Fixture Cafe",history:[],
+    cafeName:"Fixture Cafe",history,
     tools:{} as BusinessScopedCafeTools,readRules:async()=>[],
   },transport);
 
@@ -278,6 +279,33 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(outcome.reply.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
     ]));
+  });
+  it("resolves a single owner-history product for a contextual follow-up",async()=>{
+    const question="Sell 30 more drinks and Sophie works 45 more minutes";
+    const phrases=["Sell 30 more drinks","Sophie works 45 more minutes"];
+    const previous=[{role:"owner" as const,text:"Earlier, we discussed the latte"}];
+    const futurePlan={...compositionPlan,nodes:compositionPlan.nodes.map(node=>
+      node.op==="hypothetical"&&node.quotedNumber==="25"?
+        {...node,quotedNumber:"30",value:30}:node)};
+    let step=0;
+    const mock=vi.fn(async()=>response([
+      {complete:true,clauses:phrases},
+      {complete:true,choices:[
+        {clause:phrases[0],capabilityId:"p3.menu.catalog.v1",
+          inputJson:JSON.stringify(menuInput),reason:null},
+        {clause:phrases[1],capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+      ]},
+      {complete:true,plans:[{coveredClauses:phrases,
+        planJson:JSON.stringify(futurePlan),reason:null}]},
+    ][step++]));
+    const result=await run(mock,question,"en",previous);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:10650}),
+    ]));
+    expect(p1Reads).toHaveBeenCalledWith(expect.anything(),expect.anything(),
+      expect.objectContaining({id:"menu.product_economics",productId:"latte"}));
   });
   it("COMPOSE-02/08: renders independently audited Spanish and Arabic scenario results",async()=>{
     for(const language of [
