@@ -78,15 +78,21 @@ const equalPeriod=(a:Item,b:Item)=>JSON.stringify(a.p)===JSON.stringify(b.p);
 const mergeRefs=(a:Item,b:Item)=>new Set([...a.refs,...b.refs]);
 function binaryOp(a:Item,b:Item,op:string):Item{
   if(["add","subtract","scenario_delta","ratio","compare"].includes(op)){
-    if(a.u!==b.u||!equalPeriod(a,b))throw new Error("incompatible_units_or_period");
+    // Owner-quoted hypotheticals have no source period and can modify or
+    // compare with an observed period. They inherit that observation's period.
+    // TWO sourced quantities may never hide a missing/mismatched period.
+    const periodsClash=a.p&&b.p?!equalPeriod(a,b):
+      (a.p&&!b.p&&b.refs.size>0)||(!a.p&&b.p&&a.refs.size>0);
+    if(a.u!==b.u||periodsClash)
+      throw new Error("incompatible_units_or_period");
     if(op==="ratio"||op==="compare"){
       if(op==="ratio"&&b.v.n===BigInt("0"))throw new Error("division_by_zero");
       const difference=a.v.n*b.v.d-b.v.n*a.v.d;
       return {v:op==="ratio"?times(divided(a.v,b.v),rat(BigInt("10000"))):
         rat(difference===BigInt("0")?BigInt("0"):difference>BigInt("0")?BigInt("1"):-BigInt("1")),
-      u:op==="ratio"?"ratio_bps":"comparison",p:a.p,refs:mergeRefs(a,b)};
+      u:op==="ratio"?"ratio_bps":"comparison",p:a.p??b.p,refs:mergeRefs(a,b)};
     }
-    return {v:op==="add"?plus(a.v,b.v):minus(a.v,b.v),u:a.u,p:a.p,
+    return {v:op==="add"?plus(a.v,b.v):minus(a.v,b.v),u:a.u,p:a.p??b.p,
       refs:mergeRefs(a,b)};
   }
   if(a.p&&b.p&&!equalPeriod(a,b))throw new Error("incompatible_period");
