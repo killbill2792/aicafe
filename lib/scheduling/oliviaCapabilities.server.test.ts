@@ -27,6 +27,7 @@ const businessId=uid(901);
 const otherBusinessId=uid(902);
 const employeeId=uid(1);
 const locationId=uid(20);
+const previewLocations={locations:{[locationId]:"UTC"}};
 const revisionId=uid(31);
 const digest="a".repeat(64);
 const week="2026-10-12";
@@ -257,7 +258,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       .toMatchObject({ok:true,employees:[{compensation:[{cash_cost_state:"unknown"}]}]});
   });
   it("previews the saved five-worker no-POS scenario, exact gaps and unknown costs without writing",async()=>{
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[{...scenario,shifts:[0,1,2,3,4].map(i=>({
         ...shift,employeeId:uid(i+1)}))}],
       best:{...scenario,shifts:[0,1,2,3,4].map(i=>({
@@ -278,7 +279,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       {code:"wage_unknown",employeeName:`Worker ${i}`},
       {code:"availability_missing",employeeName:`Worker ${i}`},
     ]).flat();
-    m.preview.mockResolvedValueOnce({ok:true,plan,notices,blockers:[],
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan,notices,blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       previewRevision:2,sourceDigest:digest,frozenShiftKeys:[]});
     const result=await executeOliviaReadCapability(preview());
@@ -291,7 +292,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   });
   it("rejects unsafe aggregate cents and unsafe signed comparison deltas",async()=>{
     const unsafe=Number.MAX_SAFE_INTEGER+1;
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[{...scenario,cost:{
         ...scenario.cost,cashWagesCents:unsafe,
       }}]},
@@ -300,7 +301,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       previewRevision:2,sourceDigest:digest,frozenShiftKeys:[]});
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,comparisons:[{left:"cash",right:"balanced",
         ownerMinutesDifference:0,cashWagesDifferenceCents:-unsafe,
         loadedPayrollDifferenceCents:null}],
@@ -318,14 +319,15 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       cost:{...scenario.cost,cashWagesCents:0,loadedPayrollCents:0,
         allocatedSalaryCents:0,missingWageEmployeeIds:[],costState:"verified"},
     };
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
+      horizonStart:"2026-10-26",horizonEnd:"2026-11-01",
       status:"feasible",proof:"complete_candidate_solution",
       scenarios:[full],best:full},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locations:{[locationId]:"America/New_York"},
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
       previewRevision:0,frozenShiftKeys:[]});
     const result=await executeOliviaReadCapability({...preview(),
-      options:{objective:"cash"}});
+      week:"2026-10-26",options:{objective:"cash"}});
     expect(result).toMatchObject({ok:true,
       selectedScenario:{cost:{cashWagesCents:0},shifts:[{
         startAt:"2026-11-01T05:30:00.000Z",endAt:"2026-11-01T09:30:00.000Z"}]}});
@@ -352,7 +354,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const gap=scenario.gaps[0];
     const manyGaps=Array.from({length:5376},()=>({...gap}));
     const manyScenario={...scenario,gaps:manyGaps};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[manyScenario],best:manyScenario},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},previewRevision:2,
@@ -364,7 +366,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(accepted.plan.scenarios[0].gaps).toHaveLength(5376);
 
     const aboveLimit={...scenario,gaps:Array.from({length:20_001},()=>gap)};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[aboveLimit],best:aboveLimit},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},previewRevision:2,
@@ -376,7 +378,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const large={...scenario,shifts:Array.from({length:201},(_,i)=>({
       ...shift,employeeId:uid(i+1),
     }))};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[large],best:large},
       notices:[],blockers:[],
       employees:Object.fromEntries(Array.from({length:201},(_,i)=>
@@ -391,7 +393,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const malformed={...scenario,shifts:tooMany,cost:{
       ...scenario.cost,cashWagesCents:-1,
     }};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[malformed],best:malformed},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},previewRevision:2,
@@ -402,7 +404,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const invalidGaps={...scenario,gaps:Array.from({length:20_001},(_,i)=>({
       ...gap,...(i===20_000?{startAt:"not-datetime"}:{}),
     }))};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
       ...plan,scenarios:[invalidGaps],best:invalidGaps},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},previewRevision:2,
@@ -542,7 +544,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     ];
     for(const cost of invalid){
       const corrupted={...scenario,cost};
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[corrupted],best:corrupted},
         notices:[],blockers:[],employees:{[employeeId]:"Asha"},
         locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -556,7 +558,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       ...scenario.cost,costState:"verified",missingWageEmployeeIds:[],
       cashWagesCents:0,allocatedSalaryCents:0,loadedPayrollCents:null,
     }};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[incomplete],best:incomplete},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -594,7 +596,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       {...plan,status:"infeasible",proof:"candidate_constraints_unresolved"},
     ];
     for(const bad of variants){
-      m.preview.mockResolvedValueOnce({ok:true,plan:bad,notices:[],
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:bad,notices:[],
         blockers:[],employees:{[employeeId]:"Asha"},
         locationNames:{[locationId]:"Main"},previewRevision:0,
         sourceDigest:digest,frozenShiftKeys:[]});
@@ -605,7 +607,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   it("rejects malformed trusted source digests and revisions before comparing stale tokens",async()=>{
     for(const details of [{sourceDigest:"broken",previewRevision:2},
       {sourceDigest:digest,previewRevision:-1}]){
-      m.preview.mockResolvedValueOnce({ok:true,plan,notices:[],blockers:[],
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan,notices:[],blockers:[],
         employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
         frozenShiftKeys:[],...details});
       expect(await executeOliviaReadCapability({...preview(),options:{
@@ -631,7 +633,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       [good,true],
     ] as const;
     for(const [comparison,valid] of cases){
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[cash,balanced],best:cash,comparisons:[comparison]},
         notices:[],blockers:[],employees:{[employeeId]:"Asha"},
         locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -640,7 +642,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         .toMatchObject(valid?{ok:true}:{ok:false,error:{code:"invalid_record"}});
     }
     const unknown={...balanced,cost:{...scenario.cost}};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[cash,unknown],best:cash,comparisons:[good]},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -648,12 +650,44 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("rejects out-of-week shifts and gaps even with a correct top-level horizon",async()=>{
+    for(const bad of [
+      {...scenario,shifts:[{...shift,
+        startAt:"2026-10-27T09:00:00.000Z",
+        endAt:"2026-10-27T13:00:00.000Z"}]},
+      {...scenario,gaps:[{...scenario.gaps[0],
+        startAt:"2026-11-01T09:00:00.000Z",
+        endAt:"2026-11-01T13:00:00.000Z"}]},
+    ]){
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
+        ...plan,scenarios:[bad],best:bad},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
+  it("accepts a normal overnight Sunday shift ending after the week boundary",async()=>{
+    const overnight={...scenario,shifts:[{...shift,
+      startAt:"2026-10-19T03:00:00.000Z",
+      endAt:"2026-10-19T07:00:00.000Z"}]};
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{
+      ...plan,scenarios:[overnight],best:overnight},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},
+      locations:{[locationId]:"America/New_York"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:true,plan:{best:{shifts:[{
+        startAt:"2026-10-19T03:00:00.000Z"}]}}});
+  });
   it("rejects wrong week horizons, including correctly shaped plans for other Mondays",async()=>{
     for(const invalid of [
       {...plan,horizonStart:"2026-10-19",horizonEnd:"2026-10-25"},
       {...plan,horizonEnd:"2026-10-19"},
     ]){
-      m.preview.mockResolvedValueOnce({ok:true,plan:invalid,notices:[],
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:invalid,notices:[],
         blockers:[],employees:{[employeeId]:"Asha"},
         locationNames:{[locationId]:"Main"},
         sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -663,7 +697,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   });
   it("requires canonical unique PR2 objective order instead of accepting forged comparisons",async()=>{
     const reordered=[{...scenario,objective:"balanced"},scenario];
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:reordered,best:reordered[0],comparisons:[{
         left:"balanced",right:"cash",ownerMinutesDifference:0,
         cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null,
@@ -672,7 +706,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       previewRevision:0,frozenShiftKeys:[]});
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[scenario,{...scenario}],comparisons:[{
         left:"cash",right:"cash",ownerMinutesDifference:0,
         cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null,
@@ -690,7 +724,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       {...scenario,cost:{...scenario.cost,missingWageEmployeeIds:[uid(99)]}},
     ];
     for(const bad of variants){
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[bad],best:bad},notices:[],blockers:[],
         employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
         sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -700,7 +734,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   });
   it("rejects contradictory duplicate owner-minute scenario fields",async()=>{
     const bad={...scenario,cost:{...scenario.cost,ownerMinutes:60}};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[bad],best:bad},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -757,13 +791,13 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null};
     const base={...plan,status:"feasible",proof:"complete_candidate_solution",
       scenarios:[cash,ownerTime],best:ownerTime,comparisons:[comparison]};
-    m.preview.mockResolvedValueOnce({ok:true,plan:base,notices:[],
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:base,notices:[],
       blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
       previewRevision:0,frozenShiftKeys:[]});
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...base,best:cash},
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...base,best:cash},
       notices:[],blockers:[],employees:{[employeeId]:"Asha"},
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
       previewRevision:0,frozenShiftKeys:[]});
@@ -782,7 +816,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     ];
     for(const cost of bad){
       const amended={...scenario,cost};
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[amended],best:amended},notices:[],blockers:[],
         employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
         sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -791,7 +825,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     }
     const accepted={...scenario,cost:{
       ...legitimate,allocatedSalaryCents:200,costState:"estimate"}};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[accepted],best:accepted},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -800,7 +834,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         allocatedSalaryCents:200}}}});
   });
   it("rejects success previews containing setup blockers instead of implying readiness",async()=>{
-    m.preview.mockResolvedValueOnce({ok:true,plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan,
       notices:[],blockers:[{code:"no_coverage"}],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -810,7 +844,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   it("preserves canonical zero owner opportunity and rejects invented owner costs",async()=>{
     for(const ownerOpportunityCents of [null,1]){
       const mutated={...scenario,cost:{...scenario.cost,ownerOpportunityCents}};
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[mutated],best:mutated},notices:[],blockers:[],
         employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
         sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -824,7 +858,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const mutated={...scenario,gaps:[{
       ...scenario.gaps[0],missingHeadcount:0,
     }]};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[mutated],best:mutated},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -836,7 +870,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     const overflowing={...scenario,
       shifts:workers.map(id=>({...shift,employeeId:id})),
       cost:{...scenario.cost,missingWageEmployeeIds:workers}};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[overflowing],best:overflowing},notices:[],blockers:[],
       employees:Object.fromEntries(workers.map(id=>[id,"Staff"])),
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -848,7 +882,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     for(const ids of [[employeeId,employeeId],[uid(2)]]){
       const amended={...scenario,cost:{
         ...scenario.cost,missingWageEmployeeIds:ids}};
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[amended],best:amended},notices:[],blockers:[],
         employees:{[employeeId]:"Asha",[uid(2)]:"Ben"},
         locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -872,7 +906,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     ];
     for(const bad of invalidShifts){
       const invalidScenario={...scenario,shifts:[bad]};
-      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
         scenarios:[invalidScenario],best:invalidScenario},
         notices:[],blockers:[],employees:{[employeeId]:"Asha"},
         locationNames:{[locationId]:"Main"},sourceDigest:digest,
@@ -881,7 +915,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         .toMatchObject({ok:false,error:{code:"invalid_record"}});
     }
     const badScenario={...scenario,gaps:[{...scenario.gaps[0],startAt:to,endAt:iso}]};
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[badScenario],best:badScenario},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
@@ -889,7 +923,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
   it("fails closed on malformed read payloads and unavailable provider without leaking internals",async()=>{
-    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:{...plan,
       scenarios:[{...scenario,cost:{...scenario.cost,cashWagesCents:-1}}]},
       notices:[],blockers:[],employees:{},locations:{},locationNames:{},
       sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
