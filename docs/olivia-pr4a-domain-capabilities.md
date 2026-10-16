@@ -1,8 +1,8 @@
 # Olivia PR4A — Typed Domain Capability Foundation (read/preview only)
 
-**Tracking:** [#74](https://github.com/killbill2792/aicafe/issues/74)  
-**Scope:** Olivia-owned contracts and a server-side adapter, independent of Universal Supervisor.  
-**Baseline:** `main` at `248159c7c4df3c9fdc651f54d501b9b05c0dca0f`. PR #89 is **open, separate, and unmerged**; nothing here depends on its commits.  
+**Tracking:** [#74](https://github.com/killbill2792/aicafe/issues/74)
+**Scope:** Olivia-owned contracts and a server-side adapter, independent of Universal Supervisor.
+**Baseline:** `main` at `248159c7c4df3c9fdc651f54d501b9b05c0dca0f`. PR #89 is **open, separate, and unmerged**; nothing here depends on its commits.
 **Release status:** Not deployed, registered, enabled, or connected to Supervisor. No database migrations, feature flags, or live tenant data were changed.
 
 ## Capabilities and schemas
