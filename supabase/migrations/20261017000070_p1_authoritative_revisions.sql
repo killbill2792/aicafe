@@ -30,6 +30,11 @@ BEGIN
   IF p_business_id IS NULL THEN
     RAISE EXCEPTION 'source revision requires a scoped business' USING ERRCODE='23502';
   END IF;
+  -- A deleted business has no later readable source snapshot. FK cascade
+  -- deletion must not resurrect its epoch or prevent owner-directed removal.
+  IF NOT EXISTS(SELECT 1 FROM public.businesses WHERE id=p_business_id) THEN
+    RETURN;
+  END IF;
   INSERT INTO public.p1_business_source_epochs AS epoch(business_id,revision)
     VALUES (p_business_id,1)
   ON CONFLICT (business_id)
@@ -117,9 +122,17 @@ DECLARE
     ARRAY['orders','direct','business_id'],
     ARRAY['order_lines','orders','order_id'],
     ARRAY['daily_rollups','direct','business_id'],
+    ARRAY['processing_fee_daily_candidates','direct','business_id'],
+    ARRAY['processing_fee_daily_facts','direct','business_id'],
+    ARRAY['pos_connections','direct','business_id'],
+    ARRAY['staff_schedules','direct','business_id'],
+    ARRAY['ai_supplier_quotes','direct','business_id'],
+    ARRAY['ai_team_rules','direct','business_id'],
+    ARRAY['csv_import_mappings','direct','business_id'],
     ARRAY['expenses','direct','business_id'],
     ARRAY['expense_lines','expenses','expense_id'],
     ARRAY['recurring_costs','direct','business_id'],
+    ARRAY['recovery_order','direct','business_id'],
     ARRAY['uploads','direct','business_id'],
     ARRAY['csv_import_jobs','direct','business_id'],
     ARRAY['csv_sales_import_groups','direct','business_id'],
