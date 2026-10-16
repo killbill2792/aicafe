@@ -146,14 +146,14 @@ function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boole
  * natural-language ranges fail closed instead of silently displaying wrong days.
  */
 function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
-  const dates=[...text.matchAll(/(?<![\\d])\\d{4}-\\d{2}-\\d{2}(?![\\d])/gu)].map(x=>x[0]);
+  const dates=[...text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].map(x=>x[0]);
   if(dates.length===1)return {from:dates[0],to:dates[0]};
   if(dates.length===2&&dates[0]<=dates[1])return {from:dates[0],to:dates[1]};
   if(dates.length>2)return null;
   const normalized=text.normalize("NFKC").toLocaleLowerCase();
-  if(/\\b(?:today|hoy)\\b|اليوم/u.test(normalized))
+  if(/\b(?:today|hoy)\b|اليوم/u.test(normalized))
     return {from:asOf,to:asOf};
-  if(/\\b(?:yesterday|ayer)\\b|أمس/u.test(normalized)){
+  if(/\b(?:yesterday|ayer)\b|أمس/u.test(normalized)){
     const day=new Date(asOf+"T12:00:00Z");
     if(Number.isNaN(day.getTime()))return null;
     day.setUTCDate(day.getUTCDate()-1);
