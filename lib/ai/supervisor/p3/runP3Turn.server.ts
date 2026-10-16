@@ -271,8 +271,15 @@ export async function tryP3SupervisorReadOnly(input:{
   // Only a specifically recognized absent RPC can use legacy unversioned
   // conditional behavior. Authorization revocation, permission errors,
   // timeout, SQL failure and malformed/NULL RPC results all fail closed.
-  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
-    return null;
+  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed"){
+    // Returning null would permit the compatibility caller to retry through
+    // legacy read tools after owner access was revoked mid-turn. End this
+    // request with NO evidence or numeric claims instead.
+    return {kind:"p3_read_only_conditional",executedEffects:0,
+      reply:{intent:"profitability",status:"unavailable",evidence:[],
+        blocks:[{type:"warning",code:"P3_SOURCE_INTEGRITY",
+          text:labels[input.locale].unsupported}]},usage:{...reported}};
+  }
   if(atomic.status==="available" &&
     (atomic.snapshot.businessId!==identity.businessId||
       atomic.snapshot.currency!==identity.currency||
