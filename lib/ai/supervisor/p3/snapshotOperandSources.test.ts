@@ -241,10 +241,13 @@ describe("authoritative P3 source projection",()=>{
         {period:{from:date,to:date}},asOf);
       expect(projected?.leaves).toEqual([]);
       expect(projected?.missingInputs).toContain(
-        "toast_sales_review_coverage_unavailable_in_snapshot");
-      // The restriction is sales-specific, not an accidental payroll outage.
-      expect(extractAtomicSnapshot("labor.daily_costs",data,
-        {period:{from:date,to:date}},asOf)?.leaves.length).toBeGreaterThan(0);
+        "toast_independent_sales_review_not_in_snapshot");
+      // An unproven payroll zero is also withheld, independently of Toast.
+      const labor=extractAtomicSnapshot("labor.daily_costs",data,
+        {period:{from:date,to:date}},asOf);
+      expect(labor?.leaves).toEqual([]);
+      expect(labor?.missingInputs).toContain(
+        "labor_attendance_and_wage_coverage_not_proven");
     }finally{vi.unstubAllEnvs();}
   });
   it("COMPOSE-05: foreign snapshots, truncation and mismatched epochs fail closed",()=>{
