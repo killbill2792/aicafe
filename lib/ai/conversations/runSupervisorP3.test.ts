@@ -344,6 +344,59 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(p1Reads).toHaveBeenCalledWith(expect.anything(),expect.anything(),
       expect.objectContaining({id:"menu.product_economics",productId:"latte"}));
   });
+  it("preserves configured model-access fallback after a rejected P3 first audit",async()=>{
+    vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    const seen:Array<Record<string,unknown>>=[];
+    const goal={domain:"monthly_bills",period:"month_to_date",from:null,to:null,
+      comparison_period:null,comparison_from:null,comparison_to:null};
+    const providerReply=(output:unknown[])=>new Response(JSON.stringify({
+      status:"completed",model:"gpt-4.1-mini",
+      usage:{input_tokens:25,output_tokens:10},output,
+    }),{status:200});
+    const toolCall=(name:string,args:object,id:string)=>({
+      type:"function_call",name,arguments:JSON.stringify(args),call_id:id,
+    });
+    const body=(value:unknown)=>[{type:"message",content:[{
+      type:"output_text",text:JSON.stringify(value),
+    }]}];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body)) as Record<string,unknown>;
+      seen.push(request);
+      if(seen.length===1)return new Response(JSON.stringify({error:{
+        type:"invalid_request_error",code:"project_not_allowed",
+      }}),{status:403});
+      if((request.text as {format?:{name?:string}})?.format?.name==="supervisor_scope_audit")
+        return providerReply(body({complete:true,ambiguous:false,goals:[goal]}));
+      if(request.tool_choice==="required")return providerReply([
+        toolCall("declare_request_scope",{goals:[goal]},"audit-scope"),
+        toolCall("get_financials",{
+          metric:"monthly_bills",period:"month_to_date",from:null,to:null,
+        },"bills-call"),
+      ]);
+      return providerReply(body({headline:"Recorded monthly bills",summary:"From the café",
+        fact_ids:["t1:bills"],task_ids:[],insight_ids:[],evidence_refs:[]}));
+    });
+    const billReader=vi.fn(async()=>({
+      available:true,value:{totalCents:730000},quality:{level:"high",
+        missingInputs:[],estimatedInputs:[],staleInputs:[]},
+    }));
+    const result=await runSupervisorTurn({
+      text:"How much are my monthly bills?",locale:"en",asOf:identity.asOf,
+      cafeName:"Fixture Cafe",timezone:identity.timezone,history:[],
+      tools:{getMonthlyBills:billReader} as unknown as BusinessScopedCafeTools,
+      readRules:async()=>[],
+    },transport);
+    expect(billReader).toHaveBeenCalledTimes(1);
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:730000}),
+    ]));
+    expect(seen.map(req=>req.model)).toEqual([
+      "gpt-6-luna","gpt-4.1-mini","gpt-4.1-mini","gpt-4.1-mini",
+    ]);
+    expect(result.usage.modelCallCount).toBe(4);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(p1Reads).not.toHaveBeenCalled();
+  });
   it("COMPOSE-02/08: renders independently audited Spanish and Arabic scenario results",async()=>{
     for(const language of [
       {locale:"es" as const,question:"Vender 25 lattes y Sophie trabaja 45 minutos",
