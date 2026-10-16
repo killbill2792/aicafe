@@ -140,7 +140,7 @@ END $$;
 
 -- Clearing a prior timed exception must not inherit stale start/end columns
 -- from PR1B's column-selective batch updater.
-DO $
+DO $$
 DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
  c uuid:=current_setting('test.pr4b_employee_b')::uuid;
  old_row record; token text; batches jsonb; result jsonb;
@@ -172,7 +172,7 @@ BEGIN
      AND end_local IS NULL AND max_minutes IS NULL) THEN
    RAISE EXCEPTION 'old timed exception columns were retained';
  END IF;
-END $;
+END $$;
 
 -- Invalid nested UUID values must not claim an idempotency key. A valid
 -- no-op retry with that same top-level key must succeed without table access
