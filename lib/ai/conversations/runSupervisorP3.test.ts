@@ -377,7 +377,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const sameResult=result(wageInput,workers);
     const changedResult=result(wageInput,[{...workers[0],
       defaultHourlyWageCents:2100,wageAmountCents:2100}]);
-    const asEvidence=(source:ReturnType<typeof result>,clause:string)=>({
+    const asEvidence=(source:unknown,clause:string)=>({
       clause,capabilityId:"p3.labor.employee_wages.v1",
       status:"partial" as const,result:source,reason:null,
     });
