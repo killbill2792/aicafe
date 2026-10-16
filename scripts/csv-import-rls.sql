@@ -233,6 +233,10 @@ BEGIN
   RAISE EXCEPTION 'CATEGORY_DISTINCT_GROUPS_LOST_A_TOTAL';
  END IF;
 END $$;
+-- csv_finalize_sales_job only promotes staged rows; the parent job's status transition is
+-- app-layer code (lib/actions/csvImport.ts), not part of the RPC. Mirror it here so this job
+-- stops holding the (business_id, kind) active-job slot for the next test below.
+UPDATE csv_import_jobs SET status='done' WHERE id=:'category_job_id';
 
 -- A completed import's status, history row and link are atomic and idempotent.
 -- A malformed cross-kind request must not touch either table.
