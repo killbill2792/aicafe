@@ -257,10 +257,11 @@ export async function tryP3SupervisorReadOnly(input:{
     const plan=planSchema.safeParse(raw);
     if(!plan.success)return null;
     const pure=plan.data.purpose==="no_external_sources";
-    // A source-free expression may not follow canonical café reads.
-    if(pure && ((invokedReads+expanded.readCount)>0 ||
-      !item.coveredClauses.every(clause=>shadow.evidence.some(e=>
-        e.clause===clause&&e.reason==="source_free"))))return null;
+    // Source-free classification is PER CLAUSE, not per overall turn:
+    // a café-backed clause may coexist with a pure quoted arithmetic clause.
+    // The pure expression still receives EMPTY bindings and operands below.
+    if(pure && !item.coveredClauses.every(clause=>shadow.evidence.some(e=>
+      e.clause===clause&&e.reason==="source_free")))return null;
     if(!pure && item.coveredClauses.some(clause=>shadow.evidence.some(e=>
       e.clause===clause&&e.reason==="source_free")))return null;
     // All registered simulations consume the same five-tool turn budget.
