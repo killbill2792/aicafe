@@ -193,6 +193,11 @@ async function readPreview(
   const initialOwner=await requireSchedulingOwner();
   if(!initialOwner)return fail(capability,"unauthorized");
   const preview=await previewOliviaWeek({week:input.week});
+  // Reauthorize before inspecting success, errors, blockers, tokens or
+  // revision state. The selected café can change during PR3's async reads.
+  const owner=await requireSchedulingOwner();
+  if(!owner || owner.businessId!==initialOwner.businessId)
+    return fail(capability,"unauthorized");
   if(!preview.ok){
     if(preview.error==="missing_inputs"){
       // Trusted PR3 provides actionable source-grounded setup blockers.
@@ -215,9 +220,6 @@ async function readPreview(
   if(input.options?.expectedRevision!==undefined &&
       input.options.expectedRevision!==preview.previewRevision)
     return fail(capability,"revision_conflict");
-  const owner=await requireSchedulingOwner();
-  if(!owner || owner.businessId!==initialOwner.businessId)
-    return fail(capability,"unauthorized");
   const candidate=oliviaScenarioSchema.safeParse(
     input.options?.objective
       ? preview.plan.scenarios.find(x=>x.objective===input.options?.objective)??null
