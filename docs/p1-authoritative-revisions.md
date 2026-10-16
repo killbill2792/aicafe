@@ -118,3 +118,12 @@ PostgreSQL verification of the P3 adapters via
 `lib/metrics/p1AtomicSourceSnapshot.db.test.ts`. P3 changes now trigger
 `.github/workflows/p1-source-revision-db.yml`. Separate owner-controlled
 migration, staged café rollout and browser acceptance remain release gates.
+
+**Status-preserving safety gate (Codex P1):** The current SQL snapshot contract
+does not include `daily_rollups.card_fees_status`. P3 therefore does **not**
+project `cardFeesCents` as an atomic daily source operand, even when the
+numeric field is zero. It must remain unavailable until a separately reviewed
+and deployed status-preserving source contract exists. A successful `NULL`
+snapshot response is an invalid/absent authoritative ledger and fails
+closed; only an actual unavailable-RPC error may use the explicitly
+unversioned legacy conditional route. Neither case fabricates an epoch.
