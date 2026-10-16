@@ -102,10 +102,11 @@ function binaryOp(a:Item,b:Item,op:string):Item{
     };
     const key=a.u+"*"+b.u;
     const rule=lookup[key]??(
-      // Dimensionless percentages preserve the monetary rate's denominator.
-      a.u.startsWith("USD_")&&b.u==="ratio_bps"?
+      // Basis points are dimensionless for all non-comparison dimensions;
+      // preserve the unit and denominator, not just monetary rates.
+      a.u!=="comparison"&&a.u!=="ratio_bps"&&b.u==="ratio_bps"?
         [a.u,BigInt("1"),BigInt("10000")] as [Unit,bigint,bigint]:
-      b.u.startsWith("USD_")&&a.u==="ratio_bps"?
+      b.u!=="comparison"&&b.u!=="ratio_bps"&&a.u==="ratio_bps"?
         [b.u,BigInt("1"),BigInt("10000")] as [Unit,bigint,bigint]:
       a.u==="scalar"?[b.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:
       b.u==="scalar"?[a.u,BigInt("1"),BigInt("1")] as [Unit,bigint,bigint]:null);
@@ -160,7 +161,7 @@ function rounded(v:Rat):number{
   return Number(signed);
 }
 function resultValue(item:Item):number{
-  if(["hour","US_gallon","US_fl_oz","scalar"].includes(item.u)){
+  if(["item","minute","hour","US_gallon","US_fl_oz","scalar"].includes(item.u)){
     const value=Number(item.v.n)/Number(item.v.d);
     if(!Number.isFinite(value)||Math.abs(value)>1_000_000_000_000)
       throw new Error("numeric_overflow");
