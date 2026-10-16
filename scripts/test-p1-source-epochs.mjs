@@ -101,6 +101,33 @@ try{
  check(imported.coverage==="not_proven_by_revision",
    "CSV completion is not proof of complete historical POS coverage");
 
+ // Actual reviewed CSV promotion RPC, invoked as the authenticated owner.
+ const promotedJob="a12a12a1-9999-4999-8999-a12a12a12a12";
+ await admin.query("INSERT INTO public.csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count) VALUES($1,$2,'sales','processing','p1-real-csv-rpc',2,1)",[promotedJob,A]);
+ await admin.query("INSERT INTO public.csv_sales_import_groups(job_id,business_id,business_date,item_name,menu_item_id,quantity,net_sales_cents) VALUES($1,$2,'2026-10-14','Iced latte',$3,2,1200)",[promotedJob,A,menu]);
+ const staged=await snapshot();
+ await a.query("BEGIN");
+ await a.query("SET LOCAL ROLE authenticated");
+ await a.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ const promoted=(await a.query("SELECT * FROM public.csv_finalize_sales_job($1)",[promotedJob])).rows[0];
+ check(promoted?.imported_groups===1,"actual CSV finalize RPC promoted one reviewed staged group");
+ check((await snapshot()).revision===staged.revision,
+   "actual CSV order promotion invisible until its transaction commits");
+ await a.query("COMMIT");
+ const promotedSnapshot=await snapshot();
+ check(BigInt(promotedSnapshot.revision)>BigInt(staged.revision)&&
+   (await admin.query("SELECT count(*)::int AS count FROM public.order_lines ol JOIN public.orders o ON o.id=ol.order_id WHERE o.business_id=$1 AND o.pos_order_id LIKE 'csv-2026-10-14-%'",[A])).rows[0].count===1,
+   "actual CSV promotion canonically writes order+line and changes epoch");
+ check(promotedSnapshot.coverage==="not_proven_by_revision",
+   "actual CSV promotion cannot prove complete historical POS coverage");
+ await a.query("BEGIN");
+ await a.query("SET LOCAL ROLE authenticated");
+ await a.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ const replay=(await a.query("SELECT * FROM public.csv_finalize_sales_job($1)",[promotedJob])).rows[0];
+ await a.query("COMMIT");
+ check(replay.imported_groups===0 && (await snapshot()).revision===promotedSnapshot.revision,
+   "idempotent CSV finalizer does not invent an unnecessary epoch");
+
  await a.query("BEGIN");
  await a.query("DELETE FROM public.p1_business_source_epochs WHERE business_id=$1",[A]);
  await a.query("COMMIT");
@@ -113,6 +140,9 @@ try{
  const permissions=(await admin.query("SELECT has_table_privilege('authenticated','public.p1_business_source_epochs','SELECT') AS read,has_table_privilege('authenticated','public.p1_business_source_epochs','UPDATE') AS write,has_function_privilege('authenticated','public.p1_touch_business_epoch(uuid)','EXECUTE') AS touch")).rows[0];
  check(!permissions.read&&!permissions.write&&!permissions.touch,
    "clients cannot mutate authoritative revision ledger");
+ await admin.query("DELETE FROM public.businesses WHERE id=$1",[B]);
+ check((await admin.query("SELECT count(*)::int AS count FROM public.p1_business_source_epochs WHERE business_id=$1",[B])).rows[0].count===0,
+   "deleting a café cascades its ledger without resurrecting epoch rows");
  console.log("PASS "+count+" PostgreSQL source-revision, MVCC, import, rollback and tenant assertions");
 }finally{
  for(const c of dbs){try{await c.query("ROLLBACK");}catch{}await c.end();}
