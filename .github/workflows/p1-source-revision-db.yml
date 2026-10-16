@@ -1,0 +1,58 @@
+name: P1 Authoritative Source Revision PostgreSQL Acceptance
+
+on:
+  pull_request:
+    paths:
+      - "supabase/migrations/20261017000070_p1_authoritative_revisions.sql"
+      - "scripts/test-p1-source-epochs.mjs"
+      - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
+      - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
+      - "lib/metrics/p1AtomicSourceSnapshot.db.test.ts"
+      - ".github/workflows/p1-source-revision-db.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  revision-db:
+    name: Real PostgreSQL atomic source evidence and tenant isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.121.0
+      - name: Start disposable Supabase PostgreSQL
+        run: |
+          if [ ! -f supabase/config.toml ]; then supabase init --force; fi
+          supabase start
+      - name: Apply committed migrations ONLY to disposable DB
+        run: supabase db reset --local --yes
+      - name: Concurrent canonical read/write, rollback and RLS assertions
+        env:
+          P1_DISPOSABLE_DB: "1"
+        run: node scripts/test-p1-source-epochs.mjs
+      - name: Validate real database JSON against strict P1 adapter schema
+        env:
+          P1_DISPOSABLE_DB: "1"
+        run: npx vitest run lib/metrics/p1AtomicSourceSnapshot.db.test.ts
+      - name: Existing project TypeScript and tests
+        run: |
+          npx tsc --noEmit
+          npm test
+      - name: Lint and whitespace
+        run: |
+          npx eslint scripts/test-p1-source-epochs.mjs
+          git diff --check origin/main...HEAD
+      - name: Stop disposable Supabase
+        if: always()
+        run: supabase stop --no-backup
