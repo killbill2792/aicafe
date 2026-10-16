@@ -53,6 +53,13 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
     row.active===true&&row.priceStatus==="recorded"&&integer(row.priceCents)?
       [{key:text(row.id),name:text(row.name),field:"priceCents",
         value:row.priceCents,unit:"USD_cents_per_item" as const}]:[]),
+  // Read from the canonical business setting, never an invented 12% default.
+  // P1 preserves confirmed vs estimated provenance; the calculation remains
+  // partial until its source revision and coverage are independently proven.
+  "labor.payroll_burden":v=>isObject(v)&&
+    integer(v.rateBasisPoints)&&v.rateBasisPoints>=0&&v.rateBasisPoints<=10_000?
+      [{key:"aggregate",name:"employer cost rate",field:"rateBasisPoints",
+        value:v.rateBasisPoints,unit:"ratio_bps" as const}]:[],
   "labor.employee_wages":v=>rows(v).flatMap(row=>
     row.active===true&&row.wageKnown===true&&row.wagePeriod==="hour"&&
     integer(row.defaultHourlyWageCents)&&row.defaultHourlyWageCents>0?
