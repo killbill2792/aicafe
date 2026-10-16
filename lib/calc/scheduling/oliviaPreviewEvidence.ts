@@ -9,7 +9,7 @@ import type { PlannerResult } from "./plannerTypes";
 
 function overlapsReviewedWeek(
   startAt:string,endAt:string,timezone:string,
-  week:string,weekEnd:string,prior:string,after:string,
+  week:string,weekEnd:string,after:string,
 ):boolean {
   const start=Date.parse(startAt),end=Date.parse(endAt);
   if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return false;
@@ -17,9 +17,10 @@ function overlapsReviewedWeek(
   // The final millisecond belongs to the prior civil date when an interval
   // ends at midnight, including across a DST transition.
   const endLocal=localParts(end-1,timezone).date;
-  // Ordinary shifts/coverage start inside the week. Exact immutable
-  // overnight published commitments may cross either weekly boundary.
-  return startLocal>=prior && startLocal<=weekEnd &&
+  // PR3 supplies no pinned prior-week commitments to this preview.
+  // PR2 starts demand within the selected week, but Sunday night work
+  // can legitimately end in the following Monday's local date.
+  return startLocal>=week && startLocal<=weekEnd &&
     endLocal>=week && endLocal<=after;
 }
 function delta(left:number|null,right:number|null):number|null {
@@ -71,12 +72,12 @@ export function isCanonicalOliviaWeekResult(
            right.cost.loadedPayrollCents))
         return false;
     }
-    const prior=civilDateAdd(week,-1),after=civilDateAdd(week,7);
+    const after=civilDateAdd(week,7);
     for(const scenario of plan.scenarios){
       for(const interval of [...scenario.shifts,...scenario.gaps]){
         const timezone=timezones[interval.locationId];
         if(!timezone || !overlapsReviewedWeek(interval.startAt,interval.endAt,
-          timezone,week,end,prior,after))
+          timezone,week,end,after))
           return false;
       }
     }
