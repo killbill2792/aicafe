@@ -65,12 +65,10 @@ BEGIN
   IF relation='direct' AND fk<>'business_id' THEN
     RAISE EXCEPTION 'unsupported direct source identity';
   END IF;
-  IF relation IN ('ingredients','menu_items','orders','expenses') AND
-    fk <> CASE relation
-      WHEN 'ingredients' THEN 'ingredient_id'
-      WHEN 'menu_items' THEN 'menu_item_id'
-      WHEN 'orders' THEN 'order_id'
-      WHEN 'expenses' THEN 'expense_id' END THEN
+  IF (relation='ingredients' AND fk<>'ingredient_id') OR
+     (relation='menu_items' AND fk<>'menu_item_id') OR
+     (relation='orders' AND fk<>'order_id') OR
+     (relation='expenses' AND fk<>'expense_id') THEN
     RAISE EXCEPTION 'unsupported child source identity';
   END IF;
   IF TG_OP IN ('INSERT','UPDATE') THEN names:=array_append(names,'new_rows'); END IF;
