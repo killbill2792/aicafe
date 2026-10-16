@@ -205,6 +205,105 @@ BEGIN
  THEN RAISE EXCEPTION 'invalid command stranded its idempotency key'; END IF;
 END $$;
 
+-- Full recurring scope has three windows. PR4B must update ONLY the edited
+-- row: the other two preserve revisions, confirmation metadata and audit counts.
+DO $
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ a uuid:=current_setting('test.pr4b_employee_a')::uuid;
+ first_row public.staff_availability_rules%ROWTYPE;
+ second_row public.staff_availability_rules%ROWTYPE;
+ third_row public.staff_availability_rules%ROWTYPE;
+ token text; manifest jsonb; desired jsonb; batches jsonb;
+ result jsonb; replay jsonb; batch_key uuid:=gen_random_uuid();
+ command_key uuid:=gen_random_uuid(); before_audit integer;
+ before_second integer; before_third integer; confirmed_second timestamptz;
+ confirmed_third timestamptz; updated_second timestamptz; updated_third timestamptz;
+BEGIN
+ INSERT INTO public.staff_availability_rules
+  (business_id,employee_id,location_id,day_of_week,start_local,end_local,
+   overnight,effective_from,effective_to,source,confirmation)
+ VALUES (b,a,NULL,1,'08:00','12:00',false,'2026-10-26',NULL,
+     'owner_direct','owner_confirmed') RETURNING * INTO first_row;
+ INSERT INTO public.staff_availability_rules
+  (business_id,employee_id,location_id,day_of_week,start_local,end_local,
+   overnight,effective_from,effective_to,source,confirmation)
+ VALUES (b,a,NULL,2,'09:00','13:00',false,'2026-10-26',NULL,
+     'worker_reported_by_owner','owner_confirmed') RETURNING * INTO second_row;
+ INSERT INTO public.staff_availability_rules
+  (business_id,employee_id,location_id,day_of_week,start_local,end_local,
+   overnight,effective_from,effective_to,source,confirmation)
+ VALUES (b,a,NULL,3,'10:00','14:00',false,'2026-10-26',NULL,
+     'owner_direct','owner_confirmed') RETURNING * INTO third_row;
+ token:=public.scheduling_owner_source_token(b);
+ manifest:=jsonb_build_array(
+   jsonb_build_object('id',first_row.id,'revision',first_row.revision),
+   jsonb_build_object('id',second_row.id,'revision',second_row.revision),
+   jsonb_build_object('id',third_row.id,'revision',third_row.revision));
+ desired:=jsonb_build_array(
+   jsonb_build_object('id',first_row.id,'data',
+     (to_jsonb(first_row) - ARRAY['id','business_id','revision','created_at',
+       'updated_at','created_by','updated_by','confirmed_by','confirmed_at'])
+       || jsonb_build_object('start_local','07:00','end_local','12:00')),
+   jsonb_build_object('id',second_row.id,'data',
+     to_jsonb(second_row) - ARRAY['id','business_id','revision','created_at',
+       'updated_at','created_by','updated_by','confirmed_by','confirmed_at']),
+   jsonb_build_object('id',third_row.id,'data',
+     to_jsonb(third_row) - ARRAY['id','business_id','revision','created_at',
+       'updated_at','created_by','updated_by','confirmed_by','confirmed_at']));
+ batches:=jsonb_build_array(jsonb_build_object(
+   'kind','availability_rule','employeeId',a,'locationId',NULL,
+   'scope',jsonb_build_object('effective_from','2026-10-26','effective_to',NULL),
+   'expected',manifest,'desired',desired,'requestKey',batch_key));
+ SELECT count(*) INTO before_audit
+   FROM public.scheduling_foundation_audit_events
+   WHERE business_id=b AND table_name='staff_availability_rules';
+ SELECT count(*) INTO before_second FROM public.scheduling_foundation_audit_events
+   WHERE business_id=b AND record_id=second_row.id;
+ SELECT count(*) INTO before_third FROM public.scheduling_foundation_audit_events
+   WHERE business_id=b AND record_id=third_row.id;
+ confirmed_second:=second_row.confirmed_at;
+ confirmed_third:=third_row.confirmed_at;
+ updated_second:=second_row.updated_at;
+ updated_third:=third_row.updated_at;
+ result:=public.scheduling_olivia_commit_availability(b,token,command_key,batches);
+ IF result->>'replayed'<>'false' OR
+    jsonb_array_length(result->'batches'->0->'records')<>3 THEN
+   RAISE EXCEPTION 'full-scope batch result was not positional';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=b AND id=first_row.id AND revision=first_row.revision+1
+     AND start_local='07:00') THEN
+   RAISE EXCEPTION 'edited recurring row did not advance';
+ END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=b AND id=second_row.id AND revision=second_row.revision
+     AND confirmed_at=confirmed_second AND updated_at=updated_second) OR
+    NOT EXISTS(SELECT 1 FROM public.staff_availability_rules
+   WHERE business_id=b AND id=third_row.id AND revision=third_row.revision
+     AND confirmed_at=confirmed_third AND updated_at=updated_third) THEN
+   RAISE EXCEPTION 'untouched recurring window was rewritten';
+ END IF;
+ IF (SELECT count(*) FROM public.scheduling_foundation_audit_events
+     WHERE business_id=b AND table_name='staff_availability_rules')<>before_audit+1
+    OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
+     WHERE business_id=b AND record_id=second_row.id)<>before_second
+    OR (SELECT count(*) FROM public.scheduling_foundation_audit_events
+     WHERE business_id=b AND record_id=third_row.id)<>before_third THEN
+   RAISE EXCEPTION 'untouched recurring window generated audit events';
+ END IF;
+ IF (result->'batches'->0->'records'->1->>'revision')::integer<>second_row.revision
+    OR (result->'batches'->0->'records'->2->>'revision')::integer<>third_row.revision THEN
+   RAISE EXCEPTION 'unchanged receipt revisions did not match saved rows';
+ END IF;
+ replay:=public.scheduling_olivia_commit_availability(
+   b,token,command_key,batches);
+ IF replay->>'replayed'<>'true' OR replay->'batches'<>result->'batches' OR
+    (SELECT count(*) FROM public.scheduling_foundation_audit_events
+     WHERE business_id=b AND table_name='staff_availability_rules')<>before_audit+1 THEN
+   RAISE EXCEPTION 'recurring idempotency replay mutated preserved rows';
+ END IF;
+END $;
+
 -- Tenant RLS, role authorization and unprotected receipt access are denied.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
 DO $$
