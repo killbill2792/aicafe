@@ -31,6 +31,9 @@ describe("Olivia owner shift editor accessibility and immutability",()=>{
   it("renders labelled local-time controls and >=48px target classes",()=>{
     const html=render(false);
     expect(html).toContain('type="datetime-local"');
+    // Native datetime controls otherwise retain an intrinsic width that can
+    // overflow the ~360px owner editor even inside responsive flex layouts.
+    expect(html).toMatch(/type="datetime-local"[^>]+class="[^"]*min-w-0 w-full/);
     expect(html).toContain('aria-label="shiftStart"');
     expect(html).toContain('aria-label="shiftEnd"');
     expect(html).toContain("min-h-12");
