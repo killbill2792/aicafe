@@ -84,8 +84,9 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
     conflicting_limits:"blockerLimits",
   };
 
-  function loadHistory(selectedWeek: string) {
-    return readOliviaPlanHistory({ week: selectedWeek }).then(r => {
+  async function loadHistory(selectedWeek: string) {
+    try {
+      const r = await readOliviaPlanHistory({ week: selectedWeek });
       if (r.ok) {
         setCurrentRevision(r.currentRevision);
         if (proposalHead.current !== null && proposalHead.current !== r.currentRevision) {
@@ -98,7 +99,11 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
         setError(t(r.error==="unauthorized"?"ownerRequired":
           r.error==="disabled"?"previewDisabled":"historyUnavailable"));
       }
-    });
+    } catch {
+      // Network failures must leave the owner an explicit retry path rather
+      // than silently aborting a transition with an unhandled rejection.
+      setError(t("historyUnavailable"));
+    }
   }
 
   function preview() {
@@ -107,8 +112,9 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
     retry.current = null;
     proposalHead.current = null;
     startTransition(async () => {
-      const selectedWeek = week;
-      const response = await previewOliviaWeek({ week: selectedWeek });
+      try {
+        const selectedWeek = week;
+        const response = await previewOliviaWeek({ week: selectedWeek });
       if (!response.ok) {
         setError(response.blockers?.length ? response.blockers.map(b =>
           t(blockerKeys[b.code], { employee: b.employeeName ?? "" })).join(" ") :
@@ -128,7 +134,10 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
       setLocationNames(response.locationNames);
       setFrozenShiftKeys(response.frozenShiftKeys);
       setSourceDigest(response.sourceDigest);
-      await loadHistory(selectedWeek);
+        await loadHistory(selectedWeek);
+      } catch {
+        setError(t("previewUnavailable"));
+      }
     });
   }
   function save() {

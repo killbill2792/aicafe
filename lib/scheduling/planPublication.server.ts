@@ -25,13 +25,19 @@ export type OliviaTransitionResult=
 
 const shiftsSchema=editDraftSchema.shape.shifts;
 const iso=(value:string)=>new Date(value).toISOString();
-function canonicalAssignment(row:Record<string,unknown>) {
+function canonicalAssignment(row:Record<string,unknown>):PlannerShift {
   if(typeof row.employee_id!=="string"||typeof row.location_id!=="string"||
      typeof row.starts_at!=="string"||typeof row.ends_at!=="string")
     throw new Error("corrupt_assignment");
-  return {employeeId:row.employee_id,locationId:row.location_id,
+  // Postgres JSONB does not preserve the original order of break object keys.
+  // Normalize both the stored row and the revision scenario through the SAME
+  // strict schema before comparing them, or valid shifts with breaks can be
+  // rejected as mismatched on approval/publication.
+  return shiftsSchema.element.parse({
+    employeeId:row.employee_id,locationId:row.location_id,
     startAt:iso(row.starts_at),endAt:iso(row.ends_at),
-    paidMinutes:row.paid_minutes,breaks:row.breaks,pinned:row.pinned};
+    paidMinutes:row.paid_minutes,breaks:row.breaks,pinned:row.pinned,
+  });
 }
 function identity(shifts:readonly PlannerShift[]):string {
   return JSON.stringify(shifts.map(s=>({...s,

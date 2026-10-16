@@ -120,6 +120,45 @@ describe("Olivia immutable owner schedule edit service",()=>{
     expect(mocks.validate).not.toHaveBeenCalled();
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
+  it("allows unchanged pinned breaks stored with reordered JSONB keys",async()=>{
+    const original={employeeId:businessId,locationId:seriesId,
+      startAt:"2026-10-12T09:00:00.000Z",
+      endAt:"2026-10-12T11:00:00.000Z",paidMinutes:90,pinned:true,
+      // JSONB may return a different key order from the client Zod schema.
+      breaks:[{paid:false,endAt:"2026-10-12T10:00:00.000Z",
+        startAt:"2026-10-12T09:30:00.000Z"}]};
+    const unchanged={employeeId:businessId,locationId:seriesId,
+      startAt:original.startAt,endAt:original.endAt,paidMinutes:90,pinned:true,
+      breaks:[{startAt:"2026-10-12T09:30:00.000Z",
+        endAt:"2026-10-12T10:00:00.000Z",paid:false}]};
+    mocks.revision.mockResolvedValueOnce({data:{id:revisionId,status:"published",
+      source_digest:digest,scenario:{...scenario,shifts:[original]}},error:null});
+    const result=await saveOliviaEditedDraft({...edit,shifts:[unchanged]},
+      input,businessId,sourceFingerprint);
+    expect(result).toMatchObject({ok:true,revision:2});
+    expect(mocks.validate).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+  it("still rejects any change to a pinned saved break, and malformed rows",async()=>{
+    const pinned={employeeId:businessId,locationId:seriesId,
+      startAt:"2026-10-12T09:00:00.000Z",
+      endAt:"2026-10-12T11:00:00.000Z",paidMinutes:90,pinned:true,
+      breaks:[{paid:false,endAt:"2026-10-12T10:00:00.000Z",
+        startAt:"2026-10-12T09:30:00.000Z"}]};
+    const moved={...pinned,breaks:[{startAt:"2026-10-12T09:45:00.000Z",
+      endAt:"2026-10-12T10:15:00.000Z",paid:false}]};
+    mocks.revision.mockResolvedValueOnce({data:{id:revisionId,status:"published",
+      source_digest:digest,scenario:{...scenario,shifts:[pinned]}},error:null});
+    expect(await saveOliviaEditedDraft({...edit,shifts:[moved]},
+      input,businessId,sourceFingerprint)).toEqual({ok:false,
+        error:"invalid_shifts",violations:["pinned_shift_changed"]});
+    mocks.revision.mockResolvedValueOnce({data:{id:revisionId,status:"published",
+      source_digest:digest,scenario:{...scenario,shifts:[{
+        ...pinned,breaks:[{...pinned.breaks[0],paid:"false"}]}]}},error:null});
+    expect(await saveOliviaEditedDraft({...edit,shifts:[pinned]},
+      input,businessId,sourceFingerprint)).toEqual({ok:false,error:"invalid_input"});
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
   it("creates a new revision with server-calculated cost and exact CAS",async()=>{
     const output=await saveOliviaEditedDraft(edit,input,businessId,sourceFingerprint);
     expect(output).toMatchObject({ok:true,revision:2,replayed:false});
