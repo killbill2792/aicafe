@@ -595,7 +595,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       purpose:"preauthorized_operands",
       description:"Combine covered recorded units with the quoted what-if count",
       nodes:[
-        {op:"source",handle:"sales.item_units:"+fixture.id+":units"},
+        {op:"source",handle:"sales.item_units:"+fixture.id+":units:"+period.from+":"+period.to},
         {op:"hypothetical",quotedNumber:String(fixture.added),
           label:"owner-quoted additional units",value:fixture.added,unit:"item"},
         {op:"add"},
@@ -665,10 +665,10 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       purpose:"preauthorized_operands",
       description:"Sales less fees and loaded wages for the exact same period",
       nodes:[
-        {op:"source",handle:"sales.daily:aggregate:netSalesCents"},
-        {op:"source",handle:"sales.daily:aggregate:cardFeesCents"},
+        {op:"source",handle:"sales.daily:aggregate:netSalesCents:"+period.from+":"+period.to},
+        {op:"source",handle:"sales.daily:aggregate:cardFeesCents:"+period.from+":"+period.to},
         {op:"subtract"},
-        {op:"source",handle:"labor.daily_costs:aggregate:loadedStaffCostCents"},
+        {op:"source",handle:"labor.daily_costs:aggregate:loadedStaffCostCents:"+period.from+":"+period.to},
         {op:"subtract"},
       ],
     };
