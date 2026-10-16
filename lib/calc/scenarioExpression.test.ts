@@ -92,6 +92,29 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
         status:"unavailable",reason:"hypothetical_unit_mismatch",
       });
   });
+  it("rejects postfix euro and pound notation without currency conversion",()=>{
+    for(const text of ["20€","20 €","20£","20 £"]){
+      expect(evaluateExpression(plan("20",2000,"USD_cents"),
+        scope("Price is "+text))).toMatchObject({
+          status:"unavailable",reason:"hypothetical_unit_mismatch",
+        });
+      expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+        scope("Pay rate "+text+" per hour"))).toMatchObject({
+          status:"unavailable",reason:"hypothetical_unit_mismatch",
+        });
+    }
+    expect(evaluateExpression(plan("20",2000,"USD_cents"),
+      scope("Price is $20"))).toMatchObject({status:"conditional",value:2000});
+  });
+  it("does not borrow prior hourly qualifiers across Arabic conjunctions",()=>{
+    const text="الأجر $20 لكل ساعة و $30 إجمالي";
+    expect(evaluateExpression(plan("30",3000,"USD_cents_per_hour"),scope(text)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("30",3000,"USD_cents"),scope(text)))
+      .toMatchObject({status:"conditional",value:3000,unit:"USD_cents"});
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(text)))
+      .toMatchObject({status:"conditional",value:2000,unit:"USD_cents_per_hour"});
+  });
   it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
     const quoted=plan("١",1,"item");
     expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
