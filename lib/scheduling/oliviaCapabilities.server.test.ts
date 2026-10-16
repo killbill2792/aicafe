@@ -273,6 +273,43 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
           missingHeadcount:1}],cost:{cashWagesCents:null,costState:"unavailable"}}]}});
     expect(m.calls).toEqual([]);
   });
+  it("preserves all PR3 wage/availability notices for valid 51-worker previews",async()=>{
+    const notices=Array.from({length:51},(_,i)=>[
+      {code:"wage_unknown",employeeName:`Worker ${i}`},
+      {code:"availability_missing",employeeName:`Worker ${i}`},
+    ]).flat();
+    m.preview.mockResolvedValueOnce({ok:true,plan,notices,blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      previewRevision:2,sourceDigest:digest,frozenShiftKeys:[]});
+    const result=await executeOliviaReadCapability(preview());
+    expect(result.ok).toBe(true);
+    if(!result.ok)throw Error("valid preview should be accepted");
+    expect(result.capability).toBe("olivia.schedule.preview");
+    if(result.capability!=="olivia.schedule.preview")throw Error("wrong capability");
+    expect(result.notices).toEqual(notices);
+    expect(result.notices).toHaveLength(102);
+  });
+  it("rejects unsafe aggregate cents and unsafe signed comparison deltas",async()=>{
+    const unsafe=Number.MAX_SAFE_INTEGER+1;
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[{...scenario,cost:{
+        ...scenario.cost,cashWagesCents:unsafe,
+      }}]},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},
+      previewRevision:2,sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,comparisons:[{left:"cash",right:"balanced",
+        ownerMinutesDifference:0,cashWagesDifferenceCents:-unsafe,
+        loadedPayrollDifferenceCents:null}],
+    },notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},
+      previewRevision:2,sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
   it("distinguishes unknown wages from verified zero and preserves overnight UTC intervals",async()=>{
     const full={...scenario,
       shifts:[{...shift,startAt:"2026-11-01T05:30:00.000Z",
