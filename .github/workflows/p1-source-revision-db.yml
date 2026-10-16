@@ -5,6 +5,8 @@ on:
     paths:
       - "supabase/migrations/20261017000070_p1_authoritative_revisions.sql"
       - "scripts/test-p1-source-epochs.mjs"
+      - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
+      - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
       - ".github/workflows/p1-source-revision-db.yml"
   workflow_dispatch:
 
