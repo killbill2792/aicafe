@@ -83,7 +83,7 @@ describe("Olivia PR4B-A strict scheduling commands",()=>{
     const previous={...employees[0],recurring:[],exceptions:[{
       id:EXIST,revision:3,employee_id:A,location_id:null,
       local_date:"2026-10-21",exception_type:"hours_cap" as const,
-      start_local:"08:00",end_local:"16:00",overnight:false,
+      start_local:null,end_local:null,overnight:false,
       max_minutes:120,source:"owner_direct" as const,
       confirmation:"owner_confirmed" as const,
     }]};
