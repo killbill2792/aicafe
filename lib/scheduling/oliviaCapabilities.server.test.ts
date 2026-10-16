@@ -319,6 +319,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
         allocatedSalaryCents:0,missingWageEmployeeIds:[],costState:"verified"},
     };
     m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      status:"feasible",proof:"complete_candidate_solution",
       scenarios:[full],best:full},notices:[],blockers:[],
       employees:{[employeeId]:"Asha"},locations:{[locationId]:"America/New_York"},
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
