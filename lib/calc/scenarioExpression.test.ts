@@ -159,6 +159,32 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
       scope("Two employees each worked 2 hours")))
       .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
   });
+  it("disambiguates repeated identical numbers with typed occurrence positions",()=>{
+    const message="Sophie works 10 hours at 10 dollars per hour";
+    const hours={...plan("10",10,"hour"),nodes:[{
+      op:"hypothetical",label:"paid hours",quotedNumber:"10",value:10,
+      unit:"hour",occurrence:0,
+    }]};
+    const rate={...plan("10",1000,"USD_cents_per_hour"),nodes:[{
+      op:"hypothetical",label:"hourly pay",quotedNumber:"10",value:1000,
+      unit:"USD_cents_per_hour",occurrence:1,
+    }]};
+    expect(evaluateExpression(hours,scope(message)))
+      .toMatchObject({status:"conditional",value:10,unit:"hour"});
+    expect(evaluateExpression(rate,scope(message)))
+      .toMatchObject({status:"conditional",value:1000,unit:"USD_cents_per_hour"});
+    expect(evaluateExpression({...rate,nodes:[{...rate.nodes[0],occurrence:0}]},scope(message)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression({...hours,nodes:[{...hours.nodes[0],occurrence:1}]},scope(message)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("10",10,"hour"),scope(message)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression({...hours,nodes:[{...hours.nodes[0],occurrence:4}]},scope(message)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    const payroll={...hours,nodes:[...hours.nodes,...rate.nodes,{op:"multiply"}]};
+    expect(evaluateExpression(payroll,scope(message)))
+      .toMatchObject({status:"conditional",value:10000,unit:"USD_cents"});
+  });
   it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
     const quoted=plan("١",1,"item");
     expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
