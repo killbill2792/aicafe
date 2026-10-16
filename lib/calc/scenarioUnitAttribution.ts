@@ -59,6 +59,9 @@ export function ownerQuotedUnitMatches(message:string,quoted:string,unit:string)
     if(gallons.test(after))direct.add("US_gallon");
     if(ratio.test(after))direct.add("ratio_bps");
     if(money.test(after))direct.add("money");
+    // Currency words with "per hour/item" are monetary rates, not hours/items.
+    // The separate monetary-dimension validator proves the exact rate qualifier.
+    if(direct.has("money")&&direct.size>1){direct.clear();direct.add("money");}
     if(direct.size===0&&multiplier.test(after))direct.add("scalar");
     if(direct.size===0&&(items.test(after)||genericPlural.test(after)))
       direct.add("item");
@@ -90,7 +93,7 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
     const previous=(rawBefore.split(/\d+(?:\.\d+)?/u).at(-1)??"")
       // Arabic و is a conjunction when separated as its own word; never
       // split embedded letters in a longer Arabic word.
-      .split(/\b(?:and|or|but|plus|y|e|pero)\b|\s+و\s+|[;,.،!؟]/iu).at(-1)??"";
+      .split(/\b(?:and|or|but|plus|y|e|pero)\b|\s+و(?=\s|[$€£]|\d)|[;,.،!؟]/iu).at(-1)??"";
     const after=text.slice(end,end+65).split(/(?:\b(?:and|but|then|y|pero)\b|[;,.،!?؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
     // Never convert an owner-quoted non-USD amount into dollars.
     if(/[€£]\s*$/u.test(previous)||
