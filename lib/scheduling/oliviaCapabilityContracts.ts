@@ -104,7 +104,10 @@ const costSchema=z.object({
   cashWagesCents:cents,allocatedSalaryCents:cents,loadedPayrollCents:cents,
   ownerOpportunityCents:cents,ownerMinutes:nonnegative,
   costState:z.enum(["verified","estimate","unavailable"]),
-  missingWageEmployeeIds:z.array(oliviaUuid).max(500),
+  // The PR2 planner can emit up to 2,000 provisional shifts. Keep its
+  // missing-wage evidence representable before the 200-shift transport cap
+  // is classified, then bind each missing ID to a real scenario assignment.
+  missingWageEmployeeIds:z.array(oliviaUuid).max(2000),
 }).strict().superRefine((cost,ctx)=>{
   // Match PR2 costForWork: missing a wage makes every aggregate dependent on
   // that wage unavailable, while owner opportunity cost is independent.
@@ -152,11 +155,18 @@ const scenarioBase=z.object({
   ownerMinutes:nonnegative,cost:costSchema,preferencePenalty:z.number().finite(),
   exploredNodes:nonnegative,legalReview:z.enum(["verified_profile","unverified_profile"]),
 }).strict();
-const matchingOwnerMinutes=(scenario:{
-  ownerMinutes:number;cost:{ownerMinutes:number};
-})=>scenario.ownerMinutes===scenario.cost.ownerMinutes;
-export const oliviaScenarioSchema=scenarioBase.refine(matchingOwnerMinutes,
-  "Scenario owner minutes must match the cost evidence");
+function validateScenarioEvidence(
+  scenario:z.infer<typeof scenarioBase>,ctx:z.RefinementCtx,
+){
+  if(scenario.ownerMinutes!==scenario.cost.ownerMinutes)
+    ctx.addIssue({code:"custom",message:"Scenario owner minutes contradict costs"});
+  const assigned=new Set(scenario.shifts.map(s=>s.employeeId));
+  const missing=scenario.cost.missingWageEmployeeIds;
+  if(new Set(missing).size!==missing.length ||
+     missing.some(id=>!assigned.has(id)))
+    ctx.addIssue({code:"custom",message:"Missing wages must identify unique scheduled workers"});
+}
+export const oliviaScenarioSchema=scenarioBase.superRefine(validateScenarioEvidence);
 export const oliviaPlanSchema=z.object({
   status:z.enum(["feasible","infeasible","unproven"]),
   horizonStart:oliviaWeek,horizonEnd:date,
@@ -178,8 +188,7 @@ export const oliviaPlanSchema=z.object({
 export const oliviaOverflowScenarioSchema=scenarioBase.extend({
   shifts:z.array(oliviaShiftSchema),
   gaps:z.array(scenarioBase.shape.gaps.element),
-}).refine(matchingOwnerMinutes,
-  "Scenario owner minutes must match the cost evidence");
+}).superRefine(validateScenarioEvidence);
 export const oliviaOverflowPlanSchema=oliviaPlanSchema.extend({
   scenarios:z.array(oliviaOverflowScenarioSchema).max(3),
   best:oliviaOverflowScenarioSchema.nullable(),
