@@ -23,6 +23,33 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
       scope("¿Y si el precio por bebida es 12,5 dólares?")))
       .toMatchObject({status:"conditional",value:1250,unit:"USD_cents_per_item"});
   });
+  it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
+    const quoted=plan("١",1,"item");
+    expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
+      .toMatchObject({status:"unavailable",reason:"invented_hypothetical"});
+    expect(evaluateExpression(plan("٠٠٠",0,"item"),scope("كمية ١٬٠٠٠٬٠٠٠")))
+      .toMatchObject({status:"unavailable",reason:"invented_hypothetical"});
+    expect(evaluateExpression(plan("١",1,"item"),scope("لو بعت ١ مشروب")))
+      .toMatchObject({status:"conditional",value:1});
+  });
+  it("scales $1.15, 0.29 gallon and 1.15 hours from exact decimal digits",()=>{
+    expect(evaluateExpression(plan("1.15",115,"USD_cents"),
+      scope("Increase price by $1.15"))).toMatchObject({
+        status:"conditional",value:115,unit:"USD_cents",
+      });
+    const gallon={...plan("0.29",29,"US_gallon"),nodes:[{
+      op:"hypothetical",label:"gallons",quotedNumber:"0.29",value:29,
+      unit:"US_gallon",quantityScale:"hundredth",
+    }]};
+    expect(evaluateExpression(gallon,scope("Use 0.29 gallons")))
+      .toMatchObject({status:"conditional",value:0.29});
+    const hours={...plan("1.15",115,"hour"),nodes:[{
+      op:"hypothetical",label:"hours",quotedNumber:"1.15",value:115,
+      unit:"hour",quantityScale:"hundredth",
+    }]};
+    expect(evaluateExpression(hours,scope("Use 1.15 paid hours")))
+      .toMatchObject({status:"conditional",value:1.15});
+  });
   it("interprets explicitly quoted cents as cents, never as dollars",()=>{
     const cents={...plan("50",50,"USD_cents"),nodes:[{
       op:"hypothetical",quotedNumber:"50",value:50,unit:"USD_cents",
