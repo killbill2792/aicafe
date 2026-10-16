@@ -122,7 +122,7 @@ const costSchema=z.object({
   if(cost.costState==="verified" && cost.loadedPayrollCents===null)
     ctx.addIssue({code:"custom",message:"Verified payroll needs a loaded cost"});
 });
-export const oliviaScenarioSchema=z.object({
+const scenarioBase=z.object({
   objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
   gaps:z.array(z.object({
     coverageId:oliviaUuid,locationId:oliviaUuid,startAt:utc,endAt:utc,
@@ -137,6 +137,11 @@ export const oliviaScenarioSchema=z.object({
   ownerMinutes:nonnegative,cost:costSchema,preferencePenalty:z.number().finite(),
   exploredNodes:nonnegative,legalReview:z.enum(["verified_profile","unverified_profile"]),
 }).strict();
+const matchingOwnerMinutes=(scenario:{
+  ownerMinutes:number;cost:{ownerMinutes:number};
+})=>scenario.ownerMinutes===scenario.cost.ownerMinutes;
+export const oliviaScenarioSchema=scenarioBase.refine(matchingOwnerMinutes,
+  "Scenario owner minutes must match the cost evidence");
 export const oliviaPlanSchema=z.object({
   status:z.enum(["feasible","infeasible","unproven"]),
   horizonStart:oliviaWeek,horizonEnd:date,
@@ -155,10 +160,11 @@ export const oliviaPlanSchema=z.object({
  * every field/element before classifying a valid overflow as capacity; only
  * the original bounded schemas are permitted for a successful capability.
  */
-export const oliviaOverflowScenarioSchema=oliviaScenarioSchema.extend({
+export const oliviaOverflowScenarioSchema=scenarioBase.extend({
   shifts:z.array(oliviaShiftSchema),
-  gaps:z.array(oliviaScenarioSchema.shape.gaps.element),
-});
+  gaps:z.array(scenarioBase.shape.gaps.element),
+}).refine(matchingOwnerMinutes,
+  "Scenario owner minutes must match the cost evidence");
 export const oliviaOverflowPlanSchema=oliviaPlanSchema.extend({
   scenarios:z.array(oliviaOverflowScenarioSchema).max(3),
   best:oliviaOverflowScenarioSchema.nullable(),
