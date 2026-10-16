@@ -78,13 +78,12 @@ SELECT public.scheduling_save_availability_batch(
 COMMIT;
 SQL
 
-# Session C: normal owner PR1B batch for a DIFFERENT worker in the same café
-# must not slip into the
-# protected source window. A short lock_timeout fails deliberately.
+# Session C: normal PR1B batch for a DIFFERENT worker in the same café
+# must fail fast rather than deadlocking on PR3-style lock ordering.
 if "${PSQL[@]}" >"$workdir/same.log" 2>&1 <<SQL
 BEGIN;
 SET LOCAL ROLE authenticated;
-SET LOCAL lock_timeout='500ms';
+SET LOCAL lock_timeout='1000ms';
 SELECT set_config('request.jwt.claim.sub','$owner',true);
 SELECT public.scheduling_save_availability_batch(
  '$business_a'::uuid,'$employee_c'::uuid,NULL::uuid,
@@ -102,8 +101,8 @@ SQL
 then
   echo "Same-café write bypassed the source lock"; exit 1
 fi
-if ! grep -q 'lock timeout' "$workdir/same.log"; then
-  echo "Same-café failure was not a lock timeout"; cat "$workdir/same.log"; exit 1
+if ! grep -q 'Olivia scheduling source is busy; retry' "$workdir/same.log"; then
+  echo "Same-café guard did not reject overlapping source write"; cat "$workdir/same.log"; exit 1
 fi
 
 wait "$holder_pid" || { cat "$workdir/holder.log"; exit 1; }
@@ -127,4 +126,4 @@ SELECT public.scheduling_save_availability_batch(
  gen_random_uuid());
 COMMIT;
 SQL
-echo 'Olivia PR4B-A concurrent two-session source locking: same café serialized, other café progressed'
+echo 'Olivia PR4B-A concurrent sessions: same café rejected safely, other café progressed, retry succeeded'
