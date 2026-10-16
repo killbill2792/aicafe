@@ -563,6 +563,26 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(forged.reply.evidence).toEqual([]);
     expect(forged.usage.modelCallCount).toBe(3);
   });
+  it("preserves a content observation fingerprint without inventing a DB revision",()=>{
+    const clause="Sophie works 45 extra minutes";
+    const original=result(wageInput,workers);
+    const hashed={...original,provenance:{
+      ...original.provenance,observedContentHash:"sha256:"+"a".repeat(64)}};
+    const make=(resultEnvelope:unknown)=>[{
+      clause,capabilityId:"p3.labor.employee_wages.v1",
+      status:"partial" as const,result:resultEnvelope,reason:null,
+    }];
+    const projection=projectP1Evidence(
+      make(hashed),identity.businessId,clause);
+    expect(projection.operands).toHaveLength(1);
+    expect(projection.operands[0]).toMatchObject({
+      sourceRevision:null,observedContentHash:"sha256:"+"a".repeat(64),
+      status:"partial",evidenceStatus:"unverified",
+    });
+    expect(projectP1Evidence(make({...hashed,provenance:{
+      ...hashed.provenance,observedContentHash:"forged-revision"}}),
+      identity.businessId,clause).operands).toHaveLength(0);
+  });
   it("discards a repeated canonical handle when its readings conflict within one turn",()=>{
     const clauses=["Sophie works 45 additional minutes","Sophie works 20 additional minutes"];
     const sameResult=result(wageInput,workers);
