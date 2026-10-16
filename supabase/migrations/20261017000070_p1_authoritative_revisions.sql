@@ -171,6 +171,15 @@ SET search_path = pg_catalog, public AS $$
            b.payroll_tax_rate_source
     FROM public.businesses b
     WHERE b.id=p_business_id AND b.is_demo=false
+      -- Legacy corruption must not project another tenant's ingredient ID
+      -- through an owner-visible recipe. Fail the whole snapshot closed;
+      -- never repair or silently omit an invalid recipe link.
+      AND NOT EXISTS (
+        SELECT 1 FROM public.recipe_lines rl
+        JOIN public.menu_items mi ON mi.id=rl.menu_item_id
+        LEFT JOIN public.ingredients ri ON ri.id=rl.ingredient_id
+        WHERE mi.business_id=b.id AND ri.business_id IS DISTINCT FROM b.id
+      )
       AND EXISTS (
         SELECT 1 FROM public.memberships m
         WHERE m.business_id=b.id AND m.user_id=auth.uid()
@@ -200,6 +209,8 @@ SET search_path = pg_catalog, public AS $$
         (SELECT rl.menu_item_id,rl.ingredient_id,rl.quantity
          FROM public.recipe_lines rl JOIN public.menu_items mi
            ON mi.id=rl.menu_item_id
+         JOIN public.ingredients ri ON ri.id=rl.ingredient_id
+           AND ri.business_id=p_business_id
          WHERE mi.business_id=p_business_id
          ORDER BY rl.menu_item_id,rl.ingredient_id LIMIT 501) q) AS recipes,
       (SELECT jsonb_agg(to_jsonb(q)) FROM
