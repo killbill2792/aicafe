@@ -10,18 +10,31 @@ import {
 /** Six-mode P2 registry's concrete P3 simulation, not an independent executor.
  * Source operands MUST already be read, validated and bound to selected café.
  */
-export const simulationOutputSchema=z.strictObject({
-  status:z.enum(["conditional","partial","unavailable"]),
+const common={
   capabilityId:z.literal(EXPRESSION_ID),version:z.literal(1),
-  mode:z.literal("simulate"),proposal:z.null(),
-  value:z.number().finite().safe().nullable(),unit:unit.nullable(),
+  mode:z.literal("simulate"),proposal:z.null(),executedEffects:z.literal(0),
+};
+const trace=z.array(z.string().min(1).max(200)).max(30);
+const assumptions=z.array(z.string().max(300)).max(30);
+const sources=z.array(z.string().min(1).max(120)).max(12);
+const missing=z.array(z.string().max(300)).max(30);
+const zero=z.array(z.never()).length(0);
+const successful={
+  ...common,value:z.number().finite().safe(),unit,
   currency:z.literal("USD").nullable(),
-  formula:z.array(z.string().min(1).max(200)).max(30),
-  assumptions:z.array(z.string().max(300)).max(30),
-  sourceHandles:z.array(z.string().min(1).max(120)).max(12),
-  missingInputs:z.array(z.string().max(300)).max(30),
-  reason:z.string().max(200).nullable(),executedEffects:z.literal(0),
-});
+  formula:trace,assumptions,sourceHandles:sources,
+};
+export const simulationOutputSchema=z.discriminatedUnion("status",[
+  z.strictObject({...successful,status:z.literal("conditional"),
+    missingInputs:zero,reason:z.null()}),
+  z.strictObject({...successful,status:z.literal("partial"),
+    missingInputs:missing.min(1),reason:z.string().min(1).max(200)}),
+  z.strictObject({...common,status:z.literal("unavailable"),
+    value:z.null(),unit:z.null(),currency:z.null(),formula:zero,
+    assumptions:zero,sourceHandles:zero,missingInputs:zero,
+    reason:z.string().min(1).max(200)}),
+]);
+
 const trustedContextSchema=z.strictObject({
   businessId:z.string().min(1).max(120),
   locationId:z.string().min(1).max(120).nullable(),
