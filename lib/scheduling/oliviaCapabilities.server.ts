@@ -88,11 +88,15 @@ async function readAvailability(
   // Even the optional employee lookup uses the authenticated café; a forged
   // employee ID cannot authorize or locate another tenant's record.
   let query=owner.supabase.from("employees")
-    .select("id,display_name,active").eq("business_id",owner.businessId);
+    .select("id,display_name,active",{count:"exact"}).eq("business_id",owner.businessId);
   if(input.employeeId)query=query.eq("id",input.employeeId);
-  const {data:staff,error:staffError}=await query.order("id").limit(501);
-  if(staffError || !staff || staff.length>500)
-    return fail(capability,"capacity_exceeded");
+  const {data:staff,error:staffError,count}=await query.order("id").limit(501);
+  if(staffError || !staff || count===null)
+    return fail(capability,"storage_unavailable");
+  if(count>500)return fail(capability,"capacity_exceeded");
+  // Supabase deployments can cap PostgREST result pages below 501 rows.
+  // A truncated staff roster must never masquerade as complete availability.
+  if(staff.length!==count)return fail(capability,"storage_unavailable");
   if(input.employeeId && staff.length!==1)return fail(capability,"not_found");
   const ids=new Set<string>();
   for(const employee of staff){
@@ -117,6 +121,13 @@ async function readAvailability(
     if(!Array.isArray(raw) || raw.length>5000)
       return fail(capability,"capacity_exceeded");
     for(const value of raw){
+      // readSchedulingFoundation is independently authenticated; reject
+      // source records from any changed/mismatching tenant before projecting
+      // their fields (which intentionally omit business_id).
+      if(!value || typeof value!=="object" ||
+         !("business_id" in value) ||
+         (value as {business_id:unknown}).business_id!==owner.businessId)
+        return fail(capability,"invalid_record");
       const parsed=rowTypes[kind].safeParse(value);
       if(!parsed.success)return fail(capability,"invalid_record");
       const id=parsed.data.employee_id;
@@ -135,14 +146,23 @@ async function readAvailability(
     const id=employee.id as string;
     const recurring=at("availability_rule",id) as Array<z.infer<typeof oliviaStoredSchemas.recurring>>;
     const exceptions=at("availability_exception",id) as Array<z.infer<typeof oliviaStoredSchemas.exception>>;
-    const confirmed=recurring.some(r=>r.confirmation==="owner_confirmed") ||
+    const hasConfirmedPositive=recurring.some(r=>r.confirmation==="owner_confirmed") ||
       exceptions.some(e=>e.confirmation==="owner_confirmed" &&
         (e.exception_type==="replace_day"||e.exception_type==="add_available"));
+    const hasConfirmedUnavailable=exceptions.some(e=>
+      e.confirmation==="owner_confirmed" &&
+      (e.exception_type==="unavailable"||e.exception_type==="approved_leave"));
     const hasUnconfirmed=recurring.some(r=>r.confirmation==="unconfirmed") ||
       exceptions.some(e=>e.confirmation==="unconfirmed");
+    // This is an evidence-level summary, NOT a per-day availability decision.
+    // A confirmed leave still overrides a recurring window on that date in PR2.
+    const state=!employee.active || (!hasConfirmedPositive && hasConfirmedUnavailable)
+      ? "unavailable" as const
+      : hasConfirmedPositive?"confirmed" as const
+      : hasUnconfirmed?"unconfirmed" as const:"missing" as const;
     return {employeeId:id,displayName:employee.display_name as string,
       active:employee.active as boolean,
-      state:confirmed?"confirmed" as const:hasUnconfirmed?"unconfirmed" as const:"missing" as const,
+      state,
       recurring,exceptions,
       hourLimits:at("preferences",id),
       preferences:at("preference_window",id),
@@ -212,7 +232,12 @@ async function readHistory(
     if(seen.has(row.revision))return fail(capability,"invalid_record");
     seen.add(row.revision);
   }
-  if((history.currentRevision===0 && history.revisions.length!==0) ||
+  // Draft revisions are created consecutively and are immutable. A response
+  // missing any intermediate version is incomplete, even if it contains HEAD.
+  // This also detects silent PostgREST pagination truncation in PR3's reader.
+  if(history.revisions.length!==history.currentRevision ||
+     [...seen].some(v=>v<1 || v>history.currentRevision) ||
+     (history.currentRevision===0 && history.revisions.length!==0) ||
      (history.publishedRevision!==null &&
        history.publishedRevision>history.currentRevision) ||
      (history.currentRevision>0 && !seen.has(history.currentRevision)) ||
