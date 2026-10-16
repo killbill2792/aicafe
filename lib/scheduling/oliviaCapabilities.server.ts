@@ -218,6 +218,29 @@ async function readPreview(
   // capability-capacity case, not corrupt data.
   const parsedPlan=oliviaOverflowPlanSchema.safeParse(preview.plan);
   if(!parsedPlan.success)return fail(capability,"invalid_record");
+  // PR2 witnesses only claim feasibility if a returned best scenario fully
+  // satisfies hard constraints and coverage. Reject forged provider outcomes.
+  const p=parsedPlan.data;
+  const best=p.best;
+  const bestPresent=best!==null && p.scenarios.some(s=>
+    JSON.stringify(s)===JSON.stringify(best));
+  const feasible=!!best && best.completeCoverage && best.hardConstraintsSatisfied;
+  const statusConsistent=(
+    (p.status==="feasible" && feasible &&
+      p.proof==="complete_candidate_solution") ||
+    (p.status==="infeasible" && !feasible &&
+      p.proof==="required_slot_has_no_eligible_worker") ||
+    (p.status==="unproven" && !feasible &&
+      (p.proof==="search_budget_exhausted" ||
+       p.proof==="candidate_constraints_unresolved")));
+  if((best!==null && !bestPresent) ||
+     (best===null && p.scenarios.length!==0) ||
+     !statusConsistent)return fail(capability,"invalid_record");
+  // Validate source tokens BEFORE the client's expected token comparisons:
+  // invalid provider evidence must never be presented as a stale source.
+  if(!z.string().regex(/^[a-f0-9]{64}$/).safeParse(preview.sourceDigest).success ||
+     !z.number().int().min(0).max(500).safeParse(preview.previewRevision).success)
+    return fail(capability,"invalid_record");
   const oversized=(scenario:{
     shifts:readonly unknown[];gaps:readonly unknown[];
   })=>scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS ||
