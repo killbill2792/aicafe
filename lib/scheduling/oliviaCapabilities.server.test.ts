@@ -42,7 +42,7 @@ const scenario={
     qualificationCode:"barista",missingHeadcount:1,reason:"qualification_missing"}],
   completeCoverage:false,hardConstraintsSatisfied:true,ownerMinutes:0,
   cost:{cashWagesCents:null,allocatedSalaryCents:null,loadedPayrollCents:null,
-    ownerOpportunityCents:null,ownerMinutes:0,costState:"unavailable",
+    ownerOpportunityCents:0,ownerMinutes:0,costState:"unavailable",
     missingWageEmployeeIds:[employeeId]},
   preferencePenalty:0,exploredNodes:100,legalReview:"unverified_profile",
 };
@@ -798,6 +798,38 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:true,plan:{best:{cost:{costState:"estimate",
         allocatedSalaryCents:200}}}});
+  });
+  it("rejects success previews containing setup blockers instead of implying readiness",async()=>{
+    m.preview.mockResolvedValueOnce({ok:true,plan,
+      notices:[],blockers:[{code:"no_coverage"}],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("preserves canonical zero owner opportunity and rejects invented owner costs",async()=>{
+    for(const ownerOpportunityCents of [null,1]){
+      const mutated={...scenario,cost:{...scenario.cost,ownerOpportunityCents}};
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[mutated],best:mutated},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+        sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:true,plan:{best:{cost:{ownerOpportunityCents:0}}}});
+  });
+  it("rejects uncovered periods reporting zero missing headcount",async()=>{
+    const mutated={...scenario,gaps:[{
+      ...scenario.gaps[0],missingHeadcount:0,
+    }]};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[mutated],best:mutated},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
