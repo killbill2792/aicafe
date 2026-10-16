@@ -21,6 +21,32 @@ const text=(v:unknown)=>typeof v==="string"?v:"";
 function rows(v:unknown):Record<string,unknown>[] {
   return Array.isArray(v)?v.filter(isObject):[];
 }
+/** Aggregate only schema-validated daily rows with unique dates. These are
+ * observed-row sums, never a claim that every day in a requested period exists.
+ * The P1 coverage/quality and the missing source revision remain partial.
+ * No model-authored field path, SQL or aggregation expression is accepted.
+ */
+function dailySums(value:unknown,fields:readonly {
+  field:string;unit:Operand["unit"];
+}[]):Extracted[]{
+  if(!Array.isArray(value)||value.length===0||value.length>366)return [];
+  const seen=new Set<string>(),totals=new Map<string,number>();
+  for(const field of fields)totals.set(field.field,0);
+  for(const row of value){
+    if(!isObject(row)||typeof row.date!=="string"||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(row.date)||seen.has(row.date))return [];
+    seen.add(row.date);
+    for(const field of fields){
+      const amount=row[field.field];
+      if(!integer(amount))return [];
+      const sum=totals.get(field.field)!+amount;
+      if(!integer(sum))return [];
+      totals.set(field.field,sum);
+    }
+  }
+  return fields.map(field=>({key:"aggregate",name:"daily rows",
+    field:field.field,value:totals.get(field.field)!,unit:field.unit}));
+}
 /** Domain-owned allowlisted value/units, not model-requested arbitrary object paths. */
 export const extractors:Partial<Record<SupportedId,Extractor>>={
   "menu.catalog":v=>rows(v).flatMap(row=>
@@ -32,6 +58,35 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
     integer(row.defaultHourlyWageCents)&&row.defaultHourlyWageCents>0?
       [{key:text(row.id),name:text(row.name),field:"defaultHourlyWageCents",
         value:row.defaultHourlyWageCents,unit:"USD_cents_per_hour" as const}]:[]),
+  // Domain-owned projections are registered against existing canonical
+  // schemas. They generalize across questions; no owner-phrase routing exists.
+  "sales.item_units":v=>rows(v).flatMap(row=>
+    integer(row.units)&&row.units>=0&&text(row.id)&&text(row.name)?
+      [{key:text(row.id),name:text(row.name),field:"units",
+        value:row.units,unit:"item" as const}]:[]),
+  "sales.daily":v=>dailySums(v,[
+    {field:"netSalesCents",unit:"USD_cents"},
+    {field:"ingredientsCents",unit:"USD_cents"},
+    {field:"cardFeesCents",unit:"USD_cents"},
+  ]),
+  "labor.daily_costs":v=>dailySums(v,[
+    {field:"wagesCents",unit:"USD_cents"},
+    {field:"staffTaxCents",unit:"USD_cents"},
+    {field:"loadedStaffCostCents",unit:"USD_cents"},
+  ]),
+  "money.business_costs":v=>{
+    if(!isObject(v)||!integer(v.knownTotalCents)||!isObject(v.components))
+      return [];
+    const fields=["ingredientsCents","loadedStaffCents",
+      "cardFeesCents","runningCostsCents"] as const;
+    if(fields.some(f=>!integer(v.components[f])))return [];
+    return [
+      {key:"aggregate",name:"known business costs",
+        field:"knownTotalCents",value:v.knownTotalCents,unit:"USD_cents" as const},
+      ...fields.map(f=>({key:"aggregate",name:"known cost component",
+        field:f,value:v.components[f] as number,unit:"USD_cents" as const})),
+    ];
+  },
   "menu.product_economics":v=>{
     if(!isObject(v))return [];
     const out:Extracted[]=[];
@@ -101,7 +156,8 @@ export function projectP1Evidence(
         purposes:[...purposePolicies[key]],sensitivity:key.startsWith("labor.")?"staff":
           key.startsWith("money.")||key.startsWith("sales.")?"financial":"normal"});
     const named=valuesForKey.map(v=>({id:v.key,name:v.name}));
-    const plural=key.startsWith("menu.")||key==="supplies.quotes";
+    const plural=key.startsWith("menu.")||key==="supplies.quotes"||
+      key==="sales.item_units";
     // Each read result is scoped to its OWN audited semantic clause. Looking
     // for names across the entire turn could attach another worker's wage to
     // this clause, even with an authentic and correct P1 source record.
@@ -118,7 +174,8 @@ export function projectP1Evidence(
       if(operands.length>=12)break;
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
-      if(leaf.field!=="value"&&!namedCurrent.has(leaf.key)&&
+      if(leaf.field!=="value"&&leaf.key!=="aggregate"&&
+        !namedCurrent.has(leaf.key)&&
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
