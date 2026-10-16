@@ -7,6 +7,7 @@ const m=vi.hoisted(()=>({
   calls:[] as string[],
   failure:null as string|null,
   staffRowCap:null as number|null,
+  assignmentRowCap:null as number|null,
 }));
 vi.mock("server-only",()=>({}));
 vi.mock("./foundation.server",()=>({
@@ -85,7 +86,7 @@ function client(){
           if(m.failure===table)throw new Error("provider details should remain private");
           const rows=(table==="employees"?m.staff:m.assignments).filter(r=>
             constraints.every(([field,value])=>r[field]===value));
-          const rowCap=table==="employees"?m.staffRowCap??max:max;
+          const rowCap=table==="employees"?m.staffRowCap??max:m.assignmentRowCap??max;
           return {data:rows.slice(0,Math.min(max,rowCap)),error:null,count:rows.length};
         },
       };
@@ -97,7 +98,7 @@ function client(){
 describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
   beforeEach(()=>{
     vi.resetAllMocks();
-    m.calls=[];m.failure=null;m.staffRowCap=null;
+    m.calls=[];m.failure=null;m.staffRowCap=null;m.assignmentRowCap=null;
     m.staff=[{id:employeeId,display_name:"Asha",active:true,business_id:businessId}];
     m.assignments=[{employee_id:employeeId,location_id:locationId,
       business_id:businessId,plan_revision_id:revisionId,
@@ -342,6 +343,17 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
     m.revision.mockResolvedValueOnce({ok:true,revision:1,status:"published",
       currentRevision:2,publishedRevision:1,scenario,sourceDigest:digest});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects truncated persisted assignments even if returned shifts match the scenario",async()=>{
+    m.assignments.push({
+      ...m.assignments[0],employee_id:uid(2),
+    });
+    m.assignmentRowCap=1;
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"storage_unavailable"}});
+    m.assignmentRowCap=null;
     expect(await executeOliviaReadCapability(revision()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
