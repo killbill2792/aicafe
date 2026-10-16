@@ -1,6 +1,7 @@
 import "server-only";
 import { outputFor } from "@/lib/metrics/p1Readers.server";
 import { values } from "@/lib/metrics/p1Catalog";
+import { isWholeNamedEntity } from "./entityMatch";
 import type { ShadowEvidence,ShadowRegistry } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { TrustedReadScope,ResultStatus } from "@/lib/ai/supervisor/p2/registry";
 
@@ -13,7 +14,7 @@ export async function enrichResolvedProductEconomics(input:{
   evidence:readonly ShadowEvidence[];remainingReads:number;
 }):Promise<{evidence:ShadowEvidence[];readCount:number}>{
   const result:ShadowEvidence[]=[...input.evidence];
-  const names=input.goal.normalize("NFKC").toLocaleLowerCase();
+  const names=input.goal;
   const chosen=new Set<string>();
   let readCount=0;
   for(const item of input.evidence){
@@ -26,7 +27,7 @@ export async function enrichResolvedProductEconomics(input:{
       if(readCount>=input.remainingReads)break;
       if(!product.active||!product.name||!product.id||
         product.id.length>120||chosen.has(product.id)||
-        !names.includes(product.name.normalize("NFKC").toLocaleLowerCase()))
+        !isWholeNamedEntity(names,product.name,catalog.data))
         continue;
       chosen.add(product.id);
       const read=await input.registry.invoke(input.scope,
