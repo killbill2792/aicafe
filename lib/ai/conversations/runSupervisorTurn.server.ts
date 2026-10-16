@@ -307,12 +307,27 @@ export async function runSupervisorTurn(input: {
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
     let firstP3ModelDenied=false;
+    let firstDeniedStatus:number|undefined;
+    let firstDeniedCode:string|undefined;
     const trackedTransport:Transport=async(url,init)=>{
       attemptedModels++;
       const response=await transport(url,init);
-      if(attemptedModels===1 && response.status===403)firstP3ModelDenied=true;
+      if(attemptedModels===1 && response.status===403){
+        firstP3ModelDenied=true;
+        firstDeniedStatus=response.status;
+      }
       try{
         const json:unknown=await response.clone().json();
+        const maybeError=json&&typeof json==="object"&&!Array.isArray(json)?
+          (json as {error?:{code?:unknown}}).error:null;
+        const errorCode=typeof maybeError?.code==="string"?maybeError.code:null;
+        if(attemptedModels===1 &&
+          (response.status===403 || ([400,404].includes(response.status) &&
+            errorCode!==null && MODEL_ACCESS_CODES.has(errorCode)))){
+          firstP3ModelDenied=true;
+          firstDeniedStatus=response.status;
+          firstDeniedCode=errorCode??undefined;
+        }
         const billed=(json && typeof json==="object"?
           (json as {usage?:{input_tokens?:unknown;output_tokens?:unknown}}).usage:null);
         priorUsage.inputTokens+=integer(billed?.input_tokens);
@@ -353,7 +368,8 @@ export async function runSupervisorTurn(input: {
         fallbackModel && fallbackModel!==model){
         p3AccessFallback=true;
         input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,
-          toModel:fallbackModel,triggerHttpStatus:403,
+          toModel:fallbackModel,triggerHttpStatus:firstDeniedStatus,
+          triggerProviderErrorCode:firstDeniedCode,
           modelCallCount:priorUsage.modelCallCount,toolCallCount:0});
         model=fallbackModel;
       }
