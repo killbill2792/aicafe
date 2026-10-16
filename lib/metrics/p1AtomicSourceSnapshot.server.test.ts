@@ -60,6 +60,11 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       expect(atomicP1SourceSchema.safeParse(data).success).toBe(false);
     }
   });
+  it("treats successful NULL snapshots as integrity failures, never legacy eligibility",async()=>{
+    connect.mockResolvedValueOnce(fakeClient(null));
+    expect(await readAuthorizedAtomicP1SourceSnapshot())
+      .toMatchObject({status:"unavailable",reason:"invalid_source_snapshot"});
+  });
   it("treats a missing RPC or authorization failure as unavailable",async()=>{
     connect.mockResolvedValueOnce(fakeClient(null,{message:"migration not applied"}));
     expect(await readAuthorizedAtomicP1SourceSnapshot())
