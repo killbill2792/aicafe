@@ -262,12 +262,14 @@ function completeHistory(history:{
   }
   // All immutable revisions must be present; an official published pointer
   // only exists when its exact revision is recorded as published.
+  const published=history.revisions.filter(x=>x.status==="published");
   return history.revisions.length===history.currentRevision &&
     [...seen].every(v=>v>=1 && v<=history.currentRevision) &&
-    (history.publishedRevision===null ||
-      (history.publishedRevision<=history.currentRevision &&
-       history.revisions.some(x=>x.revision===history.publishedRevision &&
-         x.status==="published"))) &&
+    (history.publishedRevision===null
+      ? published.length===0
+      : (history.publishedRevision<=history.currentRevision &&
+         published.length===1 &&
+         published[0].revision===history.publishedRevision)) &&
     (history.currentRevision===0 || seen.has(history.currentRevision));
 }
 async function readHistory(
