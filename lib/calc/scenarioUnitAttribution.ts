@@ -88,11 +88,13 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string)
       end<text.length&&(word.test(text[end])||/[.,\u066b\u066c]/iu.test(text[end])))continue;
     const rawBefore=text.slice(Math.max(0,start-80),start);
     const previous=(rawBefore.split(/\d+(?:\.\d+)?/u).at(-1)??"")
-      .split(/\b(?:and|or|but|plus|y|e|pero)\b|[;,.،!؟]/iu).at(-1)??"";
+      // Arabic و is a conjunction when separated as its own word; never
+      // split embedded letters in a longer Arabic word.
+      .split(/\b(?:and|or|but|plus|y|e|pero)\b|\s+و\s+|[;,.،!؟]/iu).at(-1)??"";
     const after=text.slice(end,end+65).split(/(?:\b(?:and|but|then|y|pero)\b|[;,.،!?؟]|\b\d+(?:\.\d+)?\b)/iu)[0]??"";
     // Never convert an owner-quoted non-USD amount into dollars.
     if(/[€£]\s*$/u.test(previous)||
-      /^\s*(?:euros?|pounds?|libras?|يورو|جنيه)/iu.test(after))return false;
+      /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after))return false;
     const phrase=(previous+" "+after).toLocaleLowerCase();
     const dimensions=new Set<string>();
     if(/(?:\b(?:per|por|each|every|لكل)\s*(?:paid\s*)?(?:hours?|hrs?|horas?|hora)\b|\bhourly\b|بالساعة|لكل\s*ساعة)/iu.test(phrase))
