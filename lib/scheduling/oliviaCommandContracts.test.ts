@@ -71,6 +71,39 @@ describe("Olivia PR4B-A strict scheduling commands",()=>{
       "requires_separate_authenticated_owner_action");
   });
 
+  it("clears old exception hours when replacing with an all-day absence",()=>{
+    const request=oliviaPrepareAvailabilitySchema.parse({
+      capability:"olivia.availability.prepare",version:1,changes:[{
+        kind:"availability_exception",employee:{employeeId:A},
+        locationId:null,scope:{local_date:"2026-10-21"},
+        operations:[{action:"replace",id:EXIST,expectedRevision:3,
+          data:{exception_type:"unavailable",overnight:false,source:"owner_direct"}}],
+      }],
+    });
+    const previous={...employees[0],recurring:[],exceptions:[{
+      id:EXIST,revision:3,employee_id:A,location_id:null,
+      local_date:"2026-10-21",exception_type:"hours_cap" as const,
+      start_local:"08:00",end_local:"16:00",overnight:false,
+      max_minutes:120,source:"owner_direct" as const,
+      confirmation:"owner_confirmed" as const,
+    }]};
+    const result=reconcileOliviaAvailability(request,[previous,employees[1]],A,TOKEN,uuid);
+    expect(result.ok).toBe(true);
+    if(!result.ok)return;
+    const data=result.proposal.batches[0].desired[0].data;
+    expect(data).toMatchObject({
+      exception_type:"unavailable",start_local:null,end_local:null,
+      max_minutes:null,confirmation:"owner_confirmed",
+    });
+    const unsafe=structuredClone(result.proposal);
+    delete (unsafe.batches[0].desired[0].data as {start_local?:string|null}).start_local;
+    expect(oliviaConfirmedCommitSchema.safeParse({
+      capability:"olivia.availability.commit",version:1,
+      proposal:unsafe,proposalDigest:oliviaProposalDigest(unsafe),
+      requestKey:uuid(),
+    }).success).toBe(false);
+  });
+
   it("rejects stale revisions, foreign employee IDs and ambiguous names",()=>{
     const stale=prepare();
     stale.changes[0].operations[0]={action:"remove",id:EXIST,expectedRevision:2};
