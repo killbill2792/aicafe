@@ -390,8 +390,13 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(p1Reads).toHaveBeenCalledWith(expect.anything(),expect.anything(),
       expect.objectContaining({id:"menu.product_economics",productId:"latte"}));
   });
-  it("preserves configured model-access fallback after a rejected P3 first audit",async()=>{
+  it("preserves configured access fallback for 403 and recognized 400/404 errors",async()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_FALLBACK_MODEL","gpt-4.1-mini");
+    for(const denied of [
+      {status:403,code:"project_not_allowed"},
+      {status:400,code:"model_not_found"},
+      {status:404,code:"model_not_available"},
+    ]){
     const seen:Array<Record<string,unknown>>=[];
     const goal={domain:"monthly_bills",period:"month_to_date",from:null,to:null,
       comparison_period:null,comparison_from:null,comparison_to:null};
@@ -409,8 +414,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       const request=JSON.parse(String(init.body)) as Record<string,unknown>;
       seen.push(request);
       if(seen.length===1)return new Response(JSON.stringify({error:{
-        type:"invalid_request_error",code:"project_not_allowed",
-      }}),{status:403});
+        type:"invalid_request_error",code:denied.code,
+      }}),{status:denied.status});
       if((request.text as {format?:{name?:string}})?.format?.name==="supervisor_scope_audit")
         return providerReply(body({complete:true,ambiguous:false,goals:[goal]}));
       if(request.tool_choice==="required")return providerReply([
@@ -442,6 +447,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(result.usage.modelCallCount).toBe(4);
     expect(result.usage.toolCallCount).toBe(1);
     expect(p1Reads).not.toHaveBeenCalled();
+    }
   });
   it("COMPOSE-02/08: renders independently audited Spanish and Arabic scenario results",async()=>{
     for(const language of [
