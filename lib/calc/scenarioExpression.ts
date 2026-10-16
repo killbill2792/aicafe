@@ -161,36 +161,6 @@ function attributed(message:string,quoted:string):boolean{
   const values:string[]=normalizeScenarioNumber(message).match(/-?\d+(?:\.\d+)*/g)??[];
   return values.includes(normalized);
 }
-/** The model cannot re-label an owner-mentioned quantity as a different unit.
- * Test explicit local unit markers surrounding the precise quoted number.
- * Unknown/ambiguous dimensioned mentions fail closed.
- */
-function attributedUnit(message:string,quoted:string,unit:Unit):boolean{
-  const owner=normalizeScenarioNumber(message).toLocaleLowerCase();
-  const number=normalizeScenarioNumber(quoted);
-  for(const m of owner.matchAll(/-?\d+(?:\.\d+)*/g)){
-    if(m[0]!==number)continue;
-    const start=m.index,end=start+m[0].length;
-    const nearby=owner.slice(Math.max(0,start-15),start)+" "+
-      owner.slice(end,Math.min(owner.length,end+26));
-    const minute=/\b(?:minutes?|mins?|minutos?)\b|(?:دقيقة|دقائق)/u.test(nearby);
-    const hour=/\b(?:hours?|hrs?|horas?)\b|(?:ساعة|ساعات)/u.test(nearby);
-    const gallon=/\b(?:gallons?|galones?)\b|(?:غالون|غالونات)/u.test(nearby);
-    const ounce=/\b(?:ounces?|oz)\b|(?:onzas?|أونصات?)/u.test(nearby);
-    const money=/[$¢]|\b(?:usd|dollars?|dólares?|cents?|centavos?)\b|(?:دولار|سنت)/u.test(nearby);
-    const percent=/%|٪|\b(?:percent|percentage|por ciento)\b|(?:بالمئة|بالمائة)/u.test(nearby);
-    if(unit.startsWith("USD_")&&money)return true;
-    if(unit==="ratio_bps"&&percent)return true;
-    if(unit==="minute"&&minute&&!hour)return true;
-    if(unit==="hour"&&hour&&!minute)return true;
-    if(unit==="US_gallon"&&gallon)return true;
-    if(unit==="US_fl_oz"&&ounce)return true;
-    if((unit==="item"||unit==="scalar")&&
-      !minute&&!hour&&!gallon&&!ounce&&!money&&!percent)return true;
-  }
-  return false;
-}
-
 /** A cent-denominated interpretation requires the owner's own nearby word
  * or symbol; the model is never allowed to reinterpret stated dollars as cents.
  */
@@ -280,10 +250,8 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else if(node.op==="hypothetical"){
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
-        if(!attributedUnit(context.ownerMessage,node.quotedNumber,node.unit))
-          throw new Error("hypothetical_unit_mismatch");
         if(!ownerQuotedUnitMatches(context.ownerMessage,node.quotedNumber,node.unit))
-          throw new Error("unattributed_hypothetical_unit");
+          throw new Error("hypothetical_unit_mismatch");
         const isMoney=node.unit.startsWith("USD_");
         const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber);
         if((!isMoney&&node.quotedDenomination!==undefined)||
