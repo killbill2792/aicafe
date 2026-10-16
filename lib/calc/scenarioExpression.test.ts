@@ -146,6 +146,21 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
     expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
       scope("Pay $20 per hour"))).toMatchObject({status:"conditional",value:2000});
   });
+  it("rejects foreign dollar prefixes and ISO currency codes instead of assuming USD",()=>{
+    for(const text of [
+      "Pay MX$20 per hour","Pay AR$20 per hour","Pay $20 MXN per hour",
+      "Pay $20 ARS per hour","Pay $20 BRL per hour","Pay $20 (CAD) per hour",
+      "Pay 20 Mexican pesos per hour","Paga $20 MXN por hora",
+      "ادفع $20 MXN لكل ساعة",
+    ]){
+      expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+        scope(text))).toMatchObject({status:"unavailable",
+          reason:"hypothetical_unit_mismatch"});
+    }
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),
+      scope("Pay US$20 per hour"))).toMatchObject({
+        status:"conditional",value:2000,unit:"USD_cents_per_hour"});
+  });
   it("attributes explicit scalar division in English, Spanish and Arabic",()=>{
     for(const words of ["Divide the recorded cost by 2",
       "Dividir el costo entre 2"]){
