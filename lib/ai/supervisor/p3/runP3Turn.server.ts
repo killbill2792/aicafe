@@ -221,7 +221,8 @@ export async function tryP3SupervisorReadOnly(input:{
     });
     const checked=simulationOutputSchema.safeParse(simulated);
     if(!checked.success||checked.data.status==="unavailable")return null;
-    outcomes.push(checked.data as ExpressionOutcome);
+    const outcome=checked.data as ExpressionOutcome;
+    outcomes.push(outcome);
     calculationInputs.push({
       plan:plan.data,
       // Actual source values and revisions enter the opaque digest; no private
