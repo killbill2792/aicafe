@@ -1,7 +1,7 @@
 import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type { SupportedId } from "@/lib/metrics/p1Catalog";
 import type { Operand } from "./expression";
-import { evaluateRecipeCost } from "@/lib/calc/ingredients";
+import { evaluateRecipeCost,ingredientUsdUsGallonCents } from "@/lib/calc/ingredients";
 import { roundHalfUpToCent } from "@/lib/calc/money";
 import { staffCostLoadedCents } from "@/lib/calc/staff";
 
@@ -118,6 +118,27 @@ export function extractAtomicSnapshot(
         key:row.id,name:row.name,field:"priceCents",
         value:row.price_cents!,unit:"USD_cents_per_item" as const,
       })),["menu_price_coverage_not_proven"]);
+    case "menu.ingredients":{
+      if(snapshot.truncated.ingredients||snapshot.truncated.ingredientPrices)
+        return blocked("snapshot_ingredient_prices_truncated");
+      const leaves:SnapshotLeaf[]=[];
+      for(const ingredient of snapshot.sources.ingredients){
+        // Mass and count units cannot be converted to liquid US gallons.
+        if(ingredient.base_unit!=="ml")continue;
+        const candidates=snapshot.sources.ingredientPrices.filter(p=>
+          p.ingredient_id===ingredient.id&&p.effective_from<=asOf)
+          .sort((a,b)=>b.effective_from.localeCompare(a.effective_from));
+        if(!candidates.length||candidates.length>1&&
+          candidates[0].effective_from===candidates[1].effective_from)continue;
+        const amount=ingredientUsdUsGallonCents(
+          candidates[0].cost_per_base_unit_micros);
+        if(amount===null||amount>1_000_000_000_000)continue;
+        leaves.push({key:ingredient.id,name:ingredient.name,
+          field:"pricePerGallon",value:amount,
+          unit:"USD_cents_per_US_gallon"});
+      }
+      return result(leaves,["ingredient_price_freshness_and_option_mix_unproven"]);
+    }
     case "menu.product_economics":
       return query.productId?product(snapshot,query.productId,asOf):
         blocked("missing_product_selector");
