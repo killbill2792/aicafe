@@ -204,8 +204,7 @@ export function projectP1Evidence(
     // The atomic branch uses the earlier authorized read ONLY as a typed
     // selector/purpose. No independent number, status or content hash enters
     // the final calculation. Unsupported atomic domains expose NO operands.
-    if(atomicSnapshot && (provenance.timezone!==atomicSnapshot.timezone||
-      provenance.asOf>new Date().toISOString().slice(0,10)))continue;
+    if(atomicSnapshot && provenance.timezone!==atomicSnapshot.timezone)continue;
     const snapshotValue=atomicSnapshot?extractAtomicSnapshot(key,atomicSnapshot,
       result.query,provenance.asOf):null;
     if(atomicSnapshot && !snapshotValue){
