@@ -348,8 +348,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
         ][step++]);
       });
       const output=await run(provider,request);
-      const planning=JSON.parse(((requests[2].input as Array<{content:string}>)[0]).content)
-        as {authorizedOperandChoices:Array<{entityName:string;matchedClause:string}>};
+      const planning=JSON.parse(((requests[2].input as Array<{content:string}>)[0]).content) as
+        {authorizedOperandChoices:Array<{entityName:string;matchedClause:string}>};
       expect(planning.authorizedOperandChoices.filter(c=>c.entityName==="Sophie")
         .every(c=>c.matchedClause===clauses[0])).toBe(true);
       expect(planning.authorizedOperandChoices.filter(c=>c.entityName==="Ahmed")
