@@ -280,6 +280,43 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
     ]));
   });
+  it("evaluates a pure percentage next to a separate café-backed product read",async()=>{
+    const cafeClause="Show my latte cost";
+    const pureClause="calculate 10% of $25";
+    const question=cafeClause+" and "+pureClause;
+    const readPlan={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"preauthorized_operands",description:"Source-backed latte ingredient cost",
+      nodes:[{op:"source",handle:"menu.product_economics:latte:ingredientsCentsToday"}]};
+    const purePlan={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Quoted owner-only 10% of 25 dollars",
+      nodes:[
+        {op:"hypothetical",quotedNumber:"25",value:2500,unit:"USD_cents",label:"quoted dollars"},
+        {op:"hypothetical",quotedNumber:"10",value:1000,unit:"ratio_bps",label:"quoted percent"},
+        {op:"multiply"},
+      ]};
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[cafeClause,pureClause]},
+      {complete:true,choices:[
+        {clause:cafeClause,capabilityId:"p3.menu.catalog.v1",
+          inputJson:JSON.stringify(menuInput),reason:null},
+        {clause:pureClause,capabilityId:null,inputJson:null,reason:"source_free"},
+      ]},
+      {complete:true,plans:[
+        {coveredClauses:[cafeClause],planJson:JSON.stringify(readPlan),reason:null},
+        {coveredClauses:[pureClause],planJson:JSON.stringify(purePlan),reason:null},
+      ]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:125}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("$2.50")}),
+    ]));
+    expect(output.reply.evidence).toHaveLength(1);
+    expect(output.usage.modelCallCount).toBe(3);
+    expect(p1Reads).toHaveBeenCalled();
+  });
   it("resolves a single owner-history product for a contextual follow-up",async()=>{
     const question="Sell 30 more drinks and Sophie works 45 more minutes";
     const phrases=["Sell 30 more drinks","Sophie works 45 more minutes"];
