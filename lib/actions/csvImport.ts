@@ -150,10 +150,8 @@ async function findActiveJobId(supabase: SupabaseServerClient, businessId: strin
   return data?.id;
 }
 
-/** Writes the one `uploads` history row for a job: inserts it the first time (and remembers its id
- * on the job via `upload_id`), then UPDATEs that same row on every later call — a wage resolved, a
- * catalog match backfilled, or any other re-finalize must change what Upload History shows, not
- * leave it frozen at the first pending snapshot. */
+/** The DB atomically updates both the job status and its Upload History row. A failed
+ * insert/link/update throws so the caller cannot report successful completion with stale history. */
 async function upsertUploadHistory(
   supabase: SupabaseServerClient,
   job: { id: string; business_id: string; upload_id: string | null },
@@ -161,12 +159,14 @@ async function upsertUploadHistory(
   status: "done" | "needs_review",
   summary: SalesImportSummary | LaborImportSummary,
 ): Promise<void> {
-  if (job.upload_id) {
-    await supabase.from("uploads").update({ status, summary }).eq("id", job.upload_id);
-    return;
-  }
-  const { data: upload } = await supabase.from("uploads").insert({ business_id: job.business_id, kind: uploadKind, status, summary }).select("id").single();
-  if (upload) await supabase.from("csv_import_jobs").update({ upload_id: upload.id }).eq("id", job.id);
+  const jobStatus = status === "done" ? "done" : uploadKind === "labor_csv" ? "needs_wage_review" : "needs_review";
+  const { error } = await supabase.rpc("csv_complete_import_with_history", {
+    p_job_id: job.id,
+    p_upload_kind: uploadKind,
+    p_job_status: jobStatus,
+    p_summary: summary,
+  });
+  if (error) throw error;
 }
 
 /** Resolves each distinct item name to a menu_item (lib/pos/catalogMatching.ts, unchanged), run
@@ -241,7 +241,6 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
   const unmatchedItems = summary.unmatchedItems.filter((u) => !resolvedNames.has(u.name));
   const updatedSummary: SalesImportSummary = { ...summary, unmatchedItems };
   const finalStatus = unmatchedItems.length === 0 && summary.skippedToastConflictDates.length === 0 && summary.rejectedRows.length === 0 ? "done" : "needs_review";
-  await supabase.from("csv_import_jobs").update({ status: finalStatus, summary: updatedSummary, updated_at: new Date().toISOString() }).eq("id", job.id);
   const { data: fullJob } = await supabase.from("csv_import_jobs").select("id, business_id, upload_id").eq("id", job.id).single();
   if (fullJob) await upsertUploadHistory(supabase, fullJob, "sales_csv", finalStatus, updatedSummary);
   revalidatePath("/menu");
@@ -414,8 +413,12 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
 
   const hasIssues = unmatchedItems.length > 0 || skippedToastConflictDates.length > 0 || rejectedRows.length > 0;
   const finalStatus = hasIssues ? "needs_review" : "done";
-  await supabase.from("csv_import_jobs").update({ status: finalStatus, summary, updated_at: new Date().toISOString() }).eq("id", jobId);
-  await upsertUploadHistory(supabase, job, "sales_csv", finalStatus, summary);
+  try {
+    await upsertUploadHistory(supabase, job, "sales_csv", finalStatus, summary);
+  } catch {
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", jobId).eq("business_id", businessId);
+    return err("finalize_failed");
+  }
 
   if (unmatchedItems.length > 0) {
     const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");
@@ -711,8 +714,12 @@ export async function finalizeLaborImportJob(jobId: string): Promise<{ ok: boole
 
   const hasIssues = pending.length > 0 || rejectedRows.length > 0;
   const finalStatus = hasIssues ? "needs_wage_review" : "done";
-  await supabase.from("csv_import_jobs").update({ status: finalStatus, summary, updated_at: new Date().toISOString() }).eq("id", jobId);
-  await upsertUploadHistory(supabase, job, "labor_csv", finalStatus === "needs_wage_review" ? "needs_review" : "done", summary);
+  try {
+    await upsertUploadHistory(supabase, job, "labor_csv", finalStatus === "needs_wage_review" ? "needs_review" : "done", summary);
+  } catch {
+    await supabase.from("csv_import_jobs").update({ status: "failed", updated_at: new Date().toISOString() }).eq("id", jobId).eq("business_id", businessId);
+    return err("finalize_failed");
+  }
 
   revalidatePath("/");
   revalidatePath("/money");
@@ -734,14 +741,17 @@ export async function resolveLaborImportWage(jobId: string, rowId: string, rawWa
   const hourlyWageCents = toCents(rawWage);
   if (!Number.isInteger(hourlyWageCents) || hourlyWageCents <= 0) return err("wage_invalid");
 
-  const { error: updateError } = await supabase
+  const { data: updated, error: updateError } = await supabase
     .from("csv_labor_import_rows")
     .update({ hourly_wage_cents: hourlyWageCents })
     .eq("id", rowId)
     .eq("job_id", jobId)
     .eq("business_id", businessId)
-    .eq("promoted", false);
-  if (updateError) return err("wage_update_failed");
+    .eq("promoted", false)
+    .select("id")
+    .maybeSingle();
+  // An ID from an old review must never succeed if its staged shift was moved or deleted.
+  if (updateError || !updated) return err("wage_update_failed");
 
   return finalizeLaborImportJob(jobId);
 }
