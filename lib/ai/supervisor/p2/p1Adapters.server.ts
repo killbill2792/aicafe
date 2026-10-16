@@ -3,6 +3,7 @@ import {
   executeP1AnalysisAuthorized, p1Analyses, validateP1Analyses,
 } from "@/lib/metrics/p1Analyses.server";
 import type { ReadRegistration } from "./registry";
+import { readers } from "@/lib/metrics/p1Catalog";
 
 /** Owner-facing purposes belong to the capability, not a Supervisor keyword router.
  * Adding a fifth registered domain does not modify orchestration or the model schema.
@@ -26,6 +27,7 @@ export function buildP1P2Registrations():readonly ReadRegistration[] {
     sourceIds:(Object.values(def.sourceRequirementsByPurpose)[0] as {
       inputs:Array<{metricIds:string[];entityReadIds:string[]}>;
     }).inputs.flatMap(source=>[...source.metricIds,...source.entityReadIds]),
+    canonicalReaderIds:[readers[def.boundCapabilityKey]],
     allowedPurposes:def.allowedPurposes,
     inputSchema:def.inputSchema,outputSchema:def.outputSchema,
     schemaContract:{...def.schemaContract,registrationId:def.id},

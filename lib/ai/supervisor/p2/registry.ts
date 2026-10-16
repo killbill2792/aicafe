@@ -23,6 +23,8 @@ type Limits = Readonly<{
 type Base<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> = {
   readonly id: string; readonly version: 1; readonly owner: string;
   readonly purpose: string; readonly sourceIds: readonly string[];
+  /** Exact canonical reader IDs permitted to attest this capability's source. */
+  readonly canonicalReaderIds: readonly string[];
   readonly allowedPurposes: readonly string[];
   readonly inputSchema: I; readonly outputSchema: O;
   readonly schemaContract: Readonly<{
@@ -88,6 +90,8 @@ function validateRegistration(def:P2Registration) {
   if(!/^[a-z][a-z0-9._-]{2,120}$/.test(def.id) || def.version!==1 ||
     !CAPABILITY_MODES.includes(def.mode) || !def.owner || !def.purpose ||
     !Array.isArray(def.sourceIds) || !def.sourceIds.length ||
+    !Array.isArray(def.canonicalReaderIds) || !def.canonicalReaderIds.length ||
+    def.canonicalReaderIds.some(id=>typeof id!=="string"||!id.trim()) ||
     !Array.isArray(def.allowedPurposes) || !def.allowedPurposes.length ||
     def.requiredRole!=="owner" || def.effectPolicy!=="deny" ||
     (def.mode==="read" && (def.availability!=="shadow" || typeof def.read!=="function")) ||
@@ -119,6 +123,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
   const manifest=Object.freeze([...byId.values()].map(def=>Object.freeze({
     id:def.id,version:def.version,mode:def.mode,owner:def.owner,
     purpose:def.purpose,sourceIds:[...def.sourceIds],
+    canonicalReaderIds:[...def.canonicalReaderIds],
     allowedPurposes:[...def.allowedPurposes],
     schemaContract:def.schemaContract,
     inputJsonSchema:z.toJSONSchema(def.inputSchema,{unrepresentable:"any",reused:"inline"}),
@@ -146,7 +151,8 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       catch{return unavailable("invalid_request");}
       if(bytes>def.budgets.maxInputBytes)return unavailable("input_limit");
       const input=def.inputSchema.safeParse(rawInput);
-      if(!input.success || !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
+      if(!input.success || discardedOutputKeys(rawInput,input.data) ||
+         !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
         return unavailable("invalid_request");
       const period=(input.data as {period?:{from:string;to:string}}).period;
       if(period && Number.isFinite(Date.parse(period.from)) && Number.isFinite(Date.parse(period.to)) &&
@@ -170,7 +176,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           return unavailable("invalid_result");
         const actual=validated.data as {
           status?:string;value?:unknown;reason?:unknown;
-          provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;asOf?:unknown};
+          provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;purpose?:unknown;asOf?:unknown};
           quality?:{missingInputs?:unknown;estimatedInputs?:unknown;staleInputs?:unknown};
         };
         if(["proposal","approve","approval","commit","effect","executedEffects",
@@ -192,14 +198,21 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           const registeredSource=typeof p?.sourceId==="string" &&
             def.sourceIds.includes(p.sourceId);
           const canonicalReader=typeof p?.canonicalReaderId==="string" &&
-            p.canonicalReaderId.length>0;
+            def.canonicalReaderIds.includes(p.canonicalReaderId);
+          // An explicitly supplied identity must match even when the other
+          // source field is valid, rather than allowing a forged second ID.
+          const sourceValid=p?.sourceId===undefined || registeredSource;
+          const readerValid=p?.canonicalReaderId===undefined || canonicalReader;
           const revision=p?.sourceRevision;
           const validRevision=revision===null ||
             (typeof revision==="string" && revision.length>0);
           const arrays=[q?.missingInputs,q?.estimatedInputs,q?.staleInputs];
           if(!p || typeof p.asOf!=="string" ||
             !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
-            (!registeredSource && !canonicalReader) || !validRevision ||
+            !canonicalReader || !sourceValid || !readerValid ||
+            typeof p.purpose!=="string" ||
+            p.purpose!==(input.data as {purpose?:string}).purpose ||
+            !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))
             return unavailable("invalid_result");
