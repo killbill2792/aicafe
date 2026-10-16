@@ -58,6 +58,10 @@ export const oliviaStoredSchemas = {
   }),
 };
 const recordLimit = 5000;
+// Explicit PR4A response cap: large but valid PR2 plans are reported as
+// capacity_exceeded by the adapter, never mislabeled as corrupt evidence.
+export const OLIVIA_MAX_GAPS_PER_SCENARIO = 20_000;
+const MAX_PREVIEW_BLOCKERS = 20_002; // PR3: at most 20k workers + 2 global blockers.
 export const oliviaAvailabilityEmployeeSchema = z.object({
   employeeId:oliviaUuid,displayName:z.string().min(1).max(240),active:z.boolean(),
   state:z.enum(["confirmed","unconfirmed","missing","unavailable"]),
@@ -91,7 +95,7 @@ export const oliviaScenarioSchema=z.object({
       "capacity_or_overlap","break_or_rest_constraint","daily_hour_limit",
       "weekly_hour_limit","date_specific_cap","pinned_conflict","solver_budget",
       "handoff_overlap_missing"]),
-  }).strict()).max(5000),
+  }).strict()).max(OLIVIA_MAX_GAPS_PER_SCENARIO),
   completeCoverage:z.boolean(),hardConstraintsSatisfied:z.boolean(),
   ownerMinutes:nonnegative,cost:costSchema,preferencePenalty:z.number().finite(),
   exploredNodes:nonnegative,legalReview:z.enum(["verified_profile","unverified_profile"]),
@@ -130,13 +134,14 @@ const MAX_PREVIEW_NOTICES = 3 * 20_000 + 6;
 const notice=z.object({code:z.enum(["wage_unknown","availability_missing","unconfirmed_absence",
   "coverage_unconfirmed","no_active_staff","limits_missing","legacy_schedules",
   "policy_unverified","source_provisional"]),employeeName:z.string().optional()}).strict();
-const blocker=z.object({code:z.enum(["no_location","no_coverage","conflicting_limits"]),
+export const oliviaCapabilityBlockerSchema=z.object({code:z.enum(["no_location","no_coverage","conflicting_limits"]),
   employeeName:z.string().optional()}).strict();
 export const oliviaPreviewResponseSchema=header.extend({
   capability:z.literal("olivia.schedule.preview"),plan:oliviaPlanSchema,
   selectedScenario:oliviaScenarioSchema.nullable(),
   previewRevision:nonnegative.max(500),
-  notices:z.array(notice).max(MAX_PREVIEW_NOTICES),blockers:z.array(blocker).max(100),
+  notices:z.array(notice).max(MAX_PREVIEW_NOTICES),
+  blockers:z.array(oliviaCapabilityBlockerSchema).max(MAX_PREVIEW_BLOCKERS),
   employeeNames:z.record(oliviaUuid,z.string().max(240)),
   locationNames:z.record(oliviaUuid,z.string().max(240)),
   frozenShiftKeys:z.array(z.string().max(500)).max(200),
@@ -169,6 +174,7 @@ export const oliviaCapabilityErrorSchema=z.object({
     "missing_inputs","source_changed","revision_conflict","invalid_record",
     "storage_unavailable","planner_unavailable","capacity_exceeded"]),
     retryable:z.boolean(),message:z.string().max(180)}).strict(),
+  blockers:z.array(oliviaCapabilityBlockerSchema).min(1).max(MAX_PREVIEW_BLOCKERS).optional(),
 }).strict();
 export const oliviaReadResponseSchema=z.union([
   oliviaAvailabilityResponseSchema,oliviaPreviewResponseSchema,
