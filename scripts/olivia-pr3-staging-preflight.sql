@@ -68,5 +68,16 @@ SELECT jsonb_pretty(jsonb_build_object(
      security_definer,'anonymous_execute',anonymous_execute,
      'authenticated_execute',authenticated_execute) ORDER BY name)
     FROM function_check),'[]'::jsonb)
-)) AS olivia_staging_preflight_readonly;
+)) AS olivia_staging_preflight_readonly,
+-- Fail closed, not merely a diagnostic report: a missing migration, disabled
+-- RLS or callable privileged RPC must make an ON_ERROR_STOP=1 run fail.
+-- Division by zero is intentional here only when an unsafe state is detected.
+1 / CASE WHEN
+    (SELECT count(*) FROM migration_check WHERE present)=8
+    AND (SELECT count(*) FROM table_check WHERE exists AND rls_enabled)=14
+    AND (SELECT count(*) FROM function_check WHERE exists AND security_definer)=4
+    AND (SELECT count(*) FROM function_check
+         WHERE name IN ('scheduling_pr3_approve','scheduling_pr3_publish')
+           AND anonymous_execute=false AND authenticated_execute=false)=2
+    THEN 1 ELSE 0 END AS olivia_preflight_checks_pass;
 ROLLBACK;
