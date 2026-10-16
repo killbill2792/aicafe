@@ -68,6 +68,27 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
         .toMatchObject({status:"conditional",value:2000,unit:"USD_cents_per_hour"});
     }
   });
+  it("keeps Arabic attached و$ conjunction rate/total scopes separate",()=>{
+    const phrase="الأجر $20 لكل ساعة و$30 إجمالي";
+    expect(evaluateExpression(plan("30",3000,"USD_cents_per_hour"),scope(phrase)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("30",3000,"USD_cents"),scope(phrase)))
+      .toMatchObject({status:"conditional",value:3000});
+    expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(phrase)))
+      .toMatchObject({status:"conditional",value:2000});
+  });
+  it("accepts explicit spelled USD money rates in all supported languages",()=>{
+    for(const phrase of [
+      "Pay 20 dollars per hour",
+      "Pagar 20 dólares por hora",
+      "الأجر 20 دولار لكل ساعة",
+    ]){
+      expect(evaluateExpression(plan("20",2000,"USD_cents_per_hour"),scope(phrase)))
+        .toMatchObject({status:"conditional",value:2000,unit:"USD_cents_per_hour"});
+      expect(evaluateExpression(plan("20",2000,"USD_cents"),scope(phrase)))
+        .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    }
+  });
   it("recognizes explicit scalar multipliers without reinterpreting money or time",()=>{
     expect(evaluateExpression(plan("2",2,"scalar"),
       scope("Multiply the recorded cost by 2")))
