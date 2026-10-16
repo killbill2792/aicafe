@@ -5,7 +5,10 @@ import { metricUnits,purposePolicies,readers,sourcePolicies,
 import type { ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import type { Operand,Binding } from "./expression";
 
-export type SourceProjection={operands:Operand[];bindings:Binding[];missing:string[]};
+export type OperandChoice={handle:string;entityId:string;entityName:string;
+  field:string;matchedClause:string};
+export type SourceProjection={operands:Operand[];bindings:Binding[];
+  choices:OperandChoice[];missing:string[]};
 type Extracted={key:string;name:string;field:string;value:number;
   unit:Operand["unit"]};
 type Extractor=(data:unknown)=>Extracted[];
@@ -60,6 +63,7 @@ export function projectP1Evidence(
   locationId:string|null=null,
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
+  const choices:OperandChoice[]=[];
   const normalized=ownerGoal.normalize("NFKC").toLocaleLowerCase();
   for(const item of evidence){
     if(operands.length>=12)break;
@@ -105,6 +109,10 @@ export function projectP1Evidence(
       const handle=key+":"+leaf.key+":"+leaf.field;
       if(operands.some(o=>o.handle===handle))continue;
       const p=result.query.period;
+      // Keep the server-resolved name, ID, field and originating clause
+      // alongside the opaque handle. The model must never infer UUID identities.
+      choices.push({handle,entityId:leaf.key,entityName:leaf.name,
+        field:leaf.field,matchedClause:item.clause});
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,sourceRevision:null,
@@ -121,5 +129,5 @@ export function projectP1Evidence(
     }
     if(!valuesForKey.length)missing.push("unprojectable:"+key);
   }
-  return {operands,bindings,missing};
+  return {operands,bindings,choices,missing};
 }
