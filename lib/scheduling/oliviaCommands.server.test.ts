@@ -132,6 +132,27 @@ describe("Olivia PR4B-A authorized domain commands",()=>{
       .toMatchObject({ok:false,error:"invalid_record"});
   });
 
+  it("does not mark drafts ready while legacy schedule assignments need reconciliation",async()=>{
+    const known={...scenario,
+      legalReview:"verified_profile" as const,
+      cost:{cashWagesCents:0,allocatedSalaryCents:0,loadedPayrollCents:0,
+        ownerOpportunityCents:0,ownerMinutes:0,costState:"verified" as const,
+        missingWageEmployeeIds:[]}};
+    m.save.mockResolvedValue({ok:true,seriesId:id(41),revisionId:id(40),
+      revision:1,replayed:false,scenario:known});
+    m.read.mockImplementation(async(req:{capability:string})=>
+      req.capability==="olivia.schedule.preview"
+        ? {...preview(),selectedScenario:known,
+           plan:{warnings:[]},
+           notices:[{code:"legacy_schedules"},{code:"source_provisional"}]}
+        : {...revision(),scenario:known});
+    const args={capability:"olivia.schedule.draft.create",version:1,week,
+      objective:"cash",expectedSourceDigest:digest,expectedRevision:0,requestKey:key};
+    expect(await createOliviaScheduleDraftCommand(args)).toMatchObject({
+      ok:true,status:"saved_draft",readyForOwnerApproval:false,
+      readyForPublication:false,missingInputs:[{code:"legacy_schedules"}]});
+  });
+
   it("saves draft from PR3, but missing wage/policy prevents approval readiness",async()=>{
     const args={capability:"olivia.schedule.draft.create",version:1,week,
       objective:"cash",expectedSourceDigest:digest,expectedRevision:0,requestKey:key};
