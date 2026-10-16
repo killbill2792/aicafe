@@ -226,7 +226,14 @@ BEGIN
   IF v_id IS NULL THEN
     RAISE EXCEPTION 'missing scheduling source café' USING ERRCODE='23502';
   END IF;
-  PERFORM pg_advisory_xact_lock(hashtextextended('olivia-'||v_id::text,0));
+  -- DML can already own a row/ROW EXCLUSIVE table lock when this trigger
+  -- runs. Waiting for PR3's advisory lock could deadlock against its existing
+  -- table-wide SHARE lock. Fail fast, transactionally, rather than waiting.
+  -- A caller can safely retry after the competing scheduling transaction.
+  IF NOT pg_try_advisory_xact_lock(hashtextextended('olivia-'||v_id::text,0)) THEN
+    RAISE EXCEPTION 'Olivia scheduling source is busy; retry'
+      USING ERRCODE='55P03';
+  END IF;
   RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
 END $$;
 REVOKE ALL ON FUNCTION public.scheduling_olivia_source_write_guard()
