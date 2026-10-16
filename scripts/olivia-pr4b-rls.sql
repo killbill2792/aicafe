@@ -25,20 +25,20 @@ VALUES(:'employee_a',:'business','Ana',true),
       (:'foreign_employee',:'foreign_business','Not Ours',true);
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub',:'owner',true);
-SELECT set_config('test.4b_business',:'business',true);
-SELECT set_config('test.4b_foreign',:'foreign_business',true);
-SELECT set_config('test.4b_owner',:'owner',true);
-SELECT set_config('test.4b_manager',:'manager',true);
-SELECT set_config('test.4b_employee_a',:'employee_a',true);
-SELECT set_config('test.4b_employee_b',:'employee_b',true);
-SELECT set_config('test.4b_foreign_employee',:'foreign_employee',true);
-SELECT set_config('test.4b_key',:'command_key',true);
+SELECT set_config('test.pr4b_business',:'business',true);
+SELECT set_config('test.pr4b_foreign',:'foreign_business',true);
+SELECT set_config('test.pr4b_owner',:'owner',true);
+SELECT set_config('test.pr4b_manager',:'manager',true);
+SELECT set_config('test.pr4b_employee_a',:'employee_a',true);
+SELECT set_config('test.pr4b_employee_b',:'employee_b',true);
+SELECT set_config('test.pr4b_foreign_employee',:'foreign_employee',true);
+SELECT set_config('test.pr4b_key',:'command_key',true);
 
 DO $$
-DECLARE b uuid:=current_setting('test.4b_business')::uuid;
- a uuid:=current_setting('test.4b_employee_a')::uuid;
- c uuid:=current_setting('test.4b_employee_b')::uuid;
- key uuid:=current_setting('test.4b_key')::uuid;
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ a uuid:=current_setting('test.pr4b_employee_a')::uuid;
+ c uuid:=current_setting('test.pr4b_employee_b')::uuid;
+ key uuid:=current_setting('test.pr4b_key')::uuid;
  token text; batches jsonb; first jsonb; replay jsonb; reused jsonb;
  before_audits integer;
 BEGIN
@@ -61,11 +61,11 @@ BEGIN
       'overnight',false,'max_minutes',NULL,'source','owner_direct',
       'confirmation','owner_confirmed'))))
  );
- PERFORM set_config('test.4b_batches',batches::text,true);
- PERFORM set_config('test.4b_old_token',token,true);
+ PERFORM set_config('test.pr4b_batches',batches::text,true);
+ PERFORM set_config('test.pr4b_old_token',token,true);
  first:=public.scheduling_olivia_commit_availability(b,token,key,batches);
  IF first->>'replayed'<>'false' OR jsonb_array_length(first->'batches')<>2
-    OR first->>'actorId'<>current_setting('test.4b_owner') OR
+    OR first->>'actorId'<>current_setting('test.pr4b_owner') OR
     (SELECT count(*) FROM public.staff_availability_exceptions
       WHERE business_id=b)<>2 THEN
    RAISE EXCEPTION 'multi-employee save failed';
@@ -96,8 +96,8 @@ DO $$
 DECLARE result jsonb;
 BEGIN
  result:=public.scheduling_olivia_commit_availability(
-   current_setting('test.4b_business')::uuid,current_setting('test.4b_old_token'),
-   gen_random_uuid(),current_setting('test.4b_batches')::jsonb);
+   current_setting('test.pr4b_business')::uuid,current_setting('test.pr4b_old_token'),
+   gen_random_uuid(),current_setting('test.pr4b_batches')::jsonb);
  IF result->>'error'<>'source_changed' THEN
    RAISE EXCEPTION 'stale cross-source token accepted';
  END IF;
@@ -106,9 +106,9 @@ END $$;
 -- Co-owner/owner stale-manifest conflict in the second batch must roll back
 -- all writes and audit from the first batch, across employees.
 DO $$
-DECLARE b uuid:=current_setting('test.4b_business')::uuid;
- a uuid:=current_setting('test.4b_employee_a')::uuid;
- c uuid:=current_setting('test.4b_employee_b')::uuid;
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ a uuid:=current_setting('test.pr4b_employee_a')::uuid;
+ c uuid:=current_setting('test.pr4b_employee_b')::uuid;
  token text; batches jsonb; before_audits integer; failed boolean:=false;
 BEGIN
  token:=public.scheduling_owner_source_token(b);
@@ -144,8 +144,8 @@ DO $$
 DECLARE result jsonb;
 BEGIN
  result:=public.scheduling_olivia_commit_availability(
-  current_setting('test.4b_business')::uuid,'aabbccddeeff00112233445566778899',
-  gen_random_uuid(),current_setting('test.4b_batches')::jsonb);
+  current_setting('test.pr4b_business')::uuid,'aabbccddeeff00112233445566778899',
+  gen_random_uuid(),current_setting('test.pr4b_batches')::jsonb);
  IF result->>'error'<>'unauthorized' THEN RAISE EXCEPTION 'manager wrote availability'; END IF;
  BEGIN
   PERFORM 1 FROM public.scheduling_olivia_command_receipts LIMIT 1;
@@ -155,8 +155,8 @@ BEGIN
 END $$;
 SELECT set_config('request.jwt.claim.sub',:'owner',true);
 DO $$
-DECLARE b uuid:=current_setting('test.4b_business')::uuid;
- foreign_id uuid:=current_setting('test.4b_foreign_employee')::uuid;
+DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
+ foreign_id uuid:=current_setting('test.pr4b_foreign_employee')::uuid;
  token text; result jsonb;
 BEGIN
  token:=public.scheduling_owner_source_token(b);
