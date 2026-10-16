@@ -102,7 +102,7 @@ export const oliviaPlanSchema=z.object({
 }).strict();
 export const oliviaRevisionStatusSchema=z.enum(["draft","approved","published","superseded"]);
 const source=z.object({
-  owner:"olivia",businessId:oliviaUuid,
+  owner:z.literal("olivia"),businessId:oliviaUuid,
   kind:z.enum(["stored_availability","stored_revisions","stored_revision","trusted_preview"]),
   consistency:z.enum(["stored","provisional"]),
   sourceDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),
