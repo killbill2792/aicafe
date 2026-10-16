@@ -81,12 +81,14 @@ const times=(a:Rat,b:Rat)=>rat(a.n*b.n,a.d*b.d);
 const divided=(a:Rat,b:Rat)=>rat(a.n*b.d,a.d*b.n);
 const equalPeriod=(a:Item,b:Item)=>JSON.stringify(a.p)===JSON.stringify(b.p);
 const mergeRefs=(a:Item,b:Item)=>new Set([...a.refs,...b.refs]);
-function binaryOp(a:Item,b:Item,op:string):Item{
+function binaryOp(a:Item,b:Item,op:string,authorizedSources:ReadonlyMap<string,Operand>):Item{
   if(op==="loaded_labor"){
     // Canonical labor engine is authoritative; a declared employer burden
     // percentage is indispensable. No model-invented tax or overtime rule.
     if(a.u!=="USD_cents"||b.u!=="ratio_bps"||
-      (a.p&&b.p&&!equalPeriod(a,b)))
+      (a.p&&b.p&&!equalPeriod(a,b))||
+      [...b.refs].some(handle=>authorizedSources.get(handle)?.sourceId!==
+        "labor.payroll_burden"))
       throw new Error("invalid_loaded_labor_dimensions");
     if(b.v.n<BigInt(0)||b.v.n>b.v.d*BigInt(10_000))
       throw new Error("invalid_employer_burden");
@@ -311,7 +313,7 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else{
         const rhs=stack.pop(),lhs=stack.pop();
         if(!lhs||!rhs)throw new Error("stack_underflow");
-        stack.push(binaryOp(lhs,rhs,node.op));formula.push(node.op);
+        stack.push(binaryOp(lhs,rhs,node.op,refs));formula.push(node.op);
       }
       if(stack.length>12)throw new Error("stack_budget");
       const top=stack.at(-1);
