@@ -181,7 +181,14 @@ export function extractAtomicSnapshot(
         field:"rateBasisPoints",value:rounded,unit:"ratio_bps"}],
         snapshot.payroll.status==="estimated"?["estimated_employer_burden"]:[]);
     }
-    case "sales.daily":return daily(snapshot,query.period,false);
+    case "sales.daily":
+      // The canonical sales reader excludes Toast dates awaiting independent
+      // review when the pilot is active. This MVCC payload has no per-date
+      // Toast review status, so it cannot prove that same exclusion: never
+      // reintroduce the unreviewed rows as atomic actual sales.
+      if(process.env.TOAST_PILOT_IMPORT_ENABLED==="true")
+        return blocked("toast_independent_sales_review_not_in_snapshot");
+      return daily(snapshot,query.period,false);
     // Daily staff cents have no attendance/wage coverage status in the atomic
     // RPC. A zero may mean missing labor rather than an observed zero.
     // Use source-bound employee wages + burden for what-if labor instead.
