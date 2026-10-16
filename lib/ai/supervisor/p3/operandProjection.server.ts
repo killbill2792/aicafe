@@ -39,17 +39,9 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
         value:v.ingredientsCentsToday,unit:"USD_cents_per_item"});
     return out;
   },
-  "pricing.recommendation":v=>{
-    if(!isObject(v))return [];
-    const out:Extracted[]=[];
-    if(integer(v.currentPriceCents))
-      out.push({key:"current",name:"product pricing",field:"currentPriceCents",
-        value:v.currentPriceCents,unit:"USD_cents_per_item"});
-    if(integer(v.productCostCents))
-      out.push({key:"cost",name:"product pricing",field:"productCostCents",
-        value:v.productCostCents,unit:"USD_cents_per_item"});
-    return out;
-  },
+  // A pricing recommendation lacks a returned, name-bound product identity.
+  // It is available as a read, but not composable until resolved against a
+  // canonical named menu record. Do not attach an unknown product's price.
   "supplies.quotes":v=>{
     if(!isObject(v))return [];
     return rows(v.items).flatMap(row=>{
@@ -107,7 +99,7 @@ export function projectP1Evidence(
       if(operands.length>=12)break;
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
-      if(leaf.field!=="value"&&leaf.name!=="product pricing"&&
+      if(leaf.field!=="value"&&
         (!leaf.name||!normalized.includes(leaf.name.normalize("NFKC").toLocaleLowerCase())))
         continue;
       const handle=key+":"+leaf.key+":"+leaf.field;
