@@ -23,24 +23,34 @@ REVOKE ALL ON public.p1_business_source_epochs FROM PUBLIC, anon, authenticated;
 INSERT INTO public.p1_business_source_epochs (business_id, revision)
 SELECT id, 1 FROM public.businesses ON CONFLICT (business_id) DO NOTHING;
 
-CREATE FUNCTION public.p1_touch_business_epoch(p_business_id uuid)
+CREATE FUNCTION public.p1_touch_business_epoch(p_business_id uuid, p_new_business boolean)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER
-SET search_path = pg_catalog, public AS $$
+SET search_path = pg_catalog, public AS $
 BEGIN
   IF p_business_id IS NULL THEN
     RAISE EXCEPTION 'source revision requires a scoped business' USING ERRCODE='23502';
   END IF;
-  -- A deleted business has no later readable source snapshot. FK cascade
-  -- deletion must not resurrect its epoch or prevent owner-directed removal.
+  -- A deleted business has no readable snapshot. Its FK cascade must not
+  -- resurrect the epoch after the parent row has been deleted.
   IF NOT EXISTS(SELECT 1 FROM public.businesses WHERE id=p_business_id) THEN
     RETURN;
   END IF;
-  INSERT INTO public.p1_business_source_epochs AS epoch(business_id,revision)
-    VALUES (p_business_id,1)
-  ON CONFLICT (business_id)
-  DO UPDATE SET revision = epoch.revision + 1;
-END $$;
-REVOKE ALL ON FUNCTION public.p1_touch_business_epoch(uuid)
+  IF p_new_business THEN
+    -- A brand-new business is the ONLY context that may provision an epoch.
+    -- Reusing an old epoch without incrementing risks a stale rev collision,
+    -- so ON CONFLICT here deliberately fails instead of resetting/relabeling.
+    INSERT INTO public.p1_business_source_epochs(business_id,revision)
+      VALUES (p_business_id,1);
+    RETURN;
+  END IF;
+  UPDATE public.p1_business_source_epochs
+    SET revision = revision + 1 WHERE business_id=p_business_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'authoritative source revision missing for business'
+      USING ERRCODE='23514';
+  END IF;
+END $;
+REVOKE ALL ON FUNCTION public.p1_touch_business_epoch(uuid,boolean)
   FROM PUBLIC, anon, authenticated;
 
 -- SECURITY DEFINER is restricted to the trigger's FIXED, reviewable table
@@ -89,11 +99,25 @@ BEGIN
     'SELECT DISTINCT business_id FROM ('||statement||
     ') scoped WHERE business_id IS NOT NULL ORDER BY business_id'
   LOOP
-    PERFORM public.p1_touch_business_epoch(business);
+    PERFORM public.p1_touch_business_epoch(business,
+      relation='businesses' AND TG_OP='INSERT');
   END LOOP;
   RETURN NULL;
 END $$;
 REVOKE ALL ON FUNCTION public.p1_track_source_statement()
+  FROM PUBLIC, anon, authenticated;
+
+-- PostgreSQL TRUNCATE has no row transition tables and bypasses DELETE
+-- triggers. Deny it on canonical sources instead of letting a supervisor
+-- accept a stale epoch after a privileged bulk-clear or cascading truncate.
+CREATE FUNCTION public.p1_reject_canonical_truncate()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path = pg_catalog, public AS $
+BEGIN
+  RAISE EXCEPTION 'canonical source TRUNCATE bypasses authoritative revision; use DELETE'
+    USING ERRCODE='23514';
+END $;
+REVOKE ALL ON FUNCTION public.p1_reject_canonical_truncate()
   FROM PUBLIC, anon, authenticated;
 
 -- A table missing from an older installation is never silently ignored. That
@@ -154,6 +178,9 @@ BEGIN
         'EXECUTE FUNCTION public.p1_track_source_statement(%L,%L)',
         'p1_revision_'||lower(op),op,t,transitions,mode,fk);
     END LOOP;
+    EXECUTE format(
+      'CREATE TRIGGER p1_forbid_truncate BEFORE TRUNCATE ON public.%I '||
+      'FOR EACH STATEMENT EXECUTE FUNCTION public.p1_reject_canonical_truncate()',t);
   END LOOP;
 END $$;
 
