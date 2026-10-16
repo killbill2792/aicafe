@@ -139,7 +139,7 @@ try{
    blockedWithoutRevision=String(error.message).includes("authoritative source revision missing");
  }
  check(blockedWithoutRevision,"canonical write cannot recreate lost epoch or silently reset version");
- check((await admin.query("SELECT price_cents FROM public.menu_items WHERE id=$1",[menu])).rows[0].price_cents===600,
+ check(Number((await admin.query("SELECT price_cents FROM public.menu_items WHERE id=$1",[menu])).rows[0].price_cents)===600,
    "missing-ledger source write rolls back together with attempted revision update");
  await admin.query("INSERT INTO public.p1_business_source_epochs(business_id,revision) VALUES($1,1)",[A]);
  check(await snapshot(B,ownerA)===null,"cross-business owner A denied");
