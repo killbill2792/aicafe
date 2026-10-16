@@ -107,7 +107,7 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
           className="min-h-12 rounded-lg border border-line bg-card px-3"/>
       </div>)}
       <label className="flex items-center gap-3">
-        <input type="checkbox" disabled={disabled || shift.pinned || shift.breaks.length>1 || shift.breaks.some(b=>b.paid)}
+        <input type="checkbox" disabled={disabled || locked(shift) || shift.breaks.length>1 || shift.breaks.some(b=>b.paid)}
           checked={shift.breaks.length===1 && !shift.breaks[0].paid}
           onChange={e=>setUnpaidBreak(index,e.target.checked)}
           className="size-5"/>
