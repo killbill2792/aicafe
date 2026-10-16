@@ -29,7 +29,7 @@ All requests use strict Zod input validation, literal `version: 1`, and reject u
 
 ## Authorization, provenance and failure policy
 
-1. Owner identity and selected café are resolved using the existing trusted server membership boundary, not model/client values. Manager, employee, demo, foreign tenant and forged-employee access must fail closed. The adapter rechecks owner/café context across async domain reads to avoid a mid-request café switch.
+1. Owner identity and selected café are resolved using the existing trusted server membership boundary, not model/client values. Manager, employee, demo, foreign tenant and forged-employee access must fail closed. The adapter rechecks owner/café context across async domain reads **before interpreting preview success, failures, setup blockers, source digests or revisions** to avoid leaking details from a café switched mid-request.
 2. All employee lookups and revision-assignment reads are restricted by trusted `business_id`. Raw foundation record tenant IDs must match the authenticated café **before** projection. Unknown IDs return `not_found` without revealing whether another café has that employee or revision.
 3. Raw stored source rows are projected through the Olivia field schemas. Confirmation flags are never promoted; confirmed negative leave remains negative evidence. A worker whose only stored availability is unconfirmed is not automatically eligible.
 4. Preview never writes. Do not equate `unknown` cash costs with `0`; the optimizer already models missing qualifications, split/overnight/DST, cross-location overlap, protected published shifts and exact gaps. It does not invent POS data, labor rules or owner-worker identity.
