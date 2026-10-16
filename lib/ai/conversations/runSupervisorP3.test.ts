@@ -3,7 +3,7 @@ vi.mock("server-only",()=>({}));
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { runSupervisorTurn } from "./runSupervisorTurn.server";
 import { EXPRESSION_ID } from "@/lib/ai/supervisor/p3/expression";
-import type { SupportedId } from "@/lib/metrics/p1Catalog";
+import { readers,type SupportedId } from "@/lib/metrics/p1Catalog";
 
 const identity={businessId:"cafe-test",asOf:"2026-10-15",
   timezone:"America/Los_Angeles",currency:"USD"};
@@ -478,6 +478,181 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       expect(language.locale==="es"?text.includes("condicional"):
         text.includes("مشروط")).toBe(true);
     }
+  });
+
+
+  /**
+   * Blind extension acceptance: new wording, item identities, units, dates and
+   * combinations that were not part of the original latte/milk/wage fixtures.
+   * All responses go through runSupervisorTurn, the real feature-flagged entry.
+   * No question-specific handlers or injected arithmetic implementations.
+   */
+  const period={from:"2026-10-10",to:"2026-10-11"};
+  const p1Envelope=(raw:{id:SupportedId;version:number;purpose:string;
+    period?:{from:string;to:string}},value:unknown)=>{
+    const output=result(raw,value);
+    return {...output,query:raw,provenance:{...output.provenance,
+      canonicalReaderId:readers[raw.id],selectorContractId:raw.id+".selector"}};
+  };
+  it.each([
+    {name:"cinnamon roll",id:"roll-108",prior:23,added:37},
+    {name:"pistachio muffin",id:"muffin-900",prior:46,added:19},
+  ])("general pipeline composes unseen sold-item count for $name",async(fixture)=>{
+    const question="Increase the recorded count for "+fixture.name+
+      "s by "+fixture.added+" items";
+    const read={id:"sales.item_units",version:1,purpose:"covered_item_sales",period};
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const input=raw as typeof read;
+      if(input.id!=="sales.item_units")throw Error("unexpected source");
+      return p1Envelope(input,[{id:fixture.id,name:fixture.name,category:"food",
+        units:fixture.prior}]);
+    });
+    const expression={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"preauthorized_operands",
+      description:"Combine covered recorded units with the quoted what-if count",
+      nodes:[
+        {op:"source",handle:"sales.item_units:"+fixture.id+":units"},
+        {op:"hypothetical",quotedNumber:String(fixture.added),
+          label:"owner-quoted additional units",value:fixture.added,unit:"item"},
+        {op:"add"},
+      ],
+    };
+    let step=0;
+    const messages:Array<Record<string,unknown>>=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      messages.push(JSON.parse(String(init.body)) as Record<string,unknown>);
+      return response([
+        {complete:true,clauses:[question]},
+        {complete:true,choices:[{clause:question,
+          capabilityId:"p3.sales.item_units.v1",
+          inputJson:JSON.stringify(read),reason:null}]},
+        {complete:true,plans:[{coveredClauses:[question],
+          planJson:JSON.stringify(expression),reason:null}]},
+      ][step++]);
+    });
+    const output=await run(transport,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"text",
+        text:expect.stringContaining(String(fixture.prior+fixture.added)+" items")}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+    ]));
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:2});
+    expect(p1Reads).toHaveBeenCalledTimes(1);
+    const planning=JSON.parse(
+      (messages[2].input as Array<{content:string}>)[0].content) as {
+        authorizedOperandChoices:Array<{entityName:string;field:string}>;
+      };
+    expect(planning.authorizedOperandChoices).toEqual(expect.arrayContaining([
+      expect.objectContaining({entityName:fixture.name,field:"units"}),
+    ]));
+    // Private source amounts remain in the deterministic server context.
+    expect(JSON.stringify(messages[2])).not.toContain('"value":'+fixture.prior);
+  });
+  it("composes unseen sales, payment fees and loaded labor across a shared date range",async()=>{
+    const salesClause="Take net sales less card fees for October 10 to 11";
+    const laborClause="subtract loaded staff cost for those dates";
+    const question=salesClause+" and "+laborClause;
+    const salesInput={id:"sales.daily" as SupportedId,version:1,
+      purpose:"actual_daily_sales",period};
+    const laborInput={id:"labor.daily_costs" as SupportedId,version:1,
+      purpose:"recorded_labor_cost_review",period};
+    const sales=[
+      {date:"2026-10-10",netSalesCents:100000,ordersCount:50,drinksCount:71,
+        ingredientsCents:20000,wagesCents:16000,staffTaxCents:4000,
+        cardFeesCents:3000,voidsCents:0},
+      {date:"2026-10-11",netSalesCents:130000,ordersCount:65,drinksCount:81,
+        ingredientsCents:27000,wagesCents:19000,staffTaxCents:6000,
+        cardFeesCents:3500,voidsCents:0},
+    ];
+    const labor=[
+      {date:"2026-10-10",wagesCents:18000,staffTaxCents:4000,
+        loadedStaffCostCents:22000},
+      {date:"2026-10-11",wagesCents:19000,staffTaxCents:4000,
+        loadedStaffCostCents:23000},
+    ];
+    p1Reads.mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
+      const request=raw as typeof salesInput;
+      if(request.id==="sales.daily")return p1Envelope(request,sales);
+      if(request.id==="labor.daily_costs")return p1Envelope(request,labor);
+      throw Error("Only authorized daily domains should be read");
+    });
+    const expression={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"preauthorized_operands",
+      description:"Sales less fees and loaded wages for the exact same period",
+      nodes:[
+        {op:"source",handle:"sales.daily:aggregate:netSalesCents"},
+        {op:"source",handle:"sales.daily:aggregate:cardFeesCents"},
+        {op:"subtract"},
+        {op:"source",handle:"labor.daily_costs:aggregate:loadedStaffCostCents"},
+        {op:"subtract"},
+      ],
+    };
+    let step=0;
+    const transport=vi.fn(async()=>response([
+      {complete:true,clauses:[salesClause,laborClause]},
+      {complete:true,choices:[
+        {clause:salesClause,capabilityId:"p3.sales.daily.v1",
+          inputJson:JSON.stringify(salesInput),reason:null},
+        {clause:laborClause,capabilityId:"p3.labor.daily_costs.v1",
+          inputJson:JSON.stringify(laborInput),reason:null},
+      ]},
+      {complete:true,plans:[{coveredClauses:[salesClause,laborClause],
+        planJson:JSON.stringify(expression),reason:null}]},
+    ][step++]));
+    const output=await run(transport,question);
+    expect(output.reply.status).toBe("partial");
+    // 230000 net sales - 6500 in fees - 45000 in loaded staff = 178500.
+    // This is a conditional subtotal, NEVER verified net profit.
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:178500}),
+      expect.objectContaining({type:"warning",code:"P3_BASELINE"}),
+    ]));
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:3});
+    expect(p1Reads).toHaveBeenCalledTimes(2);
+  });
+  it("explains genuinely missing numeric inputs without inventing business totals",async()=>{
+    const question="Increase recorded cinnamon rolls by 37 items";
+    const read={id:"sales.item_units" as SupportedId,version:1,
+      purpose:"covered_item_sales",period};
+    p1Reads.mockImplementation(async()=>p1Envelope(read,[]));
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{clause:question,
+        capabilityId:"p3.sales.item_units.v1",inputJson:JSON.stringify(read),
+        reason:null}]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"missing_input"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply.evidence).toEqual([]);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    expect(output.reply.blocks.some(block=>block.type==="metric"||
+      block.type==="count")).toBe(false);
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:1});
+  });
+  it("declines a wholly unsupported action without invoking a mutation or fake calculation",async()=>{
+    const question="Publish tomorrow's staff schedule";
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{clause:question,capabilityId:null,
+        inputJson:null,reason:"unsupported"}]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"unsupported_action"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply.evidence).toEqual([]);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_UNSUPPORTED_ACTION"}),
+    ]));
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:0});
+    expect(p1Reads).not.toHaveBeenCalled();
   });
 
 });
