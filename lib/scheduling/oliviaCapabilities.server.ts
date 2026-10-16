@@ -293,8 +293,7 @@ export async function executeOliviaReadCapability(raw:unknown):Promise<OliviaRea
       case "olivia.schedule.history.read":return await readHistory(request.data);
       case "olivia.schedule.revision.read":return await readRevision(request.data);
     }
-  } catch (error) {
-    if(process.env.NODE_ENV==="test")console.error("PR4A adapter exception",error);
+  } catch {
     return fail(request.data.capability,"storage_unavailable");
   }
 }
