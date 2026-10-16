@@ -214,9 +214,11 @@ async function readPreview(
   // persisted draft limit is 200. A larger valid preview is a known
   // capability-capacity case, not corrupt data.
   const oversized=(scenario:{
-    shifts:unknown[];gaps:unknown[];
-  })=>scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS ||
-    scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO;
+    shifts:unknown;gaps:unknown;
+  })=>(Array.isArray(scenario.shifts) &&
+      scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS) ||
+    (Array.isArray(scenario.gaps) &&
+      scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO);
   if(preview.plan?.scenarios?.some(oversized) ||
      (preview.plan?.best && oversized(preview.plan.best)) ||
      (preview.plan?.warnings?.length??0)>100)
