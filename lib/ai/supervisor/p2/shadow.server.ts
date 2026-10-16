@@ -12,7 +12,7 @@ const auditSchema=z.strictObject({
 const choice=z.strictObject({
   clause,capabilityId:z.string().max(120).nullable(),
   inputJson:z.string().max(3000).nullable(),
-  reason:z.enum(["missing_input","unsupported","no_data"]).nullable(),
+  reason:z.enum(["missing_input","unsupported","no_data","source_free"]).nullable(),
 });
 const planSchema=z.strictObject({
   complete:z.boolean(),choices:z.array(choice).min(1).max(5),
@@ -35,7 +35,7 @@ export const P2_PLAN_SCHEMA={
       properties:{
         clause:{type:"string"},capabilityId:{type:["string","null"]},
         inputJson:{type:["string","null"]},
-        reason:{type:["string","null"],enum:["missing_input","unsupported","no_data",null]},
+        reason:{type:["string","null"],enum:["missing_input","unsupported","no_data","source_free",null]},
       },
     }},
   },
@@ -53,12 +53,14 @@ export type ShadowEvidence={
 export type ShadowOutcome={
   kind:"p2_read_only_shadow";status:"verified"|"estimated"|"partial"|"unavailable";
   evidence:ShadowEvidence[];reason:string|null;usage:Usage;
+  /** Actual registry read invocations, including failures; excludes model selections. */
+  attemptedReads:number;
   /** No business effects of any kind can be produced by this entry point. */
   executedEffects:0;
 };
 const missing=(reason:string,usage:Usage,evidence:ShadowEvidence[]=[]):ShadowOutcome=>({
   kind:"p2_read_only_shadow",status:evidence.length?"partial":"unavailable",
-  evidence,reason,usage:{...usage},executedEffects:0,
+  evidence,reason,usage:{...usage},attemptedReads:0,executedEffects:0,
 });
 const normalize=(x:string)=>x.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 
@@ -177,6 +179,8 @@ async function requestStructured<T>(params:{
 export async function runP2ShadowWithScope(params:{
   goal:string;scope:TrustedReadScope;transport:Transport;registry:ShadowRegistry;
   apiKey:string;model:string;
+  allowSourceFree?:boolean;allowMultipleReadsPerClause?:boolean;
+  history?:readonly {role:"owner"|"assistant";text:string}[];
 }):Promise<ShadowOutcome> {
   const usage:Usage={model:params.model,modelCalls:0,inputTokens:0,outputTokens:0};
   const validGoal=z.string().trim().min(3).max(3000).safeParse(params.goal);
@@ -190,6 +194,7 @@ export async function runP2ShadowWithScope(params:{
       "Split the owner's exact goal into EVERY independent semantic request, including unsupported work.",
       "Do not combine independent goals joined by and/or/y/و into one clause.",
       "Preserve standalone conjunctions outside individually addressable clauses.",
+      "Use recent conversation context only to understand references, never to replace the current message.",
       "Return each clause as an EXACT CONTIGUOUS SUBSTRING of the original question,",
       "without paraphrasing, invented facts, substitutions, or merging distinct goals.",
       "Include all material outcome predicates, limitations and restrictions in clauses.",
@@ -197,18 +202,35 @@ export async function runP2ShadowWithScope(params:{
       "Set complete=false if you cannot preserve all clauses in at most five elements.",
       "Do not make any claim about café records or approved actions.",
     ].join(" "),
-    input:{goal},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
+    input:{goal,recentConversationContext:(params.history??[]).slice(-6).map(h=>({
+      role:h.role,text:h.text.slice(0,450),
+    }))},schema:P2_AUDIT_SCHEMA,name:"p2_goal_audit",parse:auditSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
   if(!audit || !audit.complete || !hasP2ClauseCoverage(goal,audit.clauses))
     return missing("scope_unverified",usage);
+  // Identically worded repeated clauses have different text occurrences, but
+  // a multi-read plan names only clause text. Fail closed rather than merge
+  // two owner goals through an ambiguous text key. Legacy P2 remains unchanged.
+  if(params.allowMultipleReadsPerClause &&
+    new Set(audit.clauses).size!==audit.clauses.length)
+    return missing("ambiguous_duplicate_clauses",usage);
   const plan=await requestStructured({
     instructions:[
       "Read-only capability selection for this independent shadow demonstration.",
       "Recheck the ORIGINAL owner goal independently against the supplied clause list.",
       "If any independently requested goal is missing, set complete=false.",
-      "You MUST return exactly one choice per supplied audit clause in the same order,",
-      "with the clause string copied character-for-character. Never silently drop one.",
+      ...(params.allowMultipleReadsPerClause?[
+        "For one audited clause you MAY select multiple independent registered reads",
+        "when its calculation needs multiple sources (e.g. wage AND employer burden).",
+        "Return all choices grouped by their clause in original audit order.",
+        "Include EVERY clause at least once, with at most five total choices.",
+        "Never repeat the same capability and identical input for one clause.",
+        "A null/unavailable/source-free choice may not share a clause with other choices.",
+      ]:[
+        "You MUST return exactly one choice per supplied audit clause in the same order.",
+      ]),
+      "Copy each clause character-for-character. Never silently drop one.",
       "Select a capability ID ONLY from the reviewed owner-visible server manifest.",
       "Use its input JSON schema and allowedPurpose; inputJson must be a JSON string",
       "containing its strict input (including exact id, version, purpose).",
@@ -217,8 +239,15 @@ export async function runP2ShadowWithScope(params:{
       "For unsupported changes, approvals, purchases, publish or payroll: choose null and unsupported.",
       "Do not emit SQL, businessId, ownerId, effects, write requests or summaries.",
       "Selection is NOT evidence of a completed read or business outcome.",
+      ...(params.allowSourceFree?[
+        "For independently owner-stated arithmetic with no cafe records needed,",
+        "select null capability, null inputJson and reason source_free; never read cafe data.",
+      ]:[]),
     ].join(" "),
     input:{originalGoal:goal,localDate:params.scope.identity.asOf,
+      recentConversationContext:(params.history??[]).slice(-6).map(h=>({
+        role:h.role,text:h.text.slice(0,450),
+      })),
       timezone:params.scope.identity.timezone,clauses:audit.clauses,
       capabilities:discover.map(def=>({
       id:def.id,mode:def.mode,purpose:def.purpose,
@@ -228,17 +257,39 @@ export async function runP2ShadowWithScope(params:{
     schema:P2_PLAN_SCHEMA,name:"p2_capability_selection",parse:planSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
-  if(!plan || !plan.complete || plan.choices.length!==audit.clauses.length ||
-    plan.choices.some((v,i)=>v.clause!==audit.clauses[i]))
-    return missing("scope_unverified",usage);
+  if(!plan || !plan.complete)return missing("scope_unverified",usage);
+  if(params.allowMultipleReadsPerClause){
+    const indexes=plan.choices.map(v=>audit.clauses.indexOf(v.clause));
+    if(indexes.some(i=>i<0)||indexes.some((i,pos)=>pos>0&&i<indexes[pos-1])||
+      audit.clauses.some(clause=>!plan.choices.some(v=>v.clause===clause)))
+      return missing("scope_unverified",usage);
+    for(const clause of audit.clauses){
+      const group=plan.choices.filter(v=>v.clause===clause);
+      if(group.length>1&&group.some(v=>!v.capabilityId||
+        v.reason==="source_free"))
+        return missing("scope_unverified",usage);
+      const keys=group.map(v=>JSON.stringify([v.capabilityId,v.inputJson]));
+      if(new Set(keys).size!==keys.length)
+        return missing("scope_unverified",usage);
+    }
+  }else if(plan.choices.length!==audit.clauses.length ||
+     plan.choices.some((v,i)=>v.clause!==audit.clauses[i]))
+     return missing("scope_unverified",usage);
   const supportedIds=new Set(discover.map(d=>d.id));
   const evidence:ShadowEvidence[]=[];
   let attemptedReads=0;
   for(const selected of plan.choices){
     const id=selected.capabilityId;
     if(!id) {
+      const sourceFree=selected.reason==="source_free" && params.allowSourceFree;
       evidence.push({clause:selected.clause,capabilityId:null,status:"unavailable",
-        result:null,reason:selected.reason??"unsupported"});
+        result:null,reason:sourceFree?"source_free":
+          selected.reason==="source_free"?"unsupported":selected.reason??"unsupported"});
+      continue;
+    }
+    if(selected.reason==="source_free"){
+      evidence.push({clause:selected.clause,capabilityId:id,status:"unavailable",
+        result:null,reason:"invalid_request"});
       continue;
     }
     if(!supportedIds.has(id)){
@@ -279,7 +330,7 @@ export async function runP2ShadowWithScope(params:{
     evidence.some(e=>e.status==="estimated")?"estimated":"verified";
   return {kind:"p2_read_only_shadow",status,evidence,
     reason:successful.length===evidence.length?null:"some_goals_unavailable",usage,
-    executedEffects:0};
+    attemptedReads,executedEffects:0};
 }
 
 /** Off by default. Only an existing authenticated owner can call this isolated

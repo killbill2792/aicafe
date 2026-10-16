@@ -12,6 +12,7 @@ import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcil
   coversRequestedGoal, fallbackCallForGoal, goalLabel, unavailableGoalText,
   type RequestedGoal } from "./requestScope";
 import type { SupervisorToolCall } from "./toolRegistry.server";
+import { tryP3SupervisorReadOnly } from "@/lib/ai/supervisor/p3/runP3Turn.server";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
@@ -296,10 +297,95 @@ export async function runSupervisorTurn(input: {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
-  // No implicit fallback. Only an explicitly configured, different model may be tried.
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
-  let fallbackAttempted = false;
-  const usage: SupervisorUsage = {model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0};
+  let p3AccessFallback=false;
+  const priorUsage:SupervisorUsage={
+    model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
+  };
+  // P3 is default-off and owner-allowlisted. Every model attempt and canonical
+  // reader invocation consumes the SAME bounded turn budget as legacy fallback.
+  if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
+    let attemptedModels=0;
+    let firstP3ModelDenied=false;
+    let firstDeniedStatus:number|undefined;
+    let firstDeniedCode:string|undefined;
+    const trackedTransport:Transport=async(url,init)=>{
+      attemptedModels++;
+      const response=await transport(url,init);
+      if(attemptedModels===1 && response.status===403){
+        firstP3ModelDenied=true;
+        firstDeniedStatus=response.status;
+      }
+      try{
+        const json:unknown=await response.clone().json();
+        const maybeError=json&&typeof json==="object"&&!Array.isArray(json)?
+          (json as {error?:{code?:unknown}}).error:null;
+        const errorCode=typeof maybeError?.code==="string"?maybeError.code:null;
+        if(attemptedModels===1 &&
+          (response.status===403 || ([400,404].includes(response.status) &&
+            errorCode!==null && MODEL_ACCESS_CODES.has(errorCode)))){
+          firstP3ModelDenied=true;
+          firstDeniedStatus=response.status;
+          firstDeniedCode=errorCode??undefined;
+        }
+        const billed=(json && typeof json==="object"?
+          (json as {usage?:{input_tokens?:unknown;output_tokens?:unknown}}).usage:null);
+        priorUsage.inputTokens+=integer(billed?.input_tokens);
+        priorUsage.outputTokens+=integer(billed?.output_tokens);
+      }catch{/* Provider failure is still a charged model attempt. */}
+      return response;
+    };
+    const recordUsage=(update:SupervisorUsage)=>{
+      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,
+        attemptedModels,update.modelCallCount);
+      priorUsage.toolCallCount=Math.max(priorUsage.toolCallCount,update.toolCallCount);
+      priorUsage.inputTokens=Math.max(priorUsage.inputTokens,update.inputTokens);
+      priorUsage.outputTokens=Math.max(priorUsage.outputTokens,update.outputTokens);
+      input.onUsage?.({...priorUsage});
+    };
+    try{
+      const composed=await tryP3SupervisorReadOnly({
+        text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
+        apiKey:key,model,history:input.history.slice(-6),
+        transport:trackedTransport,onUsage:recordUsage,
+      });
+      if(composed){
+        recordUsage(composed.usage);
+        return {reply:composed.reply,usage:{...priorUsage}};
+      }
+    }catch{
+      // Source/provider failures cannot become trusted facts. Prior usage
+      // survives so an unsafe retry never gets a new five-read allowance.
+    }finally{
+      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,attemptedModels);
+      if(attemptedModels||priorUsage.toolCallCount)input.onUsage?.({...priorUsage});
+      // If the very first P3 preflight was rejected for model access, there
+      // was no model result or café-read evidence. Switch to the configured
+      // legacy access fallback rather than retrying the inaccessible model.
+      // Count the rejected request, with exactly one exceptional extra model
+      // slot so the legacy tool + scope audit + answer still fit the turn.
+      if(firstP3ModelDenied && attemptedModels===1 && priorUsage.toolCallCount===0 &&
+        fallbackModel && fallbackModel!==model){
+        p3AccessFallback=true;
+        input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,
+          toModel:fallbackModel,triggerHttpStatus:firstDeniedStatus,
+          triggerProviderErrorCode:firstDeniedCode,
+          modelCallCount:priorUsage.modelCallCount,toolCallCount:0});
+        model=fallbackModel;
+      }
+    }
+  }
+  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:0);
+  const usage:SupervisorUsage={...priorUsage};
+  const remaining={en:"The scenario needs additional verified inputs or a new request.",
+    es:"El escenario necesita más datos verificados o una nueva solicitud.",
+    ar:"يحتاج السيناريو إلى مدخلات موثوقة إضافية أو طلب جديد."};
+  if(usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
+    return {reply:{intent:"unknown",status:"unavailable",evidence:[],
+      blocks:[{type:"warning",code:"SUPERVISOR_TURN_BUDGET",text:remaining[input.locale]}]},
+      usage};
+  // No implicit provider-model fallback. Only a separately configured model.
+  let fallbackAttempted = p3AccessFallback;
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
   const executed: SupervisorToolCall[] = [];
@@ -318,7 +404,8 @@ export async function runSupervisorTurn(input: {
     const request=JSON.stringify(buildSupervisorScopeAuditRequest({
       model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
     }));
-    for(let attempt=0;attempt<2;attempt++){
+    for(let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
+      usage.modelCallCount<maxModelAttempts);attempt++){
       const attemptNumber=attempt+1,controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:1,attempt:attemptNumber,
@@ -421,9 +508,13 @@ export async function runSupervisorTurn(input: {
     ar:"لم أتمكن من تحديد جميع أجزاء السؤال بثقة. يُرجى طرح كل جزء على حدة حتى لا يفوتني شيء.",
   }[input.locale];
 
-  for (let round=0;round<MAX_ROUNDS;round++) {
+  for (let round=0;round<MAX_ROUNDS && (priorUsage.modelCallCount===0 ||
+    usage.modelCallCount<maxModelAttempts);round++) {
     let payload: Record<string,unknown> | null = null;
-    for (let attempt=0;attempt<2;attempt++) {
+    // Each decoded retry consumes the SAME P3/legacy model budget. Do not
+    // authorize a second transport merely because this round began in budget.
+    for (let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
+      usage.modelCallCount<maxModelAttempts);attempt++) {
       const roundNumber=round+1, attemptNumber=attempt+1;
       const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:roundNumber,attempt:attemptNumber,

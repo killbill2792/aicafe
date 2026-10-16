@@ -12,7 +12,18 @@ export function supervisorReplyIdFor(ownerMessageId: string): string {
 /** Reject metrics with no exact source citation before the privileged insert. */
 export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedSupervisorReply {
   const validated = groundedReplySchema.parse(reply);
-  if (!["insufficient_evidence","unavailable"].includes(validated.status) && validated.evidence.length === 0) {
+  // The P3 arithmetic evaluator can produce a deterministic owner-only what-if
+  // using no café reads. Its result is necessarily conditional and consists
+  // entirely of server-built text/warnings; it must never fabricate café
+  // evidence just to satisfy the generic grounding requirement.
+  const sourceFreeP3 = validated.status === "partial" &&
+    validated.intent === "profitability" && validated.evidence.length === 0 &&
+    validated.blocks[0]?.type === "warning" &&
+    validated.blocks[0].code === "P3_CONDITIONAL" &&
+    validated.blocks.some(b => b.type === "text") &&
+    validated.blocks.every(b => b.type === "text" || b.type === "warning");
+  if (!["insufficient_evidence","unavailable"].includes(validated.status) &&
+      validated.evidence.length === 0 && !sourceFreeP3) {
     throw new Error("Supervisor response requires trusted evidence");
   }
   if (["insufficient_evidence","unavailable"].includes(validated.status) &&

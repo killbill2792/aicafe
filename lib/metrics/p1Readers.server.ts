@@ -4,7 +4,7 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage, readP1MenuCatalog } from "./p1Additional.server";
+import { readP1BusinessProfile, readP1Recipe, readP1Ingredients, readP1EmployeeWages, readP1PayrollBurden, readP1SupplierQuotes, readP1OwnerRules, readP1SchedulingFoundation, readP1ExpenseEntries, readP1RecurringBillRows, readP1TaskPage, readP1DecisionPage, readP1MenuCatalog } from "./p1Additional.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { discoverP1, discoverP1Inventory, additionalSurfaces, classified, inputFor, metricUnits, purposePolicies, readers, sourcePolicies, values,
   type SupportedId, quality, slice } from "./p1Catalog";
@@ -80,6 +80,7 @@ const handlers: Record<SupportedId,(tools:BusinessScopedCafeTools,input:{
   "business.profile":(_t,_a,ctx)=>readP1BusinessProfile({businessId:ctx.businessId ?? ""}),
   "menu.recipe":(_t,a,ctx)=>readP1Recipe({businessId:ctx.businessId ?? ""},a.productId!),
   "menu.ingredients":(_t,_a,ctx)=>readP1Ingredients({businessId:ctx.businessId ?? ""}),
+  "labor.payroll_burden":(_t,_a,ctx)=>readP1PayrollBurden({businessId:ctx.businessId ?? ""}),
   "labor.employee_wages":(_t,_a,ctx)=>readP1EmployeeWages({businessId:ctx.businessId ?? ""}),
   "supplies.quotes":(_t,_a,ctx)=>readP1SupplierQuotes({businessId:ctx.businessId ?? ""}),
   "team.owner_rules":(_t,_a,ctx)=>readP1OwnerRules({businessId:ctx.businessId ?? ""}),
@@ -153,7 +154,7 @@ export async function executeP1Authorized(
     "money.expense_entries","money.recurring_bill_rows","money.monthly_bills",
     "money.recorded_spending","money.break_even","sales.daily","menu.recipe",
     "menu.catalog","menu.product_economics","pricing.recommendation","supplies.quotes",
-    "labor.employee_wages","labor.daily_costs",
+    "labor.payroll_burden","labor.employee_wages","labor.daily_costs",
   ]);
   if(identity.currency && identity.currency!=="USD" && moneyBearing.has(id))
     return unavailable("unsupported");

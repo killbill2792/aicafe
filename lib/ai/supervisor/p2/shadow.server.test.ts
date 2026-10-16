@@ -89,6 +89,42 @@ function syntheticRegistration(id="energy.meter.review.v1") {
   return {def,read};
 }
 describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
+  it("keeps P2 one-read-per-clause while P3 may opt into bounded multi-read choices",async()=>{
+    const goal="Review costs on 2026-10-03";
+    const selection={complete:true,choices:[
+      {clause:goal,capabilityId:"leo.money.costs.v1",
+        inputJson:JSON.stringify(args),reason:null},
+      {clause:goal,capabilityId:"leo.money.costs.v1",
+        inputJson:JSON.stringify({...args,period:{from:"2026-10-02",to:"2026-10-03"}}),
+        reason:null},
+    ]};
+    const p2=transport({complete:true,clauses:[goal]},selection);
+    const ordinary=await request(goal,p2.fn);
+    expect(ordinary.reason).toBe("scope_unverified");
+    expect(ordinary.attemptedReads).toBe(0);
+    const p3=transport({complete:true,clauses:[goal]},selection);
+    const multi=await request(goal,p3.fn,{allowMultipleReadsPerClause:true});
+    expect(multi.evidence.map(item=>item.clause)).toEqual([goal,goal]);
+    expect(multi.attemptedReads).toBe(2);
+    const ambiguous=transport({complete:true,clauses:[goal]},{
+      complete:true,choices:[
+        selection.choices[0],
+        {clause:goal,capabilityId:null,inputJson:null,reason:"source_free"},
+      ],
+    });
+    const rejected=await request(goal,ambiguous.fn,{
+      allowMultipleReadsPerClause:true,allowSourceFree:true});
+    expect(rejected.reason).toBe("scope_unverified");
+    expect(rejected.attemptedReads).toBe(0);
+    const duplicated="Review wages and Review wages";
+    const duplicateAudit=transport({complete:true,
+      clauses:["Review wages","Review wages"]});
+    const ambiguousRepeated=await request(duplicated,duplicateAudit.fn,{
+      allowMultipleReadsPerClause:true});
+    expect(ambiguousRepeated.reason).toBe("ambiguous_duplicate_clauses");
+    expect(ambiguousRepeated.attemptedReads).toBe(0);
+    expect(duplicateAudit.fn).toHaveBeenCalledTimes(1);
+  });
   it("publishes four real P1 readers, preserving exact versioned schema/source/role contracts",()=>{
     const manifest=createDefaultShadowRegistry().discover(scope());
     expect(manifest.map(x=>x.id).sort()).toEqual([
@@ -150,6 +186,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     }))));
     const result=await request(goal,mock.fn,{registry:createP2Registry([def])});
     expect(result.evidence).toHaveLength(2);
+    expect(result.attemptedReads).toBe(2);
     expect(read).toHaveBeenCalledTimes(2);
   });
   it("never trusts model no_data before a valid canonical read",async()=>{
@@ -162,6 +199,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     }]));
     const result=await request("Inspect meter",mock.fn,{registry:createP2Registry([def])});
     expect(read).toHaveBeenCalledOnce();
+    expect(result.attemptedReads).toBe(1);
     expect(result.evidence[0]).toMatchObject({status:"partial",reason:null});
   });
   it("rejects effect fields discarded by non-strict output schemas",async()=>{

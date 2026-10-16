@@ -38,6 +38,28 @@ describe("Phase 4 privileged reply validation", () => {
     expect(validateGroundedReply(notice)).toEqual(notice);
   });
 
+  it("persists only text-only source-free P3 conditional arithmetic without café evidence", () => {
+    const pure: GroundedSupervisorReply = {
+      intent: "profitability", status: "partial", evidence: [],
+      blocks: [
+        { type: "warning", code: "P3_CONDITIONAL",
+          text: "Conditional arithmetic, not verified café profit." },
+        { type: "text", text: "Calculated scenario result: $2.50" },
+      ],
+    };
+    expect(validateGroundedReply(pure)).toEqual(pure);
+    expect(() => validateGroundedReply({
+      ...pure, blocks: [{type: "text", text: "Unverified financial claim"}],
+    })).toThrow("requires trusted evidence");
+    expect(() => validateGroundedReply({
+      ...pure, intent: "unknown",
+    })).toThrow("requires trusted evidence");
+    expect(() => validateGroundedReply({
+      ...pure, blocks: [...pure.blocks, {type: "metric",label: "Profit",
+        valueCents: 250,source}],
+    })).toThrow();
+  });
+
   it("rejects arbitrary extra keys, role spoofing and forged tool names", () => {
     expect(() => validateGroundedReply({
       ...valid, role: "supervisor", method: "update_price",

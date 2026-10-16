@@ -1,0 +1,37 @@
+name: Supervisor P3 Expression Verification
+
+on:
+  pull_request:
+    paths:
+      - "lib/ai/supervisor/p3/**"
+      - ".github/workflows/supervisor-p3-verify.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  p3-expression:
+    name: P3 bounded arithmetic and security regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: TypeScript strict
+        run: npx tsc --noEmit
+      - name: P3 source-bound expression tests
+        run: npx vitest run lib/ai/supervisor/p3
+      - name: Existing Supervisor and P1/P2 security tests
+        run: npx vitest run lib/ai/supervisor/p2 lib/metrics lib/ai/conversations
+      - name: Changed-code lint
+        run: npx eslint lib/ai/supervisor/p3
+      - name: Production build without deployment
+        run: npm run build
+      - name: Whitespace
+        run: git diff --check origin/main...HEAD
