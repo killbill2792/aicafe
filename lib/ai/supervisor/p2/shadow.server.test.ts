@@ -150,6 +150,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     }))));
     const result=await request(goal,mock.fn,{registry:createP2Registry([def])});
     expect(result.evidence).toHaveLength(2);
+    expect(result.attemptedReads).toBe(2);
     expect(read).toHaveBeenCalledTimes(2);
   });
   it("never trusts model no_data before a valid canonical read",async()=>{
@@ -162,6 +163,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     }]));
     const result=await request("Inspect meter",mock.fn,{registry:createP2Registry([def])});
     expect(read).toHaveBeenCalledOnce();
+    expect(result.attemptedReads).toBe(1);
     expect(result.evidence[0]).toMatchObject({status:"partial",reason:null});
   });
   it("rejects effect fields discarded by non-strict output schemas",async()=>{
