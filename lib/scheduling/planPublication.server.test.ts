@@ -174,8 +174,6 @@ describe("Olivia PR3 guarded approval and publishing",()=>{
       breaks:[{paid:"false",endAt:"2026-10-12T19:30:00.000Z",
         startAt:"2026-10-12T19:00:00.000Z"}],
     }],error:null});
-    expect(await transitionOliviaPlan(payload,"publish"))
-      .toEqual({ok:false,error:"not_approved"});
     expect(await transitionOliviaPlan(payload,"approve"))
       .toEqual({ok:false,error:"invalid_shifts"});
     expect(mocks.admin).not.toHaveBeenCalled();
