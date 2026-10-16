@@ -98,6 +98,7 @@ async function readAvailability(
     .select("id,display_name,active",{count:"exact"}).eq("business_id",owner.businessId);
   if(input.employeeId)query=query.eq("id",input.employeeId);
   const {data:staff,error:staffError,count}=await query.order("id").limit(501);
+  if(!(await stillOwner(owner.businessId)))return fail(capability,"unauthorized");
   if(staffError || !staff || count===null)
     return fail(capability,"storage_unavailable");
   if(count>500)return fail(capability,"capacity_exceeded");
@@ -116,8 +117,8 @@ async function readAvailability(
   }
 
   const found=await readSchedulingFoundation();
-  if(!found.ok)return fromDomainError(capability,found.error);
   if(!(await stillOwner(owner.businessId)))return fail(capability,"unauthorized");
+  if(!found.ok)return fromDomainError(capability,found.error);
   const grouped:Record<Kind,Map<string,unknown[]>>={
     availability_rule:new Map(),availability_exception:new Map(),
     preferences:new Map(),preference_window:new Map(),qualification:new Map(),
@@ -221,6 +222,17 @@ async function readPreview(
   // PR2 witnesses only claim feasibility if a returned best scenario fully
   // satisfies hard constraints and coverage. Reject forged provider outcomes.
   const p=parsedPlan.data;
+  const weekEnd=new Date(Date.parse(input.week+"T00:00:00Z")+6*86400000)
+    .toISOString().slice(0,10);
+  if(p.horizonStart!==input.week || p.horizonEnd!==weekEnd)
+    return fail(capability,"invalid_record");
+  // PR2 always tries cash, owner_time and balanced in that order, retaining
+  // the cash witness and removing duplicate scenarios without reordering.
+  const objectives=["cash","owner_time","balanced"] as const;
+  if(p.scenarios.length===0 || p.scenarios[0].objective!=="cash" ||
+     p.scenarios.some((s,i)=>i>0 &&
+       objectives.indexOf(s.objective)<=objectives.indexOf(p.scenarios[i-1].objective)))
+    return fail(capability,"invalid_record");
   const best=p.best;
   const bestPresent=best!==null && p.scenarios.some(s=>
     JSON.stringify(s)===JSON.stringify(best));
@@ -254,6 +266,20 @@ async function readPreview(
          baseline.cost.cashWagesCents,right.cost.cashWagesCents) ||
        comparison.loadedPayrollDifferenceCents!==delta(
          baseline.cost.loadedPayrollCents,right.cost.loadedPayrollCents))
+      return fail(capability,"invalid_record");
+  }
+  // Every assigned worker, uncovered location and unknown wage must resolve
+  // to a trusted PR3 source name, never a forged or cross-source UUID.
+  const names=z.record(oliviaUuid,z.string().min(1).max(240));
+  const people=names.safeParse(preview.employees);
+  const locations=names.safeParse(preview.locationNames);
+  if(!people.success || !locations.success)return fail(capability,"invalid_record");
+  const workers=new Set(Object.keys(people.data));
+  const sites=new Set(Object.keys(locations.data));
+  for(const scenario of [...p.scenarios,...(p.best?[p.best]:[])]){
+    if(scenario.shifts.some(s=>!workers.has(s.employeeId) || !sites.has(s.locationId)) ||
+       scenario.gaps.some(g=>!sites.has(g.locationId)) ||
+       scenario.cost.missingWageEmployeeIds.some(id=>!workers.has(id)))
       return fail(capability,"invalid_record");
   }
   // Validate source tokens BEFORE the client's expected token comparisons:
@@ -322,10 +348,10 @@ async function readHistory(
   const initialOwner=await requireSchedulingOwner();
   if(!initialOwner)return fail(capability,"unauthorized");
   const history=await readOliviaPlanHistory({week:input.week});
-  if(!history.ok)return fromDomainError(capability,history.error);
   const owner=await requireSchedulingOwner();
   if(!owner || owner.businessId!==initialOwner.businessId)
     return fail(capability,"unauthorized");
+  if(!history.ok)return fromDomainError(capability,history.error);
   if(!completeHistory(history))return fail(capability,"invalid_record");
   return verified(capability,{
     ok:true,capability,version:1,status:"ok",
@@ -347,6 +373,7 @@ async function readRevision(
   const initialOwner=await requireSchedulingOwner();
   if(!initialOwner)return fail(capability,"unauthorized");
   const revision=await readOliviaPlanRevision({week:input.week,revisionId:input.revisionId});
+  if(!(await stillOwner(initialOwner.businessId)))return fail(capability,"unauthorized");
   if(!revision.ok)return fromDomainError(capability,revision.error);
   const scenario=oliviaScenarioSchema.safeParse(revision.scenario);
   const revisionStatus=oliviaRevisionStatusSchema.safeParse(revision.status);
@@ -380,6 +407,7 @@ async function readRevision(
       {count:"exact"})
     .eq("business_id",owner.businessId)
     .eq("plan_revision_id",input.revisionId).limit(201);
+  if(!(await stillOwner(owner.businessId)))return fail(capability,"unauthorized");
   if(error || !rows || count===null)return fail(capability,"storage_unavailable");
   if(count>200)return fail(capability,"capacity_exceeded");
   // Persisted evidence must be COMPLETE: an API row cap could otherwise
