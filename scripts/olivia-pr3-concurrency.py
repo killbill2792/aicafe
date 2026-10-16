@@ -186,5 +186,7 @@ COMMIT;""")
 finally:
     # Each test creates unique disposable identities; deleting the businesses
     # cascades Olivia fixtures and its audits before deleting those users.
-    sql(f"""DELETE FROM public.businesses WHERE id IN ('{business}','{other_business}');
+    sql(f"""DELETE FROM public.timecards WHERE business_id='{business}';
+DELETE FROM public.scheduling_plan_series WHERE business_id='{business}';
+DELETE FROM public.businesses WHERE id IN ('{business}','{other_business}');
 DELETE FROM auth.users WHERE id IN ('{owner}','{coowner}','{outsider}');""")
