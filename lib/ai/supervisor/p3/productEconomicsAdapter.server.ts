@@ -12,6 +12,7 @@ import type { TrustedReadScope,ResultStatus } from "@/lib/ai/supervisor/p2/regis
 export async function enrichResolvedProductEconomics(input:{
   goal:string;scope:TrustedReadScope;registry:ShadowRegistry;
   evidence:readonly ShadowEvidence[];remainingReads:number;
+  ownerHistory?:readonly string[];
 }):Promise<{evidence:ShadowEvidence[];readCount:number}>{
   const result:ShadowEvidence[]=[...input.evidence];
   const names=input.goal;
@@ -23,11 +24,18 @@ export async function enrichResolvedProductEconomics(input:{
     if(!parsed.success||parsed.data.status==="unavailable")continue;
     const catalog=values["menu.catalog"].safeParse(parsed.data.value);
     if(!catalog.success)continue;
+    const matchesCurrent=catalog.data.filter(product=>
+      isWholeNamedEntity(names,product.name,catalog.data,true));
+    const historical=(input.ownerHistory??[]).slice(-3).join(" ");
+    const matchesHistory=catalog.data.filter(product=>
+      isWholeNamedEntity(historical,product.name,catalog.data,true));
+    const uniquePrevious=matchesCurrent.length===0&&matchesHistory.length===1;
     for(const product of catalog.data){
       if(readCount>=input.remainingReads)break;
       if(!product.active||!product.name||!product.id||
         product.id.length>120||chosen.has(product.id)||
-        !isWholeNamedEntity(names,product.name,catalog.data,true))
+        !(matchesCurrent.some(match=>match.id===product.id)||
+          uniquePrevious&&matchesHistory[0].id===product.id))
         continue;
       chosen.add(product.id);
       const read=await input.registry.invoke(input.scope,
