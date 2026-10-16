@@ -51,3 +51,26 @@ export function formatScenarioAssumption(raw:string,locale:Locale):string{
   return validUnits.includes(unit)&&Number.isFinite(value)?
     formatScenarioValue(value,unit,locale,true):"";
 }
+
+/** Display only translated, trusted operation names, never internal RPN tags. */
+export function formatScenarioFormula(step:string,locale:"en"|"es"|"ar"):string{
+  const operations={
+    en:{source:"recorded input",convert:"unit conversion",
+      owner_hypothetical:"owner assumption",add:"plus",subtract:"minus",
+      scenario_delta:"scenario difference",multiply:"times",divide:"divided by",
+      ratio:"percentage comparison",compare:"comparison"},
+    es:{source:"dato registrado",convert:"conversión de unidades",
+      owner_hypothetical:"supuesto del propietario",add:"más",subtract:"menos",
+      scenario_delta:"diferencia entre escenarios",multiply:"multiplicado por",
+      divide:"dividido entre",ratio:"comparación porcentual",compare:"comparación"},
+    ar:{source:"بيانات مسجلة",convert:"تحويل الوحدات",
+      owner_hypothetical:"افتراض المالك",add:"جمع",subtract:"طرح",
+      scenario_delta:"فرق السيناريوهات",multiply:"ضرب",divide:"قسمة",
+      ratio:"مقارنة النسب",compare:"مقارنة"},
+  };
+  const id=step.startsWith("source(")?"source":
+    step.startsWith("convert(")?"convert":step;
+  return operations[locale][id as keyof typeof operations["en"]]??{
+    en:"calculation",es:"حساب".replace("حساب","cálculo"),ar:"حساب",
+  }[locale];
+}
