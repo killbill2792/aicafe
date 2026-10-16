@@ -176,7 +176,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
           return unavailable("invalid_result");
         const actual=validated.data as {
           status?:string;value?:unknown;reason?:unknown;
-          provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;asOf?:unknown};
+          provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;purpose?:unknown;asOf?:unknown};
           quality?:{missingInputs?:unknown;estimatedInputs?:unknown;staleInputs?:unknown};
         };
         if(["proposal","approve","approval","commit","effect","executedEffects",
