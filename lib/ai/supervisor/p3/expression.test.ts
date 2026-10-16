@@ -63,8 +63,8 @@ describe("P3 source-bound safe expression evaluator",()=>{
     ],"no_external_sources"),{
       ...context([]),ownerMessage:"45 minutes",
     });
-    // Non-money fractional results round only for presentation.
-    expect(converted).toMatchObject({status:"conditional",unit:"hour",value:1});
+    // Valid non-money conversions must not silently round 45 minutes up to one hour.
+    expect(converted).toMatchObject({status:"conditional",unit:"hour",value:0.75});
     const compared=evaluateExpression(plan([
       source("latte-price"),source("latte-price"),{op:"compare"},
     ]),context([price]));
@@ -126,13 +126,12 @@ describe("P3 source-bound safe expression evaluator",()=>{
   });
   it("rejects zero division, malformed/oversized AST and effects",()=>{
     expect(evaluateExpression(plan([
-      hypot(25,"item","one scenario"),hypot(25,"item","other scenario"),
-      {op:"subtract"},hypot(25,"item","volume"),{op:"divide"},
-    ],"no_external_sources"),context([])).status).toBe("conditional");
-    expect(evaluateExpression(plan([
-      hypot(25,"item","volume"),hypot(25,"item","same volume"),
-      {op:"subtract"},hypot(25,"item","volume"),{op:"divide"},
-    ],"no_external_sources"),context([])).status).toBe("conditional");
+      hypot(25,"item","numerator"),
+      hypot(25,"item","first volume"),hypot(25,"item","equal volume"),
+      {op:"subtract"},{op:"divide"},
+    ],"no_external_sources"),context([]))).toMatchObject({
+      status:"unavailable",reason:"division_by_zero",
+    });
     expect(evaluateExpression({...plan([source("latte-price")]),effects:["publish_schedule"]},context()))
       .toMatchObject({status:"unavailable",reason:"invalid_plan"});
     expect(evaluateExpression(plan(Array(31).fill({op:"source",handle:"latte-price"})),context()))
