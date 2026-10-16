@@ -157,7 +157,8 @@ export async function tryP3SupervisorReadOnly(input:{
   });
   if(!shadow.evidence.length)return null;
   const projection=projectP1Evidence(shadow.evidence,identity.businessId,input.text);
-  if(!projection.operands.length)return null;
+  // Validated pure owner-hypothetical arithmetic may need no café source.
+  // It must declare no_external_sources; it can never be labeled observed.
   const clauses=shadow.evidence.map(x=>x.clause);
   const completion=await modelComposition({
     goal:input.text,clauses,model:input.model,apiKey:input.apiKey,
@@ -170,22 +171,33 @@ export async function tryP3SupervisorReadOnly(input:{
   if(!completion?.plan.complete||
     !exactCoverage(clauses,completion.plan.plans))return null;
   const outcomes:ExpressionOutcome[]=[];
+  let unsupportedGoals=0;
   for(const item of completion.plan.plans){
-    if(!item.planJson)return null;
+    if(!item.planJson){
+      if(!item.reason)return null;
+      unsupportedGoals+=item.coveredClauses.length;
+      continue;
+    }
     let raw:unknown;
     try{raw=JSON.parse(item.planJson);}catch{return null;}
-    if(!planSchema.safeParse(raw).success)return null;
+    const plan=planSchema.safeParse(raw);
+    if(!plan.success)return null;
+    const pure=plan.data.purpose==="no_external_sources";
     const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
       businessId:identity.businessId,locationId:null,ownerMessage:input.text,
-      currency:"USD",bindings:projection.bindings,operands:projection.operands,
+      currency:"USD",bindings:pure?[]:projection.bindings,
+      operands:pure?[]:projection.operands,
     });
     const checked=simulationOutputSchema.safeParse(simulated);
     if(!checked.success||checked.data.status==="unavailable")return null;
     outcomes.push(checked.data as ExpressionOutcome);
   }
+  if(!outcomes.length && !unsupportedGoals)return null;
   const locale=labels[input.locale],blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
   ];
+  if(unsupportedGoals)blocks.push({type:"warning",code:"P3_UNSUPPORTED",
+    text:locale.unsupported});
   const refs:EvidenceReference[]=[];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(
