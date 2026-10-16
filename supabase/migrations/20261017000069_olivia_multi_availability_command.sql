@@ -77,11 +77,160 @@ BEGIN
   -- Lock all affected employee identities in stable order, including across
   -- location scopes. Missing/foreign employees are rejected before any write.
   IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_batches) AS x(value)
-     WHERE jsonb_typeof(x.value)<>'object'
-       OR x.value->>'employeeId' IS NULL
-       OR x.value->>'kind' NOT IN ('availability_rule','availability_exception')
-       OR jsonb_typeof(x.value->'expected')<>'array'
-       OR jsonb_typeof(x.value->'desired')<>'array') THEN
+     WHERE jsonb_typeof(x.value) IS DISTINCT FROM 'object'
+       OR coalesce(x.value->>'employeeId','') !~
+         '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  IF (SELECT count(*) FROM (
+       SELECT DISTINCT (x.value->>'employeeId')::uuid AS id
+       FROM jsonb_array_elements(p_batches) AS x(value)
+     ) selected JOIN public.employees e ON e.business_id=p_business_id
+       AND e.id=selected.id) IS DISTINCT FROM
+     (SELECT count(DISTINCT x.value->>'employeeId')
+       FROM jsonb_array_elements(p_batches) AS x(value)) THEN
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  PERFORM 1 FROM public.employees
+    WHERE business_id=p_business_id
+      AND id IN (SELECT DISTINCT (x.value->>'employeeId')::uuid
+        FROM jsonb_array_elements(p_batches) AS x(value))
+    ORDER BY id FOR UPDATE;
+
+  FOR v_batch IN SELECT value FROM jsonb_array_elements(p_batches) LOOP
+    -- Existing PR1B RPC already validates exact full-scope manifest,
+    -- revision/CAS, immutable receipt, tenant/actor, triggers and audit.
+    v_item:=public.scheduling_save_availability_batch(
+      p_business_id, (v_batch->>'employeeId')::uuid,
+      (v_batch->>'locationId')::uuid, v_batch->>'kind',
+      v_batch->'scope', v_batch->'expected', v_batch->'desired',
+      (v_batch->>'requestKey')::uuid
+    );
+    IF v_item IS NULL OR v_item->>'conflict'='true' OR
+       jsonb_typeof(v_item->'records') IS DISTINCT FROM 'array' THEN
+      -- A typed conflict aborts the ENTIRE SQL transaction, including earlier
+      -- employee edits/audit/receipts. No partial multi-employee commits.
+      RAISE EXCEPTION 'Olivia availability revision conflict' USING ERRCODE='P4B01';
+    END IF;
+    v_results:=v_results||jsonb_build_array(jsonb_build_object(
+      'batchIndex',v_index,'records',v_item->'records'));
+    v_index:=v_index+1;
+  END LOOP;
+  v_result:=jsonb_build_object('batches',v_results,'actorId',v_actor);
+  UPDATE public.scheduling_olivia_command_receipts SET result=v_result
+    WHERE business_id=p_business_id AND request_key=p_request_key;
+  RETURN v_result||jsonb_build_object('replayed',false);
+END $$;
+REVOKE ALL ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) TO authenticated;
+
+       OR coalesce(x.value->>'requestKey','') !~
+         '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  IF (SELECT count(*) FROM (
+       SELECT DISTINCT (x.value->>'employeeId')::uuid AS id
+       FROM jsonb_array_elements(p_batches) AS x(value)
+     ) selected JOIN public.employees e ON e.business_id=p_business_id
+       AND e.id=selected.id) IS DISTINCT FROM
+     (SELECT count(DISTINCT x.value->>'employeeId')
+       FROM jsonb_array_elements(p_batches) AS x(value)) THEN
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  PERFORM 1 FROM public.employees
+    WHERE business_id=p_business_id
+      AND id IN (SELECT DISTINCT (x.value->>'employeeId')::uuid
+        FROM jsonb_array_elements(p_batches) AS x(value))
+    ORDER BY id FOR UPDATE;
+
+  FOR v_batch IN SELECT value FROM jsonb_array_elements(p_batches) LOOP
+    -- Existing PR1B RPC already validates exact full-scope manifest,
+    -- revision/CAS, immutable receipt, tenant/actor, triggers and audit.
+    v_item:=public.scheduling_save_availability_batch(
+      p_business_id, (v_batch->>'employeeId')::uuid,
+      (v_batch->>'locationId')::uuid, v_batch->>'kind',
+      v_batch->'scope', v_batch->'expected', v_batch->'desired',
+      (v_batch->>'requestKey')::uuid
+    );
+    IF v_item IS NULL OR v_item->>'conflict'='true' OR
+       jsonb_typeof(v_item->'records') IS DISTINCT FROM 'array' THEN
+      -- A typed conflict aborts the ENTIRE SQL transaction, including earlier
+      -- employee edits/audit/receipts. No partial multi-employee commits.
+      RAISE EXCEPTION 'Olivia availability revision conflict' USING ERRCODE='P4B01';
+    END IF;
+    v_results:=v_results||jsonb_build_array(jsonb_build_object(
+      'batchIndex',v_index,'records',v_item->'records'));
+    v_index:=v_index+1;
+  END LOOP;
+  v_result:=jsonb_build_object('batches',v_results,'actorId',v_actor);
+  UPDATE public.scheduling_olivia_command_receipts SET result=v_result
+    WHERE business_id=p_business_id AND request_key=p_request_key;
+  RETURN v_result||jsonb_build_object('replayed',false);
+END $$;
+REVOKE ALL ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) TO authenticated;
+
+       OR NOT (x.value ? 'locationId')
+       OR (x.value->>'locationId' IS NOT NULL AND
+           x.value->>'locationId' !~
+             '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  IF (SELECT count(*) FROM (
+       SELECT DISTINCT (x.value->>'employeeId')::uuid AS id
+       FROM jsonb_array_elements(p_batches) AS x(value)
+     ) selected JOIN public.employees e ON e.business_id=p_business_id
+       AND e.id=selected.id) IS DISTINCT FROM
+     (SELECT count(DISTINCT x.value->>'employeeId')
+       FROM jsonb_array_elements(p_batches) AS x(value)) THEN
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  PERFORM 1 FROM public.employees
+    WHERE business_id=p_business_id
+      AND id IN (SELECT DISTINCT (x.value->>'employeeId')::uuid
+        FROM jsonb_array_elements(p_batches) AS x(value))
+    ORDER BY id FOR UPDATE;
+
+  FOR v_batch IN SELECT value FROM jsonb_array_elements(p_batches) LOOP
+    -- Existing PR1B RPC already validates exact full-scope manifest,
+    -- revision/CAS, immutable receipt, tenant/actor, triggers and audit.
+    v_item:=public.scheduling_save_availability_batch(
+      p_business_id, (v_batch->>'employeeId')::uuid,
+      (v_batch->>'locationId')::uuid, v_batch->>'kind',
+      v_batch->'scope', v_batch->'expected', v_batch->'desired',
+      (v_batch->>'requestKey')::uuid
+    );
+    IF v_item IS NULL OR v_item->>'conflict'='true' OR
+       jsonb_typeof(v_item->'records') IS DISTINCT FROM 'array' THEN
+      -- A typed conflict aborts the ENTIRE SQL transaction, including earlier
+      -- employee edits/audit/receipts. No partial multi-employee commits.
+      RAISE EXCEPTION 'Olivia availability revision conflict' USING ERRCODE='P4B01';
+    END IF;
+    v_results:=v_results||jsonb_build_array(jsonb_build_object(
+      'batchIndex',v_index,'records',v_item->'records'));
+    v_index:=v_index+1;
+  END LOOP;
+  v_result:=jsonb_build_object('batches',v_results,'actorId',v_actor);
+  UPDATE public.scheduling_olivia_command_receipts SET result=v_result
+    WHERE business_id=p_business_id AND request_key=p_request_key;
+  RETURN v_result||jsonb_build_object('replayed',false);
+END $$;
+REVOKE ALL ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) FROM PUBLIC,anon;
+GRANT EXECUTE ON FUNCTION public.scheduling_olivia_commit_availability(
+  uuid,text,uuid,jsonb) TO authenticated;
+)
+       OR coalesce(x.value->>'kind','') NOT IN
+         ('availability_rule','availability_exception')
+       OR jsonb_typeof(x.value->'scope') IS DISTINCT FROM 'object'
+       OR jsonb_typeof(x.value->'expected') IS DISTINCT FROM 'array'
+       OR jsonb_typeof(x.value->'desired') IS DISTINCT FROM 'array'
+       OR jsonb_array_length(x.value->'expected') > 200
+       OR jsonb_array_length(x.value->'desired') > 200) THEN
     RETURN jsonb_build_object('error','invalid_input');
   END IF;
   IF (SELECT count(*) FROM (
