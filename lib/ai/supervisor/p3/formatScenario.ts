@@ -43,8 +43,8 @@ export function formatScenarioAssumption(raw:string,locale:Locale):string{
   if(split<1)return "";
   const quoted=raw.slice(0,split),unit=raw.slice(split+1) as Unit|"cents";
   const value=Number(normalizeScenarioNumber(quoted));
-  if(unit==="cents"&&Number.isFinite(value))
-    return formatScenarioValue(value,"USD_cents",locale);
+  if(unit==="cents")
+    return Number.isFinite(value)?formatScenarioValue(value,"USD_cents",locale):"";
   const validUnits:readonly string[]=["USD_cents","USD_cents_per_item",
     "USD_cents_per_hour","USD_cents_per_US_gallon","USD_cents_per_US_fl_oz",
     "item","minute","hour","US_gallon","US_fl_oz","scalar","ratio_bps","comparison"];
