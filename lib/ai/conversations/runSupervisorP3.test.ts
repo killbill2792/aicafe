@@ -478,6 +478,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       const text=JSON.stringify(outcome.reply.blocks);
       expect(language.locale==="es"?text.includes("condicional"):
         text.includes("مشروط")).toBe(true);
+      expect(text).not.toMatch(/unversioned_source|unverified_source|unverified_input/);
+      expect(text).not.toMatch(/unverified:|sourceRevision|labor\.employee_wages:/);
     }
   });
 
