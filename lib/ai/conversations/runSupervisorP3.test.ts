@@ -336,6 +336,38 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage.modelCallCount).toBe(3);
     expect(p1Reads).toHaveBeenCalled();
   });
+  it("never borrows a hypothetical quantity from another audited clause",async()=>{
+    const clauses=["Increase by 25 items","Increase by 30 items"];
+    const question=clauses.join(" and ");
+    const testPlan=(quantity:number)=>({capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Quoted item increment",
+      nodes:[{op:"hypothetical",label:"additional items",
+        quotedNumber:String(quantity),value:quantity,unit:"item"}],
+    });
+    async function scenario(borrow:boolean){
+      let callNumber=0;
+      const transport=vi.fn(async()=>response([
+        {complete:true,clauses},
+        {complete:true,choices:clauses.map(clause=>({clause,
+          capabilityId:null,inputJson:null,reason:"source_free"}))},
+        {complete:true,plans:clauses.map((clause,i)=>({
+          coveredClauses:[clause],reason:null,
+          planJson:JSON.stringify(testPlan(i===0?(borrow?30:25):30)),
+        }))},
+      ][callNumber++]));
+      return run(transport,question);
+    }
+    const valid=await scenario(false);
+    expect(valid.reply.status).toBe("partial");
+    expect(valid.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"text",text:expect.stringContaining("25 items")}),
+      expect.objectContaining({type:"text",text:expect.stringContaining("30 items")}),
+    ]));
+    const forged=await scenario(true);
+    expect(forged.reply.status).toBe("unavailable");
+    expect(forged.reply.evidence).toEqual([]);
+    expect(forged.usage.modelCallCount).toBe(3);
+  });
   it("keeps identical sales fields separate for independent dated clauses",async()=>{
     const dates=["2026-10-01","2026-10-08"];
     const clauses=dates.map(date=>"Show sales on "+date);
