@@ -83,7 +83,11 @@ export async function readAuthorizedAtomicP1SourceSnapshot():Promise<SnapshotOut
     const {data,error}=await client.rpc("p1_authoritative_source_snapshot",{
       p_business_id:identity.businessId,
     });
-    if(error||!data)return {status:"unavailable",reason:"unauthorized_or_unconfigured"};
+    // A successful NULL RPC result means an authoritative ledger/owner row
+    // was not returned; it is an integrity failure, not a missing migration.
+    // Only an actual RPC error can represent an uninstalled RPC.
+    if(error)return {status:"unavailable",reason:"unauthorized_or_unconfigured"};
+    if(!data)return {status:"unavailable",reason:"invalid_source_snapshot"};
     const parsed=atomicP1SourceSchema.safeParse(data);
     if(!parsed.success || parsed.data.businessId!==identity.businessId ||
        parsed.data.timezone!==identity.timezone ||
