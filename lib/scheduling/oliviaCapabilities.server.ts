@@ -8,7 +8,8 @@ import {
 import {
   OLIVIA_CAPABILITY_VERSION, oliviaReadRequestSchema, oliviaReadResponseSchema,
   oliviaStoredSchemas, oliviaScenarioSchema, oliviaShiftSchema,
-  oliviaUuid, type OliviaReadCapability, type OliviaReadRequest,
+  oliviaUuid, oliviaAvailabilityEmployeeSchema, oliviaRevisionStatusSchema,
+  type OliviaReadCapability, type OliviaReadRequest,
   type OliviaReadResponse,
 } from "./oliviaCapabilityContracts";
 
@@ -148,11 +149,13 @@ async function readAvailability(
       qualifications:at("qualification",id),
       compensation:at("compensation",id)};
   });
+  const validatedEmployees=z.array(oliviaAvailabilityEmployeeSchema).max(500).safeParse(employees);
+  if(!validatedEmployees.success)return fail(capability,"invalid_record");
   return verified(capability,{
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"stored_availability",
       consistency:"provisional"},
-    employees,
+    employees:validatedEmployees.data,
   });
 }
 async function readPreview(
@@ -236,7 +239,9 @@ async function readRevision(
   const revision=await readOliviaPlanRevision({week:input.week,revisionId:input.revisionId});
   if(!revision.ok)return fromDomainError(capability,revision.error);
   const scenario=oliviaScenarioSchema.safeParse(revision.scenario);
-  if(!scenario.success || revision.revision>revision.currentRevision ||
+  const revisionStatus=oliviaRevisionStatusSchema.safeParse(revision.status);
+  if(!scenario.success || !revisionStatus.success ||
+     revision.revision>revision.currentRevision ||
      (revision.status==="published" && revision.publishedRevision!==revision.revision))
     return fail(capability,"invalid_record");
   const owner=await requireSchedulingOwner();
@@ -271,7 +276,7 @@ async function readRevision(
     ok:true,capability,version:1,status:"ok",
     source:{owner:"olivia",businessId:owner.businessId,kind:"stored_revision",
       consistency:"stored",sourceDigest:revision.sourceDigest},
-    revisionId:input.revisionId,revision:revision.revision,status:revision.status,
+    revisionId:input.revisionId,revision:revision.revision,revisionStatus:revisionStatus.data,
     currentRevision:revision.currentRevision,publishedRevision:revision.publishedRevision,
     sourceDigest:revision.sourceDigest,scenario:scenario.data,
     assignments,disposition:"stored_read_only",
