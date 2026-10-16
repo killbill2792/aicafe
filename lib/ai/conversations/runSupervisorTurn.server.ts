@@ -511,7 +511,10 @@ export async function runSupervisorTurn(input: {
   for (let round=0;round<MAX_ROUNDS && (priorUsage.modelCallCount===0 ||
     usage.modelCallCount<maxModelAttempts);round++) {
     let payload: Record<string,unknown> | null = null;
-    for (let attempt=0;attempt<2;attempt++) {
+    // Each decoded retry consumes the SAME P3/legacy model budget. Do not
+    // authorize a second transport merely because this round began in budget.
+    for (let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
+      usage.modelCallCount<maxModelAttempts);attempt++) {
       const roundNumber=round+1, attemptNumber=attempt+1;
       const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:roundNumber,attempt:attemptNumber,
