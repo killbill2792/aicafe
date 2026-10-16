@@ -75,18 +75,43 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
     {field:"loadedStaffCostCents",unit:"USD_cents"},
   ]),
   "money.business_costs":v=>{
-    if(!isObject(v)||!integer(v.knownTotalCents)||!isObject(v.components))
-      return [];
-    const components=v.components;
-    const fields=["ingredientsCents","loadedStaffCents",
-      "cardFeesCents","runningCostsCents"] as const;
-    if(fields.some(f=>!integer(components[f])))return [];
-    return [
-      {key:"aggregate",name:"known business costs",
-        field:"knownTotalCents",value:v.knownTotalCents,unit:"USD_cents" as const},
-      ...fields.map(f=>({key:"aggregate",name:"known cost component",
-        field:f,value:components[f] as number,unit:"USD_cents" as const})),
-    ];
+    if(!isObject(v)||!integer(v.knownTotalCents)||!isObject(v.components)||
+      !isObject(v.observed)||!isObject(v.coverage))return [];
+    const components=v.components,observed=v.observed,coverage=v.coverage;
+    const periodSales=integer(coverage.salesDays)&&integer(coverage.expectedDays)&&
+      coverage.salesDays===coverage.expectedDays;
+    const periodLabor=integer(coverage.laborDays)&&integer(coverage.expectedDays)&&
+      coverage.laborDays===coverage.expectedDays;
+    const provenIngredients=periodSales&&observed.ingredients===true&&
+      coverage.itemSalesCovered===true&&coverage.historicalIngredientCostsProven===true&&
+      coverage.missingProductCostCount===0;
+    const provenFees=periodSales&&observed.cardFees===true&&
+      coverage.missingFeeDays===0;
+    const provenLabor=periodLabor&&observed.loadedStaff===true;
+    const provenRunning=observed.runningCosts===true&&
+      Array.isArray(coverage.missingOperatingCategories)&&
+      coverage.missingOperatingCategories.length===0&&
+      Array.isArray(v.missingInputs)&&
+      !v.missingInputs.includes("priorMonthRunningCostCoverage");
+    // The Money domain records unknown components as numeric zero plus
+    // explicit coverage indicators. Never expose those zeros as known costs.
+    const provenFields=[
+      ["ingredientsCents",provenIngredients],
+      ["loadedStaffCents",provenLabor],
+      ["cardFeesCents",provenFees],
+      ["runningCostsCents",provenRunning],
+    ] as const;
+    const projected:Extracted[]=[];
+    for(const [field,proven] of provenFields){
+      if(proven&&integer(components[field]))
+        projected.push({key:"aggregate",name:"covered cost component",
+          field,value:components[field],unit:"USD_cents"});
+    }
+    // The total is a true total only after every source component is covered.
+    if(v.completeness==="complete"&&provenFields.every(([,ok])=>ok))
+      projected.unshift({key:"aggregate",name:"complete business costs",
+        field:"knownTotalCents",value:v.knownTotalCents,unit:"USD_cents"});
+    return projected;
   },
   "menu.product_economics":v=>{
     if(!isObject(v))return [];
