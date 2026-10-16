@@ -1,6 +1,7 @@
 import "server-only";
 
 import { z } from "zod";
+import { isCanonicalOliviaWeekResult } from "@/lib/calc/scheduling/oliviaPreviewEvidence";
 import { requireSchedulingOwner, readSchedulingFoundation } from "./foundation.server";
 import {
   previewOliviaWeek, readOliviaPlanHistory, readOliviaPlanRevision,
@@ -227,53 +228,13 @@ async function readPreview(
   // PR2 witnesses only claim feasibility if a returned best scenario fully
   // satisfies hard constraints and coverage. Reject forged provider outcomes.
   const p=parsedPlan.data;
-  const weekEnd=new Date(Date.parse(input.week+"T00:00:00Z")+6*86400000)
-    .toISOString().slice(0,10);
-  if(p.horizonStart!==input.week || p.horizonEnd!==weekEnd)
+  // All canonical planner arithmetic, objective ordering and location-local
+  // horizon invariants live in the pure Olivia PR2 calculation directory.
+  const timezones=z.record(oliviaUuid,z.string().min(1).max(128))
+    .safeParse(preview.locations);
+  if(!timezones.success ||
+     !isCanonicalOliviaWeekResult(p,input.week,timezones.data))
     return fail(capability,"invalid_record");
-  // PR2 always tries cash, owner_time and balanced in that order, retaining
-  // the cash witness and removing duplicate scenarios without reordering.
-  const objectives=["cash","owner_time","balanced"] as const;
-  if(p.scenarios.length===0 || p.scenarios[0].objective!=="cash" ||
-     p.scenarios.some((s,i)=>i>0 &&
-       objectives.indexOf(s.objective)<=objectives.indexOf(p.scenarios[i-1].objective)))
-    return fail(capability,"invalid_record");
-  const best=p.best;
-  const canonicalBest=p.scenarios.find(s=>
-    s.completeCoverage && s.hardConstraintsSatisfied)??p.scenarios[0]??null;
-  const bestPresent=JSON.stringify(canonicalBest)===JSON.stringify(best);
-  const feasible=!!best && best.completeCoverage && best.hardConstraintsSatisfied;
-  const statusConsistent=(
-    (p.status==="feasible" && feasible &&
-      p.proof==="complete_candidate_solution") ||
-    (p.status==="infeasible" && !feasible &&
-      p.proof==="required_slot_has_no_eligible_worker") ||
-    (p.status==="unproven" && !feasible &&
-      (p.proof==="search_budget_exhausted" ||
-       p.proof==="candidate_constraints_unresolved")));
-  if((best!==null && !bestPresent) ||
-     (best===null && p.scenarios.length!==0) ||
-     !statusConsistent)return fail(capability,"invalid_record");
-  // PR2 always compares every scenario after index 0 with that baseline.
-  // Deltas are evidence, not independent prices: never invent labor savings
-  // when either underlying total is missing or the claimed delta differs.
-  const delta=(left:number|null,right:number|null)=>
-    left===null || right===null?null:right-left;
-  const baseline=p.scenarios[0];
-  if(p.comparisons.length!==Math.max(0,p.scenarios.length-1))
-    return fail(capability,"invalid_record");
-  for(let i=0;i<p.comparisons.length;i++){
-    const comparison=p.comparisons[i],right=p.scenarios[i+1];
-    if(!baseline || !right ||
-       comparison.left!==baseline.objective ||
-       comparison.right!==right.objective ||
-       comparison.ownerMinutesDifference!==right.ownerMinutes-baseline.ownerMinutes ||
-       comparison.cashWagesDifferenceCents!==delta(
-         baseline.cost.cashWagesCents,right.cost.cashWagesCents) ||
-       comparison.loadedPayrollDifferenceCents!==delta(
-         baseline.cost.loadedPayrollCents,right.cost.loadedPayrollCents))
-      return fail(capability,"invalid_record");
-  }
   // Every assigned worker, uncovered location and unknown wage must resolve
   // to a trusted PR3 source name, never a forged or cross-source UUID.
   const names=z.record(oliviaUuid,z.string().min(1).max(240));
