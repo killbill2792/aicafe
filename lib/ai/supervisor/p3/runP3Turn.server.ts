@@ -264,14 +264,27 @@ export async function tryP3SupervisorReadOnly(input:{
       e.clause===clause&&e.reason==="source_free")))return null;
     if(!pure && item.coveredClauses.some(clause=>shadow.evidence.some(e=>
       e.clause===clause&&e.reason==="source_free")))return null;
+    // A source handle is authorized only for the actual clause that names its
+    // record. Never apply Ahmed's wage to Sophie's clause just because both
+    // names appear elsewhere in the same utterance. A multi-clause plan can
+    // intentionally combine the union of its own covered clauses.
+    const allowedHandles=new Set(projection.choices.filter(choice=>
+      item.coveredClauses.includes(choice.matchedClause)).map(choice=>choice.handle));
+    const requestedHandles=plan.data.nodes.flatMap(node=>
+      node.op==="source"?[node.handle]:[]);
+    if(!pure&&requestedHandles.some(handle=>!allowedHandles.has(handle)))return null;
+    const allowedOperands=pure?[]:projection.operands.filter(operand=>
+      allowedHandles.has(operand.handle));
+    const allowedBindings=pure?[]:projection.bindings.filter(binding=>
+      allowedOperands.some(operand=>operand.capabilityId===binding.capabilityId));
     // All registered simulations consume the same five-tool turn budget.
     if(reported.toolCallCount>=5)return null;
     reported.toolCallCount++;
     input.onUsage?.({...reported});
     const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
       businessId:identity.businessId,locationId:null,ownerMessage:input.text,
-      currency:"USD",bindings:pure?[]:projection.bindings,
-      operands:pure?[]:projection.operands,
+      currency:"USD",bindings:allowedBindings,
+      operands:allowedOperands,
     });
     const checked=simulationOutputSchema.safeParse(simulated);
     if(!checked.success||checked.data.status==="unavailable")return null;
