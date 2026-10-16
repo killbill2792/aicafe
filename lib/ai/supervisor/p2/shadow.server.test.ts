@@ -318,7 +318,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     const coerced=z.strictObject({
       status:z.literal("partial"),
       value:z.strictObject({reading:z.coerce.number().int()}),
-      provenance:z.strictObject({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),purpose:z.literal("meter_read"),
         sourceRevision:z.string(),asOf:z.string()}),
       quality:z.strictObject({missingInputs:z.array(z.string()),
         estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
@@ -340,7 +340,7 @@ describe("Universal Supervisor P2 nonproduction OpenAI shadow",()=>{
     const {def}=syntheticRegistration();
     const asserted=z.strictObject({
       status:z.literal("verified"),value:z.number().int(),
-      provenance:z.strictObject({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),
+      provenance:z.strictObject({sourceId:z.literal("energy.meter"),canonicalReaderId:z.string(),purpose:z.literal("meter_read"),
         sourceRevision:z.string(),asOf:z.string()}),
       quality:z.strictObject({missingInputs:z.array(z.string()),
         estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())}),
