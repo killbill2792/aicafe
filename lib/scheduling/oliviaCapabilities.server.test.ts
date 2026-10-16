@@ -37,7 +37,7 @@ const shift={
   breaks:[],pinned:false,
 };
 const scenario={
-  objective:"balanced",shifts:[shift],
+  objective:"cash",shifts:[shift],
   gaps:[{coverageId:uid(40),locationId,startAt:iso,endAt:to,
     qualificationCode:"barista",missingHeadcount:1,reason:"qualification_missing"}],
   completeCoverage:false,hardConstraintsSatisfied:true,ownerMinutes:0,
@@ -325,7 +325,7 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       locationNames:{[locationId]:"Main"},sourceDigest:digest,
       previewRevision:0,frozenShiftKeys:[]});
     const result=await executeOliviaReadCapability({...preview(),
-      options:{objective:"balanced"}});
+      options:{objective:"cash"}});
     expect(result).toMatchObject({ok:true,
       selectedScenario:{cost:{cashWagesCents:0},shifts:[{
         startAt:"2026-11-01T05:30:00.000Z",endAt:"2026-11-01T09:30:00.000Z"}]}});
@@ -645,6 +645,107 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       previewRevision:0,frozenShiftKeys:[]});
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects wrong week horizons, including correctly shaped plans for other Mondays",async()=>{
+    for(const invalid of [
+      {...plan,horizonStart:"2026-10-19",horizonEnd:"2026-10-25"},
+      {...plan,horizonEnd:"2026-10-19"},
+    ]){
+      m.preview.mockResolvedValueOnce({ok:true,plan:invalid,notices:[],
+        blockers:[],employees:{[employeeId]:"Asha"},
+        locationNames:{[locationId]:"Main"},
+        sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
+  it("requires canonical unique PR2 objective order instead of accepting forged comparisons",async()=>{
+    const reordered=[{...scenario,objective:"balanced"},scenario];
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:reordered,best:reordered[0],comparisons:[{
+        left:"balanced",right:"cash",ownerMinutesDifference:0,
+        cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null,
+      }]},notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[scenario,{...scenario}],comparisons:[{
+        left:"cash",right:"cash",ownerMinutesDifference:0,
+        cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null,
+      }]},notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("rejects preview shifts, gaps and unknown-wage IDs missing from trusted source maps",async()=>{
+    const variants=[
+      {...scenario,shifts:[{...shift,employeeId:uid(99)}]},
+      {...scenario,shifts:[{...shift,locationId:uid(99)}]},
+      {...scenario,gaps:[{...scenario.gaps[0],locationId:uid(99)}]},
+      {...scenario,cost:{...scenario.cost,missingWageEmployeeIds:[uid(99)]}},
+    ];
+    for(const bad of variants){
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[bad],best:bad},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+        sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
+  it("rejects contradictory duplicate owner-minute scenario fields",async()=>{
+    const bad={...scenario,cost:{...scenario.cost,ownerMinutes:60}};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[bad],best:bad},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.revision.mockResolvedValueOnce({ok:true,revision:2,status:"draft",
+      currentRevision:2,publishedRevision:1,scenario:bad,sourceDigest:digest});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("reauthorizes BEFORE reading any staff, foundation, history or revision outcome",async()=>{
+    let calls=0;
+    m.owner.mockImplementation(async()=>({
+      businessId:++calls===1?businessId:otherBusinessId,supabase:client(),
+    }));
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+    m.owner.mockClear();
+    calls=0;
+    m.owner.mockImplementation(async()=>({
+      businessId:++calls<=2?businessId:otherBusinessId,supabase:client(),
+    }));
+    m.foundation.mockResolvedValueOnce({ok:false,error:"not_found"});
+    expect(await executeOliviaReadCapability(availability()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+    m.owner.mockClear();
+    calls=0;
+    m.owner.mockImplementation(async()=>({
+      businessId:++calls===1?businessId:otherBusinessId,supabase:client(),
+    }));
+    m.history.mockResolvedValueOnce({ok:false,error:"not_found"});
+    expect(await executeOliviaReadCapability(history()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+    m.owner.mockClear();
+    calls=0;
+    m.revision.mockResolvedValueOnce({ok:false,error:"not_found"});
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+  });
+  it("reauthorizes again before consuming persisted assignment provider results",async()=>{
+    let checks=0;
+    m.owner.mockImplementation(async()=>({
+      businessId:++checks<=4?businessId:otherBusinessId,supabase:client(),
+    }));
+    expect(await executeOliviaReadCapability(revision()))
+      .toMatchObject({ok:false,error:{code:"unauthorized"}});
+    expect(m.calls).toContain("scheduling_plan_assignments");
   });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
