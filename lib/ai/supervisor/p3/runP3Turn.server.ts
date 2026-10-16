@@ -149,7 +149,7 @@ const labels={
     baseline:"Baseline totals and source revisions are not independently established.",
     assumptions:"Owner-stated hypothetical quantities",
     formula:"Vetted calculation steps",
-    missing:"Unverified input codes"},
+    missing:"Some input evidence still needs review."},
   es:{conditional:"Escenario condicional, no pronóstico de demanda ni beneficio verificado.",
     incomplete:"Faltan datos, son provisionales o no tienen revisión verificable.",
     money:"Cambio condicional del escenario",number:"Resultado calculado del escenario",
@@ -362,12 +362,10 @@ export async function tryP3SupervisorReadOnly(input:{
         .map(s=>formatScenarioAssumption(s,input.locale)).filter(Boolean)
         .join("; ")).slice(0,1100)});
     if(v.missingInputs.length){
-      const codes=[...new Set(v.missingInputs)].slice(0,5).map(code=>
-        code.startsWith("unverified:")?"unverified_source":
-        code.startsWith("unversioned_source:")?"unversioned_source":
-        /^[a-zA-Z][a-zA-Z0-9_:.-]{0,70}$/.test(code)?code:"unverified_input");
+      // Missing-input identifiers and source handles are private implementation
+      // metadata. Only trusted localized explanations reach the owner.
       blocks.push({type:"warning",code:"P3_SOURCE_LIMITATIONS",
-        text:(locale.incomplete+" "+locale.missing+": "+codes.join(", ")).slice(0,1100)});
+        text:locale.incomplete+" "+locale.missing});
       blocks.push({type:"warning",code:"P3_BASELINE",text:locale.baseline});
     }
   }
