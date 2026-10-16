@@ -5,7 +5,7 @@ import { requireSchedulingOwner } from "./foundation.server";
 import { executeOliviaReadCapability } from "./oliviaCapabilities.server";
 import {
   oliviaPrepareAvailabilitySchema, oliviaConfirmedCommitSchema,
-  oliviaCreateDraftSchema,
+  oliviaCreateDraftSchema, oliviaSavedDraftCommandResponseSchema,
 } from "./oliviaCommandContracts";
 import { oliviaProposalDigest, reconcileOliviaAvailability } from "./oliviaAvailabilityProposal";
 import {
@@ -222,7 +222,7 @@ export async function createOliviaScheduleDraftCommand(raw:unknown){
       scenario.hardConstraintsSatisfied && scenario.gaps.length===0 &&
       scenario.legalReview==="verified_profile" &&
       scenario.cost.costState!=="unavailable" && missingInputs.length===0;
-    return {ok:true as const,version:1 as const,status:"saved_draft" as const,
+    const result={ok:true as const,version:1 as const,status:"saved_draft" as const,
       businessId:owner.businessId,week:input.week,
       seriesId:saved.seriesId,revisionId:saved.revisionId,
       revision:saved.revision,revisionStatus:"draft" as const,replayed:saved.replayed,
@@ -236,5 +236,7 @@ export async function createOliviaScheduleDraftCommand(raw:unknown){
       notices:preview.notices,legalReview:scenario.legalReview,
       readyForOwnerApproval,readyForPublication:false as const,
       disposition:"persisted_draft_only" as const};
+    const validated=oliviaSavedDraftCommandResponseSchema.safeParse(result);
+    return validated.success?validated.data:fail("invalid_record");
   }catch{return fail("storage_unavailable");}
 }
