@@ -21,6 +21,24 @@ export function toDateStr(raw: string): string {
   return trimmed;
 }
 
+/** `/^\d{4}-\d{2}-\d{2}$/` only checks shape — "2026-02-31" and "2026-13-40" match it too. This
+ * checks the value is a real calendar date by round-tripping through UTC-safe component math
+ * (no `new Date(string)` parsing, which normalizes out-of-range values instead of rejecting
+ * them, e.g. rolling Feb 31 into March 3). A row with a shape-valid but nonexistent date must be
+ * rejected per-row with `invalid_date`, not sent to Postgres, where it would fail the whole
+ * batch insert and surface as an opaque `staging_failed`. */
+export function isValidCalendarDate(dateStr: string): boolean {
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const [, y, m, d] = match;
+  const year = Number(y);
+  const month = Number(m);
+  const day = Number(d);
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const daysInMonth = [31, year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
+}
+
 export function toCents(raw: string): number {
   const cleaned = (raw ?? "").replace(/[$,\s]/g, "");
   const negative = /^\(.*\)$/.test(cleaned);

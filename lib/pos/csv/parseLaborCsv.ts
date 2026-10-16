@@ -1,4 +1,4 @@
-import { toCents, toDateStr, toIsoTimestamp } from "./csvUtils";
+import { isValidCalendarDate, toCents, toDateStr, toIsoTimestamp } from "./csvUtils";
 
 export type LaborColumnMapping = {
   employee: string;
@@ -59,7 +59,7 @@ export function parseLaborCsv(rows: Record<string, string>[], mapping: LaborColu
       continue;
     }
     const date = toDateStr(dateRaw);
-    if (!ISO_DATE.test(date)) {
+    if (!ISO_DATE.test(date) || !isValidCalendarDate(date)) {
       reject("invalid_date");
       continue;
     }

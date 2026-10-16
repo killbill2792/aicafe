@@ -73,7 +73,7 @@ alter table employees add constraint employees_id_business_unique unique (id, bu
 -- complete when a history write failed or leave an orphan history entry on link failure.
 create function csv_complete_import_with_history(
   p_job_id uuid, p_upload_kind text, p_job_status text, p_summary jsonb
-) returns void language plpgsql security invoker set search_path = public as $
+) returns void language plpgsql security invoker set search_path = public as $$
 declare
   v_job csv_import_jobs%rowtype;
   v_upload_id uuid;
@@ -106,7 +106,7 @@ begin
     where id = p_job_id and business_id = v_job.business_id;
   if not found then raise exception 'Import job completion update failed'; end if;
 end;
-$;
+$$;
 grant execute on function csv_complete_import_with_history(uuid,text,text,jsonb) to authenticated;
 
 -- Staged, aggregated sales groups for one job. menu_item_id is resolved once per distinct item
@@ -174,14 +174,14 @@ create index csv_labor_import_rows_job_idx on csv_labor_import_rows (job_id);
 -- review: the original UI holds that row ID. Fail the second staging operation atomically
 -- rather than reassigning its job_id and silently dropping the pending owner task.
 create function csv_preserve_pending_labor_review()
-returns trigger language plpgsql set search_path = public as $
+returns trigger language plpgsql set search_path = public as $$
 begin
   if OLD.job_id is distinct from NEW.job_id and NOT OLD.promoted then
     raise exception using errcode='23514', message='Unresolved labor review belongs to another import job';
   end if;
   return NEW;
 end;
-$;
+$$;
 create trigger csv_preserve_pending_labor_review_before_update
   before update of job_id on csv_labor_import_rows
   for each row execute function csv_preserve_pending_labor_review();

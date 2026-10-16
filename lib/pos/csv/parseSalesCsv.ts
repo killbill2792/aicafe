@@ -1,4 +1,4 @@
-import { toCents, toDateStr } from "./csvUtils";
+import { isValidCalendarDate, toCents, toDateStr } from "./csvUtils";
 
 export type SalesColumnMapping = {
   date: string;
@@ -62,7 +62,7 @@ export function parseSalesCsv(rows: Record<string, string>[], mapping: SalesColu
       continue;
     }
     const date = toDateStr(dateRaw);
-    if (!ISO_DATE.test(date)) {
+    if (!ISO_DATE.test(date) || !isValidCalendarDate(date)) {
       reject("invalid_date");
       continue;
     }

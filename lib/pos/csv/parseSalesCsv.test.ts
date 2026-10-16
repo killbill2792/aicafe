@@ -53,6 +53,17 @@ describe("parseSalesCsv", () => {
     expect(result.rejected).toEqual([{ reason: "invalid_date", count: 1 }]);
   });
 
+  it("rejects a shape-valid but nonexistent calendar date (Feb 31, month 13) instead of staging it for Postgres to reject the whole batch", () => {
+    const rows = [
+      { Date: "02/31/2026", Item: "Latte", Qty: "1", Sales: "$5.50" },
+      { Date: "2026-13-40", Item: "Tea", Qty: "1", Sales: "$4.00" },
+      { Date: "2026-02-29", Item: "Mocha", Qty: "1", Sales: "$6.00" },
+    ];
+    const result = parseSalesCsv(rows, { date: "Date", item: "Item", quantity: "Qty", netSales: "Sales" });
+    expect(result.valid).toEqual([]);
+    expect(result.rejected).toEqual([{ reason: "invalid_date", count: 3 }]);
+  });
+
   it("rejects an unparseable quantity or net-sales value instead of silently zeroing it", () => {
     const rows = [
       { Date: "10/02/2026", Item: "Latte", Qty: "abc", Sales: "$5.50" },
@@ -146,5 +157,12 @@ describe("parseLaborCsv", () => {
         { reason: "missing_clock_in", count: 1 },
       ]),
     );
+  });
+
+  it("rejects a shape-valid but nonexistent calendar date instead of staging it for Postgres to reject the whole batch", () => {
+    const rows = [{ Employee: "Daniel", Date: "02/31/2026", "Clock In": "7:00 AM", "Clock Out": "3:00 PM" }];
+    const result = parseLaborCsv(rows, { employee: "Employee", date: "Date", clockIn: "Clock In", clockOut: "Clock Out" });
+    expect(result.valid).toEqual([]);
+    expect(result.rejected).toEqual([{ reason: "invalid_date", count: 1 }]);
   });
 });
