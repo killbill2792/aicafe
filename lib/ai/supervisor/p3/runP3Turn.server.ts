@@ -203,13 +203,16 @@ export async function tryP3SupervisorReadOnly(input:{
   if(!shadow.evidence.length)return null;
   // The read limit counts failed and rejected reader invocations too.
   const invokedReads=shadow.attemptedReads;
+  const ownerHistory=(input.history??[]).filter(h=>h.role==="owner")
+    .slice(-3).map(h=>h.text.slice(0,650));
   const expanded=await enrichResolvedProductEconomics({
     goal:input.text,scope,registry:capabilityRegistry,evidence:shadow.evidence,
-    remainingReads:Math.max(0,4-invokedReads),
+    remainingReads:Math.max(0,4-invokedReads),ownerHistory,
   });
   reported.toolCallCount+=expanded.readCount;
   input.onUsage?.({...reported});
-  const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text);
+  const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text,
+    null,ownerHistory);
   // Validated pure owner-hypothetical arithmetic may need no café source.
   // It must declare no_external_sources; it can never be labeled observed.
   const clauses=shadow.evidence.map(x=>x.clause);
