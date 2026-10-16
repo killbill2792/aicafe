@@ -28,6 +28,11 @@ create table csv_import_jobs (
   date_to date,
   error_message text,
   summary jsonb,
+  -- Links to the one `uploads` history row for this job, created on first finalize and updated
+  -- (never re-inserted) on every later finalize — resolving a staged wage or backfilling a catalog
+  -- match must make Upload History show the CURRENT status/summary, not the pending snapshot from
+  -- the moment the job first reached a review state.
+  upload_id uuid references uploads on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -853,6 +853,7 @@
     "rejectedMissingEmployee": "Missing employee name",
     "rejectedMissingClockIn": "Missing clock-in time",
     "rejectedEmployeeCreationFailed": "Could not create or match this employee",
+    "rejectedDuplicateShiftInFile": "Duplicate shift in the file (same employee, same clock-in) — kept the last one",
     "statusStarting": "Starting import…",
     "statusFinalizing": "Importing — this can take a few seconds for a large file…",
     "duplicateNotice": "This exact file was already imported — showing that result.",

@@ -109,7 +109,7 @@ export default function SalesCsvImporter({
       await saveMapping("sales", mapping as SalesColumnMapping, "Sales / product mix export");
       setStage("working");
       setStatusMessage(labels.statusStarting);
-      const started = await startSalesImportJob(parsed.valid, rows.length, parsed.rejected);
+      const started = await startSalesImportJob(groups, rows.length, parsed.rejected);
       if (!started.ok) {
         setStage("error");
         setStuckJobId(started.blockingJobId ?? null);

@@ -45,6 +45,7 @@ export default async function LaborCsvPage() {
             missing_clock_in: t("rejectedMissingClockIn"),
             invalid_date: t("rejectedInvalidDate"),
             employee_creation_failed: t("rejectedEmployeeCreationFailed"),
+            duplicate_shift_in_file: t("rejectedDuplicateShiftInFile"),
           },
           statusStarting: t("statusStarting"),
           statusFinalizing: t("statusFinalizing"),

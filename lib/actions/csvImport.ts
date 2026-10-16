@@ -12,8 +12,8 @@ import { matchCatalogItem } from "@/lib/pos/catalogMatching";
 import { hasOpenAlert } from "@/lib/alerts/generate";
 import { NEW_EMPLOYEE } from "@/lib/constants";
 import { toCents } from "@/lib/pos/csv/csvUtils";
-import { aggregateSalesRows, type AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
-import type { NormalizedSalesRow, SalesColumnMapping, SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
+import type { AggregatedSalesRow } from "@/lib/pos/csv/aggregateSalesRows";
+import type { SalesColumnMapping, SalesRejectReason } from "@/lib/pos/csv/parseSalesCsv";
 import type { NormalizedLaborRow, LaborColumnMapping, LaborRejectReason } from "@/lib/pos/csv/parseLaborCsv";
 import type { IngredientCostColumnMapping, NormalizedIngredientCostRow } from "@/lib/pos/csv/parseIngredientCostsCsv";
 import { processingFeeTotalsByDate, type NormalizedProcessingFeeRow, type ProcessingFeeColumnMapping } from "@/lib/pos/csv/parseProcessingFeesCsv";
@@ -54,7 +54,7 @@ function err(errorCode: ImportErrorCode, errorParams?: Record<string, string | n
 }
 
 export type RejectedRowSummary<R extends string> = { reason: R; count: number };
-type LaborSummaryRejectReason = LaborRejectReason | "employee_creation_failed";
+type LaborSummaryRejectReason = LaborRejectReason | "employee_creation_failed" | "duplicate_shift_in_file";
 
 export type SalesImportSummary = {
   rowsInFile: number;
@@ -150,6 +150,25 @@ async function findActiveJobId(supabase: SupabaseServerClient, businessId: strin
   return data?.id;
 }
 
+/** Writes the one `uploads` history row for a job: inserts it the first time (and remembers its id
+ * on the job via `upload_id`), then UPDATEs that same row on every later call — a wage resolved, a
+ * catalog match backfilled, or any other re-finalize must change what Upload History shows, not
+ * leave it frozen at the first pending snapshot. */
+async function upsertUploadHistory(
+  supabase: SupabaseServerClient,
+  job: { id: string; business_id: string; upload_id: string | null },
+  uploadKind: "sales_csv" | "labor_csv",
+  status: "done" | "needs_review",
+  summary: SalesImportSummary | LaborImportSummary,
+): Promise<void> {
+  if (job.upload_id) {
+    await supabase.from("uploads").update({ status, summary }).eq("id", job.upload_id);
+    return;
+  }
+  const { data: upload } = await supabase.from("uploads").insert({ business_id: job.business_id, kind: uploadKind, status, summary }).select("id").single();
+  if (upload) await supabase.from("csv_import_jobs").update({ upload_id: upload.id }).eq("id", job.id);
+}
+
 /** Resolves each distinct item name to a menu_item (lib/pos/catalogMatching.ts, unchanged), run
  * once over the aggregated (deduped) item set rather than once per source row. Mutates
  * menu_items/pos_catalog_matches, so callers must only invoke this AFTER the job's active-unique
@@ -223,18 +242,24 @@ async function reconcileUnresolvedSalesItems(supabase: SupabaseServerClient, bus
   const updatedSummary: SalesImportSummary = { ...summary, unmatchedItems };
   const finalStatus = unmatchedItems.length === 0 && summary.skippedToastConflictDates.length === 0 && summary.rejectedRows.length === 0 ? "done" : "needs_review";
   await supabase.from("csv_import_jobs").update({ status: finalStatus, summary: updatedSummary, updated_at: new Date().toISOString() }).eq("id", job.id);
+  const { data: fullJob } = await supabase.from("csv_import_jobs").select("id, business_id, upload_id").eq("id", job.id).single();
+  if (fullJob) await upsertUploadHistory(supabase, fullJob, "sales_csv", finalStatus, updatedSummary);
   revalidatePath("/menu");
   revalidatePath("/money");
   return updatedSummary;
 }
 
-/** Starts a sales import job: aggregates rows (lib/pos/csv/aggregateSalesRows.ts — the fix for
- * repeated same-day selections overwriting instead of summing), acquires the one-active-job lock,
- * THEN resolves menu items over the deduped item set (so a losing concurrent call never mutates the
- * catalog), then stages the bounded group list. Returns a jobId for `finalizeSalesImportJob` to
- * promote atomically — split from this step so neither call does unbounded row-by-row DB work. */
+/** Starts a sales import job: acquires the one-active-job lock, THEN resolves menu items over the
+ * deduped item set (so a losing concurrent call never mutates the catalog), then stages the bounded
+ * group list. Takes already-aggregated groups (lib/pos/csv/aggregateSalesRows.ts, run client-side
+ * BEFORE this call) rather than raw per-selection rows — the point of aggregating client-side is to
+ * keep this request's payload bounded by distinct (date, item, category) groups, not by a
+ * potentially-thousands-of-rows source file; aggregating again server-side from the full row array
+ * would defeat that and risk the request body limit on a large file. Returns a jobId for
+ * `finalizeSalesImportJob` to promote atomically — split from this step so neither call does
+ * unbounded row-by-row DB work. */
 export async function startSalesImportJob(
-  rows: NormalizedSalesRow[],
+  groups: AggregatedSalesRow[],
   rowsInFile: number,
   rejectedRows: RejectedRowSummary<SalesRejectReason>[],
 ): Promise<{ ok: boolean; jobId?: string; duplicate?: boolean; summary?: SalesImportSummary } & Partial<ActionError>> {
@@ -243,12 +268,12 @@ export async function startSalesImportJob(
   const { supabase, businessId } = ctx;
 
   if (rowsInFile > MAX_SOURCE_ROWS) return err("row_limit_source", { count: rowsInFile, limit: MAX_SOURCE_ROWS });
-
-  const groups = aggregateSalesRows(rows);
   if (groups.length > MAX_SALES_GROUPS) return err("row_limit_groups", { count: groups.length, limit: MAX_SALES_GROUPS });
   if (groups.length === 0) return err("no_valid_rows");
 
-  const fingerprint = contentFingerprint("sales", groups);
+  // Rejected-row content is part of the job's identity: a corrected re-upload that fixes malformed
+  // rows but keeps the same valid sales groups must not be treated as the exact same prior upload.
+  const fingerprint = contentFingerprint("sales", { groups, rowsInFile, rejectedRows });
   const existingJob = await findDuplicateJob(supabase, businessId, "sales", fingerprint);
   if (existingJob) {
     if (existingJob.status === "processing") return err("already_processing_duplicate");
@@ -310,7 +335,7 @@ export async function startSalesImportJob(
     }
   }
 
-  await supabase.from("csv_import_jobs").update({ summary: { ...seedSummary, unmatchedItems } }).eq("id", job.id);
+  await supabase.from("csv_import_jobs").update({ summary: { ...seedSummary, unmatchedItems }, updated_at: new Date().toISOString() }).eq("id", job.id);
 
   return { ok: true, jobId: job.id, summary: { ...seedSummary, unmatchedItems } };
 }
@@ -389,9 +414,8 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
 
   const hasIssues = unmatchedItems.length > 0 || skippedToastConflictDates.length > 0 || rejectedRows.length > 0;
   const finalStatus = hasIssues ? "needs_review" : "done";
-  const isFirstFinalize = job.status === "processing" || job.status === "failed";
   await supabase.from("csv_import_jobs").update({ status: finalStatus, summary, updated_at: new Date().toISOString() }).eq("id", jobId);
-  if (isFirstFinalize) await supabase.from("uploads").insert({ business_id: businessId, kind: "sales_csv", status: finalStatus, summary });
+  await upsertUploadHistory(supabase, job, "sales_csv", finalStatus, summary);
 
   if (unmatchedItems.length > 0) {
     const dedupeKey = [...unmatchedCounts.keys()].sort().join("|");
@@ -413,11 +437,20 @@ export async function finalizeSalesImportJob(jobId: string): Promise<{ ok: boole
   return { ok: true, imported: promotedGroups.length, summary };
 }
 
-/** Cancels an import job stuck in `processing` for more than 10 minutes — the recovery path when
- * a browser closed or crashed between `startSalesImportJob`/`startLaborImportJob` and the matching
- * finalize call, which would otherwise hold the one-active-job-per-business+kind lock forever. The
- * 10-minute floor (enforced in the UPDATE's WHERE clause, not just in this function) means this can
- * never cancel a different session's genuinely in-flight import. */
+// How long a job must sit untouched before it's considered abandoned rather than genuinely still
+// running. This is a wall-clock floor on `updated_at`, not real liveness evidence (there is no
+// heartbeat/lease — each finalize call only touches the row at the very start and very end of its
+// own work) — widened well past this import's normal bounded runtime (seconds, by design: staging
+// and promotion are both bounded by group/row count, not raw file size) specifically so this can't
+// plausibly race a call that is still actually in flight.
+const STUCK_JOB_THRESHOLD_MS = 30 * 60 * 1000;
+
+/** Cancels an import job that's sat in `processing` untouched for 30+ minutes — the recovery path
+ * when a browser closed or crashed between `startSalesImportJob`/`startLaborImportJob` and the
+ * matching finalize call, which would otherwise hold the one-active-job-per-business+kind lock
+ * forever. Checks `updated_at`, not `created_at` — a prior failed attempt that got partway and was
+ * retried bumps `updated_at`, so this measures time since the row was LAST touched, not since the
+ * job was first created. */
 export async function cancelStuckImportJob(jobId: string): Promise<{ ok: boolean } & Partial<ActionError>> {
   const ctx = await context();
   if (!ctx) return err("not_signed_in");
@@ -428,7 +461,7 @@ export async function cancelStuckImportJob(jobId: string): Promise<{ ok: boolean
     .eq("id", jobId)
     .eq("business_id", businessId)
     .eq("status", "processing")
-    .lt("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+    .lt("updated_at", new Date(Date.now() - STUCK_JOB_THRESHOLD_MS).toISOString())
     .select("id")
     .maybeSingle();
   if (error) return err("staging_failed");
@@ -514,10 +547,14 @@ export async function startLaborImportJob(
   if (rows.length === 0) return err("no_valid_rows");
 
   // employeeChoices is part of the identity: correcting an ambiguous name's match and re-uploading
-  // the same rows must not be treated as the same prior (possibly wrong) result.
+  // the same rows must not be treated as the same prior (possibly wrong) result. rowsInFile and
+  // rejectedRows are included too — a corrected re-upload that fixes malformed rows but keeps the
+  // same valid shifts must not be treated as the exact same prior upload.
   const fingerprintPayload = {
     rows: [...rows].sort((a, b) => (a.employee === b.employee ? a.clockIn.localeCompare(b.clockIn) : a.employee.localeCompare(b.employee))),
     employeeChoices: Object.fromEntries(Object.entries(employeeChoices).sort(([a], [b]) => a.localeCompare(b))),
+    rowsInFile,
+    rejectedRows,
   };
   const fingerprint = contentFingerprint("labor", fingerprintPayload);
   const existingJob = await findDuplicateJob(supabase, businessId, "labor", fingerprint);
@@ -557,7 +594,7 @@ export async function startLaborImportJob(
   const employeeNames = [...new Set(rows.map((r) => r.employee))];
   const employeeIdByName = await resolveEmployeeIds(supabase, businessId, employeeNames, employeeChoices);
 
-  const stagingRows: {
+  type StagingRow = {
     job_id: string;
     business_id: string;
     employee_id: string;
@@ -566,25 +603,37 @@ export async function startLaborImportJob(
     clock_out: string | null;
     hourly_wage_cents: number | null;
     promoted: boolean;
-  }[] = [];
+  };
+  // Deduped by (business_id, pos_timecard_id) — the same key the table's unique index and the
+  // upsert's onConflict target use — BEFORE batching. A single `INSERT ... ON CONFLICT DO UPDATE`
+  // cannot affect the same conflict target twice, so two rows sharing an employee+clock-in within
+  // one batch (a duplicated source row, or two overlapping exports) would otherwise fail the whole
+  // batch and the whole job, repeatably, on every retry of the unchanged file. The later occurrence
+  // wins, consistent with this importer's "latest upload corrects the record" convention elsewhere.
+  const stagingByKey = new Map<string, StagingRow>();
   let employeeResolutionFailures = 0;
+  let duplicateShiftsInFile = 0;
   for (const row of rows) {
     const employeeId = employeeIdByName.get(row.employee);
     if (!employeeId) {
       employeeResolutionFailures += 1;
       continue;
     }
-    stagingRows.push({
+    const posTimecardId = `csv-${row.employee}-${row.clockIn}`.slice(0, 120);
+    const key = `${businessId}:${posTimecardId}`;
+    if (stagingByKey.has(key)) duplicateShiftsInFile += 1;
+    stagingByKey.set(key, {
       job_id: job.id,
       business_id: businessId,
       employee_id: employeeId,
-      pos_timecard_id: `csv-${row.employee}-${row.clockIn}`.slice(0, 120),
+      pos_timecard_id: posTimecardId,
       clock_in: row.clockIn,
       clock_out: row.clockOut,
       hourly_wage_cents: row.hourlyWageCents,
       promoted: false,
     });
   }
+  const stagingRows = [...stagingByKey.values()];
 
   // Upsert, not plain insert: the same shift (business_id, pos_timecard_id) may already be staged
   // — unresolved — from an earlier upload of an overlapping date range. Re-staging it under this
@@ -600,8 +649,9 @@ export async function startLaborImportJob(
 
   const finalRejectedRows: RejectedRowSummary<LaborSummaryRejectReason>[] = [...rejectedRows];
   if (employeeResolutionFailures > 0) finalRejectedRows.push({ reason: "employee_creation_failed", count: employeeResolutionFailures });
+  if (duplicateShiftsInFile > 0) finalRejectedRows.push({ reason: "duplicate_shift_in_file", count: duplicateShiftsInFile });
   const summary: LaborImportSummary = { ...seedSummary, rejectedRows: finalRejectedRows };
-  await supabase.from("csv_import_jobs").update({ summary }).eq("id", job.id);
+  await supabase.from("csv_import_jobs").update({ summary, updated_at: new Date().toISOString() }).eq("id", job.id);
 
   return { ok: true, jobId: job.id, summary };
 }
@@ -643,7 +693,6 @@ export async function finalizeLaborImportJob(jobId: string): Promise<{ ok: boole
 
   const { data: business } = await supabase.from("businesses").select("timezone").eq("id", businessId).single();
   const timezone = business?.timezone ?? "America/Los_Angeles";
-  const isFirstFinalize = job.status === "processing" || job.status === "failed";
 
   const { error: rpcError } = await supabase.rpc("csv_finalize_labor_job", { p_job_id: jobId });
   if (rpcError) {
@@ -663,7 +712,7 @@ export async function finalizeLaborImportJob(jobId: string): Promise<{ ok: boole
   const hasIssues = pending.length > 0 || rejectedRows.length > 0;
   const finalStatus = hasIssues ? "needs_wage_review" : "done";
   await supabase.from("csv_import_jobs").update({ status: finalStatus, summary, updated_at: new Date().toISOString() }).eq("id", jobId);
-  if (isFirstFinalize) await supabase.from("uploads").insert({ business_id: businessId, kind: "labor_csv", status: finalStatus === "needs_wage_review" ? "needs_review" : "done", summary });
+  await upsertUploadHistory(supabase, job, "labor_csv", finalStatus === "needs_wage_review" ? "needs_review" : "done", summary);
 
   revalidatePath("/");
   revalidatePath("/money");

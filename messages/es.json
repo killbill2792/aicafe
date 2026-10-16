@@ -853,6 +853,7 @@
     "rejectedMissingEmployee": "Falta el nombre del empleado",
     "rejectedMissingClockIn": "Falta la hora de entrada",
     "rejectedEmployeeCreationFailed": "No se pudo crear o emparejar este empleado",
+    "rejectedDuplicateShiftInFile": "Turno duplicado en el archivo (mismo empleado, misma entrada) — se usó el último",
     "statusStarting": "Iniciando importación…",
     "statusFinalizing": "Importando — esto puede tardar unos segundos en archivos grandes…",
     "duplicateNotice": "Este archivo ya se importó antes — mostrando ese resultado.",

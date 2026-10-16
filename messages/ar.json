@@ -853,6 +853,7 @@
     "rejectedMissingEmployee": "اسم الموظف مفقود",
     "rejectedMissingClockIn": "وقت الحضور مفقود",
     "rejectedEmployeeCreationFailed": "تعذّر إنشاء هذا الموظف أو مطابقته",
+    "rejectedDuplicateShiftInFile": "فترة عمل مكررة في الملف (نفس الموظف ونفس وقت الحضور) — تم استخدام الأخيرة",
     "statusStarting": "بدء الاستيراد…",
     "statusFinalizing": "جارٍ الاستيراد — قد يستغرق ذلك بضع ثوانٍ للملفات الكبيرة…",
     "duplicateNotice": "تم استيراد هذا الملف بالضبط من قبل — سنعرض تلك النتيجة.",

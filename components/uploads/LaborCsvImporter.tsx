@@ -24,7 +24,7 @@ const FIELDS: { key: keyof LaborColumnMapping; required: boolean }[] = [
 ];
 
 type Stage = "idle" | "working" | "done" | "error";
-type LaborRejectedReasonLabels = Record<LaborRejectReason, string> & { employee_creation_failed: string };
+type LaborRejectedReasonLabels = Record<LaborRejectReason, string> & { employee_creation_failed: string; duplicate_shift_in_file: string };
 
 function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) return template;
