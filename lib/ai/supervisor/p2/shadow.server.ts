@@ -179,7 +179,8 @@ async function requestStructured<T>(params:{
 export async function runP2ShadowWithScope(params:{
   goal:string;scope:TrustedReadScope;transport:Transport;registry:ShadowRegistry;
   apiKey:string;model:string;
-  allowSourceFree?:boolean;history?:readonly {role:"owner"|"assistant";text:string}[];
+  allowSourceFree?:boolean;allowMultipleReadsPerClause?:boolean;
+  history?:readonly {role:"owner"|"assistant";text:string}[];
 }):Promise<ShadowOutcome> {
   const usage:Usage={model:params.model,modelCalls:0,inputTokens:0,outputTokens:0};
   const validGoal=z.string().trim().min(3).max(3000).safeParse(params.goal);
@@ -213,8 +214,17 @@ export async function runP2ShadowWithScope(params:{
       "Read-only capability selection for this independent shadow demonstration.",
       "Recheck the ORIGINAL owner goal independently against the supplied clause list.",
       "If any independently requested goal is missing, set complete=false.",
-      "You MUST return exactly one choice per supplied audit clause in the same order,",
-      "with the clause string copied character-for-character. Never silently drop one.",
+      ...(params.allowMultipleReadsPerClause?[
+        "For one audited clause you MAY select multiple independent registered reads",
+        "when its calculation needs multiple sources (e.g. wage AND employer burden).",
+        "Return all choices grouped by their clause in original audit order.",
+        "Include EVERY clause at least once, with at most five total choices.",
+        "Never repeat the same capability and identical input for one clause.",
+        "A null/unavailable/source-free choice may not share a clause with other choices.",
+      ]:[
+        "You MUST return exactly one choice per supplied audit clause in the same order.",
+      ]),
+      "Copy each clause character-for-character. Never silently drop one.",
       "Select a capability ID ONLY from the reviewed owner-visible server manifest.",
       "Use its input JSON schema and allowedPurpose; inputJson must be a JSON string",
       "containing its strict input (including exact id, version, purpose).",
@@ -241,9 +251,24 @@ export async function runP2ShadowWithScope(params:{
     schema:P2_PLAN_SCHEMA,name:"p2_capability_selection",parse:planSchema,
     key:params.apiKey,model:params.model,usage,transport:params.transport,
   });
-  if(!plan || !plan.complete || plan.choices.length!==audit.clauses.length ||
-    plan.choices.some((v,i)=>v.clause!==audit.clauses[i]))
-    return missing("scope_unverified",usage);
+  if(!plan || !plan.complete)return missing("scope_unverified",usage);
+  if(params.allowMultipleReadsPerClause){
+    const indexes=plan.choices.map(v=>audit.clauses.indexOf(v.clause));
+    if(indexes.some(i=>i<0)||indexes.some((i,pos)=>pos>0&&i<indexes[pos-1])||
+      audit.clauses.some(clause=>!plan.choices.some(v=>v.clause===clause)))
+      return missing("scope_unverified",usage);
+    for(const clause of audit.clauses){
+      const group=plan.choices.filter(v=>v.clause===clause);
+      if(group.length>1&&group.some(v=>!v.capabilityId||
+        v.reason==="source_free"))
+        return missing("scope_unverified",usage);
+      const keys=group.map(v=>JSON.stringify([v.capabilityId,v.inputJson]));
+      if(new Set(keys).size!==keys.length)
+        return missing("scope_unverified",usage);
+    }
+  }else if(plan.choices.length!==audit.clauses.length ||
+     plan.choices.some((v,i)=>v.clause!==audit.clauses[i]))
+     return missing("scope_unverified",usage);
   const supportedIds=new Set(discover.map(d=>d.id));
   const evidence:ShadowEvidence[]=[];
   let attemptedReads=0;
