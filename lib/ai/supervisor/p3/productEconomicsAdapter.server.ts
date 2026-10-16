@@ -34,9 +34,20 @@ export async function enrichResolvedProductEconomics(input:{
           id:"menu.product_economics",version:1,
           purpose:"current_recipe_cost_review",productId:product.id,
         });
-      if(!read||typeof read!=="object")continue;
-      const value=read as {status?:string;reason?:string};
+      // A successful read must return the *same* canonical menu product
+      // independently resolved before the query. Reject swapped, stale or
+      // ambiguous product identities instead of attaching another product's
+      // price/recipe costs to the owner's requested item.
       readCount++;
+      const parsedEconomics=outputFor("menu.product_economics").safeParse(read);
+      if(!parsedEconomics.success||parsedEconomics.data.status==="unavailable")
+        continue;
+      const economics=values["menu.product_economics"].safeParse(parsedEconomics.data.value);
+      if(!economics.success||economics.data.id!==product.id||
+        economics.data.name.normalize("NFKC").toLocaleLowerCase()!==
+          product.name.normalize("NFKC").toLocaleLowerCase())
+        continue;
+      const value=parsedEconomics.data as {status?:string;reason?:string};
       result.push({
         clause:item.clause,capabilityId:"p3.menu.product_economics.v1",
         status:(["verified","estimated","partial"].includes(value.status??"")?
