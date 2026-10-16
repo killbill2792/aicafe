@@ -236,7 +236,7 @@ END $$;
 
 -- A completed import's status, history row and link are atomic and idempotent.
 -- A malformed cross-kind request must not touch either table.
-DO $
+DO $$
 DECLARE j uuid := gen_random_uuid(); h uuid; first_upload uuid;
 BEGIN
   INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
@@ -262,11 +262,11 @@ BEGIN
      OR (SELECT count(*) FROM uploads WHERE id=first_upload) <> 1 THEN
     RAISE EXCEPTION 'HISTORY_REFINALIZE_NOT_IDEMPOTENT';
   END IF;
-END $;
+END $$;
 
 -- Prevent a second overlapping import stealing an old pending wage-review row. The first
 -- job's review row ID remains valid until its wage is supplied.
-DO $
+DO $$
 DECLARE first_job uuid := gen_random_uuid(); second_job uuid := gen_random_uuid(); pending_id uuid;
 BEGIN
   INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count)
@@ -294,12 +294,12 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM timecards WHERE pos_timecard_id='csv-pending-collision' AND hourly_wage_cents=1800) THEN
     RAISE EXCEPTION 'ORIGINAL_PENDING_WAGE_NOT_PROMOTED';
   END IF;
-END $;
+END $$;
 
 -- Even a user who belongs to BOTH cafés must not link a history record from B to a job in A.
 INSERT INTO memberships(business_id,user_id,role)
 VALUES (:'biz_b',:'owner_a','owner');
-DO $
+DO $$
 DECLARE other_upload uuid;
 BEGIN
   INSERT INTO uploads(business_id,kind,status,summary)
@@ -311,7 +311,7 @@ BEGIN
     RAISE EXCEPTION 'CROSS_BUSINESS_HISTORY_LINK_ACCEPTED';
   EXCEPTION WHEN foreign_key_violation THEN NULL;
   END;
-END $;
+END $$;
 
 RESET ROLE;
 ROLLBACK;
