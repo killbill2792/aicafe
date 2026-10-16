@@ -80,7 +80,7 @@ describe("P3 source-bound safe expression evaluator",()=>{
       {op:"hypothetical",label:"untrusted label",quotedNumber:"10",
         value:1000,unit:"ratio_bps"},{op:"multiply"},
     ]),{...context([price]),ownerMessage:"Increase the latte price by 10%"});
-    expect(percent).toMatchObject({status:"conditional",value:53,unit:"USD_cents"});
+    expect(percent).toMatchObject({status:"conditional",value:53,unit:"USD_cents_per_item"});
   });
   it("does not publish model-invented hypothetical labels as café facts",()=>{
     const computed=evaluateExpression(plan([
