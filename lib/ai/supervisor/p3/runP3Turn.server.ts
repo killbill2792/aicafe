@@ -12,7 +12,8 @@ import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
-import { formatScenarioValue,formatScenarioAssumption } from "./formatScenario";
+import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
+import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
 const coverage=z.strictObject({
@@ -62,7 +63,8 @@ function responseText(raw:unknown):string|null {
   return text.length===1&&text[0].length<14000?text[0]:null;
 }
 async function modelComposition(input:{
-  goal:string;clauses:string[];operands:Array<{
+  goal:string;clauses:string[];history:readonly {role:"owner"|"assistant";text:string}[];
+  operands:Array<{
     handle:string;unit:string;sourceQuality:string;entityName:string;
     entityId:string;field:string;matchedClause:string;
   }>;model:string;apiKey:string;transport:Transport;
@@ -107,6 +109,9 @@ async function modelComposition(input:{
         ].join(" "),
         input:[{role:"user",content:JSON.stringify({
           goal:input.goal,clauses:input.clauses,
+          recentConversationContext:input.history.slice(-6).map(h=>({
+            role:h.role,text:h.text.slice(0,450),
+          })),
           authorizedOperandChoices:input.operands,
         })}],
         text:{format:{type:"json_schema",name:"p3_expression_plans",strict:true,
@@ -166,6 +171,7 @@ const labels={
 export async function tryP3SupervisorReadOnly(input:{
   text:string;locale:"en"|"es"|"ar";asOf:string;timezone:string;
   apiKey:string;model:string;transport:Transport;
+  history?:ConversationalTurn[];
   onUsage?:(usage:P3Usage)=>void;
 }):Promise<P3Result|null>{
   const {tools,identity}=await authorizedOwnerP1();
@@ -183,6 +189,9 @@ export async function tryP3SupervisorReadOnly(input:{
   const shadow=await runP2ShadowWithScope({
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
+    allowSourceFree:true,history:(input.history??[]).map(h=>({
+      role:h.role,text:h.text,
+    })),
   });
   const reported={
     model:input.model,modelCallCount:shadow.usage.modelCalls,
@@ -208,7 +217,9 @@ export async function tryP3SupervisorReadOnly(input:{
   reported.modelCallCount++;
   input.onUsage?.({...reported});
   const completion=await modelComposition({
-    goal:input.text,clauses,model:input.model,apiKey:input.apiKey,
+    goal:input.text,clauses,
+    history:(input.history??[]).map(h=>({role:h.role,text:h.text})),
+    model:input.model,apiKey:input.apiKey,
     transport:input.transport,
     operands:projection.choices.map(choice=>{
       const v=projection.operands.find(o=>o.handle===choice.handle)!;
@@ -226,6 +237,8 @@ export async function tryP3SupervisorReadOnly(input:{
   const outcomes:ExpressionOutcome[]=[];
   const calculationInputs:unknown[]=[];
   let unsupportedGoals=0;
+  const plannedSimulations=completion.plan.plans.filter(p=>p.planJson!==null).length;
+  if(reported.toolCallCount+plannedSimulations>5)return null;
   for(const item of completion.plan.plans){
     if(!item.planJson){
       if(!item.reason)return null;
@@ -238,7 +251,11 @@ export async function tryP3SupervisorReadOnly(input:{
     if(!plan.success)return null;
     const pure=plan.data.purpose==="no_external_sources";
     // A source-free expression may not follow canonical café reads.
-    if(pure&&(invokedReads+expanded.readCount)>0)return null;
+    if(pure && ((invokedReads+expanded.readCount)>0 ||
+      !item.coveredClauses.every(clause=>shadow.evidence.some(e=>
+        e.clause===clause&&e.reason==="source_free"))))return null;
+    if(!pure && item.coveredClauses.some(clause=>shadow.evidence.some(e=>
+      e.clause===clause&&e.reason==="source_free")))return null;
     // All registered simulations consume the same five-tool turn budget.
     if(reported.toolCallCount>=5)return null;
     reported.toolCallCount++;
@@ -285,9 +302,8 @@ export async function tryP3SupervisorReadOnly(input:{
         formatScenarioValue(v.value,v.unit,input.locale)});
     // Server-created explanation: no model-authored labels or untrusted
     // source-record prose is rendered as a verified business fact.
-    const conversion={en:"conversion",es:"conversión",ar:"تحويل"}[input.locale];
-    const formula=v.formula.map(step=>step.startsWith("source(")?"source":
-      step.startsWith("convert(")?conversion:step).join(" → ");
+    const formula=v.formula.map(step=>formatScenarioFormula(step,input.locale))
+      .join(" → ");
     blocks.push({type:"text",text:(locale.formula+": "+formula).slice(0,1100)});
     if(v.assumptions.length)blocks.push({type:"text",
       text:(locale.assumptions+": "+v.assumptions.slice(0,6)
