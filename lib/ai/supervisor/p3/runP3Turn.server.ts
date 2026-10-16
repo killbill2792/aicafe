@@ -12,6 +12,7 @@ import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
+import { formatScenarioValue,formatScenarioAssumption } from "./formatScenario";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
 const coverage=z.strictObject({
@@ -62,7 +63,8 @@ function responseText(raw:unknown):string|null {
 }
 async function modelComposition(input:{
   goal:string;clauses:string[];operands:Array<{
-    handle:string;unit:string;sourceQuality:string;
+    handle:string;unit:string;sourceQuality:string;entityName:string;
+    entityId:string;field:string;matchedClause:string;
   }>;model:string;apiKey:string;transport:Transport;
 }):Promise<{plan:ReturnType<typeof coverage.parse>;tokens:{input:number;output:number}}|null>{
   const controller=new AbortController();
@@ -87,6 +89,9 @@ async function modelComposition(input:{
           "hypotheticals, and vetted operators: add, subtract, multiply, divide,",
           "ratio, scenario_delta, compare, convert. Use handles ONLY from authorized list.",
           "Use units exactly as supplied for sources; do not make up source values.",
+          "Each opaque source handle is bound to a verified entityName, entityId,",
+          "field and matchedClause. Match requested names to these bindings,",
+          "never guess employee/product identity from a UUID or reverse records.",
           "For hypothetical nodes include exact owner-quoted numeric substring as quotedNumber",
           "and integer value; money source-unit hypothetical values are integer cents.",
           "Never claim observed sales, actual wages, source revisions, approvals or effects.",
@@ -174,7 +179,8 @@ export async function tryP3SupervisorReadOnly(input:{
     apiKey:input.apiKey,model:input.model,transport:input.transport,
   });
   if(!shadow.evidence.length)return null;
-  const invokedReads=shadow.evidence.filter(x=>x.capabilityId&&x.result!==null).length;
+  // The read limit counts failed and rejected reader invocations too.
+  const invokedReads=shadow.attemptedReads;
   const expanded=await enrichResolvedProductEconomics({
     goal:input.text,scope,registry:capabilityRegistry,evidence:shadow.evidence,
     remainingReads:Math.max(0,4-invokedReads),
@@ -186,14 +192,16 @@ export async function tryP3SupervisorReadOnly(input:{
   const completion=await modelComposition({
     goal:input.text,clauses,model:input.model,apiKey:input.apiKey,
     transport:input.transport,
-    operands:projection.operands.map(v=>({
-      handle:v.handle,unit:v.unit,
-      sourceQuality:v.status+(v.sourceRevision?"":"_revision_unavailable"),
-    })),
+    operands:projection.choices.map(choice=>{
+      const v=projection.operands.find(o=>o.handle===choice.handle)!;
+      return {...choice,unit:v.unit,
+        sourceQuality:v.status+(v.sourceRevision?"":"_revision_unavailable")};
+    }),
   });
   if(!completion?.plan.complete||
     !exactCoverage(clauses,completion.plan.plans))return null;
   const outcomes:ExpressionOutcome[]=[];
+  const calculationInputs:unknown[]=[];
   let unsupportedGoals=0;
   for(const item of completion.plan.plans){
     if(!item.planJson){
@@ -214,6 +222,13 @@ export async function tryP3SupervisorReadOnly(input:{
     const checked=simulationOutputSchema.safeParse(simulated);
     if(!checked.success||checked.data.status==="unavailable")return null;
     outcomes.push(checked.data as ExpressionOutcome);
+    calculationInputs.push({
+      plan:plan.data,
+      // Actual source values and revisions enter the opaque digest; no private
+      // records or unverified values are exposed in the response identifier.
+      sources:pure?[]:projection.operands.filter(o=>
+        checked.data.sourceHandles.includes(o.handle)),
+    });
   }
   if(!outcomes.length && !unsupportedGoals)return null;
   const locale=labels[input.locale],blocks:SupervisorReplyBlock[]=[
@@ -224,7 +239,8 @@ export async function tryP3SupervisorReadOnly(input:{
   const refs:EvidenceReference[]=[];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(
-      JSON.stringify({source:v.sourceHandles,formula:v.formula,goal:input.text}),
+      JSON.stringify({goal:input.text,inputs:calculationInputs[i],
+        output:{value:v.value,unit:v.unit,sourceHandles:v.sourceHandles}}),
     ).digest("hex").slice(0,32);
     const evidence:EvidenceReference={source:"cafe_state",identifier:"p3:"+id,
       asOf:input.asOf};
@@ -232,14 +248,18 @@ export async function tryP3SupervisorReadOnly(input:{
     if(v.unit==="USD_cents"&&v.value!==null)
       blocks.push({type:"metric",label:locale.money,valueCents:v.value,source:evidence});
     else if(v.value!==null&&v.unit)
-      blocks.push({type:"text",text:locale.number+": "+String(v.value)+" "+v.unit});
+      blocks.push({type:"text",text:locale.number+": "+
+        formatScenarioValue(v.value,v.unit,input.locale)});
     // Server-created explanation: no model-authored labels or untrusted
     // source-record prose is rendered as a verified business fact.
-    const formula=v.formula.map(step=>step.startsWith("source(")?"source":step)
-      .join(" → ");
+    const conversion={en:"conversion",es:"conversión",ar:"تحويل"}[input.locale];
+    const formula=v.formula.map(step=>step.startsWith("source(")?"source":
+      step.startsWith("convert(")?conversion:step).join(" → ");
     blocks.push({type:"text",text:(locale.formula+": "+formula).slice(0,1100)});
     if(v.assumptions.length)blocks.push({type:"text",
-      text:(locale.assumptions+": "+v.assumptions.slice(0,6).join("; ")).slice(0,1100)});
+      text:(locale.assumptions+": "+v.assumptions.slice(0,6)
+        .map(s=>formatScenarioAssumption(s,input.locale)).filter(Boolean)
+        .join("; ")).slice(0,1100)});
     if(v.missingInputs.length){
       const codes=[...new Set(v.missingInputs)].slice(0,5).map(code=>
         code.startsWith("unverified:")?"unverified_source":
