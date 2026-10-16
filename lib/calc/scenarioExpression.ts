@@ -287,6 +287,11 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       return unavailable("invalid_source");
     refs.set(o.handle,o);
   }
+  // A successful operand binding is not enough: an expression MUST NOT
+  // combine different database commit states (or revised and unversioned
+  // observations) into one apparently coherent financial calculation.
+  const revisions=new Set([...refs.values()].map(o=>o.sourceRevision));
+  if(revisions.size>1)return unavailable("mixed_source_revisions");
   const stack:Item[]=[],formula:string[]=[],assumptions:string[]=[],missing=new Set<string>();
   try{
     for(const node of plan.nodes){
