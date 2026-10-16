@@ -2,7 +2,8 @@ import { describe,expect,it } from "vitest";
 import { fingerprintP1Observation } from "./p1ReadFingerprint";
 
 const base={
-  businessId:"cafe-a",readerId:"readP1EmployeeWages",
+  businessId:"cafe-a",asOf:"2026-10-16",timezone:"America/Los_Angeles",
+  readerId:"readP1EmployeeWages",
   selectorId:"labor.employee_wages.selector",selectorVersion:1,
   purpose:"authorized_owner_wage_review",
   query:{id:"labor.employee_wages",version:1,purpose:"authorized_owner_wage_review"},
@@ -25,6 +26,8 @@ describe("P1 observed content fingerprint is not an authoritative source revisio
       {...base,purpose:"unrelated_context"},
       {...base,quality:{missingInputs:["salary_unknown"],estimatedInputs:[],staleInputs:[]}},
       {...base,selectorVersion:2},
+      {...base,asOf:"2026-10-17"},
+      {...base,timezone:"America/New_York"},
     ])expect(fingerprintP1Observation(changed)).not.toBe(first);
   });
   it("refuses a missing tenant scope or oversized read payload",()=>{
