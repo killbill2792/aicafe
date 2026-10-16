@@ -223,7 +223,7 @@ export async function runP2ShadowWithScope(params:{
       "For unsupported changes, approvals, purchases, publish or payroll: choose null and unsupported.",
       "Do not emit SQL, businessId, ownerId, effects, write requests or summaries.",
       "Selection is NOT evidence of a completed read or business outcome.",
-      ...(params.allowSourceFree?[ 
+      ...(params.allowSourceFree?[
         "For independently owner-stated arithmetic with no cafe records needed,",
         "select null capability, null inputJson and reason source_free; never read cafe data.",
       ]:[]),
