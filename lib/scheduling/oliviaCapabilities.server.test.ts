@@ -371,6 +371,18 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
   });
+  it("reports PR2's valid 201-shift preview as capacity, not corrupted evidence",async()=>{
+    const large={...scenario,shifts:Array.from({length:201},(_,i)=>({
+      ...shift,employeeId:uid(i+1),
+    }))};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[large],best:large},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:2,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
+  });
   it("rejects stale source digests and revision conflicts without any write",async()=>{
     expect(await executeOliviaReadCapability({...preview(),options:{
       expectedSourceDigest:"b".repeat(64)}})).toMatchObject({
