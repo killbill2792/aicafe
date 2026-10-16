@@ -831,6 +831,32 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
     expect(await executeOliviaReadCapability(preview()))
       .toMatchObject({ok:false,error:{code:"invalid_record"}});
   });
+  it("classifies 501 valid provisional missing wages as capacity, not corrupted evidence",async()=>{
+    const workers=Array.from({length:501},(_,i)=>uid(i+1));
+    const overflowing={...scenario,
+      shifts:workers.map(id=>({...shift,employeeId:id})),
+      cost:{...scenario.cost,missingWageEmployeeIds:workers}};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[overflowing],best:overflowing},notices:[],blockers:[],
+      employees:Object.fromEntries(workers.map(id=>[id,"Staff"])),
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
+  });
+  it("rejects duplicate missing wages and missing-wage entries for unscheduled roster workers",async()=>{
+    for(const ids of [[employeeId,employeeId],[uid(2)]]){
+      const amended={...scenario,cost:{
+        ...scenario.cost,missingWageEmployeeIds:ids}};
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[amended],best:amended},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha",[uid(2)]:"Ben"},
+        locationNames:{[locationId]:"Main"},sourceDigest:digest,
+        previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
