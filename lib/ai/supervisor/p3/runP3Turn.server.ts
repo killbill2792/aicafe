@@ -162,7 +162,7 @@ function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
   }
   return null;
 }
-function verifiedReaderPeriods(evidence:readonly {clause:string;result:unknown}[],
+export function verifiedReaderPeriods(evidence:readonly {clause:string;result:unknown}[],
   request:string,asOf:string):boolean{
   const goal=quotedPeriod(request,asOf);
   for(const item of evidence){
