@@ -15,29 +15,32 @@ export async function enrichResolvedProductEconomics(input:{
   ownerHistory?:readonly string[];
 }):Promise<{evidence:ShadowEvidence[];readCount:number}>{
   const result:ShadowEvidence[]=[...input.evidence];
-  const names=input.goal;
-  const chosen=new Set<string>();
+  const verifiedByProduct=new Map<string,ShadowEvidence>();
   let readCount=0;
   for(const item of input.evidence){
-    if(item.capabilityId!=="p3.menu.catalog.v1"||readCount>=input.remainingReads)continue;
+    if(item.capabilityId!=="p3.menu.catalog.v1")continue;
     const parsed=outputFor("menu.catalog").safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
     const catalog=values["menu.catalog"].safeParse(parsed.data.value);
     if(!catalog.success)continue;
     const matchesCurrent=catalog.data.filter(product=>
-      isWholeNamedEntity(names,product.name,catalog.data,true));
+      isWholeNamedEntity(item.clause,product.name,catalog.data,true));
     const historical=(input.ownerHistory??[]).slice(-3).join(" ");
     const matchesHistory=catalog.data.filter(product=>
       isWholeNamedEntity(historical,product.name,catalog.data,true));
-    const uniquePrevious=matchesCurrent.length===0&&matchesHistory.length===1;
+    const namedElsewhere=catalog.data.filter(product=>
+      isWholeNamedEntity(input.goal,product.name,catalog.data,true));
+    const uniquePrevious=matchesCurrent.length===0&&namedElsewhere.length===0&&
+      matchesHistory.length===1;
     for(const product of catalog.data){
-      if(readCount>=input.remainingReads)break;
       if(!product.active||!product.name||!product.id||
-        product.id.length>120||chosen.has(product.id)||
+        product.id.length>120||
         !(matchesCurrent.some(match=>match.id===product.id)||
           uniquePrevious&&matchesHistory[0].id===product.id))
         continue;
-      chosen.add(product.id);
+      const cached=verifiedByProduct.get(product.id);
+      if(cached){result.push({...cached,clause:item.clause});continue;}
+      if(readCount>=input.remainingReads)break;
       const read=await input.registry.invoke(input.scope,
         "p3.menu.product_economics.v1",{
           id:"menu.product_economics",version:1,
@@ -57,12 +60,14 @@ export async function enrichResolvedProductEconomics(input:{
           product.name.normalize("NFKC").toLocaleLowerCase())
         continue;
       const value=parsedEconomics.data as {status?:string;reason?:string};
-      result.push({
+      const enriched:ShadowEvidence={
         clause:item.clause,capabilityId:"p3.menu.product_economics.v1",
         status:(["verified","estimated","partial"].includes(value.status??"")?
           value.status:"unavailable") as ResultStatus,
         result:read,reason:typeof value.reason==="string"?value.reason:null,
-      });
+      };
+      verifiedByProduct.set(product.id,enriched);
+      result.push(enriched);
     }
   }
   return {evidence:result,readCount};
