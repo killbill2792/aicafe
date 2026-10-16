@@ -268,6 +268,10 @@ export async function tryP3SupervisorReadOnly(input:{
   // migration 70 is missing, retain conservative unversioned conditional
   // behavior; NEVER assign an invented epoch or mix both operand sources.
   const atomic=await readAuthorizedAtomicP1SourceSnapshot();
+  // A malformed owner-scoped RPC payload is a security/integrity error, NOT
+  // evidence of an older migration. Never silently downgrade that state.
+  if(atomic.status==="unavailable"&&atomic.reason==="invalid_source_snapshot")
+    return null;
   if(atomic.status==="available" &&
     (atomic.snapshot.businessId!==identity.businessId||
       atomic.snapshot.currency!==identity.currency||
