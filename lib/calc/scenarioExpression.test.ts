@@ -23,6 +23,20 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
       scope("¿Y si el precio por bebida es 12,5 dólares?")))
       .toMatchObject({status:"conditional",value:1250,unit:"USD_cents_per_item"});
   });
+  it("rejects model unit swaps for the same owner-quoted number",()=>{
+    expect(evaluateExpression(plan("45",45,"hour"),
+      scope("Sophie works 45 more minutes")))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("45",4500,"USD_cents"),
+      scope("Sophie works 45 more minutes")))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_unit_mismatch"});
+    expect(evaluateExpression(plan("45",45,"minute"),
+      scope("Sophie works 45 more minutes")))
+      .toMatchObject({status:"conditional",unit:"minute",value:45});
+    expect(evaluateExpression(plan("25",25,"item"),
+      scope("Sell 25 more lattes")))
+      .toMatchObject({status:"conditional",value:25,unit:"item"});
+  });
   it("never attributes partial fragments of Arabic or repeated grouped numbers",()=>{
     const quoted=plan("١",1,"item");
     expect(evaluateExpression(quoted,scope("ماذا عن ١٬٠٠٠ مشروب؟")))
