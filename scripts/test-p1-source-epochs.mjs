@@ -132,6 +132,15 @@ try{
  await a.query("DELETE FROM public.p1_business_source_epochs WHERE business_id=$1",[A]);
  await a.query("COMMIT");
  check(await snapshot()===null,"no authoritative revision means no snapshot");
+ let blockedWithoutRevision=false;
+ try{
+   await admin.query("UPDATE public.menu_items SET price_cents=775 WHERE id=$1",[menu]);
+ }catch(error){
+   blockedWithoutRevision=String(error.message).includes("authoritative source revision missing");
+ }
+ check(blockedWithoutRevision,"canonical write cannot recreate lost epoch or silently reset version");
+ check((await admin.query("SELECT price_cents FROM public.menu_items WHERE id=$1",[menu])).rows[0].price_cents===600,
+   "missing-ledger source write rolls back together with attempted revision update");
  await admin.query("INSERT INTO public.p1_business_source_epochs(business_id,revision) VALUES($1,1)",[A]);
  check(await snapshot(B,ownerA)===null,"cross-business owner A denied");
  check(await snapshot(A,ownerB)===null,"cross-business owner B denied");
@@ -140,6 +149,13 @@ try{
  const permissions=(await admin.query("SELECT has_table_privilege('authenticated','public.p1_business_source_epochs','SELECT') AS read,has_table_privilege('authenticated','public.p1_business_source_epochs','UPDATE') AS write,has_function_privilege('authenticated','public.p1_touch_business_epoch(uuid)','EXECUTE') AS touch")).rows[0];
  check(!permissions.read&&!permissions.write&&!permissions.touch,
    "clients cannot mutate authoritative revision ledger");
+ let truncateBlocked=false;
+ try{
+   await admin.query("TRUNCATE public.daily_rollups");
+ }catch(error){
+   truncateBlocked=String(error.message).includes("canonical source TRUNCATE");
+ }
+ check(truncateBlocked,"bulk TRUNCATE of revisioned canonical source is forbidden");
  // Simulate a privileged legacy import that linked a menu item to another
  // tenant's ingredient despite RLS. Never leak the foreign ingredient ID.
  const foreignIngredient="b12b12b1-5555-4555-8555-b12b12b12b12";
