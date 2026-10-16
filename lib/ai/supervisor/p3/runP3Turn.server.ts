@@ -268,8 +268,11 @@ export async function tryP3SupervisorReadOnly(input:{
     ).digest("hex").slice(0,32);
     const evidence:EvidenceReference={source:"cafe_state",identifier:"p3:"+id,
       asOf:input.asOf};
-    refs.push(evidence);
-    if(v.unit==="USD_cents"&&v.value!==null)
+    // A pure owner-only hypothetical is not a café-state observation.
+    // Never attach a business-evidence reference to source-free arithmetic.
+    const usesCafeSource=v.sourceHandles.length>0;
+    if(usesCafeSource)refs.push(evidence);
+    if(usesCafeSource&&v.unit==="USD_cents"&&v.value!==null)
       blocks.push({type:"metric",label:locale.money,valueCents:v.value,source:evidence});
     else if(v.value!==null&&v.unit)
       blocks.push({type:"text",text:locale.number+": "+
