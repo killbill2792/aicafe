@@ -229,8 +229,10 @@ GRANT EXECUTE ON FUNCTION public.scheduling_olivia_commit_availability(
        OR jsonb_typeof(x.value->'scope') IS DISTINCT FROM 'object'
        OR jsonb_typeof(x.value->'expected') IS DISTINCT FROM 'array'
        OR jsonb_typeof(x.value->'desired') IS DISTINCT FROM 'array'
-       OR jsonb_array_length(x.value->'expected') > 200
-       OR jsonb_array_length(x.value->'desired') > 200) THEN
+       OR CASE WHEN jsonb_typeof(x.value->'expected')='array'
+            THEN jsonb_array_length(x.value->'expected')>200 ELSE true END
+       OR CASE WHEN jsonb_typeof(x.value->'desired')='array'
+            THEN jsonb_array_length(x.value->'desired')>200 ELSE true END) THEN
     RETURN jsonb_build_object('error','invalid_input');
   END IF;
   IF (SELECT count(*) FROM (
