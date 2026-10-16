@@ -83,3 +83,38 @@ Owner approval is required before merging this foundation, running
 migration 70 in production, changing P1/P3 provenance contracts or
 enabling Supervisor P3 feature flags. Never count a draft migration or
 green CI as proof of an applied production schema.
+
+
+## P3 source consumer — PR #94 (read-only, review pending)
+
+The P3 consumer reads the authorized PostgreSQL snapshot through
+`readAuthorizedAtomicP1SourceSnapshot()`; source-backed operands are projected
+from the *same* response, with exact tenant, timezone, selector, purpose,
+registered reader and epoch. Legacy P1 shadow calls still establish model-
+selected **selectors**, not an authoritative snapshot or numerical source for
+revision-backed operands. For successful atomic projection the observation
+content hash is deliberately null; the epoch belongs to PostgreSQL.
+
+The allowlisted P3 snapshot adapters currently cover active menu item price,
+available recipe-line/ingredient prices, hourly wages (not inferred salary
+conversions), recorded payroll burden, selected-day daily rollups, and
+compatible per-mL ingredient prices converted to US gallon cost with the pure
+calculation library. They do not prove historical POS completeness, option-mix,
+substitution entitlement, overtime rates, full staffing requirements, supplier
+freshness, expense categorization completeness, or net profit. Those remain
+unavailable/partial/conditional, even if an epoch is present. Estimated burden
+and price freshness are not upgraded to verified.
+
+The expression engine rejects mixed epochs. The Supervisor rechecks an epoch
+before returning a result and discards an answer after a concurrent source
+update. If the owner-only RPC is missing or inaccessible, P3 retains only the
+legacy **explicitly partial and unversioned** conditional path; it never
+assigns a fabricated revision or borrows the epoch for an independent read.
+This is not evidence that migration 70 has been deployed to production.
+
+Executable gates: `lib/ai/supervisor/p3/snapshotOperandSources.test.ts`,
+`lib/ai/conversations/runSupervisorP3.test.ts` and real, disposable
+PostgreSQL verification of the P3 adapters via
+`lib/metrics/p1AtomicSourceSnapshot.db.test.ts`. P3 changes now trigger
+`.github/workflows/p1-source-revision-db.yml`. Separate owner-controlled
+migration, staged café rollout and browser acceptance remain release gates.
