@@ -58,14 +58,17 @@ export function formatScenarioFormula(step:string,locale:"en"|"es"|"ar"):string{
     en:{source:"recorded input",convert:"unit conversion",
       owner_hypothetical:"owner assumption",add:"plus",subtract:"minus",
       scenario_delta:"scenario difference",multiply:"times",divide:"divided by",
+      loaded_labor:"loaded labor cost (including employer burden)",
       ratio:"percentage comparison",compare:"comparison"},
     es:{source:"dato registrado",convert:"conversión de unidades",
       owner_hypothetical:"supuesto del propietario",add:"más",subtract:"menos",
       scenario_delta:"diferencia entre escenarios",multiply:"multiplicado por",
+      loaded_labor:"costo laboral con cargas del empleador",
       divide:"dividido entre",ratio:"comparación porcentual",compare:"comparación"},
     ar:{source:"بيانات مسجلة",convert:"تحويل الوحدات",
       owner_hypothetical:"افتراض المالك",add:"جمع",subtract:"طرح",
       scenario_delta:"فرق السيناريوهات",multiply:"ضرب",divide:"قسمة",
+      loaded_labor:"تكلفة العمل شاملة أعباء صاحب العمل",
       ratio:"مقارنة النسب",compare:"مقارنة"},
   };
   const id=step.startsWith("source(")?"source":
