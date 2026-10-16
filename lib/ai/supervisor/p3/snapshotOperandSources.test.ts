@@ -214,6 +214,25 @@ describe("authoritative P3 source projection",()=>{
       {period:{from:"2025-01-01",to:"2025-01-01"}},asOf);
     expect(absent?.leaves).toEqual([]);
   });
+  it("COMPOSE-05: Toast pilot must not reclassify unreviewed rollups as actual sales",()=>{
+    const date=asOf;
+    const r={business_date:date,net_sales_cents:3000,orders_count:3,
+      drinks_count:3,ingredients_cents:0,staff_wages_cents:500,
+      staff_tax_cents:60,card_fees_cents:0,sales_data_status:"actual",
+      staff_tax_status:"actual"} as const;
+    const data=snapshot({sources:{...sources,dailyRollups:[r]}});
+    vi.stubEnv("TOAST_PILOT_IMPORT_ENABLED","true");
+    try{
+      const projected=extractAtomicSnapshot("sales.daily",data,
+        {period:{from:date,to:date}},asOf);
+      expect(projected?.leaves).toEqual([]);
+      expect(projected?.missingInputs).toContain(
+        "toast_sales_review_coverage_unavailable_in_snapshot");
+      // The restriction is sales-specific, not an accidental payroll outage.
+      expect(extractAtomicSnapshot("labor.daily_costs",data,
+        {period:{from:date,to:date}},asOf)?.leaves.length).toBeGreaterThan(0);
+    }finally{vi.unstubAllEnvs();}
+  });
   it("COMPOSE-05: foreign snapshots, truncation and mismatched epochs fail closed",()=>{
     const clause="Sophie works 45 paid minutes";
     const row=read("labor.employee_wages",clause);
