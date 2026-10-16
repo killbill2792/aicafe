@@ -78,6 +78,8 @@ jobs:
         run: python3 scripts/olivia-pr1b-coverage-concurrency.py
       - name: Concurrent qualification creates and assignments
         run: python3 scripts/olivia-pr1b-qualification-concurrency.py
+      - name: Olivia PR3 real concurrent owner approval and publication
+        run: python3 scripts/olivia-pr3-concurrency.py
       - name: Stop disposable database
         if: always()
         run: supabase stop --no-backup
