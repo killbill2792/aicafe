@@ -48,7 +48,17 @@ const cleanRecord=(kind:"availability_rule"|"availability_exception",row:unknown
   const keys=Object.keys(foundationRecordSchemas[kind].shape);
   const data=Object.fromEntries(keys.filter(k=>k in value).map(k=>[k,value[k]]));
   const parsed=foundationRecordSchemas[kind].safeParse(data);
-  return parsed.success?parsed.data:null;
+  if(!parsed.success)return null;
+  if(kind==="availability_exception"){
+    // PR1B's batch UPDATE sets only supplied columns. An omitted optional
+    // field must mean NULL, not "retain the previous day's exception time".
+    // Emit complete nullable columns for adds, replacements and preserved rows.
+    return {...parsed.data,
+      start_local:("start_local" in parsed.data ? parsed.data.start_local : null)??null,
+      end_local:("end_local" in parsed.data ? parsed.data.end_local : null)??null,
+      max_minutes:("max_minutes" in parsed.data ? parsed.data.max_minutes : null)??null};
+  }
+  return parsed.data;
 };
 
 /** The read is already authenticated and tenancy-verified by Olivia PR4A. */
