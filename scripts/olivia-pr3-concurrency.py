@@ -172,6 +172,51 @@ VALUES ('{business}','{employee}','csv-pr3-concurrency-actual',
     actual_after = sql(f"SELECT to_jsonb(t) FROM public.timecards t WHERE t.business_id='{business}';")
     assert actual_after == original_attendance, "Imported actual attendance changed"
 
+    # Publish in a transaction that is intentionally rolled back, then
+    # retry with the exact same key. Neither receipt nor pointer can leak out
+    # of a failed transaction. This checks rollback, not merely RPC errors.
+    series3, revision3, rollback_key = (str(uuid4()) for _ in range(3))
+    sql(f"""
+INSERT INTO public.scheduling_plan_series
+ (id,business_id,horizon_start,current_revision,created_by)
+VALUES ('{series3}','{business}','2099-03-23',1,'{owner}');
+INSERT INTO public.scheduling_plan_revisions
+ (id,business_id,series_id,revision,source_digest,planner_input,scenario,
+  created_by)
+VALUES ('{revision3}','{business}','{series3}',1,repeat('a',64),
+  '{"horizonStart":"2099-03-23"}'::jsonb,
+  '{"objective":"balanced","completeCoverage":true,
+    "hardConstraintsSatisfied":true,"legalReview":"verified_profile","shifts":[]}'::jsonb,
+  '{owner}');
+INSERT INTO public.scheduling_plan_assignments
+ (business_id,plan_revision_id,employee_id,location_id,starts_at,ends_at,
+  paid_minutes,breaks,pinned)
+VALUES ('{business}','{revision3}','{employee}','{location}',
+ '2099-03-23T20:00:00Z','2099-03-23T22:00:00Z',120,'[]',false);
+""")
+    approved3 = transaction_rpc("scheduling_pr3_approve", owner,
+                                revision3, str(uuid4()))
+    assert approved3.get("status") == "approved", approved3
+    rolled_back = sql(f"""
+BEGIN;
+SELECT public.scheduling_pr3_publish('{business}'::uuid,'{owner}'::uuid,
+ '{revision3}'::uuid,1,repeat('a',64),'{source}','{rollback_key}'::uuid);
+ROLLBACK;""")
+    assert '"status": "published"' in rolled_back, rolled_back
+    persisted = sql(f"""SELECT
+      (SELECT published_revision FROM public.scheduling_plan_series
+       WHERE id='{series3}') IS NULL,
+      (SELECT count(*) FROM public.scheduling_plan_audit
+       WHERE revision_id='{revision3}' AND event='published'),
+      (SELECT count(*) FROM public.scheduling_plan_request_receipts
+       WHERE business_id='{business}' AND request_key='{rollback_key}');""")
+    assert persisted == "t|0|0", f"Rolled-back publication leaked: {persisted}"
+    recovered = transaction_rpc("scheduling_pr3_publish", owner,
+                                revision3, rollback_key)
+    assert recovered.get("status") == "published" and recovered.get("replayed") is False, recovered
+    assert transaction_rpc("scheduling_pr3_publish", owner, revision3,
+                           rollback_key).get("replayed") is True
+
     # A valid café owner sees their own schedule, not a different tenant's.
     tenant_read = sql(f"""
 BEGIN;
