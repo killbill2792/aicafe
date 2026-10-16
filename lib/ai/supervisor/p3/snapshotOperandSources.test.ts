@@ -168,6 +168,23 @@ describe("authoritative P3 source projection",()=>{
     expect(selected?.missingInputs).toContain(
       "pos_import_date_and_item_coverage_not_proven");
   });
+  it("COMPOSE-04: card fee zeros and estimates remain unprojectable without status",()=>{
+    const row={business_date:asOf,net_sales_cents:1000,orders_count:2,
+      drinks_count:2,ingredients_cents:180,staff_wages_cents:300,
+      staff_tax_cents:36,card_fees_cents:0,sales_data_status:"actual",
+      staff_tax_status:"actual"} as const;
+    const snap=snapshot({sources:{...sources,dailyRollups:[row]}});
+    const projection=extractAtomicSnapshot("sales.daily",snap,
+      {period:{from:asOf,to:asOf}},asOf)!;
+    expect(projection.leaves).toEqual(expect.arrayContaining([
+      expect.objectContaining({field:"netSalesCents",value:1000}),
+      expect.objectContaining({field:"ingredientsCents",value:180}),
+    ]));
+    expect(projection.leaves.some(x=>x.field==="cardFeesCents"))
+      .toBe(false);
+    expect(projection.missingInputs).toContain(
+      "card_fee_status_unavailable_from_atomic_snapshot");
+  });
   it("COMPOSE-05: foreign snapshots, truncation and mismatched epochs fail closed",()=>{
     const clause="Sophie works 45 paid minutes";
     const row=read("labor.employee_wages",clause);
