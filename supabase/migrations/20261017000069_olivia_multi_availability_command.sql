@@ -52,6 +52,24 @@ BEGIN
     public.staff_scheduling_compensation, public.staff_schedules,
     public.scheduling_labor_rule_reviews IN SHARE MODE;
 
+  -- Reject malformed UUIDs and foreign employees before claiming a receipt.
+  -- A terminal invalid_input must not strand a NULL-result receipt.
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_batches) AS x(value)
+     WHERE jsonb_typeof(x.value) IS DISTINCT FROM 'object'
+       OR coalesce(x.value->>'employeeId','') !~
+         '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+  IF (SELECT count(*) FROM (
+       SELECT DISTINCT (x.value->>'employeeId')::uuid AS id
+       FROM jsonb_array_elements(p_batches) AS x(value)
+     ) selected JOIN public.employees e ON e.business_id=p_business_id
+       AND e.id=selected.id) IS DISTINCT FROM
+     (SELECT count(DISTINCT x.value->>'employeeId')
+       FROM jsonb_array_elements(p_batches) AS x(value)) THEN
+    RETURN jsonb_build_object('error','invalid_input');
+  END IF;
+
   v_payload:=jsonb_build_object('token',p_source_token,'batches',p_batches);
   INSERT INTO public.scheduling_olivia_command_receipts
     (business_id,request_key,actor_id,payload)
@@ -74,23 +92,7 @@ BEGIN
       WHERE business_id=p_business_id AND request_key=p_request_key;
     RETURN v_result;
   END IF;
-  -- Lock all affected employee identities in stable order, including across
-  -- location scopes. Missing/foreign employees are rejected before any write.
-  IF EXISTS(SELECT 1 FROM jsonb_array_elements(p_batches) AS x(value)
-     WHERE jsonb_typeof(x.value) IS DISTINCT FROM 'object'
-       OR coalesce(x.value->>'employeeId','') !~
-         '^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}
-    RETURN jsonb_build_object('error','invalid_input');
-  END IF;
-  IF (SELECT count(*) FROM (
-       SELECT DISTINCT (x.value->>'employeeId')::uuid AS id
-       FROM jsonb_array_elements(p_batches) AS x(value)
-     ) selected JOIN public.employees e ON e.business_id=p_business_id
-       AND e.id=selected.id) IS DISTINCT FROM
-     (SELECT count(DISTINCT x.value->>'employeeId')
-       FROM jsonb_array_elements(p_batches) AS x(value)) THEN
-    RETURN jsonb_build_object('error','invalid_input');
-  END IF;
+  -- Lock all affected employees in stable order before any scoped write.
   PERFORM 1 FROM public.employees
     WHERE business_id=p_business_id
       AND id IN (SELECT DISTINCT (x.value->>'employeeId')::uuid
