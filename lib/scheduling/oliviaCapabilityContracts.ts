@@ -61,6 +61,7 @@ const recordLimit = 5000;
 // Explicit PR4A response cap: large but valid PR2 plans are reported as
 // capacity_exceeded by the adapter, never mislabeled as corrupt evidence.
 export const OLIVIA_MAX_GAPS_PER_SCENARIO = 20_000;
+export const OLIVIA_MAX_SAVED_SHIFTS = 200;
 export const OLIVIA_MAX_PREVIEW_BLOCKERS = 20_002; // PR3: at most 20k workers + 2 global blockers.
 export const oliviaAvailabilityEmployeeSchema = z.object({
   employeeId:oliviaUuid,displayName:z.string().min(1).max(240),active:z.boolean(),
@@ -87,7 +88,7 @@ const costSchema=z.object({
   missingWageEmployeeIds:z.array(oliviaUuid).max(500),
 }).strict();
 export const oliviaScenarioSchema=z.object({
-  objective,shifts:z.array(oliviaShiftSchema).max(200),
+  objective,shifts:z.array(oliviaShiftSchema).max(OLIVIA_MAX_SAVED_SHIFTS),
   gaps:z.array(z.object({
     coverageId:oliviaUuid,locationId:oliviaUuid,startAt:utc,endAt:utc,
     qualificationCode:z.string().nullable(),missingHeadcount:nonnegative,
