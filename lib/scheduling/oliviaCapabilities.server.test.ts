@@ -329,6 +329,48 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       selectedScenario:{cost:{cashWagesCents:0},shifts:[{
         startAt:"2026-11-01T05:30:00.000Z",endAt:"2026-11-01T09:30:00.000Z"}]}});
   });
+  it("preserves actionable typed blockers from trusted PR3 setup failures",async()=>{
+    m.preview.mockResolvedValueOnce({ok:false,error:"missing_inputs",blockers:[
+      {code:"no_location"},{code:"no_coverage"},
+      {code:"conflicting_limits",employeeName:"Asha"},
+    ]});
+    const result=await executeOliviaReadCapability(preview());
+    expect(result).toMatchObject({ok:false,error:{code:"missing_inputs"},
+      blockers:[{code:"no_location"},{code:"no_coverage"},
+        {code:"conflicting_limits",employeeName:"Asha"}]});
+    m.preview.mockResolvedValueOnce({ok:false,error:"missing_inputs",blockers:[
+      {code:"conflicting_limits",employeeName:"Asha",privateProviderError:"secret"},
+    ]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.preview.mockResolvedValueOnce({ok:false,error:"missing_inputs",blockers:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+  });
+  it("accepts 5,376 legitimate gaps and reports explicit capacity beyond 20,000",async()=>{
+    const gap=scenario.gaps[0];
+    const manyGaps=Array.from({length:5376},()=>({...gap}));
+    const manyScenario={...scenario,gaps:manyGaps};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[manyScenario],best:manyScenario},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:2,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    const accepted=await executeOliviaReadCapability(preview());
+    expect(accepted.ok).toBe(true);
+    if(!accepted.ok)throw Error("valid 5-minute grid gaps should be supported");
+    if(accepted.capability!=="olivia.schedule.preview")throw Error("wrong capability");
+    expect(accepted.plan.scenarios[0].gaps).toHaveLength(5376);
+
+    const aboveLimit={...scenario,gaps:Array.from({length:20_001},()=>gap)};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{
+      ...plan,scenarios:[aboveLimit],best:aboveLimit},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:2,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"capacity_exceeded"}});
+  });
   it("rejects stale source digests and revision conflicts without any write",async()=>{
     expect(await executeOliviaReadCapability({...preview(),options:{
       expectedSourceDigest:"b".repeat(64)}})).toMatchObject({
