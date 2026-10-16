@@ -237,6 +237,12 @@ export async function tryP3SupervisorReadOnly(input:{
     const plan=planSchema.safeParse(raw);
     if(!plan.success)return null;
     const pure=plan.data.purpose==="no_external_sources";
+    // A source-free expression may not follow canonical café reads.
+    if(pure&&reported.toolCallCount>0)return null;
+    // All registered simulations consume the same five-tool turn budget.
+    if(reported.toolCallCount>=5)return null;
+    reported.toolCallCount++;
+    input.onUsage?.({...reported});
     const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
       businessId:identity.businessId,locationId:null,ownerMessage:input.text,
       currency:"USD",bindings:pure?[]:projection.bindings,
@@ -301,7 +307,7 @@ export async function tryP3SupervisorReadOnly(input:{
   return {kind:"p3_read_only_conditional",executedEffects:0,
     reply:{intent:"profitability",status:"partial",evidence:refs,blocks},
     usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
-      toolCallCount:invokedReads+expanded.readCount,
+      toolCallCount:reported.toolCallCount,
       inputTokens:shadow.usage.inputTokens+completion.tokens.input,
       outputTokens:shadow.usage.outputTokens+completion.tokens.output},
   };
