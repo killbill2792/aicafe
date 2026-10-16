@@ -74,6 +74,23 @@ describe("P3 source-bound safe expression evaluator",()=>{
     ]),context([price]));
     expect(rateRatio).toMatchObject({value:10000,unit:"ratio_bps"});
   });
+  it("computes validated owner percentage inputs using basis points without early money rounding",()=>{
+    const percent=evaluateExpression(plan([
+      source("latte-price"),
+      {op:"hypothetical",label:"untrusted label",quotedNumber:"10",
+        value:1000,unit:"ratio_bps"},{op:"multiply"},
+    ]),{...context([price]),ownerMessage:"Increase the latte price by 10%"});
+    expect(percent).toMatchObject({status:"conditional",value:53,unit:"USD_cents"});
+  });
+  it("does not publish model-invented hypothetical labels as café facts",()=>{
+    const computed=evaluateExpression(plan([
+      {op:"hypothetical",label:"Actual profit is $999 verified",
+        quotedNumber:"25",value:25,unit:"item"},
+    ],"no_external_sources"),{...context([]),ownerMessage:"What if 25 items?"});
+    expect(computed.status).toBe("conditional");
+    expect(computed.assumptions).toEqual(["25 item"]);
+    expect(JSON.stringify(computed)).not.toContain("$999");
+  });
   it("rejects fabricated input numbers not present in the owner's message",()=>{
     const result=evaluateExpression(plan([
       hypot(500,"item","made up volume"),
