@@ -15,7 +15,9 @@ const period=z.strictObject({from:z.string().date(),to:z.string().date(),
   timezone:z.string().min(1).max(100)});
 export const operandSchema=z.strictObject({
   handle:id,capabilityId:id,canonicalReaderId:id,sourceId:id,sourcePurpose:id,
-  sourceRevision:id.nullable(),selectorContractId:id,selectorContractVersion:z.literal(1),
+  sourceRevision:id.nullable(),
+  observedContentHash:z.string().regex(/^sha256:[0-9a-f]{64}$/).nullable().optional(),
+  selectorContractId:id,selectorContractVersion:z.literal(1),
   businessId:id,locationId:id.nullable(),asOf:z.string().date(),
   period:period.nullable(),status:z.enum(["verified","partial","estimated"]),
   actuality:z.enum(["actual","planned","estimated","forecast"]),
