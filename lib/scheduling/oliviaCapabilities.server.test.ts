@@ -749,6 +749,56 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
       .toMatchObject({ok:false,error:{code:"unauthorized"}});
     expect(m.calls).toContain("scheduling_plan_assignments");
   });
+  it("selects PR2's first feasible scenario rather than any later feasible member",async()=>{
+    const cash={...scenario,completeCoverage:true,gaps:[]};
+    const ownerTime={...scenario,objective:"owner_time",completeCoverage:true,
+      gaps:[],preferencePenalty:2};
+    const comparison={left:"cash",right:"owner_time",ownerMinutesDifference:0,
+      cashWagesDifferenceCents:null,loadedPayrollDifferenceCents:null};
+    const base={...plan,status:"feasible",proof:"complete_candidate_solution",
+      scenarios:[cash,ownerTime],best:ownerTime,comparisons:[comparison]};
+    m.preview.mockResolvedValueOnce({ok:true,plan:base,notices:[],
+      blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...base,best:cash},
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},sourceDigest:digest,
+      previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:true,selectedScenario:{objective:"cash"}});
+  });
+  it("rejects impossible salary allocations, loaded payroll and verification states",async()=>{
+    const legitimate={...scenario.cost,missingWageEmployeeIds:[],
+      cashWagesCents:1000,allocatedSalaryCents:0,
+      loadedPayrollCents:1100,costState:"verified"};
+    const bad=[
+      {...legitimate,allocatedSalaryCents:1500},
+      {...legitimate,loadedPayrollCents:500},
+      {...legitimate,allocatedSalaryCents:200},
+      {...legitimate,costState:"unavailable"},
+    ];
+    for(const cost of bad){
+      const amended={...scenario,cost};
+      m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+        scenarios:[amended],best:amended},notices:[],blockers:[],
+        employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+        sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+      expect(await executeOliviaReadCapability(preview()))
+        .toMatchObject({ok:false,error:{code:"invalid_record"}});
+    }
+    const accepted={...scenario,cost:{
+      ...legitimate,allocatedSalaryCents:200,costState:"estimate"}};
+    m.preview.mockResolvedValueOnce({ok:true,plan:{...plan,
+      scenarios:[accepted],best:accepted},notices:[],blockers:[],
+      employees:{[employeeId]:"Asha"},locationNames:{[locationId]:"Main"},
+      sourceDigest:digest,previewRevision:0,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview()))
+      .toMatchObject({ok:true,plan:{best:{cost:{costState:"estimate",
+        allocatedSalaryCents:200}}}});
+  });
   it("rejects invalid temporal intervals, breaks, paid duration and gaps in planner output",async()=>{
     const invalidShifts=[
       {...shift,startAt:to,endAt:iso},
