@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { createP2Registry,schemaFingerprint } from "@/lib/ai/supervisor/p2/registry";
 import { buildP3P1Registrations } from "./sourceRegistry.server";
+import { extractors } from "./operandProjection.server";
 import { registerExpressionSimulation } from "./simulateRegistration.server";
 import { EXPRESSION_ID } from "./expression";
 
@@ -49,6 +50,23 @@ const scope={
   tools:{} as BusinessScopedCafeTools,shadowEnabled:true,
 };
 describe("COMPOSE registration and source binding",()=>{
+  it("projects canonical daily totals only from valid unique ISO dates",()=>{
+    const daily=extractors["sales.daily"]!;
+    expect(daily([
+      {date:"2026-10-14",netSalesCents:1200,ingredientsCents:200,cardFeesCents:30},
+      {date:"2026-10-15",netSalesCents:1500,ingredientsCents:280,cardFeesCents:40},
+    ])).toEqual(expect.arrayContaining([
+      expect.objectContaining({field:"netSalesCents",value:2700,unit:"USD_cents"}),
+      expect.objectContaining({field:"ingredientsCents",value:480,unit:"USD_cents"}),
+      expect.objectContaining({field:"cardFeesCents",value:70,unit:"USD_cents"}),
+    ]));
+    expect(daily([
+      {date:"2026-10-14",netSalesCents:1200,ingredientsCents:200,cardFeesCents:30},
+      {date:"2026-10-14",netSalesCents:1200,ingredientsCents:200,cardFeesCents:30},
+    ])).toEqual([]);
+    expect(daily([{date:"not-an-ISO-date",netSalesCents:20,ingredientsCents:5,cardFeesCents:1}])).toEqual([]);
+    expect(daily([{date:"2026-10-14",netSalesCents:Infinity,ingredientsCents:5,cardFeesCents:1}])).toEqual([]);
+  });
   it("registers a synthetic fifth domain without changing central orchestration",async()=>{
     const registry=createP2Registry([
       ...buildP3P1Registrations(),meter,registerExpressionSimulation(),
