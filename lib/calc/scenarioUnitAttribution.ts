@@ -1,6 +1,10 @@
 /** Reject model-chosen dimensions that do not occur next to the owner's number.
  * This is source-free and intentionally conservative for unqualified values.
  */
+// ISO 4217 codes come from the runtime ICU list; only USD is a supported currency.
+// Restrict checks to the quoted amount so unrelated clauses cannot taint it.
+const foreignIsoCurrencies=new Set(Intl.supportedValuesOf("currency")
+  .map(code=>code.toLowerCase()).filter(code=>code!=="usd"));
 const normalize=(s:string)=>s.normalize("NFKC").toLocaleLowerCase()
   .replace(/[\u0660-\u0669\u06F0-\u06F9]/gu,c=>{
     const n=c.codePointAt(0)!;return String(n>=0x6f0?n-0x6f0:n-0x660);
@@ -107,8 +111,20 @@ function ownerQuotedMoneyDimensionMatches(text:string,number:string,unit:string,
     // Single-letter A$/C$ must be attached; "and a $30 total" is NOT AUD.
     const foreignDollarPrefix=/(?:^|[^\p{L}])(?:(?:ca|cad|au|aud|nz|nzd|sg|sgd|hk|hkd)\s*\$|(?:a|c)\$)\s*$/iu;
     const foreignDollarWord=/(?:\b(?:canadian|australian|new\s+zealand|singapore|hong\s+kong)\s+dollars?\b|\b(?:cad|aud|nzd|sgd|hkd)\b|\bd[oó]lares?\s+(?:canadienses?|australianos?|neozelandeses?)\b)/iu;
+    const countryDollarPrefix=/(?:^|[^\p{L}])(?:mx|ar|br|cl|co|pe|uy|ve|ca|au|nz|sg|hk|tw)\s*\$\s*$/iu;
+    const directlyPrefixedDollar=/([a-z]{2,3})\$\s*$/iu.exec(previous);
+    const precedingIso=/(?:^|[^\p{L}])([a-z]{3})\s*\$\s*$/iu.exec(previous);
+    const followingIso=/^\s*(?:\(|\[)?\s*([a-z]{3})\b/iu.exec(after);
+    const nonUsdPrefix=directlyPrefixedDollar&&
+      !["us","usd"].includes(directlyPrefixedDollar[1].toLowerCase());
+    const nonUsdCodeBefore=precedingIso&&
+      foreignIsoCurrencies.has(precedingIso[1].toLowerCase());
+    const nonUsdCodeAfter=followingIso&&
+      foreignIsoCurrencies.has(followingIso[1].toLowerCase());
     if(/[€£]\s*$/u.test(previous)||foreignDollarPrefix.test(previous)||
-      /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه)/iu.test(after)||
+      countryDollarPrefix.test(previous)||nonUsdPrefix||nonUsdCodeBefore||
+      nonUsdCodeAfter||
+      /^\s*(?:[€£]|euros?|pounds?|libras?|يورو|جنيه|pesos?|reales?|rupees?)/iu.test(after)||
       foreignDollarWord.test(previous)||foreignDollarWord.test(after))return false;
     const phrase=(previous+" "+after).toLocaleLowerCase();
     const dimensions=new Set<string>();
