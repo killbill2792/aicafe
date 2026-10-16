@@ -37,6 +37,7 @@ END $$;
 INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count,date_from,date_to)
 VALUES (gen_random_uuid(),:'biz_a','sales','processing','fp-rls-test-1',3,2,'2026-08-22','2026-08-22')
 RETURNING id \gset job_
+SELECT set_config('test.job_id',:'job_id',true);
 INSERT INTO csv_sales_import_groups(job_id,business_id,business_date,item_name,quantity,net_sales_cents,source_row_count)
 VALUES
  (:'job_id',:'biz_a','2026-08-22','Latte',3,1500,2),
@@ -65,6 +66,7 @@ VALUES (:'biz_a','toast:11111111-1111-1111-1111-111111111111:order-1','2026-08-2
 INSERT INTO csv_import_jobs(id,business_id,kind,status,content_fingerprint,rows_in_file,group_count,date_from,date_to)
 VALUES (gen_random_uuid(),:'biz_a','sales','processing','fp-rls-test-2',1,1,'2026-08-23','2026-08-23')
 RETURNING id \gset conflict_job_
+SELECT set_config('test.conflict_job_id',:'conflict_job_id',true);
 INSERT INTO csv_sales_import_groups(job_id,business_id,business_date,item_name,quantity,net_sales_cents,source_row_count)
 VALUES (:'conflict_job_id',:'biz_a','2026-08-23','Mocha',1,500,1);
 SELECT * FROM csv_finalize_sales_job(:'conflict_job_id'::uuid);
@@ -74,7 +76,7 @@ BEGIN
    AND pos_order_id='csv-2026-08-23-Mocha') THEN
   RAISE EXCEPTION 'CSV_DOUBLE_COUNTED_A_TOAST_COVERED_DATE';
  END IF;
- IF NOT EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE job_id=:'conflict_job_id'::uuid
+ IF NOT EXISTS (SELECT 1 FROM csv_sales_import_groups WHERE job_id=current_setting('test.conflict_job_id')::uuid
    AND conflict_reason='toast_covers_date') THEN
   RAISE EXCEPTION 'TOAST_CONFLICT_NOT_FLAGGED';
  END IF;
@@ -162,7 +164,7 @@ BEGIN
  END IF;
  -- RLS applies inside this security-invoker function too: as a non-member, its internal
  -- UPDATE/INSERT statements affect zero rows for business A's job — a safe no-op, not a leak.
- PERFORM public.csv_finalize_sales_job(:'job_id'::uuid);
+ PERFORM public.csv_finalize_sales_job(current_setting('test.job_id')::uuid);
 END $$;
 SELECT set_config('request.jwt.claim.sub',:'owner_a',true);
 -- Checked back as owner A (who can actually see biz_a's rows) — the foreign call above must not
