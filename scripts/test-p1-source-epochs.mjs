@@ -32,7 +32,7 @@ try{
  await admin.query("INSERT INTO auth.users(id,instance_id,aud,role,email,encrypted_password,created_at,updated_at) VALUES ($1,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','revowner-a@example.invalid','',now(),now()),($2,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','revowner-b@example.invalid','',now(),now()),($3,'00000000-0000-0000-0000-000000000000','authenticated','authenticated','revmanager@example.invalid','',now(),now())",[ownerA,ownerB,manager]);
  await admin.query("INSERT INTO public.businesses(id,name,is_demo) VALUES($1,'P1 disposable A',false),($2,'P1 disposable B',false)",[A,B]);
  await admin.query("INSERT INTO public.memberships(business_id,user_id,role) VALUES($1,$2,'owner'),($1,$3,'manager'),($4,$5,'owner')",[A,ownerA,manager,B,ownerB]);
- await admin.query("INSERT INTO public.menu_items(id,business_id,name,price_cents,category) VALUES($1,$2,'Iced latte',525,'ESPRESSO_DRINK')",[menu,A]);
+ await admin.query("INSERT INTO public.menu_items(id,business_id,name,base_name,price_cents,category) VALUES($1,$2,'Iced latte','Iced latte',525,'ESPRESSO_DRINK')",[menu,A]);
  await admin.query("INSERT INTO public.ingredients(id,business_id,name,base_unit) VALUES($1,$2,'Milk','ml')",[ingredient,A]);
  await admin.query("INSERT INTO public.ingredient_prices(id,ingredient_id,effective_from,cost_per_base_unit_micros,source) VALUES($1,$2,'2026-10-01',200,'manual')",[price,ingredient]);
  await admin.query("INSERT INTO public.recipe_lines(menu_item_id,ingredient_id,quantity) VALUES($1,$2,200)",[menu,ingredient]);
