@@ -207,7 +207,7 @@ END $$;
 
 -- Full recurring scope has three windows. PR4B must update ONLY the edited
 -- row: the other two preserve revisions, confirmation metadata and audit counts.
-DO $
+DO $$
 DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
  a uuid:=current_setting('test.pr4b_employee_a')::uuid;
  first_row public.staff_availability_rules%ROWTYPE;
@@ -302,7 +302,7 @@ BEGIN
      WHERE business_id=b AND table_name='staff_availability_rules')<>before_audit+1 THEN
    RAISE EXCEPTION 'recurring idempotency replay mutated preserved rows';
  END IF;
-END $;
+END $$;
 
 -- Tenant RLS, role authorization and unprotected receipt access are denied.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
