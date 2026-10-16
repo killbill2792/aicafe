@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ownerQuotedUnitMatches } from "./scenarioUnitAttribution";
 
 /** P3 read-only, deterministic arithmetic. The model never supplies café evidence. */
 export const EXPRESSION_ID="platform.scenario.expression.v1" as const;
@@ -249,6 +250,8 @@ export function evaluateExpression(raw:unknown,context:TrustedContext):Expressio
       }else if(node.op==="hypothetical"){
         if(!attributed(context.ownerMessage,node.quotedNumber))
           throw new Error("invented_hypothetical");
+        if(!ownerQuotedUnitMatches(context.ownerMessage,node.quotedNumber,node.unit))
+          throw new Error("unattributed_hypothetical_unit");
         const isMoney=node.unit.startsWith("USD_");
         const ownerSaidCents=ownerQuotedCents(context.ownerMessage,node.quotedNumber);
         if((!isMoney&&node.quotedDenomination!==undefined)||
