@@ -174,28 +174,36 @@ BEGIN
  END IF;
 END $;
 
--- Invalid nested UUID values must be rejected before the function casts them,
--- without reserving a receipt or touching any employee scope.
-DO $
+-- Invalid nested UUID values must not claim an idempotency key. A valid
+-- no-op retry with that same top-level key must succeed without table access
+-- (command receipts are intentionally hidden from authenticated owners).
+DO $$
 DECLARE b uuid:=current_setting('test.pr4b_business')::uuid;
- token text; example jsonb; result jsonb; before_count integer;
+ a uuid:=current_setting('test.pr4b_employee_a')::uuid;
+ token text; example jsonb; valid jsonb; result jsonb;
+ request_key uuid:=gen_random_uuid();
 BEGIN
  token:=public.scheduling_owner_source_token(b);
- SELECT count(*) INTO before_count FROM public.scheduling_olivia_command_receipts
- WHERE business_id=b;
  example:=jsonb_build_array(jsonb_build_object(
    'kind','availability_exception','employeeId','not-a-uuid',
    'locationId',NULL,'scope',jsonb_build_object('local_date','2026-10-25'),
    'expected','[]'::jsonb,'desired','[]'::jsonb,
    'requestKey',gen_random_uuid()));
  result:=public.scheduling_olivia_commit_availability(
-   b,token,gen_random_uuid(),example);
- IF result->>'error'<>'invalid_input' OR
-   (SELECT count(*) FROM public.scheduling_olivia_command_receipts
-      WHERE business_id=b)<>before_count THEN
+   b,token,request_key,example);
+ IF result->>'error'<>'invalid_input' THEN
    RAISE EXCEPTION 'invalid nested employee UUID not rejected cleanly';
  END IF;
-END $;
+ valid:=jsonb_build_array(jsonb_build_object(
+   'kind','availability_exception','employeeId',a,
+   'locationId',NULL,'scope',jsonb_build_object('local_date','2026-10-25'),
+   'expected','[]'::jsonb,'desired','[]'::jsonb,
+   'requestKey',gen_random_uuid()));
+ result:=public.scheduling_olivia_commit_availability(
+   b,token,request_key,valid);
+ IF result->>'replayed'<>'false' OR jsonb_array_length(result->'batches')<>1
+ THEN RAISE EXCEPTION 'invalid command stranded its idempotency key'; END IF;
+END $$;
 
 -- Tenant RLS, role authorization and unprotected receipt access are denied.
 SELECT set_config('request.jwt.claim.sub',:'manager',true);
