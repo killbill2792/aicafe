@@ -39,6 +39,10 @@ const result=(input:{id:string;version:number;purpose:string},value:unknown)=>({
   },
   freshness:{asOf:identity.asOf,capturedAt:null,stale:null},
 });
+const atomicRead=vi.hoisted(()=>vi.fn());
+vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({
+  readAuthorizedAtomicP1SourceSnapshot:atomicRead,
+}));
 const p1Reads=vi.hoisted(()=>vi.fn());
 const p1Auth=vi.hoisted(()=>vi.fn());
 vi.mock("@/lib/metrics/p1Readers.server",async(importOriginal)=>{
@@ -106,6 +110,9 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
     vi.stubEnv("SUPERVISOR_P3_COMPOSITION_ENABLED","true");
     vi.stubEnv("SUPERVISOR_P3_ALLOWED_BUSINESS_IDS",identity.businessId);
+    atomicRead.mockReset().mockResolvedValue({
+      status:"unavailable",reason:"unauthorized_or_unconfigured",
+    });
     p1Auth.mockReset().mockResolvedValue({identity,tools:{} as BusinessScopedCafeTools});
     p1Reads.mockReset().mockImplementation(async(_tools:unknown,_identity:unknown,raw:unknown)=>{
       const id=(raw as {id:SupportedId}).id;
@@ -116,6 +123,74 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("COMPOSE-01/05/08: real Supervisor entry uses only snapshot facts and epoch",async()=>{
+    const atomic={
+      contract:"p1.authoritative_snapshot.v1",businessId:identity.businessId,
+      revision:"25",timezone:identity.timezone,currency:"USD",
+      payroll:{rate:0.12,status:"confirmed",source:"owner_confirmed"},
+      sources:{
+        menu:[{id:"latte",name:"latte",category:"drink",is_active:true,
+          price_cents:600}],
+        ingredients:[{id:"milk",name:"whole milk",base_unit:"ml"}],
+        ingredientPrices:[{id:"price",ingredient_id:"milk",
+          effective_from:identity.asOf,cost_per_base_unit_micros:500000,
+          source:"invoice"}],
+        recipes:[{menu_item_id:"latte",ingredient_id:"milk",quantity:250}],
+        employees:[{id:"sophie",display_name:"Sophie",active:true,role:"barista",
+          default_hourly_wage_cents:2000,wage_period:"hour",wage_amount_cents:2000}],
+        dailyRollups:[],expenses:[],recurringCosts:[],imports:[],
+      },
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},
+      coverage:"not_proven_by_revision",
+    };
+    atomicRead.mockResolvedValue({status:"available",snapshot:atomic});
+    const transport=makeTransport();
+    const output=await run(transport.calls);
+    // Independent P1 fixtures still claim $5.25/$18, but snapshot is $6/$20:
+    // (600 - 125) * 25 - (2000 * 45/60) = 10,375 cents.
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"metric",valueCents:10375}),
+      expect.objectContaining({type:"warning",code:"P3_SOURCE_LIMITATIONS"}),
+    ]));
+    expect(output.reply.blocks.some(b=>b.type==="metric"&&
+      b.valueCents===8650)).toBe(false);
+    expect(atomicRead).toHaveBeenCalledTimes(2);
+    const modelPayload=JSON.parse(
+      (transport.requests[2].input as Array<{content:string}>)[0].content
+    ) as {authorizedOperandChoices:Array<{sourceQuality:string}>};
+    expect(modelPayload.authorizedOperandChoices.every(o=>
+      !o.sourceQuality.includes("revision_unavailable"))).toBe(true);
+  });
+  it("COMPOSE-05: changed epoch before owner reply invalidates the answer",async()=>{
+    const make=()=>({
+      contract:"p1.authoritative_snapshot.v1",businessId:identity.businessId,
+      revision:"25",timezone:identity.timezone,currency:"USD",
+      payroll:{rate:0.12,status:"confirmed",source:"owner_confirmed"},
+      sources:{menu:[{id:"latte",name:"latte",category:"drink",
+        is_active:true,price_cents:600}],
+        ingredients:[{id:"milk",name:"whole milk",base_unit:"ml"}],
+        ingredientPrices:[{id:"price",ingredient_id:"milk",
+          effective_from:identity.asOf,cost_per_base_unit_micros:500000,
+          source:"invoice"}],
+        recipes:[{menu_item_id:"latte",ingredient_id:"milk",quantity:250}],
+        employees:[{id:"sophie",display_name:"Sophie",active:true,role:"barista",
+          default_hourly_wage_cents:2000,wage_period:"hour",wage_amount_cents:2000}],
+        dailyRollups:[],expenses:[],recurringCosts:[],imports:[]},
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},coverage:"not_proven_by_revision",
+    });
+    atomicRead.mockResolvedValueOnce({status:"available",snapshot:make()})
+      .mockResolvedValueOnce({status:"available",
+        snapshot:{...make(),revision:"26"}});
+    const transport=makeTransport();
+    const output=await run(transport.calls);
+    expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
+    expect(output.reply.status).toBe("unavailable");
+  });
   it("COMPOSE-02: a single owner clause safely selects wages AND employer burden",async()=>{
     const clause="Sophie works 45 extra minutes including employer burden";
     const burden={id:"labor.payroll_burden",version:1,
