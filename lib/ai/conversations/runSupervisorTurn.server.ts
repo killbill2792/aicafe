@@ -297,34 +297,61 @@ export async function runSupervisorTurn(input: {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new SupervisorStageError("provider_invalid_payload","provider_request");
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
-  // P3 is a default-OFF, owner-authorized compatibility route, never production
-  // activation. Its typed simulator cannot write, approve, publish or propose.
-  // On incomplete evidence/model failure, preserve the established Supervisor.
+  const priorUsage:SupervisorUsage={
+    model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
+  };
+  // P3 is default-off and owner-allowlisted. Every model attempt and canonical
+  // reader invocation consumes the SAME bounded turn budget as legacy fallback.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
-    try {
+    let attemptedModels=0;
+    const trackedTransport:Transport=async(url,init)=>{
+      attemptedModels++;
+      const response=await transport(url,init);
+      try{
+        const json:unknown=await response.clone().json();
+        const billed=(json && typeof json==="object"?
+          (json as {usage?:{input_tokens?:unknown;output_tokens?:unknown}}).usage:null);
+        priorUsage.inputTokens+=integer(billed?.input_tokens);
+        priorUsage.outputTokens+=integer(billed?.output_tokens);
+      }catch{/* Provider failure is still a charged model attempt. */}
+      return response;
+    };
+    const recordUsage=(update:SupervisorUsage)=>{
+      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,
+        attemptedModels,update.modelCallCount);
+      priorUsage.toolCallCount=Math.max(priorUsage.toolCallCount,update.toolCallCount);
+      priorUsage.inputTokens=Math.max(priorUsage.inputTokens,update.inputTokens);
+      priorUsage.outputTokens=Math.max(priorUsage.outputTokens,update.outputTokens);
+      input.onUsage?.({...priorUsage});
+    };
+    try{
       const composed=await tryP3SupervisorReadOnly({
         text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
-        apiKey:key,model,transport,
+        apiKey:key,model,transport:trackedTransport,onUsage:recordUsage,
       });
-      if (composed) {
-        const simulatedUsage:SupervisorUsage={
-          model:composed.usage.model,inputTokens:composed.usage.inputTokens,
-          outputTokens:composed.usage.outputTokens,
-          modelCallCount:composed.usage.modelCallCount,
-          toolCallCount:composed.usage.toolCallCount,
-        };
-        input.onUsage?.({...simulatedUsage});
-        return {reply:composed.reply,usage:simulatedUsage};
+      if(composed){
+        recordUsage(composed.usage);
+        return {reply:composed.reply,usage:{...priorUsage}};
       }
-    } catch {
-      // No P3 exception, unverifiable source or provider output may become
-      // an owner-visible fact; legacy reads still use their own guardrails.
+    }catch{
+      // Source/provider failures cannot become trusted facts. Prior usage
+      // survives so an unsafe retry never gets a new five-read allowance.
+    }finally{
+      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,attemptedModels);
+      if(attemptedModels||priorUsage.toolCallCount)input.onUsage?.({...priorUsage});
     }
   }
-  // No implicit fallback. Only an explicitly configured, different model may be tried.
+  const usage:SupervisorUsage={...priorUsage};
+  const remaining={en:"The scenario needs additional verified inputs or a new request.",
+    es:"El escenario necesita más datos verificados o una nueva solicitud.",
+    ar:"يحتاج السيناريو إلى مدخلات موثوقة إضافية أو طلب جديد."};
+  if(usage.modelCallCount>=MAX_ROUNDS||usage.toolCallCount>=MAX_TOOLS)
+    return {reply:{intent:"unknown",status:"unavailable",evidence:[],
+      blocks:[{type:"warning",code:"SUPERVISOR_TURN_BUDGET",text:remaining[input.locale]}]},
+      usage};
+  // No implicit provider-model fallback. Only a separately configured model.
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
   let fallbackAttempted = false;
-  const usage: SupervisorUsage = {model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0};
   const registry = createSupervisorToolRegistry(input);
   const toolResults: ToolEvidence[] = [], called: SupervisorToolName[] = [];
   const executed: SupervisorToolCall[] = [];
@@ -343,7 +370,7 @@ export async function runSupervisorTurn(input: {
     const request=JSON.stringify(buildSupervisorScopeAuditRequest({
       model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
     }));
-    for(let attempt=0;attempt<2;attempt++){
+    for(let attempt=0;attempt<2 && usage.modelCallCount<MAX_ROUNDS;attempt++){
       const attemptNumber=attempt+1,controller=new AbortController();
       const timeout=setTimeout(()=>controller.abort(),18_000);
       input.onDiagnostic?.({stage:"provider_request",model,round:1,attempt:attemptNumber,
@@ -446,7 +473,7 @@ export async function runSupervisorTurn(input: {
     ar:"لم أتمكن من تحديد جميع أجزاء السؤال بثقة. يُرجى طرح كل جزء على حدة حتى لا يفوتني شيء.",
   }[input.locale];
 
-  for (let round=0;round<MAX_ROUNDS;round++) {
+  for (let round=0;round<MAX_ROUNDS && usage.modelCallCount<MAX_ROUNDS;round++) {
     let payload: Record<string,unknown> | null = null;
     for (let attempt=0;attempt<2;attempt++) {
       const roundNumber=round+1, attemptNumber=attempt+1;
