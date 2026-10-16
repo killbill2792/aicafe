@@ -5,6 +5,7 @@ import { runSupervisorTurn } from "./runSupervisorTurn.server";
 import { validateGroundedReply } from "./replyValidation";
 import { EXPRESSION_ID } from "@/lib/ai/supervisor/p3/expression";
 import { verifiedReaderPeriods } from "@/lib/ai/supervisor/p3/runP3Turn.server";
+import { projectP1Evidence } from "@/lib/ai/supervisor/p3/operandProjection.server";
 import { readers,type SupportedId } from "@/lib/metrics/p1Catalog";
 
 const identity={businessId:"cafe-test",asOf:"2026-10-15",
@@ -370,6 +371,37 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(forged.reply.status).toBe("unavailable");
     expect(forged.reply.evidence).toEqual([]);
     expect(forged.usage.modelCallCount).toBe(3);
+  });
+  it("discards a repeated canonical handle when its readings conflict within one turn",()=>{
+    const clauses=["Sophie works 45 additional minutes","Sophie works 20 additional minutes"];
+    const sameResult=result(wageInput,workers);
+    const changedResult=result(wageInput,[{...workers[0],
+      defaultHourlyWageCents:2100,wageAmountCents:2100}]);
+    const asEvidence=(source:ReturnType<typeof result>,clause:string)=>({
+      clause,capabilityId:"p3.labor.employee_wages.v1",
+      status:"partial" as const,result:source,reason:null,
+    });
+    const stable=projectP1Evidence([
+      asEvidence(sameResult,clauses[0]),
+      asEvidence(sameResult,clauses[1]),
+    ],identity.businessId,clauses.join(" and "));
+    expect(stable.operands).toHaveLength(1);
+    expect(stable.choices).toHaveLength(2);
+    const inconsistent=projectP1Evidence([
+      asEvidence(sameResult,clauses[0]),
+      asEvidence(changedResult,clauses[1]),
+    ],identity.businessId,clauses.join(" and "));
+    expect(inconsistent.operands).toHaveLength(0);
+    expect(inconsistent.choices).toHaveLength(0);
+    expect(inconsistent.missing).toContain(
+      "conflicting_source_snapshot:labor.employee_wages");
+    // A third read equal to the first must not rehabilitate the conflicted leaf.
+    const threeReads=projectP1Evidence([
+      asEvidence(sameResult,clauses[0]),
+      asEvidence(changedResult,clauses[1]),
+      asEvidence(sameResult,clauses[0]),
+    ],identity.businessId,clauses.join(" and "));
+    expect(threeReads.operands).toHaveLength(0);
   });
   it("keeps identical sales fields separate for independent dated clauses",async()=>{
     const dates=["2026-10-01","2026-10-08"];
