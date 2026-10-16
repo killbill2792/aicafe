@@ -98,4 +98,45 @@ describe("COMPOSE registration and source binding",()=>{
       ownerMessage:"25 items",bindings:[],operands:[],
     })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
   });
+  it("COMPOSE-05 rejects source bindings not present in the compiled read registry",async()=>{
+    const sim={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"preauthorized_operands",description:"One reader-backed scenario",
+      nodes:[{op:"source",handle:"reading"}]};
+    const bound={capabilityId:"p3.menu.catalog.v1",canonicalReaderId:"readP1MenuCatalog",
+      sourceIds:["menu.catalog"],purposes:["menu_catalog_review"],sensitivity:"normal"};
+    const observed={handle:"reading",capabilityId:bound.capabilityId,
+      canonicalReaderId:bound.canonicalReaderId,sourceId:"menu.catalog",
+      sourcePurpose:"menu_catalog_review",sourceRevision:"catalog-revision",
+      selectorContractId:"menu.catalog.selector",selectorContractVersion:1,
+      businessId:scope.businessId,locationId:null,asOf:scope.identity.asOf,
+      period:null,status:"verified",actuality:"actual",evidenceStatus:"verified",
+      missingInputs:[],staleInputs:[],unit:"item",currency:null,value:25};
+    const forged=createP2Registry([registerExpressionSimulation()]);
+    expect(await forged.invokeSimulation(scope,EXPRESSION_ID,sim,{
+      businessId:scope.businessId,locationId:null,ownerMessage:"Review 25 items",
+      currency:"USD",bindings:[bound],operands:[observed],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+    const registry=createP2Registry([
+      ...buildP3P1Registrations(),registerExpressionSimulation(),
+    ]);
+    const valid={businessId:scope.businessId,locationId:null,
+      ownerMessage:"Review 25 items",currency:"USD",
+      bindings:[bound],operands:[observed]};
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,sim,{
+      ...valid,bindings:[{...bound,canonicalReaderId:"forged.reader"}],
+      operands:[{...observed,canonicalReaderId:"forged.reader"}],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,sim,{
+      ...valid,operands:[{...observed,sourcePurpose:"staff_wage_review"}],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,sim,{
+      ...valid,operands:[{...observed,asOf:"2026-10-14"}],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+    expect(await registry.invokeSimulation(scope,EXPRESSION_ID,sim,{
+      ...valid,operands:[{...observed,period:{
+        from:"2026-10-14",to:"2026-10-14",timezone:"UTC",
+      }}],
+    })).toMatchObject({status:"unavailable",reason:"invalid_source_context"});
+  });
+
 });
