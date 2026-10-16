@@ -329,7 +329,10 @@ export async function tryP3SupervisorReadOnly(input:{
     reported.toolCallCount++;
     input.onUsage?.({...reported});
     const simulated=await capabilityRegistry.invokeSimulation(scope,EXPRESSION_ID,raw,{
-      businessId:identity.businessId,locationId:null,ownerMessage:input.text,
+      // A hypothetical belongs to the clauses covered by THIS plan. Checking
+      // the full owner turn would let a plan borrow another clause's number.
+      businessId:identity.businessId,locationId:null,
+      ownerMessage:item.coveredClauses.join(" "),
       currency:"USD",bindings:allowedBindings,
       operands:allowedOperands,
     });
