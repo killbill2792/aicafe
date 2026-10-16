@@ -410,8 +410,10 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const output=await run(provider,clauses.join(" and "));
     expect(output.reply.status).toBe("partial");
     expect(output.reply.blocks).toEqual(expect.arrayContaining([
-      expect.objectContaining({type:"metric",valueCents:1000}),
-      expect.objectContaining({type:"metric",valueCents:2000}),
+      expect.objectContaining({type:"metric",valueCents:1000,
+        label:expect.stringContaining("2026-10-01 / 2026-10-01")}),
+      expect.objectContaining({type:"metric",valueCents:2000,
+        label:expect.stringContaining("2026-10-08 / 2026-10-08")}),
     ]));
     expect(p1Reads).toHaveBeenCalledTimes(2);
   });
