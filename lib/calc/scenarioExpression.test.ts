@@ -246,6 +246,35 @@ describe("canonical pure scenario arithmetic and locale-safe owner attribution",
     expect(evaluateExpression(items,scope("What is 10% of 25 items?")))
       .toMatchObject({status:"conditional",value:2.5,unit:"item"});
   });
+  it("reuses the canonical payroll engine for explicitly quoted loaded labor",()=>{
+    const source="Pay $13.50 in wages and 12% employer payroll tax";
+    const nodes=[
+      {op:"hypothetical",label:"cash wages",quotedNumber:"13.50",
+        value:1350,unit:"USD_cents"},
+      {op:"hypothetical",label:"stated burden",quotedNumber:"12",
+        value:1200,unit:"ratio_bps"},
+      {op:"loaded_labor"},
+    ];
+    expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Loaded labor",nodes},scope(source)))
+      .toMatchObject({status:"conditional",value:1512,unit:"USD_cents",
+        executedEffects:0});
+    const falseRate={...nodes[1],value:2000};
+    expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Forged tax",
+      nodes:[nodes[0],falseRate,nodes[2]]},scope(source)))
+      .toMatchObject({status:"unavailable",reason:"hypothetical_mismatch"});
+    const missingTax="Pay $13.50 in wages";
+    expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Missing employer rate",nodes},
+      scope(missingTax))).toMatchObject({status:"unavailable"});
+    const invalidUnits={...nodes,0:{op:"hypothetical",label:"hours",
+      quotedNumber:"13.50",value:1350,unit:"hour"}};
+    expect(evaluateExpression({capabilityId:EXPRESSION_ID,version:1,
+      purpose:"no_external_sources",description:"Wrong dimensions",
+      nodes:[invalidUnits[0],nodes[1],nodes[2]]},scope(source)))
+      .toMatchObject({status:"unavailable"});
+  });
   it("normalizes Arabic decimal separators but rejects ambiguous groupings",()=>{
     expect(evaluateExpression(plan("١٢٫٥",1250,"USD_cents_per_item"),
       scope("سعر الحليب لكل كوب ١٢٫٥ دولار")))
