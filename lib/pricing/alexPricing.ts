@@ -61,6 +61,8 @@ const item=z.strictObject({
   ingredientContributionRatioBps:ratio,
   costSource:z.enum(["recipe","owner_total"]).nullable(),
   ingredientPriceSources:z.array(z.enum(["manual","receipt","statement","invoice"])).max(4),
+  hypotheticalIngredientIds:z.array(uuid).max(20),
+  staleInputs:z.array(z.string()).max(30),
   currentRecommendationCents:cents.nullable(), // never synthesise recommendation from baseline profile
   missingInputs:z.array(z.string()).max(30),
 });
@@ -112,6 +114,7 @@ const unavailableItem=(name:string,why:string,productId:string|null=null,categor
   ({productId,name,category,status:"unavailable" as const,currentPriceCents:null,
     ingredientCostCents:null,ingredientCostRatioBps:null,ingredientContributionCents:null,
     ingredientContributionRatioBps:null,costSource:null,ingredientPriceSources:[] as Price["source"][],
+    hypotheticalIngredientIds:[] as string[],staleInputs:[] as string[],
     currentRecommendationCents:null,missingInputs:[why]});
 
 function findMenu(snapshot:Snapshot,query:z.infer<typeof selector>):Row|{error:string}{
@@ -149,7 +152,10 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   if(lines.length>200 || new Set(lines.map(x=>x.ingredient_id)).size!==lines.length)
     missing.push("recipe_conflict_or_over_limit");
   const priced=new Map<string,number>();
-  const sources=new Set<Price["source"]>();
+  // Provenance belongs to the FINAL cost-bearing recipe lines, not every
+  // candidate retrieved before an ingredient substitution or price override.
+  const recordedSourcesById=new Map<string,Price["source"]>();
+  const hypotheticalPrices=new Set<string>();
   for(const id of new Set([...lines.map(l=>l.ingredient_id),
     ...alterations.flatMap(c=>c.kind==="replace_ingredient"?[c.toIngredientId]:
       "ingredientId" in c?[c.ingredientId]:[])])){
@@ -158,7 +164,7 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
     const p=ingredientPrice(snapshot,id,day);
     if(isError(p)){missing.push(p.error);continue;}
     priced.set(id,p.cost_per_base_unit_micros);
-    sources.add(p.source);
+    recordedSourcesById.set(id,p.source);
   }
   for(const edit of alterations){
     if(edit.kind==="replace_ingredient"){
@@ -194,6 +200,11 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
             edit.packageUnit,ing.base_unit);
       if(next===null){missing.push("invalid_unit_or_cost_conversion");continue;}
       priced.set(edit.ingredientId,next);
+      hypotheticalPrices.add(edit.ingredientId);
+      // An absolute owner override is not evidence from the superseded
+      // ingredient-price row. A relative multiplier still depends on that row.
+      if(edit.kind!=="ingredient_multiplier")
+        recordedSourcesById.delete(edit.ingredientId);
     }
   }
   // For substitutions, a newly introduced ingredient becomes a cost-bearing line.
@@ -217,16 +228,28 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   // snapshot. We NEVER use an independently queried owner total with this revision.
   if(rawCost===null)missing.push("owner_total_cost_fallback_not_in_atomic_snapshot");
   const uniqueMissing=[...new Set(missing)].slice(0,30);
+  const finalIds=[...new Set(lines.map(line=>line.ingredient_id))];
+  const sources=[...new Set(finalIds.flatMap(id=>{
+    const source=recordedSourcesById.get(id);
+    return source?[source]:[];
+  }))];
+  const hypotheticalIngredientIds=finalIds.filter(id=>hypotheticalPrices.has(id));
+  // An effective date and source revision prove recorded input, not supplier
+  // freshness. Do not invent a universal shelf life for a price observation.
+  const stale=rawCost!==null?finalIds.filter(id=>recordedSourcesById.has(id))
+    .map(id=>"ingredient_price_freshness_unverified:"+id):[];
+  const staleInputs=stale.length>30?[...stale.slice(0,29),
+    "additional_freshness_gaps_omitted"]:stale;
   const out={
     productId:row.id,name:row.name,category:row.category,
-    status:uniqueMissing.length?"partial" as const:"ready" as const,
+    status:uniqueMissing.length||staleInputs.length?"partial" as const:"ready" as const,
     currentPriceCents:sellingPrice,
     ingredientCostCents:economics?.ingredientCostCents??null,
     ingredientCostRatioBps:economics?.costRatioBasisPoints??null,
     ingredientContributionCents:economics?.ingredientContributionCents??null,
     ingredientContributionRatioBps:economics?.ingredientContributionBasisPoints??null,
     costSource:economics?"recipe" as const:null,
-    ingredientPriceSources:[...sources],
+    ingredientPriceSources:sources,hypotheticalIngredientIds,staleInputs,
     currentRecommendationCents:null,missingInputs:uniqueMissing,
   };
   return {item:out,rawCost};
@@ -256,9 +279,10 @@ export function reviewFromAtomicSnapshot(snapshot:Snapshot,input:AlexReviewInput
   const items=selected.map(x=>isError(x)?unavailableItem("unresolved",x.error):
     evaluateItem(snapshot,x,day).item);
   const missing=items.flatMap(x=>x.missingInputs.map(m=>x.name+":"+m));
+  const stale=items.flatMap(x=>x.staleInputs.map(m=>x.name+":"+m));
   if(omitted)missing.push("unsupported_categories_omitted:"+omitted);
   const result={
-    status:missing.length?"partial" as const:"verified" as const,
+    status:missing.length||stale.length?"partial" as const:"verified" as const,
     value:{currency:"USD" as const,items,totalSelected:
       input.selection.kind==="all_active"?supported.length:selected.length,offset,
       hasMore:input.selection.kind==="all_active"&&offset+selected.length<supported.length,
@@ -266,7 +290,10 @@ export function reviewFromAtomicSnapshot(snapshot:Snapshot,input:AlexReviewInput
       recommendationScope:"unavailable_without_coherent_authoritative_pricing_evidence" as const,
       ownerTotalFallbackCoverage:"not_in_p1_atomic_snapshot" as const},
     provenance:context(snapshot,day,input.purpose),
-    quality:{missingInputs:missing.slice(0,100),estimatedInputs:[],staleInputs:[]},
+    quality:{missingInputs:missing.length>100?[...missing.slice(0,99),
+      "additional_missing_inputs_omitted"]:missing,
+      estimatedInputs:[],staleInputs:stale.length>50?[...stale.slice(0,49),
+        "additional_freshness_gaps_omitted"]:stale},
   };
   return result;
 }
@@ -289,6 +316,7 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
   }
   const after=evaluateItem(snapshot,row,day,input.changes,proposedPrice);
   const missing=[...new Set([...before.item.missingInputs,...after.item.missingInputs])];
+  const stale=[...new Set([...before.item.staleInputs,...after.item.staleInputs])];
   if(input.changes.length>0&&after.rawCost===null)return no("hypothetical_cost_inputs_incomplete");
   const targetBps=input.targetCostRatioBps??(
     input.targetIngredientMarginBps!==undefined?10000-input.targetIngredientMarginBps:null);
@@ -296,7 +324,7 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
     conditionalTargetPrice(after.rawCost,targetBps):null;
   const sub=(a:number|null,b:number|null)=>a===null||b===null?null:b-a;
   return {
-    status:missing.length?"partial" as const:"conditional" as const,
+    status:missing.length||stale.length?"partial" as const:"conditional" as const,
     mode:"simulate" as const,proposal:null,executedEffects:0 as const,
     value:{currency:"USD" as const,productId:row.id,name:row.name,
       before:before.item,after:after.item,
@@ -305,10 +333,14 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
       ingredientContributionDeltaCents:sub(before.item.ingredientContributionCents,
         after.item.ingredientContributionCents),
       targetPriceCents,targetBasisPoints:targetBps,
-      assumptions:["owner_hypothetical_not_recorded","current_ingredient_prices_as_of_business_day",
+      assumptions:["owner_hypothetical_not_recorded",
+        "latest_effective_prices_do_not_prove_supplier_freshness",
         "ingredient_only_excludes_labor_fees_rent_and_demand",
+        ...(after.item.hypotheticalIngredientIds.length?[
+          "owner_supplied_ingredient_cost_overrides_are_hypothetical"]:[]),
         ...(targetBps===null?["no_target_selected_no_target_price"]:[])],persisted:false as const},
     provenance:context(snapshot,day,input.purpose),
-    quality:{missingInputs:missing.slice(0,100),estimatedInputs:[],staleInputs:[]},
+    quality:{missingInputs:missing.slice(0,100),estimatedInputs:[],
+      staleInputs:stale.slice(0,50)},
   };
 }
