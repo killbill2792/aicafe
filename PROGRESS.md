@@ -2691,3 +2691,26 @@ Added:
 - [ ] Same live-model-compliance caveat as PR #106's own reachability fix: a unit test proves the pipeline responds correctly *when* the model picks this capability and supplies a well-formed override list; real-world compliance is not something a test alone can guarantee ahead of production traffic.
 - [ ] Not attempted here: resolving a worker name across *multiple* overrides where different overrides name different workers who happen to share a display name with someone else is still handled per-override (independently correct, just not yet exercised in combination) — worth a multi-override regression if a real owner report surfaces it.
 - [ ] Alex's pricing what-if still excludes ingredient substitution (needs an internal ingredient UUID, same unresolved-name-to-id class of gap, deliberately left out per PR #104/#106) — not addressed by this change; a future ingredient-name-resolution capability would need the same "resolve inside `read()`, fail closed on ambiguity" pattern used here.
+
+## PR #108 completion — Universal Supervisor audit (2026-10-17)
+
+Implementation owner: Codex, taking over the owner-requested PR #108 work. Base main f2812c9; reviewed PR head be8a4da. Shared files: Olivia P3 adapter, P3 presentation/orchestration and their regression tests. No other implementer is active in this session.
+
+Plan:
+- Fix outstanding review findings on actual optimizer objective, concurrent roster ambiguity, 240-character names, and result/caveat truncation.
+- Verify date/parameter fidelity and generic capability discovery/composition rather than adding question-specific intent routing.
+- Close reachable domain parameter gaps where canonical services already support them, with real-reader regression coverage.
+- Run scoped and full regression checks, TypeScript, lint, production build and final diff checks; record actual evidence and remaining integration prerequisites. No production activation or merge.
+
+Completed implementation:
+- [x] All four latest PR #108 review findings fixed: actual selected objective, uniqueness in the simulation snapshot, full 240-character worker names, and complete bounded response blocks preserving results/caveats. Oversized combined responses explicitly request a smaller scope instead of silently cutting evidence.
+- [x] Audited owner clause is supplied as trusted scope metadata; scheduling checks owner-named staff and owner-authored explicit/named calendar dates (including EN/ES/AR weekdays and this/next week) before reading. No owner-question intent router added.
+- [x] Independently authenticated Olivia roster/preview/simulation results must match the Supervisor's selected business, preventing a mid-turn café switch from mixing tenants.
+- [x] Modeled wage and owner-minute differences are copied from canonical comparisons; salary allocations and estimated labor have localized explicit caveats.
+- [x] Removed the central completed-simulation capability-ID whitelist. Reviewed domain registrations declare their parameterized-simulation result contract; plain review/preview reads remain excluded.
+- [x] All five existing Alex ingredient-change types are reachable by exact ingredient name: multiplier, unit cost, supplier package, substitution and quantity. Names resolve inside the SAME authorized atomic snapshot used by canonical math, with epoch reread and missing/duplicate/truncated-source rejection. No new calculation formulas, dependencies, migration or effect handler.
+- [x] Structured recipe parameters and scheduling summaries render through EN/ES/AR catalogs. Actual Supervisor entrypoint regression computes a named 300 ml recipe scenario through the real Alex simulator; canonical tests exercise all five recipe changes. Multi-worker/long-name, race, tenant, calendar and response-budget regressions included.
+
+Final local validation: `npm ci` succeeded with the original locked dependencies including xlsx (no workaround). `npx vitest run`: **1533 passed, 1 pre-existing skipped, 192 files**. `npx tsc --noEmit`, changed-file ESLint, `npm run build`, and `git diff --check` all passed. Final tests ran after the last code/test change. The provider smoke script explicitly reported NOT RUN because no live `OPENAI_API_KEY` is configured in this environment.
+
+Readiness and limits: `docs/supervisor-pr108-readiness.md`. This is open-ended registered read/simulation composition, not a universal grant to every database field or every possible action. USD, source contracts, evidence and bounded budgets still apply. Name-free/ambiguous scheduling follow-ups need clarification. No authenticated production café/browser/provider acceptance was available; no live deployment or full autonomous-operation claim is made. Independent human review, final-head GitHub checks and owner-authorized merge remain release gates. Open PR #89 owns separate Olivia staging/publication work and was not modified.

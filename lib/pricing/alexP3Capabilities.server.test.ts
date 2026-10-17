@@ -323,15 +323,11 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     expect(result).toMatchObject({ status: "partial", value: [{ name: "Oat Latte 16oz", targetPriceCents: 600 }] });
   });
 
-  it("rejects an ingredient-substitution attempt at the schema level (no ingredient id the " +
-    "model could have legitimately supplied)", () => {
-    const [, whatIf] = buildAlexP3Registrations();
-    const registry = createP2Registry([whatIf]);
-    const discovered = registry.discover(scope).find(d => d.id === ALEX_P3_WHATIF_ID)!;
-    // changes is typed/advertised as an empty tuple — the model cannot populate an
-    // ingredient_multiplier/replace_ingredient/etc. entry even if it tried to.
-    expect(discovered.inputJsonSchema).toMatchObject({
-      properties: expect.objectContaining({ changes: expect.objectContaining({ maxItems: 0 }) }),
-    });
+  it("discovers all canonical recipe what-if parameters by ingredient name", () => {
+    const [,whatIf]=buildAlexP3Registrations();
+    expect(whatIf.inputSchema.safeParse({purpose:"pricing_simulate",product:{exactName:"Latte"},
+      changes:[{kind:"replace_ingredient",fromIngredientName:"Milk",toIngredientName:"Oat milk"}]}).success).toBe(true);
+    expect(whatIf.inputSchema.safeParse({purpose:"pricing_simulate",product:{exactName:"Latte"},
+      changes:[{kind:"replace_ingredient",fromIngredientId:"invented",toIngredientId:"invented"}]}).success).toBe(false);
   });
 });

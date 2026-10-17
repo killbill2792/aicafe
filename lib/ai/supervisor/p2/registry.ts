@@ -15,6 +15,8 @@ export type TrustedReadScope = {
   identity: { businessId?: string; asOf: string; timezone: string; currency?: string };
   tools: BusinessScopedCafeTools;
   shadowEnabled: boolean;
+  /** Audited owner-authored clause, injected by the caller, never model input. */
+  ownerClause?: string;
 };
 type Limits = Readonly<{
   maxOperations: number; timeoutMs: number; maxResultBytes: number;
@@ -34,6 +36,8 @@ type Base<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> = {
   readonly budgets: Limits;
   readonly requiresApproval: boolean;
   readonly effectPolicy: "deny";
+  /** Domain-owned declaration: this read computes an owner-parameterized scenario. */
+  readonly resultKind?: "owner_parameterized_simulation";
 };
 export type ReadRegistration<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> =
   Base<I,O> & { readonly mode: "read"; readonly availability: "shadow";

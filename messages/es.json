@@ -1877,6 +1877,22 @@
     "scheduleStatus_infeasible": "no se encontró un horario viable",
     "scheduleStatus_unproven": "no se pudo probar en el tiempo disponible",
     "yesValue": "sí",
-    "noValue": "no"
+    "noValue": "no",
+    "field_changesSummary": "Datos de la simulación de receta",
+    "change_ingredient_multiplier": "multiplicador de costo (puntos básicos)",
+    "change_ingredient_unit_cost": "costo por unidad base",
+    "change_supplier_package": "costo del paquete / cantidad",
+    "change_replace_ingredient": "sustituir por",
+    "change_set_quantity": "cantidad en la receta",
+    "reason_ingredientNotFound": "No encontré un ingrediente con ese nombre exacto.",
+    "reason_ambiguousIngredientName": "Hay varios ingredientes con ese nombre. Aclara cuál quieres usar.",
+    "reason_ingredientCatalogTruncated": "El catálogo de ingredientes está incompleto; no puedo identificar ese nombre con seguridad.",
+    "unit_ml": "ml",
+    "unit_g": "g",
+    "unit_fl_oz": "onzas líquidas de EE. UU.",
+    "field_ownerMinutesDifference": "Cambio en minutos del propietario",
+    "field_cashWagesDifferenceCents": "Cambio en salarios modelados",
+    "field_salaryAllocationIncluded": "Incluye equivalentes salariales asignados; no son ahorros incrementales en efectivo verificados",
+    "field_laborCostEstimated": "Los costos laborales incluyen estimaciones"
   }
 }

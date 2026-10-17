@@ -1,9 +1,10 @@
 import "server-only";
+import { alexNamedSimulateInputSchema, resolveAlexIngredientNames, type AlexNamedSimulateInput } from "./alexNamedInputs";
 import { formatInTimeZone } from "date-fns-tz";
 import { readAuthorizedAtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { schemaFingerprint, type ReadRegistration, type SimulateRegistration,
   type TrustedReadScope } from "@/lib/ai/supervisor/p2/registry";
-import { type AlexReviewInput,type AlexSimulateInput,alexReviewInputSchema,alexReviewOutputSchema,alexSimulateInputSchema,
+import { type AlexReviewInput,alexReviewInputSchema,alexReviewOutputSchema,
   alexSimulateOutputSchema,reviewFromAtomicSnapshot,simulateFromAtomicSnapshot } from "./alexPricing";
 
 /** New domain-owned IDs: the existing shadow alex.pricing.review.v1 is not
@@ -97,15 +98,20 @@ export function buildAlexPricingRegistrations():readonly [ReadRegistration,Simul
       ...base,id:ALEX_SIMULATE_ID,mode:"simulate" as const,availability:"shadow" as const,
       purpose:"Pure price and recipe quantity, ingredient substitution, supplier package-cost and ingredient-unit cost what-ifs using canonical menu/recipe evidence; owner-defined cost targets only. Never writes.",
       allowedPurposes:[simulatePurpose],
-      inputSchema:alexSimulateInputSchema,outputSchema:alexSimulateOutputSchema,
+      inputSchema:alexNamedSimulateInputSchema,outputSchema:alexSimulateOutputSchema,
       schemaContract:{id:ALEX_SIMULATE_ID+".v1",registrationId:ALEX_SIMULATE_ID,
-        version:1 as const,inputSchemaFingerprint:schemaFingerprint(alexSimulateInputSchema),
+        version:1 as const,inputSchemaFingerprint:schemaFingerprint(alexNamedSimulateInputSchema),
         outputSchemaFingerprint:schemaFingerprint(alexSimulateOutputSchema)},
       async simulate(scope,input){
         // Registry enforces preauthorized binding envelope; this domain NEVER
         // trusts an externally supplied snapshot, price, tenant or revision.
         const result=await withConsistentSnapshot(scope,(snapshot,day)=>
-          simulateFromAtomicSnapshot(snapshot,input as AlexSimulateInput,day));
+          {
+            const resolved=resolveAlexIngredientNames(snapshot,input as AlexNamedSimulateInput);
+            return resolved.ok?simulateFromAtomicSnapshot(snapshot,resolved.input,day):
+              {status:"unavailable" as const,mode:"simulate" as const,proposal:null,executedEffects:0 as const,
+                value:null,reason:resolved.reason};
+          });
         if(result.status==="denied")return {status:"unavailable",mode:"simulate",
           proposal:null,executedEffects:0,value:null,reason:result.reason};
         return result.value;

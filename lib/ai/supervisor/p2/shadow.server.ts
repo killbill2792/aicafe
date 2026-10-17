@@ -315,7 +315,7 @@ export async function runP2ShadowWithScope(params:{
         result:null,reason:"invalid_request"});continue;
     }
     attemptedReads++;
-    const result=await params.registry.invoke(params.scope,id,parsed);
+    const result=await params.registry.invoke({...params.scope,ownerClause:selected.clause},id,parsed);
     const raw=result as {status?:ResultStatus;reason?:string};
     const accepted=raw.status==="verified" || raw.status==="estimated" || raw.status==="partial";
     const status:ResultStatus=accepted?raw.status!:"unavailable";

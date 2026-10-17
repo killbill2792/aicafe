@@ -10,9 +10,9 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope, type ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
-import { buildAlexP3Registrations,ALEX_P3_WHATIF_ID } from
+import { buildAlexP3Registrations } from
   "@/lib/pricing/alexP3Capabilities.server";
-import { buildOliviaP3Registrations,OLIVIA_P3_WHATIF_ID } from
+import { buildOliviaP3Registrations } from
   "@/lib/scheduling/oliviaP3Capabilities.server";
 import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
@@ -26,22 +26,6 @@ import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } fr
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
-// The ONLY registered "read" capabilities whose successful result is a
-// complete, bounded, OWNER-PARAMETERIZED simulation -- each result actually
-// depends on a hypothetical the owner supplied (a price delta/target margin,
-// or a named worker's unavailability/hour cap), not merely a read of current
-// state. Confirmed exhaustive by reading every P3 registration: Alex's OWN
-// review capability (ALEX_P3_REVIEW_ID) takes only {purpose} and returns an
-// unchanged current price list, and Olivia's schedule PREVIEW takes only a
-// week -- neither encodes or proves satisfaction of any requested change, so
-// neither belongs here even though both are genuine P3 read capabilities.
-// Caught in review (round 2 of PR #106, for conflating this with
-// readableSourceClauses at all; round 3, for over-including Alex's review
-// and Olivia's preview here too -- a calculation/change-shaped clause
-// answered by either would otherwise be told its unchanged current-state
-// read already satisfies the request). OLIVIA_P3_WHATIF_ID added once
-// Olivia's own what-if (previously unregistered in P3 at all) was wired in.
-const COMPLETED_SIMULATION_CAPABILITY_IDS=new Set<string>([ALEX_P3_WHATIF_ID,OLIVIA_P3_WHATIF_ID]);
 const coverage=z.strictObject({
   complete:z.boolean(),
   plans:z.array(z.strictObject({
@@ -332,9 +316,12 @@ export async function tryP3SupervisorReadOnly(input:{
   if(!identity.businessId||!input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
-  const capabilityRegistry=createP3ReadRegistry([
-    ...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
-  ]);
+  const domains=[...buildAlexP3Registrations(),...buildOliviaP3Registrations()];
+  const capabilityRegistry=createP3ReadRegistry(domains);
+  // Domains declare their result contract; adding a new simulation never
+  // requires a specialist-ID allowlist or intent branch in the Supervisor.
+  const completedSimulationIds=new Set(domains.filter(d=>
+    d.resultKind==="owner_parameterized_simulation").map(d=>d.id));
   if(!capabilityRegistry.discoverSimulations(scope).some(x=>x.id===EXPRESSION_ID))
     return null;
   // Bracket independently fetched P1 selectors by an authoritative epoch.
@@ -413,7 +400,7 @@ export async function tryP3SupervisorReadOnly(input:{
       .map(read=>read.clause))],
     completedSimulationClauses:[...new Set(shadow.evidence.filter(read=>
       ["verified","estimated","partial"].includes(read.status) &&
-      read.capabilityId!==null && COMPLETED_SIMULATION_CAPABILITY_IDS.has(read.capabilityId) &&
+      read.capabilityId!==null && completedSimulationIds.has(read.capabilityId) &&
       read.result!==null &&
       !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
         sibling.capabilityId!==null && sibling.status==="unavailable"))

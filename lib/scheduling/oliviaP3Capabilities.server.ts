@@ -1,6 +1,8 @@
 import "server-only";
 import { z } from "zod";
 import { executeOliviaReadCapability } from "./oliviaCapabilities.server";
+import { matchesOwnerScheduleDates } from "./whatIfOwnerDates";
+import { isWholeNamedEntity } from "@/lib/ai/supervisor/p3/entityMatch";
 import { oliviaWeek, type OliviaWhatIfOverrideInput } from "./oliviaCapabilityContracts";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
   "@/lib/ai/supervisor/p2/registry";
@@ -97,7 +99,7 @@ const signedCents = z.number().int().min(-100_000_000).max(100_000_000).nullable
 // locale. Caught in review (PR #108, round 4).
 const overrideSummaryItem = z.strictObject({
   kind: z.enum(["temporary_unavailable", "reduce_weekly_minutes", "reduce_daily_minutes"]),
-  employeeName: z.string().min(1).max(160),
+  employeeName: z.string().min(1).max(240),
   localDate: whatIfDate.nullable(),
   startLocal: wallTime.nullable(), endLocal: wallTime.nullable(),
   maxWeeklyMinutes: z.number().int().min(0).max(10080).nullable(),
@@ -118,6 +120,10 @@ const whatIfRow = z.strictObject({
   completeCoverageAfter: z.boolean().nullable(),
   gapsDifference: z.number().int().nullable(),
   loadedPayrollDifferenceCents: signedCents,
+  ownerMinutesDifference: z.number().int().nullable(),
+  cashWagesDifferenceCents: signedCents,
+  salaryAllocationIncluded: z.boolean(),
+  laborCostEstimated: z.boolean(),
   // The planner's own legalReview/warnings/notices are real caveats on an
   // otherwise-clean-looking "feasible" result (e.g. break/labor-law
   // compliance was never independently reviewed) -- always publishing empty
@@ -151,6 +157,7 @@ export const oliviaP3WhatIfOutputSchema = z.union([
  * resolved to the wrong one of two same-named staff. */
 async function resolveEmployeeNames(
   overrides: readonly z.output<typeof whatIfOverrideInputSchema>[],
+  businessId: string,
 ): Promise<
   { ok: true; overrides: OliviaWhatIfOverrideInput[]; requestedNames: ReadonlyMap<string, string> } |
   { ok: false; reason: string }
@@ -158,6 +165,8 @@ async function resolveEmployeeNames(
   const roster = await executeOliviaReadCapability({ capability: "olivia.availability.read", version: 1 });
   if (!roster.ok || roster.capability !== "olivia.availability.read")
     return { ok: false, reason: !roster.ok ? roster.error.code : "unexpected_capability" };
+  if (roster.source.businessId !== businessId)
+    return { ok: false, reason: "unauthorized" };
   const byName = new Map<string, string[]>();
   for (const employee of roster.employees) {
     if (!employee.active) continue;
@@ -230,6 +239,8 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       if (!response.ok || response.capability !== "olivia.schedule.preview")
         return { status: "unavailable" as const, value: null,
           reason: !response.ok ? response.error.code : "unexpected_capability" };
+      if (response.source.businessId !== scope.businessId)
+        return { status: "unavailable" as const, value: null, reason: "unauthorized" };
       const { plan, selectedScenario } = response;
       if (plan.status !== "feasible" || !selectedScenario || selectedScenario.cost.loadedPayrollCents === null)
         return { status: "unavailable" as const, value: null,
@@ -251,6 +262,7 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
     },
   }, {
     id: OLIVIA_P3_WHATIF_ID, version: 1 as const, owner: "olivia",
+    resultKind: "owner_parameterized_simulation" as const,
     mode: "read" as const, availability: "shadow" as const,
     purpose: "Read-only what-if: runs the existing reviewed Olivia optimizer twice (once " +
       "unmodified, once with one or more named workers made temporarily unavailable or hour-" +
@@ -271,7 +283,10 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
     requiresApproval: false as const, effectPolicy: "deny" as const,
     async read(scope: TrustedReadScope, rawInput: unknown) {
       const input = rawInput as z.output<typeof whatIfInputSchema>;
-      const resolution = await resolveEmployeeNames(input.overrides);
+      if (scope.ownerClause && (!matchesOwnerScheduleDates(input, scope.ownerClause, scope.identity.asOf) ||
+        input.overrides.some(o => !isWholeNamedEntity(scope.ownerClause!, o.employeeName, []))))
+        return { status: "unavailable" as const, value: null, reason: "invalid_input" };
+      const resolution = await resolveEmployeeNames(input.overrides, scope.businessId);
       if (!resolution.ok) return { status: "unavailable" as const, value: null, reason: resolution.reason };
       const raw = await executeOliviaReadCapability({
         capability: "olivia.schedule.whatIf", version: 1, week: input.week,
@@ -281,6 +296,8 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       if (!raw.ok || raw.capability !== "olivia.schedule.whatIf")
         return { status: "unavailable" as const, value: null,
           reason: !raw.ok ? raw.error.code : "unexpected_capability" };
+      if (raw.source.businessId !== scope.businessId)
+        return { status: "unavailable" as const, value: null, reason: "unauthorized" };
       // The roster read and this simulation are two separate trusted reads; a staff
       // record change landing between them (e.g. a rename) must never be silently
       // presented as answering about the name the owner actually asked for. Reusing
@@ -289,6 +306,9 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
         const current = raw.employeeNames[employeeId];
         if (!current || current.trim().toLowerCase() !== requestedName.toLowerCase())
           return { status: "unavailable" as const, value: null, reason: "source_changed" };
+        if (Object.values(raw.employeeNames).filter(name =>
+          name.trim().toLowerCase() === requestedName.toLowerCase()).length !== 1)
+          return { status: "unavailable" as const, value: null, reason: "ambiguous_employee_name" };
       }
       // One structured entry per override, built from the SAME validated input the
       // simulation ran on (worker, date/window or minute cap, whichever the override kind
@@ -313,12 +333,18 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       return {
         status: "partial" as const, id: "olivia.schedule.what_if" as const,
         value: [{
-          name, overridesSummary, objective: input.objective ?? null,
+          name, overridesSummary, objective: raw.alternateScenario?.objective ?? null,
           alternateStatus: raw.alternateStatus,
           changed: raw.comparison?.changed ?? null,
           completeCoverageAfter: raw.comparison?.completeCoverageAfter ?? null,
           gapsDifference: raw.comparison?.gapsDifference ?? null,
           loadedPayrollDifferenceCents: raw.comparison?.loadedPayrollDifferenceCents ?? null,
+          ownerMinutesDifference: raw.comparison?.ownerMinutesDifference ?? null,
+          cashWagesDifferenceCents: raw.comparison?.cashWagesDifferenceCents ?? null,
+          salaryAllocationIncluded: [raw.baselineScenario, raw.alternateScenario]
+            .some(s => s !== null && (s.cost.allocatedSalaryCents ?? 0) > 0),
+          laborCostEstimated: [raw.baselineScenario, raw.alternateScenario]
+            .some(s => s !== null && s.cost.costState === "estimate"),
           legalReviewUnverified, hasAdditionalCaveats,
         }],
         provenance: {

@@ -1877,6 +1877,22 @@
     "scheduleStatus_infeasible": "no feasible schedule was found",
     "scheduleStatus_unproven": "not proven either way within the time I had",
     "yesValue": "yes",
-    "noValue": "no"
+    "noValue": "no",
+    "field_changesSummary": "Recipe what-if inputs",
+    "change_ingredient_multiplier": "cost multiplier (basis points)",
+    "change_ingredient_unit_cost": "cost per base unit",
+    "change_supplier_package": "package cost / quantity",
+    "change_replace_ingredient": "replace with",
+    "change_set_quantity": "recipe quantity",
+    "reason_ingredientNotFound": "I could not find an ingredient with that exact name.",
+    "reason_ambiguousIngredientName": "More than one ingredient has that name. Please clarify which one.",
+    "reason_ingredientCatalogTruncated": "The ingredient catalog is incomplete; I cannot safely resolve that name.",
+    "unit_ml": "ml",
+    "unit_g": "g",
+    "unit_fl_oz": "US fluid oz",
+    "field_ownerMinutesDifference": "Change in owner minutes",
+    "field_cashWagesDifferenceCents": "Change in modeled wages",
+    "field_salaryAllocationIncluded": "Includes allocated salary equivalents; this is not verified incremental cash savings",
+    "field_laborCostEstimated": "Labor costs include estimates"
   }
 }

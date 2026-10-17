@@ -252,6 +252,62 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(reply.blocks.some(b => b.type === "warning" && b.code === "P3_MISSING_INPUT")).toBe(false);
   });
 
+  it("a named ingredient quantity what-if reaches the real canonical simulator and is presented to the " +
+    "owner directly through P3 -- proving the reachability gap found in review is fixed, " +
+    "not just that the capability computes correctly in isolation", async () => {
+    const productId = avaId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [{ id: productId, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" }],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [{ menu_item_id: productId, ingredient_id: ingredientId, quantity: 200 }],
+        employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const question = "What if the Latte 12 oz uses 300 ml of Milk?";
+    const requests: string[] = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        text?: { format?: { name?: string } };
+      };
+      const schema = body.text?.format?.name;
+      requests.push(schema ?? "unexpected");
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.what_if.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_simulate",
+            product: { exactName: "Latte 12 oz" }, changes: [{kind:"set_quantity",
+              ingredientName:"Milk",quantity:{value:300,unit:"ml"}}] }),
+          reason: null }] }) }] }]);
+      // This is the fix under test: the real OpenAI call would now be instructed
+      // that a clause already answered by a registered capability (readableSourceClauses)
+      // stays read_only even when phrased as a calculation, instead of missing_input.
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "read_only" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
+    expect(requests).toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
+    expect(reply.status).toBe("partial");
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("$0.10"))).toBe(true);
+    // The generic "I don't have enough to answer this" fallback must NOT appear --
+    // that would mean the real computed answer was discarded in favor of the
+    // missing_input brush-off this fix exists to prevent.
+    expect(reply.blocks.some(b => b.type === "warning" && b.code === "P3_MISSING_INPUT")).toBe(false);
+  });
+
   it("a real schedule what-if question reaches Olivia's capability and is presented to the " +
     "owner directly through P3 -- proving the same reachability gap just closed for Alex's " +
     "pricing what-if is also closed for Olivia's schedule what-if", async () => {

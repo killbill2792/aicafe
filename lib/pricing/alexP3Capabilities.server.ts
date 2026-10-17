@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { buildAlexPricingRegistrations } from "./alexCapabilities.server";
-import type { AlexSimulateInput } from "./alexPricing";
+import { alexNamedSimulateInputSchema, namedAlexChangeSchema, type AlexNamedSimulateInput } from "./alexNamedInputs";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
   "@/lib/ai/supervisor/p2/registry";
 
@@ -61,27 +61,9 @@ export const alexP3ReviewOutputSchema = z.union([
   }),
 ]);
 
-/**
- * Alex's pricing TARGET what-if: a product resolved by exact name, scored
- * against an owner-given cost ratio / ingredient margin / selling-price
- * delta — e.g. "what should I charge for a 70% margin on the oat latte".
- * Fully self-contained in one call: no prior lookup needed.
- *
- * Deliberately EXCLUDED: ingredient substitution/unit-cost/package-cost
- * changes (Alex's own "replace oat milk with almond milk" scenario kind).
- * `alexSimulateInputSchema`'s `changes[]` requires real ingredient UUIDs
- * (`ingredientId`/`fromIngredientId`/`toIngredientId`) that only exist
- * internally — the owner says "oat milk", never a UUID, and P3's one-shot
- * capability selection has no prior-read step to resolve a name to one
- * first (same limitation documented for Olivia's employee what-if). Letting
- * the model attempt to populate those fields would mean either a guessed/
- * fabricated ID (unsafe) or a silent `invalid_request` on exactly the
- * scenario owners ask for most. `changes` is forced to an empty tuple below
- * so this is impossible to misuse, not just undocumented. Caught in review
- * (the first version of this file advertised ingredient changes as if they
- * were reachable; they were not). Real ingredient-name resolution is a
- * separate, future capability, not a shortcut to take here.
- */
+/** Owner-parameterized pricing and recipe scenarios. Ingredient display names
+ * are resolved inside the same authorized atomic snapshot used for calculation;
+ * ambiguous/missing names never become guessed IDs. No business writes. */
 export const ALEX_P3_WHATIF_ID = "p3.alex.pricing.what_if.v1" as const;
 // The exact, exhaustive set simulateFromAtomicSnapshot (lib/pricing/alexPricing.ts) can emit —
 // confirmed by reading its one call site, not assumed. Any other string is never shown, never
@@ -111,28 +93,12 @@ const ASSUMPTION_CODE_PRIORITY: readonly (typeof ALEX_ASSUMPTION_CODES)[number][
   "recorded_cost_freshness_not_proven",
   "owner_hypothetical_not_recorded",
 ];
-const smallText = z.string().trim().min(1).max(120);
-const uuid = z.string().uuid();
-const cents = z.number().int().safe().min(0).max(100_000_000);
-const whatIfInputSchema = z.strictObject({
-  purpose: z.literal("pricing_simulate"),
-  product: z.union([z.strictObject({ productId: uuid }), z.strictObject({ exactName: smallText })]),
-  changes: z.tuple([]),
-  sellingPrice: z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("delta"), deltaCents: z.number().int().safe().min(-100000).max(100000) }),
-    z.strictObject({ kind: z.literal("replace"), priceCents: cents }),
-  ]).optional(),
-  targetCostRatioBps: z.number().int().min(1).max(10000).optional(),
-  targetIngredientMarginBps: z.number().int().min(0).max(9999).optional(),
-}).refine(x => x.targetCostRatioBps === undefined || x.targetIngredientMarginBps === undefined,
-  { message: "Select exactly one target ratio or ingredient-only margin" })
-  // changes is always [] here, so unlike the legacy loop's hasScenario check this only
-  // needs to rule out an owner turn with no selling price AND no target at all — a
-  // no-op that would otherwise compare the product with itself and still report
-  // "partial" success, exactly as the legacy loop's own guard exists to prevent.
-  .refine(x => x.sellingPrice !== undefined || x.targetCostRatioBps !== undefined ||
+const whatIfInputSchema = alexNamedSimulateInputSchema.safeExtend({
+  changes: z.array(namedAlexChangeSchema).max(20),
+}).refine(x =>
+  x.changes.length > 0 || x.sellingPrice !== undefined || x.targetCostRatioBps !== undefined ||
     x.targetIngredientMarginBps !== undefined,
-  { message: "A what-if needs a selling price or a cost/margin target" });
+  { message: "A what-if needs a recipe change, selling price or cost/margin target" });
 const whatIfOutputSchema = z.union([
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
   z.strictObject({
@@ -141,6 +107,7 @@ const whatIfOutputSchema = z.union([
     status: z.literal("partial"), id: z.literal("alex.pricing.what_if"),
     value: z.array(z.strictObject({
       name: z.string().min(1).max(160),
+      changesSummary: z.array(namedAlexChangeSchema).max(20),
       priceDeltaCents: z.number().int().safe().nullable(),
       ingredientCostDeltaCents: z.number().int().safe().nullable(),
       // The actual calculated outcome of a selling-price what-if (margin impact), not
@@ -226,11 +193,12 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     },
   }, {
     id: ALEX_P3_WHATIF_ID, version: 1 as const, owner: "alex",
+    resultKind: "owner_parameterized_simulation" as const,
     mode: "read" as const, availability: "shadow" as const,
     purpose: "Read-only target-margin/cost-ratio or selling-price-delta what-if for ONE named " +
-      "active product, using the existing reviewed Alex pricing simulator. No ingredient " +
-      "substitution or cost change (that needs an internal ingredient id the owner cannot supply " +
-      "by name yet). Owner-defined cost/margin target only. Never writes a price or recipe.",
+      "active product, using the existing reviewed Alex pricing simulator. Supports ingredient substitution, quantity, " +
+      "unit-cost, multiplier and supplier-package changes by exact ingredient name, resolved in " +
+      "the same canonical snapshot. Owner-defined cost/margin target only. Never writes a price or recipe.",
     sourceIds: ["p1.authoritative_snapshot.v1"],
     canonicalReaderIds: ["alex.pricing.atomic_snapshot"],
     allowedPurposes: ["pricing_simulate"],
@@ -244,9 +212,8 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     budgets: { maxOperations: 1, timeoutMs: 10000, maxResultBytes: 20000, maxInputBytes: 10000, maxRangeDays: 365 },
     requiresApproval: false as const, effectPolicy: "deny" as const,
     async read(scope: TrustedReadScope, rawInput: unknown) {
-      // whatIfInputSchema is a narrower, no-ingredient-changes subset of AlexSimulateInput
-      // (changes forced to []); structurally compatible with what simulate() accepts.
-      const input = rawInput as AlexSimulateInput;
+      // The domain resolves typed ingredient names inside its source snapshot.
+      const input = rawInput as AlexNamedSimulateInput;
       const raw = await alexSimulate.simulate?.(scope, input, undefined);
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
         (raw.status !== "conditional" && raw.status !== "partial") ||
@@ -301,14 +268,14 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       // always exactly 0 and would misleadingly read as "Price change: $0.00" / "no
       // margin impact" right next to a nonzero targetPriceCents. Neither is a real
       // zero, both are an unapplied scenario; null them instead of presenting a false
-      // zero. ingredientCostDeltaCents is NOT included here: changes is always forced
-      // empty for this capability, so that one genuinely never changes either way.
+      // zero. Recipe changes, however, are applied even without a selling-price change.
       // Caught in review (rounds 4 and 6).
-      const targetOnly = input.sellingPrice === undefined;
+      const targetOnly = input.sellingPrice === undefined && input.changes.length === 0;
       return {
         status: "partial" as const, id: "alex.pricing.what_if" as const,
         value: [{
           name: value.name,
+          changesSummary: input.changes,
           priceDeltaCents: targetOnly ? null : value.priceDeltaCents,
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
           ingredientContributionDeltaCents: targetOnly ? null : value.ingredientContributionDeltaCents,

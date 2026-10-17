@@ -163,3 +163,17 @@ describe("reviewed localized source presentation",()=>{
     expect(blocks.map(b=>"text" in b?b.text:"").join(" ")).not.toContain("Drink 39");
   });
 });
+
+it("reports oversized evidence explicitly instead of cutting results or caveats",()=>{
+  const clauses=["first scenario","second scenario","third scenario","fourth scenario"];
+  const evidence=clauses.map(c=>({...read("alex.pricing.what_if",[{name:"Latte",
+    changesSummary:Array.from({length:20},()=>({kind:"replace_ingredient",
+      fromIngredientName:"A".repeat(240),toIngredientName:"B".repeat(240)})),
+    ingredientCostDeltaCents:20,ingredientContributionDeltaCents:-20,
+    assumptionCodes:["ingredient_only_excludes_labor_fees_rent_and_demand"]}]),clause:c}));
+  for(const locale of ["en","es","ar"] as const){
+    const result=present(evidence,clauses,locale);
+    expect(result.blocks).toEqual([expect.objectContaining({type:"warning",code:"P3_PRESENTATION_LIMIT"})]);
+    expect(result.evidence).toEqual([]);
+  }
+});

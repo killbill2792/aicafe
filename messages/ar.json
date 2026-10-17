@@ -1877,6 +1877,22 @@
     "scheduleStatus_infeasible": "لم يتم إيجاد جدول قابل للتنفيذ",
     "scheduleStatus_unproven": "لم يُثبت بأي اتجاه خلال الوقت المتاح",
     "yesValue": "نعم",
-    "noValue": "لا"
+    "noValue": "لا",
+    "field_changesSummary": "مدخلات محاكاة الوصفة",
+    "change_ingredient_multiplier": "معامل التكلفة (نقاط الأساس)",
+    "change_ingredient_unit_cost": "التكلفة لكل وحدة أساسية",
+    "change_supplier_package": "تكلفة العبوة / الكمية",
+    "change_replace_ingredient": "استبدال بـ",
+    "change_set_quantity": "الكمية في الوصفة",
+    "reason_ingredientNotFound": "لم أجد مكوّنًا بهذا الاسم تحديدًا.",
+    "reason_ambiguousIngredientName": "هناك أكثر من مكوّن بهذا الاسم. يرجى توضيح المكوّن المقصود.",
+    "reason_ingredientCatalogTruncated": "قائمة المكوّنات غير مكتملة؛ لا يمكنني تحديد هذا الاسم بأمان.",
+    "unit_ml": "مل",
+    "unit_g": "غ",
+    "unit_fl_oz": "أونصة سائلة أمريكية",
+    "field_ownerMinutesDifference": "التغير في دقائق عمل المالك",
+    "field_cashWagesDifferenceCents": "التغير في الأجور المحسوبة",
+    "field_salaryAllocationIncluded": "يتضمن مخصصات مكافئة للراتب؛ لا يمثل وفرًا نقديًا إضافيًا موثّقًا",
+    "field_laborCostEstimated": "تكاليف العمل تتضمن تقديرات"
   }
 }

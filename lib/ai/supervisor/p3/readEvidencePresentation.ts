@@ -18,7 +18,8 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated" |
   "alternateStatus" | "changed" | "completeCoverageAfter" | "gapsDifference" |
   "loadedPayrollDifferenceCents" | "legalReviewUnverified" | "hasAdditionalCaveats" |
-  "overridesSummary" | "objective";
+  "overridesSummary" | "objective" | "changesSummary" | "ownerMinutesDifference" |
+  "cashWagesDifferenceCents" | "salaryAllocationIncluded" | "laborCostEstimated";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -64,6 +65,9 @@ const specificUnavailableReasonLabels:Record<string,CatalogKey> = {
   unexpected_capability:"reason_schedulingUnavailable",
   employee_not_found:"reason_employeeNotFound",
   ambiguous_employee_name:"reason_ambiguousEmployeeName",
+  ingredient_not_found:"reason_ingredientNotFound",
+  ambiguous_ingredient_name:"reason_ambiguousIngredientName",
+  ingredient_catalog_truncated:"reason_ingredientCatalogTruncated",
   invalid_input:"reason_invalidSchedulingRequest",
   unauthorized:"reason_notAuthorized",
   disabled:"reason_featureDisabled",
@@ -142,13 +146,14 @@ const sourcePresentation:Record<string,{
   },
   "alex.pricing.what_if":{
     heading:"source_alex_pricing_what_if",
-    fields:["name","priceDeltaCents","ingredientCostDeltaCents","ingredientContributionDeltaCents",
+    fields:["name","changesSummary","priceDeltaCents","ingredientCostDeltaCents","ingredientContributionDeltaCents",
       "targetPriceCents","assumptionCodes","costBasisEstimated"],
   },
   "olivia.schedule.what_if":{
     heading:"source_olivia_schedule_what_if",
     fields:["name","overridesSummary","objective","alternateStatus","changed","completeCoverageAfter",
       "gapsDifference","loadedPayrollDifferenceCents",
+      "ownerMinutesDifference","cashWagesDifferenceCents","salaryAllocationIncluded","laborCostEstimated",
       "legalReviewUnverified","hasAdditionalCaveats"],
   },
 };
@@ -160,12 +165,12 @@ const scheduleObjectiveLabels:Record<string,CatalogKey> = {
   cash:"objective_cash", owner_time:"objective_ownerTime", balanced:"objective_balanced",
 };
 // Longer than safeText's generic 120-char cutoff on purpose: the employee name alone is
-// allowed up to 160 chars by overrideSummaryItem's own schema, and safeText's cap silently
+// allowed up to 240 chars by overrideSummaryItem's own schema, and safeText's cap silently
 // dropped a whole valid, in-bounds override line for a longer-but-real name. Caught in
 // review (PR #108, round 4).
 const safeOverrideName=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
-  return text && text.length<=160 && !/https?:\/\/|www\./iu.test(text)?text:null;
+  return text && text.length<=240 && !/https?:\/\/|www\./iu.test(text)?text:null;
 };
 /** Renders one structured override entry through the locale catalogs -- never pre-
  * assembled English prose, so ES/AR owners see a fully localized line, not English
@@ -223,6 +228,11 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   hasAdditionalCaveats:"field_hasAdditionalCaveats",
   overridesSummary:"field_overridesSummary",
   objective:"field_objective",
+  changesSummary:"field_changesSummary",
+  ownerMinutesDifference:"field_ownerMinutesDifference",
+  cashWagesDifferenceCents:"field_cashWagesDifferenceCents",
+  salaryAllocationIncluded:"field_salaryAllocationIncluded",
+  laborCostEstimated:"field_laborCostEstimated",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -255,7 +265,7 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   }
   // Structured entries, not pre-assembled English sentences: each line is rendered
   // through the EN/ES/AR catalogs here, where the owner's locale is actually known.
-  // Only the employee name (owner-entered free text, up to 160 chars here) needs the
+  // Only the employee name (owner-entered free text, up to 240 chars here) needs the
   // generic control-char/URL sanitizer; it uses its OWN length bound (safeText's 120-char
   // cutoff silently dropped a whole valid, in-bounds override line for a longer name).
   // Caught in review (PR #108, round 4).
@@ -273,7 +283,7 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
       ?t(locale,fieldLabel[key])+": "+t(locale,value?"yesValue":"noValue"):null;
   // Unlike changed/completeCoverageAfter, these are caveats only worth a line when
   // true -- same true-only pattern as costBasisEstimated below.
-  if(key==="legalReviewUnverified"||key==="hasAdditionalCaveats")
+  if(key==="legalReviewUnverified"||key==="hasAdditionalCaveats"||key==="salaryAllocationIncluded"||key==="laborCostEstimated")
     return value===true?t(locale,fieldLabel[key]):null;
   if(key==="assumptionCodes"){
     if(!Array.isArray(value)||!value.length)return null;
@@ -326,12 +336,43 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   }
   return t(locale,heading)+": "+formatted;
 }
+/** Typed scenario parameters are echoed using locale labels, never raw JSON/UUIDs. */
+function ingredientChangeLine(o:Record<string,unknown>,locale:Locale):string|null{
+  const name=typeof o.ingredientName==="string"?safeOverrideName(o.ingredientName):
+    typeof o.fromIngredientName==="string"?safeOverrideName(o.fromIngredientName):null;
+  if(!name)return null;
+  const amount=(value:unknown)=>typeof value==="number"&&Number.isFinite(value)
+    ?new Intl.NumberFormat(locale,{maximumFractionDigits:6}).format(value):null;
+  const units:Record<string,CatalogKey>={ml:"unit_ml",g:"unit_g",fl_oz:"unit_fl_oz",each:"unit_each",gal:"unit_gal"};
+  const quantity=(q:unknown)=>isRecord(q)&&typeof q.unit==="string"&&Object.hasOwn(units,q.unit)
+    ?amount(q.value)+" "+t(locale,units[q.unit]):null;
+  let detail:string|null=null;
+  if(o.kind==="ingredient_multiplier")detail=t(locale,"change_ingredient_multiplier")+": "+amount(o.multiplierBasisPoints);
+  if(o.kind==="ingredient_unit_cost")detail=t(locale,"change_ingredient_unit_cost")+": "+new Intl.NumberFormat(locale,{style:"currency",currency:"USD",maximumFractionDigits:8}).format(Number(o.costPerBaseUnitMicros)/100000000);
+  if(o.kind==="supplier_package"&&typeof o.packageUnit==="string"&&Object.hasOwn(units,o.packageUnit))
+    detail=t(locale,"change_supplier_package")+": "+new Intl.NumberFormat(locale,{style:"currency",currency:"USD"})
+      .format(Number(o.packageCostCents)/100)+" / "+amount(o.packageCount)+" "+t(locale,units[o.packageUnit]);
+  if(o.kind==="set_quantity")detail=t(locale,"change_set_quantity")+": "+quantity(o.quantity);
+  if(o.kind==="replace_ingredient"&&typeof o.toIngredientName==="string"){
+    const target=safeOverrideName(o.toIngredientName);
+    if(target)detail=t(locale,"change_replace_ingredient")+" "+target+
+      (o.quantity?" ("+quantity(o.quantity)+")":"");
+  }
+  return detail?t(locale,"field_changesSummary")+": "+name+" · "+detail:null;
+}
 function previews(id:string,value:unknown,locale:Locale,
   fields:readonly PresentedField[]):string[]{
   const rows=Array.isArray(value)?value:
     isRecord(value)&&Array.isArray(value.items)?value.items:[value];
-  return rows.slice(0,2).filter(isRecord).map(row=>{
-    const parts=fields.map(field=>displayedField(id,row,field,locale))
+  return rows.slice(0,2).filter(isRecord).flatMap(row=>{
+    const parts=fields.flatMap(field=>field==="changesSummary" && Array.isArray(row[field])
+      ? row[field].filter(isRecord).map(o=>ingredientChangeLine(o,locale))
+      : field==="overridesSummary" && Array.isArray(row[field])
+      ? row[field].filter(isRecord).map(o=>{
+        const line=overrideSummaryLine(o,locale);
+        return line?t(locale,"field_overridesSummary")+": "+line:null;
+      })
+      : [displayedField(id,row,field,locale)])
       .filter((x):x is string=>x!==null);
     // Estimated ledger rows are not actual paid expenses. Owner-facing
     // labels are attached PER ROW, not as one generic footer.
@@ -344,7 +385,16 @@ function previews(id:string,value:unknown,locale:Locale,
       if(row.isEstimate===true)parts.push(t(locale,"estimatedRecurring"));
       else parts.push(t(locale,"plannedRecurring"));
     }
-    return parts.join(" · ");
+    // Pack complete fields into bounded blocks. Never truncate an override,
+    // computed result or caveat after joining long employee names.
+    const chunks:string[]=[];
+    for(const part of parts){
+      const last=chunks.length-1;
+      if(last>=0 && chunks[last].length+3+part.length<=1150)
+        chunks[last]+=" · "+part;
+      else chunks.push(part);
+    }
+    return chunks;
   }).filter(Boolean);
 }
 
@@ -389,14 +439,17 @@ export function presentRegisteredReads(params:{
       })).digest("hex").slice(0,32),asOf};
     const rendered=previews(result.id,result.value,locale,presentation.fields);
     blocks.push({type:"text",text:t(locale,presentation.heading)+": "+t(locale,"partial")});
-    for(const text of rendered)blocks.push({type:"text",text:text.slice(0,1150)});
+    for(const text of rendered)blocks.push({type:"text",text});
     if(!rendered.length)blocks.push({type:"text",text:t(locale,"empty")});
     blocks.push({type:"warning",code:"P3_READ_PARTIAL",text:t(locale,"quality")});
     if(Array.isArray(result.value) && result.value.length>2 ||
       isRecord(result.value)&&Array.isArray(result.value.items)&&result.value.items.length>2)
       blocks.push({type:"text",text:t(locale,"more")});
     refs.push(ref);
-    if(blocks.length>=22)break;
   }
-  return {blocks:blocks.slice(0,24),evidence:refs.slice(0,8)};
+  // Fail explicitly when all selected evidence cannot fit. Cutting a source
+  // section could remove its computed result or safety caveats after long inputs.
+  if(blocks.length>24)return {blocks:[{type:"warning",code:"P3_PRESENTATION_LIMIT",
+    text:t(locale,"reason_requestTooLarge")}],evidence:[]};
+  return {blocks,evidence:refs.slice(0,8)};
 }

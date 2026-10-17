@@ -277,7 +277,7 @@ describe("Olivia P3 schedule-what-if registration", () => {
       const r = request as { capability: string };
       if (r.capability === "olivia.availability.read")
         return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
-      return whatIfResult() as OliviaResponse;
+      return whatIfResult({alternateScenario:feasiblePlan.selectedScenario}) as OliviaResponse;
     });
     const [, registration] = buildOliviaP3Registrations();
     const raw = await registration.read(scope, {
@@ -384,4 +384,98 @@ describe("Olivia P3 schedule-what-if registration", () => {
     });
     expect(view.blocks.some(b => b.type === "text" && b.text.includes(longName))).toBe(true);
   });
+});
+
+it("uses the optimizer's selected objective even when the input omitted a priority", async () => {
+  olivia.mockImplementation(async request => {
+    if ((request as {capability:string}).capability === "olivia.availability.read")
+      return roster([{employeeId:"emp-1",displayName:"Ava"}]) as OliviaResponse;
+    return whatIfResult({alternateScenario:{...feasiblePlan.selectedScenario,objective:"owner_time"}}) as OliviaResponse;
+  });
+  const [,registration]=buildOliviaP3Registrations();
+  expect(await registration.read(scope,{purpose:"schedule_what_if",week:"2026-10-19",
+    overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:120}]}))
+    .toMatchObject({value:[{objective:"owner_time"}]});
+});
+
+it("rejects a newly ambiguous name in the simulation snapshot", async () => {
+  olivia.mockImplementation(async request => {
+    if ((request as {capability:string}).capability === "olivia.availability.read")
+      return roster([{employeeId:"emp-1",displayName:"Ava"}]) as OliviaResponse;
+    return whatIfResult({employeeNames:{"emp-1":"Ava","emp-2":" ava "}}) as OliviaResponse;
+  });
+  const [,registration]=buildOliviaP3Registrations();
+  expect(await registration.read(scope,{purpose:"schedule_what_if",week:"2026-10-19",
+    overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:120}]}))
+    .toMatchObject({status:"unavailable",reason:"ambiguous_employee_name"});
+});
+
+it("preserves five full-length worker names, distinct caps and result/caveats in every locale", async () => {
+  const employees=Array.from({length:5},(_,i)=>({employeeId:"emp-"+i,displayName:String(i)+"A".repeat(239)}));
+  olivia.mockImplementation(async request => {
+    if ((request as {capability:string}).capability === "olivia.availability.read")
+      return roster(employees) as OliviaResponse;
+    return whatIfResult({employeeNames:Object.fromEntries(employees.map(e=>[e.employeeId,e.displayName])),
+      alternateScenario:feasiblePlan.selectedScenario,alternateWarnings:["caution"]}) as OliviaResponse;
+  });
+  const registry=createP2Registry(buildOliviaP3Registrations());
+  const raw=await registry.invoke(scope,OLIVIA_P3_WHATIF_ID,{purpose:"schedule_what_if",week:"2026-10-19",
+    overrides:employees.map((e,i)=>({kind:"reduce_weekly_minutes",employeeName:e.displayName,maxWeeklyMinutes:120+i}))});
+  expect(raw).toMatchObject({status:"partial"});
+  for(const locale of ["en","es","ar"] as const){
+    const view=presentRegisteredReads({evidence:[{clause:"whatif",capabilityId:OLIVIA_P3_WHATIF_ID,
+      status:"partial",result:raw,reason:null}],includedClauses:["whatif"],businessId:scope.businessId,asOf:scope.identity.asOf,locale});
+    const text=view.blocks.flatMap(b=>b.type==="text"?[b.text]:[]).join("\n");
+    for(const e of employees)expect(text).toContain(e.displayName);
+    expect(text).toContain(new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(-17.92));
+    const catalog=(await import(`../../messages/${locale}.json`)).default.SupervisorRegisteredRead;
+    expect(text).toContain(catalog.field_legalReviewUnverified);
+    expect(text).toContain(catalog.field_hasAdditionalCaveats);
+    for(const b of view.blocks)if(b.type==="text")expect(b.text.length).toBeLessThanOrEqual(1200);
+  }
+});
+
+it("rejects a wrong worker or explicit date before reading private scheduling data", async () => {
+  const [,registration]=buildOliviaP3Registrations();
+  for(const input of [
+    {employeeName:"Ben",localDate:"2026-10-20"},
+    {employeeName:"Ava",localDate:"2026-10-21"},
+  ])expect(await registration.read({...scope,ownerClause:"What if Ava cannot work 2026-10-20?"},
+    {purpose:"schedule_what_if",week:"2026-10-19",overrides:[{kind:"temporary_unavailable",...input}]}))
+    .toMatchObject({status:"unavailable",reason:"invalid_input"});
+  expect(olivia).not.toHaveBeenCalled();
+});
+
+it("distinguishes modeled salary allocation and estimated labor from actual cash savings",async()=>{
+  const scenario={...feasiblePlan.selectedScenario,cost:{...feasiblePlan.selectedScenario.cost,
+    allocatedSalaryCents:1000,costState:"estimate"}};
+  olivia.mockImplementation(async request=>(request as {capability:string}).capability==="olivia.availability.read"
+    ?roster([{employeeId:"emp-1",displayName:"Ava"}]) as OliviaResponse
+    :whatIfResult({alternateScenario:scenario}) as OliviaResponse);
+  const [,registration]=buildOliviaP3Registrations();
+  const raw=await registration.read(scope,{purpose:"schedule_what_if",week:"2026-10-19",
+    overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:120}]});
+  expect(raw).toMatchObject({value:[{salaryAllocationIncluded:true,laborCostEstimated:true,
+    cashWagesDifferenceCents:-1600,ownerMinutesDifference:0}]});
+  const view=presentRegisteredReads({evidence:[{clause:"whatif",capabilityId:OLIVIA_P3_WHATIF_ID,
+    status:"partial",result:raw,reason:null}],includedClauses:["whatif"],businessId:scope.businessId,
+    asOf:scope.identity.asOf,locale:"en"});
+  expect(view.blocks.some(b=>b.type==="text"&&b.text.includes("not verified incremental cash savings"))).toBe(true);
+  expect(view.blocks.some(b=>b.type==="text"&&b.text.includes("Labor costs include estimates"))).toBe(true);
+});
+
+it.each(["roster","simulation"])("rejects an active-café switch during the %s read",async(stage)=>{
+  olivia.mockImplementation(async request=>{
+    if((request as {capability:string}).capability==="olivia.availability.read"){
+      const result=roster([{employeeId:"emp-1",displayName:"Ava"}]);
+      return {...result,source:{...result.source,businessId:stage==="roster"?"another-cafe":scope.businessId}} as OliviaResponse;
+    }
+    const result=whatIfResult();
+    return {...result,source:{...result.source,businessId:"another-cafe"}} as OliviaResponse;
+  });
+  const [,registration]=buildOliviaP3Registrations();
+  expect(await registration.read(scope,{purpose:"schedule_what_if",week:"2026-10-19",
+    overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:120}]}))
+    .toMatchObject({status:"unavailable",reason:"unauthorized"});
+  expect(olivia).toHaveBeenCalledTimes(stage==="roster"?1:2);
 });
