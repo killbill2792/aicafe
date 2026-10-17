@@ -316,6 +316,7 @@ export async function runSupervisorTurn(input: {
   // reader invocation consumes the SAME bounded turn budget as legacy fallback.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
+    let p3Failed=false;
     let firstP3ModelDenied=false;
     let firstDeniedStatus:number|undefined;
     let firstDeniedCode:string|undefined;
@@ -361,9 +362,12 @@ export async function runSupervisorTurn(input: {
       });
       if(composed){
         recordUsage(composed.usage);
+        input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:composed.reply.status,
+          modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
         return {reply:composed.reply,usage:{...priorUsage}};
       }
     }catch{
+      p3Failed=true;
       // Source/provider failures cannot become trusted facts. Prior usage
       // survives so an unsafe retry never gets a new five-read allowance.
     }finally{
@@ -384,6 +388,9 @@ export async function runSupervisorTurn(input: {
         model=fallbackModel;
       }
     }
+    input.onDiagnostic?.({stage:"legacy_fallback",
+      legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
+      modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   }
   // The independent semantic audit has its own counted attempt; preserve all
   // three bounded conversation rounds for multi-step specialist follow-ups.
@@ -496,6 +503,9 @@ export async function runSupervisorTurn(input: {
           normalizedGoalDomains:reconciled.normalizedDomains,
           scopeAuditComplete:verified.complete,scopeAuditAmbiguous:verified.ambiguous,
           reconciliationOutcome:reconciled.outcome});
+        if(reconciled.goals)input.onDiagnostic?.({stage:"semantic_plan",
+          normalizedGoalDomains:reconciled.goals.map(g=>g.domain),
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         return reconciled.goals;
       }catch(error){
         const classified=error instanceof SupervisorStageError?error:
@@ -673,6 +683,8 @@ export async function runSupervisorTurn(input: {
             note:"Scope verified independently before any café read."})});
       }
       for (const call of reads) {
+        input.onDiagnostic?.({stage:"capability_selected",advertisedToolNames:[call.name],
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         ++usage.toolCallCount;
         input.onDiagnostic?.({stage:"tool_execution",model,round:round+1,
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
@@ -705,6 +717,8 @@ export async function runSupervisorTurn(input: {
         const fallback=fallbackCallForGoal(goal);
         if(!fallback)continue;
         const call:SupervisorToolCall={...fallback,call_id:"scope:"+usage.toolCallCount};
+        input.onDiagnostic?.({stage:"capability_selected",advertisedToolNames:[call.name],
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         ++usage.toolCallCount;
         let result:ToolEvidence;
         try {result=await registry(call,usage.toolCallCount);}
@@ -714,8 +728,13 @@ export async function runSupervisorTurn(input: {
         input.onUsage?.({...usage});
       }
     }
-    try {return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale,
-      requestedGoals??[],executed),usage};}
+    try {
+      const reply=validateSupervisorFinal(parsed,toolResults,called,input.locale,
+        requestedGoals??[],executed);
+      input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:reply.status,
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+      return {reply,usage};
+    }
     catch {throw new SupervisorStageError("final_output_validation","final_response_validation",{round:round+1});}
   }
   throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:MAX_ROUNDS});
