@@ -113,6 +113,8 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(reply.blocks).toContainEqual(expect.objectContaining({ type: "metric", label: "Loaded weekly labor cost", valueCents: 7168 }));
     expect(reply.blocks).toContainEqual(expect.objectContaining({ type: "count", label: "Planned shifts", value: 1 }));
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Ava: Mon "))).toBe(true);
+    expect(reply.blocks.some(b => b.type === "text" &&
+      b.text.includes("New hours mentioned only in chat were not saved or applied"))).toBe(true);
   });
 
   it("a follow-up what-if resolves the employee name and triggers a real recomputation with a cost delta", async () => {
