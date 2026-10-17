@@ -48,6 +48,25 @@ partial/truncated authoritative sources, ambiguous names, stale epochs,
 missing ingredient prices, incompatible units and unknown variant IDs
 are explicit failures/partials, not assumed zero.
 
+## Freshness and hypothetical price-source semantics
+
+The P1 snapshot proves the latest recorded *effective* ingredient price at the
+trusted café-local date but does **not** verify that the supplier/quote is still
+current. All current recipe-cost calculations using such price rows report
+`partial` (not `verified`), with `staleInputs` identifying unverified
+freshness. This applies even when an effective date is today: a recorded date
+cannot establish ongoing supplier validity. Numeric ingredient-only what-if
+targets remain **conditional advice**, not verified current recommendations.
+
+Each before/after item lists `ingredientPriceSources` **only for recorded price
+rows still contributing to final recipe cost**; it never keeps the replaced
+ingredient's provenance. Absolute owner-supplied `ingredient_unit_cost`
+and `supplier_package` overrides remove the superseded recorded price-source
+label; `hypotheticalIngredientIds` identifies these hypothetical prices.
+A relative `ingredient_multiplier` keeps the baseline recorded source and
+also identifies the changed ingredient as hypothetical; the base price's
+freshness remains unverified. The owner-supplied scenario is never persisted.
+
 ## Coverage and known limitations
 
 - Source prices are `ingredient_prices` latest effective date on the trusted
