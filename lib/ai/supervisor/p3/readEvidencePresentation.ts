@@ -118,7 +118,7 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
     return t(locale,fieldLabel[key])+": "+
       new Intl.NumberFormat(locale).format(value)+" "+t(locale,unitKey);
   }
-  const formatted=key.endsWith("Cents")
+  const formatted=(key.endsWith("Cents")||key==="ingredientsCentsToday")
     ?new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(value/100)
     :new Intl.NumberFormat(locale).format(value);
   let heading:CatalogKey=key==="priceCents"&&id==="supplies.quotes"
