@@ -103,4 +103,46 @@ describe("Alex P2/P3 standalone registry safety",()=>{
       selection:{kind:"all_active",offset:0,limit:1}}))
       .toMatchObject({status:"unavailable",reason:"source_scope_mismatch"});
   });
+  it("preserves café-local YYYY-MM-DD for prices taking effect TODAY, in read and what-if",async()=>{
+    // readSupervisorCafeIdentity provides a date, not an instant. UTC midnight
+    // is still the previous day in America/Los_Angeles; cost MUST be today's.
+    const dated={...snapshot,sources:{...snapshot.sources,
+      ingredientPrices:[
+        {...snapshot.sources.ingredientPrices[0],effective_from:"2026-10-15"},
+        {...snapshot.sources.ingredientPrices[0],
+          id:"a0000000-0000-4000-8000-000000000201",
+          effective_from:"2026-10-16",cost_per_base_unit_micros:150000},
+        {...snapshot.sources.ingredientPrices[0],
+          id:"a0000000-0000-4000-8000-000000000202",
+          effective_from:"2026-10-17",cost_per_base_unit_micros:1000000},
+      ]}};
+    rpc.mockResolvedValue({status:"available",snapshot:dated});
+    const cafeLocal={...scope,identity:{...scope.identity,asOf:"2026-10-16"}};
+    const read=await registry.invoke(cafeLocal,ALEX_REVIEW_ID,{
+      purpose:"pricing_review",selection:{kind:"specific",items:[{productId:id}]}});
+    expect(read).toMatchObject({status:"verified",provenance:{asOf:"2026-10-16"},
+      value:{items:[{ingredientCostCents:30}]}});
+    const simulate=await registry.invokeSimulation(cafeLocal,ALEX_SIMULATE_ID,{
+      purpose:"pricing_simulate",product:{productId:id},changes:[
+        {kind:"ingredient_multiplier",ingredientId:ing,multiplierBasisPoints:13000}],
+    },{bindings:[],operands:[]});
+    expect(simulate).toMatchObject({status:"conditional",
+      provenance:{asOf:"2026-10-16"},value:{before:{ingredientCostCents:30},
+        after:{ingredientCostCents:39},ingredientCostDeltaCents:9}});
+    expect(rpc).toHaveBeenCalledTimes(4);
+  });
+  it("accepts explicitly offset timestamps and rejects impossible/ambiguous local dates",async()=>{
+    const timestamp={...scope,identity:{...scope.identity,
+      asOf:"2026-10-17T00:30:00Z"}};
+    const result=await registry.invoke(timestamp,ALEX_REVIEW_ID,{
+      purpose:"pricing_review",selection:{kind:"specific",items:[{productId:id}]}});
+    expect(result).toMatchObject({status:"verified",provenance:{asOf:"2026-10-16"}});
+    for(const invalid of ["2026-02-30","2026-10-16T12:00:00","2026-13-16"]){
+      const bad={...scope,identity:{...scope.identity,asOf:invalid}};
+      const out=await registry.invoke(bad,ALEX_REVIEW_ID,{
+        purpose:"pricing_review",selection:{kind:"specific",items:[{productId:id}]}});
+      expect(out).toMatchObject({status:"unavailable",reason:"invalid_trusted_clock"});
+    }
+  });
+
 });
