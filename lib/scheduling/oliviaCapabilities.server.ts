@@ -2,7 +2,12 @@ import "server-only";
 
 import { z } from "zod";
 import { isCanonicalOliviaWeekResult } from "@/lib/calc/scheduling/oliviaPreviewEvidence";
+import { optimizeOliviaWeek } from "@/lib/calc/scheduling/plannerEngine";
+import { applyOliviaWhatIfOverlay, compareOliviaScenarios } from "@/lib/calc/scheduling/oliviaWhatIfOverlay";
+import type { PlannerResult } from "@/lib/calc/scheduling/plannerTypes";
 import { requireSchedulingOwner, readSchedulingFoundation } from "./foundation.server";
+import { loadOliviaWeekFromSavedStaff } from "./planInput.server";
+import { oliviaSnapshotDigest } from "./planDrafts.server";
 import {
   previewOliviaWeek, readOliviaPlanHistory, readOliviaPlanRevision,
 } from "@/lib/actions/oliviaPlanning";
@@ -26,6 +31,7 @@ type ErrorCode = z.infer<typeof import("./oliviaCapabilityContracts").oliviaCapa
 const supported:readonly OliviaReadCapability[]=[
   "olivia.availability.read","olivia.schedule.preview",
   "olivia.schedule.history.read","olivia.schedule.revision.read",
+  "olivia.schedule.whatIf",
 ];
 function safeCapability(raw:unknown):OliviaReadCapability|"invalid_request" {
   const name=raw && typeof raw==="object" && "capability" in raw
@@ -408,6 +414,95 @@ async function readRevision(
     assignments,disposition:"stored_read_only",
   });
 }
+/**
+ * Olivia PR4A-2: a single transient what-if simulation. Reuses the SAME
+ * trusted PR3 source loader and PR2 pure optimizer as olivia.schedule.preview,
+ * run twice -- once unmodified (baseline) and once through an immutable,
+ * purely subtractive overlay (alternate) -- so a conversational follow-up can
+ * see the real coverage/cost delta. Never writes availability, a draft, an
+ * approval or a publication; never equates the alternate scenario's digest
+ * with a real trusted olivia.schedule.preview source digest.
+ */
+async function readWhatIf(
+  input:Extract<OliviaReadRequest,{capability:"olivia.schedule.whatIf"}>,
+):Promise<OliviaReadResponse> {
+  const capability=input.capability;
+  const initialOwner=await requireSchedulingOwner();
+  if(!initialOwner)return fail(capability,"unauthorized");
+  const loaded=await loadOliviaWeekFromSavedStaff(input.week);
+  // Reauthorize before inspecting success, errors, blockers or source state.
+  // The selected café can change during the async trusted source read.
+  const owner=await requireSchedulingOwner();
+  if(!owner || owner.businessId!==initialOwner.businessId)
+    return fail(capability,"unauthorized");
+  if(!loaded.ok)return fromDomainError(capability,loaded.error);
+  // loadOliviaWeekFromSavedStaff resolves its OWN businessId internally; an
+  // active-café switch during that internal call must not leak another
+  // tenant's roster even if the café switches back before this re-check.
+  if(loaded.businessId!==owner.businessId)return fail(capability,"unauthorized");
+  if(loaded.blockers.length){
+    const blockers=z.array(oliviaCapabilityBlockerSchema)
+      .min(1).max(OLIVIA_MAX_PREVIEW_BLOCKERS).safeParse(loaded.blockers);
+    if(!blockers.success)return fail(capability,"invalid_record");
+    return fail(capability,"missing_inputs",blockers.data);
+  }
+  if(input.options?.expectedSourceDigest &&
+      input.options.expectedSourceDigest!==
+        oliviaSnapshotDigest(loaded.input,loaded.sourceFingerprint))
+    return fail(capability,"source_changed");
+  // Every override must name a worker the trusted loader actually resolved
+  // for this café/week; a model-invented or cross-tenant ID cannot simulate
+  // availability that was never read for this owner.
+  const knownEmployees=new Set(loaded.input.employees.map(e=>e.id));
+  if(input.overrides.some(o=>!knownEmployees.has(o.employeeId)))
+    return fail(capability,"not_found");
+  let baselinePlan:PlannerResult,alternatePlan:PlannerResult;
+  try {
+    const overlay=applyOliviaWhatIfOverlay(loaded.input,input.overrides);
+    if(!overlay.ok)return fail(capability,"invalid_input");
+    baselinePlan=optimizeOliviaWeek(loaded.input);
+    alternatePlan=optimizeOliviaWeek(overlay.input);
+  } catch { return fail(capability,"planner_unavailable"); }
+  const timezones=Object.fromEntries(
+    loaded.input.locations.map(l=>[l.id,l.timezone] as const));
+  const oversized=(scenario:{
+    shifts:readonly unknown[];gaps:readonly unknown[];
+  })=>scenario.shifts.length>OLIVIA_MAX_SAVED_SHIFTS ||
+    scenario.gaps.length>OLIVIA_MAX_GAPS_PER_SCENARIO;
+  for(const plan of [baselinePlan,alternatePlan]){
+    const parsed=oliviaOverflowPlanSchema.safeParse(plan);
+    if(!parsed.success)return fail(capability,"invalid_record");
+    if(!isCanonicalOliviaWeekResult(parsed.data,input.week,timezones))
+      return fail(capability,"invalid_record");
+    if(parsed.data.scenarios.some(oversized) ||
+       (parsed.data.best && oversized(parsed.data.best)) ||
+       parsed.data.warnings.length>100)
+      return fail(capability,"capacity_exceeded");
+  }
+  const select=(plan:PlannerResult)=>
+    input.options?.objective
+      ? plan.scenarios.find(s=>s.objective===input.options?.objective)??null
+      : plan.best;
+  const baselineSelected=oliviaScenarioSchema.safeParse(select(baselinePlan));
+  const alternateSelected=oliviaScenarioSchema.safeParse(select(alternatePlan));
+  // A requested objective without a feasible scenario is a documented null,
+  // never an invented alternative or a false coverage claim.
+  const baselineScenario=baselineSelected.success?baselineSelected.data:null;
+  const alternateScenario=alternateSelected.success?alternateSelected.data:null;
+  const comparison=baselineScenario && alternateScenario
+    ? compareOliviaScenarios(baselineScenario,alternateScenario) : null;
+  const employeeNames=Object.fromEntries(
+    loaded.input.employees.map(e=>[e.id,e.displayName] as const));
+  return verified(capability,{
+    ok:true,capability,version:1,status:"ok",
+    source:{owner:"olivia",businessId:owner.businessId,kind:"trusted_preview",
+      consistency:"provisional"},
+    baselineScenario,alternateScenario,comparison,
+    overridesApplied:input.overrides,
+    notices:loaded.notices,employeeNames,locationNames:loaded.locationNames,
+    disposition:"hypothetical_simulation_only",
+  });
+}
 /** The ONLY public executor in PR4A. No owner-action dispatcher exists. */
 export async function executeOliviaReadCapability(raw:unknown):Promise<OliviaReadResponse> {
   const request=oliviaReadRequestSchema.safeParse(raw);
@@ -418,6 +513,7 @@ export async function executeOliviaReadCapability(raw:unknown):Promise<OliviaRea
       case "olivia.schedule.preview":return await readPreview(request.data);
       case "olivia.schedule.history.read":return await readHistory(request.data);
       case "olivia.schedule.revision.read":return await readRevision(request.data);
+      case "olivia.schedule.whatIf":return await readWhatIf(request.data);
     }
   } catch {
     return fail(request.data.capability,"storage_unavailable");

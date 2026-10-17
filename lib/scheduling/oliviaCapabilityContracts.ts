@@ -19,6 +19,23 @@ const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
 export const oliviaWeek = date.refine(value =>
   new Date(value + "T00:00:00Z").getUTCDay() === 1, "Week must start Monday");
 const objective = z.enum(["cash", "owner_time", "balanced"]);
+const wallTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+// Olivia PR4A-2: a single transient what-if simulation. Every override can
+// only SUBTRACT from recorded availability or LOWER an existing hour cap --
+// never invent positive availability or raise a cap. This is a read/simulate
+// contract only; it never writes staff_availability_* or any plan table.
+export const oliviaWhatIfOverrideSchema = z.discriminatedUnion("kind", [
+  z.object({kind:z.literal("temporary_unavailable"),employeeId:oliviaUuid,
+    localDate:date,window:z.object({
+      startLocal:wallTime,endLocal:wallTime,overnight:z.boolean(),
+    }).strict().optional()}).strict(),
+  z.object({kind:z.literal("reduce_weekly_minutes"),employeeId:oliviaUuid,
+    maxWeeklyMinutes:z.number().int().min(0).max(10080)}).strict(),
+  z.object({kind:z.literal("reduce_daily_minutes"),employeeId:oliviaUuid,
+    localDate:date,maxMinutes:z.number().int().min(0).max(1440)}).strict(),
+]);
+export type OliviaWhatIfOverrideInput = z.infer<typeof oliviaWhatIfOverrideSchema>;
+export const OLIVIA_MAX_WHAT_IF_OVERRIDES = 20;
 export const oliviaReadRequestSchema = z.discriminatedUnion("capability", [
   z.object({capability:z.literal("olivia.availability.read"),version:z.literal(1),
     employeeId:oliviaUuid.optional()}).strict(),
@@ -32,6 +49,13 @@ export const oliviaReadRequestSchema = z.discriminatedUnion("capability", [
     week:oliviaWeek}).strict(),
   z.object({capability:z.literal("olivia.schedule.revision.read"),version:z.literal(1),
     week:oliviaWeek,revisionId:oliviaUuid}).strict(),
+  z.object({capability:z.literal("olivia.schedule.whatIf"),version:z.literal(1),
+    week:oliviaWeek,
+    overrides:z.array(oliviaWhatIfOverrideSchema).min(1).max(OLIVIA_MAX_WHAT_IF_OVERRIDES),
+    options:z.object({
+      objective:objective.optional(),
+      expectedSourceDigest:z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    }).strict().optional()}).strict(),
 ]);
 export type OliviaReadRequest = z.infer<typeof oliviaReadRequestSchema>;
 export type OliviaReadCapability = OliviaReadRequest["capability"];
@@ -246,10 +270,36 @@ export const oliviaRevisionResponseSchema=header.extend({
   assignments:z.array(oliviaShiftSchema).max(200),
   disposition:z.literal("stored_read_only"),
 }).strict();
+// Olivia PR4A-2: baseline vs. hypothetical-overlay comparison. Never a draft,
+// never persisted, never equal to a real trusted olivia.schedule.preview
+// sourceDigest -- "changed" is computed from the two scenarios' actual shifts
+// and gaps, never from the override list alone, so a no-op override cannot be
+// misreported as an applied change.
+export const oliviaWhatIfComparisonSchema=z.object({
+  ownerMinutesDifference:z.number().int(),
+  cashWagesDifferenceCents:signedCents,
+  loadedPayrollDifferenceCents:signedCents,
+  gapsDifference:z.number().int(),
+  completeCoverageBefore:z.boolean(),completeCoverageAfter:z.boolean(),
+  changed:z.boolean(),
+}).strict();
+export const oliviaWhatIfResponseSchema=header.extend({
+  capability:z.literal("olivia.schedule.whatIf"),
+  baselineScenario:oliviaScenarioSchema.nullable(),
+  alternateScenario:oliviaScenarioSchema.nullable(),
+  comparison:oliviaWhatIfComparisonSchema.nullable(),
+  overridesApplied:z.array(oliviaWhatIfOverrideSchema)
+    .min(1).max(OLIVIA_MAX_WHAT_IF_OVERRIDES),
+  notices:z.array(notice).max(MAX_PREVIEW_NOTICES),
+  employeeNames:z.record(oliviaUuid,z.string().max(240)),
+  locationNames:z.record(oliviaUuid,z.string().max(240)),
+  disposition:z.literal("hypothetical_simulation_only"),
+}).strict();
 export const oliviaCapabilityErrorSchema=z.object({
   ok:z.literal(false),version:z.literal(1),status:z.literal("error"),
   capability:z.enum(["olivia.availability.read","olivia.schedule.preview",
-    "olivia.schedule.history.read","olivia.schedule.revision.read","invalid_request"]),
+    "olivia.schedule.history.read","olivia.schedule.revision.read",
+    "olivia.schedule.whatIf","invalid_request"]),
   error:z.object({code:z.enum(["invalid_input","unauthorized","disabled","not_found",
     "missing_inputs","source_changed","revision_conflict","invalid_record",
     "storage_unavailable","planner_unavailable","capacity_exceeded"]),
@@ -258,7 +308,8 @@ export const oliviaCapabilityErrorSchema=z.object({
 }).strict();
 export const oliviaReadResponseSchema=z.union([
   oliviaAvailabilityResponseSchema,oliviaPreviewResponseSchema,
-  oliviaHistoryResponseSchema,oliviaRevisionResponseSchema,oliviaCapabilityErrorSchema,
+  oliviaHistoryResponseSchema,oliviaRevisionResponseSchema,
+  oliviaWhatIfResponseSchema,oliviaCapabilityErrorSchema,
 ]);
 export type OliviaReadResponse=z.infer<typeof oliviaReadResponseSchema>;
 
