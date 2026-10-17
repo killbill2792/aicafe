@@ -77,7 +77,12 @@ export const atomicP1SourceSchema=z.strictObject({
     ctx.addIssue({code:"custom",message:"owner total source and cap mismatch"});
   for(const name of Object.keys(v.truncated) as Array<keyof typeof v.truncated>){
     const cap=name==="dailyRollups"?366:name==="imports"?100:500;
-    if(v.truncated[name]!==((v.sources[name] as unknown[]).length>cap))
+    const rows=v.sources[name];
+    if(!Array.isArray(rows)){
+      ctx.addIssue({code:"custom",message:"missing source rows for truncation:"+name});
+      continue;
+    }
+    if(v.truncated[name]!==rows.length>cap)
       ctx.addIssue({code:"custom",message:"inconsistent source truncation:"+name});
   }
 });
