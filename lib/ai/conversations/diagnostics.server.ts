@@ -36,6 +36,9 @@ export type SupervisorDiagnostic = {
   invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   schemaIssuePath?:string;
   schemaIssueCode?:string;
+  outputItemTypes?:string[];
+  messagePartTypes?:string[];
+  outputTextPartCount?:number;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -65,6 +68,18 @@ const safeProviderIdentifier=(value:unknown):string|undefined=>{
   const limited=value.slice(0,64);
   return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
 };
+/** This path inspects a payload the server has already judged malformed or
+ * untrustworthy; a value there is never assumed to actually be one of OpenAI's
+ * documented output/content "type" tags just because it is identifier-shaped
+ * (a secret made only of letters/digits/._- would pass a syntax check). Only
+ * exact membership in the Responses API's own fixed, documented enum may ever
+ * reach the log; every other value is dropped, never merely truncated. */
+const outputItemTypeEnum=new Set(["message","reasoning","function_call","file_search_call",
+  "web_search_call","computer_call","code_interpreter_call","image_generation_call",
+  "local_shell_call","mcp_call","mcp_list_tools","mcp_approval_request","custom_tool_call"]);
+const messagePartTypeEnum=new Set(["output_text","refusal"]);
+const safeEnumTagArray=(arr:unknown,allowed:ReadonlySet<string>):string[]=>Array.isArray(arr)
+  ?[...new Set(arr.filter((v):v is string=>typeof v==="string"&&allowed.has(v)))].slice(0,8):[];
 /** Inspect only the provider's error.type and error.code in a non-2xx response.
  * No raw error body or error.message escapes this function. Malformed JSON is safe. */
 export async function readSafeProviderError(response:Response):Promise<Pick<SupervisorDiagnostic,
@@ -98,6 +113,9 @@ export class SupervisorStageError extends Error {
   readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   readonly schemaIssuePath?:string;
   readonly schemaIssueCode?:string;
+  readonly outputItemTypes?:string[];
+  readonly messagePartTypes?:string[];
+  readonly outputTextPartCount?:number;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -111,6 +129,13 @@ export class SupervisorStageError extends Error {
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
+    const outputItemTypes=safeEnumTagArray(meta.outputItemTypes,outputItemTypeEnum);
+    const messagePartTypes=safeEnumTagArray(meta.messagePartTypes,messagePartTypeEnum);
+    this.outputItemTypes=outputItemTypes.length?outputItemTypes:undefined;
+    this.messagePartTypes=messagePartTypes.length?messagePartTypes:undefined;
+    this.outputTextPartCount=typeof meta.outputTextPartCount==="number"&&
+      Number.isSafeInteger(meta.outputTextPartCount)&&meta.outputTextPartCount>=0?
+      meta.outputTextPartCount:undefined;
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -156,6 +181,11 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
+        ...(d.outputItemTypes&&safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum).length?
+          {outputItemTypes:safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum)}:{}),
+        ...(d.messagePartTypes&&safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum).length?
+          {messagePartTypes:safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum)}:{}),
+        ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -178,6 +208,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     providerRequestId:error.providerRequestId,
     invalidPayloadReason:error.invalidPayloadReason,
     schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
+    outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
+    outputTextPartCount:error.outputTextPartCount,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }

@@ -90,6 +90,44 @@ describe("Sanitized Supervisor production diagnostics",()=>{
     expect(second.triggerProviderErrorCode).toBeUndefined();
     expect(written.join(" ")).not.toContain("raw error.message");
   });
+  it("logs deduped, bounded output/message type tags and a safe text-part count",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    logger.emit({stage:"provider_response",category:"provider_invalid_payload",
+      invalidPayloadReason:"wrong_text_shape",requestName:"supervisor_investigation_step",
+      outputItemTypes:["message","message","reasoning","PRIVATE owner text "],
+      messagePartTypes:["refusal"],outputTextPartCount:0});
+    const logged=JSON.parse(lines[0]);
+    expect(logged.outputItemTypes).toEqual(["message","reasoning"]);
+    expect(logged.messagePartTypes).toEqual(["refusal"]);
+    expect(logged.outputTextPartCount).toBe(0);
+    expect(JSON.stringify(logged)).not.toContain("PRIVATE");
+  });
+  it("omits output/message type tags entirely when none are safe or present",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    logger.emit({stage:"provider_response",category:"provider_invalid_payload",
+      outputItemTypes:["PRIVATE only unsafe tag"],messagePartTypes:[],outputTextPartCount:-1});
+    const logged=JSON.parse(lines[0]);
+    expect(logged.outputItemTypes).toBeUndefined();
+    expect(logged.messagePartTypes).toBeUndefined();
+    expect(logged.outputTextPartCount).toBeUndefined();
+  });
+  it("drops an identifier-shaped value that is not an actual documented type, even on the untrusted malformed-payload path",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    // sk-abc123_secret-token is syntactically identifier-shaped (matches [a-zA-Z0-9_.-]+)
+    // but is not one of OpenAI's documented output-item/content-part type values.
+    const error=new SupervisorStageError("provider_invalid_payload","provider_response",
+      {invalidPayloadReason:"wrong_text_shape",
+        outputItemTypes:["message","sk-abc123_secret-token"],
+        messagePartTypes:["output_text","sk-abc123_secret-token"]});
+    logger.emit({...classifySupervisorError(error,"provider_response")});
+    const logged=JSON.parse(lines[0]);
+    expect(logged.outputItemTypes).toEqual(["message"]);
+    expect(logged.messagePartTypes).toEqual(["output_text"]);
+    expect(JSON.stringify(logged)).not.toContain("sk-abc123_secret-token");
+  });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",
       {httpStatus:200,providerStatus:"incomplete",round:2,attempt:1});
