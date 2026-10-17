@@ -93,6 +93,14 @@ const whatIfInputSchema = z.strictObject({
 const signedCents = z.number().int().min(-100_000_000).max(100_000_000).nullable();
 const whatIfRow = z.strictObject({
   name: z.string().min(1).max(160),
+  // One bounded, human-readable line per override (worker, date/window or minute cap --
+  // whichever the override kind actually carries) built directly from the SAME validated
+  // input the simulation ran on, not re-derived or guessed. Lets the owner catch capability
+  // selection emitting a valid-but-wrong parameter (e.g. 240 minutes instead of 120, the
+  // wrong day, the wrong window) the same way the date/name echo already lets them catch a
+  // wrong day or wrong worker. Caught in review (PR #108, round 3).
+  overridesSummary: z.array(z.string().min(1).max(160)).min(1).max(OLIVIA_P3_MAX_WHAT_IF_OVERRIDES),
+  objective: z.enum(["cash", "owner_time", "balanced"]).nullable(),
   alternateStatus: z.enum(["feasible", "infeasible", "unproven"]),
   changed: z.boolean().nullable(),
   completeCoverageAfter: z.boolean().nullable(),
@@ -270,18 +278,20 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
         if (!current || current.trim().toLowerCase() !== requestedName.toLowerCase())
           return { status: "unavailable" as const, value: null, reason: "source_changed" };
       }
-      const overrideDates = [...new Set(input.overrides.flatMap(o =>
-        o.kind === "temporary_unavailable" || o.kind === "reduce_daily_minutes" ? [o.localDate] : []))];
-      // Resolving a VALID but WRONG name is a different failure than the staleness race
-      // above (e.g. capability selection names Ben when the owner asked about Ava) --
-      // nothing above can catch that, since it never claims to verify owner intent, only
-      // roster/simulation consistency. Echoing the actually-simulated worker name(s) back
-      // lets the owner self-verify, the same mitigation already used for the date below.
-      // Caught in review (PR #108, round 2).
-      const names = [...new Set(resolution.requestedNames.values())];
-      const name = (names.join(", ") + " — " +
-        (overrideDates.length ? input.week + " (" + overrideDates.join(", ") + ")" : input.week))
-        .slice(0, 160);
+      // One bounded line per override, built from the SAME validated input the simulation
+      // ran on (worker, date/window or minute cap, whichever the override kind carries) --
+      // lets the owner catch capability selection emitting a valid-but-wrong parameter
+      // (wrong duration, wrong window, wrong day), the same way the resolved worker name
+      // below lets them catch a wrong worker. Caught in review (PR #108, rounds 2 and 3).
+      const overridesSummary = input.overrides.slice(0, OLIVIA_P3_MAX_WHAT_IF_OVERRIDES).map(o => {
+        if (o.kind === "temporary_unavailable")
+          return o.employeeName + " unavailable " + o.localDate +
+            (o.window ? " (" + o.window.startLocal + "–" + o.window.endLocal + ")" : " (all day)");
+        if (o.kind === "reduce_weekly_minutes")
+          return o.employeeName + " capped at " + o.maxWeeklyMinutes + " min/week";
+        return o.employeeName + " capped at " + o.maxMinutes + " min on " + o.localDate;
+      });
+      const name = input.week;
       const legalReviewUnverified = [raw.baselineScenario, raw.alternateScenario]
         .some(s => s !== null && s.legalReview !== "verified_profile");
       const hasAdditionalCaveats = raw.baselineWarnings.length > 0 || raw.alternateWarnings.length > 0 ||
@@ -289,7 +299,7 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       return {
         status: "partial" as const, id: "olivia.schedule.what_if" as const,
         value: [{
-          name,
+          name, overridesSummary, objective: input.objective ?? null,
           alternateStatus: raw.alternateStatus,
           changed: raw.comparison?.changed ?? null,
           completeCoverageAfter: raw.comparison?.completeCoverageAfter ?? null,

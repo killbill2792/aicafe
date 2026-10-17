@@ -17,7 +17,8 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents" |
   "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated" |
   "alternateStatus" | "changed" | "completeCoverageAfter" | "gapsDifference" |
-  "loadedPayrollDifferenceCents" | "legalReviewUnverified" | "hasAdditionalCaveats";
+  "loadedPayrollDifferenceCents" | "legalReviewUnverified" | "hasAdditionalCaveats" |
+  "overridesSummary" | "objective";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -146,7 +147,7 @@ const sourcePresentation:Record<string,{
   },
   "olivia.schedule.what_if":{
     heading:"source_olivia_schedule_what_if",
-    fields:["name","alternateStatus","changed","completeCoverageAfter",
+    fields:["name","overridesSummary","objective","alternateStatus","changed","completeCoverageAfter",
       "gapsDifference","loadedPayrollDifferenceCents",
       "legalReviewUnverified","hasAdditionalCaveats"],
   },
@@ -154,6 +155,9 @@ const sourcePresentation:Record<string,{
 const scheduleStatusLabels:Record<string,CatalogKey> = {
   feasible:"scheduleStatus_feasible", infeasible:"scheduleStatus_infeasible",
   unproven:"scheduleStatus_unproven",
+};
+const scheduleObjectiveLabels:Record<string,CatalogKey> = {
+  cash:"objective_cash", owner_time:"objective_ownerTime", balanced:"objective_balanced",
 };
 /** Exhaustive map of Alex's own enumerable what-if caveat codes (never free text — see
  * ALEX_ASSUMPTION_CODES in alexP3Capabilities.server.ts) to a localized plain-language string.
@@ -192,6 +196,8 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   loadedPayrollDifferenceCents:"field_loadedPayrollDifferenceCents",
   legalReviewUnverified:"field_legalReviewUnverified",
   hasAdditionalCaveats:"field_hasAdditionalCaveats",
+  overridesSummary:"field_overridesSummary",
+  objective:"field_objective",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -217,6 +223,21 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   if(key==="alternateStatus"){
     return typeof value==="string" && Object.hasOwn(scheduleStatusLabels,value)
       ?t(locale,fieldLabel[key])+": "+t(locale,scheduleStatusLabels[value]):null;
+  }
+  if(key==="objective"){
+    return typeof value==="string" && Object.hasOwn(scheduleObjectiveLabels,value)
+      ?t(locale,fieldLabel[key])+": "+t(locale,scheduleObjectiveLabels[value]):null;
+  }
+  // These are OUR OWN bounded, already-validated strings built server-side from the
+  // same inputs the simulation ran on (worker names from the trusted roster, dates/
+  // numbers from a schema-checked override) -- not raw external or DB content -- so
+  // safeText's generic sanitizing (strip control chars, collapse whitespace, cap
+  // length, reject URL-like text) is enough; no code->label mapping is needed.
+  if(key==="overridesSummary"){
+    if(!Array.isArray(value)||!value.length)return null;
+    const lines=value.filter((v):v is string=>typeof v==="string")
+      .map(safeText).filter((x):x is string=>x!==null);
+    return lines.length?t(locale,fieldLabel[key])+": "+lines.join("; "):null;
   }
   // Unlike costBasisEstimated (only shown when true), both true and false are
   // meaningful here: "nothing changed" and "coverage stayed complete" are real,

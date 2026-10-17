@@ -271,8 +271,8 @@ describe("Olivia P3 schedule-what-if registration", () => {
     expect(raw).toMatchObject({ status: "partial", value: [{ hasAdditionalCaveats: true }] });
   });
 
-  it("reflects the resolved override date back in the result, so an owner can catch the " +
-    "model resolving the wrong day", async () => {
+  it("echoes every override's worker, date/window or minute cap back in the result, so an " +
+    "owner can catch capability selection emitting a valid but wrong parameter", async () => {
     olivia.mockImplementation(async (request: unknown) => {
       const r = request as { capability: string };
       if (r.capability === "olivia.availability.read")
@@ -282,9 +282,33 @@ describe("Olivia P3 schedule-what-if registration", () => {
     const [, registration] = buildOliviaP3Registrations();
     const raw = await registration.read(scope, {
       purpose: "schedule_what_if", week: "2026-10-19",
-      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20",
+        window: { startLocal: "09:00", endLocal: "12:00", overnight: false } }],
+      objective: "cash",
     });
-    expect(raw).toMatchObject({ status: "partial", value: [{ name: "Ava — 2026-10-19 (2026-10-20)" }] });
+    expect(raw).toMatchObject({
+      status: "partial",
+      value: [{ name: "2026-10-19", objective: "cash",
+        overridesSummary: ["Ava unavailable 2026-10-20 (09:00–12:00)"] }],
+    });
+  });
+
+  it("echoes a weekly/daily minute-cap override's actual limit, not just the worker/date", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      return whatIfResult() as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "reduce_weekly_minutes", employeeName: "Ava", maxWeeklyMinutes: 120 }],
+    });
+    expect(raw).toMatchObject({
+      status: "partial",
+      value: [{ objective: null, overridesSummary: ["Ava capped at 120 min/week"] }],
+    });
   });
 
   it("presents a real coverage/cost delta as an owner-readable block (not raw internals)", async () => {
