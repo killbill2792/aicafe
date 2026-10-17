@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SupervisorToolCall } from "./toolRegistry.server";
 
 export const GOAL_DOMAINS = [
-  "total_business_costs","staff_cost","menu_count","pricing_review","owner_profit",
+  "total_business_costs","staff_cost","menu_count","pricing_review","owner_profit","profit_margin",
   "monthly_bills","recorded_spending","sales","distinct_products","staffing",
   "team","break_even","overview","owner_rules","comparison",
   "staff_attendance","staff_schedule","staff_coverage",
@@ -95,13 +95,18 @@ export function reconcileRequestScopesDetailed(declared:RequestedGoal[],audit:Re
   if(missing.length){
     // Different period/range for the same goal family, or two competing single
     // goal families, is a semantic conflict; neither can overwrite the other.
-    const conflict=missing.some(g=>verified.some(v=>v.domain===g.domain))||
-      (initial.length===1&&verified.length===1);
-    return reject(conflict?"semantic_conflict":"declared_goal_missing");
+    // A single time-sensitive goal with incompatible dates is a real conflict.
+    // A missing independent sub-goal is not proof the owner did not ask it.
+    const conflict=missing.some(g=>initial.filter(x=>x.domain===g.domain).length===1 &&
+      verified.filter(x=>x.domain===g.domain).length===1 &&
+      !isSnapshotGoal(g.domain));
+    if(conflict)return reject("semantic_conflict");
   }
-  // Audited additional goals are intentionally preserved: 3 planned / 4 audited
-  // must answer ALL FOUR, not silently accept only the first three.
-  return {...metadata,outcome:"accepted",goals:verified};
+  // Preserve the union of independently identified goals, with the same
+  // bounded execution and authorization gates as any other declared goal.
+  const combined=normalizeRequestedGoals([...verified,...missing]);
+  if(combined.length>5)return reject("audit_incomplete");
+  return {...metadata,outcome:"accepted",goals:combined};
 }
 export function reconcileRequestScopes(declared:RequestedGoal[],audit:RequestedGoal[],
   complete:boolean,ambiguous:boolean):RequestedGoal[]|null {
@@ -126,6 +131,7 @@ export function coversRequestedGoal(goal:RequestedGoal,call:ReadCall):boolean {
     case "pricing_review":return call.name==="get_pricing" ||
       call.name==="alex_pricing_review" || call.name==="alex_pricing_what_if";
     case "owner_profit":return call.name==="get_financials" && a.metric==="owner_profit" && datesMatch();
+    case "profit_margin":return call.name==="get_financials" && a.metric==="profit_margin" && datesMatch();
     case "monthly_bills":return call.name==="get_financials" && a.metric==="monthly_bills" && datesMatch();
     case "recorded_spending":return call.name==="get_financials" && a.metric==="recorded_spending" && datesMatch();
     case "sales":return call.name==="get_sales" && datesMatch();
@@ -151,6 +157,7 @@ export function fallbackCallForGoal(goal:RequestedGoal): ReadCall | null {
     case "menu_count":return {name:"get_menu",arguments:{view:"active_count",scope:"active",product_name:null,limit:10}};
     case "pricing_review":return {name:"get_pricing",arguments:{product_name:null,limit:10}};
     case "owner_profit":return {name:"get_financials",arguments:{metric:"owner_profit",...date}};
+    case "profit_margin":return {name:"get_financials",arguments:{metric:"profit_margin",...date}};
     case "monthly_bills":return {name:"get_financials",arguments:{metric:"monthly_bills",...date}};
     case "recorded_spending":return {name:"get_financials",arguments:{metric:"recorded_spending",...date}};
     case "sales":return {name:"get_sales",arguments:{metric:"net_sales",group_by:"total",...date,category:"all",
@@ -173,7 +180,7 @@ export function fallbackCallForGoal(goal:RequestedGoal): ReadCall | null {
 const copy={
   en:{
     total_business_costs:"Total business costs",staff_cost:"Staff cost",menu_count:"Products on your menu",
-    pricing_review:"Verified price changes",owner_profit:"Owner profit",monthly_bills:"Recurring monthly bills",
+    pricing_review:"Verified price changes",owner_profit:"Owner profit",profit_margin:"Operating profit margin",monthly_bills:"Recurring monthly bills",
     recorded_spending:"Recorded spending",sales:"Sales",distinct_products:"Products customers bought",
     staffing:"Staffing",staff_attendance:"Staff attendance",staff_schedule:"Staff schedule",
     staff_coverage:"Staff coverage",team:"AI Team",break_even:"Break-even",overview:"Café overview",
@@ -182,7 +189,7 @@ const copy={
   },
   es:{
     total_business_costs:"Costos totales del negocio",staff_cost:"Costo del personal",menu_count:"Productos del menú",
-    pricing_review:"Cambios de precio verificados",owner_profit:"Ganancia del propietario",
+    pricing_review:"Cambios de precio verificados",owner_profit:"Ganancia del propietario",profit_margin:"Margen de beneficio operativo",
     monthly_bills:"Facturas mensuales recurrentes",recorded_spending:"Gastos registrados",
     sales:"Ventas",distinct_products:"Productos comprados por clientes",staffing:"Personal",
     staff_attendance:"Asistencia del personal",staff_schedule:"Horario del personal",staff_coverage:"Cobertura del personal",
@@ -192,7 +199,7 @@ const copy={
   },
   ar:{
     total_business_costs:"إجمالي تكاليف العمل",staff_cost:"تكلفة الموظفين",menu_count:"منتجات القائمة",
-    pricing_review:"تغييرات الأسعار المثبتة",owner_profit:"ربح المالك",monthly_bills:"الفواتير الشهرية المتكررة",
+    pricing_review:"تغييرات الأسعار المثبتة",owner_profit:"ربح المالك",profit_margin:"هامش الربح التشغيلي",monthly_bills:"الفواتير الشهرية المتكررة",
     recorded_spending:"المصروفات المسجلة",sales:"المبيعات",distinct_products:"المنتجات التي اشتراها العملاء",
     staffing:"الموظفون",staff_attendance:"حضور الموظفين",staff_schedule:"جدول الموظفين",
     staff_coverage:"تغطية الموظفين",team:"فريق الذكاء الاصطناعي",break_even:"نقطة التعادل",
