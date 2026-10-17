@@ -78,13 +78,18 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
       value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
         before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: -20,
         ingredientContributionDeltaCents: 70, targetPriceCents: 600, targetBasisPoints: 7000,
-        assumptions: ["owner target margin"], persisted: false },
+        assumptions: ["ingredient_only_excludes_labor_fees_rent_and_demand", "recorded_cost_freshness_not_proven"],
+        persisted: false },
     });
     const [, whatIf] = buildAlexP3Registrations();
     const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
       product: { exactName: "Oat Latte 16oz" }, changes: [],
       targetIngredientMarginBps: 7000 });
-    expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if" });
+    expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if",
+      // The calculated outcome and the simulator's own caveats must survive the reshape,
+      // not just an echo of the requested target — both were real findings in review.
+      value: [expect.objectContaining({ ingredientContributionDeltaCents: 70,
+        assumptionsSummary: expect.stringContaining("ingredient_only_excludes_labor_fees_rent_and_demand") })] });
     expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
       product: { exactName: "Oat Latte 16oz" },
     }), undefined);
@@ -95,6 +100,19 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     });
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("$6.00"))).toBe(true);
+    expect(view.blocks.some(b => b.type === "text" && b.text.includes("$0.70"))).toBe(true);
+    expect(view.blocks.some(b => b.type === "text" &&
+      b.text.includes("ingredient_only_excludes_labor_fees_rent_and_demand"))).toBe(true);
+  });
+
+  it("rejects a no-op what-if (no selling price, no target) before it ever reaches the " +
+    "simulator, instead of silently comparing the product with itself", async () => {
+    const [, whatIf] = buildAlexP3Registrations();
+    const registry = createP2Registry([whatIf]);
+    const result = await registry.invoke(scope, ALEX_P3_WHATIF_ID,
+      { purpose: "pricing_simulate", product: { exactName: "Oat Latte 16oz" }, changes: [] });
+    expect(result).toMatchObject({ status: "unavailable" });
+    expect(mockSimulate).not.toHaveBeenCalled();
   });
 
   it("returns unavailable, never a fabricated scenario, when Alex's simulator denies it", async () => {

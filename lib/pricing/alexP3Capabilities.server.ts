@@ -86,7 +86,14 @@ const whatIfInputSchema = z.strictObject({
   targetCostRatioBps: z.number().int().min(1).max(10000).optional(),
   targetIngredientMarginBps: z.number().int().min(0).max(9999).optional(),
 }).refine(x => x.targetCostRatioBps === undefined || x.targetIngredientMarginBps === undefined,
-  { message: "Select exactly one target ratio or ingredient-only margin" });
+  { message: "Select exactly one target ratio or ingredient-only margin" })
+  // changes is always [] here, so unlike the legacy loop's hasScenario check this only
+  // needs to rule out an owner turn with no selling price AND no target at all — a
+  // no-op that would otherwise compare the product with itself and still report
+  // "partial" success, exactly as the legacy loop's own guard exists to prevent.
+  .refine(x => x.sellingPrice !== undefined || x.targetCostRatioBps !== undefined ||
+    x.targetIngredientMarginBps !== undefined,
+  { message: "A what-if needs a selling price or a cost/margin target" });
 const whatIfOutputSchema = z.union([
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
   z.strictObject({
@@ -97,7 +104,16 @@ const whatIfOutputSchema = z.union([
       name: z.string().min(1).max(160),
       priceDeltaCents: z.number().int().safe().nullable(),
       ingredientCostDeltaCents: z.number().int().safe().nullable(),
+      // The actual calculated outcome of a selling-price what-if (margin impact), not
+      // just an echo of the requested delta — dropping this was a real finding in review.
+      ingredientContributionDeltaCents: z.number().int().safe().nullable(),
       targetPriceCents: z.number().int().safe().min(0).max(100_000_000).nullable(),
+      // Alex's simulator's own caveats (e.g. "ingredient-only, excludes labor/fees/rent",
+      // "cost freshness not proven") — dropping these was a real finding in review; a bare
+      // target/delta number reads as a full profitability price without them. Capped at
+      // 120 chars to match presentRegisteredReads' own safeText() limit, not re-truncated
+      // there (a longer string would be silently dropped, not shortened).
+      assumptionsSummary: z.string().max(120).nullable(),
     })).length(1),
     provenance: simulateProvenanceSchema, quality: qualitySchema,
   }),
@@ -185,14 +201,20 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
             ? raw.reason : "unavailable" };
       const value = raw.value as {
         name: string; priceDeltaCents: number | null;
-        ingredientCostDeltaCents: number | null; targetPriceCents: number | null;
+        ingredientCostDeltaCents: number | null; ingredientContributionDeltaCents: number | null;
+        targetPriceCents: number | null; assumptions: unknown;
       };
+      const assumptions = Array.isArray(value.assumptions)
+        ? value.assumptions.filter((a): a is string => typeof a === "string").slice(0, 2)
+        : [];
       return {
         status: "partial" as const, id: "alex.pricing.what_if" as const,
         value: [{
           name: value.name, priceDeltaCents: value.priceDeltaCents,
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
+          ingredientContributionDeltaCents: value.ingredientContributionDeltaCents,
           targetPriceCents: value.targetPriceCents,
+          assumptionsSummary: assumptions.length ? assumptions.join("; ").slice(0, 120) : null,
         }],
         provenance: raw.provenance as z.output<typeof simulateProvenanceSchema>,
         quality: raw.quality as z.output<typeof qualitySchema>,

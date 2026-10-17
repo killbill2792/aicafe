@@ -14,7 +14,8 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "defaultHourlyWageCents" | "wageAmountCents" | "ingredientsCentsToday" |
   "currentPriceCents" | "reviewIngredientCostCents" | "currentRecommendationCents" |
   "loadedLaborCostCents" | "shiftCount" |
-  "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents";
+  "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents" |
+  "ingredientContributionDeltaCents" | "assumptionsSummary";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -84,7 +85,8 @@ const sourcePresentation:Record<string,{
   },
   "alex.pricing.what_if":{
     heading:"source_alex_pricing_what_if",
-    fields:["name","priceDeltaCents","ingredientCostDeltaCents","targetPriceCents"],
+    fields:["name","priceDeltaCents","ingredientCostDeltaCents","ingredientContributionDeltaCents",
+      "targetPriceCents","assumptionsSummary"],
   },
 };
 const fieldLabel:Record<PresentedField,CatalogKey> = {
@@ -103,6 +105,8 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   priceDeltaCents:"field_priceDeltaCents",
   ingredientCostDeltaCents:"field_ingredientCostDeltaCents",
   targetPriceCents:"field_targetPriceCents",
+  ingredientContributionDeltaCents:"field_ingredientContributionDeltaCents",
+  assumptionsSummary:"field_assumptionsSummary",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -126,7 +130,7 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   if(key==="wageAmountCents" &&
     !["hour","month","year"].includes(String(row.wagePeriod)))return null;
   if(typeof value==="string"){
-    if(!["supplierName","itemName","name","label"].includes(key))return null;
+    if(!["supplierName","itemName","name","label","assumptionsSummary"].includes(key))return null;
     const text=safeText(value);
     return text?t(locale,fieldLabel[key])+": "+text:null;
   }

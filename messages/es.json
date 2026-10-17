@@ -1798,6 +1798,8 @@
     "field_priceDeltaCents": "Cambio de precio",
     "field_ingredientCostDeltaCents": "Cambio en costo de ingredientes",
     "field_targetPriceCents": "Precio objetivo",
+    "field_ingredientContributionDeltaCents": "Cambio en contribución (solo ingredientes)",
+    "field_assumptionsSummary": "Limitaciones",
     "estimatedExpense": "Gasto estimado; el pago no está confirmado",
     "actualExpense": "Gasto real registrado",
     "estimatedRecurring": "Obligación recurrente estimada",

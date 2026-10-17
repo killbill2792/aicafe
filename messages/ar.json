@@ -1798,6 +1798,8 @@
     "field_priceDeltaCents": "تغير السعر",
     "field_ingredientCostDeltaCents": "تغير تكلفة المكونات",
     "field_targetPriceCents": "السعر المستهدف",
+    "field_ingredientContributionDeltaCents": "تغير مساهمة المكونات فقط",
+    "field_assumptionsSummary": "القيود",
     "estimatedExpense": "نفقة تقديرية؛ لم يُؤكد دفعها",
     "actualExpense": "نفقة فعلية مسجلة",
     "estimatedRecurring": "التزام متكرر تقديري",
