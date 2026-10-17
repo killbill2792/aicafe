@@ -27,8 +27,8 @@ describe("reviewed localized source presentation",()=>{
     const all=result.blocks.map(b=>"text" in b?b.text:"").join(" ");
     expect(all).toContain("Oat milk");
     expect(all).toContain("$12.75");
-    expect(all).toContain("Recorded price");
-    expect(all).toContain("Package quantity: 6 case");
+    expect(all).toContain("Quoted package price");
+    expect(all).toContain("Package quantity: 6 cases");
     expect(all).not.toMatch(/supplier Name|source Kind|internal-uuid|supplier_quote|evil.example/u);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0].identifier).toMatch(/^p3:read:[a-f0-9]{32}$/u);
@@ -77,15 +77,22 @@ describe("reviewed localized source presentation",()=>{
     const recurring=read("money.recurring_bill_rows",[
       {label:"Rent",amountCents:30000,isEstimate:true},
     ]);
+    const expected={
+      en:{expense:"Estimated expense; not confirmed as paid",
+        bill:"Estimated recurring obligation"},
+      es:{expense:"Gasto estimado; el pago no está confirmado",
+        bill:"Obligación recurrente estimada"},
+      ar:{expense:"نفقة تقديرية؛ لم يُؤكد دفعها",
+        bill:"التزام متكرر تقديري"},
+    } as const;
     for(const locale of ["en","es","ar"] as const){
       const estimated=present([expense],undefined,locale).blocks
         .filter(b=>b.type==="text").map(b=>b.text).join(" ");
       const bill=present([recurring],undefined,locale).blocks
         .filter(b=>b.type==="text").map(b=>b.text).join(" ");
-      const expected=locale==="en"?"Estimated":locale==="es"?"Estimado":"تقديري";
-      expect(estimated).toContain(expected);
-      expect(bill).toContain(expected);
-      expect(estimated.split(expected)).toHaveLength(2);
+      expect(estimated).toContain(expected[locale].expense);
+      expect(bill).toContain(expected[locale].bill);
+      expect(estimated).not.toContain("status:");
     }
   });
   it("keeps localized package units and never exposes raw enum values",()=>{
@@ -95,7 +102,7 @@ describe("reviewed localized source presentation",()=>{
     }]});
     const spanish=present([quote],undefined,"es").blocks
       .filter(b=>b.type==="text").map(b=>b.text).join(" ");
-    expect(spanish).toContain("6 galón estadounidense");
+    expect(spanish).toContain("6 galones estadounidenses");
     expect(spanish).not.toContain("supplier_quote");
   });
   it("rejects foreign date, unavailable and unrequested records",()=>{
