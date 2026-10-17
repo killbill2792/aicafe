@@ -1,6 +1,6 @@
 import "server-only";
 import {z} from "zod";
-import {SupervisorStageError} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
@@ -8,7 +8,8 @@ export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Respon
 export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount:number;inputTokens:number;outputTokens:number};
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
   instructions:string;context:unknown;model:string;apiKey:string;transport:InvestigationTransport;
-  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void},attempt=1):Promise<T|null>{
+  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
+  onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
   if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
@@ -38,7 +39,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
           clearTimeout(timeout);
           return requestInvestigation({...input,model:fallback});
         }
-        throw new SupervisorStageError("provider_http","provider_response",{httpStatus:response.status});
+        throw new SupervisorStageError("provider_http","provider_response",
+          {httpStatus:response.status,providerErrorCode:code||undefined});
       }
       const raw=await response.json();
       const positive=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)&&v>=0?v:0;
@@ -77,6 +79,13 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
     // as a lenient, retryable model hiccup.
     const classified=error instanceof SupervisorStageError?error:
       new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_http","provider_response");
+    // This is the only visibility production has into why an investigation
+    // step failed; without it, a failure here is otherwise completely silent
+    // between "cafe_identity_loaded" and "reply_persistence" in the logs.
+    input.onDiagnostic?.({stage:"provider_response",category:classified.category,
+      httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
+      providerErrorCode:classified.providerErrorCode,requestName:input.name,
+      attempt,modelCallCount:input.usage.modelCallCount});
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly
     // one more try with the same inputs before giving up; a persistent failure

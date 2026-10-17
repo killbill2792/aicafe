@@ -24,6 +24,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
+import type {SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -44,7 +45,8 @@ function calendar(asOf:string){
 }
 export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:string;
   history:ConversationalTurn[];investigationMemory?:InvestigationMemory;
-  apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void};
+  apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
+  onDiagnostic?:(event:SupervisorDiagnostic)=>void};
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
@@ -79,7 +81,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
         context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
         apiKey:input.apiKey,model:input.model,transport,usage,
-        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage});
+        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       return checked?.safe===true;
     })]);
   const manifest=registry.discover(scope);
@@ -108,7 +110,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
         remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback},
-      apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage});
+      apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
+      onDiagnostic:input.onDiagnostic});
     if(!step)return failure();
     feedback=null;
     if(step.action==="answer"){
@@ -122,7 +125,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const review=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
         instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
           proposedAnswer:answer.data,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
-        transport,usage,deadline,onUsage:input.onUsage});
+        transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       if(!review?.supported||!review.complete){feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";continue;}
       // Reauthorize at publication time. A changed café or epoch invalidates the
       // investigation; no data from the later snapshot is mixed with earlier reads.
@@ -184,7 +187,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
               capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
-            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage});
+            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
+            onDiagnostic:input.onDiagnostic});
           verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){

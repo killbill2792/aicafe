@@ -254,6 +254,16 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     // A terminal "failed"/"cancelled" generation must not be retried-and-swallowed either.
     expect(transport).toHaveBeenCalledTimes(1);
   });
+
+  it("reports why an investigation step failed instead of staying silent",async()=>{
+    const transport=vi.fn(async()=>malformed());
+    const onDiagnostic=vi.fn();
+    await runSupervisorTurn({...base,text:"How should we handle the morning rush?",onDiagnostic},transport);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"provider_response",
+      category:"provider_invalid_payload",requestName:"supervisor_investigation_step",attempt:1}));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"provider_response",
+      category:"provider_invalid_payload",requestName:"supervisor_investigation_step",attempt:2}));
+  });
 });
 
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{
