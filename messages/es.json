@@ -1797,6 +1797,15 @@
     "unit_kg": "kilogramos",
     "unit_gal": "galones estadounidenses",
     "unit_liter": "litros",
-    "unit_case": "cajas"
+    "unit_case": "cajas",
+    "field_ingredientsCentsEstimated": "Ingredientes actuales estimados de la receta",
+    "field_ownerTotalCostRecorded": "Costo total del producto registrado por el propietario (no solo ingredientes)",
+    "field_ownerTotalCostEstimated": "Costo total del producto estimado por el propietario (no solo ingredientes)",
+    "period_hour": "hora",
+    "period_month": "mes",
+    "period_year": "año",
+    "unsupportedOutcome": "Ninguna capacidad registrada puede completar todavía este resultado.",
+    "missingInput": "Faltan registros o datos necesarios para un cálculo fiable.",
+    "unsupportedAction": "Esta acción requiere un flujo separado de aprobación; no se ha cambiado nada."
   }
 }
