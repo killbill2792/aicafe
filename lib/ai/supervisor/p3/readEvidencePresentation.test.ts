@@ -21,13 +21,14 @@ describe("reviewed localized source presentation",()=>{
   it("presents a bounded Maya quote but never raw URLs, IDs or internal enums",()=>{
     const result=present([read("supplies.quotes",{items:[{
       id:"internal-uuid",supplierName:"Baker Shop",itemName:"Oat milk",
-      priceCents:1275,packageCount:6,evidenceStatus:"owner_reported",
+      priceCents:1275,packageCount:6,packageUnit:"case",evidenceStatus:"owner_reported",
       sourceKind:"supplier_quote",sourceUrl:"https://evil.example/click",
     }],truncated:false})]);
     const all=result.blocks.map(b=>"text" in b?b.text:"").join(" ");
     expect(all).toContain("Oat milk");
     expect(all).toContain("$12.75");
     expect(all).toContain("Recorded price");
+    expect(all).toContain("Package quantity: 6 case");
     expect(all).not.toMatch(/supplier Name|source Kind|internal-uuid|supplier_quote|evil.example/u);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0].identifier).toMatch(/^p3:read:[a-f0-9]{32}$/u);
@@ -67,6 +68,35 @@ describe("reviewed localized source presentation",()=>{
       expect(all).not.toMatch(/supplier Name|source Kind|supplier_quote|owner_reported|supplies\.quotes/u);
       expect(all).toContain(locale==="es"?"Proveedor":"المورد");
     }
+  });
+  it("labels each estimated expense entry and recurring bill in all supported languages",()=>{
+    const expense=read("money.expense_entries",[
+      {amountCents:2000,status:"estimated"},
+      {amountCents:1000,status:"actual"},
+    ]);
+    const recurring=read("money.recurring_bill_rows",[
+      {label:"Rent",amountCents:30000,isEstimate:true},
+    ]);
+    for(const locale of ["en","es","ar"] as const){
+      const estimated=present([expense],undefined,locale).blocks
+        .filter(b=>b.type==="text").map(b=>b.text).join(" ");
+      const bill=present([recurring],undefined,locale).blocks
+        .filter(b=>b.type==="text").map(b=>b.text).join(" ");
+      const expected=locale==="en"?"Estimated":locale==="es"?"Estimado":"تقديري";
+      expect(estimated).toContain(expected);
+      expect(bill).toContain(expected);
+      expect(estimated.split(expected)).toHaveLength(2);
+    }
+  });
+  it("keeps localized package units and never exposes raw enum values",()=>{
+    const quote=read("supplies.quotes",{items:[{
+      itemName:"Oat milk",supplierName:"Supplier",priceCents:1275,
+      packageCount:6,packageUnit:"gal",sourceKind:"supplier_quote",
+    }]});
+    const spanish=present([quote],undefined,"es").blocks
+      .filter(b=>b.type==="text").map(b=>b.text).join(" ");
+    expect(spanish).toContain("6 galón estadounidense");
+    expect(spanish).not.toContain("supplier_quote");
   });
   it("rejects foreign date, unavailable and unrequested records",()=>{
     const foreign=read("supplies.quotes",{items:[{itemName:"leak"}]},{provenance:{
