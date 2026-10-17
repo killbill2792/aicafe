@@ -245,6 +245,15 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     // A genuine network failure must not be retried-and-swallowed like malformed model output.
     expect(transport).toHaveBeenCalledTimes(1);
   });
+
+  it("still propagates a terminal provider failure status instead of persisting a false unavailable answer",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"failed",
+      usage:{input_tokens:5,output_tokens:5},output:[]})));
+    await expect(runSupervisorTurn({...base,text:"How should we handle the morning rush?"},transport))
+      .rejects.toMatchObject({category:"provider_http"});
+    // A terminal "failed"/"cancelled" generation must not be retried-and-swallowed either.
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
 });
 
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{

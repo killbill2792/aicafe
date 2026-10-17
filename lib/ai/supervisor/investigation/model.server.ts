@@ -45,8 +45,17 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       input.usage.inputTokens+=positive(raw.usage?.input_tokens);
       input.usage.outputTokens+=positive(raw.usage?.output_tokens);
       input.onUsage?.({...input.usage});
-      if(raw.status!=="completed"||!Array.isArray(raw.output))
+      // "incomplete" (e.g. hit the output-token limit) is a one-time model
+      // hiccup worth retrying. Any other non-"completed" status (failed,
+      // cancelled, ...) is a terminal provider-side failure, not a retryable
+      // output problem, and must propagate like a transport failure.
+      if(raw.status==="incomplete")
         throw new SupervisorStageError("provider_incomplete","provider_response");
+      if(raw.status!=="completed")
+        throw new SupervisorStageError("provider_http","provider_response",
+          {providerStatus:typeof raw.status==="string"?raw.status:undefined});
+      if(!Array.isArray(raw.output))
+        throw new SupervisorStageError("provider_invalid_payload","provider_response");
       const texts=raw.output.filter((i:{type?:unknown})=>i?.type==="message")
         .flatMap((i:{content?:Array<{type?:unknown;text?:unknown}>})=>i.content??[])
         .filter((p:{type?:unknown;text?:unknown})=>p?.type==="output_text"&&typeof p.text==="string")
