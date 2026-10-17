@@ -37,10 +37,21 @@ const simulateProvenanceSchema = z.strictObject({
   sourceRevision: z.string(), purpose: z.literal("pricing_simulate"),
   asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
+// reviewFromAtomicSnapshot prefixes each per-item quality signal with the
+// product name (up to 160 chars) plus ":" plus a reason string plus,
+// sometimes, ":" plus a 36-char ingredient UUID -- e.g.
+// "<name>:ingredient_price_freshness_unverified:<uuid>". The previous 80-char
+// cap was tight enough that a realistic product name alone could exceed it,
+// silently failing this whole result's output validation (the P2 registry
+// returns unavailable("invalid_result") on a schema mismatch, not an error)
+// and discarding an otherwise-good "partial" read. These strings are never
+// shown raw to the owner (only a generic "has missing inputs" signal is
+// derived from them), so a longer cap leaks nothing. Found while testing
+// this PR's unrelated completedSimulationClauses fix.
 const qualitySchema = z.strictObject({
-  missingInputs: z.array(z.string().max(80)).max(100),
-  estimatedInputs: z.array(z.string().max(80)).max(50),
-  staleInputs: z.array(z.string().max(80)).max(50),
+  missingInputs: z.array(z.string().max(260)).max(100),
+  estimatedInputs: z.array(z.string().max(260)).max(50),
+  staleInputs: z.array(z.string().max(260)).max(50),
 });
 export const alexP3ReviewOutputSchema = z.union([
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
@@ -193,7 +204,15 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         name: string; status: string; currentPriceCents: number | null;
         ingredientCostCents: number | null; currentRecommendationCents: number | null;
       }> };
-      const rows = value.items.filter(item => item.status === "ready").slice(0, MAX_ROWS).map(item => ({
+      // A real recipe-priced item is "partial" (not "ready") essentially always --
+      // evaluateItem marks any recorded ingredient price "freshness unverified",
+      // which alone makes status "partial". Filtering to literally "ready" only
+      // meant this capability silently returned no_ready_items for any real café
+      // with recipe-priced items -- found while testing this PR's unrelated
+      // completedSimulationClauses fix. "unavailable" (no price/cost data at all)
+      // is still excluded; "partial" is the normal, honestly-disclosed real case.
+      const rows = value.items.filter(item =>
+        item.status === "ready" || item.status === "partial").slice(0, MAX_ROWS).map(item => ({
         name: item.name, currentPriceCents: item.currentPriceCents,
         reviewIngredientCostCents: item.ingredientCostCents,
         currentRecommendationCents: item.currentRecommendationCents,

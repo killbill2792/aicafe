@@ -361,6 +361,60 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(JSON.stringify(reply.blocks)).not.toContain("unknown_capability");
   });
 
+  it("never treats Alex's plain pricing REVIEW (current, unchanged prices -- no owner " +
+    "hypothetical at all) as a completed simulation for a calculation-shaped clause", async () => {
+    const productId = avaId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [{ id: productId, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" }],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [{ menu_item_id: productId, ingredient_id: ingredientId, quantity: 200 }],
+        employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    // Phrased as a calculation (a hypothetical total revenue change), but the plan
+    // selector picks the plain review capability -- which only ever reads CURRENT,
+    // unchanged prices and cannot encode or satisfy this request at all.
+    const question = "What would my total menu revenue be if I raised every price by 10%?";
+    const requests: Array<Record<string, unknown>> = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      requests.push(body);
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.review.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_review" }), reason: null }] }) }] }]);
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    await runSupervisorTurn({ ...base, text: question }, transport);
+    const compositionRequest = requests.find(r =>
+      (r.text as { format?: { name?: string } } | undefined)?.format?.name === "p3_expression_plans");
+    const payload = JSON.parse(
+      (compositionRequest!.input as Array<{ content: string }>)[0].content,
+    ) as { readableSourceClauses: string[]; completedSimulationClauses: string[] };
+    // The review read succeeded, so the clause is a readable source...
+    expect(payload.readableSourceClauses).toContain(question);
+    // ...but it is NOT a completed simulation: the review never saw or applied the
+    // owner's requested 10% change, so presenting it as read_only would show an
+    // unchanged price list as if it answered the hypothetical. Caught in review
+    // (round 3 of PR #106).
+    expect(payload.completedSimulationClauses).not.toContain(question);
+  });
+
   it("a combined scheduling + pricing request preserves both goals in one reply", async () => {
     const scenario = {
       objective: "cash" as const, shifts: [], gaps: [{

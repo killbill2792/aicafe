@@ -10,10 +10,9 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope, type ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
-import { buildAlexP3Registrations,ALEX_P3_REVIEW_ID,ALEX_P3_WHATIF_ID } from
+import { buildAlexP3Registrations,ALEX_P3_WHATIF_ID } from
   "@/lib/pricing/alexP3Capabilities.server";
-import { buildOliviaP3Registrations,OLIVIA_P3_SCHEDULE_PREVIEW_ID } from
-  "@/lib/scheduling/oliviaP3Capabilities.server";
+import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
 import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
@@ -26,18 +25,21 @@ import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } fr
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
-// The ONLY registered "read" capabilities whose successful result is already
-// a complete, bounded, owner-parameterized simulation -- never a raw P1
-// catalog operand (a wage, a sales figure) that still needs the expression
-// engine for whatever arithmetic the owner actually asked for. Confirmed
-// exhaustive by reading each registration's own file; a raw P1 reader is
-// never added here even if its own read succeeds. Caught in review (round 2
-// of PR #106): conflating this with readableSourceClauses (any successful
-// read at all) would have told the model a plain operand read -- e.g. "sum
-// my wages" -- was already a complete answer.
-const COMPLETED_SIMULATION_CAPABILITY_IDS=new Set<string>([
-  ALEX_P3_REVIEW_ID,ALEX_P3_WHATIF_ID,OLIVIA_P3_SCHEDULE_PREVIEW_ID,
-]);
+// The ONLY registered "read" capability whose successful result is a
+// complete, bounded, OWNER-PARAMETERIZED simulation -- its result actually
+// depends on a hypothetical the owner supplied (a price delta, a target
+// margin), not merely a read of current state. Confirmed exhaustive by
+// reading every P3 registration: Alex's OWN review capability
+// (ALEX_P3_REVIEW_ID) takes only {purpose} and returns an unchanged current
+// price list, and Olivia's schedule PREVIEW (not what-if; that capability
+// isn't registered in P3 at all) takes only a week -- neither encodes or
+// proves satisfaction of any requested change, so neither belongs here even
+// though both are genuine P3 read capabilities. Caught in review (round 2
+// of PR #106, for conflating this with readableSourceClauses at all; round 3,
+// for over-including Alex's review and Olivia's preview here too -- a
+// calculation/change-shaped clause answered by either would otherwise be
+// told its unchanged current-state read already satisfies the request).
+const COMPLETED_SIMULATION_CAPABILITY_IDS=new Set<string>([ALEX_P3_WHATIF_ID]);
 const coverage=z.strictObject({
   complete:z.boolean(),
   plans:z.array(z.strictObject({
