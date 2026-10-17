@@ -60,27 +60,31 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       if(raw.status!=="completed")
         throw new SupervisorStageError("provider_http","provider_response",
           {providerStatus:typeof raw.status==="string"?raw.status:undefined});
-      // Every prior "wrong_text_shape" sighting in production has been identical in
-      // shape, down to the attempt/model-call pairing — evidence of one structural
-      // cause, not a flaky one. These tags are the OpenAI protocol's own fixed,
-      // documented item/part "type" enum values (e.g. "message", "reasoning",
-      // "output_text", "refusal"); they are never model-generated content, café
-      // data or owner text, so recording them (bounded, deduped) is safe and is the
-      // only way left to pinpoint the exact shape without ever reading the payload.
+      // Production evidence (the sub-classification tags added alongside this
+      // comment previously) showed a "message" item with one or more genuine
+      // "output_text" parts every time: the provider legitimately splits a long
+      // JSON answer across multiple output_text parts in the same message, which
+      // is valid Responses API shape, not malformed output. Concatenate them in
+      // order rather than requiring exactly one. These tags are the OpenAI
+      // protocol's own fixed, documented item/part "type" enum values (e.g.
+      // "message", "reasoning", "output_text", "refusal"); never model-generated
+      // content, café data or owner text, so recording them (bounded, deduped)
+      // is safe and is what pinpointed this exact shape without reading the payload.
       const outputIsArray=Array.isArray(raw.output);
       const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>}>=
         outputIsArray?raw.output:[];
       const messageParts=outputItems.filter(i=>i?.type==="message").flatMap(i=>i.content??[]);
       const texts=messageParts.filter((p):p is {type:unknown;text:string}=>
         p?.type==="output_text"&&typeof p.text==="string").map(p=>p.text);
-      if(!outputIsArray||texts.length!==1||texts[0].length>18000)
+      const text=texts.join("");
+      if(!outputIsArray||texts.length===0||text.length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"wrong_text_shape",
             outputItemTypes:outputItems.map(i=>i?.type) as string[],
             messagePartTypes:messageParts.map(p=>p?.type) as string[],
             outputTextPartCount:texts.length});
       let decoded:unknown;
-      try{decoded=JSON.parse(texts[0]);}
+      try{decoded=JSON.parse(text);}
       catch{throw new SupervisorStageError("provider_invalid_payload","provider_response",
         {invalidPayloadReason:"unparseable_json"});}
       const parsed=input.schema.safeParse(decoded);
