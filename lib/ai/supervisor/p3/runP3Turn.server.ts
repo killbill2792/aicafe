@@ -416,18 +416,18 @@ export async function tryP3SupervisorReadOnly(input:{
   // separate from canonical atomic financial/scheduling calculations.
   const presentedReads=presentRegisteredReads({
     evidence:shadow.evidence,
-    includedClauses:completion.plan.plans.filter(p=>p.planJson===null)
+    includedClauses:completion.plan.plans.filter(p=>p.planJson===null && p.reason==="unsupported")
       .flatMap(p=>p.coveredClauses),
     businessId:identity.businessId,asOf:identity.asOf,locale:input.locale,
   });
   const reasonText={
-    en:{unsupported:"The requested information is not supported by a registered read capability.",
+    en:{unsupported:"A registered capability cannot yet complete this requested outcome.",
       missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
       unsupported_action:"This action requires an authorized, separate approval workflow; nothing was changed."},
-    es:{unsupported:"No existe una capacidad de lectura registrada para esta información.",
+    es:{unsupported:"Ninguna capacidad registrada puede completar todavía este resultado.",
       missing_input:"Faltan registros o datos necesarios para un cálculo fiable.",
       unsupported_action:"Esta acción requiere un flujo separado de aprobación; no se ha cambiado nada."},
-    ar:{unsupported:"لا توجد قدرة قراءة مسجلة لهذه المعلومات.",
+    ar:{unsupported:"لا تستطيع القدرة المسجلة إكمال هذه النتيجة حاليًا.",
       missing_input:"البيانات أو السجلات المطلوبة ناقصة، ولا يمكن حساب نتيجة موثوقة.",
       unsupported_action:"يتطلب هذا الإجراء مسار موافقة منفصلًا؛ لم يتم تغيير أي شيء."},
   }[input.locale];
