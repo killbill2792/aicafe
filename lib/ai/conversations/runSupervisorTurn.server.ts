@@ -83,6 +83,14 @@ function missingMarginCoverage(goal:RequestedGoal,result:ToolEvidence|undefined,
   }
   const date=goal.period==="custom"&&goal.from?
     " ("+goal.from+(goal.to&&goal.to!==goal.from?" – "+goal.to:"")+")":"";
+  // Historical months can contain uploaded sales but the legacy profitability
+  // reader explicitly loads only the current month. This is a SOURCE CONTRACT
+  // limitation, not proof that the owner's historical data is absent.
+  if(categories.has("period"))return {
+    en:"Operating profit margin"+date+": this profitability reader cannot verify earlier months, even when sales were uploaded. Historical costs and coverage need a separate verified read.",
+    es:"Margen de beneficio operativo"+date+": este lector no puede verificar meses anteriores, aunque se hayan cargado ventas. Se requieren costos y cobertura históricos verificados.",
+    ar:"هامش الربح التشغيلي"+date+": لا يستطيع قارئ البيانات هذا التحقق من الأشهر السابقة حتى لو تم تحميل المبيعات. يلزم التحقق من التكاليف والتغطية التاريخية.",
+  }[locale];
   const causes=[...categories].map(k=>labels.items[k]);
   return labels.prefix+date+": "+labels.unavailable+
     (causes.length?"; "+labels.missing+" "+causes.join(", "):".");
