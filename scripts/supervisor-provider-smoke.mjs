@@ -12,6 +12,9 @@ const request=buildInvestigationRequest({model,name:"supervisor_investigation_st
   schema:INVESTIGATION_STEP_JSON_SCHEMA,
   instructions:"You are a café advisor. Return action answer, null capabilityId/argumentsJson and responseJson containing paragraphs [{kind:advice,text,citations:[]}]. Give qualitative general handoff advice, no invented café facts or numerical claims.",
   context:{ownerRequest:"How could a café improve shift handoffs?",locale:"en",observations:[],remainingOperations:0},
+  // Matches the production per-call cap (lib/ai/supervisor/investigation/model.server.ts)
+  // when the turn's full output-token budget is still available.
+  maxOutputTokens:6000,
 });
 try {
   const response=await fetch(SUPERVISOR_ENDPOINT,{
