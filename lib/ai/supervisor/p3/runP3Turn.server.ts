@@ -10,7 +10,7 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
-import { parseOwnerDateWindows } from "@/lib/ai/conversations/ownerDateIntent";
+import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
@@ -237,7 +237,9 @@ export async function tryP3SupervisorReadOnly(input:{
   // P3 scalar reads currently validate one contiguous owner date window.
   // Disjoint days belong to the registered multi-read Supervisor path; skip
   // P3 *before* spending a provider/read budget rather than widening dates.
-  if(parseOwnerDateWindows(input.text,input.asOf).length>1)return null;
+  const directDates=parseOwnerDateWindows(input.text,input.asOf);
+  const contextualDates=ownerDateWindowsFromContext(input.text,input.asOf,input.history);
+  if(contextualDates.length>1 || (!directDates.length && contextualDates.length))return null;
   const {tools,identity}=await authorizedOwnerP1();
   const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
     .split(",").map(id=>id.trim()).filter(Boolean);
