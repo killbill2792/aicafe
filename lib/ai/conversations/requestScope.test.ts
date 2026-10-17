@@ -54,7 +54,8 @@ describe("independent semantic scope correction and period coverage",()=>{
       .toEqual([costs,staff,menu,pricing]);
     expect(reconcileRequestScopes([costs,staff,menu],[costs,staff,menu,pricing],true,false))
       .toHaveLength(4);
-    expect(reconcileRequestScopes([costs,staff,menu],[staff,menu,pricing],true,false)).toBeNull();
+    expect(reconcileRequestScopes([costs,staff,menu],[staff,menu,pricing],true,false))
+      .toEqual([staff,menu,pricing,costs]);
     expect(reconcileRequestScopes([staff,menu,pricing],[costs,staff,menu,pricing],false,false)).toBeNull();
     expect(reconcileRequestScopes([staff,menu,pricing],[costs,staff,menu,pricing],true,true)).toBeNull();
   });
