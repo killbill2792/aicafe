@@ -231,4 +231,79 @@ describe("Alex atomic canonical review and scenarios",()=>{
       "ingredient_price_freshness_unverified:"+whole);
   });
 
+  it("uses atomic owner-entered totals when recipe rows are absent, including price-only what-ifs",()=>{
+    const old=snapshot();
+    const extended={...old,
+      sources:{...old.sources,ownerTotalCosts:[{
+        menu_item_id:id(5),cost_cents:105,status:"confirmed" as const,
+        source_type:"owner_manual" as const,source_label:"Owner cost for 12oz",
+        updated_at:"2026-10-16T16:00:00+00:00"}]},
+      truncated:{...old.truncated,ownerTotalCosts:false},
+    };
+    const selected=review({purpose:"pricing_review",selection:{kind:"specific",
+      items:[{productId:id(5)}]}});
+    const out=reviewFromAtomicSnapshot(extended,selected,day);
+    if(out.status==="unavailable")throw Error("owner cost review unavailable");
+    expect(out.value.ownerTotalFallbackCoverage).toBe("present_in_p1_atomic_snapshot");
+    expect(out.value.items[0]).toMatchObject({
+      productId:id(5),currentPriceCents:600,ingredientCostCents:105,
+      costSource:"owner_total",ownerTotalCostCents:105,
+      ownerTotalCostStatus:"confirmed",ownerTotalCostSource:"owner_manual",
+      recipeCostCents:null,ingredientContributionCents:495,
+      staleInputs:["owner_total_cost_freshness_unverified"],
+    });
+    const priceOnly=simulateFromAtomicSnapshot(extended,scenario({
+      purpose:"pricing_simulate",product:{productId:id(5)},changes:[],
+      sellingPrice:{kind:"delta",deltaCents:50},targetCostRatioBps:3000,
+    }),day);
+    if(priceOnly.status==="unavailable")throw Error("price-only scenario unavailable");
+    expect(priceOnly.value).toMatchObject({
+      priceDeltaCents:50,ingredientCostDeltaCents:0,
+      ingredientContributionDeltaCents:50,targetPriceCents:350,
+      before:{costSource:"owner_total",ingredientCostCents:105},
+      after:{costSource:"owner_total",ingredientCostCents:105,currentPriceCents:650},
+    });
+    expect(priceOnly.value.persisted).toBe(false);
+    expect(alexReviewOutputSchema.safeParse(out).success).toBe(true);
+    expect(alexSimulateOutputSchema.safeParse(priceOnly).success).toBe(true);
+    expect(JSON.stringify(extended.sources.ownerTotalCosts)).toContain("105");
+    // No invented ingredient breakdown: the total cannot answer milk quantity.
+    const invalid=simulateFromAtomicSnapshot(extended,scenario({
+      purpose:"pricing_simulate",product:{productId:id(5)},
+      changes:[{kind:"ingredient_unit_cost",ingredientId:whole,costPerBaseUnitMicros:500000}],
+    }),day);
+    expect(invalid).toMatchObject({status:"unavailable",
+      reason:"ingredient_scenario_requires_complete_priced_recipe"});
+    expect(reviewFromAtomicSnapshot(old,selected,day)).toMatchObject({
+      status:"partial",value:{ownerTotalFallbackCoverage:"not_in_p1_atomic_snapshot",
+        items:[{ingredientCostCents:null}]}});
+  });
+  it("preserves canonical recipe-first precedence and identifies estimated manual costs",()=>{
+    const base=snapshot();
+    const data={...base,sources:{...base.sources,ownerTotalCosts:[
+      {menu_item_id:id(1),cost_cents:180,status:"confirmed" as const,
+        source_type:"owner_manual" as const,source_label:null,
+        updated_at:"2026-10-16T00:00:00+00:00"},
+      {menu_item_id:id(7),cost_cents:220,status:"estimated" as const,
+        source_type:"imported" as const,source_label:"Seeded placeholder",
+        updated_at:"2026-10-16T00:00:00+00:00"},
+    ]},truncated:{...base.truncated,ownerTotalCosts:false}};
+    const input=review({purpose:"pricing_review",selection:{kind:"specific",
+      items:[{productId:id(1)},{productId:id(7)}]}});
+    const out=reviewFromAtomicSnapshot(data,input,day);
+    if(out.status==="unavailable")throw Error("no review");
+    expect(out.value.items[0]).toMatchObject({costSource:"recipe",
+      recipeCostCents:20,ownerTotalCostCents:180,costDifferenceCents:-160,
+      ingredientCostCents:20});
+    expect(out.value.items[1]).toMatchObject({costSource:"owner_total",
+      ingredientCostCents:220,ownerTotalCostStatus:"estimated",
+      ownerTotalCostSource:"imported",
+      estimatedInputs:["owner_total_cost_estimated"]});
+    expect(out.quality.estimatedInputs).toContain(
+      "Drink 7:owner_total_cost_estimated");
+    const incomplete={...data,truncated:{...data.truncated,ownerTotalCosts:true}};
+    expect(reviewFromAtomicSnapshot(incomplete,input,day))
+      .toMatchObject({status:"unavailable",reason:"source_truncated_or_unsupported_currency"});
+  });
+
 });
