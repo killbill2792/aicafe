@@ -82,6 +82,19 @@ export const ALEX_ASSUMPTION_CODES = [
   "owner_supplied_ingredient_cost_overrides_are_hypothetical",
   "no_target_selected_no_target_price",
 ] as const;
+// simulateFromAtomicSnapshot always emits these in the same fixed internal order (own cost
+// mechanics first), so the decision-critical caveat for an ingredient-only margin -- that it
+// excludes labor, fees, rent and demand -- always lands at index 2 or 3, never 0 or 1. The
+// output schema caps presented codes at 2, so picking by raw array position silently dropped
+// that caveat from every real result. Select by this priority instead. Caught in review (round 4).
+const ASSUMPTION_CODE_PRIORITY: readonly (typeof ALEX_ASSUMPTION_CODES)[number][] = [
+  "ingredient_only_excludes_labor_fees_rent_and_demand",
+  "owner_total_is_aggregate_not_ingredient_recipe",
+  "owner_supplied_ingredient_cost_overrides_are_hypothetical",
+  "no_target_selected_no_target_price",
+  "recorded_cost_freshness_not_proven",
+  "owner_hypothetical_not_recorded",
+];
 const smallText = z.string().trim().min(1).max(120);
 const uuid = z.string().uuid();
 const cents = z.number().int().safe().min(0).max(100_000_000);
@@ -214,15 +227,23 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         targetPriceCents: number | null; assumptions: unknown;
       };
       const knownCodes: readonly string[] = ALEX_ASSUMPTION_CODES;
-      const assumptionCodes = (Array.isArray(value.assumptions)
+      const presentCodes = new Set(Array.isArray(value.assumptions)
         ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))
-        : []).slice(0, 2) as (typeof ALEX_ASSUMPTION_CODES)[number][];
+        : []);
+      const assumptionCodes = ASSUMPTION_CODE_PRIORITY.filter(c => presentCodes.has(c)).slice(0, 2);
       return {
         status: "partial" as const, id: "alex.pricing.what_if" as const,
         value: [{
           name: value.name, priceDeltaCents: value.priceDeltaCents,
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
-          ingredientContributionDeltaCents: value.ingredientContributionDeltaCents,
+          // A target-only request (no sellingPrice) never actually applies the target as a
+          // hypothetical price -- simulateFromAtomicSnapshot leaves "after" identical to
+          // "before" -- so this is always exactly 0 and would misleadingly read as "no margin
+          // impact" next to a nonzero targetPriceCents. It's not a real zero, it's an
+          // unapplied scenario; null it instead of presenting a false zero. Caught in review
+          // (round 4).
+          ingredientContributionDeltaCents: input.sellingPrice === undefined
+            ? null : value.ingredientContributionDeltaCents,
           targetPriceCents: value.targetPriceCents,
           assumptionCodes,
         }],

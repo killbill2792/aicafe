@@ -71,14 +71,20 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     expect(registry.discover(scope).map(d => d.id)).toContain(ALEX_P3_WHATIF_ID);
   });
 
-  it("reuses Alex's real simulate() output with no new math, and presents a real block", async () => {
+  it("reuses Alex's real simulate() output with no new math, and presents a real block " +
+    "for a target-only scenario (no selling price applied)", async () => {
     mockSimulate.mockResolvedValue({
       status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
       provenance: simulateProvenance, quality,
       value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
-        before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: -20,
-        ingredientContributionDeltaCents: 70, targetPriceCents: 600, targetBasisPoints: 7000,
-        assumptions: ["ingredient_only_excludes_labor_fees_rent_and_demand", "recorded_cost_freshness_not_proven"],
+        before: {}, after: {}, priceDeltaCents: 0, ingredientCostDeltaCents: 0,
+        // simulateFromAtomicSnapshot never applies an unselected target as a hypothetical
+        // price, so this is always exactly 0 for a target-only request — a real result,
+        // in the exact real production order (own-cost caveats first, then the
+        // ingredient-only caveat), not the convenient order a prior version of this test used.
+        ingredientContributionDeltaCents: 0, targetPriceCents: 600, targetBasisPoints: 7000,
+        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven",
+          "ingredient_only_excludes_labor_fees_rent_and_demand"],
         persisted: false },
     });
     const [, whatIf] = buildAlexP3Registrations();
@@ -86,9 +92,11 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
       product: { exactName: "Oat Latte 16oz" }, changes: [],
       targetIngredientMarginBps: 7000 });
     expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if",
-      // The calculated outcome and the simulator's own caveats must survive the reshape,
-      // not just an echo of the requested target — both were real findings in review.
-      value: [expect.objectContaining({ ingredientContributionDeltaCents: 70,
+      // The unapplied-target zero must be nulled out (never presented as a real "no
+      // impact" result), and the decision-critical ingredient-only caveat must survive
+      // the 2-code cap even though it is NOT in the first two array positions — both were
+      // real findings in review (round 4).
+      value: [expect.objectContaining({ ingredientContributionDeltaCents: null,
         assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
           "recorded_cost_freshness_not_proven"] })] });
     expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
@@ -101,13 +109,39 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     });
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("$6.00"))).toBe(true);
-    expect(view.blocks.some(b => b.type === "text" && b.text.includes("$0.70"))).toBe(true);
+    // Never a misleading "Ingredient-only contribution change: $0.00" next to the nonzero
+    // target price — the field is omitted entirely, not shown as a false zero. (Price and
+    // ingredient-cost change are legitimately $0.00 here — nothing was actually applied —
+    // so only the contribution-change label itself is checked, not "$0.00" anywhere.)
+    const allTextForZeroCheck = view.blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
+    expect(allTextForZeroCheck).not.toContain("Ingredient-only contribution change");
     // The simulator's caveat is shown as localized plain language, never the raw internal
     // code — passing the raw code straight through to an owner (ES/AR included) was a real
     // finding in review.
     const allText = view.blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
     expect(allText).toContain("Ingredient cost only");
     expect(allText).not.toContain("ingredient_only_excludes_labor_fees_rent_and_demand");
+  });
+
+  it("keeps the real margin-impact number when a selling price is actually applied " +
+    "(not a target-only request)", async () => {
+    mockSimulate.mockResolvedValue({
+      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
+      provenance: simulateProvenance, quality,
+      value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
+        before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: 0,
+        ingredientContributionDeltaCents: 50, targetPriceCents: null, targetBasisPoints: null,
+        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven"],
+        persisted: false },
+    });
+    const [, whatIf] = buildAlexP3Registrations();
+    const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
+      product: { exactName: "Oat Latte 16oz" }, changes: [],
+      sellingPrice: { kind: "delta", deltaCents: 50 } });
+    // A real applied price change produces a real margin delta — it must NOT be nulled
+    // out the way an unapplied target-only delta is.
+    expect(raw).toMatchObject({ status: "partial",
+      value: [expect.objectContaining({ ingredientContributionDeltaCents: 50 })] });
   });
 
   it("rejects a no-op what-if (no selling price, no target) before it ever reaches the " +
