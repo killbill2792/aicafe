@@ -85,16 +85,33 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         messagePartTypes:["refusal"],outputTextPartCount:0}));
   });
 
-  it("counts multiple output_text parts instead of the required single part",async()=>{
+  it("counts a too-long concatenated text as wrong_text_shape even when every part parses alone",async()=>{
+    const longHalf="x".repeat(9001);
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",
-        content:[{type:"output_text",text:"{}"},{type:"output_text",text:"{}"}]}]})));
+        content:[{type:"output_text",text:longHalf},{type:"output_text",text:longHalf}]}]})));
     const onDiagnostic=vi.fn();
     await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
       model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
       {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["message"],
         messagePartTypes:["output_text"],outputTextPartCount:2}));
+  });
+
+  it("concatenates a JSON answer split across multiple output_text parts, in order, instead of rejecting it",async()=>{
+    // Production evidence: the Responses API legitimately splits a long structured
+    // answer across several output_text parts within the same message.
+    const whole=JSON.stringify({x:"reassembled answer"});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:whole.slice(0,10)},
+        {type:"output_text",text:whole.slice(10)},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+      context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toEqual({x:"reassembled answer"});
+    expect(onDiagnostic).not.toHaveBeenCalled();
   });
 
   it("reports unparseable_json for literally malformed JSON text",async()=>{
