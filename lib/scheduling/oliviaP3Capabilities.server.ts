@@ -91,15 +91,27 @@ const whatIfInputSchema = z.strictObject({
   objective: z.enum(["cash", "owner_time", "balanced"]).optional(),
 });
 const signedCents = z.number().int().min(-100_000_000).max(100_000_000).nullable();
+// Structured, not a pre-assembled English sentence: the presentation layer (which already
+// knows the owner's locale) renders each line through the EN/ES/AR catalogs. Building the
+// sentence here baked raw English ("unavailable", "all day", "capped at") into every
+// locale. Caught in review (PR #108, round 4).
+const overrideSummaryItem = z.strictObject({
+  kind: z.enum(["temporary_unavailable", "reduce_weekly_minutes", "reduce_daily_minutes"]),
+  employeeName: z.string().min(1).max(160),
+  localDate: whatIfDate.nullable(),
+  startLocal: wallTime.nullable(), endLocal: wallTime.nullable(),
+  maxWeeklyMinutes: z.number().int().min(0).max(10080).nullable(),
+  maxMinutes: z.number().int().min(0).max(1440).nullable(),
+});
 const whatIfRow = z.strictObject({
   name: z.string().min(1).max(160),
-  // One bounded, human-readable line per override (worker, date/window or minute cap --
-  // whichever the override kind actually carries) built directly from the SAME validated
-  // input the simulation ran on, not re-derived or guessed. Lets the owner catch capability
-  // selection emitting a valid-but-wrong parameter (e.g. 240 minutes instead of 120, the
-  // wrong day, the wrong window) the same way the date/name echo already lets them catch a
-  // wrong day or wrong worker. Caught in review (PR #108, round 3).
-  overridesSummary: z.array(z.string().min(1).max(160)).min(1).max(OLIVIA_P3_MAX_WHAT_IF_OVERRIDES),
+  // One structured entry per override (worker, date/window or minute cap -- whichever the
+  // override kind actually carries) built directly from the SAME validated input the
+  // simulation ran on, not re-derived or guessed. Lets the owner catch capability selection
+  // emitting a valid-but-wrong parameter (e.g. 240 minutes instead of 120, the wrong day,
+  // the wrong window) the same way the date/name echo already lets them catch a wrong day
+  // or wrong worker. Caught in review (PR #108, round 3).
+  overridesSummary: z.array(overrideSummaryItem).min(1).max(OLIVIA_P3_MAX_WHAT_IF_OVERRIDES),
   objective: z.enum(["cash", "owner_time", "balanced"]).nullable(),
   alternateStatus: z.enum(["feasible", "infeasible", "unproven"]),
   changed: z.boolean().nullable(),
@@ -278,19 +290,21 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
         if (!current || current.trim().toLowerCase() !== requestedName.toLowerCase())
           return { status: "unavailable" as const, value: null, reason: "source_changed" };
       }
-      // One bounded line per override, built from the SAME validated input the simulation
-      // ran on (worker, date/window or minute cap, whichever the override kind carries) --
-      // lets the owner catch capability selection emitting a valid-but-wrong parameter
-      // (wrong duration, wrong window, wrong day), the same way the resolved worker name
-      // below lets them catch a wrong worker. Caught in review (PR #108, rounds 2 and 3).
-      const overridesSummary = input.overrides.slice(0, OLIVIA_P3_MAX_WHAT_IF_OVERRIDES).map(o => {
-        if (o.kind === "temporary_unavailable")
-          return o.employeeName + " unavailable " + o.localDate +
-            (o.window ? " (" + o.window.startLocal + "–" + o.window.endLocal + ")" : " (all day)");
-        if (o.kind === "reduce_weekly_minutes")
-          return o.employeeName + " capped at " + o.maxWeeklyMinutes + " min/week";
-        return o.employeeName + " capped at " + o.maxMinutes + " min on " + o.localDate;
-      });
+      // One structured entry per override, built from the SAME validated input the
+      // simulation ran on (worker, date/window or minute cap, whichever the override kind
+      // carries) -- lets the owner catch capability selection emitting a valid-but-wrong
+      // parameter (wrong duration, wrong window, wrong day), the same way the resolved
+      // worker name lets them catch a wrong worker. The presentation layer renders this
+      // through the locale catalogs; no English prose is assembled here.
+      // Caught in review (PR #108, rounds 2, 3 and 4).
+      const overridesSummary = input.overrides.slice(0, OLIVIA_P3_MAX_WHAT_IF_OVERRIDES).map(o => ({
+        kind: o.kind, employeeName: o.employeeName,
+        localDate: o.kind === "reduce_weekly_minutes" ? null : o.localDate,
+        startLocal: o.kind === "temporary_unavailable" ? o.window?.startLocal ?? null : null,
+        endLocal: o.kind === "temporary_unavailable" ? o.window?.endLocal ?? null : null,
+        maxWeeklyMinutes: o.kind === "reduce_weekly_minutes" ? o.maxWeeklyMinutes : null,
+        maxMinutes: o.kind === "reduce_daily_minutes" ? o.maxMinutes : null,
+      }));
       const name = input.week;
       const legalReviewUnverified = [raw.baselineScenario, raw.alternateScenario]
         .some(s => s !== null && s.legalReview !== "verified_profile");

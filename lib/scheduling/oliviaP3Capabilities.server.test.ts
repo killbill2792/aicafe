@@ -289,7 +289,8 @@ describe("Olivia P3 schedule-what-if registration", () => {
     expect(raw).toMatchObject({
       status: "partial",
       value: [{ name: "2026-10-19", objective: "cash",
-        overridesSummary: ["Ava unavailable 2026-10-20 (09:00–12:00)"] }],
+        overridesSummary: [{ kind: "temporary_unavailable", employeeName: "Ava",
+          localDate: "2026-10-20", startLocal: "09:00", endLocal: "12:00" }] }],
     });
   });
 
@@ -307,7 +308,8 @@ describe("Olivia P3 schedule-what-if registration", () => {
     });
     expect(raw).toMatchObject({
       status: "partial",
-      value: [{ objective: null, overridesSummary: ["Ava capped at 120 min/week"] }],
+      value: [{ objective: null,
+        overridesSummary: [{ kind: "reduce_weekly_minutes", employeeName: "Ava", maxWeeklyMinutes: 120 }] }],
     });
   });
 
@@ -331,5 +333,55 @@ describe("Olivia P3 schedule-what-if registration", () => {
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("Schedule what-if"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("feasible"))).toBe(true);
     expect(view.evidence.length).toBeGreaterThan(0);
+  });
+
+  it("renders the override summary fully localized for a Spanish or Arabic owner, with no " +
+    "raw English words leaking through", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      return whatIfResult() as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+    });
+    for (const locale of ["es", "ar"] as const) {
+      const view = presentRegisteredReads({
+        evidence: [{ clause: "whatif", capabilityId: "p3." + "olivia.schedule.what_if" + ".v1",
+          status: "partial", result: raw as Record<string, unknown>, reason: null }],
+        includedClauses: ["whatif"], businessId: scope.businessId, asOf: scope.identity.asOf, locale,
+      });
+      const summaryLine = view.blocks.find(b => b.type === "text" && b.text.includes("Ava"));
+      expect(summaryLine).toBeDefined();
+      if (summaryLine?.type === "text") {
+        expect(summaryLine.text).not.toMatch(/\bunavailable\b/i);
+        expect(summaryLine.text).not.toMatch(/\ball day\b/i);
+      }
+    }
+  });
+
+  it("still shows the override summary for an employee name longer than the generic " +
+    "120-char presentation cutoff, as long as it is within the schema's own bound", async () => {
+    const longName = "A".repeat(130);
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: longName }]) as OliviaResponse;
+      return whatIfResult({ employeeNames: { "emp-1": longName } }) as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "reduce_weekly_minutes", employeeName: longName, maxWeeklyMinutes: 120 }],
+    });
+    const view = presentRegisteredReads({
+      evidence: [{ clause: "whatif", capabilityId: "p3." + "olivia.schedule.what_if" + ".v1",
+        status: "partial", result: raw as Record<string, unknown>, reason: null }],
+      includedClauses: ["whatif"], businessId: scope.businessId, asOf: scope.identity.asOf, locale: "en",
+    });
+    expect(view.blocks.some(b => b.type === "text" && b.text.includes(longName))).toBe(true);
   });
 });

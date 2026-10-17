@@ -159,6 +159,31 @@ const scheduleStatusLabels:Record<string,CatalogKey> = {
 const scheduleObjectiveLabels:Record<string,CatalogKey> = {
   cash:"objective_cash", owner_time:"objective_ownerTime", balanced:"objective_balanced",
 };
+// Longer than safeText's generic 120-char cutoff on purpose: the employee name alone is
+// allowed up to 160 chars by overrideSummaryItem's own schema, and safeText's cap silently
+// dropped a whole valid, in-bounds override line for a longer-but-real name. Caught in
+// review (PR #108, round 4).
+const safeOverrideName=(value:string):string|null=>{
+  const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
+  return text && text.length<=160 && !/https?:\/\/|www\./iu.test(text)?text:null;
+};
+/** Renders one structured override entry through the locale catalogs -- never pre-
+ * assembled English prose, so ES/AR owners see a fully localized line, not English
+ * fragments inside an otherwise-localized reply. Caught in review (PR #108, round 4). */
+function overrideSummaryLine(o:Record<string,unknown>,locale:Locale):string|null{
+  const name=typeof o.employeeName==="string"?safeOverrideName(o.employeeName):null;
+  if(!name)return null;
+  if(o.kind==="temporary_unavailable" && typeof o.localDate==="string"){
+    const window=typeof o.startLocal==="string" && typeof o.endLocal==="string"
+      ?" ("+o.startLocal+"–"+o.endLocal+")":" "+t(locale,"override_allDay");
+    return name+" "+t(locale,"override_unavailable")+" "+o.localDate+window;
+  }
+  if(o.kind==="reduce_weekly_minutes" && typeof o.maxWeeklyMinutes==="number")
+    return name+" "+t(locale,"override_cappedAt")+" "+o.maxWeeklyMinutes+" "+t(locale,"override_minPerWeek");
+  if(o.kind==="reduce_daily_minutes" && typeof o.maxMinutes==="number" && typeof o.localDate==="string")
+    return name+" "+t(locale,"override_cappedAt")+" "+o.maxMinutes+" "+t(locale,"override_minOn")+" "+o.localDate;
+  return null;
+}
 /** Exhaustive map of Alex's own enumerable what-if caveat codes (never free text — see
  * ALEX_ASSUMPTION_CODES in alexP3Capabilities.server.ts) to a localized plain-language string.
  * An unrecognized code is dropped, never shown as a raw internal value (caught in review). */
@@ -228,15 +253,16 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
     return typeof value==="string" && Object.hasOwn(scheduleObjectiveLabels,value)
       ?t(locale,fieldLabel[key])+": "+t(locale,scheduleObjectiveLabels[value]):null;
   }
-  // These are OUR OWN bounded, already-validated strings built server-side from the
-  // same inputs the simulation ran on (worker names from the trusted roster, dates/
-  // numbers from a schema-checked override) -- not raw external or DB content -- so
-  // safeText's generic sanitizing (strip control chars, collapse whitespace, cap
-  // length, reject URL-like text) is enough; no code->label mapping is needed.
+  // Structured entries, not pre-assembled English sentences: each line is rendered
+  // through the EN/ES/AR catalogs here, where the owner's locale is actually known.
+  // Only the employee name (owner-entered free text, up to 160 chars here) needs the
+  // generic control-char/URL sanitizer; it uses its OWN length bound (safeText's 120-char
+  // cutoff silently dropped a whole valid, in-bounds override line for a longer name).
+  // Caught in review (PR #108, round 4).
   if(key==="overridesSummary"){
     if(!Array.isArray(value)||!value.length)return null;
-    const lines=value.filter((v):v is string=>typeof v==="string")
-      .map(safeText).filter((x):x is string=>x!==null);
+    const lines=value.filter(isRecord).map(o=>overrideSummaryLine(o,locale))
+      .filter((x):x is string=>x!==null);
     return lines.length?t(locale,fieldLabel[key])+": "+lines.join("; "):null;
   }
   // Unlike costBasisEstimated (only shown when true), both true and false are
