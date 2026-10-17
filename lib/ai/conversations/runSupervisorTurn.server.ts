@@ -146,7 +146,12 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
           ar:"تكاليف العمل المعروفة"}[locale] : goalLabel(goal.domain,locale);
       const suffix=goal.domain==="total_business_costs"||goal.domain==="staff_cost"
         ? " — "+labels[goal.period] : "";
-      const primaryLabel=suffixByDomain[goal.domain] ? heading+suffix : primary.label;
+      // Only the EXACT canonical fact for this domain's known legacy tool earns
+      // the fixed heading. A different registered tool's own distinctly-labeled
+      // fact (e.g. Alex's "Products reviewed") must never be silently renamed
+      // to a legacy label describing a different measurement.
+      const canonicalSuffixMatch=(suffixByDomain[goal.domain]??[]).some(s=>primary.id.endsWith(s));
+      const primaryLabel=canonicalSuffixMatch ? heading+suffix : primary.label;
       chosen.push({...primary,label:primaryLabel});represented.add(primary.id);
     } else if(result.insights.length){
       supplementalTexts.push(goalLabel(goal.domain,locale)+": "+result.insights[0].text);

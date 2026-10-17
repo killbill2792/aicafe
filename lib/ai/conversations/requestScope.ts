@@ -123,7 +123,8 @@ export function coversRequestedGoal(goal:RequestedGoal,call:ReadCall):boolean {
     case "total_business_costs":return call.name==="get_financials" && a.metric==="total_business_costs" && datesMatch();
     case "staff_cost":return call.name==="get_staff" && a.view==="labor_cost" && datesMatch();
     case "menu_count":return call.name==="get_menu" && (a.view==="count"||a.view==="active_count");
-    case "pricing_review":return call.name==="get_pricing";
+    case "pricing_review":return call.name==="get_pricing" ||
+      call.name==="alex_pricing_review" || call.name==="alex_pricing_what_if";
     case "owner_profit":return call.name==="get_financials" && a.metric==="owner_profit" && datesMatch();
     case "monthly_bills":return call.name==="get_financials" && a.metric==="monthly_bills" && datesMatch();
     case "recorded_spending":return call.name==="get_financials" && a.metric==="recorded_spending" && datesMatch();
@@ -131,7 +132,8 @@ export function coversRequestedGoal(goal:RequestedGoal,call:ReadCall):boolean {
     case "distinct_products":return call.name==="get_sales" && a.metric==="distinct_products" && datesMatch();
     case "staffing":return call.name==="get_staff" && a.view==="current_staffing" && datesMatch();
     case "staff_attendance":return call.name==="get_staff" && a.view==="attendance" && datesMatch();
-    case "staff_schedule":return call.name==="get_staff" && a.view==="schedule" && datesMatch();
+    case "staff_schedule":return (call.name==="get_staff" && a.view==="schedule" && datesMatch()) ||
+      call.name==="olivia_schedule" || call.name==="olivia_availability";
     case "staff_coverage":return call.name==="get_staff" && a.view==="coverage_issues";
     case "team":return call.name==="get_team";
     case "break_even":return call.name==="get_financials" && a.metric==="break_even";

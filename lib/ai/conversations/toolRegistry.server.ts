@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { formatInTimeZone } from "date-fns-tz";
 import type { CafeState, CafeStatePeriod, KnownSlice } from "@/lib/operating/types";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { TeamRule } from "@/lib/ai/policies/contracts";
@@ -9,8 +10,37 @@ import { compareCompleteValues } from "./periodComparison";
 import { dateSelectionSchema, rangeExpectedDays, resolveCafeDateRange } from "./dateRange";
 import { requestScopeSchema } from "./requestScope";
 import { businessCostLimitations } from "@/lib/operating/businessCostMessages";
+import { executeOliviaReadCapability } from "@/lib/scheduling/oliviaCapabilities.server";
+import type { OliviaWhatIfOverride } from "@/lib/calc/scheduling/oliviaWhatIfOverlay";
+import { createP2Registry } from "@/lib/ai/supervisor/p2/registry";
+import { buildAlexPricingRegistrations, ALEX_REVIEW_ID, ALEX_SIMULATE_ID } from "@/lib/pricing/alexCapabilities.server";
+import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 
 const agent = z.enum(["all", "alex", "olivia", "maya", "leo"]);
+const oliviaOverride = z.strictObject({
+  kind: z.enum(["temporary_unavailable", "reduce_weekly_minutes", "reduce_daily_minutes"]),
+  employee_id: z.string().uuid(),
+  local_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  start_local: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+  end_local: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/).nullable(),
+  overnight: z.boolean().nullable(),
+  max_weekly_minutes: z.number().int().min(0).max(10080).nullable(),
+  max_minutes: z.number().int().min(0).max(1440).nullable(),
+});
+const alexChange = z.strictObject({
+  kind: z.enum(["ingredient_multiplier", "ingredient_unit_cost", "supplier_package",
+    "replace_ingredient", "set_quantity"]),
+  ingredient_id: z.string().uuid().nullable(),
+  from_ingredient_id: z.string().uuid().nullable(),
+  to_ingredient_id: z.string().uuid().nullable(),
+  multiplier_basis_points: z.number().int().min(0).max(100000).nullable(),
+  cost_per_base_unit_micros: z.number().int().min(0).max(100000000).nullable(),
+  package_cost_cents: z.number().int().min(0).max(100000000).nullable(),
+  package_count: z.number().int().min(1).max(1000000).nullable(),
+  package_unit: z.enum(["gal", "fl_oz", "ml", "g", "each"]).nullable(),
+  quantity_value: z.number().finite().positive().max(1000000).nullable(),
+  quantity_unit: z.enum(["g", "ml", "fl_oz", "each"]).nullable(),
+});
 const status = z.enum(["all", "needs_you", "handled", "watching"]);
 const date = dateSelectionSchema.shape;
 const schemas = {
@@ -49,6 +79,29 @@ const schemas = {
     comparison_period:date.period,comparison_from:date.from,comparison_to:date.to,
   }),
   conversation_control:z.strictObject({intent:z.enum(["greeting","clarification","unsupported"])}),
+  olivia_availability: z.strictObject({ employee_name: z.string().max(120).nullable() }),
+  olivia_schedule: z.strictObject({
+    action: z.enum(["preview", "what_if"]),
+    week: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    objective: z.enum(["cash", "owner_time", "balanced"]).nullable(),
+    overrides: z.array(oliviaOverride).max(20).nullable(),
+  }),
+  alex_pricing_review: z.strictObject({
+    selection: z.enum(["all_active", "specific_name", "specific_id"]),
+    product_name: z.string().max(120).nullable(),
+    product_id: z.string().uuid().nullable(),
+    offset: z.number().int().min(0).max(500),
+    limit: z.number().int().min(1).max(25),
+  }),
+  alex_pricing_what_if: z.strictObject({
+    product_name: z.string().max(120).nullable(),
+    product_id: z.string().uuid().nullable(),
+    changes: z.array(alexChange).max(20),
+    selling_price_delta_cents: z.number().int().min(-100000).max(100000).nullable(),
+    selling_price_replace_cents: z.number().int().min(0).max(100000000).nullable(),
+    target_cost_ratio_bps: z.number().int().min(1).max(10000).nullable(),
+    target_ingredient_margin_bps: z.number().int().min(0).max(9999).nullable(),
+  }),
 } as const;
 
 export type SupervisorToolName = keyof typeof schemas;
@@ -148,7 +201,9 @@ export function intentForCalls(names: SupervisorToolName[]): SupervisorIntent {
   const intents: Record<SupervisorToolName, SupervisorIntent> = { get_cafe_overview: "cafe_overview", get_sales: "sales_quantity", get_menu: "menu_catalog",
     get_financials: "profitability", get_staff: "staff", get_team: "operating_tasks", declare_request_scope:"unknown",
     get_pricing: "menu_pricing", get_owner_rules: "owner_rules",
-    compare_periods:"cafe_overview",conversation_control:"unknown" };
+    compare_periods:"cafe_overview",conversation_control:"unknown",
+    olivia_availability:"staff",olivia_schedule:"staff",
+    alex_pricing_review:"menu_pricing",alex_pricing_what_if:"menu_pricing" };
   return intents[unique[0]];
 }
 
@@ -157,6 +212,18 @@ export function createSupervisorToolRegistry(context: Context) {
   const { tools, asOf } = context;
   let statePromise: Promise<CafeState> | null = null;
   const state = () => statePromise ??= tools.getCafeSummary();
+  // Independently re-authenticates (never trusts context.tools' caller-chosen
+  // business/currency) and lazily builds the exact TrustedReadScope Alex's
+  // reviewed P2 registrations require. A fresh instance per turn; never shared
+  // across requests, never caller/model supplied.
+  let alexScopePromise: ReturnType<typeof authorizedOwnerP1> | null = null;
+  const alexScope = async () => {
+    const { tools: ownerTools, identity } = await (alexScopePromise ??= authorizedOwnerP1());
+    return { role: "owner" as const, businessId: identity.businessId,
+      identity: { ...identity }, tools: ownerTools, shadowEnabled: true as const };
+  };
+  const alexRegistry = createP2Registry(buildAlexPricingRegistrations());
+  const oliviaTime = (iso: string) => formatInTimeZone(new Date(iso), context.timezone, "EEE HH:mm");
   return async (call: SupervisorToolCall, index: number): Promise<ToolEvidence> => {
     // Metadata-only declaration is never a café reader, even if called directly.
     if(call.name==="declare_request_scope")throw new Error("Scope metadata is not a café read");
@@ -590,6 +657,268 @@ export function createSupervisorToolRegistry(context: Context) {
       }
       result.data={reviewReady:reviewReady.length,blocked:blocked.length,examined:candidates.length,
         evaluated:fullyEvaluated.size,noChange:keepPrice.length,newPrice:newPriceReady.length,reviewOnly:true};
+      return result;
+    }
+    if (call.name === "olivia_availability") {
+      const a = schemas.olivia_availability.parse(call.arguments);
+      const source = ref("olivia:availability:" + asOf, asOf, "staff_timecards");
+      const response = await executeOliviaReadCapability({ capability: "olivia.availability.read", version: 1 });
+      if (!response.ok) return absent("olivia:" + response.error.code);
+      if (response.capability !== "olivia.availability.read") return absent("oliviaInvalidRecord");
+      let employees = response.employees;
+      if (a.employee_name) employees = employees.filter(e => matchName(e.displayName, a.employee_name));
+      const result = quality({ available: true, value: employees,
+        quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] } },
+        [source], { employees: employees.map(e => ({ id: e.employeeId, name: e.displayName,
+          active: e.active, state: e.state })) });
+      addFact(result, prefix + "count", "Matching employees", employees.length, "count", source);
+      if (a.employee_name && employees.length > 1) {
+        result.status = "partial";
+        addInsight(result, prefix + "ambiguous",
+          "More than one employee matches \"" + a.employee_name + "\": " +
+          employees.map(e => e.displayName).join(", ") +
+          ". Ask the owner exactly which person they mean before scheduling around that name.", source);
+      } else if (!employees.length) {
+        result.status = "partial";
+        addInsight(result, prefix + "noMatch", a.employee_name
+          ? "No employee matches \"" + a.employee_name + "\"."
+          : "No employees are recorded.", source);
+      } else {
+        for (const [i, e] of employees.slice(0, 10).entries())
+          addInsight(result, prefix + "emp" + i, e.displayName + " — availability: " +
+            e.state.replaceAll("_", " ") + (e.active ? "" : " (inactive)"), source);
+      }
+      return result;
+    }
+    if (call.name === "olivia_schedule") {
+      const a = schemas.olivia_schedule.parse(call.arguments);
+      const monday = new Date(a.week + "T00:00:00Z");
+      if (Number.isNaN(monday.getTime()) || monday.toISOString().slice(0,10)!==a.week ||
+          monday.getUTCDay() !== 1) return absent("oliviaInvalidWeek");
+      const source = ref("olivia:schedule:" + a.action + ":" + a.week, asOf, "staff_timecards");
+      const options = a.objective ? { objective: a.objective } : {};
+      let response;
+      if (a.action === "preview") {
+        response = await executeOliviaReadCapability({
+          capability: "olivia.schedule.preview", version: 1, week: a.week, options });
+      } else {
+        if (!a.overrides?.length) return absent("oliviaWhatIfRequiresOverrides");
+        const mapped: (OliviaWhatIfOverride | null)[] = a.overrides.map(o => {
+          if (o.kind === "temporary_unavailable") {
+            if (!o.local_date) return null;
+            const hasWindow = o.start_local !== null && o.end_local !== null && o.overnight !== null;
+            return { kind: "temporary_unavailable", employeeId: o.employee_id, localDate: o.local_date,
+              ...(hasWindow ? { window: { startLocal: o.start_local as string,
+                endLocal: o.end_local as string, overnight: o.overnight as boolean } } : {}) };
+          }
+          if (o.kind === "reduce_weekly_minutes")
+            return o.max_weekly_minutes === null ? null :
+              { kind: "reduce_weekly_minutes", employeeId: o.employee_id, maxWeeklyMinutes: o.max_weekly_minutes };
+          if (!o.local_date || o.max_minutes === null) return null;
+          return { kind: "reduce_daily_minutes", employeeId: o.employee_id, localDate: o.local_date,
+            maxMinutes: o.max_minutes };
+        });
+        if (mapped.some(m => m === null)) return absent("oliviaInvalidOverride");
+        response = await executeOliviaReadCapability({
+          capability: "olivia.schedule.whatIf", version: 1, week: a.week,
+          overrides: mapped as OliviaWhatIfOverride[], options });
+      }
+      if (!response.ok) {
+        const result = absent("olivia:" + response.error.code);
+        for (const [i, b] of (response.blockers ?? []).slice(0, 5).entries())
+          addInsight(result, prefix + "blocker" + i, "Setup needed: " + b.code.replaceAll("_", " ") +
+            (b.employeeName ? " (" + b.employeeName + ")" : "") + ".", source);
+        return result;
+      }
+      const result = quality({ available: true, value: response,
+        quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] } }, [source], null);
+      const names = response.capability === "olivia.schedule.preview" ? response.employeeNames :
+        response.capability === "olivia.schedule.whatIf" ? response.employeeNames : {};
+      const shiftLine = (shift: { employeeId: string; startAt: string; endAt: string; pinned: boolean }) =>
+        (names[shift.employeeId] ?? "Employee") + ": " + oliviaTime(shift.startAt) + " to " +
+          formatInTimeZone(new Date(shift.endAt), context.timezone, "HH:mm") +
+          (shift.pinned ? " (already published)" : "");
+      if (response.capability === "olivia.schedule.preview") {
+        const scenario = response.selectedScenario;
+        result.data = { status: response.plan.status, employeeNames: names, locationNames: response.locationNames };
+        if (scenario) {
+          if (scenario.cost.costState !== "unavailable" && scenario.cost.loadedPayrollCents !== null)
+            addFact(result, prefix + "laborCost", "Loaded weekly labor cost", scenario.cost.loadedPayrollCents, "metric", source);
+          addFact(result, prefix + "gaps", "Uncovered coverage slots", scenario.gaps.length, "count", source);
+          addFact(result, prefix + "shifts", "Planned shifts", scenario.shifts.length, "count", source);
+          addFact(result, prefix + "ownerMinutes", "Owner minutes in this plan", scenario.ownerMinutes, "count", source);
+          for (const [i, shift] of scenario.shifts.slice(0, 15).entries())
+            addInsight(result, prefix + "shift" + i, shiftLine(shift), source);
+          for (const [i, gap] of scenario.gaps.slice(0, 8).entries())
+            addInsight(result, prefix + "gap" + i, "Uncovered: " + (response.locationNames[gap.locationId] ?? "location") +
+              " " + oliviaTime(gap.startAt) + "–" + formatInTimeZone(new Date(gap.endAt), context.timezone, "HH:mm") +
+              " (" + gap.reason.replaceAll("_", " ") + ")", source);
+          if (!scenario.completeCoverage) { result.status = "partial"; result.missingInputs.push("oliviaIncompleteCoverage"); }
+          if (scenario.cost.costState === "unavailable") { result.status = "partial"; result.missingInputs.push("oliviaWageUnknown"); }
+          if (scenario.legalReview === "unverified_profile")
+            addInsight(result, prefix + "legal", "Labor rules for this schedule are unverified; have them reviewed before publishing.", source);
+        } else {
+          result.status = "partial"; result.missingInputs.push("oliviaNoFeasibleScenario");
+          addInsight(result, prefix + "infeasible", "No feasible schedule could be produced for the requested objective.", source);
+        }
+        for (const [i, n] of response.notices.slice(0, 6).entries())
+          addInsight(result, prefix + "notice" + i, "Note: " + n.code.replaceAll("_", " ") +
+            (n.employeeName ? " (" + n.employeeName + ")" : "") + ".", source);
+        addInsight(result, prefix + "disposition", "This is a proposed schedule preview, not a saved or published schedule.", source);
+      } else if (response.capability === "olivia.schedule.whatIf") {
+        const { alternateScenario, comparison, alternateStatus } = response;
+        result.data = { comparison, baselineStatus: response.baselineStatus, alternateStatus, employeeNames: names };
+        if (comparison) {
+          addFact(result, prefix + "changed", "Schedule changed by this scenario", comparison.changed ? 1 : 0, "count", source);
+          addFact(result, prefix + "gapsDelta", "Change in uncovered slots", comparison.gapsDifference, "count", source);
+          if (comparison.cashWagesDifferenceCents !== null)
+            addFact(result, prefix + "costDelta", "Change in cash wages", comparison.cashWagesDifferenceCents, "metric", source);
+          addFact(result, prefix + "ownerMinutesDelta", "Change in owner minutes", comparison.ownerMinutesDifference, "count", source);
+        }
+        if (!comparison?.changed)
+          addInsight(result, prefix + "noEffect", "This hypothetical change does not affect the proposed schedule or its cost.", source);
+        if (alternateStatus === "infeasible")
+          addInsight(result, prefix + "infeasible", "With this change, the requested coverage cannot be fully met.", source);
+        else if (alternateStatus === "unproven")
+          addInsight(result, prefix + "unproven", "The effect of this change could not be fully proven within solver limits; treat this as inconclusive, not a confirmed result.", source);
+        if (alternateScenario) {
+          addFact(result, prefix + "altGaps", "Uncovered slots with this change", alternateScenario.gaps.length, "count", source);
+          for (const [i, shift] of alternateScenario.shifts.slice(0, 15).entries())
+            addInsight(result, prefix + "altShift" + i, shiftLine(shift), source);
+        }
+        addInsight(result, prefix + "disposition", "This is a hypothetical simulation only, not a saved or published schedule change.", source);
+      }
+      return result;
+    }
+    if (call.name === "alex_pricing_review") {
+      const a = schemas.alex_pricing_review.parse(call.arguments);
+      const selection = a.selection === "all_active"
+        ? { kind: "all_active" as const, offset: a.offset, limit: a.limit }
+        : a.selection === "specific_id" && a.product_id
+        ? { kind: "specific" as const, items: [{ productId: a.product_id }] }
+        : a.selection === "specific_name" && a.product_name
+        ? { kind: "specific" as const, items: [{ exactName: a.product_name }] }
+        : null;
+      if (!selection) return absent("alexInvalidSelection");
+      const source = ref("alex:review:" + asOf, asOf, "pricing_engine");
+      let raw: Awaited<ReturnType<typeof alexRegistry.invoke>>;
+      try {
+        const scope = await alexScope();
+        raw = await alexRegistry.invoke(scope, ALEX_REVIEW_ID, { purpose: "pricing_review", selection });
+      } catch { return absent("alexUnauthorized"); }
+      const data = raw as { status: string; value: unknown; reason?: string;
+        quality?: { missingInputs: string[]; estimatedInputs: string[]; staleInputs: string[] } };
+      if (data.status === "unavailable" || data.status === "conflict" || !data.value)
+        return absent("alex:" + (data.reason ?? data.status));
+      const value = data.value as { items: Array<{ productId: string | null; name: string;
+        status: string; currentPriceCents: number | null; ingredientCostCents: number | null;
+        ingredientCostRatioBps: number | null; ingredientContributionCents: number | null;
+        costSource: string | null; ownerTotalCostStatus: string | null;
+        missingInputs: string[]; staleInputs: string[] }>; totalSelected: number;
+        hasMore: boolean; omittedUnsupported: number };
+      const result: ToolEvidence = { status: data.status === "partial" ? "partial" :
+        (data.quality?.estimatedInputs.length ? "estimated" : "verified"),
+        coverage: {}, missingInputs: (data.quality?.missingInputs ?? []).slice(0, 12),
+        estimatedInputs: (data.quality?.estimatedInputs ?? []).slice(0, 12),
+        data: { items: value.items.map(it => ({ productId: it.productId, name: it.name, status: it.status })),
+          hasMore: value.hasMore, nextOffset: a.offset + value.items.length },
+        facts: [], tasks: [], insights: [], evidence: [source] };
+      addFact(result, prefix + "count", "Products reviewed", value.items.length, "count", source);
+      addFact(result, prefix + "total", "Matching products found", value.totalSelected, "count", source);
+      if (value.omittedUnsupported > 0)
+        addFact(result, prefix + "omitted", "Unsupported products omitted", value.omittedUnsupported, "count", source);
+      for (const [i, it] of value.items.slice(0, 15).entries()) {
+        if (it.status === "unavailable") {
+          addInsight(result, prefix + "item" + i, it.name + ": pricing data unavailable." +
+            (it.missingInputs.length ? " Missing: " + it.missingInputs.slice(0, 3).join(", ") + "." : ""), source);
+          continue;
+        }
+        const parts = [it.name];
+        if (it.currentPriceCents !== null) parts.push("price $" + (it.currentPriceCents / 100).toFixed(2));
+        if (it.ingredientCostCents !== null) parts.push("ingredient cost $" + (it.ingredientCostCents / 100).toFixed(2));
+        if (it.ingredientCostRatioBps !== null) parts.push("cost ratio " + (it.ingredientCostRatioBps / 100).toFixed(1) + "%");
+        if (it.ingredientContributionCents !== null)
+          parts.push("ingredient-only contribution $" + (it.ingredientContributionCents / 100).toFixed(2));
+        if (it.costSource === "owner_total")
+          parts.push("(owner-entered total cost, " + (it.ownerTotalCostStatus === "estimated" ? "estimated" : "confirmed") + ")");
+        if (it.status === "partial") {
+          const notes = [...it.missingInputs, ...it.staleInputs].slice(0, 2);
+          if (notes.length) parts.push("(partial: " + notes.join(", ") + ")");
+        }
+        addInsight(result, prefix + "item" + i, parts.join(" — ") + ".", source);
+      }
+      if (value.hasMore)
+        addInsight(result, prefix + "more", "More matching products exist beyond this page; ask to see the next page.", source);
+      return result;
+    }
+    if (call.name === "alex_pricing_what_if") {
+      const a = schemas.alex_pricing_what_if.parse(call.arguments);
+      const product = a.product_id ? { productId: a.product_id }
+        : a.product_name ? { exactName: a.product_name } : null;
+      if (!product) return absent("alexInvalidSelection");
+      const changes: (Record<string, unknown> | null)[] = a.changes.map(c => {
+        if (c.kind === "ingredient_multiplier")
+          return c.ingredient_id && c.multiplier_basis_points !== null
+            ? { kind: c.kind, ingredientId: c.ingredient_id, multiplierBasisPoints: c.multiplier_basis_points } : null;
+        if (c.kind === "ingredient_unit_cost")
+          return c.ingredient_id && c.cost_per_base_unit_micros !== null
+            ? { kind: c.kind, ingredientId: c.ingredient_id, costPerBaseUnitMicros: c.cost_per_base_unit_micros } : null;
+        if (c.kind === "supplier_package")
+          return c.ingredient_id && c.package_cost_cents !== null && c.package_count !== null && c.package_unit
+            ? { kind: c.kind, ingredientId: c.ingredient_id, packageCostCents: c.package_cost_cents,
+                packageCount: c.package_count, packageUnit: c.package_unit } : null;
+        if (c.kind === "replace_ingredient")
+          return c.from_ingredient_id && c.to_ingredient_id
+            ? { kind: c.kind, fromIngredientId: c.from_ingredient_id, toIngredientId: c.to_ingredient_id,
+                ...(c.quantity_value !== null && c.quantity_unit
+                  ? { quantity: { value: c.quantity_value, unit: c.quantity_unit } } : {}) } : null;
+        return c.ingredient_id && c.quantity_value !== null && c.quantity_unit
+          ? { kind: c.kind, ingredientId: c.ingredient_id,
+              quantity: { value: c.quantity_value, unit: c.quantity_unit } } : null;
+      });
+      if (!a.changes.length || changes.some(c => c === null)) return absent("alexInvalidChange");
+      if (a.target_cost_ratio_bps !== null && a.target_ingredient_margin_bps !== null)
+        return absent("alexInvalidTarget");
+      const sellingPrice = a.selling_price_delta_cents !== null
+        ? { kind: "delta" as const, deltaCents: a.selling_price_delta_cents }
+        : a.selling_price_replace_cents !== null
+        ? { kind: "replace" as const, priceCents: a.selling_price_replace_cents } : undefined;
+      const source = ref("alex:whatif:" + asOf, asOf, "pricing_engine");
+      let raw: Awaited<ReturnType<typeof alexRegistry.invokeSimulation>>;
+      try {
+        const scope = await alexScope();
+        raw = await alexRegistry.invokeSimulation(scope, ALEX_SIMULATE_ID, {
+          purpose: "pricing_simulate", product, changes,
+          ...(sellingPrice ? { sellingPrice } : {}),
+          ...(a.target_cost_ratio_bps !== null ? { targetCostRatioBps: a.target_cost_ratio_bps } : {}),
+          ...(a.target_ingredient_margin_bps !== null ? { targetIngredientMarginBps: a.target_ingredient_margin_bps } : {}),
+        }, { bindings: [], operands: [] });
+      } catch { return absent("alexUnauthorized"); }
+      const data = raw as { status: string; value: unknown; reason?: string };
+      if (data.status === "unavailable" || !data.value) return absent("alex:" + (data.reason ?? data.status));
+      const value = data.value as { name: string; before: { ingredientCostCents: number | null };
+        after: { ingredientCostCents: number | null }; priceDeltaCents: number | null;
+        ingredientCostDeltaCents: number | null; ingredientContributionDeltaCents: number | null;
+        targetPriceCents: number | null; assumptions: string[] };
+      const result: ToolEvidence = { status: data.status === "partial" ? "partial" : "estimated",
+        coverage: {}, missingInputs: [], estimatedInputs: ["hypotheticalScenario"],
+        data: { name: value.name, persisted: false }, facts: [], tasks: [], insights: [], evidence: [source] };
+      if (value.before.ingredientCostCents !== null)
+        addFact(result, prefix + "before", value.name + " current ingredient cost", value.before.ingredientCostCents, "metric", source);
+      if (value.after.ingredientCostCents !== null)
+        addFact(result, prefix + "after", value.name + " scenario ingredient cost", value.after.ingredientCostCents, "metric", source);
+      if (value.priceDeltaCents !== null)
+        addFact(result, prefix + "priceDelta", "Price change", value.priceDeltaCents, "metric", source);
+      if (value.ingredientCostDeltaCents !== null)
+        addFact(result, prefix + "costDelta", "Ingredient cost change", value.ingredientCostDeltaCents, "metric", source);
+      if (value.ingredientContributionDeltaCents !== null)
+        addFact(result, prefix + "contribDelta", "Ingredient-only contribution change", value.ingredientContributionDeltaCents, "metric", source);
+      if (value.targetPriceCents !== null)
+        addInsight(result, prefix + "target", "Conditional target price to hit the requested ratio: $" +
+          (value.targetPriceCents / 100).toFixed(2) + ".", source);
+      for (const [i, assumption] of value.assumptions.slice(0, 6).entries())
+        addInsight(result, prefix + "assumption" + i, assumption, source);
+      addInsight(result, prefix + "disposition", "This is a conditional what-if only; no price or recipe has been changed.", source);
       return result;
     }
     const a = schemas.get_owner_rules.parse(call.arguments);
