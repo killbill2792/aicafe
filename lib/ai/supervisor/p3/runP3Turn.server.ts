@@ -239,7 +239,12 @@ export async function tryP3SupervisorReadOnly(input:{
   // P3 *before* spending a provider/read budget rather than widening dates.
   const directDates=parseOwnerDateWindows(input.text,input.asOf);
   const contextualDates=ownerDateWindowsFromContext(input.text,input.asOf,input.history);
-  if(contextualDates.length>1 || (!directDates.length && contextualDates.length))return null;
+  // Existing P3 multi-clause ISO dates are already checked independently by
+  // verifiedReaderPeriods; only newer conversational month-name/deictic multi-
+  // day references need the legacy independent-date reader path.
+  const isoDates=[...input.text.matchAll(/(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)/gu)].length;
+  if((contextualDates.length>1 && isoDates===0) ||
+    (!directDates.length && contextualDates.length>0))return null;
   const {tools,identity}=await authorizedOwnerP1();
   const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
     .split(",").map(id=>id.trim()).filter(Boolean);
