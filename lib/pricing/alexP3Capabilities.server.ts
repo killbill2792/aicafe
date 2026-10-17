@@ -72,6 +72,16 @@ export const alexP3ReviewOutputSchema = z.union([
  * separate, future capability, not a shortcut to take here.
  */
 export const ALEX_P3_WHATIF_ID = "p3.alex.pricing.what_if.v1" as const;
+// The exact, exhaustive set simulateFromAtomicSnapshot (lib/pricing/alexPricing.ts) can emit —
+// confirmed by reading its one call site, not assumed. Any other string is never shown, never
+// silently passed through as English prose.
+export const ALEX_ASSUMPTION_CODES = [
+  "owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven",
+  "owner_total_is_aggregate_not_ingredient_recipe",
+  "ingredient_only_excludes_labor_fees_rent_and_demand",
+  "owner_supplied_ingredient_cost_overrides_are_hypothetical",
+  "no_target_selected_no_target_price",
+] as const;
 const smallText = z.string().trim().min(1).max(120);
 const uuid = z.string().uuid();
 const cents = z.number().int().safe().min(0).max(100_000_000);
@@ -108,12 +118,11 @@ const whatIfOutputSchema = z.union([
       // just an echo of the requested delta — dropping this was a real finding in review.
       ingredientContributionDeltaCents: z.number().int().safe().nullable(),
       targetPriceCents: z.number().int().safe().min(0).max(100_000_000).nullable(),
-      // Alex's simulator's own caveats (e.g. "ingredient-only, excludes labor/fees/rent",
-      // "cost freshness not proven") — dropping these was a real finding in review; a bare
-      // target/delta number reads as a full profitability price without them. Capped at
-      // 120 chars to match presentRegisteredReads' own safeText() limit, not re-truncated
-      // there (a longer string would be silently dropped, not shortened).
-      assumptionsSummary: z.string().max(120).nullable(),
+      // Alex's simulator's own caveats, as the exact enumerable codes it emits (see
+      // ALEX_ASSUMPTION_CODES) -- NOT raw/joined text. Passing raw English snake_case codes
+      // straight through was a real finding in review: unlocalized for ES/AR sessions. The
+      // shared presentation layer maps each known code to a localized string.
+      assumptionCodes: z.array(z.enum(ALEX_ASSUMPTION_CODES)).max(2),
     })).length(1),
     provenance: simulateProvenanceSchema, quality: qualitySchema,
   }),
@@ -204,9 +213,10 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         ingredientCostDeltaCents: number | null; ingredientContributionDeltaCents: number | null;
         targetPriceCents: number | null; assumptions: unknown;
       };
-      const assumptions = Array.isArray(value.assumptions)
-        ? value.assumptions.filter((a): a is string => typeof a === "string").slice(0, 2)
-        : [];
+      const knownCodes: readonly string[] = ALEX_ASSUMPTION_CODES;
+      const assumptionCodes = (Array.isArray(value.assumptions)
+        ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))
+        : []).slice(0, 2) as (typeof ALEX_ASSUMPTION_CODES)[number][];
       return {
         status: "partial" as const, id: "alex.pricing.what_if" as const,
         value: [{
@@ -214,7 +224,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
           ingredientContributionDeltaCents: value.ingredientContributionDeltaCents,
           targetPriceCents: value.targetPriceCents,
-          assumptionsSummary: assumptions.length ? assumptions.join("; ").slice(0, 120) : null,
+          assumptionCodes,
         }],
         provenance: raw.provenance as z.output<typeof simulateProvenanceSchema>,
         quality: raw.quality as z.output<typeof qualitySchema>,

@@ -89,7 +89,8 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
       // The calculated outcome and the simulator's own caveats must survive the reshape,
       // not just an echo of the requested target — both were real findings in review.
       value: [expect.objectContaining({ ingredientContributionDeltaCents: 70,
-        assumptionsSummary: expect.stringContaining("ingredient_only_excludes_labor_fees_rent_and_demand") })] });
+        assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
+          "recorded_cost_freshness_not_proven"] })] });
     expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
       product: { exactName: "Oat Latte 16oz" },
     }), undefined);
@@ -101,8 +102,12 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("$6.00"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("$0.70"))).toBe(true);
-    expect(view.blocks.some(b => b.type === "text" &&
-      b.text.includes("ingredient_only_excludes_labor_fees_rent_and_demand"))).toBe(true);
+    // The simulator's caveat is shown as localized plain language, never the raw internal
+    // code — passing the raw code straight through to an owner (ES/AR included) was a real
+    // finding in review.
+    const allText = view.blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
+    expect(allText).toContain("Ingredient cost only");
+    expect(allText).not.toContain("ingredient_only_excludes_labor_fees_rent_and_demand");
   });
 
   it("rejects a no-op what-if (no selling price, no target) before it ever reaches the " +
