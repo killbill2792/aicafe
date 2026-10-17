@@ -18,6 +18,15 @@ const dictionaries = {
   ar:arCatalog.SupervisorRegisteredRead,
 };
 const t=(locale:Locale,key:CatalogKey):string=>dictionaries[locale][key];
+export function registeredReadReason(locale:Locale,reason:
+  "unsupported"|"missing_input"|"unsupported_action"):string {
+  const names={
+    unsupported:"unsupportedOutcome",
+    missing_input:"missingInput",
+    unsupported_action:"unsupportedAction",
+  } as const satisfies Record<typeof reason,CatalogKey>;
+  return t(locale,names[reason]);
+}
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const packageUnitKeys = {
@@ -83,9 +92,16 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   // source's field-specific status instead. Recorded zero prices are retained.
   if(key==="priceCents" && id==="menu.catalog" && row.priceStatus!=="recorded")
     return null;
-  if(key==="ingredientsCentsToday" && row.costStatus!=="READY")return null;
+  if(key==="ingredientsCentsToday" &&
+    (row.costStatus!=="READY"||
+      !["recipe","owner_total"].includes(String(row.costSource))||
+      !["actual","estimated"].includes(String(row.costQuality))))return null;
   if((key==="wageAmountCents"||key==="defaultHourlyWageCents") &&
     row.wageKnown!==true)return null;
+  if(key==="defaultHourlyWageCents" && row.wagePeriod!=="hour")
+    return null;
+  if(key==="wageAmountCents" &&
+    !["hour","month","year"].includes(String(row.wagePeriod)))return null;
   if(typeof value==="string"){
     if(!["supplierName","itemName","name","label"].includes(key))return null;
     const text=safeText(value);
@@ -105,8 +121,20 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   const formatted=key.endsWith("Cents")
     ?new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(value/100)
     :new Intl.NumberFormat(locale).format(value);
-  const heading=key==="priceCents"&&id==="supplies.quotes"
+  let heading:CatalogKey=key==="priceCents"&&id==="supplies.quotes"
     ?"field_quotePriceCents":fieldLabel[key];
+  if(key==="ingredientsCentsToday"){
+    if(row.costSource==="owner_total")heading=row.costQuality==="estimated"
+      ?"field_ownerTotalCostEstimated":"field_ownerTotalCostRecorded";
+    else if(row.costQuality==="estimated")heading="field_ingredientsCentsEstimated";
+  }
+  if(key==="wageAmountCents"){
+    const period={
+      hour:"period_hour",month:"period_month",year:"period_year",
+    } as const satisfies Record<string,CatalogKey>;
+    return t(locale,heading)+" ("+
+      t(locale,period[row.wagePeriod as keyof typeof period])+"): "+formatted;
+  }
   return t(locale,heading)+": "+formatted;
 }
 function previews(id:string,value:unknown,locale:Locale,
