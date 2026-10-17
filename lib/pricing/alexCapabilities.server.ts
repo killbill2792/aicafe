@@ -49,7 +49,7 @@ async function withConsistentSnapshot<T>(
   // and silently excludes prices effective on the actual business date.
   const asOf=scope.identity.asOf;
   let day:string;
-  if(/^\\d{4}-\\d{2}-\\d{2}$/.test(asOf)){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(asOf)){
     const normalized=new Date(asOf+"T12:00:00Z");
     if(!Number.isFinite(normalized.getTime())||
       normalized.toISOString().slice(0,10)!==asOf)
@@ -58,7 +58,7 @@ async function withConsistentSnapshot<T>(
   }else{
     // Preserve explicit timestamp support in domain tests / future callers;
     // reject ambiguous local timestamps without a UTC offset.
-    if(!/T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$/.test(asOf))
+    if(!/T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(asOf))
       return {status:"denied",reason:"invalid_trusted_clock"};
     const now=new Date(asOf);
     if(!Number.isFinite(now.getTime()))
