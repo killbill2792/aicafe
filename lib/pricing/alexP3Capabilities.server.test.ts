@@ -1,13 +1,13 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
 const mockRead = vi.fn();
+const mockSimulate = vi.fn();
 vi.mock("./alexCapabilities.server", () => ({
-  buildAlexPricingRegistrations: () => [{ read: mockRead }, {}],
+  buildAlexPricingRegistrations: () => [{ read: mockRead }, { simulate: mockSimulate }],
 }));
-
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { createP2Registry } from "@/lib/ai/supervisor/p2/registry";
-import { buildAlexP3Registrations, ALEX_P3_REVIEW_ID } from "./alexP3Capabilities.server";
+import { buildAlexP3Registrations, ALEX_P3_REVIEW_ID, ALEX_P3_WHATIF_ID } from "./alexP3Capabilities.server";
 import { presentRegisteredReads } from "@/lib/ai/supervisor/p3/readEvidencePresentation";
 
 const scope = {
@@ -19,7 +19,7 @@ const provenance = { sourceId: "p1.authoritative_snapshot.v1", canonicalReaderId
   sourceRevision: "rev-1", purpose: "pricing_review", asOf: "2026-10-19" };
 const quality = { missingInputs: [], estimatedInputs: [], staleInputs: [] };
 
-beforeEach(() => { mockRead.mockReset(); });
+beforeEach(() => { mockRead.mockReset(); mockSimulate.mockReset(); });
 
 describe("Alex P3 pricing-review registration", () => {
   it("registers cleanly into the P2/P3 capability registry and is discoverable", () => {
@@ -58,5 +58,47 @@ describe("Alex P3 pricing-review registration", () => {
     const [registration] = buildAlexP3Registrations();
     const raw = await registration.read(scope, { purpose: "pricing_review" });
     expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "source_scope_mismatch" });
+  });
+});
+
+describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup needed)", () => {
+  it("registers cleanly into the P2/P3 capability registry and is discoverable", () => {
+    const [, whatIf] = buildAlexP3Registrations();
+    const registry = createP2Registry([whatIf]);
+    expect(registry.discover(scope).map(d => d.id)).toContain(ALEX_P3_WHATIF_ID);
+  });
+
+  it("reuses Alex's real simulate() output with no new math, and presents a real block", async () => {
+    mockSimulate.mockResolvedValue({
+      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0, provenance, quality,
+      value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
+        before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: -20,
+        ingredientContributionDeltaCents: 70, targetPriceCents: 600, targetBasisPoints: 7000,
+        assumptions: ["owner target margin"], persisted: false },
+    });
+    const [, whatIf] = buildAlexP3Registrations();
+    const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
+      product: { exactName: "Oat Latte 16oz" }, changes: [],
+      targetIngredientMarginBps: 7000 });
+    expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if" });
+    expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
+      product: { exactName: "Oat Latte 16oz" },
+    }), undefined);
+    const view = presentRegisteredReads({
+      evidence: [{ clause: "what if", capabilityId: ALEX_P3_WHATIF_ID, status: "partial",
+        result: raw as Record<string, unknown>, reason: null }],
+      includedClauses: ["what if"], businessId: scope.businessId, asOf: scope.identity.asOf, locale: "en",
+    });
+    expect(view.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
+    expect(view.blocks.some(b => b.type === "text" && b.text.includes("$6.00"))).toBe(true);
+  });
+
+  it("returns unavailable, never a fabricated scenario, when Alex's simulator denies it", async () => {
+    mockSimulate.mockResolvedValue({ status: "unavailable", mode: "simulate", proposal: null,
+      executedEffects: 0, reason: "ambiguous_product_name", value: null });
+    const [, whatIf] = buildAlexP3Registrations();
+    const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
+      product: { exactName: "Latte" }, changes: [] });
+    expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "ambiguous_product_name" });
   });
 });

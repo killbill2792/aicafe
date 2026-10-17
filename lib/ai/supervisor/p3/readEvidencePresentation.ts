@@ -13,7 +13,8 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "packageCount" | "name" | "label" | "amountCents" | "totalCents" |
   "defaultHourlyWageCents" | "wageAmountCents" | "ingredientsCentsToday" |
   "currentPriceCents" | "reviewIngredientCostCents" | "currentRecommendationCents" |
-  "loadedLaborCostCents" | "shiftCount";
+  "loadedLaborCostCents" | "shiftCount" |
+  "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -81,6 +82,10 @@ const sourcePresentation:Record<string,{
     heading:"source_olivia_schedule_preview",
     fields:["name","loadedLaborCostCents","shiftCount"],
   },
+  "alex.pricing.what_if":{
+    heading:"source_alex_pricing_what_if",
+    fields:["name","priceDeltaCents","ingredientCostDeltaCents","targetPriceCents"],
+  },
 };
 const fieldLabel:Record<PresentedField,CatalogKey> = {
   supplierName:"field_supplierName",itemName:"field_itemName",
@@ -95,6 +100,9 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   currentRecommendationCents:"field_currentRecommendationCents",
   loadedLaborCostCents:"field_loadedLaborCostCents",
   shiftCount:"field_shiftCount",
+  priceDeltaCents:"field_priceDeltaCents",
+  ingredientCostDeltaCents:"field_ingredientCostDeltaCents",
+  targetPriceCents:"field_targetPriceCents",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
