@@ -63,7 +63,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
     const found=insights.find(s=>s.id===id);
     if(!found) throw new Error("Unverified Supervisor insight reference");
     return found;
-  });
+  }).filter(insight=>!goals.length||executed.some((call,i)=>
+    goals.some(g=>coversRequestedGoal(g,call)) &&
+    results[i]?.insights.some(x=>x.id===insight.id)));
   const refs: EvidenceReference[] = [];
   for (const identifier of final.evidence_refs) {
     const found = availableRefs.find(x=>x.identifier===identifier);
