@@ -99,7 +99,10 @@ export function reconcileRequestScopesDetailed(declared:RequestedGoal[],audit:Re
     // A missing independent sub-goal is not proof the owner did not ask it.
     const conflict=missing.some(g=>initial.filter(x=>x.domain===g.domain).length===1 &&
       verified.filter(x=>x.domain===g.domain).length===1 &&
-      !isSnapshotGoal(g.domain));
+      !isSnapshotGoal(g.domain)) ||
+      // Two competing singleton classifications are not independent clauses.
+      (initial.length===1 && verified.length===1 &&
+        initial[0].domain!==verified[0].domain);
     if(conflict)return reject("semantic_conflict");
   }
   // Preserve the union of independently identified goals, with the same
