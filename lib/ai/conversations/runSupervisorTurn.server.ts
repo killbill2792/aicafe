@@ -39,6 +39,54 @@ function textFromResponse(output: unknown): string | null {
     .map(x=>x.text);
   return chunks.length === 1 ? chunks[0] : null;
 }
+/** Only category-level coverage labels are displayable. IDs, ingredient names,
+ * employee identifiers and raw source errors never escape into owner text. */
+function missingMarginCoverage(goal:RequestedGoal,result:ToolEvidence|undefined,
+  locale:"en"|"es"|"ar"):string {
+  const labels={
+    en:{prefix:"Operating profit margin",unavailable:"cannot be verified",
+      missing:"Missing or incomplete",items:{
+        period:"historical cost source for this period",
+        sales:"daily sales coverage",labor:"staff labor coverage",
+        ingredients:"ingredient costs and item-sales coverage",
+        fees:"payment-processing fees",expenses:"operating expense categories",
+        zero:"positive verified net sales",
+      }},
+    es:{prefix:"Margen de beneficio operativo",unavailable:"no se puede verificar",
+      missing:"Faltan datos completos de",items:{
+        period:"costos históricos para este período",
+        sales:"ventas diarias",labor:"costos laborales",
+        ingredients:"ingredientes y ventas por producto",
+        fees:"comisiones de pago",expenses:"gastos operativos",
+        zero:"ventas netas positivas verificadas",
+      }},
+    ar:{prefix:"هامش الربح التشغيلي",unavailable:"لا يمكن التحقق منه",
+      missing:"بيانات ناقصة عن",items:{
+        period:"التكاليف التاريخية لهذه الفترة",
+        sales:"المبيعات اليومية",labor:"تكاليف العمالة",
+        ingredients:"تكاليف المكونات ومبيعات المنتجات",
+        fees:"رسوم الدفع",expenses:"النفقات التشغيلية",
+        zero:"صافي مبيعات موجب ومؤكد",
+      }},
+  }[locale];
+  const categories=new Set<keyof typeof labels.items>();
+  for(const reason of result?.missingInputs??[]){
+    if(reason==="periodOutsideLoadedMonth")categories.add("period");
+    else if(reason.startsWith("salesCoverage:")||reason==="salesHistory")categories.add("sales");
+    else if(reason.startsWith("laborCoverage")||reason==="laborHistory")categories.add("labor");
+    else if(reason.startsWith("productCost:")||reason.startsWith("ingredient")||
+      reason==="itemSalesCoverage"||reason==="historicalIngredientCostCoverage")
+      categories.add("ingredients");
+    else if(reason.startsWith("cardFees:"))categories.add("fees");
+    else if(reason.startsWith("expense:"))categories.add("expenses");
+    else if(reason==="verifiedNonZeroNetSales")categories.add("zero");
+  }
+  const date=goal.period==="custom"&&goal.from?
+    " ("+goal.from+(goal.to&&goal.to!==goal.from?" – "+goal.to:"")+")":"";
+  const causes=[...categories].map(k=>labels.items[k]);
+  return labels.prefix+date+": "+labels.unavailable+
+    (causes.length?"; "+labels.missing+" "+causes.join(", "):".");
+}
 export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], names: SupervisorToolName[],
   locale: "en" | "es" | "ar" = "en", goals: RequestedGoal[] = [],
   executed: SupervisorToolCall[] = []):
@@ -136,7 +184,8 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       ?? result?.facts[0];
     if(!result || (result.status==="unavailable" && !primary) || !primary && !result.insights.length && !result.tasks.length){
       // Canonical business-cost coverage provides a specific, localized cause.
-      const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:null;
+      const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:
+        goal.domain==="profit_margin"?missingMarginCoverage(goal,result,locale):null;
       supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
       specificWarning=true;missingGoal=true;
       continue;
