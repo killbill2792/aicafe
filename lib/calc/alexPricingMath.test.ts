@@ -4,9 +4,9 @@ import { conditionalTargetPrice,ingredientOnlyEconomics,scaleMicrocents,
 
 describe("Alex ingredient-only integer-cent math",()=>{
   it("converts exact US gallons without treating ounces as grams",()=>{
-    expect(supplierPackageMicrocents(400,1,"gal","ml")).toBe(105670);
+    expect(supplierPackageMicrocents(400,1,"gal","ml")).toBe(105669);
     expect(supplierPackageMicrocents(400,1,"gal","g")).toBeNull();
-    expect(supplierPackageMicrocents(40,1,"fl_oz","ml")).toBe(135256);
+    expect(supplierPackageMicrocents(40,1,"fl_oz","ml")).toBe(1352562);
     expect(supplierPackageMicrocents(0,1,"gal","ml")).toBe(0);
     expect(supplierPackageMicrocents(-1,1,"gal","ml")).toBeNull();
     expect(supplierPackageMicrocents(400,0,"gal","ml")).toBeNull();
