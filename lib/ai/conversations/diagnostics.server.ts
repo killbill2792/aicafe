@@ -33,6 +33,9 @@ export type SupervisorDiagnostic = {
   groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence";
   legacyFallbackReason?:"p3_not_completed"|"p3_failed";
   requestName?:string;
+  invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
+  schemaIssuePath?:string;
+  schemaIssueCode?:string;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -92,6 +95,9 @@ export class SupervisorStageError extends Error {
   readonly round?:number;
   readonly attempt?:number;
   readonly timeout:boolean;
+  readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
+  readonly schemaIssuePath?:string;
+  readonly schemaIssueCode?:string;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -101,6 +107,10 @@ export class SupervisorStageError extends Error {
     this.providerErrorCode=safeProviderIdentifier(meta.providerErrorCode);
     this.providerRequestId=safeProviderIdentifier(meta.providerRequestId);
     this.round=meta.round;this.attempt=meta.attempt;this.timeout=meta.timeout===true;
+    this.invalidPayloadReason=["wrong_text_shape","unparseable_json","schema_mismatch"]
+      .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
+    this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
+    this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -142,6 +152,10 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           {legacyFallbackReason:d.legacyFallbackReason}:{}),
         ...(d.requestName && (investigationRequestNames as readonly string[]).includes(d.requestName)?
           {requestName:d.requestName}:{}),
+        ...(d.invalidPayloadReason && ["wrong_text_shape","unparseable_json","schema_mismatch"]
+          .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
+        ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
+        ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -162,6 +176,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     providerStatus:error.providerStatus,round:error.round,attempt:error.attempt,timeout:error.timeout,
     providerErrorType:error.providerErrorType,providerErrorCode:error.providerErrorCode,
     providerRequestId:error.providerRequestId,
+    invalidPayloadReason:error.invalidPayloadReason,
+    schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }
