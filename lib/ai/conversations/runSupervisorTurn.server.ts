@@ -186,7 +186,18 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       // Canonical business-cost coverage provides a specific, localized cause.
       const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:
         goal.domain==="profit_margin"?missingMarginCoverage(goal,result,locale):null;
-      supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
+      // Authenticated Olivia returns bounded typed setup blockers (e.g. no
+      // saved coverage or availability) even when a preview is unavailable.
+      // Do not discard those verified blockers and replace them with an
+      // unrelated generic request-for-dates clarification. These strings
+      // originate in the scheduling contract, never in model prose.
+      const scheduleBlockers=goal.domain==="staff_schedule" &&
+        executed[index]?.name==="olivia_schedule" && result?.status==="unavailable"
+        ? result.insights.filter(i=>i.id.endsWith(":blocker0") ||
+          /:blocker[1-4]$/.test(i.id)).slice(0,5).map(i=>i.text)
+        : [];
+      if(scheduleBlockers.length) supplementalTexts.push(...scheduleBlockers);
+      else supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
       specificWarning=true;missingGoal=true;
       continue;
     }
