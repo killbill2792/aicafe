@@ -17,6 +17,9 @@ const scope = {
 };
 const provenance = { sourceId: "p1.authoritative_snapshot.v1", canonicalReaderId: "alex.pricing.atomic_snapshot",
   sourceRevision: "rev-1", purpose: "pricing_review", asOf: "2026-10-19" };
+// simulate() echoes the INPUT purpose (pricing_simulate), never pricing_review — using the
+// wrong one here is exactly the bug a previous version of this file shipped (caught in review).
+const simulateProvenance = { ...provenance, purpose: "pricing_simulate" };
 const quality = { missingInputs: [], estimatedInputs: [], staleInputs: [] };
 
 beforeEach(() => { mockRead.mockReset(); mockSimulate.mockReset(); });
@@ -70,7 +73,8 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
 
   it("reuses Alex's real simulate() output with no new math, and presents a real block", async () => {
     mockSimulate.mockResolvedValue({
-      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0, provenance, quality,
+      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
+      provenance: simulateProvenance, quality,
       value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
         before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: -20,
         ingredientContributionDeltaCents: 70, targetPriceCents: 600, targetBasisPoints: 7000,
@@ -100,5 +104,35 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
       product: { exactName: "Latte" }, changes: [] });
     expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "ambiguous_product_name" });
+  });
+
+  it("the real registry.invoke() path accepts a successful simulate() result end to end " +
+    "(a wrong provenance.purpose here silently became 'invalid_result', not a thrown error — " +
+    "calling .read() directly, as the other tests do, could not have caught that)", async () => {
+    mockSimulate.mockResolvedValue({
+      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
+      provenance: simulateProvenance, quality,
+      value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
+        before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: -20,
+        ingredientContributionDeltaCents: 70, targetPriceCents: 600, targetBasisPoints: 7000,
+        assumptions: [], persisted: false },
+    });
+    const [, whatIf] = buildAlexP3Registrations();
+    const registry = createP2Registry([whatIf]);
+    const result = await registry.invoke(scope, ALEX_P3_WHATIF_ID, { purpose: "pricing_simulate",
+      product: { exactName: "Oat Latte 16oz" }, changes: [], targetIngredientMarginBps: 7000 });
+    expect(result).toMatchObject({ status: "partial", value: [{ name: "Oat Latte 16oz", targetPriceCents: 600 }] });
+  });
+
+  it("rejects an ingredient-substitution attempt at the schema level (no ingredient id the " +
+    "model could have legitimately supplied)", () => {
+    const [, whatIf] = buildAlexP3Registrations();
+    const registry = createP2Registry([whatIf]);
+    const discovered = registry.discover(scope).find(d => d.id === ALEX_P3_WHATIF_ID)!;
+    // changes is typed/advertised as an empty tuple — the model cannot populate an
+    // ingredient_multiplier/replace_ingredient/etc. entry even if it tried to.
+    expect(discovered.inputJsonSchema).toMatchObject({
+      properties: expect.objectContaining({ changes: expect.objectContaining({ maxItems: 0 }) }),
+    });
   });
 });

@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { buildAlexPricingRegistrations } from "./alexCapabilities.server";
-import { alexSimulateInputSchema, type AlexSimulateInput } from "./alexPricing";
+import type { AlexSimulateInput } from "./alexPricing";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
   "@/lib/ai/supervisor/p2/registry";
 
@@ -28,6 +28,15 @@ const provenanceSchema = z.strictObject({
   sourceRevision: z.string(), purpose: z.literal("pricing_review"),
   asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
+// Alex's real simulate() echoes the INPUT purpose into its own provenance
+// (pricing_simulate, not pricing_review) — a separate schema is required or
+// every real what-if result fails output validation. Caught in review.
+const simulateProvenanceSchema = z.strictObject({
+  sourceId: z.literal("p1.authoritative_snapshot.v1"),
+  canonicalReaderId: z.literal("alex.pricing.atomic_snapshot"),
+  sourceRevision: z.string(), purpose: z.literal("pricing_simulate"),
+  asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
 const qualitySchema = z.strictObject({
   missingInputs: z.array(z.string().max(80)).max(100),
   estimatedInputs: z.array(z.string().max(80)).max(50),
@@ -42,16 +51,42 @@ export const alexP3ReviewOutputSchema = z.union([
 ]);
 
 /**
- * Alex's pricing what-if: unlike Olivia's employee-specific what-if, this is
- * self-contained — the product is resolved by exact name (or id) in the SAME
- * call, with no prior lookup step. P3 selects and invokes each capability in
- * one pass per clause (it has no multi-round "look something up, then use the
- * result" loop like the legacy Supervisor tool loop does), so only a what-if
- * that can be fully resolved from the owner's words in one shot can be
- * registered here safely. A what-if that needs a prior read's result (e.g.
- * Olivia's employee-id resolution) is explicitly NOT registered — see PR notes.
+ * Alex's pricing TARGET what-if: a product resolved by exact name, scored
+ * against an owner-given cost ratio / ingredient margin / selling-price
+ * delta — e.g. "what should I charge for a 70% margin on the oat latte".
+ * Fully self-contained in one call: no prior lookup needed.
+ *
+ * Deliberately EXCLUDED: ingredient substitution/unit-cost/package-cost
+ * changes (Alex's own "replace oat milk with almond milk" scenario kind).
+ * `alexSimulateInputSchema`'s `changes[]` requires real ingredient UUIDs
+ * (`ingredientId`/`fromIngredientId`/`toIngredientId`) that only exist
+ * internally — the owner says "oat milk", never a UUID, and P3's one-shot
+ * capability selection has no prior-read step to resolve a name to one
+ * first (same limitation documented for Olivia's employee what-if). Letting
+ * the model attempt to populate those fields would mean either a guessed/
+ * fabricated ID (unsafe) or a silent `invalid_request` on exactly the
+ * scenario owners ask for most. `changes` is forced to an empty tuple below
+ * so this is impossible to misuse, not just undocumented. Caught in review
+ * (the first version of this file advertised ingredient changes as if they
+ * were reachable; they were not). Real ingredient-name resolution is a
+ * separate, future capability, not a shortcut to take here.
  */
 export const ALEX_P3_WHATIF_ID = "p3.alex.pricing.what_if.v1" as const;
+const smallText = z.string().trim().min(1).max(120);
+const uuid = z.string().uuid();
+const cents = z.number().int().safe().min(0).max(100_000_000);
+const whatIfInputSchema = z.strictObject({
+  purpose: z.literal("pricing_simulate"),
+  product: z.union([z.strictObject({ productId: uuid }), z.strictObject({ exactName: smallText })]),
+  changes: z.tuple([]),
+  sellingPrice: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("delta"), deltaCents: z.number().int().safe().min(-100000).max(100000) }),
+    z.strictObject({ kind: z.literal("replace"), priceCents: cents }),
+  ]).optional(),
+  targetCostRatioBps: z.number().int().min(1).max(10000).optional(),
+  targetIngredientMarginBps: z.number().int().min(0).max(9999).optional(),
+}).refine(x => x.targetCostRatioBps === undefined || x.targetIngredientMarginBps === undefined,
+  { message: "Select exactly one target ratio or ingredient-only margin" });
 const whatIfOutputSchema = z.union([
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
   z.strictObject({
@@ -64,7 +99,7 @@ const whatIfOutputSchema = z.union([
       ingredientCostDeltaCents: z.number().int().safe().nullable(),
       targetPriceCents: z.number().int().safe().min(0).max(100_000_000).nullable(),
     })).length(1),
-    provenance: provenanceSchema, quality: qualitySchema,
+    provenance: simulateProvenanceSchema, quality: qualitySchema,
   }),
 ]);
 
@@ -120,22 +155,25 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
   }, {
     id: ALEX_P3_WHATIF_ID, version: 1 as const, owner: "alex",
     mode: "read" as const, availability: "shadow" as const,
-    purpose: "Read-only ingredient substitution, ingredient-unit-cost or supplier-package-cost " +
-      "what-if for ONE named active product, using the existing reviewed Alex pricing simulator. " +
-      "Owner-defined cost/margin target only. Never writes a price or recipe.",
+    purpose: "Read-only target-margin/cost-ratio or selling-price-delta what-if for ONE named " +
+      "active product, using the existing reviewed Alex pricing simulator. No ingredient " +
+      "substitution or cost change (that needs an internal ingredient id the owner cannot supply " +
+      "by name yet). Owner-defined cost/margin target only. Never writes a price or recipe.",
     sourceIds: ["p1.authoritative_snapshot.v1"],
     canonicalReaderIds: ["alex.pricing.atomic_snapshot"],
     allowedPurposes: ["pricing_simulate"],
-    inputSchema: alexSimulateInputSchema, outputSchema: whatIfOutputSchema,
+    inputSchema: whatIfInputSchema, outputSchema: whatIfOutputSchema,
     schemaContract: {
       id: ALEX_P3_WHATIF_ID + ".v1", registrationId: ALEX_P3_WHATIF_ID, version: 1 as const,
-      inputSchemaFingerprint: schemaFingerprint(alexSimulateInputSchema),
+      inputSchemaFingerprint: schemaFingerprint(whatIfInputSchema),
       outputSchemaFingerprint: schemaFingerprint(whatIfOutputSchema),
     },
     requiredRole: "owner" as const, sensitivity: "financial" as const,
     budgets: { maxOperations: 1, timeoutMs: 10000, maxResultBytes: 20000, maxInputBytes: 10000, maxRangeDays: 365 },
     requiresApproval: false as const, effectPolicy: "deny" as const,
     async read(scope: TrustedReadScope, rawInput: unknown) {
+      // whatIfInputSchema is a narrower, no-ingredient-changes subset of AlexSimulateInput
+      // (changes forced to []); structurally compatible with what simulate() accepts.
       const input = rawInput as AlexSimulateInput;
       const raw = await alexSimulate.simulate?.(scope, input, undefined);
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
@@ -156,7 +194,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
           targetPriceCents: value.targetPriceCents,
         }],
-        provenance: raw.provenance as z.output<typeof provenanceSchema>,
+        provenance: raw.provenance as z.output<typeof simulateProvenanceSchema>,
         quality: raw.quality as z.output<typeof qualitySchema>,
       };
     },
