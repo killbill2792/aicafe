@@ -738,7 +738,11 @@ export async function runSupervisorTurn(input: {
         // An unsuccessful first legacy provider attempt after a charged P3
         // preflight must not initiate an extra retry. A successful completed
         // response still has the separately reserved scope-audit/final budget.
-        if(!retry||attempt===1||priorUsage.modelCallCount>0) throw classified;
+        // Only a clean, no-read P3 handoff may use its independently bounded
+        // legacy retry. Never retry a failed/integrity-rejected P3 or after
+        // P3 already consumed a café read.
+        if(!retry||attempt===1||
+          (priorUsage.modelCallCount>0&&!cleanP3Handoff)) throw classified;
       } finally {clearTimeout(timeout);}
     }
     if (!payload) throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:round+1});
