@@ -32,7 +32,10 @@ export type SupervisorDiagnostic = {
   reconciliationOutcome?:ScopeReconciliationOutcome;
   groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence";
   legacyFallbackReason?:"p3_not_completed"|"p3_failed";
+  requestName?:string;
 };
+const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
+  "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
 const stages:readonly SupervisorStage[]=[
   "conversation_auth","owner_message_persisted","cafe_tools_created","cafe_identity_loaded",
   "provider_request","provider_response","provider_fallback","semantic_plan",
@@ -137,6 +140,8 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           {groundedStatus:d.groundedStatus}:{}),
         ...(d.legacyFallbackReason && ["p3_not_completed","p3_failed"].includes(d.legacyFallbackReason)?
           {legacyFallbackReason:d.legacyFallbackReason}:{}),
+        ...(d.requestName && (investigationRequestNames as readonly string[]).includes(d.requestName)?
+          {requestName:d.requestName}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
