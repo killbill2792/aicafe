@@ -483,10 +483,15 @@ export async function runSupervisorTurn(input: {
   // cap still applies across both stages; neither stage is unbounded.
   const maxModelAttempts=priorUsage.modelCallCount+MAX_ROUNDS+1;
   const usage:SupervisorUsage={...priorUsage};
+  // A rejected/full P3 composition is not a license for new model attempts.
+  // Preserve the existing bounded fail-closed behavior for forged handles and
+  // cross-clause operand swaps. Only a genuinely unproductive, shorter P3
+  // preflight can fall through to the separate audited specialist loop.
+  const p3Exhausted=priorUsage.modelCallCount>=MAX_ROUNDS;
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
     ar:"يحتاج السيناريو إلى مدخلات موثوقة إضافية أو طلب جديد."};
-  if(usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
+  if(p3Exhausted||usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
     return {reply:{intent:"unknown",status:"unavailable",evidence:[],
       blocks:[{type:"warning",code:"SUPERVISOR_TURN_BUDGET",text:remaining[input.locale]}]},
       usage};
@@ -727,7 +732,10 @@ export async function runSupervisorTurn(input: {
           (classified.category==="provider_http"&&
             (classified.httpStatus===undefined||
             [408,409,429].includes(classified.httpStatus)||classified.httpStatus>=500));
-        if(!retry||attempt===1) throw classified;
+        // An unsuccessful first legacy provider attempt after a charged P3
+        // preflight must not initiate an extra retry. A successful completed
+        // response still has the separately reserved scope-audit/final budget.
+        if(!retry||attempt===1||priorUsage.modelCallCount>0) throw classified;
       } finally {clearTimeout(timeout);}
     }
     if (!payload) throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:round+1});
