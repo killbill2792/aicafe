@@ -1,6 +1,8 @@
+/** Compatibility-only regression suite. Default conversational runtime acceptance
+ * is in lib/ai/supervisor/investigation/runInvestigation.server.test.ts. */
 import {beforeAll,afterAll,beforeEach,afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {runSupervisorTurn as actualRunSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
+import {runLegacySupervisorTurn as actualRunSupervisorTurn,validateSupervisorFinal} from "./runSupervisorTurn.server";
 import type {RequestedGoal} from "./requestScope";
 import {parseSupervisorCalls} from "./toolRegistry.server";
 import {SupervisorStageError,createSupervisorDiagnosticLogger} from "./diagnostics.server";

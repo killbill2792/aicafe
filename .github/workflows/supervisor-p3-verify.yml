@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "lib/ai/supervisor/p3/**"
+      - "lib/ai/supervisor/investigation/**"
+      - "lib/ai/conversations/investigation*"
+      - "lib/calc/datasetAnalysis*"
       - ".github/workflows/supervisor-p3-verify.yml"
   workflow_dispatch:
 
@@ -26,11 +29,11 @@ jobs:
       - name: TypeScript strict
         run: npx tsc --noEmit
       - name: P3 source-bound expression tests
-        run: npx vitest run lib/ai/supervisor/p3
+        run: npx vitest run lib/ai/supervisor/p3 lib/ai/supervisor/investigation lib/calc/datasetAnalysis.test.ts
       - name: Existing Supervisor and P1/P2 security tests
         run: npx vitest run lib/ai/supervisor/p2 lib/metrics lib/ai/conversations
       - name: Changed-code lint
-        run: npx eslint lib/ai/supervisor/p3
+        run: npx eslint lib/ai/supervisor/p3 lib/ai/supervisor/investigation lib/calc/datasetAnalysis.ts
       - name: Production build without deployment
         run: npm run build
       - name: Whitespace

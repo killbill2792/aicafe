@@ -22,8 +22,12 @@ export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedS
     validated.blocks[0].code === "P3_CONDITIONAL" &&
     validated.blocks.some(b => b.type === "text") &&
     validated.blocks.every(b => b.type === "text" || b.type === "warning");
+  const sourceFreeAdvice=validated.status==="partial"&&validated.intent==="unknown"&&
+    validated.evidence.length===0&&validated.blocks[0]?.type==="warning"&&
+    validated.blocks[0].code==="SUPERVISOR_ADVICE"&&
+    validated.blocks.every(b=>b.type==="text"||b.type==="warning");
   if (!["insufficient_evidence","unavailable"].includes(validated.status) &&
-      validated.evidence.length === 0 && !sourceFreeP3) {
+      validated.evidence.length === 0 && !sourceFreeP3 && !sourceFreeAdvice) {
     throw new Error("Supervisor response requires trusted evidence");
   }
   if (["insufficient_evidence","unavailable"].includes(validated.status) &&

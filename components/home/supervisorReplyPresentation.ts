@@ -1,3 +1,6 @@
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import type { EvidenceReference, SupervisorReplyBlock } from "@/lib/ai/conversations/contracts";
 export type Locale="en"|"es"|"ar";
 export type FactBlock=Extract<SupervisorReplyBlock,{type:"metric"|"count"}>;
@@ -5,15 +8,15 @@ export type ReplyGroup={kind:"facts";blocks:FactBlock[]} | {kind:"single";block:
 const labels:Record<Locale,Record<EvidenceReference["source"],string>>={
   en:{cafe_state:"Café records",historical_rollups:"Sales records",
     staff_timecards:"Staff records",pricing_engine:"Menu pricing",operating_tasks:"AI Team",
-    owner_rules:"Owner rules",verified_external:"Verified external source"},
+    owner_rules:"Owner rules",unverified_external:en.SupervisorInvestigation.externalUnverified,verified_external:"Verified external source"},
   es:{cafe_state:"Registros del café",historical_rollups:"Registros de ventas",
     staff_timecards:"Registros del personal",pricing_engine:"Precios del menú",
     operating_tasks:"Equipo de IA",owner_rules:"Reglas del propietario",
-    verified_external:"Fuente externa verificada"},
+    unverified_external:es.SupervisorInvestigation.externalUnverified,verified_external:"Fuente externa verificada"},
   ar:{cafe_state:"سجلات المقهى",historical_rollups:"سجلات المبيعات",
     staff_timecards:"سجلات الموظفين",pricing_engine:"تسعير القائمة",
     operating_tasks:"فريق الذكاء الاصطناعي",owner_rules:"قواعد المالك",
-    verified_external:"مصدر خارجي موثوق"},
+    unverified_external:ar.SupervisorInvestigation.externalUnverified,verified_external:"مصدر خارجي موثوق"},
 };
 export function sourceLabel(source:EvidenceReference["source"],locale:Locale){
   return labels[locale][source];

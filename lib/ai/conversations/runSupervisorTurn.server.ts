@@ -1,3 +1,5 @@
+import {runInvestigationTurn} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
+import type {InvestigationMemory} from "./investigationMemory";
 import "server-only";
 import { z } from "zod";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
@@ -380,7 +382,7 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
 }
 
 /** Bounded Responses API multi-tool loop: up to three model rounds, five authorized read tools. */
-export async function runSupervisorTurn(input: {
+export async function runLegacySupervisorTurn(input: {
   text: string; locale:"en"|"es"|"ar"; asOf:string; cafeName:string; timezone:string;
   tools: BusinessScopedCafeTools; history: ConversationalTurn[];
   readRules: () => Promise<TeamRule[]>;
@@ -836,4 +838,16 @@ export async function runSupervisorTurn(input: {
     catch {throw new SupervisorStageError("final_output_validation","final_response_validation",{round:round+1});}
   }
   throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:MAX_ROUNDS});
+}
+
+/** Default owner entrypoint: iterative investigation, contextual follow-ups and
+ * natural evidence-grounded synthesis. No rollout flag or question router. The
+ * previous P3/legacy implementation remains exported for compatibility proof. */
+export async function runSupervisorTurn(
+  input:Parameters<typeof runLegacySupervisorTurn>[0] & {investigationMemory?:InvestigationMemory},
+  transport:Transport=fetch,
+):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
+  const apiKey=process.env.OPENAI_API_KEY;
+  if(!apiKey)throw new SupervisorStageError("provider_invalid_payload","provider_request");
+  return runInvestigationTurn({...input,apiKey,model:process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna"},transport);
 }

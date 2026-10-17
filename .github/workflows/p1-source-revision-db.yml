@@ -6,6 +6,8 @@ on:
       - "supabase/migrations/20261017000070_p1_authoritative_revisions.sql"
       - "supabase/migrations/20261017000071_p1_owner_total_cost_source.sql"
       - "scripts/test-p1-source-epochs.mjs"
+      - "scripts/test-supervisor-investigation-usage.mjs"
+      - "supabase/migrations/20261017000072_supervisor_investigation_usage.sql"
       - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.db.test.ts"
@@ -46,6 +48,10 @@ jobs:
         env:
           P1_DISPOSABLE_DB: "1"
         run: node scripts/test-p1-source-epochs.mjs
+      - name: Investigation usage budgets and service-only tenant accounting
+        env:
+          P1_DISPOSABLE_DB: "1"
+        run: node scripts/test-supervisor-investigation-usage.mjs
       - name: Validate real database JSON against strict P1 adapter schema
         env:
           P1_DISPOSABLE_DB: "1"
@@ -56,7 +62,7 @@ jobs:
           npm test
       - name: Lint and whitespace
         run: |
-          npx eslint scripts/test-p1-source-epochs.mjs
+          npx eslint scripts/test-p1-source-epochs.mjs scripts/test-supervisor-investigation-usage.mjs
           git diff --check origin/main...HEAD
       - name: Stop disposable Supabase
         if: always()

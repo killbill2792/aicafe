@@ -1894,5 +1894,18 @@
     "field_cashWagesDifferenceCents": "Change in modeled wages",
     "field_salaryAllocationIncluded": "Includes allocated salary equivalents; this is not verified incremental cash savings",
     "field_laborCostEstimated": "Labor costs include estimates"
+  },
+  "SupervisorInvestigation": {
+    "yes": "yes",
+    "no": "no",
+    "advice": "General guidance and suggested next steps; not a verified finding about your café.",
+    "conditional": "Conditional scenario using stated assumptions; not observed demand or verified profit.",
+    "partial": "Based on the cited records. Source coverage and scenario assumptions still apply.",
+    "research": "Public search snippets are unverified leads; listing dates, sizes and current prices need confirmation.",
+    "estimated": "Some source values include estimates.",
+    "unavailable": "I could not complete that investigation reliably. Please try again; your business records were not changed.",
+    "budget": "I reached the limit for this investigation. I can continue with the remaining part in a follow-up; no business changes were made.",
+    "externalUnverified": "Unverified public source",
+    "financialUnavailable": "Financial amounts are unavailable in this view; the scheduling details remain usable."
   }
 }
