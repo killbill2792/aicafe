@@ -28,7 +28,13 @@ export const oliviaWhatIfOverrideSchema = z.discriminatedUnion("kind", [
   z.object({kind:z.literal("temporary_unavailable"),employeeId:oliviaUuid,
     localDate:date,window:z.object({
       startLocal:wallTime,endLocal:wallTime,overnight:z.boolean(),
-    }).strict().optional()}).strict(),
+      // Mirrors the canonical DB invariant on staff_availability_exceptions
+      // (supabase/migrations/20261014000060_olivia_scheduling_foundation.sql):
+      // no zero-length window, and overnight iff the clock actually wraps.
+    }).strict().refine(w=>w.startLocal!==w.endLocal &&
+      w.overnight===(w.endLocal<w.startLocal),
+      "Window overnight flag must match the start/end ordering")
+      .optional()}).strict(),
   z.object({kind:z.literal("reduce_weekly_minutes"),employeeId:oliviaUuid,
     maxWeeklyMinutes:z.number().int().min(0).max(10080)}).strict(),
   z.object({kind:z.literal("reduce_daily_minutes"),employeeId:oliviaUuid,
@@ -287,6 +293,15 @@ export const oliviaWhatIfResponseSchema=header.extend({
   capability:z.literal("olivia.schedule.whatIf"),
   baselineScenario:oliviaScenarioSchema.nullable(),
   alternateScenario:oliviaScenarioSchema.nullable(),
+  // The selected scenario alone cannot distinguish a proven infeasible result
+  // from one the bounded solver merely failed to prove; a consumer must see
+  // each run's actual PlannerResult-level outcome before stating "impossible".
+  baselineStatus:oliviaPlanSchema.shape.status,
+  baselineProof:oliviaPlanSchema.shape.proof,
+  baselineWarnings:oliviaPlanSchema.shape.warnings,
+  alternateStatus:oliviaPlanSchema.shape.status,
+  alternateProof:oliviaPlanSchema.shape.proof,
+  alternateWarnings:oliviaPlanSchema.shape.warnings,
   comparison:oliviaWhatIfComparisonSchema.nullable(),
   overridesApplied:z.array(oliviaWhatIfOverrideSchema)
     .min(1).max(OLIVIA_MAX_WHAT_IF_OVERRIDES),

@@ -86,6 +86,42 @@ describe("olivia.schedule.whatIf", () => {
     expect(result.comparison?.changed).toBe(true);
     expect(result.disposition).toBe("hypothetical_simulation_only");
     expect(result.overridesApplied).toHaveLength(1);
+    expect(result.baselineStatus).toBe("feasible");
+    expect(result.baselineProof).toBe("complete_candidate_solution");
+    expect(result.alternateStatus).toBe("feasible");
+    expect(result.alternateProof).toBe("complete_candidate_solution");
+    expect(Array.isArray(result.baselineWarnings)).toBe(true);
+    expect(Array.isArray(result.alternateWarnings)).toBe(true);
+  });
+
+  it("exposes a genuinely infeasible alternate's status/proof instead of implying it merely wasn't proven", async () => {
+    const snapshot = loaded();
+    snapshot.input.employees = [employee(avaId, "Ava")];
+    m.loadOliviaWeekFromSavedStaff.mockResolvedValue(snapshot);
+    const result = await executeOliviaReadCapability(whatIf([
+      { kind: "temporary_unavailable", employeeId: avaId, localDate: monday },
+    ]));
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.capability !== "olivia.schedule.whatIf") throw new Error("unexpected");
+    expect(result.baselineStatus).toBe("feasible");
+    expect(result.alternateStatus).toBe("infeasible");
+    expect(result.alternateProof).toBe("required_slot_has_no_eligible_worker");
+    expect(result.alternateScenario?.gaps.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a zero-length or overnight-mismatched window before touching the trusted loader", async () => {
+    const zeroLength = await executeOliviaReadCapability(whatIf([
+      { kind: "temporary_unavailable", employeeId: avaId, localDate: monday,
+        window: { startLocal: "09:00", endLocal: "09:00", overnight: false } },
+    ]));
+    expect(zeroLength).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+
+    const mismatchedOvernight = await executeOliviaReadCapability(whatIf([
+      { kind: "temporary_unavailable", employeeId: avaId, localDate: monday,
+        window: { startLocal: "09:00", endLocal: "17:00", overnight: true } },
+    ]));
+    expect(mismatchedOvernight).toMatchObject({ ok: false, error: { code: "invalid_input" } });
+    expect(m.loadOliviaWeekFromSavedStaff).not.toHaveBeenCalled();
   });
 
   it("reports changed:false for an override with no observable effect", async () => {
