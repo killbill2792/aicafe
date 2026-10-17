@@ -1,6 +1,6 @@
 import "server-only";
 import { createP2Registry,schemaFingerprint,unavailable,type ReadRegistration,
-  type TrustedReadScope } from "@/lib/ai/supervisor/p2/registry";
+  type TrustedReadScope, type SimulateRegistration } from "@/lib/ai/supervisor/p2/registry";
 import { executeP1Authorized,outputFor } from "@/lib/metrics/p1Readers.server";
 import { registerExpressionSimulation } from "./simulateRegistration.server";
 import { inputFor,purposePolicies,readers,sourcePolicies,values,
@@ -45,6 +45,12 @@ export function buildP3P1Registrations():readonly ReadRegistration[] {
     };
   });
 }
-export const createP3ReadRegistry=()=>createP2Registry([
-  ...buildP3P1Registrations(),registerExpressionSimulation(),
+/** Domain modules own their descriptors and handlers. Shared P3 wiring only
+ * accepts statically imported, reviewed read/simulate registrations; never
+ * model-provided registration, effect mode, or independent specialist chat.
+ * Olivia and Alex are added here only AFTER their own PRs are merged.
+ */
+export type P3DomainRegistrations = readonly (ReadRegistration | SimulateRegistration)[];
+export const createP3ReadRegistry=(domains:P3DomainRegistrations=[])=>createP2Registry([
+  ...buildP3P1Registrations(),registerExpressionSimulation(),...domains,
 ]);
