@@ -40,3 +40,22 @@ it("preserves each validated comparison period without admitting a new one",()=>
   expect(matches({period:b},"Only actual entries",asOf,m,[...m.ownerStatements,"Only actual entries"])).toBe(true);
   expect(matches({period:{from:"2026-10-15",to:"2026-10-19"}},"Only actual entries",asOf,m,[...m.ownerStatements,"Only actual entries"])).toBe(false);
 });
+it.each(["Show expenses month to date","Gastos en lo que va del mes","المصاريف منذ بداية الشهر"])("replaces a previous day with an explicit relative period: %s",text=>{
+  const old={from:"2026-10-01",to:"2026-10-01"};
+  const m=memory({period:old});
+  expect(matches({period:{from:"2026-10-01",to:asOf}},text,asOf,m,[...m.ownerStatements,text])).toBe(true);
+  expect(matches({period:old},text,asOf,m,[...m.ownerStatements,text])).toBe(false);
+});
+it.each(["Use today instead","Usa hoy","استخدم اليوم"])("binds relative days to the replacement scheduling week: %s",text=>{
+  const m=memory({week:"2026-10-12"});
+  expect(matches({request:{week:oldWeek}},text,asOf,m,[...m.ownerStatements,text])).toBe(true);
+  expect(matches({request:{week:"2026-10-12"}},text,asOf,m,[...m.ownerStatements,text])).toBe(false);
+});
+it("retains the calendar guard when a full operation budget reads only catalogs",()=>{
+  const calendar=remembered({week:oldWeek});
+  const reads=rememberInvestigationReads([calendar],Array.from({length:5},(_,i)=>remembered({productId:String(i)})));
+  expect(reads).toHaveLength(5);
+  expect(reads).toContainEqual(calendar);
+  const m={...memory({week:oldWeek}),reads};
+  expect(matches({week:newWeek},"Change her hours",asOf,m,[...m.ownerStatements,"Change her hours"])).toBe(false);
+});

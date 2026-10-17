@@ -65,7 +65,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
     buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
     buildDatasetRegistration(datasets,identity.businessId),buildRecordsRegistration(()=>observations,identity.businessId),buildResearchRegistration(()=>[
-      ...ownerStatements,
+      input.text,
       ...observations.filter(o=>o.result.id==="business.profile").flatMap(o=>{
         const value=o.result.value;
         return record(value)&&Array.isArray(value.locations)?value.locations.filter(record)

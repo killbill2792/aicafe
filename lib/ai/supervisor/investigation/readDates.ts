@@ -1,4 +1,5 @@
 import {z} from "zod";
+import {resolveCafeDateRange,type DateSelection} from "@/lib/ai/conversations/dateRange";
 import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
 import type {InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek} from "@/lib/scheduling/whatIfOwnerDates";
@@ -24,9 +25,23 @@ function selector(input:unknown):TemporalSelector|null{
 function readSelector(read:ReadSelector):TemporalSelector|null{
   try{return selector(JSON.parse(read.inputJson));}catch{return null;}
 }
+// Calendar grammar reuses the canonical relative-date resolver; these are
+// constraints on selectors, never mappings from owner questions to tools.
+const relativePeriods:readonly [DateSelection["period"],RegExp][]=[
+  ["month_to_date",/\bmonth[ -]to[ -]date\b|\bthis month\b|en lo que va del mes|este mes|منذ بداية الشهر|هذا الشهر/iu],
+  ["previous_month",/\blast month\b|\bprevious month\b|mes pasado|الشهر الماضي/iu],
+  ["week_to_date",/\bweek[ -]to[ -]date\b|en lo que va de la semana|منذ بداية الأسبوع/iu],
+  ["previous_week",/\blast week\b|\bprevious week\b|semana pasada|الأسبوع الماضي/iu],
+  ["last_7_days",/\blast (?:7|seven) days\b|(?:últimos|ultimos) (?:7|siete) días|آخر 7 أيام/iu],
+  ["last_28_days",/\blast (?:28|twenty[ -]eight) days\b|(?:últimos|ultimos) 28 días|آخر 28 يوم/iu],
+  ["yesterday",/\b(?:yesterday|ayer)\b|أمس/iu],
+  ["today",/\b(?:today|hoy)\b|اليوم/iu],
+];
 function windows(text:string,asOf:string){
   const dates=parseOwnerDateWindows(text,asOf);
   if(dates.length)return dates;
+  const relative=relativePeriods.filter(([,pattern])=>pattern.test(text));
+  if(relative.length)return relative.map(([period])=>resolveCafeDateRange({period,from:null,to:null},asOf));
   const week=ownerScheduleWeek(text,asOf);
   return week?[{from:week,to:new Date(Date.parse(week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)}]:[];
 }
@@ -34,9 +49,16 @@ export function investigationReadDatesMatch(input:unknown,current:string,asOf:st
   memory:InvestigationMemory|undefined,ownerStatements:readonly string[]):boolean{
   const candidate=selector(input);
   if(!candidate)return true; // Inputs themselves still undergo registry schema validation.
-  const hasDate=(s:string)=>candidate.kind==="week"?hasOwnerScheduleDates(s,asOf):windows(s,asOf).length>0;
-  const matches=(s:string)=>candidate.kind==="week"?matchesOwnerScheduleDates(candidate,s,asOf):
-    windows(s,asOf).some(w=>w.from===candidate.from&&w.to===candidate.to);
+  const hasDate=(s:string)=>windows(s,asOf).length>0||candidate.kind==="week"&&hasOwnerScheduleDates(s,asOf);
+  const matches=(s:string)=>{
+    if(candidate.kind==="period")return windows(s,asOf).some(w=>w.from===candidate.from&&w.to===candidate.to);
+    if(hasOwnerScheduleDates(s,asOf))return matchesOwnerScheduleDates(candidate,s,asOf);
+    const ranges=windows(s,asOf);
+    const dates=candidate.overrides.flatMap(o=>"localDate" in o&&typeof o.localDate==="string"?[o.localDate]:[]);
+    const end=new Date(Date.parse(candidate.week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10);
+    return dates.length?dates.every(d=>d>=candidate.week&&d<=end&&ranges.some(w=>d>=w.from&&d<=w.to)):
+      ranges.every(w=>w.from>=candidate.week&&w.to<=end);
+  };
   if(hasDate(current))return matches(current);
   // New owner turns after the persisted reply may have failed before saving
   // memory. Their explicit replacement date still supersedes older selectors.
@@ -61,5 +83,8 @@ export function rememberInvestigationReads(previous:readonly ReadSelector[],curr
   for(const read of [...kept,...current]){
     const key=JSON.stringify([read.capabilityId,read.inputJson]);unique.delete(key);unique.set(key,read);
   }
-  return [...unique.values()].slice(-5);
+  const reads=[...unique.values()];
+  // Calendar guards take priority over navigational catalog hints when bounded
+  // memory fills; a full turn of catalog reads must not erase its date scope.
+  return [...reads.filter(r=>!readSelector(r)),...reads.filter(r=>readSelector(r))].slice(-5);
 }

@@ -27,8 +27,9 @@ export function buildResearchRegistration(publicContext:()=>string=()=>""):ReadR
     async read(scope,raw){
       if(!researchEnabled())return {status:"unavailable",value:null,reason:"research_not_connected"};
       const input=inputSchema.parse(raw);
-      // Outbound queries may use only owner-authored/public profile words,
-      // never private numeric/person data learned from financial/staff tools.
+      // Outbound queries may use only the current research request and approved
+      // public location fields, never prior owner statements/thread memory or
+      // private numeric/person data learned from financial/staff tools.
       const words=(v:string)=>v.normalize("NFKC").toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu)??[];
       const allowed=new Set(words(publicContext()+" cafe café coffee menu price prices competitor competitors nearby supplier suppliers public research location café precios competidores proveedores قائمة أسعار مقهى منافسين موردين"));
       if(words(input.query).some(w=>!allowed.has(w)))

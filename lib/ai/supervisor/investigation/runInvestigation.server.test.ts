@@ -378,3 +378,18 @@ it("preserves validated finance periods across follow-ups and allows an explicit
   expect(p1.mock.calls[0][2]).toMatchObject({period:newPeriod});
   expect(JSON.stringify(replacement.reply.investigationMemory?.reads)).not.toContain("2026-10-01");
 });
+
+it.each([
+  ["Sophie earns 1800", "Sophie 1800 supplier prices"],
+  ["Our bank balance is 19437", "bank balance 19437 supplier prices"],
+])("keeps prior private owner context out of public research: %s",async(previous,queryText)=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices.",
+    history:[{role:"owner",text:previous}],investigationMemory:{version:1,businessId:cafe,ownerStatements:[previous],reads:[]}},
+    transportFor([
+      read("p3.public.research.v1",{purpose:"public_market_research",query:queryText}),
+      answer([{kind:"advice",text:"Public supplier research must exclude private conversation details. I can compare publicly available supplier menus.",citations:[]}])],
+    (context,step)=>{if(step===1)expect(JSON.stringify(context.observations)).toContain("research_query_contains_unapproved_terms");}));
+  expect(researchPublicSources).not.toHaveBeenCalled();
+  expect(result.reply.evidence).toEqual([]);
+});
