@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alignGoalsToOwnerDates, parseOwnerDateWindows } from "./ownerDateIntent";
+import { alignGoalsToOwnerDates, ownerDateWindowsFromContext, parseOwnerDateWindows } from "./ownerDateIntent";
 import { coversRequestedGoal, reconcileRequestScopes, type RequestedGoal } from "./requestScope";
 
 const asOf="2026-10-16";
@@ -57,6 +57,22 @@ describe("Owner-written café-local dates are independent of model-selected tool
     expect(parseOwnerDateWindows("February 30",asOf)).toEqual([]);
     expect(parseOwnerDateWindows("February 28, 2025",asOf))
       .toEqual([{from:"2025-02-28",to:"2025-02-28"}]);
+  });
+  it("resolves a comparison follow-up from prior owner dates but not generated facts",()=>{
+    const history=[
+      {role:"owner",text:"How did we do on August 22 and September 4?"},
+      {role:"supervisor",text:"Those two days have recorded results."},
+    ];
+    const question="Compare how much money I kept on those two days.";
+    expect(ownerDateWindowsFromContext(question,asOf,history)).toHaveLength(2);
+    const comparison=alignGoalsToOwnerDates([goal("comparison")],question,asOf,history)[0];
+    expect(comparison).toMatchObject({
+      period:"custom",from:"2026-09-04",to:"2026-09-04",
+      comparison_period:"custom",comparison_from:"2026-08-22",comparison_to:"2026-08-22",
+    });
+    expect(ownerDateWindowsFromContext("What about my team?",asOf,history)).toEqual([]);
+    expect(ownerDateWindowsFromContext(question,asOf,
+      [{role:"supervisor",text:"August 22 and September 4"}])).toEqual([]);
   });
   it("preserves unrelated snapshot and mixed-domain goals",()=>{
     const goals=alignGoalsToOwnerDates([goal("profit_margin"),goal("team")],
