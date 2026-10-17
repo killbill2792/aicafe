@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Check, Trash2 } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
@@ -32,17 +32,21 @@ type Labels = {
 export default function AggregateProductCostEditor({ items, labels }: { items: MenuItemForEdit[]; labels: Labels }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents == null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])),
-  );
+  // Drafts are scoped to the server-provided value they were based on.
+  // When router.refresh supplies a new saved cost, the old draft is ignored
+  // automatically without synchronously setting state in a React effect.
+  const [drafts, setDrafts] = useState<Record<string, { baseline: string; value: string }>>({});
   const [message, setMessage] = useState<{ id: string; text: string; good: boolean } | null>(null);
-
-  useEffect(() => {
-    setValues(Object.fromEntries(items.map((item) => [item.id, item.ownerTotalCostCents == null ? "" : (item.ownerTotalCostCents / 100).toFixed(2)])));
-  }, [items]);
+  const baseline = (item: MenuItemForEdit) =>
+    item.ownerTotalCostCents == null ? "" : (item.ownerTotalCostCents / 100).toFixed(2);
+  const currentValue = (item: MenuItemForEdit) => {
+    const base = baseline(item);
+    const draft = drafts[item.id];
+    return draft?.baseline === base ? draft.value : base;
+  };
 
   function save(item: MenuItemForEdit) {
-    const dollars = Number(values[item.id]);
+    const dollars = Number(currentValue(item));
     const cents = Math.round(dollars * 100);
     if (!Number.isFinite(dollars) || cents <= 0) {
       setMessage({ id: item.id, text: labels.invalid, good: false });
@@ -59,7 +63,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
     startTransition(async () => {
       const result = await removeMenuItemAggregateCost(item.id);
       if (result.ok) {
-        setValues((current) => ({ ...current, [item.id]: "" }));
+        setDrafts((current) => ({ ...current, [item.id]: { baseline: baseline(item), value: "" } }));
         setMessage({ id: item.id, text: labels.saved, good: true });
         router.refresh();
       } else {
@@ -118,8 +122,11 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                     <span className="me-1 font-bold text-ink-muted">$</span>
                     <input
                       inputMode="decimal"
-                      value={values[item.id] ?? ""}
-                      onChange={(event) => setValues((current) => ({ ...current, [item.id]: event.target.value }))}
+                      value={currentValue(item)}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setDrafts((current) => ({ ...current, [item.id]: { baseline: baseline(item), value } }));
+                      }}
                       className="min-w-0 flex-1 bg-transparent text-[17px] outline-none"
                     />
                   </span>
