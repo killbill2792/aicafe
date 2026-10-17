@@ -59,7 +59,7 @@ const schemas = {
     limit: z.number().int().min(1).max(15),
   }),
   get_financials: z.strictObject({
-    metric: z.enum(["owner_profit", "total_business_costs", "monthly_bills",
+    metric: z.enum(["owner_profit", "profit_margin", "total_business_costs", "monthly_bills",
       "recorded_spending", "break_even", "cost_breakdown"]),
     period: date.period, from: date.from, to: date.to,
   }),
@@ -483,7 +483,21 @@ export function createSupervisorToolRegistry(context: Context) {
       }
       const profit = await tools.getProfitability(range);
       const result = quality(profit,[source],{from:range.from,to:range.to, arithmetic:"canonical-only"});
-      if (profit.available) addFact(result,prefix+"value","Owner profit",profit.value.ownerProfitCents,"metric",source);
+      if (profit.available && a.metric === "profit_margin") {
+        if (profit.value.netSalesCents<=0 || !Number.isFinite(profit.value.operatingMargin))
+          return absent("verifiedNonZeroNetSales");
+        // Canonical operating margin is a percentage, never a currency card.
+        const percent=(profit.value.operatingMargin*100).toFixed(1);
+        const title=context.locale==="es"?"Margen de beneficio operativo":
+          context.locale==="ar"?"هامش الربح التشغيلي":"Operating profit margin";
+        addInsight(result,prefix+"margin",title+" ("+range.from+
+          (range.from===range.to?"":" – "+range.to)+"): "+percent+
+          "% of net sales after modeled business costs.",source);
+        result.data={from:range.from,to:range.to,ratio:profit.value.operatingMargin,
+          netSalesCents:profit.value.netSalesCents,ownerProfitCents:profit.value.ownerProfitCents,
+          arithmetic:"canonical operating margin, not ingredient contribution"};
+      } else if (profit.available)
+        addFact(result,prefix+"value","Owner profit",profit.value.ownerProfitCents,"metric",source);
       return result;
     }
     if (call.name === "get_staff") {
