@@ -54,8 +54,9 @@ describe("Alex P2/P3 standalone registry safety",()=>{
   it("reads only authenticated source snapshot and double-checks its epoch",async()=>{
     const out=await registry.invoke(scope,ALEX_REVIEW_ID,{purpose:"pricing_review",
       selection:{kind:"specific",items:[{productId:id}]}});
-    expect(out).toMatchObject({status:"verified",value:{items:[{
-      productId:id,currentPriceCents:525,ingredientCostCents:20}]}});
+    expect(out).toMatchObject({status:"partial",value:{items:[{
+      productId:id,currentPriceCents:525,ingredientCostCents:20}]},
+      quality:{staleInputs:["Latte 12 oz:ingredient_price_freshness_unverified:"+ing]}});
     expect(rpc).toHaveBeenCalledTimes(2);
   });
   it("returns conflict after any mid-analysis snapshot epoch change",async()=>{
@@ -72,7 +73,7 @@ describe("Alex P2/P3 standalone registry safety",()=>{
       changes:[{kind:"ingredient_multiplier",ingredientId:ing,multiplierBasisPoints:13000}],
       sellingPrice:{kind:"delta",deltaCents:50},
     },{bindings:[],operands:[]});
-    expect(out).toMatchObject({mode:"simulate",status:"conditional",
+    expect(out).toMatchObject({mode:"simulate",status:"partial",
       proposal:null,executedEffects:0,value:{
         persisted:false,ingredientCostDeltaCents:6,priceDeltaCents:50}});
     expect(rpc).toHaveBeenCalledTimes(2);
@@ -120,13 +121,13 @@ describe("Alex P2/P3 standalone registry safety",()=>{
     const cafeLocal={...scope,identity:{...scope.identity,asOf:"2026-10-16"}};
     const read=await registry.invoke(cafeLocal,ALEX_REVIEW_ID,{
       purpose:"pricing_review",selection:{kind:"specific",items:[{productId:id}]}});
-    expect(read).toMatchObject({status:"verified",provenance:{asOf:"2026-10-16"},
+    expect(read).toMatchObject({status:"partial",provenance:{asOf:"2026-10-16"},
       value:{items:[{ingredientCostCents:30}]}});
     const simulate=await registry.invokeSimulation(cafeLocal,ALEX_SIMULATE_ID,{
       purpose:"pricing_simulate",product:{productId:id},changes:[
         {kind:"ingredient_multiplier",ingredientId:ing,multiplierBasisPoints:13000}],
     },{bindings:[],operands:[]});
-    expect(simulate).toMatchObject({status:"conditional",
+    expect(simulate).toMatchObject({status:"partial",
       provenance:{asOf:"2026-10-16"},value:{before:{ingredientCostCents:30},
         after:{ingredientCostCents:39},ingredientCostDeltaCents:9}});
     expect(rpc).toHaveBeenCalledTimes(4);
@@ -136,7 +137,7 @@ describe("Alex P2/P3 standalone registry safety",()=>{
       asOf:"2026-10-17T00:30:00Z"}};
     const result=await registry.invoke(timestamp,ALEX_REVIEW_ID,{
       purpose:"pricing_review",selection:{kind:"specific",items:[{productId:id}]}});
-    expect(result).toMatchObject({status:"verified",provenance:{asOf:"2026-10-16"}});
+    expect(result).toMatchObject({status:"partial",provenance:{asOf:"2026-10-16"}});
     for(const invalid of ["2026-02-30","2026-10-16T12:00:00","2026-13-16"]){
       const bad={...scope,identity:{...scope.identity,asOf:invalid}};
       const out=await registry.invoke(bad,ALEX_REVIEW_ID,{
