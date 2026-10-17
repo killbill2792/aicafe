@@ -13,7 +13,9 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "packageCount" | "name" | "label" | "amountCents" | "totalCents" |
   "defaultHourlyWageCents" | "wageAmountCents" | "ingredientsCentsToday" |
   "currentPriceCents" | "reviewIngredientCostCents" | "currentRecommendationCents" |
-  "loadedLaborCostCents" | "shiftCount";
+  "loadedLaborCostCents" | "shiftCount" |
+  "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents" |
+  "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -81,6 +83,22 @@ const sourcePresentation:Record<string,{
     heading:"source_olivia_schedule_preview",
     fields:["name","loadedLaborCostCents","shiftCount"],
   },
+  "alex.pricing.what_if":{
+    heading:"source_alex_pricing_what_if",
+    fields:["name","priceDeltaCents","ingredientCostDeltaCents","ingredientContributionDeltaCents",
+      "targetPriceCents","assumptionCodes","costBasisEstimated"],
+  },
+};
+/** Exhaustive map of Alex's own enumerable what-if caveat codes (never free text — see
+ * ALEX_ASSUMPTION_CODES in alexP3Capabilities.server.ts) to a localized plain-language string.
+ * An unrecognized code is dropped, never shown as a raw internal value (caught in review). */
+const assumptionCodeLabels:Record<string,CatalogKey> = {
+  owner_hypothetical_not_recorded:"assumption_ownerHypotheticalNotRecorded",
+  recorded_cost_freshness_not_proven:"assumption_recordedCostFreshnessNotProven",
+  owner_total_is_aggregate_not_ingredient_recipe:"assumption_ownerTotalIsAggregate",
+  ingredient_only_excludes_labor_fees_rent_and_demand:"assumption_ingredientOnlyExcludesOverhead",
+  owner_supplied_ingredient_cost_overrides_are_hypothetical:"assumption_ownerSuppliedOverrides",
+  no_target_selected_no_target_price:"assumption_noTargetSelected",
 };
 const fieldLabel:Record<PresentedField,CatalogKey> = {
   supplierName:"field_supplierName",itemName:"field_itemName",
@@ -95,6 +113,12 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   currentRecommendationCents:"field_currentRecommendationCents",
   loadedLaborCostCents:"field_loadedLaborCostCents",
   shiftCount:"field_shiftCount",
+  priceDeltaCents:"field_priceDeltaCents",
+  ingredientCostDeltaCents:"field_ingredientCostDeltaCents",
+  targetPriceCents:"field_targetPriceCents",
+  ingredientContributionDeltaCents:"field_ingredientContributionDeltaCents",
+  assumptionCodes:"field_assumptionsSummary",
+  costBasisEstimated:"field_costBasisEstimated",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -117,6 +141,22 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
     return null;
   if(key==="wageAmountCents" &&
     !["hour","month","year"].includes(String(row.wagePeriod)))return null;
+  if(key==="assumptionCodes"){
+    if(!Array.isArray(value)||!value.length)return null;
+    // 3, not 2: matches the upstream cap in alexP3Capabilities.server.ts's output schema
+    // (raised in review, round 9) -- an owner-total cost basis needs both its own caveat
+    // and the cost-freshness one alongside the always-present ingredient-only caveat.
+    const labels=value.filter((c):c is string=>typeof c==="string"&&Object.hasOwn(assumptionCodeLabels,c))
+      .slice(0,3).map(c=>t(locale,assumptionCodeLabels[c]));
+    return labels.length?t(locale,fieldLabel[key])+": "+labels.join("; "):null;
+  }
+  // quality.estimatedInputs's "owner_total_cost_estimated" signal, carried through as a
+  // plain boolean: an owner-entered TOTAL that is itself an estimate (not a recorded real
+  // figure) must be labeled as such per this project's own estimate-labeling rule, and was
+  // previously dropped entirely (this capability's presentation never rendered `quality` at
+  // all beyond a generic warning). Caught in review (round 9).
+  if(key==="costBasisEstimated")
+    return value===true?t(locale,fieldLabel[key]):null;
   if(typeof value==="string"){
     if(!["supplierName","itemName","name","label"].includes(key))return null;
     const text=safeText(value);
