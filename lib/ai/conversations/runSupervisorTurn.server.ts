@@ -267,6 +267,18 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       supplementalTexts.push(reason??labels.costCoverage);specificWarning=true;
     }
   }
+  // Always disclose what a provisional Olivia preview did (and did not)
+  // use, independent of the model's optional insight-ID selection. This
+  // prevents chat-mentioned worker windows/opening hours from appearing saved.
+  if(goals.some(g=>g.domain==="schedule_preview") &&
+    executed.some((c,i)=>c.name==="olivia_schedule"&&
+      results[i]?.status!=="unavailable")){
+    supplementalTexts.push({
+      en:"This proposed schedule uses saved employee availability and coverage requirements. New hours mentioned only in chat were not saved or applied.",
+      es:"Este horario propuesto usa disponibilidad y cobertura guardadas. Los horarios mencionados solo en el chat no se guardaron ni aplicaron.",
+      ar:"يستخدم هذا الجدول المقترح التوفر ومتطلبات التغطية المحفوظة. لم تُحفظ أو تُطبق الساعات المذكورة في الدردشة فقط.",
+    }[locale]);
+  }
   // Single-domain detailed answers retain the model's chosen additional facts. For
   // multi-domain responses, use one primary fact per goal rather than a nested dashboard.
   for(const f of chosen){
