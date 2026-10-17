@@ -331,4 +331,53 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     }
   });
 
+
+  it("returns real scheduling setup blockers after the same two-call P3 fallthrough", async () => {
+    const oldFlag=process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
+    const oldAllowlist=process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
+    process.env.SUPERVISOR_P3_COMPOSITION_ENABLED="true";
+    process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=businessId;
+    try {
+      // P3 is intentionally unproductive for a specialist schedule request.
+      atomicRpc.mockResolvedValue({status:"unavailable",reason:"rpc_not_installed"});
+      olivia.mockResolvedValue({ok:false,version:1,status:"error",
+        capability:"olivia.schedule.preview",error:{
+          code:"missing_inputs",retryable:false,message:"missing coverage"},
+        blockers:[{code:"no_coverage"}]});
+      const question="These are my workers' times for next week. Please make a schedule " +
+        "for the café's 7 a.m. to 8 p.m. operating hours.";
+      const requests:string[]=[];
+      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+        const body=JSON.parse(String(init.body)) as {
+          text?:{format?:{name?:string}};tool_choice?:string;
+        };
+        const schema=body.text?.format?.name;
+        requests.push(schema??body.tool_choice??"legacy_final");
+        if(schema==="p2_goal_audit")return response([{type:"message",content:[
+          {type:"output_text",text:JSON.stringify({complete:true,clauses:[question]})}]}]);
+        if(schema==="p2_capability_selection")return response([]);
+        if(schema==="supervisor_scope_audit")return auditPayload([scheduleGoal]);
+        if(body.tool_choice==="required")return response([
+          call("declare_request_scope",{goals:[scheduleGoal]},"scope"),
+          call("olivia_schedule",{action:"preview",week:monday,objective:"cash",overrides:null},"c1"),
+        ]);
+        return response([finish([],[])]);
+      });
+      const {reply,usage}=await runSupervisorTurn({...base,text:question},transport);
+      expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
+        "supervisor_final","supervisor_scope_audit","supervisor_final"]);
+      expect(usage).toMatchObject({modelCallCount:5,toolCallCount:1});
+      expect(olivia).toHaveBeenCalledTimes(1);
+      expect(reply.blocks).toContainEqual(expect.objectContaining({
+        type:"text",text:expect.stringContaining("Setup needed: no coverage"),
+      }));
+      expect(reply.blocks.some(b=>b.type==="text" && b.text.includes("Which exact dates"))).toBe(false);
+    } finally {
+      if(oldFlag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
+      else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=oldFlag;
+      if(oldAllowlist===undefined)delete process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
+      else process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=oldAllowlist;
+    }
+  });
+
 });
