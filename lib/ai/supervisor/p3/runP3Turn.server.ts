@@ -244,7 +244,7 @@ export async function tryP3SupervisorReadOnly(input:{
   // Existing P3 multi-clause ISO dates are already checked independently by
   // verifiedReaderPeriods; only newer conversational month-name/deictic multi-
   // day references need the legacy independent-date reader path.
-  const isoDates=[...input.text.matchAll(/(?<!\\d)\\d{4}-\\d{2}-\\d{2}(?!\\d)/gu)].length;
+  const isoDates=[...input.text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].length;
   if((contextualDates.length>1 && isoDates===0) ||
     (!directDates.length && contextualDates.length>0))return null;
   const {tools,identity}=await authorizedOwnerP1();
