@@ -147,3 +147,45 @@ describe("Alex P2/P3 standalone registry safety",()=>{
   });
 
 });
+
+it.each([
+  [{kind:"ingredient_multiplier",ingredientName:" milk ",multiplierBasisPoints:13000},6],
+  [{kind:"ingredient_unit_cost",ingredientName:"Milk",costPerBaseUnitMicros:200000},20],
+  [{kind:"supplier_package",ingredientName:"Milk",packageCostCents:100,packageCount:100,packageUnit:"ml"},180],
+  [{kind:"set_quantity",ingredientName:"Milk",quantity:{value:300,unit:"ml"}},10],
+  [{kind:"replace_ingredient",fromIngredientName:"Milk",toIngredientName:"Oat milk"},20],
+])("resolves named recipe parameter %j in the same snapshot and uses canonical cents math",async(change,delta)=>{
+  const oat="a0000000-0000-4000-8000-000000000101";
+  rpc.mockResolvedValue({status:"available",snapshot:{...snapshot,sources:{...snapshot.sources,
+    ingredients:[...snapshot.sources.ingredients,{id:oat,name:"Oat milk",base_unit:"ml"}],
+    ingredientPrices:[...snapshot.sources.ingredientPrices,{...snapshot.sources.ingredientPrices[0],
+      id:"a0000000-0000-4000-8000-000000000201",ingredient_id:oat,cost_per_base_unit_micros:200000}]}}});
+  const result=await registry.invokeSimulation(scope,ALEX_SIMULATE_ID,{purpose:"pricing_simulate",
+    product:{exactName:"Latte 12 oz"},changes:[change]}, {bindings:[],operands:[]});
+  expect(result).toMatchObject({status:"partial",executedEffects:0,proposal:null,
+    value:{ingredientCostDeltaCents:delta,ingredientContributionDeltaCents:-Number(delta),persisted:false}});
+  expect(rpc).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+  [[],false,"ingredient_not_found"],
+  [[{id:"a0000000-0000-4000-8000-000000000101",name:"milk",base_unit:"ml"}],false,"ambiguous_ingredient_name"],
+  [[],true,"ingredient_catalog_truncated"],
+])("fails closed for missing/ambiguous/truncated ingredient names",async(extra,truncated,reason)=>{
+  rpc.mockResolvedValue({status:"available",snapshot:{...snapshot,
+    sources:{...snapshot.sources,ingredients:[...snapshot.sources.ingredients,...extra]},
+    truncated:{...snapshot.truncated,ingredients:truncated}} as AtomicP1SourceSnapshot});
+  const result=await registry.invokeSimulation(scope,ALEX_SIMULATE_ID,{purpose:"pricing_simulate",
+    product:{exactName:"Latte 12 oz"},changes:[{kind:"set_quantity",ingredientName:
+      reason==="ingredient_not_found"?"Unknown":"Milk",quantity:{value:100,unit:"ml"}}]}, {bindings:[],operands:[]});
+  expect(result).toMatchObject({status:"unavailable",reason});
+});
+
+it("rejects an epoch change during named resolution/simulation",async()=>{
+  rpc.mockResolvedValueOnce({status:"available",snapshot});
+  rpc.mockResolvedValueOnce({status:"available",snapshot:{...snapshot,revision:"101"}});
+  expect(await registry.invokeSimulation(scope,ALEX_SIMULATE_ID,{purpose:"pricing_simulate",
+    product:{exactName:"Latte 12 oz"},changes:[{kind:"set_quantity",ingredientName:"Milk",
+      quantity:{value:100,unit:"ml"}}]}, {bindings:[],operands:[]}))
+    .toMatchObject({status:"unavailable",reason:"source_revision_changed_or_unavailable"});
+});
