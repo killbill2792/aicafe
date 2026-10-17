@@ -1852,6 +1852,19 @@
     "reason_notFound": "لم أجد ذلك السجل.",
     "reason_schedulingInputsMissing": "بيانات الجدولة المطلوبة — التغطية أو التوفر أو الأجور — ناقصة.",
     "reason_temporarilyUnavailable": "ذلك غير متاح مؤقتًا؛ يرجى المحاولة مرة أخرى بعد قليل.",
-    "reason_requestTooLarge": "هذا الطلب كبير جدًا لمعالجته الآن؛ جرّب نطاقًا زمنيًا أقصر."
+    "reason_requestTooLarge": "هذا الطلب كبير جدًا لمعالجته الآن؛ جرّب نطاقًا زمنيًا أقصر.",
+    "reason_employeeNotFound": "لم أجد موظفًا نشطًا بهذا الاسم تحديدًا.",
+    "reason_ambiguousEmployeeName": "هناك أكثر من موظف نشط بهذا الاسم — من تقصد؟",
+    "source_olivia_schedule_what_if": "محاكاة الجدول (ماذا لو)",
+    "field_alternateStatus": "هل يمكن تغطية هذا رغم ذلك",
+    "field_scheduleChanged": "هل تغيّر الجدول فعلًا",
+    "field_completeCoverageAfter": "كل نوبة مطلوبة لا تزال مغطاة",
+    "field_gapsDifference": "التغير في النوبات غير المغطاة",
+    "field_loadedPayrollDifferenceCents": "التغير في تكلفة الرواتب المحمّلة",
+    "scheduleStatus_feasible": "نعم، تم إيجاد جدول قابل للتنفيذ",
+    "scheduleStatus_infeasible": "لم يتم إيجاد جدول قابل للتنفيذ",
+    "scheduleStatus_unproven": "لم يُثبت بأي اتجاه خلال الوقت المتاح",
+    "yesValue": "نعم",
+    "noValue": "لا"
   }
 }

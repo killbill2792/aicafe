@@ -1852,6 +1852,19 @@
     "reason_notFound": "I couldn't find that record.",
     "reason_schedulingInputsMissing": "Required scheduling inputs — coverage, availability or wage data — are missing.",
     "reason_temporarilyUnavailable": "That's temporarily unavailable; please try again shortly.",
-    "reason_requestTooLarge": "That request is too large to process right now; try a shorter time range."
+    "reason_requestTooLarge": "That request is too large to process right now; try a shorter time range.",
+    "reason_employeeNotFound": "I couldn't find an active staff member with that exact name.",
+    "reason_ambiguousEmployeeName": "More than one active staff member has that name — which one did you mean?",
+    "source_olivia_schedule_what_if": "Schedule what-if",
+    "field_alternateStatus": "Can this still be covered",
+    "field_scheduleChanged": "Did the schedule actually change",
+    "field_completeCoverageAfter": "Every required shift is still covered",
+    "field_gapsDifference": "Change in uncovered shifts",
+    "field_loadedPayrollDifferenceCents": "Change in loaded payroll cost",
+    "scheduleStatus_feasible": "yes, a feasible schedule was found",
+    "scheduleStatus_infeasible": "no feasible schedule was found",
+    "scheduleStatus_unproven": "not proven either way within the time I had",
+    "yesValue": "yes",
+    "noValue": "no"
   }
 }

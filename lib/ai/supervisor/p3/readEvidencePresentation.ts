@@ -15,7 +15,9 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "currentPriceCents" | "reviewIngredientCostCents" | "currentRecommendationCents" |
   "loadedLaborCostCents" | "shiftCount" |
   "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents" |
-  "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated";
+  "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated" |
+  "alternateStatus" | "changed" | "completeCoverageAfter" | "gapsDifference" |
+  "loadedPayrollDifferenceCents";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -59,6 +61,8 @@ const specificUnavailableReasonLabels:Record<string,CatalogKey> = {
   no_feasible_schedule:"reason_noFeasibleSchedule",
   wage_data_incomplete:"reason_wageDataIncomplete",
   unexpected_capability:"reason_schedulingUnavailable",
+  employee_not_found:"reason_employeeNotFound",
+  ambiguous_employee_name:"reason_ambiguousEmployeeName",
   invalid_input:"reason_invalidSchedulingRequest",
   unauthorized:"reason_notAuthorized",
   disabled:"reason_featureDisabled",
@@ -140,6 +144,15 @@ const sourcePresentation:Record<string,{
     fields:["name","priceDeltaCents","ingredientCostDeltaCents","ingredientContributionDeltaCents",
       "targetPriceCents","assumptionCodes","costBasisEstimated"],
   },
+  "olivia.schedule.what_if":{
+    heading:"source_olivia_schedule_what_if",
+    fields:["name","alternateStatus","changed","completeCoverageAfter",
+      "gapsDifference","loadedPayrollDifferenceCents"],
+  },
+};
+const scheduleStatusLabels:Record<string,CatalogKey> = {
+  feasible:"scheduleStatus_feasible", infeasible:"scheduleStatus_infeasible",
+  unproven:"scheduleStatus_unproven",
 };
 /** Exhaustive map of Alex's own enumerable what-if caveat codes (never free text — see
  * ALEX_ASSUMPTION_CODES in alexP3Capabilities.server.ts) to a localized plain-language string.
@@ -171,6 +184,11 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   ingredientContributionDeltaCents:"field_ingredientContributionDeltaCents",
   assumptionCodes:"field_assumptionsSummary",
   costBasisEstimated:"field_costBasisEstimated",
+  alternateStatus:"field_alternateStatus",
+  changed:"field_scheduleChanged",
+  completeCoverageAfter:"field_completeCoverageAfter",
+  gapsDifference:"field_gapsDifference",
+  loadedPayrollDifferenceCents:"field_loadedPayrollDifferenceCents",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -193,6 +211,16 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
     return null;
   if(key==="wageAmountCents" &&
     !["hour","month","year"].includes(String(row.wagePeriod)))return null;
+  if(key==="alternateStatus"){
+    return typeof value==="string" && Object.hasOwn(scheduleStatusLabels,value)
+      ?t(locale,fieldLabel[key])+": "+t(locale,scheduleStatusLabels[value]):null;
+  }
+  // Unlike costBasisEstimated (only shown when true), both true and false are
+  // meaningful here: "nothing changed" and "coverage stayed complete" are real,
+  // reassuring answers to a what-if, not the absence of one.
+  if(key==="changed"||key==="completeCoverageAfter")
+    return typeof value==="boolean"
+      ?t(locale,fieldLabel[key])+": "+t(locale,value?"yesValue":"noValue"):null;
   if(key==="assumptionCodes"){
     if(!Array.isArray(value)||!value.length)return null;
     // 3, not 2: matches the upstream cap in alexP3Capabilities.server.ts's output schema

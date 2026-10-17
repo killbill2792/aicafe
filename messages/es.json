@@ -1852,6 +1852,19 @@
     "reason_notFound": "No pude encontrar ese registro.",
     "reason_schedulingInputsMissing": "Faltan datos de horarios necesarios — cobertura, disponibilidad o salarios.",
     "reason_temporarilyUnavailable": "Eso no está disponible temporalmente; por favor, intenta de nuevo en un momento.",
-    "reason_requestTooLarge": "Esa solicitud es demasiado grande para procesarla ahora; intenta un rango de fechas más corto."
+    "reason_requestTooLarge": "Esa solicitud es demasiado grande para procesarla ahora; intenta un rango de fechas más corto.",
+    "reason_employeeNotFound": "No encontré a un empleado activo con ese nombre exacto.",
+    "reason_ambiguousEmployeeName": "Más de un empleado activo tiene ese nombre — ¿a quién te refieres?",
+    "source_olivia_schedule_what_if": "Simulación de horario",
+    "field_alternateStatus": "¿Se puede seguir cubriendo?",
+    "field_scheduleChanged": "¿Cambió realmente el horario?",
+    "field_completeCoverageAfter": "Todos los turnos requeridos siguen cubiertos",
+    "field_gapsDifference": "Cambio en turnos sin cubrir",
+    "field_loadedPayrollDifferenceCents": "Cambio en el costo de nómina cargado",
+    "scheduleStatus_feasible": "sí, se encontró un horario viable",
+    "scheduleStatus_infeasible": "no se encontró un horario viable",
+    "scheduleStatus_unproven": "no se pudo probar en el tiempo disponible",
+    "yesValue": "sí",
+    "noValue": "no"
   }
 }

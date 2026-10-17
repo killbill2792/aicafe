@@ -19,7 +19,8 @@ import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { buildAlexP3Registrations } from "@/lib/pricing/alexP3Capabilities.server";
 import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
 import { ALEX_P3_REVIEW_ID } from "@/lib/pricing/alexP3Capabilities.server";
-import { OLIVIA_P3_SCHEDULE_PREVIEW_ID } from "@/lib/scheduling/oliviaP3Capabilities.server";
+import { OLIVIA_P3_SCHEDULE_PREVIEW_ID, OLIVIA_P3_WHATIF_ID } from
+  "@/lib/scheduling/oliviaP3Capabilities.server";
 
 const scope = {
   role: "owner" as const, businessId: "cafe-fixture",
@@ -35,6 +36,7 @@ describe("P3 registry wiring (exact shape used by runP3Turn.server.ts)", () => {
     const ids = registry.discover(scope).map(d => d.id);
     expect(ids).toContain(ALEX_P3_REVIEW_ID);
     expect(ids).toContain(OLIVIA_P3_SCHEDULE_PREVIEW_ID);
+    expect(ids).toContain(OLIVIA_P3_WHATIF_ID);
     // The pre-existing P1 financial/sales/staff sources must still be present — this is additive, not a replacement.
     expect(ids.length).toBeGreaterThan(2);
   });

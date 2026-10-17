@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { executeOliviaReadCapability } from "./oliviaCapabilities.server";
+import { oliviaWeek, type OliviaWhatIfOverrideInput } from "./oliviaCapabilityContracts";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
   "@/lib/ai/supervisor/p2/registry";
 
@@ -43,8 +44,129 @@ export const oliviaP3PreviewOutputSchema = z.union([
   }),
 ]);
 
-/** Domains array entry for `createP3ReadRegistry`. Read-only; no simulate/what-if here yet. */
-export function buildOliviaP3Registrations(): readonly [ReadRegistration] {
+/**
+ * Olivia's "what if a worker is out / has fewer hours" simulation, exposed to
+ * the P3 dynamic registry the same way as Alex's pricing what-if. Reuses the
+ * existing, independently reviewed `olivia.schedule.whatIf` read capability
+ * directly (PR4A-2) -- this file adds NO new scheduling math.
+ *
+ * `olivia.schedule.whatIf` identifies every override by the worker's internal
+ * employeeId (a UUID resolved earlier from the trusted roster). An owner's
+ * turn can only name a worker by their display name, and P3's one-shot
+ * capability selection has no prior-read step to resolve a name to an id
+ * first (the same limitation documented for Alex's ingredient-substitution
+ * exclusion above). Rather than leaving this unreachable the way Alex's
+ * ingredient-change scenario was deliberately left out, this capability
+ * resolves each name to the trusted roster itself, inside `read()`, using
+ * the EXISTING `olivia.schedule.foundation`-backed `olivia.availability.read`
+ * capability -- never a model-supplied or guessed id.
+ */
+export const OLIVIA_P3_WHATIF_ID = "p3.olivia.schedule.what_if.v1" as const;
+const OLIVIA_P3_MAX_WHAT_IF_OVERRIDES = 5;
+const wallTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+const whatIfDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const employeeName = z.string().trim().min(1).max(240);
+const whatIfOverrideInputSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("temporary_unavailable"), employeeName,
+    localDate: whatIfDate,
+    window: z.strictObject({
+      startLocal: wallTime, endLocal: wallTime, overnight: z.boolean(),
+    }).refine(w => w.startLocal !== w.endLocal && w.overnight === (w.endLocal < w.startLocal),
+      "Window overnight flag must match the start/end ordering").optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("reduce_weekly_minutes"), employeeName,
+    maxWeeklyMinutes: z.number().int().min(0).max(10080),
+  }),
+  z.strictObject({
+    kind: z.literal("reduce_daily_minutes"), employeeName,
+    localDate: whatIfDate, maxMinutes: z.number().int().min(0).max(1440),
+  }),
+]);
+const whatIfInputSchema = z.strictObject({
+  purpose: z.literal("schedule_what_if"),
+  week: oliviaWeek,
+  overrides: z.array(whatIfOverrideInputSchema).min(1).max(OLIVIA_P3_MAX_WHAT_IF_OVERRIDES),
+  objective: z.enum(["cash", "owner_time", "balanced"]).optional(),
+});
+const signedCents = z.number().int().min(-100_000_000).max(100_000_000).nullable();
+const whatIfRow = z.strictObject({
+  name: z.string().min(1).max(160),
+  alternateStatus: z.enum(["feasible", "infeasible", "unproven"]),
+  changed: z.boolean().nullable(),
+  completeCoverageAfter: z.boolean().nullable(),
+  gapsDifference: z.number().int().nullable(),
+  loadedPayrollDifferenceCents: signedCents,
+});
+const whatIfProvenanceSchema = z.strictObject({
+  sourceId: z.literal("olivia.schedule_foundation"),
+  canonicalReaderId: z.literal("olivia.schedule.whatIf"),
+  sourceRevision: z.null(),
+  purpose: z.literal("schedule_what_if"),
+  asOf: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+});
+const whatIfQualitySchema = z.strictObject({
+  missingInputs: z.array(z.string().max(80)).max(50),
+  estimatedInputs: z.array(z.string().max(80)).max(50),
+  staleInputs: z.array(z.string().max(80)).max(50),
+});
+export const oliviaP3WhatIfOutputSchema = z.union([
+  z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
+  z.strictObject({
+    status: z.literal("partial"), id: z.literal("olivia.schedule.what_if"),
+    value: z.array(whatIfRow).length(1), provenance: whatIfProvenanceSchema, quality: whatIfQualitySchema,
+  }),
+]);
+/** Resolves every requested worker name against the trusted roster for the active
+ * café. A name that matches no one, or more than one active worker, is reported
+ * unavailable rather than guessing -- an owner-named worker is never confused
+ * with another by a case/whitespace difference alone, and never silently
+ * resolved to the wrong one of two same-named staff. */
+async function resolveEmployeeNames(
+  overrides: readonly z.output<typeof whatIfOverrideInputSchema>[],
+): Promise<{ ok: true; overrides: OliviaWhatIfOverrideInput[] } | { ok: false; reason: string }> {
+  const roster = await executeOliviaReadCapability({ capability: "olivia.availability.read", version: 1 });
+  if (!roster.ok || roster.capability !== "olivia.availability.read")
+    return { ok: false, reason: !roster.ok ? roster.error.code : "unexpected_capability" };
+  const byName = new Map<string, string[]>();
+  for (const employee of roster.employees) {
+    if (!employee.active) continue;
+    const key = employee.displayName.trim().toLowerCase();
+    byName.set(key, [...(byName.get(key) ?? []), employee.employeeId]);
+  }
+  const resolved: OliviaWhatIfOverrideInput[] = [];
+  for (const override of overrides) {
+    const ids = byName.get(override.employeeName.trim().toLowerCase());
+    if (!ids || ids.length === 0) return { ok: false, reason: "employee_not_found" };
+    if (ids.length > 1) return { ok: false, reason: "ambiguous_employee_name" };
+    const employeeId = ids[0];
+    switch (override.kind) {
+      case "temporary_unavailable":
+        resolved.push({
+          kind: "temporary_unavailable", employeeId, localDate: override.localDate,
+          ...(override.window ? { window: override.window } : {}),
+        });
+        break;
+      case "reduce_weekly_minutes":
+        resolved.push({
+          kind: "reduce_weekly_minutes", employeeId, maxWeeklyMinutes: override.maxWeeklyMinutes,
+        });
+        break;
+      case "reduce_daily_minutes":
+        resolved.push({
+          kind: "reduce_daily_minutes", employeeId, localDate: override.localDate,
+          maxMinutes: override.maxMinutes,
+        });
+        break;
+    }
+  }
+  return { ok: true, overrides: resolved };
+}
+
+/** Domains array entry for `createP3ReadRegistry`. Read-only/simulate; never writes
+ * availability, a draft, an approval or a publication. */
+export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRegistration] {
   return [{
     id: OLIVIA_P3_SCHEDULE_PREVIEW_ID, version: 1 as const, owner: "olivia",
     mode: "read" as const, availability: "shadow" as const,
@@ -87,6 +209,56 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration] {
           sourceId: "olivia.schedule_foundation" as const,
           canonicalReaderId: "olivia.schedule.preview" as const,
           sourceRevision: null, purpose: "schedule_preview" as const, asOf: scope.identity.asOf,
+        },
+        quality: { missingInputs: [], estimatedInputs: [], staleInputs: [] },
+      };
+    },
+  }, {
+    id: OLIVIA_P3_WHATIF_ID, version: 1 as const, owner: "olivia",
+    mode: "read" as const, availability: "shadow" as const,
+    purpose: "Read-only what-if: runs the existing reviewed Olivia optimizer twice (once " +
+      "unmodified, once with one or more named workers made temporarily unavailable or hour-" +
+      "capped) and reports the real coverage/cost delta. Workers are named by their display " +
+      "name, resolved against the trusted roster -- never a model-supplied id. Never writes " +
+      "availability, a draft, an approval or a publication.",
+    sourceIds: ["olivia.schedule_foundation"],
+    canonicalReaderIds: ["olivia.schedule.whatIf"],
+    allowedPurposes: ["schedule_what_if"],
+    inputSchema: whatIfInputSchema, outputSchema: oliviaP3WhatIfOutputSchema,
+    schemaContract: {
+      id: OLIVIA_P3_WHATIF_ID + ".v1", registrationId: OLIVIA_P3_WHATIF_ID, version: 1 as const,
+      inputSchemaFingerprint: schemaFingerprint(whatIfInputSchema),
+      outputSchemaFingerprint: schemaFingerprint(oliviaP3WhatIfOutputSchema),
+    },
+    requiredRole: "owner" as const, sensitivity: "staff" as const,
+    budgets: { maxOperations: 1, timeoutMs: 10000, maxResultBytes: 20000, maxInputBytes: 10000, maxRangeDays: 7 },
+    requiresApproval: false as const, effectPolicy: "deny" as const,
+    async read(scope: TrustedReadScope, rawInput: unknown) {
+      const input = rawInput as z.output<typeof whatIfInputSchema>;
+      const resolution = await resolveEmployeeNames(input.overrides);
+      if (!resolution.ok) return { status: "unavailable" as const, value: null, reason: resolution.reason };
+      const raw = await executeOliviaReadCapability({
+        capability: "olivia.schedule.whatIf", version: 1, week: input.week,
+        overrides: resolution.overrides,
+        ...(input.objective ? { options: { objective: input.objective } } : {}),
+      });
+      if (!raw.ok || raw.capability !== "olivia.schedule.whatIf")
+        return { status: "unavailable" as const, value: null,
+          reason: !raw.ok ? raw.error.code : "unexpected_capability" };
+      return {
+        status: "partial" as const, id: "olivia.schedule.what_if" as const,
+        value: [{
+          name: input.week,
+          alternateStatus: raw.alternateStatus,
+          changed: raw.comparison?.changed ?? null,
+          completeCoverageAfter: raw.comparison?.completeCoverageAfter ?? null,
+          gapsDifference: raw.comparison?.gapsDifference ?? null,
+          loadedPayrollDifferenceCents: raw.comparison?.loadedPayrollDifferenceCents ?? null,
+        }],
+        provenance: {
+          sourceId: "olivia.schedule_foundation" as const,
+          canonicalReaderId: "olivia.schedule.whatIf" as const,
+          sourceRevision: null, purpose: "schedule_what_if" as const, asOf: scope.identity.asOf,
         },
         quality: { missingInputs: [], estimatedInputs: [], staleInputs: [] },
       };
