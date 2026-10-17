@@ -42,7 +42,7 @@ mirrored 1:1 by `oliviaWhatIfOverrideSchema`):
 
 | kind | fields | effect |
 | --- | --- | --- |
-| `temporary_unavailable` | `employeeId`, `localDate`, optional `window: {startLocal, endLocal, overnight}` | Adds an in-memory `unavailable` exception for that date/window (or the whole day). Pure subtraction. |
+| `temporary_unavailable` | `employeeId`, `localDate`, optional `window: {startLocal, endLocal, overnight}` | Adds an in-memory `unavailable` exception for that date/window (or the whole day). Pure subtraction. `window` is refined to the exact same invariant as the canonical `staff_availability_exceptions` DB constraint (`20261014000060_olivia_scheduling_foundation.sql`): no zero-length window, and `overnight` iff the clock actually wraps (`endLocal < startLocal`). |
 | `reduce_weekly_minutes` | `employeeId`, `maxWeeklyMinutes` | Combines with any existing weekly cap by **minimum** — can only lower it. Rejected with `invalid_input` if the result would fall below the employee's recorded `minWeeklyMinutes`. |
 | `reduce_daily_minutes` | `employeeId`, `localDate`, `maxMinutes` | Adds an in-memory `hours_cap` exception for that date; combined with any existing same-date cap by the planner's own `Math.min(...)` aggregation. |
 
@@ -52,9 +52,18 @@ convention.
 
 Response (`oliviaWhatIfResponseSchema`): `ok:true` carries `baselineScenario`,
 `alternateScenario` (both reuse the existing `oliviaScenarioSchema` — same shape as
-`olivia.schedule.preview`'s scenarios), a `comparison` block, `overridesApplied` (echo of the
-validated input), `notices`, `employeeNames`, `locationNames`, and
+`olivia.schedule.preview`'s scenarios), **`baselineStatus`/`baselineProof`/`baselineWarnings`
+and `alternateStatus`/`alternateProof`/`alternateWarnings`** (each run's full `PlannerResult`-level
+outcome — `"feasible" | "infeasible" | "unproven"` and its matching proof), a `comparison` block,
+`overridesApplied` (echo of the validated input), `notices`, `employeeNames`, `locationNames`, and
 `disposition: "hypothetical_simulation_only"`.
+
+The status/proof pair matters because the selected scenario alone cannot distinguish a **proven**
+infeasible result from one the bounded solver merely **failed to prove** (search budget exhausted,
+or combined constraints unresolved). Kill Bill 1's reply-composer must read `alternateStatus`
+before telling the owner a hypothetical is impossible — `"infeasible"` means proven impossible
+(trust `alternateScenario.gaps`); `"unproven"` means inconclusive and must be disclosed as such,
+never phrased as a confirmed gap.
 
 ```ts
 comparison: {
@@ -164,8 +173,11 @@ Suggested conversation flow for the model:
    owner-facing sentence is "that change wouldn't affect next week's schedule or cost" — never
    "I applied that change."
 5. If `alternateScenario` is `null` (requested `options.objective` had no feasible scenario) or
-   `alternatePlan` status is `infeasible`, the reply must state the specific uncovered gaps from
-   `alternateScenario?.gaps` / the comparison deltas — never claim a schedule was produced.
+   `alternateStatus` is `"infeasible"`, the reply must state the specific uncovered gaps from
+   `alternateScenario?.gaps` / the comparison deltas — never claim a schedule was produced. If
+   `alternateStatus` is `"unproven"` instead, the reply must disclose that the result is
+   inconclusive (search budget exhausted or constraints unresolved) — never phrase it as either a
+   confirmed schedule or a confirmed impossibility.
 
 ## Verification run
 
