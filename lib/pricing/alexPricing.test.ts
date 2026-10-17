@@ -143,4 +143,27 @@ describe("Alex atomic canonical review and scenarios",()=>{
     expect(reviewFromAtomicSnapshot(s,review({purpose:"pricing_review",
       selection:{kind:"all_active",offset:0,limit:10}}),day).status).toBe("unavailable");
   });
+  it("distinguishes recorded zero cost from missing data and conflicting source rows",()=>{
+    const zero=snapshot();
+    zero.sources.ingredientPrices[0].cost_per_base_unit_micros=0;
+    const selected=review({purpose:"pricing_review",selection:{kind:"specific",
+      items:[{productId:id(1)}]}});
+    const clean=reviewFromAtomicSnapshot(zero,selected,day);
+    if(clean.status==="unavailable")throw Error("unexpected unavailable");
+    expect(clean.value.items[0]).toMatchObject({
+      ingredientCostCents:0,ingredientCostRatioBps:0,
+      ingredientContributionCents:500,costSource:"recipe",currentRecommendationCents:null,
+    });
+    const conflicting=snapshot();
+    conflicting.sources.ingredientPrices.push({...conflicting.sources.ingredientPrices[0],
+      id:id(301)});
+    const ambiguous=reviewFromAtomicSnapshot(conflicting,selected,day);
+    if(ambiguous.status==="unavailable")throw Error("unexpected unavailable");
+    expect(ambiguous.status).toBe("partial");
+    expect(ambiguous.value.items[0].ingredientCostCents).toBeNull();
+    expect(ambiguous.value.items[0].missingInputs.some(x=>
+      x.includes("ambiguous_or_invalid_ingredient_price"))).toBe(true);
+    expect(ambiguous.value.ownerTotalFallbackCoverage).toBe("not_in_p1_atomic_snapshot");
+  });
+
 });
