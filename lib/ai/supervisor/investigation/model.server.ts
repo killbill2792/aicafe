@@ -33,7 +33,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         let code="";
         try{const error=await response.json();code=String(error?.error?.code??"");}catch{/* No error body is evidence. */}
         if(input.usage.modelCallCount===1&&fallback&&fallback!==input.usage.model&&
-          ["model_not_found","model_not_allowed","model_access_denied"].includes(code)){
+          ["model_not_found","model_not_allowed","model_access_denied","model_not_available","model_not_accessible"].includes(code)){
           input.usage.model=fallback;
           clearTimeout(timeout);
           return requestInvestigation({...input,model:fallback});

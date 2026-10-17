@@ -124,6 +124,15 @@ describe("COMPOSE registration and source binding",()=>{
     expect(await registry.invoke(scope,EXPRESSION_ID,plan))
       .toMatchObject({status:"unavailable",reason:"mode_disabled"});
   });
+  it("rejects a forged USD expression context for a non-USD tenant",async()=>{
+    const registry=createP2Registry([registerExpressionSimulation()]);
+    const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+      description:"Quoted local price",nodes:[{op:"hypothetical",label:"price",quotedNumber:"5",value:500,unit:"USD_cents"}]};
+    const result=await registry.invokeSimulation({...scope,identity:{...scope.identity,currency:"EUR"}},EXPRESSION_ID,plan,{
+      businessId:scope.businessId,locationId:null,currency:"USD",ownerMessage:"Price is 5 euros",bindings:[],operands:[],
+    });
+    expect(result).toMatchObject({status:"unavailable",reason:"invalid_source_context",value:null,currency:null});
+  });
   it("never upgrades missing or foreign-biz evidence under the six-mode dispatcher",async()=>{
     const registry=createP2Registry([registerExpressionSimulation()]);
     const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",

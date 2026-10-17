@@ -61,7 +61,7 @@ export function registerExpressionSimulation():SimulateRegistration {
     requiresApproval:false,effectPolicy:"deny",
     simulate(scope,plan,rawContext){
       const parsed=trustedContextSchema.safeParse(rawContext);
-      if(!parsed.success||parsed.data.businessId!==scope.businessId||
+      if(!parsed.success||scope.identity.currency!=="USD"||parsed.data.businessId!==scope.businessId||
         parsed.data.operands.some(o=>o.asOf!==scope.identity.asOf ||
           (o.period!==null && o.period.timezone!==scope.identity.timezone)))
         return {status:"unavailable",capabilityId:EXPRESSION_ID,version:1,

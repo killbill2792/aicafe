@@ -6,7 +6,7 @@ import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.serv
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
+import {investigationReadDatesMatch,rememberInvestigationReads} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -126,7 +126,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           latest.snapshot.revision!==atomic.snapshot.revision)return failure();
       }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
-        reads:remembered.length?remembered.slice(-5):memory?.reads??[]};
+        reads:rememberInvestigationReads(memory?.reads??[],remembered)};
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
     }
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
@@ -140,13 +140,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     let result:unknown;
     let calculation=false;
     if(step.action==="calculate"){
+      if(identity.currency!=="USD"){
+        feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
+      }
       const plan=planSchema.safeParse(args);
       if(step.capabilityId!==EXPRESSION_ID||!plan.success){feedback="Select the registered expression contract and its typed nodes.";continue;}
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
-        locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:"USD",
+        locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
         bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))});
       const checked=simulationOutputSchema.safeParse(result);
@@ -155,12 +158,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       calculation=true;
     }else{
       if(!manifest.some(m=>m.id===step.capabilityId)){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
-      // Explicit owner dates constrain all period-bearing reads. Context/default
-      // periods remain visible to the independent completeness/evidence review.
-      const dates=parseOwnerDateWindows(input.text,identity.asOf);
-      const period=record(args)&&record(args.period)?args.period:null;
-      if(period&&dates.length&&!dates.some(d=>d.from===period.from&&d.to===period.to)){
-        feedback="That period differs from the owner's explicit calendar window.";continue;
+      // Preserve validated period/week selectors across date-free follow-ups,
+      // including nested domain requests. Explicit new owner dates supersede them.
+      if(!investigationReadDatesMatch(args,input.text,identity.asOf,memory,ownerStatements)){
+        feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
       }
       if(identity.currency!=="USD"&&!['p3.business.profile.v1','p3.public.research.v1'].includes(step.capabilityId)){
         feedback="The currently registered monetary source contracts support USD only. Explain the scope limit without inventing conversions.";continue;

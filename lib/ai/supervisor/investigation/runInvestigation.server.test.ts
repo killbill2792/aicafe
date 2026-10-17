@@ -207,7 +207,10 @@ it("resolves a scheduling pronoun from owner/thread scenario memory without dema
     overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:minutes}]});
   const final=answer([{kind:"evidence",text:"I tested the weekly cap of {{r1:value.0.overridesSummary.0.maxWeeklyMinutes}} minutes. The modeled payroll difference is {{r1:value.0.loadedPayrollDifferenceCents}}; this is a simulation, not a published change.",citations:["r1"]}]);
   const first=await runSupervisorTurn({...base,text:"What if we cap Ava at 120 minutes for the week of 2026-10-19?"},transportFor([cap(120),final]));
-  const second=await runSupervisorTurn({...base,text:"Make her cap 90 minutes instead.",investigationMemory:first.reply.investigationMemory},transportFor([cap(90),final]));
+  const second=await runSupervisorTurn({...base,text:"Make her cap 90 minutes instead.",investigationMemory:first.reply.investigationMemory},transportFor([{...cap(90),argumentsJson:JSON.stringify({purpose:"schedule_what_if",week:"2026-10-26",
+      overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:90}]})},cap(90),final]));
+  expect(olivia.mock.calls.every(([r])=>typeof r!=="object"||r===null||!("week" in r)||r.week===asOf)).toBe(true);
+  expect(second.usage.toolCallCount).toBe(2);
   expect(second.reply.status).toBe("partial");
   expect(JSON.stringify(second.reply.blocks)).toContain("90 minutes");
   expect(olivia).toHaveBeenLastCalledWith(expect.objectContaining({capability:"olivia.schedule.whatIf",
@@ -261,14 +264,14 @@ it("rechecks the active tenant before publishing any investigated evidence",asyn
   expect(result.reply.status).toBe("unavailable");expect(result.reply.evidence).toEqual([]);
 });
 
-it("honors the configured model-access fallback with shared bounded usage",async()=>{
+it.each(["model_not_found","model_not_allowed","model_access_denied","model_not_available","model_not_accessible"])("honors configured model fallback for %s with shared bounded usage",async(code)=>{
   const previous=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL;
   process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL="allowed-small-model";
   try{
     const models:string[]=[];
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));models.push(body.model);
-      if(models.length===1)return new Response(JSON.stringify({error:{code:"model_not_found"}}),{status:404});
+      if(models.length===1)return new Response(JSON.stringify({error:{code}}),{status:404});
       return body.text.format.name==="supervisor_investigation_review"?response({supported:true,complete:true}):
         response(answer([{kind:"advice",text:"Review handoff bottlenecks with the team before changing the workflow.",citations:[]}]))});
     const result=await runSupervisorTurn({...base,text:"How can we improve workflow?"},transport);
@@ -323,4 +326,55 @@ it("investigates nested owner-workflow records and keeps the exact canonical tas
     href:"/operations?status=needs_you&agent=olivia&task=owner-coverage#selected-task"}));
   expect(result.reply.blocks.some(b=>b.type==="task_card"&&b.taskId==="watching-price")).toBe(false);
   expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+});
+
+
+it.each(["EUR","AED"])("rejects source-free money relabeling for a %s cafe",async(currency)=>{
+  auth.mockResolvedValue({identity:{...identity,currency},tools:base.tools});
+  atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,currency}});
+  const transport=transportFor([
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({capabilityId:EXPRESSION_ID,
+      version:1,purpose:"no_external_sources",description:"Owner hypothetical product price",
+      nodes:[{op:"hypothetical",label:"product price",quotedNumber:"5",value:500,unit:"USD_cents"}]}),responseJson:null},
+    answer([{kind:"advice",text:"This calculator does not support your cafe currency yet. I can explain the pricing approach without relabeling local amounts as dollars.",citations:[]}])],
+    (context,step)=>{if(step===1){
+      expect(context.observations).toEqual([]);
+      expect(context.feedback).toContain("supports USD only");
+    }});
+  const result=await runSupervisorTurn({...base,text:"What if product price is 5 in our local currency?"},transport);
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("$5");
+  expect(result.reply.evidence).toEqual([]);
+  expect(result.usage.toolCallCount).toBe(1);
+});
+
+it.each(["top-level","nested"])("blocks a silent scheduling week change through %s selectors",async(shape)=>{
+  const oldWeek="2026-10-19",wrongWeek="2026-10-26";
+  const old=shape==="nested"?{purpose:"scheduling_investigation",request:{capability:"olivia.schedule.preview",version:1,week:oldWeek}}:
+    {purpose:"staffing_preview",week:oldWeek};
+  const wrong=shape==="nested"?{...old,request:{capability:"olivia.schedule.preview",version:1,week:wrongWeek}}:{...old,week:wrongWeek};
+  const capabilityId=shape==="nested"?"p3.olivia.records.v1":"p3.olivia.schedule.preview.v1";
+  await runSupervisorTurn({...base,text:"Use the same plan with fewer hours.",investigationMemory:{version:1,businessId:cafe,
+    ownerStatements:["Review the upcoming plan"],reads:[{capabilityId,inputJson:JSON.stringify(old)}]}},transportFor([
+      read(capabilityId,wrong),answer([{kind:"clarification",text:"I will retain the previous plan period. Which staffing constraint should change?",citations:[]}])],
+    (context,step)=>{if(step===1)expect(context.feedback).toContain("remembered calendar window");}));
+  expect(olivia).not.toHaveBeenCalled();
+});
+
+it("preserves validated finance periods across follow-ups and allows an explicit replacement",async()=>{
+  const oldPeriod={from:"2026-10-01",to:"2026-10-01"},newPeriod={from:"2026-10-02",to:"2026-10-02"};
+  const capabilityId="p3.money.expense_entries.v1";
+  const memory={version:1 as const,businessId:cafe,ownerStatements:["Show recorded expense entries for 2026-10-01."],
+    reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:oldPeriod}))}]};
+  const result=await runSupervisorTurn({...base,text:"Only actual entries please.",investigationMemory:memory},transportFor([
+    read(capabilityId,query("money.expense_entries",{period:newPeriod})),
+    read(capabilityId,query("money.expense_entries",{period:oldPeriod})),
+    answer([{kind:"evidence",text:"I kept the requested period and retrieved the recorded entries.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(p1.mock.calls[0][2]).toMatchObject({period:oldPeriod});
+  p1.mockClear();
+  const replacement=await runSupervisorTurn({...base,text:"Use 2026-10-02 instead.",investigationMemory:result.reply.investigationMemory},transportFor([
+    read(capabilityId,query("money.expense_entries",{period:newPeriod})),
+    answer([{kind:"evidence",text:"I retrieved the entries for the replacement date.",citations:["r1"]}])]));
+  expect(p1.mock.calls[0][2]).toMatchObject({period:newPeriod});
+  expect(JSON.stringify(replacement.reply.investigationMemory?.reads)).not.toContain("2026-10-01");
 });
