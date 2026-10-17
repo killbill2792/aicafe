@@ -1718,5 +1718,47 @@
     "revisionUnknown": "Estado desconocido",
     "invalidWallTime": "Elija una fecha y hora local válida y sin ambigüedad. Los cambios de horario de verano pueden hacer que algunas horas no existan o se repitan.",
     "historyUnavailable": "No se pudieron cargar las versiones del calendario. Actualice y vuelva a intentarlo."
+  },
+  "SupervisorP3Reads": {
+    "headings": {
+      "supplierQuotes": "Cotizaciones de proveedores",
+      "menuCatalog": "Catálogo del menú",
+      "productCosts": "Costos del producto",
+      "ingredients": "Ingredientes",
+      "staffWages": "Salarios registrados",
+      "monthlyBills": "Obligaciones recurrentes",
+      "billRows": "Facturas recurrentes",
+      "recordedSpending": "Gastos registrados",
+      "expenseEntries": "Gastos registrados"
+    },
+    "fields": {
+      "supplierName": "Proveedor",
+      "itemName": "Producto",
+      "priceCents": "Precio registrado",
+      "packageCount": "Cantidad de paquetes",
+      "name": "Nombre",
+      "label": "Factura",
+      "amountCents": "Importe",
+      "totalCents": "Total registrado",
+      "defaultHourlyWageCents": "Salario por hora",
+      "wageAmountCents": "Salario registrado",
+      "ingredientsCentsToday": "Ingredientes de receta actuales"
+    },
+    "alerts": {
+      "partial": "Lectura provisional",
+      "quality": "La cobertura y la revisión del origen no están verificadas. No representa un total completo, existencias confirmadas ni una acción ejecutada.",
+      "empty": "No hay campos admitidos en esta muestra autorizada.",
+      "more": "Solo se muestra una muestra pequeña, no un recuento completo.",
+      "estimated": "Estimado — no es un gasto real registrado"
+    },
+    "units": {
+      "each": "unidad",
+      "oz": "onza",
+      "lb": "libra",
+      "kg": "kg",
+      "gal": "galón estadounidense",
+      "liter": "litro",
+      "case": "caja"
+    }
   }
 }
