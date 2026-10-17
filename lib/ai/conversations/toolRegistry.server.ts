@@ -490,9 +490,12 @@ export function createSupervisorToolRegistry(context: Context) {
         const percent=(profit.value.operatingMargin*100).toFixed(1);
         const title=context.locale==="es"?"Margen de beneficio operativo":
           context.locale==="ar"?"هامش الربح التشغيلي":"Operating profit margin";
+        const qualification=context.locale==="es"?" de las ventas netas después de los costos operativos modelados.":
+          context.locale==="ar"?" من صافي المبيعات بعد تكاليف العمل المحسوبة.":
+          " of net sales after modeled business costs.";
         addInsight(result,prefix+"margin",title+" ("+range.from+
           (range.from===range.to?"":" – "+range.to)+"): "+percent+
-          "% of net sales after modeled business costs.",source);
+          "%"+qualification,source);
         result.data={from:range.from,to:range.to,ratio:profit.value.operatingMargin,
           netSalesCents:profit.value.netSalesCents,ownerProfitCents:profit.value.ownerProfitCents,
           arithmetic:"canonical operating margin, not ingredient contribution"};
