@@ -10,6 +10,7 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
+import { parseOwnerDateWindows } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
@@ -163,6 +164,9 @@ function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boole
  * natural-language ranges fail closed instead of silently displaying wrong days.
  */
 function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
+  const parsed=parseOwnerDateWindows(text,asOf);
+  if(parsed.length===1)return parsed[0];
+  if(parsed.length>1)return null;
   const dates=[...text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].map(x=>x[0]);
   if(dates.length===1)return {from:dates[0],to:dates[0]};
   if(dates.length===2&&dates[0]<=dates[1])return {from:dates[0],to:dates[1]};
@@ -230,6 +234,10 @@ export async function tryP3SupervisorReadOnly(input:{
   history?:ConversationalTurn[];
   onUsage?:(usage:P3Usage)=>void;
 }):Promise<P3Result|null>{
+  // P3 scalar reads currently validate one contiguous owner date window.
+  // Disjoint days belong to the registered multi-read Supervisor path; skip
+  // P3 *before* spending a provider/read budget rather than widening dates.
+  if(parseOwnerDateWindows(input.text,input.asOf).length>1)return null;
   const {tools,identity}=await authorizedOwnerP1();
   const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
     .split(",").map(id=>id.trim()).filter(Boolean);
