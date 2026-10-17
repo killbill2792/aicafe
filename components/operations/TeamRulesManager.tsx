@@ -26,7 +26,13 @@ const surface = "rounded-2xl border border-[#D8C8B5] bg-card p-4 md:p-5";
 const field = "min-h-12 w-full rounded-xl border border-[#B9A995] bg-white px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const button = "min-h-12 rounded-full px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50";
 
-export default function TeamRulesManager({ copy, selectedAgent }: { copy: TeamRulesCopy; selectedAgent:RuleAgent }) {
+/** A selected-agent change remounts the editor rather than using a synchronous
+ * effect to reset its local draft. The async policy readers stay owner-scoped. */
+export default function TeamRulesManager(props: { copy: TeamRulesCopy; selectedAgent:RuleAgent }) {
+  return <TeamRulesManagerBody key={props.selectedAgent} {...props} />;
+}
+
+function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; selectedAgent:RuleAgent }) {
   const [instruction, setInstruction] = useState("");
   const [editingFrom,setEditingFrom]=useState<TeamRule|null>(null);
   const [rules, setRules] = useState<TeamRule[]>([]);
@@ -47,12 +53,6 @@ export default function TeamRulesManager({ copy, selectedAgent }: { copy: TeamRu
     setEvents(auditPage.items);
     setNextAuditOffset(auditPage.nextOffset);
   }, []);
-
-  useEffect(()=>{
-    setInstruction("");
-    setEditingFrom(null);
-    setError(null);
-  },[selectedAgent]);
 
   useEffect(() => {
     const controller = new AbortController();
