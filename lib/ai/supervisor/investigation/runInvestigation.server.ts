@@ -216,12 +216,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const parents=calculation?observations.filter(o=>sourceHandles.some(
       handle=>typeof handle==="string"&&handle.startsWith("dataset:"+o.id+":"))):
       observations.filter(o=>o.id===parentReadId);
+    // Dataset handles inherit their read's dependency through parents. Direct
+    // P1 handles have no dataset parent, but still depend on financial source
+    // state and must never bypass the publication-time snapshot reread.
+    const directSourceRequiresSnapshot=calculation&&sourceHandles.some(
+      handle=>typeof handle==="string"&&!handle.startsWith("dataset:"));
     const parentObservation=parents[0];
     const inheritedSource=parents.some(o=>o.reference?.source==="unverified_external")?"unverified_external":parentObservation?.reference?.source;
     const observation:Observation={id,capabilityId:step.capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
       reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result,inheritedSource):null,
-      requiresSnapshot:parents.some(o=>o.requiresSnapshot)||!calculation&&
+      requiresSnapshot:directSourceRequiresSnapshot||parents.some(o=>o.requiresSnapshot)||!calculation&&
         manifest.find(m=>m.id===step.capabilityId)?.currencyPolicy!=="independent",
       display:successful?observationDisplay(result,input.locale):{},calculation};
     if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
