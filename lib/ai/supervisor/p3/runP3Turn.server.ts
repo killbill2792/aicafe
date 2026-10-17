@@ -15,7 +15,7 @@ import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 import { rebaseQuotedOccurrence } from "./quoteOccurrences";
-import { presentRegisteredReads } from "./readEvidencePresentation";
+import { presentRegisteredReads,registeredReadReason } from "./readEvidencePresentation";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
@@ -312,8 +312,10 @@ export async function tryP3SupervisorReadOnly(input:{
     transport:input.transport,
     readableSourceClauses:[...new Set(shadow.evidence.filter(read=>
       ["verified","estimated","partial"].includes(read.status) &&
-      read.capabilityId!==null &&
-      read.result!==null).map(read=>read.clause))],
+      read.capabilityId!==null && read.result!==null &&
+      !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
+        sibling.capabilityId!==null && sibling.status==="unavailable"))
+      .map(read=>read.clause))],
     operands:projection.choices.map(choice=>{
       const v=projection.operands.find(o=>o.handle===choice.handle)!;
       return {...choice,unit:v.unit,
@@ -339,9 +341,16 @@ export async function tryP3SupervisorReadOnly(input:{
     if(!item.planJson){
       if(!item.reason)return null;
       unsupportedGoals+=item.coveredClauses.length;
-      if(item.reason==="read_only")
-        for(const clause of item.coveredClauses)plainReadClauses.add(clause);
-      else unsupportedReasons.add(item.reason);
+      if(item.reason==="read_only"){
+        for(const clause of item.coveredClauses){
+          plainReadClauses.add(clause);
+          // A source-backed preview of one successful sibling must not hide
+          // that another owner-requested source for the same clause failed.
+          if(shadow.evidence.some(read=>read.clause===clause &&
+            read.capabilityId!==null && read.status==="unavailable"))
+            unsupportedReasons.add("missing_input");
+        }
+      }else unsupportedReasons.add(item.reason);
       continue;
     }
     // A multi-read clause may require more than one canonical source (e.g.
@@ -441,17 +450,6 @@ export async function tryP3SupervisorReadOnly(input:{
   });
   if(plainReadClauses.size && !presentedReads.blocks.length)
     unsupportedReasons.add("missing_input");
-  const reasonText={
-    en:{unsupported:"A registered capability cannot yet complete this requested outcome.",
-      missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
-      unsupported_action:"This action requires an authorized, separate approval workflow; nothing was changed."},
-    es:{unsupported:"Ninguna capacidad registrada puede completar todavía este resultado.",
-      missing_input:"Faltan registros o datos necesarios para un cálculo fiable.",
-      unsupported_action:"Esta acción requiere un flujo separado de aprobación; no se ha cambiado nada."},
-    ar:{unsupported:"لا تستطيع القدرة المسجلة إكمال هذه النتيجة حاليًا.",
-      missing_input:"البيانات أو السجلات المطلوبة ناقصة، ولا يمكن حساب نتيجة موثوقة.",
-      unsupported_action:"يتطلب هذا الإجراء مسار موافقة منفصلًا؛ لم يتم تغيير أي شيء."},
-  }[input.locale];
   // A complete audit of an unsupported or incomplete request is an honest
   // answer, not a reason to exhaust the legacy model budget and hallucinate.
   // A request with no successful computation must never claim a scenario result.
@@ -467,7 +465,7 @@ export async function tryP3SupervisorReadOnly(input:{
     }
     const warnings=[...unsupportedReasons].map(reason=>({
       type:"warning" as const,code:"P3_"+reason.toUpperCase(),
-      text:reasonText[reason],
+      text:registeredReadReason(input.locale,reason),
     }));
     return {kind:"p3_read_only_conditional",executedEffects:0,
       reply:{intent:"unknown",status:presentedReads.blocks.length?"partial":"unavailable",
@@ -484,7 +482,8 @@ export async function tryP3SupervisorReadOnly(input:{
     ...presentedReads.blocks,
   ];
   for(const reason of unsupportedReasons)blocks.push({
-    type:"warning",code:"P3_"+reason.toUpperCase(),text:reasonText[reason],
+    type:"warning",code:"P3_"+reason.toUpperCase(),
+    text:registeredReadReason(input.locale,reason),
   });
   const refs:EvidenceReference[]=[...presentedReads.evidence];
   for(let i=0;i<outcomes.length;i++){
