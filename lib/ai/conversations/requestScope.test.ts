@@ -87,6 +87,22 @@ describe("independent semantic scope correction and period coverage",()=>{
   });
 });
 
+describe("Proposed Olivia scheduling is a distinct read-only intent",()=>{
+  it("normalizes planning scope metadata but keeps actual staff history period-sensitive",()=>{
+    const planned=goal("schedule_preview","custom"),audited=goal("schedule_preview","month_to_date");
+    expect(reconcileRequestScopes([planned],[audited],true,false))
+      .toEqual([audited]);
+    expect(coversRequestedGoal(planned,{name:"olivia_schedule",arguments:{
+      action:"preview",week:"2026-10-19",objective:"cash",overrides:null,
+    }})).toBe(true);
+    expect(coversRequestedGoal(planned,{name:"get_staff",arguments:{
+      view:"schedule",period:"custom",from:"2026-10-19",to:"2026-10-25",
+    }})).toBe(false);
+    expect(fallbackCallForGoal(planned)).toBeNull();
+    expect(goalLabel("schedule_preview","en")).toBe("Scheduling proposal");
+  });
+});
+
 describe("Remaining period-sensitive goal reads",()=>{
   it("rejects wrong periods for sales, distinct items, owner profit, spending and bills",()=>{
     const date={period:"month_to_date",from:null,to:null};
