@@ -15,6 +15,7 @@ import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 import { rebaseQuotedOccurrence } from "./quoteOccurrences";
+import { presentRegisteredReads } from "./readEvidencePresentation";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
@@ -409,6 +410,16 @@ export async function tryP3SupervisorReadOnly(input:{
     });
   }
   const locale=labels[input.locale];
+  // Each read comes from the existing model-selected, server-registered P1
+  // source. A read-only clause can show bounded provisional source evidence
+  // even when it cannot be represented by the expression engine. Keep this
+  // separate from canonical atomic financial/scheduling calculations.
+  const presentedReads=presentRegisteredReads({
+    evidence:shadow.evidence,
+    includedClauses:completion.plan.plans.filter(p=>p.planJson===null)
+      .flatMap(p=>p.coveredClauses),
+    businessId:identity.businessId,asOf:identity.asOf,locale:input.locale,
+  });
   const reasonText={
     en:{unsupported:"The requested information is not supported by a registered read capability.",
       missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
@@ -425,12 +436,22 @@ export async function tryP3SupervisorReadOnly(input:{
   // A request with no successful computation must never claim a scenario result.
   if(!outcomes.length){
     if(unsupportedGoals!==clauses.length)return null;
+    // Do not show a stale earlier read when the PostgreSQL source epoch moved.
+    if(atomic.status==="available"){
+      const latest=await readAuthorizedAtomicP1SourceSnapshot();
+      if(latest.status!=="available" ||
+        latest.snapshot.businessId!==atomic.snapshot.businessId ||
+        latest.snapshot.revision!==atomic.snapshot.revision)
+        return sourceIntegrityFailure();
+    }
+    const warnings=[...unsupportedReasons].map(reason=>({
+      type:"warning" as const,code:"P3_"+reason.toUpperCase(),
+      text:reasonText[reason],
+    }));
     return {kind:"p3_read_only_conditional",executedEffects:0,
-      reply:{intent:"unknown",status:"unavailable",evidence:[],
-        blocks:[...unsupportedReasons].map(reason=>({
-          type:"warning" as const,code:"P3_"+reason.toUpperCase(),
-          text:reasonText[reason],
-        }))},
+      reply:{intent:"unknown",status:presentedReads.blocks.length?"partial":"unavailable",
+        evidence:presentedReads.evidence,
+        blocks:[...presentedReads.blocks,...warnings].slice(0,30)},
       usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
         toolCallCount:reported.toolCallCount,
         inputTokens:shadow.usage.inputTokens+completion.tokens.input,
@@ -439,11 +460,12 @@ export async function tryP3SupervisorReadOnly(input:{
   }
   const blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
+    ...presentedReads.blocks,
   ];
   for(const reason of unsupportedReasons)blocks.push({
     type:"warning",code:"P3_"+reason.toUpperCase(),text:reasonText[reason],
   });
-  const refs:EvidenceReference[]=[];
+  const refs:EvidenceReference[]=[...presentedReads.evidence];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(
       JSON.stringify({goal:input.text,inputs:calculationInputs[i],
