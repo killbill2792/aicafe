@@ -1797,6 +1797,15 @@
     "unit_kg": "kilograms",
     "unit_gal": "US gallons",
     "unit_liter": "liters",
-    "unit_case": "cases"
+    "unit_case": "cases",
+    "field_ingredientsCentsEstimated": "Estimated current recipe ingredients",
+    "field_ownerTotalCostRecorded": "Owner-recorded total product cost (not recipe ingredients)",
+    "field_ownerTotalCostEstimated": "Estimated owner-entered total product cost (not recipe ingredients)",
+    "period_hour": "hour",
+    "period_month": "month",
+    "period_year": "year",
+    "unsupportedOutcome": "A registered capability cannot yet complete this requested outcome.",
+    "missingInput": "Required records or inputs are missing; I cannot calculate a reliable result.",
+    "unsupportedAction": "This action requires an authorized, separate approval workflow; nothing was changed."
   }
 }
