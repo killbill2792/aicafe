@@ -363,8 +363,8 @@ export async function runSupervisorTurn(input: {
   const priorUsage:SupervisorUsage={
     model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
   };
-  // P3 is default-off and owner-allowlisted. Every model attempt and canonical
-  // reader invocation consumes the SAME bounded turn budget as legacy fallback.
+  // P3 is default-off and owner-allowlisted. P3 and legacy share the
+  // authorized five-read cap, while model usage from both stages is recorded.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
     let p3Failed=false;
@@ -443,10 +443,13 @@ export async function runSupervisorTurn(input: {
       legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
       modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   }
-  // The independent semantic audit has its own counted attempt; preserve all
-  // three bounded conversation rounds for multi-step specialist follow-ups.
-  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:
-    priorUsage.modelCallCount===0?1:0);
+  // The legacy tool loop needs three bounded model rounds PLUS one mandatory
+  // independent scope audit. Count P3 attempts in the overall usage ledger,
+  // but do not spend the legacy budget before legacy starts: otherwise two
+  // successful P3 planning responses leave only one legacy call, and its
+  // mandatory audit fails before any café tool can run. The shared five-read
+  // cap still applies across both stages; neither stage is unbounded.
+  const maxModelAttempts=priorUsage.modelCallCount+MAX_ROUNDS+1;
   const usage:SupervisorUsage={...priorUsage};
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
