@@ -143,7 +143,7 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   if(row.price_cents===null||row.price_cents<0)missing.push("selling_price_missing");
   const sellingPrice=newPrice??(row.price_cents!==null&&row.price_cents>=0?row.price_cents:null);
   const ingredientById=new Map(snapshot.sources.ingredients.map(i=>[i.id,i]));
-  let lines=snapshot.sources.recipes.filter(l=>l.menu_item_id===row.id)
+  const lines=snapshot.sources.recipes.filter(l=>l.menu_item_id===row.id)
     .map(l=>({...l}));
   if(!lines.length)missing.push("recipe_missing");
   if(lines.length>200 || new Set(lines.map(x=>x.ingredient_id)).size!==lines.length)
