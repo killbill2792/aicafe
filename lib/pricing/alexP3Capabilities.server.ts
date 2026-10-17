@@ -226,21 +226,33 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         ingredientCostDeltaCents: number | null; ingredientContributionDeltaCents: number | null;
         targetPriceCents: number | null; assumptions: unknown;
       };
-      // A target was requested but simulateFromAtomicSnapshot could not price it (no
-      // complete recipe and no usable owner-total fallback) -- it still returns
-      // "partial" (missing inputs, not a hard failure) with targetPriceCents null.
-      // Publishing that as a successful what-if silently drops the one answer the
-      // owner actually asked for (presentation omits the null field entirely). Report
-      // unavailable instead. Caught in review (round 5).
-      if ((input.targetCostRatioBps !== undefined || input.targetIngredientMarginBps !== undefined) &&
-        value.targetPriceCents === null) {
+      // Shared by both missing-cost-basis checks below: simulateFromAtomicSnapshot still
+      // returns "partial" (missing inputs, not a hard failure) when the product has
+      // neither a complete priced recipe nor a usable owner-total fallback -- it does
+      // not fail the whole scenario just because it can't price it.
+      const missingCostReason = () => {
         const missingInputs = (raw.quality as { missingInputs?: unknown }).missingInputs;
-        const costReason = Array.isArray(missingInputs)
+        return Array.isArray(missingInputs)
           ? missingInputs.find((m): m is string => typeof m === "string" && m.includes("owner_total_cost"))
           : undefined;
+      };
+      // A target was requested but simulateFromAtomicSnapshot could not price it. Publishing
+      // that as a successful what-if silently drops the one answer the owner actually asked
+      // for (presentation omits the null targetPriceCents entirely). Report unavailable
+      // instead. Caught in review (round 5).
+      if ((input.targetCostRatioBps !== undefined || input.targetIngredientMarginBps !== undefined) &&
+        value.targetPriceCents === null)
         return { status: "unavailable" as const, value: null,
-          reason: costReason ?? "cost_basis_unavailable_for_target" };
-      }
+          reason: missingCostReason() ?? "cost_basis_unavailable_for_target" };
+      // A selling-price change was requested (the point of which is its margin impact) but
+      // the same missing cost basis means ingredientContributionDeltaCents comes back null
+      // too -- not because the scenario is unapplied (it is applied; see targetOnly below),
+      // but because the impact genuinely could not be computed. Publishing that as success
+      // would silently echo back only the requested price change with no indication the
+      // impact calculation failed. Report unavailable instead. Caught in review (round 7).
+      if (input.sellingPrice !== undefined && value.ingredientContributionDeltaCents === null)
+        return { status: "unavailable" as const, value: null,
+          reason: missingCostReason() ?? "cost_basis_unavailable_for_impact" };
       const knownCodes: readonly string[] = ALEX_ASSUMPTION_CODES;
       const presentCodes = new Set(Array.isArray(value.assumptions)
         ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))
