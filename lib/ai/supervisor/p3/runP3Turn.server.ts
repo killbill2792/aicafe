@@ -8,9 +8,10 @@ import { SUPERVISOR_ENDPOINT,supervisorModelProfile } from
 import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
-import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
+import { runP2ShadowWithScope, type ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
-import { buildAlexP3Registrations } from "@/lib/pricing/alexP3Capabilities.server";
+import { buildAlexP3Registrations,ALEX_P3_WHATIF_ID } from
+  "@/lib/pricing/alexP3Capabilities.server";
 import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
 import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
@@ -18,11 +19,27 @@ import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 import { rebaseQuotedOccurrence } from "./quoteOccurrences";
-import { presentRegisteredReads,registeredReadReason } from "./readEvidencePresentation";
+import { presentRegisteredReads,registeredReadReason,
+  specificCapabilityUnavailableReason } from "./readEvidencePresentation";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
+// The ONLY registered "read" capability whose successful result is a
+// complete, bounded, OWNER-PARAMETERIZED simulation -- its result actually
+// depends on a hypothetical the owner supplied (a price delta, a target
+// margin), not merely a read of current state. Confirmed exhaustive by
+// reading every P3 registration: Alex's OWN review capability
+// (ALEX_P3_REVIEW_ID) takes only {purpose} and returns an unchanged current
+// price list, and Olivia's schedule PREVIEW (not what-if; that capability
+// isn't registered in P3 at all) takes only a week -- neither encodes or
+// proves satisfaction of any requested change, so neither belongs here even
+// though both are genuine P3 read capabilities. Caught in review (round 2
+// of PR #106, for conflating this with readableSourceClauses at all; round 3,
+// for over-including Alex's review and Olivia's preview here too -- a
+// calculation/change-shaped clause answered by either would otherwise be
+// told its unchanged current-state read already satisfies the request).
+const COMPLETED_SIMULATION_CAPABILITY_IDS=new Set<string>([ALEX_P3_WHATIF_ID]);
 const coverage=z.strictObject({
   complete:z.boolean(),
   plans:z.array(z.strictObject({
@@ -75,6 +92,7 @@ async function modelComposition(input:{
     handle:string;unit:string;sourceQuality:string;entityName:string;
     entityId:string;field:string;matchedClause:string;
   }>;readableSourceClauses:readonly string[];
+  completedSimulationClauses:readonly string[];
   model:string;apiKey:string;transport:Transport;
 }):Promise<{plan:ReturnType<typeof coverage.parse>;tokens:{input:number;output:number}}|null>{
   const controller=new AbortController();
@@ -121,8 +139,21 @@ async function modelComposition(input:{
           "For a request to SHOW or LIST already authorized record fields with no arithmetic,",
           "choose planJson null and reason read_only ONLY for a clause in readableSourceClauses.",
           "This renders a provisional bounded source sample, never a complete count or effect.",
+          "completedSimulationClauses is DIFFERENT and NARROWER: a clause in it was answered by",
+          "a bounded owner-parameterized what-if or simulation (a price change, a margin target,",
+          "a schedule change) whose registered capability ALREADY computed a complete result for",
+          "that exact request -- not a raw source value for you to combine with anything else.",
+          "Being phrased as a calculation does not disqualify such a clause: if it is in",
+          "completedSimulationClauses, choose planJson null and reason read_only for it too, so",
+          "the already-computed result is shown, rather than missing_input, which would discard",
+          "a real completed answer. Never apply this to a clause that is ONLY in",
+          "readableSourceClauses (a raw operand value, e.g. a recorded wage or sales figure) --",
+          "that clause still needs the expression engine for any real arithmetic (sums, rates,",
+          "percentages) the owner actually asked for.",
           "Never classify a request for a business change/approval as a completed read.",
-          "If a requested calculation lacks necessary operands, choose null and missing_input.",
+          "If a clause needs genuinely new arithmetic across sources, or its calculation lacks",
+          "necessary operands and it is in neither readableSourceClauses nor",
+          "completedSimulationClauses, choose null and missing_input.",
           "Writes or approvals are unsupported_action. Do not present a partial subtraction",
           "of revenue and wages as verified profit when ingredients/fees are missing.",
         ].join(" "),
@@ -133,6 +164,7 @@ async function modelComposition(input:{
           })),
           authorizedOperandChoices:input.operands,
           readableSourceClauses:input.readableSourceClauses,
+          completedSimulationClauses:input.completedSimulationClauses,
         })}],
         text:{format:{type:"json_schema",name:"p3_expression_plans",strict:true,
           schema:OUTPUT_SCHEMA}},
@@ -150,6 +182,47 @@ async function modelComposition(input:{
       output:n(usage?.output_tokens)}};
   }catch{return null;}
   finally{clearTimeout(timer);}
+}
+/** A generic "missing_input" reason discards whatever a registered
+ * capability's OWN unavailable result already knows about why it couldn't
+ * answer (ambiguous product name, no priced recipe, no feasible schedule...).
+ * Prefer that specific, actionable text over the generic brush-off whenever
+ * it's available; the generic text remains the fallback for anything not in
+ * the known reason map, and for the other two coarser classifications
+ * (unsupported / unsupported_action), which come from the planner itself,
+ * not from a capability's own result. */
+function unsupportedReasonWarnings(
+  reasons:ReadonlySet<"unsupported"|"missing_input"|"unsupported_action">,
+  evidence:readonly ShadowEvidence[],locale:"en"|"es"|"ar",
+):SupervisorReplyBlock[]{
+  const warnings:SupervisorReplyBlock[]=[];
+  if(reasons.has("missing_input")){
+    const specific=new Set<string>();
+    // A clause whose failure reason isn't in the known map must never go
+    // unexplained just because a DIFFERENT clause's reason happened to be
+    // specific -- that would be a worse outcome than the single generic
+    // warning this replaced. Caught in review (round 2 of PR #106).
+    let hasUnmapped=false;
+    for(const item of evidence){
+      if(item.status!=="unavailable"||!item.capabilityId||!item.reason)continue;
+      const text=specificCapabilityUnavailableReason(locale,item.reason);
+      if(text)specific.add(text);
+      else hasUnmapped=true;
+    }
+    // A turn covers at most 5 clauses total (coverage schema's own cap), so
+    // this never truncates a real distinct reason.
+    for(const text of [...specific].slice(0,5))
+      warnings.push({type:"warning",code:"P3_MISSING_INPUT",text});
+    if(!specific.size||hasUnmapped)
+      warnings.push({type:"warning",code:"P3_MISSING_INPUT",
+        text:registeredReadReason(locale,"missing_input")});
+  }
+  for(const reason of reasons){
+    if(reason==="missing_input")continue;
+    warnings.push({type:"warning",code:"P3_"+reason.toUpperCase(),
+      text:registeredReadReason(locale,reason)});
+  }
+  return warnings;
 }
 function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boolean{
   const expected=new Map<string,number>();
@@ -250,12 +323,11 @@ export async function tryP3SupervisorReadOnly(input:{
   if((contextualDates.length>1 && isoDates===0) ||
     (!directDates.length && contextualDates.length>0))return null;
   const {tools,identity}=await authorizedOwnerP1();
-  const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
-    .split(",").map(id=>id.trim()).filter(Boolean);
-  // Compatibility requires BOTH the default-off feature flag at the caller
-  // and an explicit authenticated selected-business allowlist.
-  if(!identity.businessId||!allowed.includes(identity.businessId)||
-    !input.apiKey||identity.currency!=="USD")return null;
+  // Every authenticated owner's business reaches P3 the same way, regardless
+  // of how many locations it has -- businessId is the tenant boundary, not a
+  // rollout allowlist. USD-only remains a real scope limit (the P1 catalog's
+  // units), not a feature gate.
+  if(!identity.businessId||!input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
   const capabilityRegistry=createP3ReadRegistry([
@@ -334,6 +406,13 @@ export async function tryP3SupervisorReadOnly(input:{
     readableSourceClauses:[...new Set(shadow.evidence.filter(read=>
       ["verified","estimated","partial"].includes(read.status) &&
       read.capabilityId!==null && read.result!==null &&
+      !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
+        sibling.capabilityId!==null && sibling.status==="unavailable"))
+      .map(read=>read.clause))],
+    completedSimulationClauses:[...new Set(shadow.evidence.filter(read=>
+      ["verified","estimated","partial"].includes(read.status) &&
+      read.capabilityId!==null && COMPLETED_SIMULATION_CAPABILITY_IDS.has(read.capabilityId) &&
+      read.result!==null &&
       !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
         sibling.capabilityId!==null && sibling.status==="unavailable"))
       .map(read=>read.clause))],
@@ -484,10 +563,7 @@ export async function tryP3SupervisorReadOnly(input:{
         latest.snapshot.revision!==atomic.snapshot.revision)
         return sourceIntegrityFailure();
     }
-    const warnings=[...unsupportedReasons].map(reason=>({
-      type:"warning" as const,code:"P3_"+reason.toUpperCase(),
-      text:registeredReadReason(input.locale,reason),
-    }));
+    const warnings=unsupportedReasonWarnings(unsupportedReasons,shadow.evidence,input.locale);
     return {kind:"p3_read_only_conditional",executedEffects:0,
       reply:{intent:"unknown",status:presentedReads.blocks.length?"partial":"unavailable",
         evidence:presentedReads.evidence,
@@ -502,10 +578,7 @@ export async function tryP3SupervisorReadOnly(input:{
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
     ...presentedReads.blocks,
   ];
-  for(const reason of unsupportedReasons)blocks.push({
-    type:"warning",code:"P3_"+reason.toUpperCase(),
-    text:registeredReadReason(input.locale,reason),
-  });
+  blocks.push(...unsupportedReasonWarnings(unsupportedReasons,shadow.evidence,input.locale));
   const refs:EvidenceReference[]=[...presentedReads.evidence];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(

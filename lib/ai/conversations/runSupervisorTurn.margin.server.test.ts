@@ -23,13 +23,10 @@ const testBase={text:"What's my profit margin for that August 22 and September 4
   locale:"en" as const,asOf,cafeName:"Test Café",timezone:"America/Los_Angeles",
   history:[],readRules:async()=>[],
 };
-let key:string|undefined,flag:string|undefined;
-beforeAll(()=>{key=process.env.OPENAI_API_KEY;flag=process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-  process.env.OPENAI_API_KEY="mock-key";delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;});
+let key:string|undefined;
+beforeAll(()=>{key=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="mock-key";});
 afterAll(()=>{if(key===undefined)delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY=key;
-  if(flag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-  else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=flag;});
+  else process.env.OPENAI_API_KEY=key;});
 it("explains unsupported prior-month profitability without declaring that uploads are missing",()=>{
   const period={...goal("custom","2026-08-22","2026-08-22")};
   const call={name:"get_financials" as const,call_id:"c1",arguments:{

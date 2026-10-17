@@ -62,6 +62,47 @@ describe("Alex P3 pricing-review registration", () => {
     const raw = await registration.read(scope, { purpose: "pricing_review" });
     expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "source_scope_mismatch" });
   });
+
+  it("includes a 'partial' item -- the normal, honestly-disclosed state for any real " +
+    "recipe-priced item (evaluateItem marks recorded ingredient prices freshness-" +
+    "unverified, so a real item is essentially never literally 'ready') -- not just " +
+    "'ready'; filtering to 'ready' only meant this capability returned no_ready_items " +
+    "for any real café. Caught while testing an unrelated fix in PR #106.", async () => {
+    mockRead.mockResolvedValue({
+      status: "partial", provenance, quality,
+      value: { currency: "USD", items: [
+        { name: "Oat Latte 16oz", status: "partial", currentPriceCents: 550,
+          ingredientCostCents: 180, currentRecommendationCents: 600 },
+      ], totalSelected: 1, offset: 0, hasMore: false, omittedUnsupported: 0 },
+    });
+    const [registration] = buildAlexP3Registrations();
+    const raw = await registration.read(scope, { purpose: "pricing_review" });
+    expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.review",
+      value: [expect.objectContaining({ name: "Oat Latte 16oz", currentPriceCents: 550 })] });
+  });
+
+  it("the real registry.invoke() path accepts a realistic long per-item stale-input " +
+    "string -- a long product name plus a reason plus a 36-char ingredient UUID can " +
+    "exceed a tight length cap and silently fail OUTPUT validation (registry.invoke " +
+    "returns unavailable, not a thrown error), discarding an otherwise-good partial " +
+    "read. Caught while testing an unrelated fix in PR #106.", async () => {
+    const longName = "A".repeat(160);
+    mockRead.mockResolvedValue({
+      status: "partial", provenance,
+      quality: { missingInputs: [], estimatedInputs: [],
+        staleInputs: [longName + ":ingredient_price_freshness_unverified:" +
+          "a0000000-0000-4000-8000-000000000100"] },
+      value: { currency: "USD", items: [
+        { name: longName, status: "partial", currentPriceCents: 550,
+          ingredientCostCents: 180, currentRecommendationCents: null },
+      ], totalSelected: 1, offset: 0, hasMore: false, omittedUnsupported: 0 },
+    });
+    const [registration] = buildAlexP3Registrations();
+    const registry = createP2Registry([registration]);
+    const result = await registry.invoke(scope, ALEX_P3_REVIEW_ID, { purpose: "pricing_review" });
+    expect(result).toMatchObject({ status: "partial",
+      value: [expect.objectContaining({ name: longName })] });
+  });
 });
 
 describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup needed)", () => {

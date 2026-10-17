@@ -54,12 +54,20 @@ const pricingGoal: RequestedGoal = { domain: "pricing_review", period: "month_to
   from: null, to: null, comparison_period: null, comparison_from: null, comparison_to: null };
 
 /** Sequences provider responses: main-loop rounds in order, with the scope
- * audit transparently interleaved wherever runSupervisorTurn actually sends it. */
+ * audit transparently interleaved wherever runSupervisorTurn actually sends it.
+ * P3 runs unconditionally ahead of the legacy loop now, so every request here
+ * also gives P3 a clean, cheap, two-call non-productive handoff (no validated
+ * capability selected) rather than letting it consume a legacy-shaped mock
+ * response meant for a later round. */
 function sequencedTransport(mainRounds: Response[], auditGoals: RequestedGoal[]) {
   let mainIndex = 0;
   return vi.fn(async (_url: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
-    if (body.text?.format?.name === "supervisor_scope_audit") return auditPayload(auditGoals);
+    const schema = body.text?.format?.name;
+    if (schema === "supervisor_scope_audit") return auditPayload(auditGoals);
+    if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+      { type: "output_text", text: JSON.stringify({ complete: true, clauses: ["."] }) }] }]);
+    if (schema === "p2_capability_selection") return response([]);
     const next = mainRounds[mainIndex];
     mainIndex++;
     return next;
@@ -80,7 +88,6 @@ beforeEach(() => {
     tools: {} as BusinessScopedCafeTools,
     identity: { businessId, currency: "USD", cafeName: "Sample", timezone: "America/Los_Angeles", asOf: monday },
   });
-  delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
 });
 
 describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (acceptance)", () => {
@@ -189,6 +196,225 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Latte 12 oz"))).toBe(true);
   });
 
+  it("a real pricing what-if question reaches Alex's capability and is presented to the " +
+    "owner directly through P3 -- proving the reachability gap found in review is fixed, " +
+    "not just that the capability computes correctly in isolation", async () => {
+    const productId = avaId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [{ id: productId, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" }],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [{ menu_item_id: productId, ingredient_id: ingredientId, quantity: 200 }],
+        employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const question = "What if I raise the Latte 12 oz by 50 cents?";
+    const requests: string[] = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        text?: { format?: { name?: string } };
+      };
+      const schema = body.text?.format?.name;
+      requests.push(schema ?? "unexpected");
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.what_if.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_simulate",
+            product: { exactName: "Latte 12 oz" }, changes: [],
+            sellingPrice: { kind: "delta", deltaCents: 50 } }),
+          reason: null }] }) }] }]);
+      // This is the fix under test: the real OpenAI call would now be instructed
+      // that a clause already answered by a registered capability (readableSourceClauses)
+      // stays read_only even when phrased as a calculation, instead of missing_input.
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "read_only" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
+    expect(requests).toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
+    expect(reply.status).toBe("partial");
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("$0.50"))).toBe(true);
+    // The generic "I don't have enough to answer this" fallback must NOT appear --
+    // that would mean the real computed answer was discarded in favor of the
+    // missing_input brush-off this fix exists to prevent.
+    expect(reply.blocks.some(b => b.type === "warning" && b.code === "P3_MISSING_INPUT")).toBe(false);
+  });
+
+  it("surfaces the capability's own specific reason for an ambiguous product name, " +
+    "instead of a generic 'missing input' brush-off", async () => {
+    const idA = avaId, idB = benId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        // Two active items share the exact same name -- what-if can't resolve
+        // which one the owner means by name alone.
+        menu: [
+          { id: idA, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" },
+          { id: idB, name: "Latte 12 oz", price_cents: 550, is_active: true, category: "ESPRESSO_DRINK" },
+        ],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [], employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const question = "What if I raise the Latte 12 oz by 50 cents?";
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.what_if.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_simulate",
+            product: { exactName: "Latte 12 oz" }, changes: [],
+            sellingPrice: { kind: "delta", deltaCents: 50 } }),
+          reason: null }] }) }] }]);
+      // The ambiguous-name read failed, so this clause is correctly NOT in
+      // readableSourceClauses; the model classifies it missing_input as instructed.
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
+    const warning = reply.blocks.find(b => b.type === "warning" && b.code === "P3_MISSING_INPUT");
+    expect(warning).toMatchObject({ text: expect.stringContaining("More than one active menu item") });
+    // The raw internal reason code must never leak to the owner, in any language.
+    expect(JSON.stringify(reply.blocks)).not.toContain("ambiguous_canonical_name_use_product_id");
+  });
+
+  it("never drops a failed clause's explanation just because a DIFFERENT clause's " +
+    "failure reason happened to be specific -- the generic warning still covers " +
+    "whatever isn't in the known reason map", async () => {
+    const idA = avaId, idB = benId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [
+          { id: idA, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" },
+          { id: idB, name: "Latte 12 oz", price_cents: 550, is_active: true, category: "ESPRESSO_DRINK" },
+        ],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [], employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const clauseA = "What if I raise the Latte 12 oz by 50 cents?";
+    const clauseB = "Can I see a schedule preview for next week?";
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [clauseA, clauseB] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [
+          { clause: clauseA, capabilityId: "p3.alex.pricing.what_if.v1",
+            inputJson: JSON.stringify({ purpose: "pricing_simulate",
+              product: { exactName: "Latte 12 oz" }, changes: [],
+              sellingPrice: { kind: "delta", deltaCents: 50 } }),
+            reason: null },
+          // A capability id the server registry does not recognize -- shadow.server.ts's
+          // own "unknown_capability" reason, which is deliberately NOT in the known
+          // reason map, to prove the fallback covers it.
+          { clause: clauseB, capabilityId: "p3.nonexistent.capability.v1",
+            inputJson: JSON.stringify({ purpose: "schedule_preview" }), reason: null },
+        ] }) }] }]);
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [clauseA, clauseB], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: clauseA + " " + clauseB }, transport);
+    const warnings = reply.blocks.filter(b => b.type === "warning" && b.code === "P3_MISSING_INPUT");
+    // Clause A's specific reason must still appear...
+    expect(warnings.some(b => b.type === "warning" &&
+      b.text.includes("More than one active menu item"))).toBe(true);
+    // ...and clause B's unmapped failure must NOT be silently dropped: the generic
+    // explanation covers it instead of vanishing entirely.
+    expect(warnings.some(b => b.type === "warning" &&
+      b.text.includes("Required records or inputs are missing"))).toBe(true);
+    expect(JSON.stringify(reply.blocks)).not.toContain("unknown_capability");
+  });
+
+  it("never treats Alex's plain pricing REVIEW (current, unchanged prices -- no owner " +
+    "hypothetical at all) as a completed simulation for a calculation-shaped clause", async () => {
+    const productId = avaId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [{ id: productId, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" }],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [{ menu_item_id: productId, ingredient_id: ingredientId, quantity: 200 }],
+        employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    // Phrased as a calculation (a hypothetical total revenue change), but the plan
+    // selector picks the plain review capability -- which only ever reads CURRENT,
+    // unchanged prices and cannot encode or satisfy this request at all.
+    const question = "What would my total menu revenue be if I raised every price by 10%?";
+    const requests: Array<Record<string, unknown>> = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      requests.push(body);
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.review.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_review" }), reason: null }] }) }] }]);
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    await runSupervisorTurn({ ...base, text: question }, transport);
+    const compositionRequest = requests.find(r =>
+      (r.text as { format?: { name?: string } } | undefined)?.format?.name === "p3_expression_plans");
+    const payload = JSON.parse(
+      (compositionRequest!.input as Array<{ content: string }>)[0].content,
+    ) as { readableSourceClauses: string[]; completedSimulationClauses: string[] };
+    // The review read succeeded, so the clause is a readable source...
+    expect(payload.readableSourceClauses).toContain(question);
+    // ...but it is NOT a completed simulation: the review never saw or applied the
+    // owner's requested 10% change, so presenting it as read_only would show an
+    // unchanged price list as if it answered the hypothetical. Caught in review
+    // (round 3 of PR #106).
+    expect(payload.completedSimulationClauses).not.toContain(question);
+  });
+
   it("a combined scheduling + pricing request preserves both goals in one reply", async () => {
     const scenario = {
       objective: "cash" as const, shifts: [], gaps: [{
@@ -264,123 +490,101 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     // Production regression: P3 consumed two completed Responses, fell back
     // without reading a café tool, then legacy's first Responses succeeded but
     // the mandatory semantic audit had no remaining model-call allowance.
-    const savedFlag=process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-    const savedAllowlist=process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
-    process.env.SUPERVISOR_P3_COMPOSITION_ENABLED="true";
-    process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=businessId;
-    try {
-      const productId=avaId, ingredientId="a0000000-0000-4000-8000-000000000100";
-      atomicRpc.mockResolvedValue({status:"available",snapshot:{
-        contract:"p1.authoritative_snapshot.v1",businessId,revision:"100",
-        timezone:"America/Los_Angeles",currency:"USD",
-        payroll:{rate:0.12,status:"confirmed",source:"business"},
-        sources:{
-          menu:[{id:productId,name:"Dirty Cardamom Iced 12oz",price_cents:650,
-            is_active:true,category:"ESPRESSO_DRINK"}],
-          ingredients:[{id:ingredientId,name:"Milk",base_unit:"ml"}],
-          ingredientPrices:[{id:"a0000000-0000-4000-8000-000000000200",
-            ingredient_id:ingredientId,effective_from:"2026-09-01",
-            cost_per_base_unit_micros:100000,source:"manual"}],
-          recipes:[{menu_item_id:productId,ingredient_id:ingredientId,quantity:200}],
-          employees:[],dailyRollups:[],expenses:[],recurringCosts:[],imports:[],
-        },
-        truncated:{menu:false,ingredients:false,ingredientPrices:false,
-          recipes:false,employees:false,dailyRollups:false,expenses:false,
-          recurringCosts:false,imports:false},
-        coverage:"not_proven_by_revision",
-      } as AtomicP1SourceSnapshot});
-      const question="How much should I charge for Dirty Cardamom Iced 12oz?";
-      const requests:string[]=[];
-      const diagnostics:Array<{stage:string;legacyFallbackReason?:string}>=[];
-      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
-        const body=JSON.parse(String(init.body)) as {
-          text?:{format?:{name?:string}};tool_choice?:string;
-        };
-        const schema=body.text?.format?.name;
-        requests.push(schema??body.tool_choice??"legacy_final");
-        if(schema==="p2_goal_audit")
-          return response([{type:"message",content:[{type:"output_text",
-            text:JSON.stringify({complete:true,clauses:[question]})}]}]);
-        if(schema==="p2_capability_selection")
-          return response([]); // No validated P3 read: hand off to the legacy registry.
-        if(schema==="supervisor_scope_audit")return auditPayload([pricingGoal]);
-        if(body.tool_choice==="required")
-          return response([
-            call("declare_request_scope",{goals:[pricingGoal]},"scope"),
-            call("alex_pricing_review",{selection:"specific_name",
-              product_name:"Dirty Cardamom Iced 12oz",product_id:null,
-              offset:0,limit:25},"c1"),
-          ]);
-        return response([finish(["t1:count"],["t1:item0"])]);
-      });
-      const result=await runSupervisorTurn({...base,text:question,
-        onDiagnostic:d=>diagnostics.push(d)},transport);
-      expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
-        "supervisor_final","supervisor_scope_audit","supervisor_final"]);
-      expect(result.usage).toMatchObject({modelCallCount:5,toolCallCount:1});
-      expect(result.reply.blocks).toContainEqual(expect.objectContaining({
-        type:"count",label:"Products reviewed",value:1,
-      }));
-      expect(result.reply.blocks.some(b=>b.type==="text" &&
-        b.text.includes("Dirty Cardamom Iced 12oz"))).toBe(true);
-      expect(diagnostics).toContainEqual(expect.objectContaining({
-        stage:"legacy_fallback",legacyFallbackReason:"p3_not_completed",
-      }));
-    } finally {
-      if(savedFlag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-      else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=savedFlag;
-      if(savedAllowlist===undefined)delete process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
-      else process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=savedAllowlist;
-    }
+    const productId=avaId, ingredientId="a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({status:"available",snapshot:{
+      contract:"p1.authoritative_snapshot.v1",businessId,revision:"100",
+      timezone:"America/Los_Angeles",currency:"USD",
+      payroll:{rate:0.12,status:"confirmed",source:"business"},
+      sources:{
+        menu:[{id:productId,name:"Dirty Cardamom Iced 12oz",price_cents:650,
+          is_active:true,category:"ESPRESSO_DRINK"}],
+        ingredients:[{id:ingredientId,name:"Milk",base_unit:"ml"}],
+        ingredientPrices:[{id:"a0000000-0000-4000-8000-000000000200",
+          ingredient_id:ingredientId,effective_from:"2026-09-01",
+          cost_per_base_unit_micros:100000,source:"manual"}],
+        recipes:[{menu_item_id:productId,ingredient_id:ingredientId,quantity:200}],
+        employees:[],dailyRollups:[],expenses:[],recurringCosts:[],imports:[],
+      },
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},
+      coverage:"not_proven_by_revision",
+    } as AtomicP1SourceSnapshot});
+    const question="How much should I charge for Dirty Cardamom Iced 12oz?";
+    const requests:string[]=[];
+    const diagnostics:Array<{stage:string;legacyFallbackReason?:string}>=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body)) as {
+        text?:{format?:{name?:string}};tool_choice?:string;
+      };
+      const schema=body.text?.format?.name;
+      requests.push(schema??body.tool_choice??"legacy_final");
+      if(schema==="p2_goal_audit")
+        return response([{type:"message",content:[{type:"output_text",
+          text:JSON.stringify({complete:true,clauses:[question]})}]}]);
+      if(schema==="p2_capability_selection")
+        return response([]); // No validated P3 read: hand off to the legacy registry.
+      if(schema==="supervisor_scope_audit")return auditPayload([pricingGoal]);
+      if(body.tool_choice==="required")
+        return response([
+          call("declare_request_scope",{goals:[pricingGoal]},"scope"),
+          call("alex_pricing_review",{selection:"specific_name",
+            product_name:"Dirty Cardamom Iced 12oz",product_id:null,
+            offset:0,limit:25},"c1"),
+        ]);
+      return response([finish(["t1:count"],["t1:item0"])]);
+    });
+    const result=await runSupervisorTurn({...base,text:question,
+      onDiagnostic:d=>diagnostics.push(d)},transport);
+    expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
+      "supervisor_final","supervisor_scope_audit","supervisor_final"]);
+    expect(result.usage).toMatchObject({modelCallCount:5,toolCallCount:1});
+    expect(result.reply.blocks).toContainEqual(expect.objectContaining({
+      type:"count",label:"Products reviewed",value:1,
+    }));
+    expect(result.reply.blocks.some(b=>b.type==="text" &&
+      b.text.includes("Dirty Cardamom Iced 12oz"))).toBe(true);
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      stage:"legacy_fallback",legacyFallbackReason:"p3_not_completed",
+    }));
   });
 
 
   it("returns real scheduling setup blockers after the same two-call P3 fallthrough", async () => {
-    const oldFlag=process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-    const oldAllowlist=process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
-    process.env.SUPERVISOR_P3_COMPOSITION_ENABLED="true";
-    process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=businessId;
-    try {
-      // P3 is intentionally unproductive for a specialist schedule request.
-      atomicRpc.mockResolvedValue({status:"unavailable",reason:"rpc_not_installed"});
-      olivia.mockResolvedValue({ok:false,version:1,status:"error",
-        capability:"olivia.schedule.preview",error:{
-          code:"missing_inputs",retryable:false,message:"missing coverage"},
-        blockers:[{code:"no_coverage"}]});
-      const question="These are my workers' times for next week. Please make a schedule " +
-        "for the café's 7 a.m. to 8 p.m. operating hours.";
-      const requests:string[]=[];
-      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
-        const body=JSON.parse(String(init.body)) as {
-          text?:{format?:{name?:string}};tool_choice?:string;
-        };
-        const schema=body.text?.format?.name;
-        requests.push(schema??body.tool_choice??"legacy_final");
-        if(schema==="p2_goal_audit")return response([{type:"message",content:[
-          {type:"output_text",text:JSON.stringify({complete:true,clauses:[question]})}]}]);
-        if(schema==="p2_capability_selection")return response([]);
-        if(schema==="supervisor_scope_audit")return auditPayload([schedulePlanGoal]);
-        if(body.tool_choice==="required")return response([
-          call("declare_request_scope",{goals:[schedulePlanGoal]},"scope"),
-          call("olivia_schedule",{action:"preview",week:monday,objective:"cash",overrides:null},"c1"),
-        ]);
-        return response([finish([],[])]);
-      });
-      const {reply,usage}=await runSupervisorTurn({...base,text:question},transport);
-      expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
-        "supervisor_final","supervisor_scope_audit","supervisor_final"]);
-      expect(usage).toMatchObject({modelCallCount:5,toolCallCount:1});
-      expect(olivia).toHaveBeenCalledTimes(1);
-      expect(reply.blocks).toContainEqual(expect.objectContaining({
-        type:"text",text:expect.stringContaining("Setup needed: no coverage"),
-      }));
-      expect(reply.blocks.some(b=>b.type==="text" && b.text.includes("Which exact dates"))).toBe(false);
-    } finally {
-      if(oldFlag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
-      else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=oldFlag;
-      if(oldAllowlist===undefined)delete process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
-      else process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=oldAllowlist;
-    }
+    // P3 is intentionally unproductive for a specialist schedule request.
+    atomicRpc.mockResolvedValue({status:"unavailable",reason:"rpc_not_installed"});
+    olivia.mockResolvedValue({ok:false,version:1,status:"error",
+      capability:"olivia.schedule.preview",error:{
+        code:"missing_inputs",retryable:false,message:"missing coverage"},
+      blockers:[{code:"no_coverage"}]});
+    const question="These are my workers' times for next week. Please make a schedule " +
+      "for the café's 7 a.m. to 8 p.m. operating hours.";
+    const requests:string[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body)) as {
+        text?:{format?:{name?:string}};tool_choice?:string;
+      };
+      const schema=body.text?.format?.name;
+      requests.push(schema??body.tool_choice??"legacy_final");
+      if(schema==="p2_goal_audit")return response([{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({complete:true,clauses:[question]})}]}]);
+      if(schema==="p2_capability_selection")return response([]);
+      if(schema==="supervisor_scope_audit")return auditPayload([schedulePlanGoal]);
+      if(body.tool_choice==="required")return response([
+        call("declare_request_scope",{goals:[schedulePlanGoal]},"scope"),
+        call("olivia_schedule",{action:"preview",week:monday,objective:"cash",overrides:null},"c1"),
+      ]);
+      return response([finish([],[])]);
+    });
+    const {reply,usage}=await runSupervisorTurn({...base,text:question},transport);
+    expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
+      "supervisor_final","supervisor_scope_audit","supervisor_final"]);
+    expect(usage).toMatchObject({modelCallCount:5,toolCallCount:1});
+    expect(olivia).toHaveBeenCalledTimes(1);
+    expect(reply.blocks).toContainEqual(expect.objectContaining({
+      type:"text",text:expect.stringContaining("Setup needed: no coverage"),
+    }));
+    expect(reply.blocks.some(b=>b.type==="text" && b.text.includes("Which exact dates"))).toBe(false);
   });
 
 });

@@ -31,6 +31,58 @@ export function registeredReadReason(locale:Locale,reason:
   } as const satisfies Record<typeof reason,CatalogKey>;
   return t(locale,names[reason]);
 }
+/** Exhaustive map of the specific `reason` codes a registered P3 capability's
+ * own unavailable result can carry -- confirmed by reading each capability's
+ * source (lib/pricing/alexCapabilities.server.ts, lib/pricing/alexPricing.ts,
+ * lib/pricing/alexP3Capabilities.server.ts, lib/scheduling/oliviaP3Capabilities.server.ts,
+ * lib/scheduling/oliviaCapabilityContracts.ts, lib/metrics/p1AtomicSourceSnapshot.server.ts)
+ * -- to a localized, actionable owner-facing sentence. An unrecognized code
+ * returns null so the caller falls back to the generic missing_input text;
+ * a raw internal code is never shown to the owner. */
+const specificUnavailableReasonLabels:Record<string,CatalogKey> = {
+  unauthorized_or_unsupported_currency:"reason_notAuthorizedOrCurrency",
+  source_scope_mismatch:"reason_sourceChanged",
+  invalid_trusted_clock:"reason_clockUnverified",
+  source_revision_changed_or_unavailable:"reason_sourceChanged",
+  no_ready_items:"reason_noReadyMenuItems",
+  product_not_found:"reason_productNotFound",
+  ambiguous_canonical_name_use_product_id:"reason_ambiguousProductName",
+  price_delta_requires_recorded_price:"reason_noRecordedPrice",
+  proposed_price_out_of_range:"reason_priceOutOfRange",
+  ingredient_scenario_requires_complete_priced_recipe:"reason_recipeIncomplete",
+  hypothetical_cost_inputs_incomplete:"reason_ingredientCostsIncomplete",
+  cost_basis_unavailable_for_target:"reason_noCostBasisForTarget",
+  cost_basis_unavailable_for_impact:"reason_noCostBasisForImpact",
+  owner_total_cost_fallback_not_in_atomic_snapshot:"reason_totalCostUnavailable",
+  owner_total_cost_missing:"reason_noCostBasisAtAll",
+  source_truncated_or_unsupported_currency:"reason_sourceTooLargeOrUnsupported",
+  no_feasible_schedule:"reason_noFeasibleSchedule",
+  wage_data_incomplete:"reason_wageDataIncomplete",
+  unexpected_capability:"reason_schedulingUnavailable",
+  invalid_input:"reason_invalidSchedulingRequest",
+  unauthorized:"reason_notAuthorized",
+  disabled:"reason_featureDisabled",
+  not_found:"reason_notFound",
+  missing_inputs:"reason_schedulingInputsMissing",
+  source_changed:"reason_sourceChanged",
+  revision_conflict:"reason_sourceChanged",
+  invalid_record:"reason_invalidSchedulingRequest",
+  storage_unavailable:"reason_temporarilyUnavailable",
+  planner_unavailable:"reason_temporarilyUnavailable",
+  capacity_exceeded:"reason_requestTooLarge",
+  rpc_not_installed:"reason_temporarilyUnavailable",
+  unauthorized_or_unconfigured:"reason_notAuthorized",
+  invalid_source_snapshot:"reason_temporarilyUnavailable",
+};
+export function specificCapabilityUnavailableReason(locale:Locale,reason:string):string|null{
+  if(Object.hasOwn(specificUnavailableReasonLabels,reason))
+    return t(locale,specificUnavailableReasonLabels[reason]);
+  // A dynamic per-ingredient suffix (":<uuid>") is never shown raw to an
+  // owner; match the stable prefix instead.
+  if(reason.startsWith("ambiguous_or_invalid_ingredient_price:"))
+    return t(locale,"reason_ingredientPriceAmbiguous");
+  return null;
+}
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 const packageUnitKeys = {
