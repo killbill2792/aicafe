@@ -185,6 +185,23 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(result.reply.status).toBe("unavailable");expect(result.reply.evidence).toEqual([]);
   });
 
+  it("rejects a direct P1 operand calculation if the financial epoch changes before publication",async()=>{
+    atomic.mockResolvedValueOnce({status:"available",snapshot});
+    atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,revision:"102"}});
+    const result=await runSupervisorTurn({...base,text:"What is the recorded Iced Latte price?"},transportFor([
+      read("p3.menu.product_economics.v1",query("menu.product_economics",{productId:product})),
+      {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({
+        capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
+        description:"Direct observed menu-price operand",nodes:[{op:"source",handle:`menu.product_economics:${product}:priceCents`}]
+      }),responseJson:null},
+      answer([{kind:"evidence",text:"The recorded price is {{r2:value}}.",citations:["r2"]}])
+    ]));
+    // The answer cites ONLY the expression, not the originating P1 read.
+    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.evidence).toEqual([]);
+    expect(atomic).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds provider failures and does not fabricate a clarification about dates",async()=>{
     const transport=vi.fn(async()=>new Response("down",{status:503}));
     const onUsage=vi.fn();
@@ -552,6 +569,9 @@ it("blocks financial reads during snapshot failure while still allowing a useful
 });
 
 it("preserves public provenance through a dataset count and a subsequent expression",async()=>{
+  // An unrelated financial epoch must not block a purely public dataset calculation.
+  atomic.mockResolvedValueOnce({status:"available",snapshot});
+  atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,revision:"102"}});
   vi.mocked(researchEnabled).mockReturnValue(true);
   vi.mocked(researchPublicSources).mockResolvedValue([{title:"Public supplier",url:"https://example.com/menu",snippet:"Public menu lead",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
   const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices and count the returned public leads."},transportFor([
@@ -561,6 +581,7 @@ it("preserves public provenance through a dataset count and a subsequent express
     answer([{kind:"evidence",text:"The returned public-lead count is {{r3:value}}. These leads are unverified external results, not stock or confirmed supplier records.",citations:["r3"]}])]));
   expect(result.reply.evidence).toHaveLength(1);expect(result.reply.evidence[0].source).toBe("unverified_external");
   expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH"}));
+  expect(atomic).toHaveBeenCalledTimes(1);
 });
 
 it("recovers a dated correction after a provider-failed turn with no saved reply",async()=>{
