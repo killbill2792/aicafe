@@ -236,6 +236,15 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(transport).toHaveBeenCalledTimes(2);
     expect(result.usage.modelCallCount).toBe(2);
   });
+
+  it("still propagates a raw transport failure instead of persisting a false unavailable answer",async()=>{
+    const transport=vi.fn(async()=>{throw new TypeError("fetch failed: ECONNRESET");});
+    const onUsage=vi.fn();
+    await expect(runSupervisorTurn({...base,text:"How should we handle the morning rush?",onUsage},transport))
+      .rejects.toMatchObject({category:"provider_http"});
+    // A genuine network failure must not be retried-and-swallowed like malformed model output.
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
 });
 
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{

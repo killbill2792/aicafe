@@ -53,13 +53,21 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         .map((p:{text:string})=>p.text);
       if(texts.length!==1||texts[0].length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response");
-      const parsed=input.schema.safeParse(JSON.parse(texts[0]));
+      let decoded:unknown;
+      try{decoded=JSON.parse(texts[0]);}
+      catch{throw new SupervisorStageError("provider_invalid_payload","provider_response");}
+      const parsed=input.schema.safeParse(decoded);
       if(!parsed.success)throw new SupervisorStageError("provider_invalid_payload","provider_response");
       return parsed.data;
     })(),expired]);
   }catch(error){
+    // Only a SupervisorStageError thrown above, after a response was actually
+    // received and inspected, is evidence of malformed/incomplete MODEL output.
+    // A raw error here (DNS failure, connection reset, a rejected fetch) never
+    // reached that inspection and must stay a transport failure, not be treated
+    // as a lenient, retryable model hiccup.
     const classified=error instanceof SupervisorStageError?error:
-      new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_invalid_payload","provider_response");
+      new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_http","provider_response");
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly
     // one more try with the same inputs before giving up; a persistent failure
