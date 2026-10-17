@@ -22,10 +22,14 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
     INVESTIGATION_LIMITS.providerTimeoutMs,input.deadline-Date.now())));
   try{
     return await Promise.race([(async()=>{
+      // Clamp to what remains of the turn's own output-token backstop so one
+      // call's max_output_tokens cannot push the turn's total past it.
+      const maxOutputTokens=Math.max(500,Math.min(6000,
+        INVESTIGATION_LIMITS.totalOutputTokens-input.usage.outputTokens));
       const response=await input.transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
         body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
-          instructions:input.instructions,context:input.context,
+          instructions:input.instructions,context:input.context,maxOutputTokens,
           schema:input.name==="supervisor_investigation_step"?INVESTIGATION_STEP_JSON_SCHEMA:
             z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})})),
       });
