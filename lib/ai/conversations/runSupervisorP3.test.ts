@@ -159,6 +159,42 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count")).toBe(false);
     expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:1});
   });
+  it("rejects provisional quote evidence after an in-flight epoch change",async()=>{
+    const request="Show supplier quotes I recorded";
+    const source={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    const initial={status:"available",snapshot:{
+      businessId:identity.businessId,currency:identity.currency,
+      timezone:identity.timezone,revision:"91",
+    }};
+    atomicRead.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+      status:"available",snapshot:{...initial.snapshot,revision:"92"},
+    });
+    const original=result(source,{items:[{
+      id:"q",supplierName:"Acme",itemName:"Oat milk",
+      priceCents:2000,packageCount:4,packageUnit:"case",
+      sourceKind:"supplier_quote",sourceUrl:null,
+      quotedOn:"2026-10-10",evidenceStatus:"owner_reported",
+      createdAt:"2026-10-10T00:00:00Z",
+    }],truncated:false});
+    p1Reads.mockResolvedValue({...original,provenance:{
+      ...original.provenance,canonicalReaderId:"readP1SupplierQuotes",
+    }});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[request]},
+      {complete:true,choices:[{clause:request,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(source),reason:null}]},
+      {complete:true,plans:[{coveredClauses:[request],
+        planJson:null,reason:"unsupported"}]},
+    ][step++]));
+    const output=await run(provider,request);
+    expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
+      blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
+    expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(p1Reads).toHaveBeenCalledTimes(1);
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count"||
+      b.type==="text"&&b.text.includes("Oat milk"))).toBe(false);
+  });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"unauthorized_or_unconfigured",
@@ -166,7 +202,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const provider=makeTransport();
     const output=await run(provider.calls).catch(e=>e);
     expect(atomicRead).toHaveBeenCalledTimes(1);
-    expect(provider.calls).toHaveBeenCalledTimes(2);
+    // Integrity fails before the model can select sources or execute P1 reads.
+    expect(provider.calls).toHaveBeenCalledTimes(0);
     expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
       blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
     expect(output.reply.blocks.some((block:{type:string})=>block.type==="metric"))
@@ -181,7 +218,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(atomicRead).toHaveBeenCalledTimes(1);
     expect(output?.reply?.blocks?.some((b:{type:string})=>b.type==="metric"))
       .not.toBe(true);
-    expect(transport.calls).toHaveBeenCalledTimes(2);
+    expect(transport.calls).toHaveBeenCalledTimes(0);
     expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
       blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
   });
