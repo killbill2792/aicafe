@@ -8,7 +8,7 @@ export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Respon
 export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount:number;inputTokens:number;outputTokens:number};
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
   instructions:string;context:unknown;model:string;apiKey:string;transport:InvestigationTransport;
-  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void}):Promise<T|null>{
+  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void},attempt=1):Promise<T|null>{
   if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
@@ -45,21 +45,48 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       input.usage.inputTokens+=positive(raw.usage?.input_tokens);
       input.usage.outputTokens+=positive(raw.usage?.output_tokens);
       input.onUsage?.({...input.usage});
-      if(raw.status!=="completed"||!Array.isArray(raw.output))
+      // "incomplete" (e.g. hit the output-token limit) is a one-time model
+      // hiccup worth retrying. Any other non-"completed" status (failed,
+      // cancelled, ...) is a terminal provider-side failure, not a retryable
+      // output problem, and must propagate like a transport failure.
+      if(raw.status==="incomplete")
         throw new SupervisorStageError("provider_incomplete","provider_response");
+      if(raw.status!=="completed")
+        throw new SupervisorStageError("provider_http","provider_response",
+          {providerStatus:typeof raw.status==="string"?raw.status:undefined});
+      if(!Array.isArray(raw.output))
+        throw new SupervisorStageError("provider_invalid_payload","provider_response");
       const texts=raw.output.filter((i:{type?:unknown})=>i?.type==="message")
         .flatMap((i:{content?:Array<{type?:unknown;text?:unknown}>})=>i.content??[])
         .filter((p:{type?:unknown;text?:unknown})=>p?.type==="output_text"&&typeof p.text==="string")
         .map((p:{text:string})=>p.text);
       if(texts.length!==1||texts[0].length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response");
-      const parsed=input.schema.safeParse(JSON.parse(texts[0]));
+      let decoded:unknown;
+      try{decoded=JSON.parse(texts[0]);}
+      catch{throw new SupervisorStageError("provider_invalid_payload","provider_response");}
+      const parsed=input.schema.safeParse(decoded);
       if(!parsed.success)throw new SupervisorStageError("provider_invalid_payload","provider_response");
       return parsed.data;
     })(),expired]);
   }catch(error){
-    if(error instanceof SupervisorStageError)throw error;
-    throw new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_invalid_payload","provider_response");
+    // Only a SupervisorStageError thrown above, after a response was actually
+    // received and inspected, is evidence of malformed/incomplete MODEL output.
+    // A raw error here (DNS failure, connection reset, a rejected fetch) never
+    // reached that inspection and must stay a transport failure, not be treated
+    // as a lenient, retryable model hiccup.
+    const classified=error instanceof SupervisorStageError?error:
+      new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_http","provider_response");
+    // The model producing malformed JSON or an incomplete turn is a one-time
+    // hiccup in its own output, not an infrastructure failure. Give it exactly
+    // one more try with the same inputs before giving up; a persistent failure
+    // degrades to a graceful "unavailable" reply (handled by every call site's
+    // existing null-check) instead of crashing the whole owner turn.
+    if(classified.category==="provider_invalid_payload"||classified.category==="provider_incomplete"){
+      if(attempt<2)return requestInvestigation(input,attempt+1);
+      return null;
+    }
+    throw classified;
   }
   finally{clearTimeout(timeout);}
 }
