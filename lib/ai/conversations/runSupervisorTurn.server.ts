@@ -396,7 +396,8 @@ export async function runSupervisorTurn(input: {
   }
   // The independent semantic audit has its own counted attempt; preserve all
   // three bounded conversation rounds for multi-step specialist follow-ups.
-  const maxModelAttempts=MAX_ROUNDS+1+(p3AccessFallback?1:0);
+  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:
+    priorUsage.modelCallCount===0?1:0);
   const usage:SupervisorUsage={...priorUsage};
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
