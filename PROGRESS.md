@@ -2626,3 +2626,27 @@ Tracking: [Issue #74](https://github.com/killbill2792/aicafe/issues/74). Based o
 - Deferred PR2 deterministic planner and time-zone/DST instant feasibility; PR3 separately reviewed approval/publication + timecard bridge; Supervisor capability adapter after PR #73 platform readiness. No worker messaging, sales assumptions, POS writes or autonomous actions in PR1B.
 - [ ] Independent whole-PR Codex review completed with no substantive unresolved issues.
 - [ ] Owner-approved merge, manual production migration ledger review/application, and separate feature enablement.
+
+## Supervisor P3 — Alex pricing what-if registered (PR #104, merged)
+
+Tracking: [Issue #74](https://github.com/killbill2792/aicafe/issues/74), follow-on to PR #103 (merged). Base `main` at `ac0f9b8`; merged as `8a92a07`.
+
+Adds `ALEX_P3_WHATIF_ID` to the P3 dynamic registry (`lib/pricing/alexP3Capabilities.server.ts`): a target-margin/cost-ratio or selling-price-delta pricing what-if, resolved by exact product name in one self-contained call, reusing Alex's existing reviewed `simulate()` directly — no new pricing math. Ingredient substitution/unit-cost/package-cost changes are deliberately excluded (`changes` forced to an empty tuple): every one of those needs an internal ingredient UUID an owner's natural-language question can never supply, and P3 has no prior-lookup step to resolve a name to one first (same limitation as Olivia's employee what-if).
+
+Went through 9 rounds of real Codex-found bugs across two review sessions, all fixed with regression tests, zero shortcuts:
+- Provenance purpose mismatch and unreachable ingredient-UUID fields (round 1).
+- No-op scenario not rejected, calculated margin impact discarded, caveats dropped (round 2).
+- Raw internal assumption codes leaked unlocalized to owners (round 3).
+- Assumption-code `.slice(0,2)` always dropped the decision-critical ingredient-only-scope caveat because real array order never puts it first (round 4).
+- A target-only what-if's unapplied zero (`ingredientContributionDeltaCents`) presented as a real "no margin impact" next to a nonzero target price (round 4) — same bug also affected `priceDeltaCents` (round 6).
+- A target requested with no priced cost basis silently returned a "success" with no target price (round 5); the mirror case for a selling-price-only request with no cost basis (round 7).
+- The irrelevant `no_target_selected_no_target_price` caveat was crowding out the real `recorded_cost_freshness_not_proven` one under the 2-code cap (round 8).
+- An owner-entered TOTAL cost that is itself an estimate was never labeled as such, and the cap still dropped the cost-freshness caveat for that case — cap raised 2→3, new `costBasisEstimated` field + localized label added (round 9).
+
+- [x] `lib/pricing/alexP3Capabilities.server.ts`, `lib/pricing/alexP3Capabilities.server.test.ts`, `lib/ai/supervisor/p3/readEvidencePresentation.ts`, `messages/{en,es,ar}.json`.
+- [x] Full suite green throughout (1486 Vitest tests at merge), scoped ESLint and `tsc --noEmit` clean (sandbox `xlsx` dependency removed only for local `npm install`, restored before every commit — see PR #103's note).
+- [x] All 14 PR review comments replied to and resolved; final Codex pass on the merged commit found zero issues.
+- [ ] **NOT fixed, explicitly out of scope for this PR: live-conversation reachability.** Confirmed by reading `runP3Turn.server.ts`'s `modelComposition` instructions directly: a genuine owner "what if I raise the latte 50 cents?" is a calculation, not a SHOW/LIST, so the planner correctly classifies it `missing_input` — and `presentRegisteredReads`'s `includedClauses` only ever includes `reason==="unsupported"` or `reason==="read_only"`, never `missing_input`. So this capability is only reachable through the registry's own internal `invoke()` path (what the tests exercise), not from a live Supervisor turn. Two real fixes, neither attempted here, both bigger than a single PR:
+  1. Project what-if results as **operands** into the generic expression engine (`lib/calc/scenarioExpression.ts`'s `EXPRESSION_ID`) instead of a "read" capability — nontrivial, since operands today are derived purely from one pre-fetched atomic snapshot, not a parameterized mid-plan simulation call.
+  2. Extend `modelComposition`'s shared instructions (used for every P3 clause, not just pricing) to recognize a bounded, owner-parameterized simulation as a legitimate third classification alongside `read_only`/`missing_input` — a change to the core, already-reviewed turn loop.
+- [ ] This is the real next step toward "ask anything" actually answering a pricing what-if in a live conversation — Olivia's schedule-preview and employee-what-if capabilities likely have the identical gap and should be checked once a fix pattern is chosen here, rather than fixed twice independently.
