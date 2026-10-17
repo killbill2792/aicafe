@@ -226,6 +226,21 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         ingredientCostDeltaCents: number | null; ingredientContributionDeltaCents: number | null;
         targetPriceCents: number | null; assumptions: unknown;
       };
+      // A target was requested but simulateFromAtomicSnapshot could not price it (no
+      // complete recipe and no usable owner-total fallback) -- it still returns
+      // "partial" (missing inputs, not a hard failure) with targetPriceCents null.
+      // Publishing that as a successful what-if silently drops the one answer the
+      // owner actually asked for (presentation omits the null field entirely). Report
+      // unavailable instead. Caught in review (round 5).
+      if ((input.targetCostRatioBps !== undefined || input.targetIngredientMarginBps !== undefined) &&
+        value.targetPriceCents === null) {
+        const missingInputs = (raw.quality as { missingInputs?: unknown }).missingInputs;
+        const costReason = Array.isArray(missingInputs)
+          ? missingInputs.find((m): m is string => typeof m === "string" && m.includes("owner_total_cost"))
+          : undefined;
+        return { status: "unavailable" as const, value: null,
+          reason: costReason ?? "cost_basis_unavailable_for_target" };
+      }
       const knownCodes: readonly string[] = ALEX_ASSUMPTION_CODES;
       const presentCodes = new Set(Array.isArray(value.assumptions)
         ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))

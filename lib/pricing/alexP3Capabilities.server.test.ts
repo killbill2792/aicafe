@@ -144,6 +144,29 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
       value: [expect.objectContaining({ ingredientContributionDeltaCents: 50 })] });
   });
 
+  it("returns unavailable, not a targetless 'success', when a target was requested " +
+    "but the product has no priced cost basis to compute it from", async () => {
+    mockSimulate.mockResolvedValue({
+      // simulateFromAtomicSnapshot really does return "partial" (missing inputs, not a
+      // hard failure) with targetPriceCents null here -- publishing that as-is would
+      // silently drop the one answer the owner asked for.
+      status: "partial", mode: "simulate", proposal: null, executedEffects: 0,
+      provenance: simulateProvenance,
+      quality: { missingInputs: ["owner_total_cost_fallback_not_in_atomic_snapshot"],
+        estimatedInputs: [], staleInputs: [] },
+      value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
+        before: {}, after: {}, priceDeltaCents: 0, ingredientCostDeltaCents: 0,
+        ingredientContributionDeltaCents: 0, targetPriceCents: null, targetBasisPoints: 7000,
+        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven"],
+        persisted: false },
+    });
+    const [, whatIf] = buildAlexP3Registrations();
+    const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
+      product: { exactName: "Oat Latte 16oz" }, changes: [], targetIngredientMarginBps: 7000 });
+    expect(raw).toMatchObject({ status: "unavailable", value: null,
+      reason: "owner_total_cost_fallback_not_in_atomic_snapshot" });
+  });
+
   it("rejects a no-op what-if (no selling price, no target) before it ever reaches the " +
     "simulator, instead of silently comparing the product with itself", async () => {
     const [, whatIf] = buildAlexP3Registrations();
