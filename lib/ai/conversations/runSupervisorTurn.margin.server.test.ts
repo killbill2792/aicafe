@@ -95,6 +95,9 @@ describe("Actual Supervisor entrypoint: operating margin for separate owner-writ
     const lines=res.reply.blocks.filter(x=>x.type==="text").map(x=>x.text).join(" ");
     expect(lines).toContain("20.0%");
     expect(lines).not.toContain("25.0%");
-    expect(lines).toContain("Unable to verify");
+    expect(lines).toContain("cannot be verified");
+    expect(lines).toContain("2026-09-04");
+    expect(lines).toContain("ingredient costs");
+    expect(lines).toContain("staff labor coverage");
   });
 });
