@@ -139,8 +139,18 @@ const whatIfOutputSchema = z.union([
       // Alex's simulator's own caveats, as the exact enumerable codes it emits (see
       // ALEX_ASSUMPTION_CODES) -- NOT raw/joined text. Passing raw English snake_case codes
       // straight through was a real finding in review: unlocalized for ES/AR sessions. The
-      // shared presentation layer maps each known code to a localized string.
-      assumptionCodes: z.array(z.enum(ALEX_ASSUMPTION_CODES)).max(2),
+      // shared presentation layer maps each known code to a localized string. Capped at 3,
+      // not 2: when the cost basis is an owner-entered total (not a recipe), both that
+      // caveat AND the ingredient-cost-freshness one are decision-critical together, on
+      // top of the always-present ingredient-only-scope caveat. Caught in review (round 9).
+      assumptionCodes: z.array(z.enum(ALEX_ASSUMPTION_CODES)).max(3),
+      // Carries quality.estimatedInputs's "owner_total_cost_estimated" signal through to
+      // presentation (which otherwise never rendered it at all): per this project's own
+      // rule that every estimate must be labeled, an owner-entered TOTAL cost that is
+      // itself an estimate (not a recorded real figure) is a stronger caveat than "cost
+      // freshness not independently verified" and must not be silently dropped either.
+      // Caught in review (round 9).
+      costBasisEstimated: z.boolean(),
     })).length(1),
     provenance: simulateProvenanceSchema, quality: qualitySchema,
   }),
@@ -262,7 +272,10 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       const presentCodes = new Set(Array.isArray(value.assumptions)
         ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))
         : []);
-      const assumptionCodes = ASSUMPTION_CODE_PRIORITY.filter(c => presentCodes.has(c)).slice(0, 2);
+      const assumptionCodes = ASSUMPTION_CODE_PRIORITY.filter(c => presentCodes.has(c)).slice(0, 3);
+      const estimatedInputs = (raw.quality as { estimatedInputs?: unknown }).estimatedInputs;
+      const costBasisEstimated = Array.isArray(estimatedInputs) &&
+        estimatedInputs.includes("owner_total_cost_estimated");
       // A target-only request (no sellingPrice) never actually applies the target as a
       // hypothetical price -- simulateFromAtomicSnapshot leaves "after" identical to
       // "before" -- so both priceDeltaCents and ingredientContributionDeltaCents are
@@ -282,6 +295,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
           ingredientContributionDeltaCents: targetOnly ? null : value.ingredientContributionDeltaCents,
           targetPriceCents: value.targetPriceCents,
           assumptionCodes,
+          costBasisEstimated,
         }],
         provenance: raw.provenance as z.output<typeof simulateProvenanceSchema>,
         quality: raw.quality as z.output<typeof qualitySchema>,

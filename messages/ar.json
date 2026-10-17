@@ -1800,6 +1800,7 @@
     "field_targetPriceCents": "السعر المستهدف",
     "field_ingredientContributionDeltaCents": "تغير مساهمة المكونات فقط",
     "field_assumptionsSummary": "القيود",
+    "field_costBasisEstimated": "هذه التكلفة تقدير أدخله المالك، وليست رقمًا فعليًا مؤكدًا",
     "assumption_ownerHypotheticalNotRecorded": "هذا سيناريو افتراضي، وليس نتيجة مسجلة",
     "assumption_recordedCostFreshnessNotProven": "حداثة تكلفة المكونات غير موثقة بشكل مستقل",
     "assumption_ownerTotalIsAggregate": "استناداً إلى تكلفة إجمالية أدخلها المالك، وليس تفصيل وصفة",

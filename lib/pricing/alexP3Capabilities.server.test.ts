@@ -94,11 +94,12 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if",
       // Both unapplied-target zeros must be nulled out (never presented as a real "no
       // change"/"no impact" result), and the decision-critical ingredient-only caveat
-      // must survive the 2-code cap even though it is NOT in the first two array
-      // positions — all real findings in review (rounds 4 and 6).
+      // must survive the cap even though it is NOT in the first array position — all
+      // real findings in review (rounds 4 and 6). Cap is 3, not 2 (round 9), so all 3
+      // present codes here survive, in priority order.
       value: [expect.objectContaining({ priceDeltaCents: null, ingredientContributionDeltaCents: null,
         assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
-          "recorded_cost_freshness_not_proven"] })] });
+          "recorded_cost_freshness_not_proven", "owner_hypothetical_not_recorded"] })] });
     expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
       product: { exactName: "Oat Latte 16oz" },
     }), undefined);
@@ -149,10 +150,54 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     expect(raw).toMatchObject({ status: "partial",
       // no_target_selected_no_target_price only explains an already-absent field (no
       // target was requested) and must never crowd out the cost-freshness caveat under
-      // the 2-code cap -- a real finding in review (round 8).
+      // the cap -- a real finding in review (round 8). Cap is 3, not 2 (round 9), so all
+      // 3 OTHER present codes survive here.
       value: [expect.objectContaining({ ingredientContributionDeltaCents: 50,
         assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
-          "recorded_cost_freshness_not_proven"] })] });
+          "recorded_cost_freshness_not_proven", "owner_hypothetical_not_recorded"] })] });
+  });
+
+  it("labels an owner-entered total cost basis as an estimate, and keeps both the " +
+    "aggregate-cost and cost-freshness caveats alongside the always-present " +
+    "ingredient-only one", async () => {
+    mockSimulate.mockResolvedValue({
+      status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
+      provenance: simulateProvenance,
+      // quality.estimatedInputs carries "owner_total_cost_estimated" whenever costSource
+      // is owner_total AND the owner marked that total as an estimate, not a recorded
+      // actual figure (lib/pricing/alexPricing.ts).
+      quality: { missingInputs: [], estimatedInputs: ["owner_total_cost_estimated"], staleInputs: [] },
+      value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
+        before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: 0,
+        ingredientContributionDeltaCents: 30, targetPriceCents: null, targetBasisPoints: null,
+        // Real production order when costSource is owner_total: the aggregate-cost caveat
+        // is inserted between the two "own cost mechanics" codes and the ingredient-only one.
+        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven",
+          "owner_total_is_aggregate_not_ingredient_recipe",
+          "ingredient_only_excludes_labor_fees_rent_and_demand"],
+        persisted: false },
+    });
+    const [, whatIf] = buildAlexP3Registrations();
+    const raw = await whatIf.read(scope, { purpose: "pricing_simulate",
+      product: { exactName: "Oat Latte 16oz" }, changes: [],
+      sellingPrice: { kind: "delta", deltaCents: 50 } });
+    expect(raw).toMatchObject({ status: "partial",
+      // Without the round-9 cap raise, the 2-code cap would keep only
+      // ingredient_only_excludes_labor_fees_rent_and_demand and
+      // owner_total_is_aggregate_not_ingredient_recipe, silently dropping the
+      // cost-freshness caveat — the exact finding from review (round 9).
+      value: [expect.objectContaining({ costBasisEstimated: true,
+        assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
+          "owner_total_is_aggregate_not_ingredient_recipe", "recorded_cost_freshness_not_proven"] })] });
+    const view = presentRegisteredReads({
+      evidence: [{ clause: "what if", capabilityId: ALEX_P3_WHATIF_ID, status: "partial",
+        result: raw as Record<string, unknown>, reason: null }],
+      includedClauses: ["what if"], businessId: scope.businessId, asOf: scope.identity.asOf, locale: "en",
+    });
+    const allText = view.blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
+    expect(allText).toContain("owner-entered estimate");
+    expect(allText).toContain("Ingredient cost freshness is not independently verified");
+    expect(allText).not.toContain("owner_total_cost_estimated");
   });
 
   it("returns unavailable, not a targetless 'success', when a target was requested " +

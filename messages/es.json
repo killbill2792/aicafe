@@ -1800,6 +1800,7 @@
     "field_targetPriceCents": "Precio objetivo",
     "field_ingredientContributionDeltaCents": "Cambio en contribución (solo ingredientes)",
     "field_assumptionsSummary": "Limitaciones",
+    "field_costBasisEstimated": "Este costo es una estimación ingresada por el propietario, no una cifra real verificada",
     "assumption_ownerHypotheticalNotRecorded": "Este es un escenario hipotético, no un resultado registrado",
     "assumption_recordedCostFreshnessNotProven": "La actualidad del costo de ingredientes no está verificada de forma independiente",
     "assumption_ownerTotalIsAggregate": "Basado en un costo total ingresado por el propietario, no en un desglose de receta",
