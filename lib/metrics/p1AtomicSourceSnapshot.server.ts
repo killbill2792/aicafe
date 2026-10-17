@@ -32,6 +32,16 @@ export const atomicP1SourceSchema=z.strictObject({
     recipes:bounded(z.strictObject({
       menu_item_id:z.string().uuid(),ingredient_id:z.string().uuid(),
       quantity:z.number().finite().nonnegative()}),501),
+    /** Optional ONLY for pre-migration RPC compatibility. Absence is NOT
+     * evidence of missing manual cost rows; domain adapters must report
+     * owner-total source coverage unavailable until this key is present. */
+    ownerTotalCosts:bounded(z.strictObject({
+      menu_item_id:z.string().uuid(),cost_cents:cents.positive(),
+      source_type:z.enum(["owner_manual","imported"]),
+      status:z.enum(["confirmed","estimated"]),
+      source_label:z.string().nullable(),
+      updated_at:z.string().datetime({offset:true}),
+    }),501).optional(),
     employees:bounded(z.strictObject({
       id:z.string().uuid(),display_name:z.string(),active:z.boolean(),role:z.string().nullable(),
       default_hourly_wage_cents:cents.nullable(),wage_period:z.enum(["hour","month","year"]),
@@ -55,14 +65,24 @@ export const atomicP1SourceSchema=z.strictObject({
   }),
   truncated:z.strictObject({
     menu:z.boolean(),ingredients:z.boolean(),ingredientPrices:z.boolean(),
-    recipes:z.boolean(),employees:z.boolean(),dailyRollups:z.boolean(),
+    recipes:z.boolean(),ownerTotalCosts:z.boolean().optional(),
+    employees:z.boolean(),dailyRollups:z.boolean(),
     expenses:z.boolean(),recurringCosts:z.boolean(),imports:z.boolean(),
   }),
   coverage:z.literal("not_proven_by_revision"),
 }).superRefine((v,ctx)=>{
+  // Reject half-deployed/forged snapshots that claim fallback completeness
+  // without the corresponding rows (or vice versa).
+  if((v.sources.ownerTotalCosts===undefined)!==(v.truncated.ownerTotalCosts===undefined))
+    ctx.addIssue({code:"custom",message:"owner total source and cap mismatch"});
   for(const name of Object.keys(v.truncated) as Array<keyof typeof v.truncated>){
     const cap=name==="dailyRollups"?366:name==="imports"?100:500;
-    if(v.truncated[name]!==((v.sources[name] as unknown[]).length>cap))
+    const rows=v.sources[name];
+    if(!Array.isArray(rows)){
+      ctx.addIssue({code:"custom",message:"missing source rows for truncation:"+name});
+      continue;
+    }
+    if(v.truncated[name]!==rows.length>cap)
       ctx.addIssue({code:"custom",message:"inconsistent source truncation:"+name});
   }
 });

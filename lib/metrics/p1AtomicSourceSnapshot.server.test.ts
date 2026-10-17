@@ -36,6 +36,29 @@ describe("P1 authoritative source adapter never invents a DB revision",()=>{
       snapshot:{businessId:cafe,revision:"25",coverage:"not_proven_by_revision"}});
     expect(connect).toHaveBeenCalledTimes(1);
   });
+  it("retains owner-entered total cost provenance without conflating it with recipes",()=>{
+    const amount={menu_item_id:cafe,cost_cents:135,status:"confirmed",
+      source_type:"owner_manual",source_label:"Owner demo entry",
+      updated_at:"2026-10-16T19:00:00+00:00"};
+    const complete={...base,
+      sources:{...base.sources,ownerTotalCosts:[amount]},
+      truncated:{...base.truncated,ownerTotalCosts:false}};
+    expect(atomicP1SourceSchema.safeParse(complete).success).toBe(true);
+    // Existing, not-yet-migrated RPCs are recognized as lacking coverage,
+    // NOT as a trustworthy empty collection of owner-entered costs.
+    expect(atomicP1SourceSchema.safeParse(base).success).toBe(true);
+    for(const invalid of [
+      {...complete,truncated:base.truncated},
+      {...complete,sources:base.sources},
+      {...complete,sources:{...complete.sources,ownerTotalCosts:[
+        {...amount,status:"unverified"}]}},
+      {...complete,sources:{...complete.sources,ownerTotalCosts:[
+        {...amount,cost_cents:0}]}},
+      {...complete,truncated:{...complete.truncated,ownerTotalCosts:true}},
+    ]){
+      expect(atomicP1SourceSchema.safeParse(invalid).success).toBe(false);
+    }
+  });
   it("denies foreign tenant or wrong business timezone before returning records",async()=>{
     for(const data of [
       {...base,businessId:"b12b12b1-1111-4111-8111-b12b12b12b12"},

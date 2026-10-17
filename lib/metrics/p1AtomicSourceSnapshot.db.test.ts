@@ -38,6 +38,26 @@ describe.skipIf(!enabled)("real PostgreSQL authoritative P1 snapshot schema",()=
         expect.objectContaining({field:"priceCents",value:600}),
         expect.objectContaining({field:"ingredientsCentsToday",value:0}),
       ]));
+      // Real authenticated INSERT and same-transaction STABLE snapshot prove
+      // that the JSON timestamp, money, tenant and source fields match Zod.
+      // This entire fixture is rolled back: no production/committed mutation.
+      await client.query("INSERT INTO public.menu_item_cost_fallbacks "+
+        "(business_id,menu_item_id,cost_cents,source_type,status,source_label) "+
+        "VALUES ($1,$2,175,'owner_manual','confirmed','Owner-entered demo cost')",
+      [cafe,item]);
+      const withTotal=await client.query(
+        "SELECT public.p1_authoritative_source_snapshot($1) AS payload",[cafe]);
+      const ownerCost=atomicP1SourceSchema.parse(withTotal.rows[0]?.payload);
+      expect(BigInt(ownerCost.revision)>BigInt(data.revision)).toBe(true);
+      expect(ownerCost.truncated.ownerTotalCosts).toBe(false);
+      expect(ownerCost.sources.ownerTotalCosts).toEqual([
+        expect.objectContaining({
+          menu_item_id:item,cost_cents:175,source_type:"owner_manual",
+          status:"confirmed",source_label:"Owner-entered demo cost",
+          updated_at:expect.any(String),
+        }),
+      ]);
+      expect(ownerCost.sources.recipes).toEqual(data.sources.recipes);
       const wages=extractAtomicSnapshot("labor.employee_wages",data,{},"2026-10-15");
       expect(wages?.leaves).toEqual(expect.arrayContaining([
         expect.objectContaining({name:"Sophie",value:1900}),

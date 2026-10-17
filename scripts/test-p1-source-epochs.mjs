@@ -128,6 +128,51 @@ try{
  check(replay.imported_groups===0 && (await snapshot()).revision===promotedSnapshot.revision,
    "idempotent CSV finalizer does not invent an unnecessary epoch");
 
+ // New P1 source-contract acceptance: manual total costs are the very SAME
+ // owner-authorized statement and share the SAME revision ledger.
+ const beforeTotal=await snapshot();
+ check(Array.isArray(beforeTotal.sources.ownerTotalCosts)&&
+   beforeTotal.sources.ownerTotalCosts.length===0&&
+   beforeTotal.truncated.ownerTotalCosts===false,
+   "owner cost source has explicit complete/empty coverage after migration");
+ await a.query("BEGIN");
+ await a.query("INSERT INTO public.menu_item_cost_fallbacks "+
+   "(business_id,menu_item_id,cost_cents,source_type,status,source_label) "+
+   "VALUES ($1,$2,175,'owner_manual','confirmed','demo total')",[A,menu]);
+ const unseen=await snapshot();
+ check(unseen.revision===beforeTotal.revision&&
+   unseen.sources.ownerTotalCosts.length===0,
+   "uncommitted total-cost insert is invisible to authoritative snapshot");
+ await a.query("COMMIT");
+ const confirmed=await snapshot();
+ check(BigInt(confirmed.revision)>BigInt(beforeTotal.revision)&&
+   confirmed.sources.ownerTotalCosts.length===1&&
+   confirmed.sources.ownerTotalCosts[0].menu_item_id===menu&&
+   Number(confirmed.sources.ownerTotalCosts[0].cost_cents)===175&&
+   confirmed.sources.ownerTotalCosts[0].source_type==="owner_manual"&&
+   confirmed.sources.ownerTotalCosts[0].status==="confirmed"&&
+   confirmed.sources.ownerTotalCosts[0].source_label==="demo total"&&
+   typeof confirmed.sources.ownerTotalCosts[0].updated_at==="string",
+   "confirmed owner total and provenance become atomic at next revision");
+ await a.query("BEGIN");
+ await a.query("UPDATE public.menu_item_cost_fallbacks SET cost_cents=195, "+
+   "status='estimated',source_label='estimated by owner' "+
+   "WHERE business_id=$1 AND menu_item_id=$2",[A,menu]);
+ check((await snapshot()).revision===confirmed.revision,
+   "uncommitted owner-cost update does not leak into old source revision");
+ await a.query("COMMIT");
+ const estimated=await snapshot();
+ check(BigInt(estimated.revision)>BigInt(confirmed.revision)&&
+   Number(estimated.sources.ownerTotalCosts[0].cost_cents)===195&&
+   estimated.sources.ownerTotalCosts[0].status==="estimated",
+   "owner price and estimate status advance same epoch");
+ await a.query("DELETE FROM public.menu_item_cost_fallbacks WHERE "+
+   "business_id=$1 AND menu_item_id=$2",[A,menu]);
+ const removed=await snapshot();
+ check(BigInt(removed.revision)>BigInt(estimated.revision)&&
+   removed.sources.ownerTotalCosts.length===0,
+   "owner total delete cannot leave previous cost valid under previous revision");
+
  await a.query("BEGIN");
  await a.query("DELETE FROM public.p1_business_source_epochs WHERE business_id=$1",[A]);
  await a.query("COMMIT");
