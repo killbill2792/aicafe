@@ -83,7 +83,7 @@ export function buildAlexPricingRegistrations():readonly [ReadRegistration,Simul
       schemaContract:{id:ALEX_SIMULATE_ID+".v1",registrationId:ALEX_SIMULATE_ID,
         version:1 as const,inputSchemaFingerprint:schemaFingerprint(alexSimulateInputSchema),
         outputSchemaFingerprint:schemaFingerprint(alexSimulateOutputSchema)},
-      async simulate(scope,input,_trustedSourceContext){
+      async simulate(scope,input){
         // Registry enforces preauthorized binding envelope; this domain NEVER
         // trusts an externally supplied snapshot, price, tenant or revision.
         const result=await withConsistentSnapshot(scope,(snapshot,day)=>
