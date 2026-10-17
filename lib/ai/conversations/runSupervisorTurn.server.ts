@@ -475,13 +475,16 @@ export async function runSupervisorTurn(input: {
       legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
       modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   }
-  // The legacy tool loop needs three bounded model rounds PLUS one mandatory
-  // independent scope audit. Count P3 attempts in the overall usage ledger,
-  // but do not spend the legacy budget before legacy starts: otherwise two
-  // successful P3 planning responses leave only one legacy call, and its
-  // mandatory audit fails before any café tool can run. The shared five-read
-  // cap still applies across both stages; neither stage is unbounded.
-  const maxModelAttempts=priorUsage.modelCallCount+MAX_ROUNDS+1;
+  // Only a CLEAN, unproductive P3 planning handoff gets a fresh bounded
+  // legacy conversation + mandatory audit. A P3 that already attempted any
+  // café read, exhausted its own three rounds, or threw an integrity/provider
+  // error must NOT reset the turn budget and retry against different evidence.
+  // All attempts remain charged in usage; all stages share the five-read cap.
+  const cleanP3Handoff=!p3Failed && priorUsage.toolCallCount===0 &&
+    priorUsage.modelCallCount>0 && priorUsage.modelCallCount<MAX_ROUNDS;
+  const maxModelAttempts=cleanP3Handoff
+    ? priorUsage.modelCallCount+MAX_ROUNDS+1
+    : MAX_ROUNDS+(p3AccessFallback?1:priorUsage.modelCallCount===0?1:0);
   const usage:SupervisorUsage={...priorUsage};
   // A rejected/full P3 composition is not a license for new model attempts.
   // Preserve the existing bounded fail-closed behavior for forged handles and
