@@ -54,7 +54,8 @@ describe("independent semantic scope correction and period coverage",()=>{
       .toEqual([costs,staff,menu,pricing]);
     expect(reconcileRequestScopes([costs,staff,menu],[costs,staff,menu,pricing],true,false))
       .toHaveLength(4);
-    expect(reconcileRequestScopes([costs,staff,menu],[staff,menu,pricing],true,false)).toBeNull();
+    expect(reconcileRequestScopes([costs,staff,menu],[staff,menu,pricing],true,false))
+      .toEqual([staff,menu,pricing,costs]);
     expect(reconcileRequestScopes([staff,menu,pricing],[costs,staff,menu,pricing],false,false)).toBeNull();
     expect(reconcileRequestScopes([staff,menu,pricing],[costs,staff,menu,pricing],true,true)).toBeNull();
   });
@@ -243,8 +244,9 @@ describe("Bounded reconciliation outcomes and four-domain completeness",()=>{
     expect(audit.goals?.map(x=>x.domain)).toEqual([
       "total_business_costs","staff_cost","menu_count","pricing_review",
     ]);
+    // Audit omission alone is not proof that the owner never requested costs.
     expect(reconcileRequestScopesDetailed(all,first,true,false))
-      .toMatchObject({outcome:"declared_goal_missing",goals:null});
+      .toMatchObject({outcome:"accepted",goals:[...first,all[0]]});
   });
   it("keeps period-sensitive dates and no extra business selector",()=>{
     expect(reconcileRequestScopesDetailed([g("staff_cost","today")],[g("staff_cost")],true,false))

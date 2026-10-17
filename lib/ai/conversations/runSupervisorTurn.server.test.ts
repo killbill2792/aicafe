@@ -116,7 +116,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     ]));
     expect(JSON.stringify(bodies)).not.toContain("business_id");
   });
-  it("production request includes ten read/control tools plus bounded semantic scope metadata",async()=>{
+  it("production request includes fourteen read/control tools plus bounded semantic scope metadata",async()=>{
     const shared = (await import("./supervisorFunctions.mjs")).SUPERVISOR_FUNCTIONS;
     const bodies:Record<string,unknown>[]=[];
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
@@ -126,9 +126,9 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     });
     await runSupervisorTurn({...base,text:"Hi"},transport);
     const offered=bodies[0].tools as Array<{name:string}>;
-    expect(offered).toHaveLength(11);
+    expect(offered).toHaveLength(15);
     expect(offered.map(x=>x.name)).toEqual(shared.map(x=>x.name));
-    expect(new Set(offered.map(x=>x.name)).size).toBe(11);
+    expect(new Set(offered.map(x=>x.name)).size).toBe(15);
     expect(offered).toEqual(expect.arrayContaining([
       expect.objectContaining({name:"compare_periods"}),
       expect.objectContaining({name:"conversation_control"}),
@@ -171,7 +171,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     const expected=buildSupervisorRequest({model:"gpt-6-luna",instructions,
       input:[{role:"user",content:"Hi"}],round:0});
     expect(bodies[0]).toEqual(expected);
-    expect((bodies[0].tools as unknown[]).length).toBe(11);
+    expect((bodies[0].tools as unknown[]).length).toBe(15);
   });
   it("reports provider non-2xx without swallowing its safe HTTP status",async()=>{
     const stages:string[]=[];
@@ -665,7 +665,7 @@ describe("Four-domain semantic request-coverage contract",()=>{
   }
   it("fails closed before ANY café read when independent audit conflicts or is ambiguous",async()=>{
     for(const outcome of [
-      {goals:fullGoals.filter(g=>g.domain!=="pricing_review"),complete:true,ambiguous:false},
+      {goals:fullGoals.map(g=>g.domain==="staff_cost"?{...g,period:"today" as const}:g),complete:true,ambiguous:false},
       {goals:fullGoals,complete:false,ambiguous:false},
       {goals:fullGoals,complete:true,ambiguous:true},
     ]){
@@ -680,7 +680,9 @@ describe("Four-domain semantic request-coverage contract",()=>{
         asOf:"2026-10-12",tools:readers},transport);
       expect(result.reply.status).toBe("unavailable");
       expect(result.reply.blocks).toEqual([{type:"text",
-        text:"I couldn't reliably identify every part of that question. Please ask the parts separately so nothing is missed."}]);
+        text:outcome.complete&&!outcome.ambiguous
+          ? "Which dates and financial measure should I check: operating profit margin, owner profit, or ingredient margin?"
+          : "Which exact dates or business result would you like me to check?"}]);
       expect(result.usage.toolCallCount).toBe(0);
       expect(vi.mocked(readers.getMenuCatalog)).not.toHaveBeenCalled();
       expect(vi.mocked(readers.getProfitability)).not.toHaveBeenCalled();
@@ -708,7 +710,7 @@ describe("Four-domain semantic request-coverage contract",()=>{
     expect(m).toBeDefined();
     expect(m?.parameters.additionalProperties).toBe(false);
     expect(JSON.stringify(m?.parameters)).not.toMatch(/business_id|query|sql|writes|UPDATE /);
-    expect(SUPERVISOR_FUNCTIONS.filter(x=>x.name!=="declare_request_scope")).toHaveLength(10);
+    expect(SUPERVISOR_FUNCTIONS.filter(x=>x.name!=="declare_request_scope")).toHaveLength(14);
     for(const output of [
       [call("declare_request_scope",{goals:fullGoals,business_id:"foreign"},"scope")],
       [call("declare_request_scope",{goals:[{...fullGoals[0],sql:"select 1"}]},"scope")],

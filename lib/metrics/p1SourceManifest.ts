@@ -142,4 +142,8 @@ export const LEGACY_MODEL_TOOL_SURFACES = {
   get_owner_rules:{capabilities:["team.owner_rules"]},
   compare_periods:{capabilities:["sales.daily","money.profitability","money.business_costs","labor.daily_costs"]},
   conversation_control:{restricted:"No operational facts"},
+  olivia_availability:{restricted:"Olivia's own authenticated staff_availability_* reader (executeOliviaReadCapability), independent of the P1 canonical metric catalog"},
+  olivia_schedule:{restricted:"Olivia's own authenticated PR2/PR3 scheduling optimizer and what-if overlay (executeOliviaReadCapability), independent of the P1 canonical metric catalog"},
+  alex_pricing_review:{restricted:"Alex's own domain-owned alex.pricing.batch_review.v1 P2 registration, independent of the P1 canonical metric catalog"},
+  alex_pricing_what_if:{restricted:"Alex's own domain-owned alex.pricing.what_if.v1 P2 simulate registration, independent of the P1 canonical metric catalog"},
 } as const satisfies Record<string,Surface>;

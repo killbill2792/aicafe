@@ -13,6 +13,7 @@ import { requestScopeSchema, scopeAuditSchema, normalizeRequestedGoals, reconcil
   type RequestedGoal } from "./requestScope";
 import type { SupervisorToolCall } from "./toolRegistry.server";
 import { tryP3SupervisorReadOnly } from "@/lib/ai/supervisor/p3/runP3Turn.server";
+import { alignGoalsToOwnerDates } from "./ownerDateIntent";
 
 export type SupervisorUsage = {
   model: string; inputTokens: number; outputTokens: number;
@@ -38,6 +39,54 @@ function textFromResponse(output: unknown): string | null {
     .map(x=>x.text);
   return chunks.length === 1 ? chunks[0] : null;
 }
+/** Only category-level coverage labels are displayable. IDs, ingredient names,
+ * employee identifiers and raw source errors never escape into owner text. */
+function missingMarginCoverage(goal:RequestedGoal,result:ToolEvidence|undefined,
+  locale:"en"|"es"|"ar"):string {
+  const labels={
+    en:{prefix:"Operating profit margin",unavailable:"cannot be verified",
+      missing:"Missing or incomplete",items:{
+        period:"historical cost source for this period",
+        sales:"daily sales coverage",labor:"staff labor coverage",
+        ingredients:"ingredient costs and item-sales coverage",
+        fees:"payment-processing fees",expenses:"operating expense categories",
+        zero:"positive verified net sales",
+      }},
+    es:{prefix:"Margen de beneficio operativo",unavailable:"no se puede verificar",
+      missing:"Faltan datos completos de",items:{
+        period:"costos históricos para este período",
+        sales:"ventas diarias",labor:"costos laborales",
+        ingredients:"ingredientes y ventas por producto",
+        fees:"comisiones de pago",expenses:"gastos operativos",
+        zero:"ventas netas positivas verificadas",
+      }},
+    ar:{prefix:"هامش الربح التشغيلي",unavailable:"لا يمكن التحقق منه",
+      missing:"بيانات ناقصة عن",items:{
+        period:"التكاليف التاريخية لهذه الفترة",
+        sales:"المبيعات اليومية",labor:"تكاليف العمالة",
+        ingredients:"تكاليف المكونات ومبيعات المنتجات",
+        fees:"رسوم الدفع",expenses:"النفقات التشغيلية",
+        zero:"صافي مبيعات موجب ومؤكد",
+      }},
+  }[locale];
+  const categories=new Set<keyof typeof labels.items>();
+  for(const reason of result?.missingInputs??[]){
+    if(reason==="periodOutsideLoadedMonth")categories.add("period");
+    else if(reason.startsWith("salesCoverage:")||reason==="salesHistory")categories.add("sales");
+    else if(reason.startsWith("laborCoverage")||reason==="laborHistory")categories.add("labor");
+    else if(reason.startsWith("productCost:")||reason.startsWith("ingredient")||
+      reason==="itemSalesCoverage"||reason==="historicalIngredientCostCoverage")
+      categories.add("ingredients");
+    else if(reason.startsWith("cardFees:"))categories.add("fees");
+    else if(reason.startsWith("expense:"))categories.add("expenses");
+    else if(reason==="verifiedNonZeroNetSales")categories.add("zero");
+  }
+  const date=goal.period==="custom"&&goal.from?
+    " ("+goal.from+(goal.to&&goal.to!==goal.from?" – "+goal.to:"")+")":"";
+  const causes=[...categories].map(k=>labels.items[k]);
+  return labels.prefix+date+": "+labels.unavailable+
+    (causes.length?"; "+labels.missing+" "+causes.join(", "):".");
+}
 export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], names: SupervisorToolName[],
   locale: "en" | "es" | "ar" = "en", goals: RequestedGoal[] = [],
   executed: SupervisorToolCall[] = []):
@@ -62,7 +111,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
     const found=insights.find(s=>s.id===id);
     if(!found) throw new Error("Unverified Supervisor insight reference");
     return found;
-  });
+  }).filter(insight=>!goals.length||executed.some((call,i)=>
+    goals.some(g=>coversRequestedGoal(g,call)) &&
+    results[i]?.insights.some(x=>x.id===insight.id)));
   const refs: EvidenceReference[] = [];
   for (const identifier of final.evidence_refs) {
     const found = availableRefs.find(x=>x.identifier===identifier);
@@ -133,7 +184,8 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       ?? result?.facts[0];
     if(!result || (result.status==="unavailable" && !primary) || !primary && !result.insights.length && !result.tasks.length){
       // Canonical business-cost coverage provides a specific, localized cause.
-      const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:null;
+      const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:
+        goal.domain==="profit_margin"?missingMarginCoverage(goal,result,locale):null;
       supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
       specificWarning=true;missingGoal=true;
       continue;
@@ -144,12 +196,19 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       const heading=goal.domain==="total_business_costs"&&costMode==="partial"
         ? {en:"Known business costs",es:"Costos conocidos del negocio",
           ar:"تكاليف العمل المعروفة"}[locale] : goalLabel(goal.domain,locale);
-      const suffix=goal.domain==="total_business_costs"||goal.domain==="staff_cost"
-        ? " — "+labels[goal.period] : "";
-      const primaryLabel=suffixByDomain[goal.domain] ? heading+suffix : primary.label;
+      const suffix=["total_business_costs","staff_cost","owner_profit","sales","staff_attendance"].includes(goal.domain)
+        ? " — "+(goal.period==="custom"&&goal.from
+          ? goal.from+(goal.to!==goal.from&&goal.to?" – "+goal.to:"") : labels[goal.period]) : "";
+      // Only the EXACT canonical fact for this domain's known legacy tool earns
+      // the fixed heading. A different registered tool's own distinctly-labeled
+      // fact (e.g. Alex's "Products reviewed") must never be silently renamed
+      // to a legacy label describing a different measurement.
+      const canonicalSuffixMatch=(suffixByDomain[goal.domain]??[]).some(s=>primary.id.endsWith(s));
+      const primaryLabel=canonicalSuffixMatch ? heading+suffix : primary.label;
       chosen.push({...primary,label:primaryLabel});represented.add(primary.id);
     } else if(result.insights.length){
-      supplementalTexts.push(goalLabel(goal.domain,locale)+": "+result.insights[0].text);
+      supplementalTexts.push(result.insights[0].text);
+      for(const ref of result.evidence)if(!evidence.some(e=>e.identifier===ref.identifier))evidence.push(ref);
     }
     if(goal.domain==="team"&&result.status!=="unavailable"){
       const filter=(result.data as {filterStatus?:unknown}|null)?.filterStatus;
@@ -238,7 +297,9 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
   for(const text of supplementalTexts)blocks.push({type:"text",text});
   const hasFacts = blocks.length>0;
   const trusted = chosen.length>0 || extraFacts.length>0 || shownTasks.length>0 ||
-    selectedInsights.length>0 || blocks.some(b=>b.type==="text" && !supplementalTexts.includes(b.text));
+    selectedInsights.length>0 || goals.some(g=>executed.some((call,i)=>coversRequestedGoal(g,call) &&
+      results[i]?.status!=="unavailable" && (results[i]?.insights.length??0)>0)) ||
+    blocks.some(b=>b.type==="text" && !supplementalTexts.includes(b.text));
   const anyPartial=results.some(x=>x.status==="partial");
   const anyEstimated=results.some(x=>x.status==="estimated");
   const anyMissing=results.some(x=>x.status==="unavailable");
@@ -306,6 +367,7 @@ export async function runSupervisorTurn(input: {
   // reader invocation consumes the SAME bounded turn budget as legacy fallback.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
+    let p3Failed=false;
     let firstP3ModelDenied=false;
     let firstDeniedStatus:number|undefined;
     let firstDeniedCode:string|undefined;
@@ -351,9 +413,12 @@ export async function runSupervisorTurn(input: {
       });
       if(composed){
         recordUsage(composed.usage);
+        input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:composed.reply.status,
+          modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
         return {reply:composed.reply,usage:{...priorUsage}};
       }
     }catch{
+      p3Failed=true;
       // Source/provider failures cannot become trusted facts. Prior usage
       // survives so an unsafe retry never gets a new five-read allowance.
     }finally{
@@ -374,8 +439,14 @@ export async function runSupervisorTurn(input: {
         model=fallbackModel;
       }
     }
+    input.onDiagnostic?.({stage:"legacy_fallback",
+      legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
+      modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   }
-  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:0);
+  // The independent semantic audit has its own counted attempt; preserve all
+  // three bounded conversation rounds for multi-step specialist follow-ups.
+  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:
+    priorUsage.modelCallCount===0?1:0);
   const usage:SupervisorUsage={...priorUsage};
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
@@ -398,11 +469,13 @@ export async function runSupervisorTurn(input: {
   // A separate, bounded read of the original owner utterance using the SAME
   // configured model. No café tools, prior scope, history or business records are
   // included. The original tool loop never sees a redeclaration.
+  let scopeFailure:"audit_ambiguous"|"semantic_conflict"|"audit_incomplete"|"declared_goal_missing"|null=null;
   async function auditFirstScope(declared: RequestedGoal[]): Promise<RequestedGoal[] | null> {
     // One semantic audit with the same model and at most two transport attempts.
     // Never fall back here: the first model response has already succeeded.
     const request=JSON.stringify(buildSupervisorScopeAuditRequest({
       model,text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
+      history:input.history,
     }));
     for(let attempt=0;attempt<2 && (priorUsage.modelCallCount===0 ||
       usage.modelCallCount<maxModelAttempts);attempt++){
@@ -461,6 +534,7 @@ export async function runSupervisorTurn(input: {
           catch{/* Invalid scope audit payload is not evidence; never emit raw text. */}
         }
         if(!verified){
+          scopeFailure="audit_incomplete";
           input.onDiagnostic?.({stage:"scope_reconciliation",model,round:1,
             declaredGoalDomains:declared.map(g=>g.domain),auditedGoalDomains:[],
             normalizedGoalDomains:declared.map(g=>g.domain),
@@ -468,8 +542,11 @@ export async function runSupervisorTurn(input: {
             reconciliationOutcome:"audit_incomplete"});
           return null;
         }
-        const reconciled=reconcileRequestScopesDetailed(declared,verified.goals,
+        const reconciled=reconcileRequestScopesDetailed(
+          alignGoalsToOwnerDates(declared,input.text,input.asOf,input.history),
+          alignGoalsToOwnerDates(verified.goals,input.text,input.asOf,input.history),
           verified.complete,verified.ambiguous);
+        if(reconciled.outcome!=="accepted")scopeFailure=reconciled.outcome;
         // Only static domain enum values, booleans and a bounded outcome enum.
         // Never emit the owner utterance, provider output or café/task evidence.
         input.onDiagnostic?.({stage:"scope_reconciliation",model,round:1,
@@ -478,6 +555,9 @@ export async function runSupervisorTurn(input: {
           normalizedGoalDomains:reconciled.normalizedDomains,
           scopeAuditComplete:verified.complete,scopeAuditAmbiguous:verified.ambiguous,
           reconciliationOutcome:reconciled.outcome});
+        if(reconciled.goals)input.onDiagnostic?.({stage:"semantic_plan",
+          normalizedGoalDomains:reconciled.goals.map(g=>g.domain),
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         return reconciled.goals;
       }catch(error){
         const classified=error instanceof SupervisorStageError?error:
@@ -502,11 +582,18 @@ export async function runSupervisorTurn(input: {
     }
     throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:1});
   }
-  const clarification={
-    en:"I couldn't reliably identify every part of that question. Please ask the parts separately so nothing is missed.",
-    es:"No pude identificar con seguridad todas las partes de la pregunta. Consulta cada parte por separado para que no falte ninguna.",
-    ar:"لم أتمكن من تحديد جميع أجزاء السؤال بثقة. يُرجى طرح كل جزء على حدة حتى لا يفوتني شيء.",
-  }[input.locale];
+  const clarification=()=>{
+    const choices=scopeFailure==="semantic_conflict" ? {
+      en:"Which dates and financial measure should I check: operating profit margin, owner profit, or ingredient margin?",
+      es:"¿Qué fechas y medida debo revisar: margen operativo, ganancia del propietario o margen de ingredientes?",
+      ar:"ما التواريخ والمقياس المطلوب: هامش الربح التشغيلي أم ربح المالك أم هامش المكونات؟",
+    } : {
+      en:"Which exact dates or business result would you like me to check?",
+      es:"¿Qué fechas exactas o resultado del negocio quieres que revise?",
+      ar:"ما التواريخ الدقيقة أو نتيجة العمل التي تريدني أن أتحقق منها؟",
+    };
+    return choices[input.locale];
+  };
 
   for (let round=0;round<MAX_ROUNDS && (priorUsage.modelCallCount===0 ||
     usage.modelCallCount<maxModelAttempts);round++) {
@@ -639,15 +726,17 @@ export async function runSupervisorTurn(input: {
         let firstScope:RequestedGoal[];
         try{firstScope=requestScopeSchema.parse(declarations[0].arguments).goals;}
         catch{throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});}
-        const audited=await auditFirstScope(normalizeRequestedGoals(firstScope));
+        const audited=await auditFirstScope(alignGoalsToOwnerDates(firstScope,input.text,input.asOf,input.history));
         if(!audited)return {reply:{intent:"unknown",status:"unavailable",evidence:[],
-          blocks:[{type:"text",text:clarification}]},usage};
+          blocks:[{type:"text",text:clarification()}]},usage};
         requestedGoals=audited;
         conversation.push({type:"function_call_output",call_id:declarations[0].call_id,
           output:JSON.stringify({accepted:true,goals:requestedGoals.length,
             note:"Scope verified independently before any café read."})});
       }
       for (const call of reads) {
+        input.onDiagnostic?.({stage:"capability_selected",advertisedToolNames:[call.name],
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         ++usage.toolCallCount;
         input.onDiagnostic?.({stage:"tool_execution",model,round:round+1,
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
@@ -680,6 +769,8 @@ export async function runSupervisorTurn(input: {
         const fallback=fallbackCallForGoal(goal);
         if(!fallback)continue;
         const call:SupervisorToolCall={...fallback,call_id:"scope:"+usage.toolCallCount};
+        input.onDiagnostic?.({stage:"capability_selected",advertisedToolNames:[call.name],
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
         ++usage.toolCallCount;
         let result:ToolEvidence;
         try {result=await registry(call,usage.toolCallCount);}
@@ -689,8 +780,13 @@ export async function runSupervisorTurn(input: {
         input.onUsage?.({...usage});
       }
     }
-    try {return {reply:validateSupervisorFinal(parsed,toolResults,called,input.locale,
-      requestedGoals??[],executed),usage};}
+    try {
+      const reply=validateSupervisorFinal(parsed,toolResults,called,input.locale,
+        requestedGoals??[],executed);
+      input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:reply.status,
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+      return {reply,usage};
+    }
     catch {throw new SupervisorStageError("final_output_validation","final_response_validation",{round:round+1});}
   }
   throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:MAX_ROUNDS});

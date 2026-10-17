@@ -22,13 +22,13 @@ describe("Exact production Responses request model profiles",()=>{
       expect(supervisorModelProfile(model)).toEqual({});
     });
   it.each(["gpt-6-luna","gpt-4.1-mini","gpt-4.1-mini-2025-04-14"])(
-    "retains the ten original tools plus request-scope metadata, strict final schema and all shared fields for %s",model=>{
+    "retains the fourteen original tools plus request-scope metadata, strict final schema and all shared fields for %s",model=>{
       const first=build(model,0),later=build(model,1);
       for(const request of [first,later]){
         expect(request).toMatchObject({model,instructions,input,
           store:false,max_output_tokens:1300,parallel_tool_calls:true});
         expect(request.tools).toBe(SUPERVISOR_FUNCTIONS);
-        expect(request.tools.map((tool:{name:string})=>tool.name)).toHaveLength(11);
+        expect(request.tools.map((tool:{name:string})=>tool.name)).toHaveLength(15);
         expect(request.text.format).toMatchObject({type:"json_schema",name:"supervisor_final",strict:true,
           schema:expect.objectContaining({type:"object",additionalProperties:false,
             required:["headline","summary","fact_ids","task_ids","insight_ids","evidence_refs"]})});

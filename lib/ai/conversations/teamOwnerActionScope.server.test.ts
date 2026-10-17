@@ -155,7 +155,8 @@ describe("Direct owner-action Team question — complete mocked provider/model l
     const answer=await h.execute();
     expect(answer.reply.status).toBe("unavailable");
     expect(answer.reply.blocks[0]).toMatchObject({type:"text",
-      text:expect.stringContaining("Please ask the parts separately")});
+      text:expect.stringContaining(x.outcome==="semantic_conflict"
+        ? "Which dates and financial measure" : "Which exact dates or business result")});
     expect(h.read).not.toHaveBeenCalled();
     expect(h.requests).toHaveLength(2);
     const diagnostic=h.diagnostics.find(d=>d.stage==="scope_reconciliation");

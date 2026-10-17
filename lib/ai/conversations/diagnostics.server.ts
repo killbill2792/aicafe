@@ -7,6 +7,7 @@ import { GOAL_DOMAINS, type RequestedGoal, type ScopeReconciliationOutcome } fro
 export type SupervisorStage =
   | "conversation_auth" | "owner_message_persisted" | "cafe_tools_created"
   | "cafe_identity_loaded" | "provider_request" | "provider_response" | "provider_fallback"
+  | "semantic_plan" | "capability_selected" | "grounded_answer" | "legacy_fallback"
   | "tool_call_parse" | "tool_execution" | "final_response_parse"
   | "final_response_validation" | "scope_reconciliation" | "reply_persistence";
 export type SupervisorErrorCategory =
@@ -29,10 +30,13 @@ export type SupervisorDiagnostic = {
   scopeAuditComplete?:boolean;
   scopeAuditAmbiguous?:boolean;
   reconciliationOutcome?:ScopeReconciliationOutcome;
+  groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence";
+  legacyFallbackReason?:"p3_not_completed"|"p3_failed";
 };
 const stages:readonly SupervisorStage[]=[
   "conversation_auth","owner_message_persisted","cafe_tools_created","cafe_identity_loaded",
-  "provider_request","provider_response","provider_fallback","tool_call_parse","tool_execution",
+  "provider_request","provider_response","provider_fallback","semantic_plan",
+  "capability_selected","grounded_answer","legacy_fallback","tool_call_parse","tool_execution",
   "final_response_parse","final_response_validation","scope_reconciliation","reply_persistence",
 ];
 const categories:readonly SupervisorErrorCategory[]=[
@@ -129,6 +133,10 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.modelCallCount)!==undefined?{modelCallCount:d.modelCallCount}:{}),
         ...(safeCount(d.toolCallCount)!==undefined?{toolCallCount:d.toolCallCount}:{}),
         ...(d.timeout===true?{timeout:true}:{}),
+        ...(d.groundedStatus && ["verified","estimated","partial","unavailable","insufficient_evidence"].includes(d.groundedStatus)?
+          {groundedStatus:d.groundedStatus}:{}),
+        ...(d.legacyFallbackReason && ["p3_not_completed","p3_failed"].includes(d.legacyFallbackReason)?
+          {legacyFallbackReason:d.legacyFallbackReason}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),

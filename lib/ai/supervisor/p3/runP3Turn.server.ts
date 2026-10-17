@@ -10,6 +10,7 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
+import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
@@ -163,10 +164,15 @@ function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boole
  * natural-language ranges fail closed instead of silently displaying wrong days.
  */
 function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
+  // Preserve P3's existing ISO envelope needed by independently scoped
+  // P2 clauses; each individual source still must match its own quoted date.
   const dates=[...text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].map(x=>x[0]);
   if(dates.length===1)return {from:dates[0],to:dates[0]};
   if(dates.length===2&&dates[0]<=dates[1])return {from:dates[0],to:dates[1]};
   if(dates.length>2)return null;
+  const parsed=parseOwnerDateWindows(text,asOf);
+  if(parsed.length===1)return parsed[0];
+  if(parsed.length>1)return null;
   const normalized=text.normalize("NFKC").toLocaleLowerCase();
   if(/\b(?:today|hoy)\b|اليوم/u.test(normalized))
     return {from:asOf,to:asOf};
@@ -230,6 +236,17 @@ export async function tryP3SupervisorReadOnly(input:{
   history?:ConversationalTurn[];
   onUsage?:(usage:P3Usage)=>void;
 }):Promise<P3Result|null>{
+  // P3 scalar reads currently validate one contiguous owner date window.
+  // Disjoint days belong to the registered multi-read Supervisor path; skip
+  // P3 *before* spending a provider/read budget rather than widening dates.
+  const directDates=parseOwnerDateWindows(input.text,input.asOf);
+  const contextualDates=ownerDateWindowsFromContext(input.text,input.asOf,input.history);
+  // Existing P3 multi-clause ISO dates are already checked independently by
+  // verifiedReaderPeriods; only newer conversational month-name/deictic multi-
+  // day references need the legacy independent-date reader path.
+  const isoDates=[...input.text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].length;
+  if((contextualDates.length>1 && isoDates===0) ||
+    (!directDates.length && contextualDates.length>0))return null;
   const {tools,identity}=await authorizedOwnerP1();
   const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
     .split(",").map(id=>id.trim()).filter(Boolean);
