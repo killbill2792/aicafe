@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "supabase/migrations/20261017000070_p1_authoritative_revisions.sql"
+      - "supabase/migrations/20261017000071_p1_owner_total_cost_source.sql"
       - "scripts/test-p1-source-epochs.mjs"
       - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
