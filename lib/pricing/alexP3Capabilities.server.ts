@@ -87,11 +87,16 @@ export const ALEX_ASSUMPTION_CODES = [
 // excludes labor, fees, rent and demand -- always lands at index 2 or 3, never 0 or 1. The
 // output schema caps presented codes at 2, so picking by raw array position silently dropped
 // that caveat from every real result. Select by this priority instead. Caught in review (round 4).
+// "no_target_selected_no_target_price" is deliberately left OUT of this list: it only ever
+// appears for a selling-price-only request (this capability requires at least one of
+// sellingPrice/target, so a missing target implies a given selling price), it explains an
+// already-visible absent field rather than a data-quality limitation on the computed result,
+// and ranking it at all let it crowd out the real cost-freshness caveat under the 2-code cap.
+// Caught in review (round 8).
 const ASSUMPTION_CODE_PRIORITY: readonly (typeof ALEX_ASSUMPTION_CODES)[number][] = [
   "ingredient_only_excludes_labor_fees_rent_and_demand",
   "owner_total_is_aggregate_not_ingredient_recipe",
   "owner_supplied_ingredient_cost_overrides_are_hypothetical",
-  "no_target_selected_no_target_price",
   "recorded_cost_freshness_not_proven",
   "owner_hypothetical_not_recorded",
 ];

@@ -126,14 +126,18 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
   });
 
   it("keeps the real margin-impact number when a selling price is actually applied " +
-    "(not a target-only request)", async () => {
+    "(not a target-only request), and drops the irrelevant no-target caveat in favor " +
+    "of the real cost-freshness one", async () => {
     mockSimulate.mockResolvedValue({
       status: "conditional", mode: "simulate", proposal: null, executedEffects: 0,
       provenance: simulateProvenance, quality,
       value: { currency: "USD", productId: "11111111-1111-1111-1111-111111111111", name: "Oat Latte 16oz",
         before: {}, after: {}, priceDeltaCents: 50, ingredientCostDeltaCents: 0,
         ingredientContributionDeltaCents: 50, targetPriceCents: null, targetBasisPoints: null,
-        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven"],
+        // Real production order for a selling-price-only request: no_target_selected_no_target_price
+        // is always last (no target was requested at all here).
+        assumptions: ["owner_hypothetical_not_recorded", "recorded_cost_freshness_not_proven",
+          "ingredient_only_excludes_labor_fees_rent_and_demand", "no_target_selected_no_target_price"],
         persisted: false },
     });
     const [, whatIf] = buildAlexP3Registrations();
@@ -143,7 +147,12 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     // A real applied price change produces a real margin delta — it must NOT be nulled
     // out the way an unapplied target-only delta is.
     expect(raw).toMatchObject({ status: "partial",
-      value: [expect.objectContaining({ ingredientContributionDeltaCents: 50 })] });
+      // no_target_selected_no_target_price only explains an already-absent field (no
+      // target was requested) and must never crowd out the cost-freshness caveat under
+      // the 2-code cap -- a real finding in review (round 8).
+      value: [expect.objectContaining({ ingredientContributionDeltaCents: 50,
+        assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
+          "recorded_cost_freshness_not_proven"] })] });
   });
 
   it("returns unavailable, not a targetless 'success', when a target was requested " +
