@@ -48,3 +48,35 @@ describe("requestInvestigation output-token budget", ()=>{
     expect(bodies[0].max_output_tokens).toBe(500);
   });
 });
+
+describe("requestInvestigation invalid-payload sub-reasons",()=>{
+  const baseUsage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0});
+  const schema=z.strictObject({x:z.string().min(2)});
+
+  it("reports wrong_text_shape when the provider returns no output_text parts",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({invalidPayloadReason:"wrong_text_shape"}));
+  });
+
+  it("reports unparseable_json for literally malformed JSON text",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"{not json"}]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({invalidPayloadReason:"unparseable_json"}));
+  });
+
+  it("reports schema_mismatch with the failing field path when JSON parses but fails the zod contract",async()=>{
+    const transport=vi.fn(async()=>completed({x:""}));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"schema_mismatch",schemaIssuePath:"x"}));
+  });
+});

@@ -61,18 +61,26 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         throw new SupervisorStageError("provider_http","provider_response",
           {providerStatus:typeof raw.status==="string"?raw.status:undefined});
       if(!Array.isArray(raw.output))
-        throw new SupervisorStageError("provider_invalid_payload","provider_response");
+        throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {invalidPayloadReason:"wrong_text_shape"});
       const texts=raw.output.filter((i:{type?:unknown})=>i?.type==="message")
         .flatMap((i:{content?:Array<{type?:unknown;text?:unknown}>})=>i.content??[])
         .filter((p:{type?:unknown;text?:unknown})=>p?.type==="output_text"&&typeof p.text==="string")
         .map((p:{text:string})=>p.text);
       if(texts.length!==1||texts[0].length>18000)
-        throw new SupervisorStageError("provider_invalid_payload","provider_response");
+        throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {invalidPayloadReason:"wrong_text_shape"});
       let decoded:unknown;
       try{decoded=JSON.parse(texts[0]);}
-      catch{throw new SupervisorStageError("provider_invalid_payload","provider_response");}
+      catch{throw new SupervisorStageError("provider_invalid_payload","provider_response",
+        {invalidPayloadReason:"unparseable_json"});}
       const parsed=input.schema.safeParse(decoded);
-      if(!parsed.success)throw new SupervisorStageError("provider_invalid_payload","provider_response");
+      if(!parsed.success){
+        const issue=parsed.error.issues[0];
+        throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {invalidPayloadReason:"schema_mismatch",
+            schemaIssuePath:issue?.path.join(".")||undefined,schemaIssueCode:issue?.code});
+      }
       return parsed.data;
     })(),expired]);
   }catch(error){
@@ -89,6 +97,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
     input.onDiagnostic?.({stage:"provider_response",category:classified.category,
       httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
       providerErrorCode:classified.providerErrorCode,requestName:input.name,
+      invalidPayloadReason:classified.invalidPayloadReason,
+      schemaIssuePath:classified.schemaIssuePath,schemaIssueCode:classified.schemaIssueCode,
       attempt,modelCallCount:input.usage.modelCallCount});
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly
