@@ -392,6 +392,7 @@ export async function runSupervisorTurn(input: {
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
   let p3AccessFallback=false;
+  let p3Failed=false;
   const priorUsage:SupervisorUsage={
     model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
   };
@@ -399,7 +400,6 @@ export async function runSupervisorTurn(input: {
   // authorized five-read cap, while model usage from both stages is recorded.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
-    let p3Failed=false;
     let firstP3ModelDenied=false;
     let firstDeniedStatus:number|undefined;
     let firstDeniedCode:string|undefined;
