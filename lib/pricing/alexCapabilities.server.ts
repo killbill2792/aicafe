@@ -3,7 +3,7 @@ import { formatInTimeZone } from "date-fns-tz";
 import { readAuthorizedAtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { schemaFingerprint, type ReadRegistration, type SimulateRegistration,
   type TrustedReadScope } from "@/lib/ai/supervisor/p2/registry";
-import { alexReviewInputSchema,alexReviewOutputSchema,alexSimulateInputSchema,
+import { type AlexReviewInput,type AlexSimulateInput,alexReviewInputSchema,alexReviewOutputSchema,alexSimulateInputSchema,
   alexSimulateOutputSchema,reviewFromAtomicSnapshot,simulateFromAtomicSnapshot } from "./alexPricing";
 
 /** New domain-owned IDs: the existing shadow alex.pricing.review.v1 is not
@@ -69,7 +69,7 @@ export function buildAlexPricingRegistrations():readonly [ReadRegistration,Simul
         outputSchemaFingerprint:schemaFingerprint(alexReviewOutputSchema)},
       async read(scope,input){
         const result=await withConsistentSnapshot(scope,(snapshot,day)=>
-          reviewFromAtomicSnapshot(snapshot,input,day));
+          reviewFromAtomicSnapshot(snapshot,input as AlexReviewInput,day));
         if(result.status==="denied")return {status:result.reason==="source_revision_changed_or_unavailable"?
           "conflict":"unavailable",value:null,reason:result.reason};
         return result.value;
@@ -87,7 +87,7 @@ export function buildAlexPricingRegistrations():readonly [ReadRegistration,Simul
         // Registry enforces preauthorized binding envelope; this domain NEVER
         // trusts an externally supplied snapshot, price, tenant or revision.
         const result=await withConsistentSnapshot(scope,(snapshot,day)=>
-          simulateFromAtomicSnapshot(snapshot,input,day));
+          simulateFromAtomicSnapshot(snapshot,input as AlexSimulateInput,day));
         if(result.status==="denied")return {status:"unavailable",mode:"simulate",
           proposal:null,executedEffects:0,value:null,reason:result.reason};
         return result.value;
