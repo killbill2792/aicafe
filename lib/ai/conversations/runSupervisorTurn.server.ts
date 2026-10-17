@@ -484,8 +484,8 @@ export async function runSupervisorTurn(input: {
           return null;
         }
         const reconciled=reconcileRequestScopesDetailed(
-          alignGoalsToOwnerDates(declared,input.text,input.asOf),
-          alignGoalsToOwnerDates(verified.goals,input.text,input.asOf),
+          alignGoalsToOwnerDates(declared,input.text,input.asOf,input.history),
+          alignGoalsToOwnerDates(verified.goals,input.text,input.asOf,input.history),
           verified.complete,verified.ambiguous);
         if(reconciled.outcome!=="accepted")scopeFailure=reconciled.outcome;
         // Only static domain enum values, booleans and a bounded outcome enum.
@@ -664,7 +664,7 @@ export async function runSupervisorTurn(input: {
         let firstScope:RequestedGoal[];
         try{firstScope=requestScopeSchema.parse(declarations[0].arguments).goals;}
         catch{throw new SupervisorStageError("invalid_tool_call","tool_call_parse",{round:round+1});}
-        const audited=await auditFirstScope(alignGoalsToOwnerDates(firstScope,input.text,input.asOf));
+        const audited=await auditFirstScope(alignGoalsToOwnerDates(firstScope,input.text,input.asOf,input.history));
         if(!audited)return {reply:{intent:"unknown",status:"unavailable",evidence:[],
           blocks:[{type:"text",text:clarification()}]},usage};
         requestedGoals=audited;
