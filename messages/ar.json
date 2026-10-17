@@ -1797,6 +1797,15 @@
     "unit_kg": "كيلوغرامات",
     "unit_gal": "غالونات أمريكية",
     "unit_liter": "لترات",
-    "unit_case": "صناديق"
+    "unit_case": "صناديق",
+    "field_ingredientsCentsEstimated": "تكلفة مكونات الوصفة الحالية المقدّرة",
+    "field_ownerTotalCostRecorded": "إجمالي تكلفة المنتج التي سجلها المالك (وليست تكلفة المكونات فقط)",
+    "field_ownerTotalCostEstimated": "إجمالي تكلفة المنتج المقدّر من المالك (وليست تكلفة المكونات فقط)",
+    "period_hour": "ساعة",
+    "period_month": "شهر",
+    "period_year": "سنة",
+    "unsupportedOutcome": "لا تستطيع القدرة المسجلة إكمال هذه النتيجة حاليًا.",
+    "missingInput": "البيانات أو السجلات المطلوبة ناقصة، ولا يمكن حساب نتيجة موثوقة.",
+    "unsupportedAction": "يتطلب هذا الإجراء مسار موافقة منفصلًا؛ لم يتم تغيير أي شيء."
   }
 }
