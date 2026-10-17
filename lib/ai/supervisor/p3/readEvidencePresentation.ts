@@ -86,6 +86,7 @@ export function presentRegisteredReads(params:{
       typeof result.provenance.canonicalReaderId!=="string" ||
       typeof result.provenance.purpose!=="string" ||
       typeof result.id!=="string" ||
+      item.capabilityId!=="p3."+result.id+".v1" ||
       !isRecord(result.quality) ||
       !Array.isArray(result.quality.missingInputs) ||
       !Array.isArray(result.quality.estimatedInputs) ||
