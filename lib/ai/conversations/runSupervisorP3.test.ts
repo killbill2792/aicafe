@@ -123,6 +123,42 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("live Supervisor presents Maya's bounded supplier evidence, not inventory",async()=>{
+    const question="Show the supplier quotes I recorded";
+    const source={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    const quotes={items:[{
+      id:"quote-1",supplierName:"Baker Shop",itemName:"Oat milk",
+      priceCents:1275,packageCount:6,packageUnit:"case",
+      sourceKind:"supplier_quote",sourceUrl:null,quotedOn:"2026-10-10",
+      evidenceStatus:"owner_reported",createdAt:"2026-10-10T10:00:00Z",
+    }],truncated:false};
+    const envelope=result(source,quotes);
+    p1Reads.mockResolvedValue({...envelope,provenance:{
+      ...envelope.provenance,canonicalReaderId:"readP1SupplierQuotes",
+    }});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{
+        clause:question,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(source),reason:null,
+      }]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"unsupported"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.evidence).toHaveLength(1);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+    ]));
+    const text=output.reply.blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(text).toContain("Oat milk");
+    expect(text).toContain("$12.75");
+    expect(text).not.toContain("quote-1");
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count")).toBe(false);
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:1});
+  });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"unauthorized_or_unconfigured",
