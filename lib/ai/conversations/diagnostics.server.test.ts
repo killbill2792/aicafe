@@ -113,6 +113,21 @@ describe("Sanitized Supervisor production diagnostics",()=>{
     expect(logged.messagePartTypes).toBeUndefined();
     expect(logged.outputTextPartCount).toBeUndefined();
   });
+  it("drops an identifier-shaped value that is not an actual documented type, even on the untrusted malformed-payload path",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    // sk-abc123_secret-token is syntactically identifier-shaped (matches [a-zA-Z0-9_.-]+)
+    // but is not one of OpenAI's documented output-item/content-part type values.
+    const error=new SupervisorStageError("provider_invalid_payload","provider_response",
+      {invalidPayloadReason:"wrong_text_shape",
+        outputItemTypes:["message","sk-abc123_secret-token"],
+        messagePartTypes:["output_text","sk-abc123_secret-token"]});
+    logger.emit({...classifySupervisorError(error,"provider_response")});
+    const logged=JSON.parse(lines[0]);
+    expect(logged.outputItemTypes).toEqual(["message"]);
+    expect(logged.messagePartTypes).toEqual(["output_text"]);
+    expect(JSON.stringify(logged)).not.toContain("sk-abc123_secret-token");
+  });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",
       {httpStatus:200,providerStatus:"incomplete",round:2,attempt:1});

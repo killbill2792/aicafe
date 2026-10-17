@@ -68,16 +68,18 @@ const safeProviderIdentifier=(value:unknown):string|undefined=>{
   const limited=value.slice(0,64);
   return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
 };
-/** OpenAI's own fixed, documented output item/content-part "type" enum values
- * (e.g. "message", "reasoning", "output_text", "refusal"). Never model-generated
- * content, café data or owner text; still bounded, deduped and allow-listed. */
-const safeTag=(value:unknown):string|undefined=>{
-  if(typeof value!=="string")return undefined;
-  const limited=value.slice(0,32);
-  return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
-};
-const safeTagArray=(arr:unknown):string[]=>Array.isArray(arr)
-  ?[...new Set(arr.map(safeTag).filter((s):s is string=>!!s))].slice(0,8):[];
+/** This path inspects a payload the server has already judged malformed or
+ * untrustworthy; a value there is never assumed to actually be one of OpenAI's
+ * documented output/content "type" tags just because it is identifier-shaped
+ * (a secret made only of letters/digits/._- would pass a syntax check). Only
+ * exact membership in the Responses API's own fixed, documented enum may ever
+ * reach the log; every other value is dropped, never merely truncated. */
+const outputItemTypeEnum=new Set(["message","reasoning","function_call","file_search_call",
+  "web_search_call","computer_call","code_interpreter_call","image_generation_call",
+  "local_shell_call","mcp_call","mcp_list_tools","mcp_approval_request","custom_tool_call"]);
+const messagePartTypeEnum=new Set(["output_text","refusal"]);
+const safeEnumTagArray=(arr:unknown,allowed:ReadonlySet<string>):string[]=>Array.isArray(arr)
+  ?[...new Set(arr.filter((v):v is string=>typeof v==="string"&&allowed.has(v)))].slice(0,8):[];
 /** Inspect only the provider's error.type and error.code in a non-2xx response.
  * No raw error body or error.message escapes this function. Malformed JSON is safe. */
 export async function readSafeProviderError(response:Response):Promise<Pick<SupervisorDiagnostic,
@@ -127,8 +129,8 @@ export class SupervisorStageError extends Error {
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
-    const outputItemTypes=safeTagArray(meta.outputItemTypes);
-    const messagePartTypes=safeTagArray(meta.messagePartTypes);
+    const outputItemTypes=safeEnumTagArray(meta.outputItemTypes,outputItemTypeEnum);
+    const messagePartTypes=safeEnumTagArray(meta.messagePartTypes,messagePartTypeEnum);
     this.outputItemTypes=outputItemTypes.length?outputItemTypes:undefined;
     this.messagePartTypes=messagePartTypes.length?messagePartTypes:undefined;
     this.outputTextPartCount=typeof meta.outputTextPartCount==="number"&&
@@ -179,10 +181,10 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
-        ...(d.outputItemTypes&&safeTagArray(d.outputItemTypes).length?
-          {outputItemTypes:safeTagArray(d.outputItemTypes)}:{}),
-        ...(d.messagePartTypes&&safeTagArray(d.messagePartTypes).length?
-          {messagePartTypes:safeTagArray(d.messagePartTypes)}:{}),
+        ...(d.outputItemTypes&&safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum).length?
+          {outputItemTypes:safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum)}:{}),
+        ...(d.messagePartTypes&&safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum).length?
+          {messagePartTypes:safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum)}:{}),
         ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
