@@ -8,7 +8,7 @@ import { SUPERVISOR_ENDPOINT,supervisorModelProfile } from
 import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
-import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
+import { runP2ShadowWithScope, type ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
 import { buildAlexP3Registrations } from "@/lib/pricing/alexP3Capabilities.server";
 import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
@@ -18,7 +18,8 @@ import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 import { rebaseQuotedOccurrence } from "./quoteOccurrences";
-import { presentRegisteredReads,registeredReadReason } from "./readEvidencePresentation";
+import { presentRegisteredReads,registeredReadReason,
+  specificCapabilityUnavailableReason } from "./readEvidencePresentation";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
@@ -121,8 +122,17 @@ async function modelComposition(input:{
           "For a request to SHOW or LIST already authorized record fields with no arithmetic,",
           "choose planJson null and reason read_only ONLY for a clause in readableSourceClauses.",
           "This renders a provisional bounded source sample, never a complete count or effect.",
+          "A clause in readableSourceClauses may ALSO be a bounded owner-parameterized",
+          "what-if or simulation (a price change, a margin target, a schedule change) whose",
+          "registered capability ALREADY computed a complete result for that exact request --",
+          "not raw arithmetic for you to redo. Being phrased as a calculation does not by",
+          "itself disqualify it: if the clause is in readableSourceClauses, choose planJson",
+          "null and reason read_only for it too, so the already-computed result is shown,",
+          "rather than missing_input, which would discard a real completed answer.",
           "Never classify a request for a business change/approval as a completed read.",
-          "If a requested calculation lacks necessary operands, choose null and missing_input.",
+          "If a clause needs genuinely new arithmetic across sources, or its calculation",
+          "lacks necessary operands and it is NOT in readableSourceClauses, choose null",
+          "and missing_input.",
           "Writes or approvals are unsupported_action. Do not present a partial subtraction",
           "of revenue and wages as verified profit when ingredients/fees are missing.",
         ].join(" "),
@@ -150,6 +160,39 @@ async function modelComposition(input:{
       output:n(usage?.output_tokens)}};
   }catch{return null;}
   finally{clearTimeout(timer);}
+}
+/** A generic "missing_input" reason discards whatever a registered
+ * capability's OWN unavailable result already knows about why it couldn't
+ * answer (ambiguous product name, no priced recipe, no feasible schedule...).
+ * Prefer that specific, actionable text over the generic brush-off whenever
+ * it's available; the generic text remains the fallback for anything not in
+ * the known reason map, and for the other two coarser classifications
+ * (unsupported / unsupported_action), which come from the planner itself,
+ * not from a capability's own result. */
+function unsupportedReasonWarnings(
+  reasons:ReadonlySet<"unsupported"|"missing_input"|"unsupported_action">,
+  evidence:readonly ShadowEvidence[],locale:"en"|"es"|"ar",
+):SupervisorReplyBlock[]{
+  const warnings:SupervisorReplyBlock[]=[];
+  if(reasons.has("missing_input")){
+    const specific=new Set<string>();
+    for(const item of evidence){
+      if(item.status!=="unavailable"||!item.capabilityId||!item.reason)continue;
+      const text=specificCapabilityUnavailableReason(locale,item.reason);
+      if(text)specific.add(text);
+    }
+    if(specific.size)
+      for(const text of [...specific].slice(0,3))
+        warnings.push({type:"warning",code:"P3_MISSING_INPUT",text});
+    else warnings.push({type:"warning",code:"P3_MISSING_INPUT",
+      text:registeredReadReason(locale,"missing_input")});
+  }
+  for(const reason of reasons){
+    if(reason==="missing_input")continue;
+    warnings.push({type:"warning",code:"P3_"+reason.toUpperCase(),
+      text:registeredReadReason(locale,reason)});
+  }
+  return warnings;
 }
 function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boolean{
   const expected=new Map<string,number>();
@@ -483,10 +526,7 @@ export async function tryP3SupervisorReadOnly(input:{
         latest.snapshot.revision!==atomic.snapshot.revision)
         return sourceIntegrityFailure();
     }
-    const warnings=[...unsupportedReasons].map(reason=>({
-      type:"warning" as const,code:"P3_"+reason.toUpperCase(),
-      text:registeredReadReason(input.locale,reason),
-    }));
+    const warnings=unsupportedReasonWarnings(unsupportedReasons,shadow.evidence,input.locale);
     return {kind:"p3_read_only_conditional",executedEffects:0,
       reply:{intent:"unknown",status:presentedReads.blocks.length?"partial":"unavailable",
         evidence:presentedReads.evidence,
@@ -501,10 +541,7 @@ export async function tryP3SupervisorReadOnly(input:{
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
     ...presentedReads.blocks,
   ];
-  for(const reason of unsupportedReasons)blocks.push({
-    type:"warning",code:"P3_"+reason.toUpperCase(),
-    text:registeredReadReason(input.locale,reason),
-  });
+  blocks.push(...unsupportedReasonWarnings(unsupportedReasons,shadow.evidence,input.locale));
   const refs:EvidenceReference[]=[...presentedReads.evidence];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(

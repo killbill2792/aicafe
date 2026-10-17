@@ -196,6 +196,112 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Latte 12 oz"))).toBe(true);
   });
 
+  it("a real pricing what-if question reaches Alex's capability and is presented to the " +
+    "owner directly through P3 -- proving the reachability gap found in review is fixed, " +
+    "not just that the capability computes correctly in isolation", async () => {
+    const productId = avaId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [{ id: productId, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" }],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [{ menu_item_id: productId, ingredient_id: ingredientId, quantity: 200 }],
+        employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const question = "What if I raise the Latte 12 oz by 50 cents?";
+    const requests: string[] = [];
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as {
+        text?: { format?: { name?: string } };
+      };
+      const schema = body.text?.format?.name;
+      requests.push(schema ?? "unexpected");
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.what_if.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_simulate",
+            product: { exactName: "Latte 12 oz" }, changes: [],
+            sellingPrice: { kind: "delta", deltaCents: 50 } }),
+          reason: null }] }) }] }]);
+      // This is the fix under test: the real OpenAI call would now be instructed
+      // that a clause already answered by a registered capability (readableSourceClauses)
+      // stays read_only even when phrased as a calculation, instead of missing_input.
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "read_only" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
+    expect(requests).toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
+    expect(reply.status).toBe("partial");
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
+    expect(reply.blocks.some(b => b.type === "text" && b.text.includes("$0.50"))).toBe(true);
+    // The generic "I don't have enough to answer this" fallback must NOT appear --
+    // that would mean the real computed answer was discarded in favor of the
+    // missing_input brush-off this fix exists to prevent.
+    expect(reply.blocks.some(b => b.type === "warning" && b.code === "P3_MISSING_INPUT")).toBe(false);
+  });
+
+  it("surfaces the capability's own specific reason for an ambiguous product name, " +
+    "instead of a generic 'missing input' brush-off", async () => {
+    const idA = avaId, idB = benId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        // Two active items share the exact same name -- what-if can't resolve
+        // which one the owner means by name alone.
+        menu: [
+          { id: idA, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" },
+          { id: idB, name: "Latte 12 oz", price_cents: 550, is_active: true, category: "ESPRESSO_DRINK" },
+        ],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [], employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const question = "What if I raise the Latte 12 oz by 50 cents?";
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [question] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [{
+          clause: question, capabilityId: "p3.alex.pricing.what_if.v1",
+          inputJson: JSON.stringify({ purpose: "pricing_simulate",
+            product: { exactName: "Latte 12 oz" }, changes: [],
+            sellingPrice: { kind: "delta", deltaCents: 50 } }),
+          reason: null }] }) }] }]);
+      // The ambiguous-name read failed, so this clause is correctly NOT in
+      // readableSourceClauses; the model classifies it missing_input as instructed.
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [question], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
+    const warning = reply.blocks.find(b => b.type === "warning" && b.code === "P3_MISSING_INPUT");
+    expect(warning).toMatchObject({ text: expect.stringContaining("More than one active menu item") });
+    // The raw internal reason code must never leak to the owner, in any language.
+    expect(JSON.stringify(reply.blocks)).not.toContain("ambiguous_canonical_name_use_product_id");
+  });
+
   it("a combined scheduling + pricing request preserves both goals in one reply", async () => {
     const scenario = {
       objective: "cash" as const, shifts: [], gaps: [{
