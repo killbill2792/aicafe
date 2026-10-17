@@ -40,13 +40,17 @@ try {
   const body=await response.json();
   const safeStatus=["completed","incomplete","failed","queued","in_progress"].includes(body.status)?
     body.status:"unknown";
-  const text=(Array.isArray(body.output)?body.output:[]).filter(x=>x?.type==="message")
+  const texts=(Array.isArray(body.output)?body.output:[]).filter(x=>x?.type==="message")
     .flatMap(x=>x.content??[]).filter(x=>x?.type==="output_text").map(x=>x.text);
+  // Matches production (lib/ai/supervisor/investigation/model.server.ts): the
+  // provider may legitimately split a long JSON answer across multiple
+  // output_text parts in the same message; reassemble them before parsing.
+  const text=texts.join("");
   let validAnswer=false;
   try{
-    const step=JSON.parse(text[0]);
+    const step=JSON.parse(text);
     const answer=JSON.parse(step.responseJson);
-    validAnswer=text.length===1&&step.action==="answer"&&step.capabilityId===null&&step.argumentsJson===null&&
+    validAnswer=texts.length>0&&step.action==="answer"&&step.capabilityId===null&&step.argumentsJson===null&&
       Array.isArray(answer.paragraphs)&&answer.paragraphs.length>0&&answer.paragraphs.every(p=>
         p.kind==="advice"&&typeof p.text==="string"&&Array.isArray(p.citations)&&p.citations.length===0);
   }catch{/* Invalid output fails without printing the response body. */}
