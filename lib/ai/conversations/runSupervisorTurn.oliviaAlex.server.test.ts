@@ -47,7 +47,7 @@ const auditPayload = (goals: RequestedGoal[]) => new Response(JSON.stringify({ s
   model: "gpt-6-luna", usage: { input_tokens: 0, output_tokens: 0 }, output: [{ type: "message",
     content: [{ type: "output_text", text: JSON.stringify({ complete: true, ambiguous: false, goals }) }] }] }), { status: 200 });
 
-const scheduleGoal: RequestedGoal = { domain: "staff_schedule", period: "month_to_date",
+const scheduleGoal: RequestedGoal = { domain: "schedule_preview", period: "month_to_date",
   from: null, to: null, comparison_period: null, comparison_from: null, comparison_to: null };
 const pricingGoal: RequestedGoal = { domain: "pricing_review", period: "month_to_date",
   from: null, to: null, comparison_period: null, comparison_from: null, comparison_to: null };
