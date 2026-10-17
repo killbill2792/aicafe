@@ -103,7 +103,7 @@ export const alexSimulateOutputSchema=z.union([
     proposal:z.null(),executedEffects:z.literal(0),value:scenarioValue,provenance,quality}),
 ]);
 
-const categoryAllowed=new Set<string>([...MENU_ITEM_CATEGORY_CODES,"drink","food"]);
+const categoryAllowed=new Set<string>([...MENU_ITEM_CATEGORY_CODES.filter(c=>c!=="RETAIL"),"drink","food"]);
 const normalize=(s:string)=>s.normalize("NFC").trim().replace(/\s+/g," ").toLocaleLowerCase("en");
 type Snapshot=AtomicP1SourceSnapshot;
 type Row=Snapshot["sources"]["menu"][number];
