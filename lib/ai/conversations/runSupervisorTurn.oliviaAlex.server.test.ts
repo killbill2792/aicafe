@@ -47,8 +47,9 @@ const auditPayload = (goals: RequestedGoal[]) => new Response(JSON.stringify({ s
   model: "gpt-6-luna", usage: { input_tokens: 0, output_tokens: 0 }, output: [{ type: "message",
     content: [{ type: "output_text", text: JSON.stringify({ complete: true, ambiguous: false, goals }) }] }] }), { status: 200 });
 
-const scheduleGoal: RequestedGoal = { domain: "schedule_preview", period: "month_to_date",
+const scheduleGoal: RequestedGoal = { domain: "staff_schedule", period: "month_to_date",
   from: null, to: null, comparison_period: null, comparison_from: null, comparison_to: null };
+const schedulePlanGoal: RequestedGoal = { ...scheduleGoal, domain: "schedule_preview" };
 const pricingGoal: RequestedGoal = { domain: "pricing_review", period: "month_to_date",
   from: null, to: null, comparison_period: null, comparison_from: null, comparison_to: null };
 
@@ -103,10 +104,10 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
       frozenShiftKeys: [], disposition: "proposal_only",
     });
     const transport = sequencedTransport([
-      response([call("declare_request_scope", { goals: [scheduleGoal] }, "scope"),
+      response([call("declare_request_scope", { goals: [schedulePlanGoal] }, "scope"),
         call("olivia_schedule", { action: "preview", week: monday, objective: "cash", overrides: null }, "c1")]),
       response([finish(["t1:laborCost", "t1:shifts"], ["t1:shift0", "t1:disposition"])]),
-    ], [scheduleGoal]);
+    ], [schedulePlanGoal]);
     const { reply } = await runSupervisorTurn({ ...base,
       text: "Make next week's schedule using my available employees. Minimize labor costs." }, transport);
     expect(olivia).toHaveBeenCalledWith(expect.objectContaining({ capability: "olivia.schedule.preview", week: monday }));
@@ -358,9 +359,9 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
         if(schema==="p2_goal_audit")return response([{type:"message",content:[
           {type:"output_text",text:JSON.stringify({complete:true,clauses:[question]})}]}]);
         if(schema==="p2_capability_selection")return response([]);
-        if(schema==="supervisor_scope_audit")return auditPayload([scheduleGoal]);
+        if(schema==="supervisor_scope_audit")return auditPayload([schedulePlanGoal]);
         if(body.tool_choice==="required")return response([
-          call("declare_request_scope",{goals:[scheduleGoal]},"scope"),
+          call("declare_request_scope",{goals:[schedulePlanGoal]},"scope"),
           call("olivia_schedule",{action:"preview",week:monday,objective:"cash",overrides:null},"c1"),
         ]);
         return response([finish([],[])]);
