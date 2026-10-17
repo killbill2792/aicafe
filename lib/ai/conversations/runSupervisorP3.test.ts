@@ -104,12 +104,10 @@ const run=(transport:ReturnType<typeof makeTransport>["calls"],
     tools:{} as BusinessScopedCafeTools,readRules:async()=>[],
   },transport);
 
-describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
+describe("COMPOSE end-to-end P3 Supervisor (runs unconditionally, no flag or allowlist)",()=>{
   beforeEach(()=>{
     vi.stubEnv("OPENAI_API_KEY","fixture-not-live");
     vi.stubEnv("SUPERVISOR_OPENAI_MODEL","gpt-6-luna");
-    vi.stubEnv("SUPERVISOR_P3_COMPOSITION_ENABLED","true");
-    vi.stubEnv("SUPERVISOR_P3_ALLOWED_BUSINESS_IDS",identity.businessId);
     atomicRead.mockReset().mockResolvedValue({
       status:"unavailable",reason:"rpc_not_installed",
     });

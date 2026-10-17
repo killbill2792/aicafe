@@ -396,85 +396,84 @@ export async function runSupervisorTurn(input: {
   const priorUsage:SupervisorUsage={
     model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
   };
-  // P3 is default-off and owner-allowlisted. P3 and legacy share the
+  // P3 is attempted for every owner turn, on every business -- not gated by a
+  // rollout flag or a per-business allowlist. P3 and legacy share the
   // authorized five-read cap, while model usage from both stages is recorded.
-  if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
-    let attemptedModels=0;
-    let firstP3ModelDenied=false;
-    let firstDeniedStatus:number|undefined;
-    let firstDeniedCode:string|undefined;
-    const trackedTransport:Transport=async(url,init)=>{
-      attemptedModels++;
-      const response=await transport(url,init);
-      if(attemptedModels===1 && response.status===403){
+  let attemptedModels=0;
+  let firstP3ModelDenied=false;
+  let firstDeniedStatus:number|undefined;
+  let firstDeniedCode:string|undefined;
+  const trackedTransport:Transport=async(url,init)=>{
+    attemptedModels++;
+    const response=await transport(url,init);
+    if(attemptedModels===1 && response.status===403){
+      firstP3ModelDenied=true;
+      firstDeniedStatus=response.status;
+    }
+    try{
+      const json:unknown=await response.clone().json();
+      const maybeError=json&&typeof json==="object"&&!Array.isArray(json)?
+        (json as {error?:{code?:unknown}}).error:null;
+      const errorCode=typeof maybeError?.code==="string"?maybeError.code:null;
+      if(attemptedModels===1 &&
+        (response.status===403 || ([400,404].includes(response.status) &&
+          errorCode!==null && MODEL_ACCESS_CODES.has(errorCode)))){
         firstP3ModelDenied=true;
         firstDeniedStatus=response.status;
+        firstDeniedCode=errorCode??undefined;
       }
-      try{
-        const json:unknown=await response.clone().json();
-        const maybeError=json&&typeof json==="object"&&!Array.isArray(json)?
-          (json as {error?:{code?:unknown}}).error:null;
-        const errorCode=typeof maybeError?.code==="string"?maybeError.code:null;
-        if(attemptedModels===1 &&
-          (response.status===403 || ([400,404].includes(response.status) &&
-            errorCode!==null && MODEL_ACCESS_CODES.has(errorCode)))){
-          firstP3ModelDenied=true;
-          firstDeniedStatus=response.status;
-          firstDeniedCode=errorCode??undefined;
-        }
-        const billed=(json && typeof json==="object"?
-          (json as {usage?:{input_tokens?:unknown;output_tokens?:unknown}}).usage:null);
-        priorUsage.inputTokens+=integer(billed?.input_tokens);
-        priorUsage.outputTokens+=integer(billed?.output_tokens);
-      }catch{/* Provider failure is still a charged model attempt. */}
-      return response;
-    };
-    const recordUsage=(update:SupervisorUsage)=>{
-      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,
-        attemptedModels,update.modelCallCount);
-      priorUsage.toolCallCount=Math.max(priorUsage.toolCallCount,update.toolCallCount);
-      priorUsage.inputTokens=Math.max(priorUsage.inputTokens,update.inputTokens);
-      priorUsage.outputTokens=Math.max(priorUsage.outputTokens,update.outputTokens);
-      input.onUsage?.({...priorUsage});
-    };
-    try{
-      const composed=await tryP3SupervisorReadOnly({
-        text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
-        apiKey:key,model,history:input.history.slice(-6),
-        transport:trackedTransport,onUsage:recordUsage,
-      });
-      if(composed){
-        recordUsage(composed.usage);
-        input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:composed.reply.status,
-          modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
-        return {reply:composed.reply,usage:{...priorUsage}};
-      }
-    }catch{
-      p3Failed=true;
-      // Source/provider failures cannot become trusted facts. Prior usage
-      // survives so an unsafe retry never gets a new five-read allowance.
-    }finally{
-      priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,attemptedModels);
-      if(attemptedModels||priorUsage.toolCallCount)input.onUsage?.({...priorUsage});
-      // If the very first P3 preflight was rejected for model access, there
-      // was no model result or café-read evidence. Switch to the configured
-      // legacy access fallback rather than retrying the inaccessible model.
-      // Count the rejected request, with exactly one exceptional extra model
-      // slot so the legacy tool + scope audit + answer still fit the turn.
-      if(firstP3ModelDenied && attemptedModels===1 && priorUsage.toolCallCount===0 &&
-        fallbackModel && fallbackModel!==model){
-        p3AccessFallback=true;
-        input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,
-          toModel:fallbackModel,triggerHttpStatus:firstDeniedStatus,
-          triggerProviderErrorCode:firstDeniedCode,
-          modelCallCount:priorUsage.modelCallCount,toolCallCount:0});
-        model=fallbackModel;
-      }
+      const billed=(json && typeof json==="object"?
+        (json as {usage?:{input_tokens?:unknown;output_tokens?:unknown}}).usage:null);
+      priorUsage.inputTokens+=integer(billed?.input_tokens);
+      priorUsage.outputTokens+=integer(billed?.output_tokens);
+    }catch{/* Provider failure is still a charged model attempt. */}
+    return response;
+  };
+  const recordUsage=(update:SupervisorUsage)=>{
+    priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,
+      attemptedModels,update.modelCallCount);
+    priorUsage.toolCallCount=Math.max(priorUsage.toolCallCount,update.toolCallCount);
+    priorUsage.inputTokens=Math.max(priorUsage.inputTokens,update.inputTokens);
+    priorUsage.outputTokens=Math.max(priorUsage.outputTokens,update.outputTokens);
+    input.onUsage?.({...priorUsage});
+  };
+  try{
+    const composed=await tryP3SupervisorReadOnly({
+      text:input.text,locale:input.locale,asOf:input.asOf,timezone:input.timezone,
+      apiKey:key,model,history:input.history.slice(-6),
+      transport:trackedTransport,onUsage:recordUsage,
+    });
+    if(composed){
+      recordUsage(composed.usage);
+      input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:composed.reply.status,
+        modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
+      return {reply:composed.reply,usage:{...priorUsage}};
     }
-    input.onDiagnostic?.({stage:"legacy_fallback",
-      legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
-      modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
+  }catch{
+    p3Failed=true;
+    // Source/provider failures cannot become trusted facts. Prior usage
+    // survives so an unsafe retry never gets a new five-read allowance.
+  }finally{
+    priorUsage.modelCallCount=Math.max(priorUsage.modelCallCount,attemptedModels);
+    if(attemptedModels||priorUsage.toolCallCount)input.onUsage?.({...priorUsage});
+    // If the very first P3 preflight was rejected for model access, there
+    // was no model result or café-read evidence. Switch to the configured
+    // legacy access fallback rather than retrying the inaccessible model.
+    // Count the rejected request, with exactly one exceptional extra model
+    // slot so the legacy tool + scope audit + answer still fit the turn.
+    if(firstP3ModelDenied && attemptedModels===1 && priorUsage.toolCallCount===0 &&
+      fallbackModel && fallbackModel!==model){
+      p3AccessFallback=true;
+      input.onDiagnostic?.({stage:"provider_fallback",fromModel:model,
+        toModel:fallbackModel,triggerHttpStatus:firstDeniedStatus,
+        triggerProviderErrorCode:firstDeniedCode,
+        modelCallCount:priorUsage.modelCallCount,toolCallCount:0});
+      model=fallbackModel;
+    }
   }
+  input.onDiagnostic?.({stage:"legacy_fallback",
+    legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
+    modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   // Only a CLEAN, unproductive P3 planning handoff gets a fresh bounded
   // legacy conversation + mandatory audit. A P3 that already attempted any
   // café read, exhausted its own three rounds, or threw an integrity/provider

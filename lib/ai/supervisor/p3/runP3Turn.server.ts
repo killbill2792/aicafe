@@ -250,12 +250,11 @@ export async function tryP3SupervisorReadOnly(input:{
   if((contextualDates.length>1 && isoDates===0) ||
     (!directDates.length && contextualDates.length>0))return null;
   const {tools,identity}=await authorizedOwnerP1();
-  const allowed=(process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS??"")
-    .split(",").map(id=>id.trim()).filter(Boolean);
-  // Compatibility requires BOTH the default-off feature flag at the caller
-  // and an explicit authenticated selected-business allowlist.
-  if(!identity.businessId||!allowed.includes(identity.businessId)||
-    !input.apiKey||identity.currency!=="USD")return null;
+  // Every authenticated owner's business reaches P3 the same way, regardless
+  // of how many locations it has -- businessId is the tenant boundary, not a
+  // rollout allowlist. USD-only remains a real scope limit (the P1 catalog's
+  // units), not a feature gate.
+  if(!identity.businessId||!input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
   const capabilityRegistry=createP3ReadRegistry([
