@@ -1718,5 +1718,47 @@
     "revisionUnknown": "Unknown status",
     "invalidWallTime": "Choose an unambiguous valid local date and time. Daylight-saving transitions may make some times unavailable or repeated.",
     "historyUnavailable": "Unable to load schedule versions. Refresh and try again."
+  },
+  "SupervisorP3Reads": {
+    "headings": {
+      "supplierQuotes": "Supplier quotes",
+      "menuCatalog": "Menu catalog",
+      "productCosts": "Product costs",
+      "ingredients": "Ingredients",
+      "staffWages": "Recorded staff wages",
+      "monthlyBills": "Recurring obligations",
+      "billRows": "Recurring bills",
+      "recordedSpending": "Recorded spending",
+      "expenseEntries": "Expense entries"
+    },
+    "fields": {
+      "supplierName": "Supplier",
+      "itemName": "Item",
+      "priceCents": "Recorded price",
+      "packageCount": "Package quantity",
+      "name": "Name",
+      "label": "Bill",
+      "amountCents": "Amount",
+      "totalCents": "Recorded total",
+      "defaultHourlyWageCents": "Hourly wage",
+      "wageAmountCents": "Recorded wage",
+      "ingredientsCentsToday": "Current recipe ingredients"
+    },
+    "alerts": {
+      "partial": "Provisional source read",
+      "quality": "Coverage and source revision are not independently verified. This is not a complete business total, verified stock count or completed action.",
+      "empty": "No supported fields are available in this authorized sample.",
+      "more": "Only a small sample is shown, not a complete count.",
+      "estimated": "Estimated — not recorded actual"
+    },
+    "units": {
+      "each": "each",
+      "oz": "oz",
+      "lb": "lb",
+      "kg": "kg",
+      "gal": "US gal",
+      "liter": "liter",
+      "case": "case"
+    }
   }
 }
