@@ -210,6 +210,32 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(onUsage).toHaveBeenCalledWith(expect.objectContaining({modelCallCount:1}));
     expect(transport).toHaveBeenCalledTimes(1);
   });
+
+  const malformed=()=>new Response(JSON.stringify({status:"completed",
+    usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));
+
+  it("retries once when the model's first reply is malformed JSON, then answers normally",async()=>{
+    const inner=transportFor([answer([{kind:"advice",text:"Keep prep steady during the rush.",citations:[]}])]);
+    let stepAttempts=0;
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_step"&&++stepAttempts===1)return malformed();
+      return inner(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"How should we handle the morning rush?"},transport);
+    expect(result.reply.blocks).toContainEqual({type:"text",text:"Keep prep steady during the rush."});
+    // malformed step attempt + successful retry + the answer's independent review call.
+    expect(transport).toHaveBeenCalledTimes(3);
+    expect(result.usage.modelCallCount).toBe(3);
+  });
+
+  it("degrades to an unavailable reply instead of crashing the turn when the model's output never parses",async()=>{
+    const transport=vi.fn(async()=>malformed());
+    const result=await runSupervisorTurn({...base,text:"How should we handle the morning rush?"},transport);
+    expect(result.reply.status).toBe("unavailable");
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(result.usage.modelCallCount).toBe(2);
+  });
 });
 
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{

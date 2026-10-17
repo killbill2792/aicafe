@@ -8,7 +8,7 @@ export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Respon
 export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount:number;inputTokens:number;outputTokens:number};
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
   instructions:string;context:unknown;model:string;apiKey:string;transport:InvestigationTransport;
-  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void}):Promise<T|null>{
+  usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void},attempt=1):Promise<T|null>{
   if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
@@ -58,8 +58,18 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       return parsed.data;
     })(),expired]);
   }catch(error){
-    if(error instanceof SupervisorStageError)throw error;
-    throw new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_invalid_payload","provider_response");
+    const classified=error instanceof SupervisorStageError?error:
+      new SupervisorStageError(controller.signal.aborted?"provider_timeout":"provider_invalid_payload","provider_response");
+    // The model producing malformed JSON or an incomplete turn is a one-time
+    // hiccup in its own output, not an infrastructure failure. Give it exactly
+    // one more try with the same inputs before giving up; a persistent failure
+    // degrades to a graceful "unavailable" reply (handled by every call site's
+    // existing null-check) instead of crashing the whole owner turn.
+    if(classified.category==="provider_invalid_payload"||classified.category==="provider_incomplete"){
+      if(attempt<2)return requestInvestigation(input,attempt+1);
+      return null;
+    }
+    throw classified;
   }
   finally{clearTimeout(timeout);}
 }
