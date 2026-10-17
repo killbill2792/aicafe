@@ -1861,6 +1861,8 @@
     "field_completeCoverageAfter": "Todos los turnos requeridos siguen cubiertos",
     "field_gapsDifference": "Cambio en turnos sin cubrir",
     "field_loadedPayrollDifferenceCents": "Cambio en el costo de nómina cargado",
+    "field_legalReviewUnverified": "El cumplimiento laboral y de descansos de este horario no se ha revisado de forma independiente",
+    "field_hasAdditionalCaveats": "El motor de programación reportó advertencias adicionales para este escenario que no se detallan aquí",
     "scheduleStatus_feasible": "sí, se encontró un horario viable",
     "scheduleStatus_infeasible": "no se encontró un horario viable",
     "scheduleStatus_unproven": "no se pudo probar en el tiempo disponible",

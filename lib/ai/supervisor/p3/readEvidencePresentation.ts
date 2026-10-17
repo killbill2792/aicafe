@@ -17,7 +17,7 @@ type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "priceDeltaCents" | "ingredientCostDeltaCents" | "targetPriceCents" |
   "ingredientContributionDeltaCents" | "assumptionCodes" | "costBasisEstimated" |
   "alternateStatus" | "changed" | "completeCoverageAfter" | "gapsDifference" |
-  "loadedPayrollDifferenceCents";
+  "loadedPayrollDifferenceCents" | "legalReviewUnverified" | "hasAdditionalCaveats";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -147,7 +147,8 @@ const sourcePresentation:Record<string,{
   "olivia.schedule.what_if":{
     heading:"source_olivia_schedule_what_if",
     fields:["name","alternateStatus","changed","completeCoverageAfter",
-      "gapsDifference","loadedPayrollDifferenceCents"],
+      "gapsDifference","loadedPayrollDifferenceCents",
+      "legalReviewUnverified","hasAdditionalCaveats"],
   },
 };
 const scheduleStatusLabels:Record<string,CatalogKey> = {
@@ -189,6 +190,8 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   completeCoverageAfter:"field_completeCoverageAfter",
   gapsDifference:"field_gapsDifference",
   loadedPayrollDifferenceCents:"field_loadedPayrollDifferenceCents",
+  legalReviewUnverified:"field_legalReviewUnverified",
+  hasAdditionalCaveats:"field_hasAdditionalCaveats",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
@@ -221,6 +224,10 @@ function displayedField(id:string,row:Record<string,unknown>,key:PresentedField,
   if(key==="changed"||key==="completeCoverageAfter")
     return typeof value==="boolean"
       ?t(locale,fieldLabel[key])+": "+t(locale,value?"yesValue":"noValue"):null;
+  // Unlike changed/completeCoverageAfter, these are caveats only worth a line when
+  // true -- same true-only pattern as costBasisEstimated below.
+  if(key==="legalReviewUnverified"||key==="hasAdditionalCaveats")
+    return value===true?t(locale,fieldLabel[key]):null;
   if(key==="assumptionCodes"){
     if(!Array.isArray(value)||!value.length)return null;
     // 3, not 2: matches the upstream cap in alexP3Capabilities.server.ts's output schema

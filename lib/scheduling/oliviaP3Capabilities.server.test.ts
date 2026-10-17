@@ -100,7 +100,7 @@ const whatIfResult = (overrides: Record<string, unknown> = {}) => ({
     ownerMinutesDifference: 0, cashWagesDifferenceCents: -1600, loadedPayrollDifferenceCents: -1792,
     gapsDifference: 0, completeCoverageBefore: true, completeCoverageAfter: true, changed: true,
   },
-  overridesApplied: [], notices: [], employeeNames: {}, locationNames: {},
+  overridesApplied: [], notices: [], employeeNames: { "emp-1": "Ava" }, locationNames: {},
   disposition: "hypothetical_simulation_only" as const,
   ...overrides,
 });
@@ -213,6 +213,78 @@ describe("Olivia P3 schedule-what-if registration", () => {
       overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
     });
     expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "disabled" });
+  });
+
+  it("reports source_changed instead of silently answering about the wrong worker when a " +
+    "rename lands between the roster read and the simulation", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      // The simulation's OWN authoritative employeeNames now says "Sam" for emp-1 --
+      // as if a rename landed between the roster read and this later trusted read.
+      return whatIfResult({ employeeNames: { "emp-1": "Sam" } }) as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+    });
+    expect(raw).toMatchObject({ status: "unavailable", value: null, reason: "source_changed" });
+  });
+
+  it("surfaces that legal/break compliance was never independently reviewed, instead of " +
+    "presenting a feasible schedule as caveat-free", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      return whatIfResult({
+        alternateScenario: { objective: "cash", shifts: [], gaps: [], completeCoverage: true,
+          hardConstraintsSatisfied: true, ownerMinutes: 0,
+          cost: { cashWagesCents: 0, allocatedSalaryCents: 0, loadedPayrollCents: 0, ownerOpportunityCents: 0,
+            ownerMinutes: 0, costState: "verified", missingWageEmployeeIds: [] },
+          preferencePenalty: 0, exploredNodes: 1, legalReview: "unverified_profile" },
+      }) as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+    });
+    expect(raw).toMatchObject({ status: "partial", value: [{ legalReviewUnverified: true }] });
+  });
+
+  it("surfaces that the planner reported additional warnings/notices, instead of silently " +
+    "dropping them", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      return whatIfResult({ alternateWarnings: ["Search budget exhausted before full proof"] }) as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+    });
+    expect(raw).toMatchObject({ status: "partial", value: [{ hasAdditionalCaveats: true }] });
+  });
+
+  it("reflects the resolved override date back in the result, so an owner can catch the " +
+    "model resolving the wrong day", async () => {
+    olivia.mockImplementation(async (request: unknown) => {
+      const r = request as { capability: string };
+      if (r.capability === "olivia.availability.read")
+        return roster([{ employeeId: "emp-1", displayName: "Ava" }]) as OliviaResponse;
+      return whatIfResult() as OliviaResponse;
+    });
+    const [, registration] = buildOliviaP3Registrations();
+    const raw = await registration.read(scope, {
+      purpose: "schedule_what_if", week: "2026-10-19",
+      overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
+    });
+    expect(raw).toMatchObject({ status: "partial", value: [{ name: "2026-10-19 (2026-10-20)" }] });
   });
 
   it("presents a real coverage/cost delta as an owner-readable block (not raw internals)", async () => {

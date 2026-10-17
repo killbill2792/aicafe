@@ -1861,6 +1861,8 @@
     "field_completeCoverageAfter": "كل نوبة مطلوبة لا تزال مغطاة",
     "field_gapsDifference": "التغير في النوبات غير المغطاة",
     "field_loadedPayrollDifferenceCents": "التغير في تكلفة الرواتب المحمّلة",
+    "field_legalReviewUnverified": "لم تُراجَع مطابقة هذا الجدول لقوانين العمل وفترات الراحة بشكل مستقل",
+    "field_hasAdditionalCaveats": "أفاد محرك الجدولة بتحذيرات إضافية لهذا السيناريو لم تُفصَّل هنا",
     "scheduleStatus_feasible": "نعم، تم إيجاد جدول قابل للتنفيذ",
     "scheduleStatus_infeasible": "لم يتم إيجاد جدول قابل للتنفيذ",
     "scheduleStatus_unproven": "لم يُثبت بأي اتجاه خلال الوقت المتاح",

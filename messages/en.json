@@ -1861,6 +1861,8 @@
     "field_completeCoverageAfter": "Every required shift is still covered",
     "field_gapsDifference": "Change in uncovered shifts",
     "field_loadedPayrollDifferenceCents": "Change in loaded payroll cost",
+    "field_legalReviewUnverified": "Labor-law and break compliance for this schedule has not been independently reviewed",
+    "field_hasAdditionalCaveats": "The scheduling engine reported additional cautions for this scenario that aren't detailed here",
     "scheduleStatus_feasible": "yes, a feasible schedule was found",
     "scheduleStatus_infeasible": "no feasible schedule was found",
     "scheduleStatus_unproven": "not proven either way within the time I had",

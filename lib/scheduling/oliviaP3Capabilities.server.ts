@@ -98,6 +98,12 @@ const whatIfRow = z.strictObject({
   completeCoverageAfter: z.boolean().nullable(),
   gapsDifference: z.number().int().nullable(),
   loadedPayrollDifferenceCents: signedCents,
+  // The planner's own legalReview/warnings/notices are real caveats on an
+  // otherwise-clean-looking "feasible" result (e.g. break/labor-law
+  // compliance was never independently reviewed) -- always publishing empty
+  // quality arrays here silently dropped them. Caught in review (PR #108).
+  legalReviewUnverified: z.boolean(),
+  hasAdditionalCaveats: z.boolean(),
 });
 const whatIfProvenanceSchema = z.strictObject({
   sourceId: z.literal("olivia.schedule_foundation"),
@@ -125,7 +131,10 @@ export const oliviaP3WhatIfOutputSchema = z.union([
  * resolved to the wrong one of two same-named staff. */
 async function resolveEmployeeNames(
   overrides: readonly z.output<typeof whatIfOverrideInputSchema>[],
-): Promise<{ ok: true; overrides: OliviaWhatIfOverrideInput[] } | { ok: false; reason: string }> {
+): Promise<
+  { ok: true; overrides: OliviaWhatIfOverrideInput[]; requestedNames: ReadonlyMap<string, string> } |
+  { ok: false; reason: string }
+> {
   const roster = await executeOliviaReadCapability({ capability: "olivia.availability.read", version: 1 });
   if (!roster.ok || roster.capability !== "olivia.availability.read")
     return { ok: false, reason: !roster.ok ? roster.error.code : "unexpected_capability" };
@@ -136,11 +145,18 @@ async function resolveEmployeeNames(
     byName.set(key, [...(byName.get(key) ?? []), employee.employeeId]);
   }
   const resolved: OliviaWhatIfOverrideInput[] = [];
+  // Binds each resolved id back to the exact name the owner's turn asked for, so the
+  // caller can re-verify identity against the LATER whatIf read's own authoritative
+  // employeeNames -- a roster read and the simulation it feeds are two separate trusted
+  // reads, and a rename landing between them must never silently answer about the wrong
+  // worker under the name the owner actually asked about. Caught in review (PR #108).
+  const requestedNames = new Map<string, string>();
   for (const override of overrides) {
     const ids = byName.get(override.employeeName.trim().toLowerCase());
     if (!ids || ids.length === 0) return { ok: false, reason: "employee_not_found" };
     if (ids.length > 1) return { ok: false, reason: "ambiguous_employee_name" };
     const employeeId = ids[0];
+    requestedNames.set(employeeId, override.employeeName.trim());
     switch (override.kind) {
       case "temporary_unavailable":
         resolved.push({
@@ -161,7 +177,7 @@ async function resolveEmployeeNames(
         break;
     }
   }
-  return { ok: true, overrides: resolved };
+  return { ok: true, overrides: resolved, requestedNames };
 }
 
 /** Domains array entry for `createP3ReadRegistry`. Read-only/simulate; never writes
@@ -245,15 +261,33 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       if (!raw.ok || raw.capability !== "olivia.schedule.whatIf")
         return { status: "unavailable" as const, value: null,
           reason: !raw.ok ? raw.error.code : "unexpected_capability" };
+      // The roster read and this simulation are two separate trusted reads; a staff
+      // record change landing between them (e.g. a rename) must never be silently
+      // presented as answering about the name the owner actually asked for. Reusing
+      // the EXISTING "source_changed" reason -- already localized -- rather than a new one.
+      for (const [employeeId, requestedName] of resolution.requestedNames) {
+        const current = raw.employeeNames[employeeId];
+        if (!current || current.trim().toLowerCase() !== requestedName.toLowerCase())
+          return { status: "unavailable" as const, value: null, reason: "source_changed" };
+      }
+      const overrideDates = [...new Set(input.overrides.flatMap(o =>
+        o.kind === "temporary_unavailable" || o.kind === "reduce_daily_minutes" ? [o.localDate] : []))];
+      const name = (overrideDates.length ? input.week + " (" + overrideDates.join(", ") + ")" : input.week)
+        .slice(0, 160);
+      const legalReviewUnverified = [raw.baselineScenario, raw.alternateScenario]
+        .some(s => s !== null && s.legalReview !== "verified_profile");
+      const hasAdditionalCaveats = raw.baselineWarnings.length > 0 || raw.alternateWarnings.length > 0 ||
+        raw.notices.length > 0;
       return {
         status: "partial" as const, id: "olivia.schedule.what_if" as const,
         value: [{
-          name: input.week,
+          name,
           alternateStatus: raw.alternateStatus,
           changed: raw.comparison?.changed ?? null,
           completeCoverageAfter: raw.comparison?.completeCoverageAfter ?? null,
           gapsDifference: raw.comparison?.gapsDifference ?? null,
           loadedPayrollDifferenceCents: raw.comparison?.loadedPayrollDifferenceCents ?? null,
+          legalReviewUnverified, hasAdditionalCaveats,
         }],
         provenance: {
           sourceId: "olivia.schedule_foundation" as const,
