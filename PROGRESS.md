@@ -2761,3 +2761,10 @@ Third review on c1ac10f found two additional edge cases. Implemented before re-r
 Targeted investigation/supplier suites: 61 tests passed, with TypeScript, lint and whitespace clean. Full suite is running. No dependencies, migration changes or production actions.
 
 Final local suite after third-round changes: **1601 passed, 1 pre-existing skipped, 197 files**. Strict TypeScript, changed investigation/supplier source lint and whitespace passed. All nine workflows passed on prior c1ac10f; re-review and final-head CI will be checked after this push. No production action.
+
+Fourth review on a0f0070 identified cross-domain calendar contamination and incorrect internal labeling of public-search references. Implemented:
+- Calendar memory now stores bounded selectors keyed to the capability's trusted registry owner/domain, not a global latest dated statement. Attempted schema-valid reads retain owner date corrections even when the source is unavailable. Same-domain selectors restore older thread memory; another specialist's dates cannot replace them. No domain intent/keyword router or stored financial values.
+- Public-search evidence derives its source class from validated Brave/public-search provenance and persists as `unverified_external`; derived record projections inherit that class and its caution. Added localized EN/ES/AR evidence labels and persistence/reload coverage. Internal and verified-external evidence remain distinct.
+Targeted runtime/calendar/memory/persistence/presentation suites: 73 passed; strict TypeScript, changed-source lint and whitespace clean. Full regression suite is running before push/re-review. No dependency, DB migration or production changes.
+
+Final local suite after fourth-round fixes: **1605 passed, 1 pre-existing skipped, 197 files**; strict TypeScript, changed-source lint and whitespace passed. All nine GitHub workflows passed on preceding a0f0070; final-head CI and another bot review are required on this commit before handoff. No production action.

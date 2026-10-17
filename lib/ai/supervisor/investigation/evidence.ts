@@ -58,8 +58,11 @@ export function observationDisplay(result:Record<string,unknown>,locale:Locale):
     result.assumptions.forEach((a,i)=>{if(typeof a==="string")display["assumptions."+i]=formatScenarioAssumption(a,locale);});
   return display;
 }
-export function observationReference(businessId:string,asOf:string,capabilityId:string,result:unknown):EvidenceReference{
-  return {source:"cafe_state",identifier:"investigation:"+createHash("sha256")
+export function observationReference(businessId:string,asOf:string,capabilityId:string,result:unknown,inheritedSource?:EvidenceReference["source"]):EvidenceReference{
+  const provenance=isRecord(result)&&isRecord(result.provenance)?result.provenance:null;
+  const source:EvidenceReference["source"]=inheritedSource==="unverified_external"?inheritedSource:provenance?.sourceId==="public.search"&&
+    provenance.canonicalReaderId==="public.brave.search"?"unverified_external":"cafe_state";
+  return {source,identifier:"investigation:"+createHash("sha256")
     .update(JSON.stringify({businessId,asOf,capabilityId,result})).digest("hex").slice(0,32),asOf};
 }
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):
@@ -99,7 +102,7 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
   const warnings:SupervisorReplyBlock[]=pure?[{type:"warning",code:"P3_CONDITIONAL",text:labels.conditional}]:
     rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning",code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
       [{type:"warning",code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}];
-  if(cited.some(o=>o.result.id==="public.research"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+  if(cited.some(o=>o.reference?.source==="unverified_external"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
   if(cited.some(o=>{
     const q=o.result.quality;
     return isRecord(q)&&Array.isArray(q.estimatedInputs)&&q.estimatedInputs.length>0;

@@ -42,7 +42,7 @@ describe("Supervisor fact presentation",()=>{
   });
   it("localizes ALL evidence-source enums in English, Spanish and Arabic",()=>{
     const codes:EvidenceReference["source"][]=["cafe_state","historical_rollups","staff_timecards",
-      "pricing_engine","operating_tasks","owner_rules","verified_external"];
+      "pricing_engine","operating_tasks","owner_rules","verified_external","unverified_external"];
     for(const locale of ["en","es","ar"] as const)for(const code of codes){
       const label=sourceLabel(code,locale);
       expect(label.length).toBeGreaterThan(3);

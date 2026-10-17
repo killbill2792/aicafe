@@ -6,7 +6,7 @@ import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.serv
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -81,6 +81,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const manifest=registry.discover(scope);
   const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
   const attempted=new Set<string>();
+  const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
   let feedback:string|null=null;
   const atomic=await readAuthorizedAtomicP1SourceSnapshot();
   if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")return failure();
@@ -133,7 +134,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           latest.snapshot.revision!==atomic.snapshot.revision)return failure();
       }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
-        reads:rememberInvestigationReads(memory?.reads??[],remembered)};
+        reads:rememberInvestigationReads(memory?.reads??[],remembered),
+        calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
     }
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
@@ -146,6 +148,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     attempted.add(signature);
     let result:unknown;
     let calculation=false;
+    let readDomain:string|undefined;
     if(step.action==="calculate"){
       if(identity.currency!=="USD"){
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
@@ -164,10 +167,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result=checked.data;
       calculation=true;
     }else{
-      if(!manifest.some(m=>m.id===step.capabilityId)){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
+      readDomain=manifest.find(m=>m.id===step.capabilityId)?.owner;
+      if(!readDomain){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
-      if(!investigationReadDatesMatch(args,input.text,identity.asOf,memory,ownerStatements)){
+      if(!investigationReadDatesMatch(args,input.text,identity.asOf,memory,ownerStatements,readDomain,
+        id=>manifest.find(m=>m.id===id)?.owner)){
         feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
       }
       if(identity.currency!=="USD"&&!['p3.business.profile.v1','p3.public.research.v1'].includes(step.capabilityId)){
@@ -176,6 +181,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result=await registry.invoke(scope,step.capabilityId,args);
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
+    if(readDomain&&!["invalid_request","input_limit","unknown_capability","unauthorized","mode_disabled"].includes(String(result.reason))){
+      const calendar=investigationCalendarScope(args,readDomain);
+      if(calendar)calendarScopes.push(calendar);
+    }
     const id="r"+(observations.length+1);
     const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
     const pure=calculation&&Array.isArray(result.sourceHandles)&&result.sourceHandles.length===0;
@@ -183,7 +192,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       ?observations.find(o=>o.id===result.sourceReadId):undefined;
     const observation:Observation={id,capabilityId:step.capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
-      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result):null,
+      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result,parentObservation?.reference?.source):null,
       display:successful?observationDisplay(result,input.locale):{},calculation};
     if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);

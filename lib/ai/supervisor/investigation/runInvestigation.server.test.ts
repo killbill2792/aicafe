@@ -158,6 +158,8 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
       answer([{kind:"evidence",text:"This public menu is a lead: {{r1:value.0.url}}. Confirm the current size and price before comparing it with your own menu.",citations:["r1"]}])]));
     expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_PUBLIC_RESEARCH")).toBe(true);
     expect(JSON.stringify(result.reply.blocks)).toContain("https://example.com/menu");
+    expect(result.reply.evidence[0].source).toBe("unverified_external");
+    expect(validateGroundedReply(result.reply)).toEqual(result.reply);
   });
 
   it("rejects model arithmetic, forged citations, SQL and attempted business effects",async()=>{
@@ -470,4 +472,37 @@ it("does not contact public search after a privacy-review timeout",async()=>{
     expect(researchPublicSources).not.toHaveBeenCalled();
     expect(result.usage.modelCallCount).toBe(4);
   }finally{vi.useRealTimers();}
+});
+
+it("keeps the financial period after an unrelated dated scheduling turn",async()=>{
+  const expenseId="p3.money.expense_entries.v1",financialPeriod={from:"2026-09-01",to:"2026-09-30"};
+  const first=await runSupervisorTurn({...base,text:"Show expenses from 2026-09-01 through 2026-09-30"},transportFor([
+    read(expenseId,query("money.expense_entries",{period:financialPeriod})),
+    answer([{kind:"evidence",text:"I retrieved the recorded expense entries for that period.",citations:["r1"]}])]));
+  olivia.mockRejectedValueOnce(new Error("preview unavailable"));
+  const second=await runSupervisorTurn({...base,text:"Preview Ava's schedule next week",investigationMemory:first.reply.investigationMemory},transportFor([
+    read("p3.olivia.records.v1",{purpose:"scheduling_investigation",request:{capability:"olivia.schedule.preview",version:1,week:"2026-10-26"}}),
+    answer([{kind:"advice",text:"The schedule preview is unavailable; your chosen week can be retried.",citations:[]}])]));
+  expect(second.reply.investigationMemory?.calendarScopes).toContainEqual({domain:"money",kind:"period",...financialPeriod});
+  expect(second.reply.investigationMemory?.calendarScopes).toContainEqual({domain:"olivia",kind:"week",week:"2026-10-26"});
+  p1.mockClear();
+  await runSupervisorTurn({...base,text:"How much did we spend?",investigationMemory:second.reply.investigationMemory},transportFor([
+    read(expenseId,query("money.expense_entries",{period:{from:"2026-10-26",to:"2026-11-01"}})),
+    read(expenseId,query("money.expense_entries",{period:financialPeriod})),
+    answer([{kind:"evidence",text:"I retained the financial period for the spending investigation.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(p1.mock.calls[0][2]).toMatchObject({period:financialPeriod});
+});
+
+it("preserves unverified external provenance and cautions through record inspection",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  vi.mocked(researchPublicSources).mockResolvedValue([{title:"Public supplier",url:"https://example.com/menu",snippet:"Public menu lead",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
+  const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices."},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby supplier prices",ownerResearchClause:"Research nearby supplier prices."}),
+    read("p3.platform.records.inspect.v1",{purpose:"authorized_record_projection",readId:"r1",path:"value",offset:0,limit:25,filters:[]}),
+    answer([{kind:"evidence",text:"These public search leads still need current-price verification.",citations:["r2"]}])]));
+  expect(result.reply.evidence).toHaveLength(1);
+  expect(result.reply.evidence[0].source).toBe("unverified_external");
+  expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH"}));
+  expect(validateGroundedReply(result.reply)).toEqual(result.reply);
 });

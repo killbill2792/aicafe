@@ -1,7 +1,7 @@
 import {z} from "zod";
 import {resolveCafeDateRange,type DateSelection} from "@/lib/ai/conversations/dateRange";
 import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
-import type {InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
+import type {InvestigationMemory,InvestigationCalendarScope} from "@/lib/ai/conversations/investigationMemory";
 import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek} from "@/lib/scheduling/whatIfOwnerDates";
 
 type ReadSelector=InvestigationMemory["reads"][number];
@@ -46,7 +46,8 @@ function windows(text:string,asOf:string){
   return week?[{from:week,to:new Date(Date.parse(week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)}]:[];
 }
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
-  memory:InvestigationMemory|undefined,ownerStatements:readonly string[]):boolean{
+  memory:InvestigationMemory|undefined,_ownerStatements:readonly string[],domain:string,
+  domainForRead:(capabilityId:string)=>string|undefined):boolean{
   const candidate=selector(input);
   if(!candidate)return true; // Inputs themselves still undergo registry schema validation.
   const hasDate=(s:string)=>windows(s,asOf).length>0||candidate.kind==="week"&&hasOwnerScheduleDates(s,asOf);
@@ -60,14 +61,17 @@ export function investigationReadDatesMatch(input:unknown,current:string,asOf:st
       ranges.every(w=>w.from>=candidate.week&&w.to<=end);
   };
   if(hasDate(current))return matches(current);
-  // Explicit owner corrections remain authoritative even if the corrected
-  // source read failed and the persisted selectors still describe the old scope.
-  const prior=ownerStatements.slice(0,-1);
-  const previous=[...prior].reverse().find(hasDate);
-  if(previous)return matches(previous);
-  const remembered=(memory?.reads??[]).map(readSelector).filter(s=>s?.kind===candidate.kind);
-  if(remembered.length)return remembered.some(s=>s?.kind==="week"&&candidate.kind==="week"?
-    s.week===candidate.week:s?.kind==="period"&&candidate.kind==="period"&&s.from===candidate.from&&s.to===candidate.to);
+  // A date belongs to its registered domain/read context. Scheduling turns
+  // cannot change money periods. Attempted corrected reads persist their scope
+  // even when source data is unavailable, so stale selectors cannot undo them.
+  const scopes=(memory?.calendarScopes??[]).filter(s=>s.domain===domain&&s.kind===candidate.kind);
+  const same=(s:TemporalSelector|InvestigationCalendarScope)=>s.kind==="week"&&candidate.kind==="week"?
+    s.week===candidate.week:s.kind==="period"&&candidate.kind==="period"&&s.from===candidate.from&&s.to===candidate.to;
+  if(scopes.length)return scopes.some(same);
+  // Backward-compatible selector restoration, scoped by trusted registry owner.
+  const remembered=(memory?.reads??[]).filter(r=>domainForRead(r.capabilityId)===domain)
+    .map(readSelector).filter((s):s is TemporalSelector=>!!s&&s.kind===candidate.kind);
+  if(remembered.length)return remembered.some(same);
   return true;
 }
 /** Preserve a period across intervening catalog reads. Once a turn successfully
@@ -83,4 +87,16 @@ export function rememberInvestigationReads(previous:readonly ReadSelector[],curr
   // Calendar guards take priority over navigational catalog hints when bounded
   // memory fills; a full turn of catalog reads must not erase its date scope.
   return [...reads.filter(r=>!readSelector(r)),...reads.filter(r=>readSelector(r))].slice(-5);
+}
+
+/** Selectors only, never observations or model-granted domain identity. */
+export function investigationCalendarScope(input:unknown,domain:string):InvestigationCalendarScope|null{
+  const s=selector(input);
+  return s?.kind==="period"?{domain,kind:s.kind,from:s.from,to:s.to}:
+    s?.kind==="week"?{domain,kind:s.kind,week:s.week}:null;
+}
+export function rememberCalendarScopes(previous:readonly InvestigationCalendarScope[],current:readonly InvestigationCalendarScope[]):InvestigationCalendarScope[]{
+  const replaced=new Set(current.map(s=>s.domain+":"+s.kind));
+  const all=[...previous.filter(s=>!replaced.has(s.domain+":"+s.kind)),...current];
+  return [...new Map(all.map(s=>[JSON.stringify(s),s])).values()].slice(-5);
 }

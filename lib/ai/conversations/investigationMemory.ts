@@ -3,9 +3,15 @@ import type {ConversationMessage} from "./contracts";
 
 /** Navigation/owner context only. Never persisted balances, wages, derived numbers,
  * model-written summaries or grants. Every remembered read must execute again. */
+export const investigationCalendarScopeSchema=z.discriminatedUnion("kind",[
+  z.strictObject({domain:z.string().min(1).max(120),kind:z.literal("period"),from:z.string().date(),to:z.string().date()}),
+  z.strictObject({domain:z.string().min(1).max(120),kind:z.literal("week"),week:z.string().date()}),
+]);
+export type InvestigationCalendarScope=z.infer<typeof investigationCalendarScopeSchema>;
 export const investigationMemorySchema=z.strictObject({
   version:z.literal(1),businessId:z.string().min(1).max(120),
   ownerStatements:z.array(z.string().min(1).max(4000)).max(6),
+  calendarScopes:z.array(investigationCalendarScopeSchema).max(5).optional(),
   reads:z.array(z.strictObject({capabilityId:z.string().min(1).max(120),
     inputJson:z.string().min(2).max(6000)})).max(5),
 });

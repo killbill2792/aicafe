@@ -1904,6 +1904,7 @@
     "research": "Public search snippets are unverified leads; listing dates, sizes and current prices need confirmation.",
     "estimated": "Some source values include estimates.",
     "unavailable": "I could not complete that investigation reliably. Please try again; your business records were not changed.",
-    "budget": "I reached the limit for this investigation. I can continue with the remaining part in a follow-up; no business changes were made."
-}
+    "budget": "I reached the limit for this investigation. I can continue with the remaining part in a follow-up; no business changes were made.",
+    "externalUnverified": "Unverified public source"
+  }
 }
