@@ -87,17 +87,41 @@ export function parseOwnerDateWindows(text:string,asOf:string):OwnerDateWindow[]
   }
   return [];
 }
+/** Referents are resolved only to explicitly dated OWNER turns, not a model's
+ * memory or generated financial figures. An unrelated follow-up is untouched. */
+export function ownerDateWindowsFromContext(text:string,asOf:string,
+  history:readonly {role:string;text:string}[]=[]):OwnerDateWindow[]{
+  const direct=parseOwnerDateWindows(text,asOf);
+  if(direct.length)return direct;
+  if(!/\b(?:those|these|both)\s+(?:two\s+)?(?:days|dates)\b|\bthat\s+(?:day|date)\b|\b(?:esos|esas|ambas)\s+(?:días|dias|fechas)\b|تلك\s+الأيام|هذين\s+اليومين/iu.test(text))
+    return [];
+  for(const turn of [...history].reverse()){
+    if(turn.role!=="owner")continue;
+    const previous=parseOwnerDateWindows(turn.text,asOf);
+    if(previous.length)return previous;
+  }
+  return [];
+}
 const periodDomains=new Set<RequestedGoal["domain"]>([
   "profit_margin","owner_profit","total_business_costs","sales","distinct_products",
   "recorded_spending","staff_cost","staff_attendance","staffing",
 ]);
 /** Reconcile the two independent semantic readings against *the same* explicit
  * owner calendar constraints. Source selectors never accept model-chosen dates alone. */
-export function alignGoalsToOwnerDates(goals:RequestedGoal[],text:string,asOf:string):RequestedGoal[]{
-  const windows=parseOwnerDateWindows(text,asOf);
+export function alignGoalsToOwnerDates(goals:RequestedGoal[],text:string,asOf:string,
+  history:readonly {role:string;text:string}[]=[]):RequestedGoal[]{
+  const windows=ownerDateWindowsFromContext(text,asOf,history);
   if(!windows.length)return normalizeRequestedGoals(goals);
   const out:RequestedGoal[]=[];
   for(const g of goals){
+    if(g.domain==="comparison" && windows.length===2){
+      // Comparison metric remains model-chosen and must match the read call.
+      // Only the two calendar selectors are verified from owner context.
+      out.push({...g,period:"custom",from:windows[1].from,to:windows[1].to,
+        comparison_period:"custom",comparison_from:windows[0].from,
+        comparison_to:windows[0].to});
+      continue;
+    }
     if(!periodDomains.has(g.domain) ||
        (SNAPSHOT_GOAL_DOMAINS as readonly string[]).includes(g.domain)){
       out.push(g);continue;
