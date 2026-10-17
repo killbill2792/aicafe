@@ -244,8 +244,9 @@ describe("Bounded reconciliation outcomes and four-domain completeness",()=>{
     expect(audit.goals?.map(x=>x.domain)).toEqual([
       "total_business_costs","staff_cost","menu_count","pricing_review",
     ]);
+    // Audit omission alone is not proof that the owner never requested costs.
     expect(reconcileRequestScopesDetailed(all,first,true,false))
-      .toMatchObject({outcome:"declared_goal_missing",goals:null});
+      .toMatchObject({outcome:"accepted",goals:[...first,all[0]]});
   });
   it("keeps period-sensitive dates and no extra business selector",()=>{
     expect(reconcileRequestScopesDetailed([g("staff_cost","today")],[g("staff_cost")],true,false))
