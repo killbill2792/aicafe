@@ -5,7 +5,12 @@ import {matchesOwnerScheduleDates} from "./whatIfOwnerDates";
 import {executeOliviaReadCapability} from "./oliviaCapabilities.server";
 import {schemaFingerprint,type ReadRegistration} from "@/lib/ai/supervisor/p2/registry";
 const inputSchema=z.strictObject({purpose:z.literal("scheduling_investigation"),request:oliviaReadRequestSchema});
+const provenance={sourceId:z.literal("olivia.schedule_foundation"),canonicalReaderId:z.literal("olivia.authorized.read"),
+  sourceRevision:z.null(),asOf:z.string(),purpose:z.literal("scheduling_investigation")};
+const quality={missingInputs:z.array(z.string()),estimatedInputs:z.array(z.string()),staleInputs:z.array(z.string())};
 const outputSchema=z.union([
+  z.strictObject({status:z.literal("partial"),id:z.literal("olivia.nonmonetary_records"),value:z.json(),
+    provenance:z.strictObject(provenance),quality:z.strictObject(quality)}),
   z.strictObject({status:z.literal("unavailable"),value:z.null(),reason:z.string().max(100)}),
   z.strictObject({status:z.literal("partial"),id:z.literal("olivia.records"),value:oliviaReadResponseSchema,
     provenance:z.strictObject({sourceId:z.literal("olivia.schedule_foundation"),canonicalReaderId:z.literal("olivia.authorized.read"),
@@ -16,7 +21,7 @@ const outputSchema=z.union([
  * and what-if details are available for iterative reasoning, not summary-only views. */
 export function buildOliviaInvestigationRegistration():ReadRegistration{
   const id="p3.olivia.records.v1";
-  return {id,version:1,owner:"olivia",mode:"read",availability:"shadow",
+  return {id,version:1,owner:"olivia",mode:"read",availability:"shadow",currencyPolicy:"independent",
     purpose:"Inspect full authorized staff availability/roster, schedule preview, saved revision/history or what-if result. Resolve employee/revision IDs from these records before further reads. Never saves, approves or publishes. Prefer the named-worker what-if for natural names; this reader exposes full source details for investigation.",
     sourceIds:["olivia.schedule_foundation"],canonicalReaderIds:["olivia.authorized.read"],allowedPurposes:["scheduling_investigation"],
     inputSchema,outputSchema,schemaContract:{id:id+".v1",registrationId:id,version:1,
@@ -31,9 +36,24 @@ export function buildOliviaInvestigationRegistration():ReadRegistration{
       const result=await executeOliviaReadCapability(input.request);
       if(!result.ok)return {status:"unavailable",value:null,reason:result.error.code};
       if(result.source.businessId!==scope.businessId)return {status:"unavailable",value:null,reason:"unauthorized"};
-      return {status:"partial",id:"olivia.records",value:result,
+      const checked=oliviaReadResponseSchema.safeParse(result);
+      if(!checked.success)return {status:"unavailable",value:null,reason:"invalid_result"};
+      const financial=scope.identity.currency==="USD"&&scope.financialReadsAvailable!==false;
+      return {status:"partial",id:financial?"olivia.records":"olivia.nonmonetary_records",
+        value:financial?checked.data:nonmonetaryProjection(checked.data),
         provenance:{sourceId:"olivia.schedule_foundation",canonicalReaderId:"olivia.authorized.read",sourceRevision:null,
           asOf:scope.identity.asOf,purpose:input.purpose},
-        quality:{missingInputs:["scheduling_read_is_provisional"],estimatedInputs:[],staleInputs:[]}};
+        quality:{missingInputs:["scheduling_read_is_provisional",...(!financial?["monetary_fields_unavailable"]:[])],estimatedInputs:[],staleInputs:[]}};
     }};
+}
+
+/** Only removal from the validated canonical response. No fabricated empty
+ * compensation records or replacement currency labels. All coverage, roster,
+ * availability, shifts and feasibility fields keep their original values. */
+function nonmonetaryProjection(value:unknown):unknown{
+  if(Array.isArray(value))return value.map(nonmonetaryProjection);
+  if(value&&typeof value==="object")return Object.fromEntries(Object.entries(value)
+    .filter(([key,v])=>v!==undefined&&key!=="compensation"&&key!=="cost"&&!/cents$/iu.test(key)&&!/_cents$/u.test(key))
+    .map(([key,v])=>[key,nonmonetaryProjection(v)]));
+  return value;
 }

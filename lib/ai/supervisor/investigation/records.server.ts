@@ -36,7 +36,7 @@ const outputSchema=z.union([
 ]);
 export const RECORDS_ID="p3.platform.records.inspect.v1";
 export function buildRecordsRegistration(observations:()=>readonly Observation[],businessId:string):ReadRegistration{
-  return {id:RECORDS_ID,version:1,owner:"platform",mode:"read",availability:"shadow",
+  return {id:RECORDS_ID,version:1,owner:"platform",mode:"read",availability:"shadow",currencyPolicy:"independent",
     purpose:"Inspect/filter/page any listed nested record collection from a previously authorized source. Use collections paths from observations, then actual row fields as filters (e.g. employee identity/date/status). No new database data, arbitrary object traversal, record writes or invented values. Inspect another page if hasMore; a page is not a complete count.",
     sourceIds:["platform.authorized_records"],canonicalReaderIds:["platform.records.inspect"],allowedPurposes:["authorized_record_projection"],
     inputSchema:recordInputSchema,outputSchema,schemaContract:{id:RECORDS_ID+".v1",registrationId:RECORDS_ID,version:1,

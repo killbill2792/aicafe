@@ -48,7 +48,7 @@ const outputSchema=z.union([
       sourceRevision:z.string().nullable(),asOf:z.string(),purpose:z.literal("dataset_analysis")}),quality:qualitySchema}),
 ]);
 export function buildDatasetRegistration(store:ReadonlyMap<string,StoredDataset>,businessId:string):ReadRegistration{
-  return {id:DATASET_ID,version:1,owner:"platform",mode:"read",availability:"shadow",
+  return {id:DATASET_ID,version:1,owner:"platform",mode:"read",availability:"shadow",currencyPolicy:"independent",
     purpose:"Pure count, sum, min, max and grouped analysis of any previously authorized dataset using its declared field/unit contract. Filter by actual schema fields. No new database reads. Record counts are never physical stock counts; recurring amounts retain their frequency and planned/estimated status.",
     sourceIds:["platform.authorized_dataset"],canonicalReaderIds:["platform.dataset.analysis"],allowedPurposes:["dataset_analysis"],
     inputSchema:datasetPlanSchema,outputSchema,schemaContract:{id:DATASET_ID+".v1",registrationId:DATASET_ID,version:1,
@@ -59,6 +59,8 @@ export function buildDatasetRegistration(store:ReadonlyMap<string,StoredDataset>
       if(scope.businessId!==businessId)return {status:"unavailable",value:null,reason:"unauthorized"};
       const input=datasetPlanSchema.parse(raw),source=store.get(input.readId);
       if(!source)return {status:"unavailable",value:null,reason:"unknown_dataset"};
+      if(scope.identity.currency!=="USD"&&input.field&&source.dataset.fields.find(f=>f.key===input.field)?.unit?.startsWith("USD_"))
+        return {status:"unavailable",value:null,reason:"unsupported_currency"};
       if(source.sourceId==="money.recurring_bill_rows"&&input.operation!=="count"&&
         new Set(source.dataset.rows.map(r=>r.frequency)).size>1)
         return {status:"unavailable",value:null,reason:"incompatible_bill_frequencies"};

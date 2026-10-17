@@ -10,7 +10,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 export type Locale="en"|"es"|"ar";
 export type Observation={id:string;capabilityId:string;input:unknown;result:Record<string,unknown>;
-  reference:EvidenceReference|null;sourceContract?:string;display:Record<string,string>;datasetFields?:unknown;calculation?:boolean};
+  reference:EvidenceReference|null;requiresSnapshot?:boolean;sourceContract?:string;display:Record<string,string>;datasetFields?:unknown;calculation?:boolean};
 export const investigationLabels=(locale:Locale)=>({en,es,ar}[locale].SupervisorInvestigation);
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const clean=(v:string)=>v.replace(/[\p{Cc}\p{Cf}]/gu," ").trim();
@@ -103,6 +103,9 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
     rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning",code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
       [{type:"warning",code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}];
   if(cited.some(o=>o.reference?.source==="unverified_external"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+  if(cited.some(o=>isRecord(o.result.quality)&&Array.isArray(o.result.quality.missingInputs)&&
+    o.result.quality.missingInputs.includes("monetary_fields_unavailable")))
+    warnings.push({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE",text:labels.financialUnavailable});
   if(cited.some(o=>{
     const q=o.result.quality;
     return isRecord(q)&&Array.isArray(q.estimatedInputs)&&q.estimatedInputs.length>0;

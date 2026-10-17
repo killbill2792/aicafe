@@ -355,6 +355,12 @@ export const purposePolicies = {
 } as const satisfies Record<SupportedId,readonly [string,...string[]]>;
 
 export type P1Kind = "metric" | "entity_read" | "analysis";
+/** These reviewed source contracts contain no monetary values. */
+export const currencyIndependentP1Ids:ReadonlySet<SupportedId>=new Set<SupportedId>([
+  "business.profile","menu.ingredients","sales.item_units","sales.item_coverage",
+  "labor.availability_foundation","labor.attendance","labor.current_staff","labor.recurring_assignments",
+  "team.owner_rules","team.decisions","team.tasks",
+]);
 export const metricUnits = {
   "money.owner_profit_cents":"USD_cents",
   "sales.net_sales_cents":"USD_cents",

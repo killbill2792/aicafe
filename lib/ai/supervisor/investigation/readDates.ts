@@ -100,3 +100,18 @@ export function rememberCalendarScopes(previous:readonly InvestigationCalendarSc
   const all=[...previous.filter(s=>!replaced.has(s.domain+":"+s.kind)),...current];
   return [...new Map(all.map(s=>[JSON.stringify(s),s])).values()].slice(-5);
 }
+
+/** Only owner turns newer than the last saved reply can be unbound corrections.
+ * Their domain is checked semantically against trusted capability metadata;
+ * dates themselves are still parsed from the exact owner-authored text. */
+export function pendingOwnerCalendarCorrection(input:unknown,current:string,asOf:string,
+  memory:InvestigationMemory|undefined,ownerStatements:readonly string[]):string|null{
+  const candidate=selector(input);
+  if(!candidate||!memory)return null;
+  const hasDate=(s:string)=>windows(s,asOf).length>0||candidate.kind==="week"&&hasOwnerScheduleDates(s,asOf);
+  if(hasDate(current))return null;
+  const prior=ownerStatements.slice(0,-1),savedLast=memory.ownerStatements.at(-1);
+  const savedIndex=savedLast?prior.lastIndexOf(savedLast):-1;
+  if(savedIndex<0)return null;
+  return prior.slice(savedIndex+1).reverse().find(hasDate)??null;
+}

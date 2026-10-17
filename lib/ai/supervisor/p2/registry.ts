@@ -19,6 +19,8 @@ export type TrustedReadScope = {
   ownerClause?: string;
   /** Same-thread owner-authored context; never model summaries or grants. */
   ownerContext?: string;
+  /** Trusted snapshot readiness; independent domain readers may omit money fields. */
+  financialReadsAvailable?:boolean;
 };
 type Limits = Readonly<{
   maxOperations: number; timeoutMs: number; maxResultBytes: number;
@@ -40,6 +42,8 @@ type Base<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> = {
   readonly effectPolicy: "deny";
   /** Domain-owned declaration: this read computes an owner-parameterized scenario. */
   readonly resultKind?: "owner_parameterized_simulation";
+  /** Domain-owned output policy, never a question/intent route. Defaults to USD_only. */
+  readonly currencyPolicy?:"independent"|"USD_only";
 };
 export type ReadRegistration<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> =
   Base<I,O> & { readonly mode: "read"; readonly availability: "shadow";
@@ -140,7 +144,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
   }
   const manifest=Object.freeze([...byId.values()].map(def=>Object.freeze({
     id:def.id,version:def.version,mode:def.mode,owner:def.owner,
-    purpose:def.purpose,sourceIds:[...def.sourceIds],
+    purpose:def.purpose,currencyPolicy:def.currencyPolicy??"USD_only",sourceIds:[...def.sourceIds],
     canonicalReaderIds:[...def.canonicalReaderIds],
     allowedPurposes:[...def.allowedPurposes],
     schemaContract:def.schemaContract,

@@ -6,7 +6,7 @@ import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.serv
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -24,7 +24,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
-import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions} from "./instructions";
+import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** Bound the MODEL preview, not the authoritative dataset used by calculators.
@@ -59,7 +59,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const memory=parsedMemory.success&&parsedMemory.data.businessId===identity.businessId?parsedMemory.data:undefined;
   // Only authenticated same-thread owner statements can ground referents or hypotheticals.
   const ownerStatements=investigationOwnerStatements(memory,input.history,input.text);
-  const scope={role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
+  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
+  const financialReadsAvailable=atomic.status==="available"||atomic.reason==="rpc_not_installed";
+  if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
+    atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))return failure();
+  const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
     ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
   const datasets=new Map<string,StoredDataset>();
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
@@ -81,12 +85,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const manifest=registry.discover(scope);
   const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
   const attempted=new Set<string>();
+  const calendarReviews=new Map<string,"applies"|"unrelated"|"ambiguous">();
   const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
   let feedback:string|null=null;
-  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
-  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")return failure();
-  if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
-    atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))return failure();
   for(let round=0;usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls-1&&Date.now()<deadline;round++){
     const projection=projectP1Evidence(evidence,identity.businessId,input.text,null,ownerStatements,undefined,"authorized_selection",120);
     const aggregates=datasetOperands(observations,scope);
@@ -100,8 +101,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       instructions:investigationInstructions,context:{ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
-        capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,inputSchema:m.inputJsonSchema})),
-        capabilityLimitations:{inventory:"No verified stock count or inventory feed is connected.",
+        capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
+        capabilityLimitations:{financialSnapshot:financialReadsAvailable?"available_or_provisional":"unavailable; financial evidence must not be used",inventory:"No verified stock count or inventory feed is connected.",
           writes:"Business mutations and publication are not executable in this read/simulation conversation."},
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
@@ -128,7 +129,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const latestOwner=await authorizedOwnerP1();
       if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
         latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)return failure();
-      if(atomic.status==="available"&&observations.some(o=>o.reference)){
+      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))return failure();
+      if(atomic.status==="available"&&observations.some(o=>o.reference&&o.requiresSnapshot)){
         const latest=await readAuthorizedAtomicP1SourceSnapshot();
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return failure();
@@ -171,12 +173,32 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!readDomain){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
-      if(!investigationReadDatesMatch(args,input.text,identity.asOf,memory,ownerStatements,readDomain,
+      let calendarText=input.text;
+      const pending=pendingOwnerCalendarCorrection(args,input.text,identity.asOf,memory,ownerStatements);
+      if(pending){
+        const key=readDomain+":"+investigationCalendarScope(args,readDomain)?.kind+":"+pending;
+        let verdict=calendarReviews.get(key);
+        if(!verdict){
+          const reviewed=await requestInvestigation({name:"supervisor_calendar_context_review",
+            schema:z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])}),
+            instructions:calendarContextReviewInstructions,
+            context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
+              capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
+            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage});
+          verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
+        }
+        if(verdict==="ambiguous"){
+          feedback="The failed-turn date correction could not be bound safely to this domain. Ask the specific unresolved calendar-context question, without choosing an old or unrelated period.";continue;
+        }
+        if(verdict==="applies")calendarText=pending;
+      }
+      if(!investigationReadDatesMatch(args,calendarText,identity.asOf,memory,ownerStatements,readDomain,
         id=>manifest.find(m=>m.id===id)?.owner)){
         feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
       }
-      if(identity.currency!=="USD"&&!['p3.business.profile.v1','p3.public.research.v1'].includes(step.capabilityId)){
-        feedback="The currently registered monetary source contracts support USD only. Explain the scope limit without inventing conversions.";continue;
+      const currencyPolicy=manifest.find(m=>m.id===step.capabilityId)!.currencyPolicy;
+      if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
+        feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
       result=await registry.invoke(scope,step.capabilityId,args);
     }
@@ -188,11 +210,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const id="r"+(observations.length+1);
     const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
     const pure=calculation&&Array.isArray(result.sourceHandles)&&result.sourceHandles.length===0;
-    const parentObservation=step.capabilityId===RECORDS_ID&&typeof result.sourceReadId==="string"
-      ?observations.find(o=>o.id===result.sourceReadId):undefined;
+    const parentReadId=typeof result.sourceReadId==="string"?result.sourceReadId:
+      record(result.value)&&typeof result.value.sourceReadId==="string"?result.value.sourceReadId:null;
+    const sourceHandles=Array.isArray(result.sourceHandles)?result.sourceHandles:[];
+    const parents=calculation?observations.filter(o=>sourceHandles.some(
+      handle=>typeof handle==="string"&&handle.startsWith("dataset:"+o.id+":"))):
+      observations.filter(o=>o.id===parentReadId);
+    const parentObservation=parents[0];
+    const inheritedSource=parents.some(o=>o.reference?.source==="unverified_external")?"unverified_external":parentObservation?.reference?.source;
     const observation:Observation={id,capabilityId:step.capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
-      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result,parentObservation?.reference?.source):null,
+      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result,inheritedSource):null,
+      requiresSnapshot:parents.some(o=>o.requiresSnapshot)||!calculation&&
+        manifest.find(m=>m.id===step.capabilityId)?.currencyPolicy!=="independent",
       display:successful?observationDisplay(result,input.locale):{},calculation};
     if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);

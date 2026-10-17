@@ -4,7 +4,7 @@ import { createP2Registry,schemaFingerprint,unavailable,type ReadRegistration,
 import { executeP1Authorized,outputFor } from "@/lib/metrics/p1Readers.server";
 import { registerExpressionSimulation } from "./simulateRegistration.server";
 import { inputFor,purposePolicies,readers,sourcePolicies,values,
-  metricUnits,type SupportedId } from "@/lib/metrics/p1Catalog";
+  currencyIndependentP1Ids,type SupportedId } from "@/lib/metrics/p1Catalog";
 
 /**
  * Each P1 canonical key is a discovered registration. New P1 domains require
@@ -25,7 +25,7 @@ export function buildP3P1Registrations():readonly ReadRegistration[] {
       id,version:1 as const,mode:"read" as const,availability:"shadow" as const,
       owner:key.split(".")[0],purpose:"Authorized canonical "+key+" source read.",
       sourceIds:[key],canonicalReaderIds:[readers[key]],allowedPurposes:purposes,
-      inputSchema,outputSchema,
+      inputSchema,outputSchema,currencyPolicy:currencyIndependentP1Ids.has(key)?"independent" as const:"USD_only" as const,
       schemaContract:{id:id+".v1",registrationId:id,version:1 as const,
         inputSchemaFingerprint:schemaFingerprint(inputSchema),
         outputSchemaFingerprint:schemaFingerprint(outputSchema)},
@@ -38,7 +38,7 @@ export function buildP3P1Registrations():readonly ReadRegistration[] {
       async read(scope:TrustedReadScope,rawInput:unknown){
         // P1's business/membership-checked reader is still the sole source.
         // P1's monetary outputs currently assume USD; fail closed in any other currency.
-        if(scope.identity.currency!=="USD" && key in metricUnits)
+        if(scope.identity.currency!=="USD" && !currencyIndependentP1Ids.has(key))
           return unavailable("unsupported");
         return executeP1Authorized(scope.tools,scope.identity,rawInput);
       },

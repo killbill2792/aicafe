@@ -48,6 +48,7 @@ function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,s
   let next=0;
   return vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
     if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
     if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
@@ -505,4 +506,126 @@ it("preserves unverified external provenance and cautions through record inspect
   expect(result.reply.evidence[0].source).toBe("unverified_external");
   expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH"}));
   expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+});
+
+it.each(["EUR","AED"])("reads currency-independent attendance for a %s cafe",async(currency)=>{
+  auth.mockResolvedValue({identity:{...identity,currency},tools:base.tools});
+  atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,currency}});
+  p1.mockImplementation(async(_t,_i,raw)=>envelope(raw as Record<string,unknown>,{timecardCount:3,onClockCount:2}) as Awaited<ReturnType<typeof executeP1Authorized>>);
+  const result=await runSupervisorTurn({...base,text:"How many timecards are recorded?"},transportFor([
+    read("p3.labor.attendance.v1",query("labor.attendance",{period})),
+    answer([{kind:"evidence",text:"The source has {{r1:value.timecardCount}} timecards; this does not calculate wages.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);expect(JSON.stringify(result.reply.blocks)).toContain("3 timecards");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("$");
+});
+
+it("exposes nonfinancial Olivia availability for a non-USD cafe without compensation data",async()=>{
+  auth.mockResolvedValue({identity:{...identity,currency:"EUR"},tools:base.tools});
+  atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,currency:"EUR"}});
+  olivia.mockResolvedValue({ok:true,version:1,status:"ok",capability:"olivia.availability.read",
+    source:{owner:"olivia",businessId:cafe,kind:"stored_availability",consistency:"provisional"},employees:[{employeeId:employee,displayName:"Ava",active:true,state:"confirmed",
+      recurring:[],exceptions:[],hourLimits:[],preferences:[],qualifications:[],compensation:[]}]} as Awaited<ReturnType<typeof executeOliviaReadCapability>>);
+  const result=await runSupervisorTurn({...base,text:"Show my staff availability."},transportFor([
+    read("p3.olivia.records.v1",{purpose:"scheduling_investigation",request:{capability:"olivia.availability.read",version:1}}),
+    answer([{kind:"evidence",text:"{{r1:value.employees.0.displayName}} is present in the availability records; this is not a wage calculation.",citations:["r1"]}])],
+    (context,step)=>{if(step===1){
+      const observations=JSON.stringify(context.observations);expect(observations).toContain("Ava");
+      expect(observations).toContain("monetary_fields_unavailable");expect(observations).not.toContain('"compensation":');
+    }}));
+  expect(olivia).toHaveBeenCalledTimes(1);expect(JSON.stringify(result.reply.blocks)).toContain("Ava");
+});
+
+it.each(["unauthorized_or_unconfigured","invalid_source_snapshot"] as const)("keeps source-free advice available during %s snapshot failure",async(reason)=>{
+  atomic.mockResolvedValue({status:"unavailable",reason});
+  const result=await runSupervisorTurn({...base,text:"How can we improve customer service?"},transportFor([
+    answer([{kind:"advice",text:"Review the handoff with the team and resolve recurring service bottlenecks.",citations:[]}])]));
+  expect(result.reply.blocks).toContainEqual({type:"text",text:"Review the handoff with the team and resolve recurring service bottlenecks."});
+  expect(p1).not.toHaveBeenCalled();expect(result.usage.modelCallCount).toBe(2);
+});
+
+it("blocks financial reads during snapshot failure while still allowing a useful explanation",async()=>{
+  atomic.mockResolvedValue({status:"unavailable",reason:"invalid_source_snapshot"});
+  const result=await runSupervisorTurn({...base,text:"What were our recorded expenses?"},transportFor([
+    read("p3.money.expense_entries.v1",query("money.expense_entries",{period})),
+    answer([{kind:"advice",text:"The financial source is unavailable. I can explain how to compare costs while that source is restored.",citations:[]}])]));
+  expect(p1).not.toHaveBeenCalled();expect(result.reply.evidence).toEqual([]);
+});
+
+it("preserves public provenance through a dataset count and a subsequent expression",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  vi.mocked(researchPublicSources).mockResolvedValue([{title:"Public supplier",url:"https://example.com/menu",snippet:"Public menu lead",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
+  const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices and count the returned public leads."},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby supplier prices",ownerResearchClause:"Research nearby supplier prices and count the returned public leads."}),
+    read("p3.platform.dataset.analysis.v1",{purpose:"dataset_analysis",readId:"r1",operation:"count",field:null,groupBy:null,filters:[]}),
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Count of returned public leads, not verified suppliers",nodes:[{op:"source",handle:"dataset:r2:0"}]}),responseJson:null},
+    answer([{kind:"evidence",text:"The returned public-lead count is {{r3:value}}. These leads are unverified external results, not stock or confirmed supplier records.",citations:["r3"]}])]));
+  expect(result.reply.evidence).toHaveLength(1);expect(result.reply.evidence[0].source).toBe("unverified_external");
+  expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH"}));
+});
+
+it("recovers a dated correction after a provider-failed turn with no saved reply",async()=>{
+  const capabilityId="p3.money.expense_entries.v1",oldPeriod={from:"2026-10-01",to:"2026-10-01"},newPeriod={from:"2026-10-02",to:"2026-10-02"};
+  const firstText="Show recorded expenses for 2026-10-01";
+  const first=await runSupervisorTurn({...base,text:firstText},transportFor([
+    read(capabilityId,query("money.expense_entries",{period:oldPeriod})),
+    answer([{kind:"evidence",text:"I retrieved the recorded entries for your date.",citations:["r1"]}])]));
+  await expect(runSupervisorTurn({...base,text:"Use 2026-10-02 instead",investigationMemory:first.reply.investigationMemory},
+    async()=>new Response("down",{status:503}))).rejects.toMatchObject({category:"provider_http"});
+  p1.mockClear();
+  const result=await runSupervisorTurn({...base,text:"Please retry",investigationMemory:first.reply.investigationMemory,
+    history:[{role:"owner",text:firstText},{role:"owner",text:"Use 2026-10-02 instead"}]},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:oldPeriod})),
+      read(capabilityId,query("money.expense_entries",{period:newPeriod})),
+      answer([{kind:"evidence",text:"I used your corrected financial date on this retry.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);expect(p1.mock.calls[0][2]).toMatchObject({period:newPeriod});
+  expect(result.usage.modelCallCount).toBe(5);
+});
+
+it("simulates nonfinancial scheduling for a non-USD cafe without publishing dollar costs",async()=>{
+  auth.mockResolvedValue({identity:{...identity,currency:"EUR"},tools:base.tools});
+  atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,currency:"EUR"}});
+  olivia.mockImplementation(async raw=>{
+    const request=raw as {capability:string};
+    if(request.capability==="olivia.availability.read")return {ok:true,version:1,status:"ok",capability:request.capability,
+      source:{owner:"olivia",businessId:cafe,kind:"stored_availability",consistency:"provisional"},employees:[{employeeId:employee,displayName:"Ava",active:true,state:"confirmed",
+        recurring:[],exceptions:[],hourLimits:[],preferences:[],qualifications:[],compensation:[]}]} as Awaited<ReturnType<typeof executeOliviaReadCapability>>;
+    return {ok:true,version:1,status:"ok",capability:"olivia.schedule.whatIf",source:{owner:"olivia",businessId:cafe,kind:"trusted_preview",consistency:"provisional"},
+      baselineScenario:null,alternateScenario:null,baselineStatus:"feasible",baselineProof:"complete_candidate_solution",baselineWarnings:[],
+      alternateStatus:"feasible",alternateProof:"complete_candidate_solution",alternateWarnings:[],comparison:{ownerMinutesDifference:0,cashWagesDifferenceCents:200,
+        loadedPayrollDifferenceCents:224,gapsDifference:0,completeCoverageBefore:true,completeCoverageAfter:true,changed:true},
+      overridesApplied:[{kind:"reduce_weekly_minutes",employeeId:employee,maxWeeklyMinutes:90}],notices:[],employeeNames:{[employee]:"Ava"},locationNames:{},disposition:"hypothetical_simulation_only"} as Awaited<ReturnType<typeof executeOliviaReadCapability>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"Cap Ava at 90 minutes next week."},transportFor([
+    read("p3.olivia.records.v1",{purpose:"scheduling_investigation",request:{capability:"olivia.availability.read",version:1}}),
+    read("p3.olivia.records.v1",{purpose:"scheduling_investigation",request:{capability:"olivia.schedule.whatIf",version:1,week:"2026-10-26",
+      overrides:[{kind:"reduce_weekly_minutes",employeeId:employee,maxWeeklyMinutes:90}]}}),
+    answer([{kind:"evidence",text:"The alternative schedule is {{r2:value.alternateStatus}}; this is a simulation, not a published change.",citations:["r2"]}])],
+    (context,step)=>{if(step===2){const data=JSON.stringify(context.observations);expect(data).not.toContain("cashWagesDifferenceCents");expect(data).not.toContain("loadedPayrollDifferenceCents");}}));
+  expect(olivia).toHaveBeenCalledTimes(2);expect(JSON.stringify(result.reply.blocks)).toContain("feasible");
+  expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE"}));
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("$");
+});
+
+it("reads team tasks in a non-USD cafe during a financial snapshot outage",async()=>{
+  auth.mockResolvedValue({identity:{...identity,currency:"AED"},tools:base.tools});
+  atomic.mockResolvedValue({status:"unavailable",reason:"invalid_source_snapshot"});
+  p1.mockImplementation(async(_t,_i,raw)=>envelope(raw as Record<string,unknown>,{items:[],page:0,hasMore:false,nextPage:null,limitReached:false}) as Awaited<ReturnType<typeof executeP1Authorized>>);
+  const result=await runSupervisorTurn({...base,text:"Show my team inbox."},transportFor([
+    read("p3.team.tasks.v1",query("team.tasks",{page:0})),
+    answer([{kind:"evidence",text:"No task was returned on this inbox page.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);expect(result.reply.status).toBe("partial");
+});
+
+it("does not apply an unrelated provider-failed scheduling date to financial reads",async()=>{
+  const capabilityId="p3.money.expense_entries.v1",oldPeriod={from:"2026-10-01",to:"2026-10-01"};
+  const state={version:1 as const,businessId:cafe,ownerStatements:["Expenses for 2026-10-01"],
+    calendarScopes:[{domain:"money",kind:"period" as const,...oldPeriod}],reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:oldPeriod}))}]};
+  const scripted=transportFor([
+    read(capabilityId,query("money.expense_entries",{period:oldPeriod})),
+    answer([{kind:"evidence",text:"I retained the financial period while reading expenses.",citations:["r1"]}])]);
+  const transport=async(url:string,init:RequestInit)=>JSON.parse(String(init.body)).text.format.name==="supervisor_calendar_context_review"?
+    response({verdict:"unrelated"}):scripted(url,init);
+  await runSupervisorTurn({...base,text:"How much did we spend?",investigationMemory:state,
+    history:[{role:"owner",text:"Expenses for 2026-10-01"},{role:"owner",text:"Schedule Ava for 2026-10-26"}]},transport);
+  expect(p1).toHaveBeenCalledTimes(1);expect(p1.mock.calls[0][2]).toMatchObject({period:oldPeriod});
 });

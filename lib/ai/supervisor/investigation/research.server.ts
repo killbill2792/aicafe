@@ -18,7 +18,7 @@ const outputSchema=z.union([
 export function buildResearchRegistration(publicContext:()=>string=()=>"",
   reviewPublicQuery:(clause:string,query:string,publicLocationContext:string)=>Promise<boolean>=async()=>false):ReadRegistration{
   const id="p3.public.research.v1";
-  return {id,version:1,owner:"maya",mode:"read",availability:"shadow",
+  return {id,version:1,owner:"maya",mode:"read",availability:"shadow",currencyPolicy:"independent",
     purpose:"Find public competitor/menu/supplier/market sources when the owner asks for external research. Provide ownerResearchClause as an exact quote of ONLY the current owner public-research request, excluding any private staff, payroll or financial clauses. Search snippets are unverified leads, not confirmed current prices. Never send private café/person/payroll records in the query.",
     sourceIds:["public.search"],canonicalReaderIds:["public.brave.search"],allowedPurposes:["public_market_research"],
     inputSchema,outputSchema,schemaContract:{id:id+".v1",registrationId:id,version:1,
