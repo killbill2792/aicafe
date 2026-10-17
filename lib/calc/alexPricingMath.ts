@@ -15,18 +15,18 @@ export function supplierPackageMicrocents(
   if ((baseUnit === "ml" && !["gal", "fl_oz", "ml"].includes(packageUnit)) ||
       (baseUnit === "g" && packageUnit !== "g") ||
       (baseUnit === "each" && packageUnit !== "each")) return null;
-  const quantityMicroUnits = packageUnit === "gal" ? 3785411784n :
-    packageUnit === "fl_oz" ? 29573500n : 1000000n;
+  const quantityMicroUnits = packageUnit === "gal" ? BigInt("3785411784") :
+    packageUnit === "fl_oz" ? BigInt("29573500") : BigInt("1000000");
   const denominator = BigInt(packageCount) * quantityMicroUnits;
-  const numerator = BigInt(costCents) * 1000000000000n;
-  const rounded = (numerator + denominator / 2n) / denominator;
+  const numerator = BigInt(costCents) * BigInt("1000000000000");
+  const rounded = (numerator + denominator / BigInt("2")) / denominator;
   return rounded <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(rounded) : null;
 }
 
 export function scaleMicrocents(micros: number, multiplierBasisPoints: number): number | null {
   if (!Number.isSafeInteger(micros) || micros < 0 ||
       !Number.isSafeInteger(multiplierBasisPoints) || multiplierBasisPoints < 0) return null;
-  const result = (BigInt(micros) * BigInt(multiplierBasisPoints) + 5000n) / 10000n;
+  const result = (BigInt(micros) * BigInt(multiplierBasisPoints) + BigInt("5000")) / BigInt("10000");
   return result <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(result) : null;
 }
 
