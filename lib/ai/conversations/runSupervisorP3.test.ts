@@ -163,8 +163,16 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const request="Show supplier quotes I recorded";
     const source={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
     const initial={status:"available",snapshot:{
+      contract:"p1.authoritative_snapshot.v1",
       businessId:identity.businessId,currency:identity.currency,
       timezone:identity.timezone,revision:"91",
+      payroll:{rate:0.12,status:"estimated",source:"system_estimate"},
+      sources:{menu:[],ingredients:[],ingredientPrices:[],recipes:[],
+        employees:[],dailyRollups:[],expenses:[],recurringCosts:[],imports:[]},
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},
+      coverage:"not_proven_by_revision",
     }};
     atomicRead.mockResolvedValueOnce(initial).mockResolvedValueOnce({
       status:"available",snapshot:{...initial.snapshot,revision:"92"},
@@ -586,7 +594,11 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       }]});
     });
     const output=await run(provider,clause);
-    expect(output.reply.status).toBe("unavailable");
+    // The wage is source-backed, but the requested loaded-pay calculation is not.
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+    ]));
     expect(output.reply.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
     ]));
