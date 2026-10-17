@@ -7,10 +7,10 @@ const clause="Check supplier quotes";
 function read(value:unknown,overrides:Record<string,unknown>={}):ShadowEvidence {
   return {clause,capabilityId:"p3.supplies.quotes.v1",status:"partial",reason:null,
     result:{status:"partial",id:"supplies.quotes",version:1,
-      query:{id:"supplies.quotes",version:1,purpose:"supplier_quote_review"},
+      query:{id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"},
       value,quality:{missingInputs:[],estimatedInputs:[],staleInputs:[]},
       provenance:{asOf,canonicalReaderId:"readP1SupplierQuotes",
-        purpose:"supplier_quote_review",sourceRevision:null},
+        purpose:"owner_reported_quote_review",sourceRevision:null},
       ...overrides},
   };
 }
@@ -48,7 +48,7 @@ describe("live registered source evidence presentation",()=>{
   it("does not surface foreign-date, unavailable or unrequested capability data",()=>{
     const foreign=read({items:[{name:"leak"}]},{provenance:{
       asOf:"2026-10-15",canonicalReaderId:"readP1SupplierQuotes",
-      purpose:"supplier_quote_review",sourceRevision:null,
+      purpose:"owner_reported_quote_review",sourceRevision:null,
     }});
     expect(present([foreign]).blocks).toHaveLength(0);
     expect(present([{...read({items:[{name:"leak"}]}),status:"unavailable"}]).blocks).toHaveLength(0);
