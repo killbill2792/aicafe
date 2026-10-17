@@ -665,7 +665,7 @@ describe("Four-domain semantic request-coverage contract",()=>{
   }
   it("fails closed before ANY café read when independent audit conflicts or is ambiguous",async()=>{
     for(const outcome of [
-      {goals:fullGoals.filter(g=>g.domain!=="pricing_review"),complete:true,ambiguous:false},
+      {goals:fullGoals.map(g=>g.domain==="staff_cost"?{...g,period:"today" as const}:g),complete:true,ambiguous:false},
       {goals:fullGoals,complete:false,ambiguous:false},
       {goals:fullGoals,complete:true,ambiguous:true},
     ]){
@@ -680,7 +680,9 @@ describe("Four-domain semantic request-coverage contract",()=>{
         asOf:"2026-10-12",tools:readers},transport);
       expect(result.reply.status).toBe("unavailable");
       expect(result.reply.blocks).toEqual([{type:"text",
-        text:"I couldn't reliably identify every part of that question. Please ask the parts separately so nothing is missed."}]);
+        text:outcome.complete&&!outcome.ambiguous
+          ? "Which dates and financial measure should I check: operating profit margin, owner profit, or ingredient margin?"
+          : "Which exact dates or business result would you like me to check?"}]);
       expect(result.usage.toolCallCount).toBe(0);
       expect(vi.mocked(readers.getMenuCatalog)).not.toHaveBeenCalled();
       expect(vi.mocked(readers.getProfitability)).not.toHaveBeenCalled();
