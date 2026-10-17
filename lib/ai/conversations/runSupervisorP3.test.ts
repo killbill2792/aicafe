@@ -228,7 +228,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(output.usage.toolCallCount).toBe(1);
   });
   it("read-only inspection keeps a missing sibling wage/burden warning",async()=>{
-    const question="Show Sophie's recorded wage and employer payroll burden";
+    const question="Show Sophie's recorded wage including employer payroll burden";
     const burden={id:"labor.payroll_burden",version:1,
       purpose:"authorized_owner_employer_cost_review"};
     p1Reads.mockImplementation(async(_tools:unknown,_id:unknown,raw:unknown)=>
