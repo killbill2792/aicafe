@@ -1,6 +1,6 @@
 import {describe,expect,it} from "vitest";
 import type {ShadowEvidence} from "@/lib/ai/supervisor/p2/shadow.server";
-import {presentRegisteredReads} from "./readEvidencePresentation";
+import {presentRegisteredReads,registeredReadReason} from "./readEvidencePresentation";
 
 const asOf="2026-10-16",businessId="owner-cafe";
 const clause="Show the supplier quotes I recorded";
@@ -104,6 +104,43 @@ describe("reviewed localized source presentation",()=>{
       .filter(b=>b.type==="text").map(b=>b.text).join(" ");
     expect(spanish).toContain("6 galones estadounidenses");
     expect(spanish).not.toContain("supplier_quote");
+  });
+  it("labels owner-total fallback as estimated rather than recipe ingredient cost",()=>{
+    const estimated=read("menu.product_economics",{
+      name:"Latte",priceCents:525,ingredientsCentsToday:240,
+      costStatus:"READY",costSource:"owner_total",costQuality:"estimated",
+    });
+    const all=present([estimated]).blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(all).toContain("Estimated owner-entered total product cost");
+    expect(all).toContain("$2.40");
+    expect(all).not.toContain("Current recipe ingredients:");
+    const missing=read("menu.product_economics",{
+      name:"Latte",priceCents:525,ingredientsCentsToday:0,
+      costStatus:"NO_RECIPE",costSource:null,costQuality:null,
+    });
+    const withheld=present([missing]).blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(withheld).not.toContain("Current recipe ingredients");
+    expect(withheld).not.toContain("$0.00");
+  });
+  it("labels monthly and annual wages by period without inventing an hourly rate",()=>{
+    const wages=read("labor.employee_wages",[
+      {id:"a",name:"Worker A",active:true,wageKnown:true,
+        wagePeriod:"month",wageAmountCents:300000,defaultHourlyWageCents:0},
+      {id:"b",name:"Worker B",active:true,wageKnown:true,
+        wagePeriod:"year",wageAmountCents:3600000,defaultHourlyWageCents:0},
+    ]);
+    const en=present([wages]).blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(en).toContain("Recorded wage (month): $3,000.00");
+    expect(en).toContain("Recorded wage (year): $36,000.00");
+    expect(en).not.toContain("Hourly wage:");
+    const es=present([wages],undefined,"es").blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(es).toContain("Salario registrado (mes)");
+    expect(es).toContain("Salario registrado (año)");
+  });
+  it("uses locale catalogs for unsupported, missing and effect-denial copy",()=>{
+    expect(registeredReadReason("en","unsupported")).toContain("cannot yet complete");
+    expect(registeredReadReason("es","missing_input")).toContain("Faltan registros");
+    expect(registeredReadReason("ar","unsupported_action")).toContain("موافقة");
   });
   it("rejects foreign date, unavailable and unrequested records",()=>{
     const foreign=read("supplies.quotes",{items:[{itemName:"leak"}]},{provenance:{
