@@ -256,4 +256,79 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(olivia).toHaveBeenCalledTimes(1);
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("More than one employee matches"))).toBe(true);
   });
+
+  it("keeps an audited Alex pricing turn alive after two successful but unproductive P3 OpenAI calls", async () => {
+    // Production regression: P3 consumed two completed Responses, fell back
+    // without reading a café tool, then legacy's first Responses succeeded but
+    // the mandatory semantic audit had no remaining model-call allowance.
+    const savedFlag=process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
+    const savedAllowlist=process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
+    process.env.SUPERVISOR_P3_COMPOSITION_ENABLED="true";
+    process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=businessId;
+    try {
+      const productId=avaId, ingredientId="a0000000-0000-4000-8000-000000000100";
+      atomicRpc.mockResolvedValue({status:"available",snapshot:{
+        contract:"p1.authoritative_snapshot.v1",businessId,revision:"100",
+        timezone:"America/Los_Angeles",currency:"USD",
+        payroll:{rate:0.12,status:"confirmed",source:"business"},
+        sources:{
+          menu:[{id:productId,name:"Dirty Cardamom Iced 12oz",price_cents:650,
+            is_active:true,category:"ESPRESSO_DRINK"}],
+          ingredients:[{id:ingredientId,name:"Milk",base_unit:"ml"}],
+          ingredientPrices:[{id:"a0000000-0000-4000-8000-000000000200",
+            ingredient_id:ingredientId,effective_from:"2026-09-01",
+            cost_per_base_unit_micros:100000,source:"manual"}],
+          recipes:[{menu_item_id:productId,ingredient_id:ingredientId,quantity:200}],
+          employees:[],dailyRollups:[],expenses:[],recurringCosts:[],imports:[],
+        },
+        truncated:{menu:false,ingredients:false,ingredientPrices:false,
+          recipes:false,employees:false,dailyRollups:false,expenses:false,
+          recurringCosts:false,imports:false},
+        coverage:"not_proven_by_revision",
+      } as AtomicP1SourceSnapshot});
+      const question="How much should I charge for Dirty Cardamom Iced 12oz?";
+      const requests:string[]=[];
+      const diagnostics:Array<{stage:string;legacyFallbackReason?:string}>=[];
+      const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+        const body=JSON.parse(String(init.body)) as {
+          text?:{format?:{name?:string}};tool_choice?:string;
+        };
+        const schema=body.text?.format?.name;
+        requests.push(schema??body.tool_choice??"legacy_final");
+        if(schema==="p2_goal_audit")
+          return response([{type:"message",content:[{type:"output_text",
+            text:JSON.stringify({complete:true,clauses:[question]})}]}]);
+        if(schema==="p2_capability_selection")
+          return response([]); // No validated P3 read: hand off to the legacy registry.
+        if(schema==="supervisor_scope_audit")return auditPayload([pricingGoal]);
+        if(body.tool_choice==="required")
+          return response([
+            call("declare_request_scope",{goals:[pricingGoal]},"scope"),
+            call("alex_pricing_review",{selection:"specific_name",
+              product_name:"Dirty Cardamom Iced 12oz",product_id:null,
+              offset:0,limit:25},"c1"),
+          ]);
+        return response([finish(["t1:count"],["t1:item0"])]);
+      });
+      const result=await runSupervisorTurn({...base,text:question,
+        onDiagnostic:d=>diagnostics.push(d)},transport);
+      expect(requests).toEqual(["p2_goal_audit","p2_capability_selection",
+        "supervisor_final","supervisor_scope_audit","supervisor_final"]);
+      expect(result.usage).toMatchObject({modelCallCount:5,toolCallCount:1});
+      expect(result.reply.blocks).toContainEqual(expect.objectContaining({
+        type:"count",label:"Products reviewed",value:1,
+      }));
+      expect(result.reply.blocks.some(b=>b.type==="text" &&
+        b.text.includes("Dirty Cardamom Iced 12oz"))).toBe(true);
+      expect(diagnostics).toContainEqual(expect.objectContaining({
+        stage:"legacy_fallback",legacyFallbackReason:"p3_not_completed",
+      }));
+    } finally {
+      if(savedFlag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
+      else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=savedFlag;
+      if(savedAllowlist===undefined)delete process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS;
+      else process.env.SUPERVISOR_P3_ALLOWED_BUSINESS_IDS=savedAllowlist;
+    }
+  });
+
 });
