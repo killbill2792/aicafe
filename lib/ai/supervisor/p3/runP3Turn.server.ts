@@ -164,13 +164,15 @@ function exactCoverage(clauses:string[],plans:{coveredClauses:string[]}[]):boole
  * natural-language ranges fail closed instead of silently displaying wrong days.
  */
 function quotedPeriod(text:string,asOf:string):{from:string;to:string}|null{
-  const parsed=parseOwnerDateWindows(text,asOf);
-  if(parsed.length===1)return parsed[0];
-  if(parsed.length>1)return null;
+  // Preserve P3's existing ISO envelope needed by independently scoped
+  // P2 clauses; each individual source still must match its own quoted date.
   const dates=[...text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/gu)].map(x=>x[0]);
   if(dates.length===1)return {from:dates[0],to:dates[0]};
   if(dates.length===2&&dates[0]<=dates[1])return {from:dates[0],to:dates[1]};
   if(dates.length>2)return null;
+  const parsed=parseOwnerDateWindows(text,asOf);
+  if(parsed.length===1)return parsed[0];
+  if(parsed.length>1)return null;
   const normalized=text.normalize("NFKC").toLocaleLowerCase();
   if(/\b(?:today|hoy)\b|اليوم/u.test(normalized))
     return {from:asOf,to:asOf};
