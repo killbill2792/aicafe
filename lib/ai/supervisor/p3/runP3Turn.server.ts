@@ -236,6 +236,26 @@ export async function tryP3SupervisorReadOnly(input:{
   const capabilityRegistry=createP3ReadRegistry();
   if(!capabilityRegistry.discoverSimulations(scope).some(x=>x.id===EXPRESSION_ID))
     return null;
+  // Bracket independently fetched P1 selectors by an authoritative epoch.
+  // Taking only a post-read snapshot misses updates between selection and
+  // the initial snapshot, even if the final epoch check is unchanged.
+  const reported:P3Usage={model:input.model,modelCallCount:0,
+    toolCallCount:0,inputTokens:0,outputTokens:0};
+  const sourceIntegrityFailure=()=>({
+    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
+    reply:{intent:"profitability" as const,status:"unavailable" as const,
+      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
+        text:labels[input.locale].unsupported}]},
+    usage:{...reported},
+  });
+  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
+  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
+    return sourceIntegrityFailure();
+  if(atomic.status==="available"&&
+    (atomic.snapshot.businessId!==identity.businessId||
+      atomic.snapshot.currency!==identity.currency||
+      atomic.snapshot.timezone!==identity.timezone))
+    return sourceIntegrityFailure();
   const shadow=await runP2ShadowWithScope({
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
@@ -245,11 +265,10 @@ export async function tryP3SupervisorReadOnly(input:{
       text:h.text.slice(0,450),
     })),
   });
-  const reported={
-    model:input.model,modelCallCount:shadow.usage.modelCalls,
-    toolCallCount:shadow.attemptedReads,
-    inputTokens:shadow.usage.inputTokens,outputTokens:shadow.usage.outputTokens,
-  };
+  reported.modelCallCount=shadow.usage.modelCalls;
+  reported.toolCallCount=shadow.attemptedReads;
+  reported.inputTokens=shadow.usage.inputTokens;
+  reported.outputTokens=shadow.usage.outputTokens;
   input.onUsage?.({...reported});
   if(!shadow.evidence.length)return null;
   // A syntactically valid model-selected date range is not owner authorization.
@@ -264,29 +283,8 @@ export async function tryP3SupervisorReadOnly(input:{
   });
   reported.toolCallCount+=expanded.readCount;
   input.onUsage?.({...reported});
-  // The one-statement SQL RPC supplies ALL cross-domain numeric operands.
-  // Preceding independent P1 reads only discover/authorize selectors. When
-  // migration 70 is missing, retain conservative unversioned conditional
-  // behavior; NEVER assign an invented epoch or mix both operand sources.
-  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
-  // Only a specifically recognized absent RPC can use legacy unversioned
-  // conditional behavior. Authorization revocation, permission errors,
-  // timeout, SQL failure and malformed/NULL RPC results all fail closed.
-  // Integrity failures must terminate the turn. Returning null invokes the
-  // legacy compatibility reader, which could reuse stale shadow evidence.
-  const sourceIntegrityFailure=()=>({
-    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
-    reply:{intent:"profitability" as const,status:"unavailable" as const,
-      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
-        text:labels[input.locale].unsupported}]},
-    usage:{...reported},
-  });
-  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
-    return sourceIntegrityFailure();
-  if(atomic.status==="available" &&
-    (atomic.snapshot.businessId!==identity.businessId||
-      atomic.snapshot.currency!==identity.currency||
-      atomic.snapshot.timezone!==identity.timezone))return sourceIntegrityFailure();
+  // Every P1 selector was fetched inside the epoch bracket. A final
+  // authoritative reread must match this revision before any response.
   const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text,
     null,ownerHistory,atomic.status==="available"?atomic.snapshot:undefined);
   // Validated pure owner-hypothetical arithmetic may need no café source.
@@ -323,6 +321,7 @@ export async function tryP3SupervisorReadOnly(input:{
   const calculationInputs:unknown[]=[];
   let unsupportedGoals=0;
   const unsupportedReasons=new Set<"unsupported"|"missing_input"|"unsupported_action">();
+  const incompleteReadClauses=new Set<string>();
   const plannedSimulations=completion.plan.plans.filter(p=>p.planJson!==null).length;
   if(reported.toolCallCount+plannedSimulations>5)return null;
   for(const item of completion.plan.plans){
@@ -341,6 +340,12 @@ export async function tryP3SupervisorReadOnly(input:{
       read.status==="unavailable"))){
       unsupportedGoals+=item.coveredClauses.length;
       unsupportedReasons.add("missing_input");
+      for(const clause of item.coveredClauses)if(shadow.evidence.some(read=>
+        read.clause===clause&&read.capabilityId!==null&&
+        read.status==="unavailable"&&
+        shadow.evidence.some(sibling=>sibling.clause===clause&&
+          ["verified","estimated","partial"].includes(sibling.status))))
+        incompleteReadClauses.add(clause);
       continue;
     }
     let raw:unknown;
@@ -416,8 +421,9 @@ export async function tryP3SupervisorReadOnly(input:{
   // separate from canonical atomic financial/scheduling calculations.
   const presentedReads=presentRegisteredReads({
     evidence:shadow.evidence,
-    includedClauses:completion.plan.plans.filter(p=>p.planJson===null && p.reason==="unsupported")
-      .flatMap(p=>p.coveredClauses),
+    includedClauses:[...completion.plan.plans.filter(p=>
+      p.planJson===null&&p.reason==="unsupported")
+      .flatMap(p=>p.coveredClauses),...incompleteReadClauses],
     businessId:identity.businessId,asOf:identity.asOf,locale:input.locale,
   });
   const reasonText={
