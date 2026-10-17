@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { MENU_ITEM_CATEGORY_CODES } from "@/lib/constants";
-import { evaluateRecipeCost } from "@/lib/calc/ingredients";
+import { evaluateRecipeCost, resolveProductCost } from "@/lib/calc/ingredients";
 import { toBaseUnitQuantity } from "@/lib/calc/recipeUnits";
 import { conditionalTargetPrice, ingredientOnlyEconomics,
   scaleMicrocents, supplierPackageMicrocents } from "@/lib/calc/alexPricingMath";
@@ -60,9 +60,15 @@ const item=z.strictObject({
   ingredientCostRatioBps:ratio,ingredientContributionCents:z.number().int().safe().nullable(),
   ingredientContributionRatioBps:ratio,
   costSource:z.enum(["recipe","owner_total"]).nullable(),
+  recipeCostCents:cents.nullable(),
+  ownerTotalCostCents:cents.nullable(),
+  ownerTotalCostStatus:z.enum(["confirmed","estimated"]).nullable(),
+  ownerTotalCostSource:z.enum(["owner_manual","imported"]).nullable(),
+  costDifferenceCents:z.number().int().safe().nullable(),
   ingredientPriceSources:z.array(z.enum(["manual","receipt","statement","invoice"])).max(4),
   hypotheticalIngredientIds:z.array(uuid).max(20),
   staleInputs:z.array(z.string()).max(30),
+  estimatedInputs:z.array(z.string()).max(30),
   currentRecommendationCents:cents.nullable(), // never synthesise recommendation from baseline profile
   missingInputs:z.array(z.string()).max(30),
 });
@@ -83,7 +89,8 @@ const reviewValue=z.strictObject({
   totalSelected:z.number().int().min(0).max(500),offset:z.number().int().min(0).max(500),
   hasMore:z.boolean(),omittedUnsupported:z.number().int().min(0).max(500),
   recommendationScope:z.literal("unavailable_without_coherent_authoritative_pricing_evidence"),
-  ownerTotalFallbackCoverage:z.literal("not_in_p1_atomic_snapshot"),
+  ownerTotalFallbackCoverage:z.enum(["not_in_p1_atomic_snapshot",
+    "present_in_p1_atomic_snapshot"]),
 });
 export const alexReviewOutputSchema=z.union([
   denied,
@@ -108,13 +115,30 @@ export const alexSimulateOutputSchema=z.union([
 const categoryAllowed=new Set<string>([...MENU_ITEM_CATEGORY_CODES.filter(c=>c!=="RETAIL"),"drink","food"]);
 const normalize=(s:string)=>s.normalize("NFC").trim().replace(/\s+/g," ").toLocaleLowerCase("en");
 type Snapshot=AtomicP1SourceSnapshot;
+type OwnerTotal={
+  menu_item_id:string;cost_cents:number;source_type:"owner_manual"|"imported";
+  status:"confirmed"|"estimated";source_label:string|null;updated_at:string;
+};
+// Optional extension belongs to P1 prerequisite PR #98. No independent
+// reader is permitted: legacy snapshots remain explicit "not covered".
+type ExtendedSnapshot=Snapshot & {
+  sources:Snapshot["sources"] & {ownerTotalCosts?:OwnerTotal[]};
+  truncated:Snapshot["truncated"] & {ownerTotalCosts?:boolean};
+};
+const ownerCosts=(snapshot:Snapshot)=>(snapshot as ExtendedSnapshot).sources.ownerTotalCosts;
+const ownerCostsTruncated=(snapshot:Snapshot)=>
+  (snapshot as ExtendedSnapshot).truncated.ownerTotalCosts===true;
 type Row=Snapshot["sources"]["menu"][number];
 type Price=Snapshot["sources"]["ingredientPrices"][number];
 const unavailableItem=(name:string,why:string,productId:string|null=null,category:string|null=null)=>
   ({productId,name,category,status:"unavailable" as const,currentPriceCents:null,
     ingredientCostCents:null,ingredientCostRatioBps:null,ingredientContributionCents:null,
-    ingredientContributionRatioBps:null,costSource:null,ingredientPriceSources:[] as Price["source"][],
+    ingredientContributionRatioBps:null,costSource:null,
+    recipeCostCents:null,ownerTotalCostCents:null,ownerTotalCostStatus:null,
+    ownerTotalCostSource:null,costDifferenceCents:null,
+    ingredientPriceSources:[] as Price["source"][],
     hypotheticalIngredientIds:[] as string[],staleInputs:[] as string[],
+    estimatedInputs:[] as string[],
     currentRecommendationCents:null,missingInputs:[why]});
 
 function findMenu(snapshot:Snapshot,query:z.infer<typeof selector>):Row|{error:string}{
@@ -143,8 +167,8 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   newPrice?:number) {
   const missing:string[]=[];
   if(!categoryAllowed.has(row.category??""))missing.push("unsupported_category");
-  if(row.price_cents===null||row.price_cents<0)missing.push("selling_price_missing");
   const sellingPrice=newPrice??(row.price_cents!==null&&row.price_cents>=0?row.price_cents:null);
+  if(sellingPrice===null)missing.push("selling_price_missing");
   const ingredientById=new Map(snapshot.sources.ingredients.map(i=>[i.id,i]));
   const lines=snapshot.sources.recipes.filter(l=>l.menu_item_id===row.id)
     .map(l=>({...l}));
@@ -215,18 +239,37 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   }
   if(new Set(lines.map(x=>x.ingredient_id)).size!==lines.length)
     missing.push("duplicate_ingredient_after_substitution");
-  let rawCost:number|null=null;
+  let recipeCost:number|null=null;
   if(!missing.some(m=>m!=="selling_price_missing")&&lines.length){
     const prices=Object.fromEntries(priced.entries());
     const result=evaluateRecipeCost(lines.map(x=>({
       ingredientId:x.ingredient_id,quantity:x.quantity})),prices);
-    if(result.status==="READY" && result.costCents!==null)rawCost=result.costCents;
+    if(result.status==="READY" && result.costCents!==null)recipeCost=result.costCents;
   }
-  const economics=rawCost===null?null:ingredientOnlyEconomics(rawCost,sellingPrice);
+  const rows=ownerCosts(snapshot)?.filter(x=>x.menu_item_id===row.id)??[];
+  if(rows.length>1)missing.push("conflicting_owner_total_cost_rows");
+  const manual=rows.length===1?rows[0]:null;
+  const manualCents=manual&&manual.cost_cents>0&&
+    Number.isSafeInteger(manual.cost_cents)&&manual.cost_cents<=100000000?
+    manual.cost_cents:null;
+  if(manual&&manualCents===null)missing.push("owner_total_cost_out_of_range");
+  // Canonical rule: complete positive recipe first, otherwise positive owner
+  // total. Never ADD the two or turn an absent total into zero. A recorded
+  // zero-cost recipe with no owner fallback is still a known zero.
+  const resolved=resolveProductCost({
+    status:recipeCost===null?lines.length?"MISSING_INGREDIENT_COST":"NO_RECIPE":"READY",
+    costCents:recipeCost,missingIngredientIds:[],
+  },manualCents);
+  const selectedSource=recipeCost===0&&manualCents===null?
+    "recipe" as const:resolved.source;
+  const rawCost=selectedSource===null?null:resolved.costCents;
+  const economics=rawCost===null||rawCost>100000000?null:
+    ingredientOnlyEconomics(rawCost,sellingPrice);
   if(!economics)missing.push("ingredient_cost_unavailable_or_out_of_range");
-  // The existing aggregate fallback is in a different table, missing from P1 atomic
-  // snapshot. We NEVER use an independently queried owner total with this revision.
-  if(rawCost===null)missing.push("owner_total_cost_fallback_not_in_atomic_snapshot");
+  if(rawCost===null){
+    missing.push(ownerCosts(snapshot)===undefined?
+      "owner_total_cost_fallback_not_in_atomic_snapshot":"owner_total_cost_missing");
+  }
   const uniqueMissing=[...new Set(missing)].slice(0,30);
   const finalIds=[...new Set(lines.map(line=>line.ingredient_id))];
   const sources=[...new Set(finalIds.flatMap(id=>{
@@ -236,20 +279,32 @@ function evaluateItem(snapshot:Snapshot,row:Row,day:string,alterations:AlexSimul
   const hypotheticalIngredientIds=finalIds.filter(id=>hypotheticalPrices.has(id));
   // An effective date and source revision prove recorded input, not supplier
   // freshness. Do not invent a universal shelf life for a price observation.
-  const stale=rawCost!==null?finalIds.filter(id=>recordedSourcesById.has(id))
-    .map(id=>"ingredient_price_freshness_unverified:"+id):[];
+  const stale=selectedSource==="recipe"?finalIds.filter(id=>recordedSourcesById.has(id))
+    .map(id=>"ingredient_price_freshness_unverified:"+id):
+    selectedSource==="owner_total"?["owner_total_cost_freshness_unverified"]:[];
   const staleInputs=stale.length>30?[...stale.slice(0,29),
     "additional_freshness_gaps_omitted"]:stale;
+  const estimatedInputs=selectedSource==="owner_total"&&manual?.status==="estimated"?
+    ["owner_total_cost_estimated"]:[];
   const out={
     productId:row.id,name:row.name,category:row.category,
-    status:uniqueMissing.length||staleInputs.length?"partial" as const:"ready" as const,
+    status:uniqueMissing.length||staleInputs.length||estimatedInputs.length?
+      "partial" as const:"ready" as const,
     currentPriceCents:sellingPrice,
     ingredientCostCents:economics?.ingredientCostCents??null,
     ingredientCostRatioBps:economics?.costRatioBasisPoints??null,
     ingredientContributionCents:economics?.ingredientContributionCents??null,
     ingredientContributionRatioBps:economics?.ingredientContributionBasisPoints??null,
-    costSource:economics?"recipe" as const:null,
-    ingredientPriceSources:sources,hypotheticalIngredientIds,staleInputs,
+    costSource:economics?selectedSource:null,
+    recipeCostCents:recipeCost===null?null:Math.round(recipeCost),
+    ownerTotalCostCents:manualCents,
+    ownerTotalCostStatus:manual?.status??null,
+    ownerTotalCostSource:manual?.source_type??null,
+    costDifferenceCents:recipeCost!==null&&manualCents!==null?
+      Math.round(recipeCost-manualCents):null,
+    ingredientPriceSources:selectedSource==="recipe"?sources:[],
+    hypotheticalIngredientIds:selectedSource==="recipe"?hypotheticalIngredientIds:[],
+    staleInputs,estimatedInputs,
     currentRecommendationCents:null,missingInputs:uniqueMissing,
   };
   return {item:out,rawCost};
@@ -263,7 +318,8 @@ const context=(snapshot:Snapshot,day:string,purpose:string)=>({
 function sourceSafe(snapshot:Snapshot):boolean{
   return snapshot.currency==="USD"&&
     !snapshot.truncated.menu&&!snapshot.truncated.ingredients&&
-    !snapshot.truncated.ingredientPrices&&!snapshot.truncated.recipes;
+    !snapshot.truncated.ingredientPrices&&!snapshot.truncated.recipes&&
+    !ownerCostsTruncated(snapshot);
 }
 
 export function reviewFromAtomicSnapshot(snapshot:Snapshot,input:AlexReviewInput,day:string){
@@ -280,19 +336,23 @@ export function reviewFromAtomicSnapshot(snapshot:Snapshot,input:AlexReviewInput
     evaluateItem(snapshot,x,day).item);
   const missing=items.flatMap(x=>x.missingInputs.map(m=>x.name+":"+m));
   const stale=items.flatMap(x=>x.staleInputs.map(m=>x.name+":"+m));
+  const estimated=items.flatMap(x=>x.estimatedInputs.map(m=>x.name+":"+m));
   if(omitted)missing.push("unsupported_categories_omitted:"+omitted);
   const result={
-    status:missing.length||stale.length?"partial" as const:"verified" as const,
+    status:missing.length||stale.length||estimated.length?
+      "partial" as const:"verified" as const,
     value:{currency:"USD" as const,items,totalSelected:
       input.selection.kind==="all_active"?supported.length:selected.length,offset,
       hasMore:input.selection.kind==="all_active"&&offset+selected.length<supported.length,
       omittedUnsupported:omitted,
       recommendationScope:"unavailable_without_coherent_authoritative_pricing_evidence" as const,
-      ownerTotalFallbackCoverage:"not_in_p1_atomic_snapshot" as const},
+      ownerTotalFallbackCoverage:ownerCosts(snapshot)===undefined?
+        "not_in_p1_atomic_snapshot" as const:"present_in_p1_atomic_snapshot" as const},
     provenance:context(snapshot,day,input.purpose),
     quality:{missingInputs:missing.length>100?[...missing.slice(0,99),
       "additional_missing_inputs_omitted"]:missing,
-      estimatedInputs:[],staleInputs:stale.length>50?[...stale.slice(0,49),
+      estimatedInputs:estimated.slice(0,50),
+      staleInputs:stale.length>50?[...stale.slice(0,49),
         "additional_freshness_gaps_omitted"]:stale},
   };
   return result;
@@ -317,6 +377,12 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
   const after=evaluateItem(snapshot,row,day,input.changes,proposedPrice);
   const missing=[...new Set([...before.item.missingInputs,...after.item.missingInputs])];
   const stale=[...new Set([...before.item.staleInputs,...after.item.staleInputs])];
+  const estimated=[...new Set([...before.item.estimatedInputs,
+    ...after.item.estimatedInputs])];
+  // Manual TOTAL is not an ingredient breakdown. Price-only/target what-ifs
+  // are possible; ingredient edits without complete recipe are NOT.
+  if(input.changes.length>0&&after.item.costSource!=="recipe")
+    return no("ingredient_scenario_requires_complete_priced_recipe");
   if(input.changes.length>0&&after.rawCost===null)return no("hypothetical_cost_inputs_incomplete");
   const targetBps=input.targetCostRatioBps??(
     input.targetIngredientMarginBps!==undefined?10000-input.targetIngredientMarginBps:null);
@@ -324,7 +390,8 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
     conditionalTargetPrice(after.rawCost,targetBps):null;
   const sub=(a:number|null,b:number|null)=>a===null||b===null?null:b-a;
   return {
-    status:missing.length||stale.length?"partial" as const:"conditional" as const,
+    status:missing.length||stale.length||estimated.length?
+      "partial" as const:"conditional" as const,
     mode:"simulate" as const,proposal:null,executedEffects:0 as const,
     value:{currency:"USD" as const,productId:row.id,name:row.name,
       before:before.item,after:after.item,
@@ -334,13 +401,15 @@ export function simulateFromAtomicSnapshot(snapshot:Snapshot,input:AlexSimulateI
         after.item.ingredientContributionCents),
       targetPriceCents,targetBasisPoints:targetBps,
       assumptions:["owner_hypothetical_not_recorded",
-        "latest_effective_prices_do_not_prove_supplier_freshness",
+        "recorded_cost_freshness_not_proven",
+        ...(after.item.costSource==="owner_total"?[
+          "owner_total_is_aggregate_not_ingredient_recipe"]:[]),
         "ingredient_only_excludes_labor_fees_rent_and_demand",
         ...(after.item.hypotheticalIngredientIds.length?[
           "owner_supplied_ingredient_cost_overrides_are_hypothetical"]:[]),
         ...(targetBps===null?["no_target_selected_no_target_price"]:[])],persisted:false as const},
     provenance:context(snapshot,day,input.purpose),
-    quality:{missingInputs:missing.slice(0,100),estimatedInputs:[],
-      staleInputs:stale.slice(0,50)},
+    quality:{missingInputs:missing.slice(0,100),
+      estimatedInputs:estimated.slice(0,50),staleInputs:stale.slice(0,50)},
   };
 }
