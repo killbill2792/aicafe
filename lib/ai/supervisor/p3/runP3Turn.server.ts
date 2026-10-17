@@ -15,6 +15,7 @@ import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server
 import { EXPRESSION_ID,planSchema,type ExpressionOutcome } from "./expression";
 import { simulationOutputSchema } from "./simulateRegistration.server";
 import { rebaseQuotedOccurrence } from "./quoteOccurrences";
+import { presentRegisteredReads,registeredReadReason } from "./readEvidencePresentation";
 import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } from "./formatScenario";
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
@@ -24,7 +25,7 @@ const coverage=z.strictObject({
   plans:z.array(z.strictObject({
     coveredClauses:z.array(z.string().min(2).max(1000)).min(1).max(5),
     planJson:z.string().max(6000).nullable(),reason:z.enum([
-      "unsupported","missing_input","unsupported_action"]).nullable(),
+      "unsupported","missing_input","unsupported_action","read_only"]).nullable(),
   })).min(1).max(5),
 });
 const OUTPUT_SCHEMA={
@@ -38,7 +39,7 @@ const OUTPUT_SCHEMA={
         coveredClauses:{type:"array",minItems:1,maxItems:5,items:{type:"string"}},
         planJson:{type:["string","null"]},
         reason:{type:["string","null"],enum:[
-          "unsupported","missing_input","unsupported_action",null]},
+          "unsupported","missing_input","unsupported_action","read_only",null]},
       },
     }},
   },
@@ -70,7 +71,8 @@ async function modelComposition(input:{
   operands:Array<{
     handle:string;unit:string;sourceQuality:string;entityName:string;
     entityId:string;field:string;matchedClause:string;
-  }>;model:string;apiKey:string;transport:Transport;
+  }>;readableSourceClauses:readonly string[];
+  model:string;apiKey:string;transport:Transport;
 }):Promise<{plan:ReturnType<typeof coverage.parse>;tokens:{input:number;output:number}}|null>{
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),18000);
@@ -113,7 +115,11 @@ async function modelComposition(input:{
            "If employer burden is missing, do NOT assume 12 percent or claim loaded cost.",
            "Never claim observed sales, actual wages, source revisions, approvals or effects.",
           "Never use SQL, JavaScript, executors, hidden reads or new domain capabilities.",
-          "If the requested outcome lacks the necessary operands, choose null and missing_input.",
+          "For a request to SHOW or LIST already authorized record fields with no arithmetic,",
+          "choose planJson null and reason read_only ONLY for a clause in readableSourceClauses.",
+          "This renders a provisional bounded source sample, never a complete count or effect.",
+          "Never classify a request for a business change/approval as a completed read.",
+          "If a requested calculation lacks necessary operands, choose null and missing_input.",
           "Writes or approvals are unsupported_action. Do not present a partial subtraction",
           "of revenue and wages as verified profit when ingredients/fees are missing.",
         ].join(" "),
@@ -123,6 +129,7 @@ async function modelComposition(input:{
             role:h.role,text:h.text.slice(0,450),
           })),
           authorizedOperandChoices:input.operands,
+          readableSourceClauses:input.readableSourceClauses,
         })}],
         text:{format:{type:"json_schema",name:"p3_expression_plans",strict:true,
           schema:OUTPUT_SCHEMA}},
@@ -235,6 +242,26 @@ export async function tryP3SupervisorReadOnly(input:{
   const capabilityRegistry=createP3ReadRegistry();
   if(!capabilityRegistry.discoverSimulations(scope).some(x=>x.id===EXPRESSION_ID))
     return null;
+  // Bracket independently fetched P1 selectors by an authoritative epoch.
+  // Taking only a post-read snapshot misses updates between selection and
+  // the initial snapshot, even if the final epoch check is unchanged.
+  const reported:P3Usage={model:input.model,modelCallCount:0,
+    toolCallCount:0,inputTokens:0,outputTokens:0};
+  const sourceIntegrityFailure=()=>({
+    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
+    reply:{intent:"profitability" as const,status:"unavailable" as const,
+      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
+        text:labels[input.locale].unsupported}]},
+    usage:{...reported},
+  });
+  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
+  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
+    return sourceIntegrityFailure();
+  if(atomic.status==="available"&&
+    (atomic.snapshot.businessId!==identity.businessId||
+      atomic.snapshot.currency!==identity.currency||
+      atomic.snapshot.timezone!==identity.timezone))
+    return sourceIntegrityFailure();
   const shadow=await runP2ShadowWithScope({
     goal:input.text,scope,registry:capabilityRegistry,
     apiKey:input.apiKey,model:input.model,transport:input.transport,
@@ -244,11 +271,10 @@ export async function tryP3SupervisorReadOnly(input:{
       text:h.text.slice(0,450),
     })),
   });
-  const reported={
-    model:input.model,modelCallCount:shadow.usage.modelCalls,
-    toolCallCount:shadow.attemptedReads,
-    inputTokens:shadow.usage.inputTokens,outputTokens:shadow.usage.outputTokens,
-  };
+  reported.modelCallCount=shadow.usage.modelCalls;
+  reported.toolCallCount=shadow.attemptedReads;
+  reported.inputTokens=shadow.usage.inputTokens;
+  reported.outputTokens=shadow.usage.outputTokens;
   input.onUsage?.({...reported});
   if(!shadow.evidence.length)return null;
   // A syntactically valid model-selected date range is not owner authorization.
@@ -263,29 +289,8 @@ export async function tryP3SupervisorReadOnly(input:{
   });
   reported.toolCallCount+=expanded.readCount;
   input.onUsage?.({...reported});
-  // The one-statement SQL RPC supplies ALL cross-domain numeric operands.
-  // Preceding independent P1 reads only discover/authorize selectors. When
-  // migration 70 is missing, retain conservative unversioned conditional
-  // behavior; NEVER assign an invented epoch or mix both operand sources.
-  const atomic=await readAuthorizedAtomicP1SourceSnapshot();
-  // Only a specifically recognized absent RPC can use legacy unversioned
-  // conditional behavior. Authorization revocation, permission errors,
-  // timeout, SQL failure and malformed/NULL RPC results all fail closed.
-  // Integrity failures must terminate the turn. Returning null invokes the
-  // legacy compatibility reader, which could reuse stale shadow evidence.
-  const sourceIntegrityFailure=()=>({
-    kind:"p3_read_only_conditional" as const,executedEffects:0 as const,
-    reply:{intent:"profitability" as const,status:"unavailable" as const,
-      evidence:[],blocks:[{type:"warning" as const,code:"P3_SOURCE_INTEGRITY",
-        text:labels[input.locale].unsupported}]},
-    usage:{...reported},
-  });
-  if(atomic.status==="unavailable"&&atomic.reason!=="rpc_not_installed")
-    return sourceIntegrityFailure();
-  if(atomic.status==="available" &&
-    (atomic.snapshot.businessId!==identity.businessId||
-      atomic.snapshot.currency!==identity.currency||
-      atomic.snapshot.timezone!==identity.timezone))return sourceIntegrityFailure();
+  // Every P1 selector was fetched inside the epoch bracket. A final
+  // authoritative reread must match this revision before any response.
   const projection=projectP1Evidence(expanded.evidence,identity.businessId,input.text,
     null,ownerHistory,atomic.status==="available"?atomic.snapshot:undefined);
   // Validated pure owner-hypothetical arithmetic may need no café source.
@@ -305,6 +310,12 @@ export async function tryP3SupervisorReadOnly(input:{
     })),
     model:input.model,apiKey:input.apiKey,
     transport:input.transport,
+    readableSourceClauses:[...new Set(shadow.evidence.filter(read=>
+      ["verified","estimated","partial"].includes(read.status) &&
+      read.capabilityId!==null && read.result!==null &&
+      !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
+        sibling.capabilityId!==null && sibling.status==="unavailable"))
+      .map(read=>read.clause))],
     operands:projection.choices.map(choice=>{
       const v=projection.operands.find(o=>o.handle===choice.handle)!;
       return {...choice,unit:v.unit,
@@ -322,13 +333,24 @@ export async function tryP3SupervisorReadOnly(input:{
   const calculationInputs:unknown[]=[];
   let unsupportedGoals=0;
   const unsupportedReasons=new Set<"unsupported"|"missing_input"|"unsupported_action">();
+  const incompleteReadClauses=new Set<string>();
+  const plainReadClauses=new Set<string>();
   const plannedSimulations=completion.plan.plans.filter(p=>p.planJson!==null).length;
   if(reported.toolCallCount+plannedSimulations>5)return null;
   for(const item of completion.plan.plans){
     if(!item.planJson){
       if(!item.reason)return null;
       unsupportedGoals+=item.coveredClauses.length;
-      unsupportedReasons.add(item.reason);
+      if(item.reason==="read_only"){
+        for(const clause of item.coveredClauses){
+          plainReadClauses.add(clause);
+          // A source-backed preview of one successful sibling must not hide
+          // that another owner-requested source for the same clause failed.
+          if(shadow.evidence.some(read=>read.clause===clause &&
+            read.capabilityId!==null && read.status==="unavailable"))
+            unsupportedReasons.add("missing_input");
+        }
+      }else unsupportedReasons.add(item.reason);
       continue;
     }
     // A multi-read clause may require more than one canonical source (e.g.
@@ -340,6 +362,12 @@ export async function tryP3SupervisorReadOnly(input:{
       read.status==="unavailable"))){
       unsupportedGoals+=item.coveredClauses.length;
       unsupportedReasons.add("missing_input");
+      for(const clause of item.coveredClauses)if(shadow.evidence.some(read=>
+        read.clause===clause&&read.capabilityId!==null&&
+        read.status==="unavailable"&&
+        shadow.evidence.some(sibling=>sibling.clause===clause&&
+          ["verified","estimated","partial"].includes(sibling.status))))
+        incompleteReadClauses.add(clause);
       continue;
     }
     let raw:unknown;
@@ -409,28 +437,40 @@ export async function tryP3SupervisorReadOnly(input:{
     });
   }
   const locale=labels[input.locale];
-  const reasonText={
-    en:{unsupported:"The requested information is not supported by a registered read capability.",
-      missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
-      unsupported_action:"This action requires an authorized, separate approval workflow; nothing was changed."},
-    es:{unsupported:"No existe una capacidad de lectura registrada para esta información.",
-      missing_input:"Faltan registros o datos necesarios para un cálculo fiable.",
-      unsupported_action:"Esta acción requiere un flujo separado de aprobación; no se ha cambiado nada."},
-    ar:{unsupported:"لا توجد قدرة قراءة مسجلة لهذه المعلومات.",
-      missing_input:"البيانات أو السجلات المطلوبة ناقصة، ولا يمكن حساب نتيجة موثوقة.",
-      unsupported_action:"يتطلب هذا الإجراء مسار موافقة منفصلًا؛ لم يتم تغيير أي شيء."},
-  }[input.locale];
+  // Each read comes from the existing model-selected, server-registered P1
+  // source. A read-only clause can show bounded provisional source evidence
+  // even when it cannot be represented by the expression engine. Keep this
+  // separate from canonical atomic financial/scheduling calculations.
+  const presentedReads=presentRegisteredReads({
+    evidence:shadow.evidence,
+    includedClauses:[...completion.plan.plans.filter(p=>
+      p.planJson===null&&p.reason==="unsupported")
+      .flatMap(p=>p.coveredClauses),...incompleteReadClauses,...plainReadClauses],
+    businessId:identity.businessId,asOf:identity.asOf,locale:input.locale,
+  });
+  if(plainReadClauses.size && !presentedReads.blocks.length)
+    unsupportedReasons.add("missing_input");
   // A complete audit of an unsupported or incomplete request is an honest
   // answer, not a reason to exhaust the legacy model budget and hallucinate.
   // A request with no successful computation must never claim a scenario result.
   if(!outcomes.length){
     if(unsupportedGoals!==clauses.length)return null;
+    // Do not show a stale earlier read when the PostgreSQL source epoch moved.
+    if(atomic.status==="available"){
+      const latest=await readAuthorizedAtomicP1SourceSnapshot();
+      if(latest.status!=="available" ||
+        latest.snapshot.businessId!==atomic.snapshot.businessId ||
+        latest.snapshot.revision!==atomic.snapshot.revision)
+        return sourceIntegrityFailure();
+    }
+    const warnings=[...unsupportedReasons].map(reason=>({
+      type:"warning" as const,code:"P3_"+reason.toUpperCase(),
+      text:registeredReadReason(input.locale,reason),
+    }));
     return {kind:"p3_read_only_conditional",executedEffects:0,
-      reply:{intent:"unknown",status:"unavailable",evidence:[],
-        blocks:[...unsupportedReasons].map(reason=>({
-          type:"warning" as const,code:"P3_"+reason.toUpperCase(),
-          text:reasonText[reason],
-        }))},
+      reply:{intent:"unknown",status:presentedReads.blocks.length?"partial":"unavailable",
+        evidence:presentedReads.evidence,
+        blocks:[...presentedReads.blocks,...warnings].slice(0,30)},
       usage:{model:input.model,modelCallCount:shadow.usage.modelCalls+1,
         toolCallCount:reported.toolCallCount,
         inputTokens:shadow.usage.inputTokens+completion.tokens.input,
@@ -439,11 +479,13 @@ export async function tryP3SupervisorReadOnly(input:{
   }
   const blocks:SupervisorReplyBlock[]=[
     {type:"warning",code:"P3_CONDITIONAL",text:locale.conditional},
+    ...presentedReads.blocks,
   ];
   for(const reason of unsupportedReasons)blocks.push({
-    type:"warning",code:"P3_"+reason.toUpperCase(),text:reasonText[reason],
+    type:"warning",code:"P3_"+reason.toUpperCase(),
+    text:registeredReadReason(input.locale,reason),
   });
-  const refs:EvidenceReference[]=[];
+  const refs:EvidenceReference[]=[...presentedReads.evidence];
   for(let i=0;i<outcomes.length;i++){
     const v=outcomes[i],id=createHash("sha256").update(
       JSON.stringify({goal:input.text,inputs:calculationInputs[i],

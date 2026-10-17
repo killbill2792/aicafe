@@ -123,6 +123,142 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
   });
   afterEach(()=>vi.unstubAllEnvs());
+  it("live Supervisor presents Maya's bounded supplier evidence, not inventory",async()=>{
+    const question="Show the supplier quotes I recorded";
+    const source={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    const quotes={items:[{
+      id:"quote-1",supplierName:"Baker Shop",itemName:"Oat milk",
+      priceCents:1275,packageCount:6,packageUnit:"case",
+      sourceKind:"supplier_quote",sourceUrl:null,quotedOn:"2026-10-10",
+      evidenceStatus:"owner_reported",createdAt:"2026-10-10T10:00:00Z",
+    }],truncated:false};
+    const envelope=result(source,quotes);
+    p1Reads.mockResolvedValue({...envelope,provenance:{
+      ...envelope.provenance,canonicalReaderId:"readP1SupplierQuotes",
+    }});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{
+        clause:question,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(source),reason:null,
+      }]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"read_only"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.evidence).toHaveLength(1);
+    expect(output.reply.blocks.some(b=>b.type==="warning"&&
+      b.code==="P3_UNSUPPORTED")).toBe(false);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+    ]));
+    const text=output.reply.blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(text).toContain("Oat milk");
+    expect(text).toContain("$12.75");
+    expect(text).not.toContain("quote-1");
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count")).toBe(false);
+    expect(output.usage).toMatchObject({modelCallCount:3,toolCallCount:1});
+  });
+  it("rejects provisional quote evidence after an in-flight epoch change",async()=>{
+    const request="Show supplier quotes I recorded";
+    const source={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    const initial={status:"available",snapshot:{
+      contract:"p1.authoritative_snapshot.v1",
+      businessId:identity.businessId,currency:identity.currency,
+      timezone:identity.timezone,revision:"91",
+      payroll:{rate:0.12,status:"estimated",source:"system_estimate"},
+      sources:{menu:[],ingredients:[],ingredientPrices:[],recipes:[],
+        employees:[],dailyRollups:[],expenses:[],recurringCosts:[],imports:[]},
+      truncated:{menu:false,ingredients:false,ingredientPrices:false,
+        recipes:false,employees:false,dailyRollups:false,expenses:false,
+        recurringCosts:false,imports:false},
+      coverage:"not_proven_by_revision",
+    }};
+    atomicRead.mockResolvedValueOnce(initial).mockResolvedValueOnce({
+      status:"available",snapshot:{...initial.snapshot,revision:"92"},
+    });
+    const original=result(source,{items:[{
+      id:"q",supplierName:"Acme",itemName:"Oat milk",
+      priceCents:2000,packageCount:4,packageUnit:"case",
+      sourceKind:"supplier_quote",sourceUrl:null,
+      quotedOn:"2026-10-10",evidenceStatus:"owner_reported",
+      createdAt:"2026-10-10T00:00:00Z",
+    }],truncated:false});
+    p1Reads.mockResolvedValue({...original,provenance:{
+      ...original.provenance,canonicalReaderId:"readP1SupplierQuotes",
+    }});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[request]},
+      {complete:true,choices:[{clause:request,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(source),reason:null}]},
+      {complete:true,plans:[{coveredClauses:[request],
+        planJson:null,reason:"read_only"}]},
+    ][step++]));
+    const output=await run(provider,request);
+    expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
+      blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
+    expect(atomicRead).toHaveBeenCalledTimes(2);
+    expect(p1Reads).toHaveBeenCalledTimes(1);
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count"||
+      b.type==="text"&&b.text.includes("Oat milk"))).toBe(false);
+  });
+  it("cannot pretend to answer read-only requests when the source read failed",async()=>{
+    const question="Show my supplier quotes";
+    const request={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    p1Reads.mockResolvedValue({status:"unavailable",value:null,reason:"unavailable_source"});
+    let phase=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{clause:question,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(request),reason:null}]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"read_only"}]},
+    ][phase++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply.evidence).toEqual([]);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count"))
+      .toBe(false);
+    expect(output.usage.toolCallCount).toBe(1);
+  });
+  it("read-only inspection keeps a missing sibling wage/burden warning",async()=>{
+    const question="Show Sophie's recorded wage including employer payroll burden";
+    const burden={id:"labor.payroll_burden",version:1,
+      purpose:"authorized_owner_employer_cost_review"};
+    p1Reads.mockImplementation(async(_tools:unknown,_id:unknown,raw:unknown)=>
+      (raw as {id:string}).id==="labor.employee_wages"
+        ?result(wageInput,workers)
+        :{status:"unavailable",value:null,reason:"unavailable_source"});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[
+        {clause:question,capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+        {clause:question,capabilityId:"p3.labor.payroll_burden.v1",
+          inputJson:JSON.stringify(burden),reason:null},
+      ]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"read_only"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    const text=output.reply.blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(text).toContain("Sophie");
+    expect(text).toContain("$18.00");
+    expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
+    expect(output.usage.toolCallCount).toBe(2);
+  });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"unauthorized_or_unconfigured",
@@ -130,7 +266,8 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     const provider=makeTransport();
     const output=await run(provider.calls).catch(e=>e);
     expect(atomicRead).toHaveBeenCalledTimes(1);
-    expect(provider.calls).toHaveBeenCalledTimes(2);
+    // Integrity fails before the model can select sources or execute P1 reads.
+    expect(provider.calls).toHaveBeenCalledTimes(0);
     expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
       blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
     expect(output.reply.blocks.some((block:{type:string})=>block.type==="metric"))
@@ -145,7 +282,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(atomicRead).toHaveBeenCalledTimes(1);
     expect(output?.reply?.blocks?.some((b:{type:string})=>b.type==="metric"))
       .not.toBe(true);
-    expect(transport.calls).toHaveBeenCalledTimes(2);
+    expect(transport.calls).toHaveBeenCalledTimes(0);
     expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
       blocks:[expect.objectContaining({code:"P3_SOURCE_INTEGRITY"})]});
   });
@@ -513,7 +650,11 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       }]});
     });
     const output=await run(provider,clause);
-    expect(output.reply.status).toBe("unavailable");
+    // The wage is source-backed, but the requested loaded-pay calculation is not.
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+    ]));
     expect(output.reply.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
     ]));
