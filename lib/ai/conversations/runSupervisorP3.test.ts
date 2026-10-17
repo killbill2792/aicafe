@@ -144,11 +144,13 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
         inputJson:JSON.stringify(source),reason:null,
       }]},
       {complete:true,plans:[{coveredClauses:[question],
-        planJson:null,reason:"unsupported"}]},
+        planJson:null,reason:"read_only"}]},
     ][step++]));
     const output=await run(provider,question);
     expect(output.reply.status).toBe("partial");
     expect(output.reply.evidence).toHaveLength(1);
+    expect(output.reply.blocks.some(b=>b.type==="warning"&&
+      b.code==="P3_UNSUPPORTED")).toBe(false);
     expect(output.reply.blocks).toEqual(expect.arrayContaining([
       expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
     ]));
@@ -193,7 +195,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       {complete:true,choices:[{clause:request,capabilityId:"p3.supplies.quotes.v1",
         inputJson:JSON.stringify(source),reason:null}]},
       {complete:true,plans:[{coveredClauses:[request],
-        planJson:null,reason:"unsupported"}]},
+        planJson:null,reason:"read_only"}]},
     ][step++]));
     const output=await run(provider,request);
     expect(output.reply).toMatchObject({status:"unavailable",evidence:[],
@@ -202,6 +204,28 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     expect(p1Reads).toHaveBeenCalledTimes(1);
     expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count"||
       b.type==="text"&&b.text.includes("Oat milk"))).toBe(false);
+  });
+  it("cannot pretend to answer read-only requests when the source read failed",async()=>{
+    const question="Show my supplier quotes";
+    const request={id:"supplies.quotes",version:1,purpose:"owner_reported_quote_review"};
+    p1Reads.mockResolvedValue({status:"unavailable",value:null,reason:"unavailable_source"});
+    let phase=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[{clause:question,capabilityId:"p3.supplies.quotes.v1",
+        inputJson:JSON.stringify(request),reason:null}]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"read_only"}]},
+    ][phase++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("unavailable");
+    expect(output.reply.evidence).toEqual([]);
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    expect(output.reply.blocks.some(b=>b.type==="metric"||b.type==="count"))
+      .toBe(false);
+    expect(output.usage.toolCallCount).toBe(1);
   });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
