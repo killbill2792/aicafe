@@ -87,10 +87,17 @@ describe("Alex atomic canonical review and scenarios",()=>{
       changes:[{kind:"replace_ingredient",fromIngredientId:whole,toIngredientId:oat,
         quantity:{value:200,unit:"ml"}}],sellingPrice:{kind:"delta",deltaCents:50},
       targetCostRatioBps:2500}),day);
-    expect(result.status).toBe("conditional");
+    expect(result.status).toBe("partial");
     if(result.status==="unavailable")throw Error("scenario unavailable");
     expect(result.value.before.ingredientCostCents).toBe(20);
     expect(result.value.after.ingredientCostCents).toBe(40);
+    expect(result.value.before.ingredientPriceSources).toEqual(["manual"]);
+    expect(result.value.after.ingredientPriceSources).toEqual(["receipt"]);
+    expect(result.value.after.hypotheticalIngredientIds).toEqual([]);
+    expect(result.quality.staleInputs).toEqual(expect.arrayContaining([
+      "ingredient_price_freshness_unverified:"+whole,
+      "ingredient_price_freshness_unverified:"+oat,
+    ]));
     expect(result.value.ingredientCostDeltaCents).toBe(20);
     expect(result.value.priceDeltaCents).toBe(50);
     expect(result.value.targetPriceCents).toBe(160);
@@ -164,6 +171,64 @@ describe("Alex atomic canonical review and scenarios",()=>{
     expect(ambiguous.value.items[0].missingInputs.some(x=>
       x.includes("ambiguous_or_invalid_ingredient_price"))).toBe(true);
     expect(ambiguous.value.ownerTotalFallbackCoverage).toBe("not_in_p1_atomic_snapshot");
+  });
+
+  it("keeps recognized ingredient-cost amounts partial when supplier freshness is unproven",()=>{
+    const selected=review({purpose:"pricing_review",selection:{kind:"specific",
+      items:[{productId:id(1)}]}});
+    const result=reviewFromAtomicSnapshot(snapshot(),selected,day);
+    if(result.status==="unavailable")throw Error("unexpected unavailable");
+    expect(result.status).toBe("partial");
+    expect(result.value.items[0]).toMatchObject({
+      productId:id(1),ingredientCostCents:20,status:"partial",
+      ingredientPriceSources:["manual"],hypotheticalIngredientIds:[],
+    });
+    expect(result.value.items[0].missingInputs).toEqual([]);
+    expect(result.value.items[0].staleInputs).toEqual([
+      "ingredient_price_freshness_unverified:"+whole,
+    ]);
+    expect(result.quality.staleInputs).toContain(
+      "Latte 12 oz:ingredient_price_freshness_unverified:"+whole);
+    expect(alexReviewOutputSchema.safeParse(result).success).toBe(true);
+  });
+  it("does not attribute an absolute owner cost override to superseded price evidence",()=>{
+    const outcome=simulateFromAtomicSnapshot(snapshot(),scenario({
+      purpose:"pricing_simulate",product:{productId:id(1)},
+      changes:[{kind:"ingredient_unit_cost",ingredientId:whole,
+        costPerBaseUnitMicros:500000}],
+    }),day);
+    if(outcome.status==="unavailable")throw Error("override unavailable");
+    expect(outcome.status).toBe("partial"); // baseline lacks verified freshness
+    expect(outcome.value.before.ingredientPriceSources).toEqual(["manual"]);
+    expect(outcome.value.after.ingredientPriceSources).toEqual([]);
+    expect(outcome.value.after.hypotheticalIngredientIds).toEqual([whole]);
+    expect(outcome.value.after.staleInputs).toEqual([]);
+    expect(outcome.value.before.staleInputs).toEqual([
+      "ingredient_price_freshness_unverified:"+whole]);
+    expect(outcome.value.after.ingredientCostCents).toBe(100);
+    expect(outcome.value.assumptions).toContain(
+      "owner_supplied_ingredient_cost_overrides_are_hypothetical");
+    expect(alexSimulateOutputSchema.safeParse(outcome).success).toBe(true);
+    const gallon=simulateFromAtomicSnapshot(snapshot(),scenario({
+      purpose:"pricing_simulate",product:{productId:id(1)},
+      changes:[{kind:"supplier_package",ingredientId:whole,
+        packageCostCents:400,packageCount:1,packageUnit:"gal"}],
+    }),day);
+    if(gallon.status==="unavailable")throw Error("supplier override unavailable");
+    expect(gallon.value.after.ingredientPriceSources).toEqual([]);
+    expect(gallon.value.after.hypotheticalIngredientIds).toEqual([whole]);
+  });
+  it("keeps recorded price provenance for relative multipliers and separates the what-if",()=>{
+    const out=simulateFromAtomicSnapshot(snapshot(),scenario({
+      purpose:"pricing_simulate",product:{productId:id(1)},
+      changes:[{kind:"ingredient_multiplier",ingredientId:whole,
+        multiplierBasisPoints:13000}],
+    }),day);
+    if(out.status==="unavailable")throw Error("unexpected unavailable");
+    expect(out.value.after.ingredientPriceSources).toEqual(["manual"]);
+    expect(out.value.after.hypotheticalIngredientIds).toEqual([whole]);
+    expect(out.value.after.staleInputs).toContain(
+      "ingredient_price_freshness_unverified:"+whole);
   });
 
 });
