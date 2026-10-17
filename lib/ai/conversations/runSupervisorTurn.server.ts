@@ -191,7 +191,8 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       // Do not discard those verified blockers and replace them with an
       // unrelated generic request-for-dates clarification. These strings
       // originate in the scheduling contract, never in model prose.
-      const scheduleBlockers=goal.domain==="staff_schedule" &&
+      const scheduleBlockers=(goal.domain==="staff_schedule" ||
+        goal.domain==="schedule_preview") &&
         executed[index]?.name==="olivia_schedule" && result?.status==="unavailable"
         ? result.insights.filter(i=>i.id.endsWith(":blocker0") ||
           /:blocker[1-4]$/.test(i.id)).slice(0,5).map(i=>i.text)
