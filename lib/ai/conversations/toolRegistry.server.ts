@@ -893,7 +893,13 @@ export function createSupervisorToolRegistry(context: Context) {
           ? { kind: c.kind, ingredientId: c.ingredient_id,
               quantity: { value: c.quantity_value, unit: c.quantity_unit } } : null;
       });
-      if (!a.changes.length || changes.some(c => c === null)) return absent("alexInvalidChange");
+      // A target-only repricing request is valid: Alex computes the conditional
+      // price from the authenticated product cost without needing an ingredient
+      // mutation. Reject only genuinely empty/no-op simulations.
+      const hasScenario = a.changes.length>0 || a.target_cost_ratio_bps!==null ||
+        a.target_ingredient_margin_bps!==null ||
+        a.selling_price_delta_cents!==null || a.selling_price_replace_cents!==null;
+      if (!hasScenario || changes.some(c => c === null)) return absent("alexInvalidChange");
       if (a.target_cost_ratio_bps !== null && a.target_ingredient_margin_bps !== null)
         return absent("alexInvalidTarget");
       const sellingPrice = a.selling_price_delta_cents !== null

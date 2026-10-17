@@ -5,7 +5,7 @@ export const GOAL_DOMAINS = [
   "total_business_costs","staff_cost","menu_count","pricing_review","owner_profit","profit_margin",
   "monthly_bills","recorded_spending","sales","distinct_products","staffing",
   "team","break_even","overview","owner_rules","comparison",
-  "staff_attendance","staff_schedule","staff_coverage",
+  "staff_attendance","staff_schedule","schedule_preview","staff_coverage",
 ] as const;
 const periods = ["today","yesterday","week_to_date","previous_week","month_to_date",
   "previous_month","last_7_days","last_28_days","custom"] as const;
@@ -23,7 +23,7 @@ export const scopeAuditSchema=z.strictObject({
 /** Snapshot domains are business-scoped current state, not date-window queries.
  * In particular, persisted Team inbox tasks have no semantic period. */
 export const SNAPSHOT_GOAL_DOMAINS = [
-  "team","menu_count","pricing_review","owner_rules","break_even","staff_coverage",
+  "team","menu_count","pricing_review","owner_rules","break_even","staff_coverage","schedule_preview",
 ] as const satisfies readonly RequestedGoal["domain"][];
 const isSnapshotGoal=(domain:RequestedGoal["domain"]) =>
   (SNAPSHOT_GOAL_DOMAINS as readonly string[]).includes(domain);
@@ -144,6 +144,7 @@ export function coversRequestedGoal(goal:RequestedGoal,call:ReadCall):boolean {
     case "staff_schedule":return (call.name==="get_staff" && a.view==="schedule" && datesMatch()) ||
       call.name==="olivia_schedule" || call.name==="olivia_availability";
     case "staff_coverage":return call.name==="get_staff" && a.view==="coverage_issues";
+    case "schedule_preview":return call.name==="olivia_schedule";
     case "team":return call.name==="get_team";
     case "break_even":return call.name==="get_financials" && a.metric==="break_even";
     case "overview":return call.name==="get_cafe_overview" &&
@@ -172,6 +173,7 @@ export function fallbackCallForGoal(goal:RequestedGoal): ReadCall | null {
     case "staff_attendance":return {name:"get_staff",arguments:{view:"attendance",...date}};
     case "staff_schedule":return {name:"get_staff",arguments:{view:"schedule",...date}};
     case "staff_coverage":return {name:"get_staff",arguments:{view:"coverage_issues",...date}};
+    case "schedule_preview":return null; // No fabricated plan; only Olivia's verified optimizer.
     case "team":return {name:"get_team",arguments:{status:"all",agent:"all",view:"tasks",limit:10}};
     case "break_even":return {name:"get_financials",arguments:{metric:"break_even",...date}};
     case "overview":return goal.period==="today"||goal.period==="month_to_date"
@@ -186,6 +188,7 @@ const copy={
     pricing_review:"Verified price changes",owner_profit:"Owner profit",profit_margin:"Operating profit margin",monthly_bills:"Recurring monthly bills",
     recorded_spending:"Recorded spending",sales:"Sales",distinct_products:"Products customers bought",
     staffing:"Staffing",staff_attendance:"Staff attendance",staff_schedule:"Staff schedule",
+    schedule_preview:"Scheduling proposal",
     staff_coverage:"Staff coverage",team:"AI Team",break_even:"Break-even",overview:"Café overview",
     owner_rules:"Owner rules",comparison:"Period comparison",
     unavailable:"Unable to verify from the available records.",
@@ -195,7 +198,7 @@ const copy={
     pricing_review:"Cambios de precio verificados",owner_profit:"Ganancia del propietario",profit_margin:"Margen de beneficio operativo",
     monthly_bills:"Facturas mensuales recurrentes",recorded_spending:"Gastos registrados",
     sales:"Ventas",distinct_products:"Productos comprados por clientes",staffing:"Personal",
-    staff_attendance:"Asistencia del personal",staff_schedule:"Horario del personal",staff_coverage:"Cobertura del personal",
+    staff_attendance:"Asistencia del personal",staff_schedule:"Horario del personal",schedule_preview:"Propuesta de horario",staff_coverage:"Cobertura del personal",
     team:"Equipo de IA",break_even:"Punto de equilibrio",overview:"Resumen del café",
     owner_rules:"Reglas del propietario",comparison:"Comparación de períodos",
     unavailable:"No se puede verificar con los registros disponibles.",
@@ -205,6 +208,7 @@ const copy={
     pricing_review:"تغييرات الأسعار المثبتة",owner_profit:"ربح المالك",profit_margin:"هامش الربح التشغيلي",monthly_bills:"الفواتير الشهرية المتكررة",
     recorded_spending:"المصروفات المسجلة",sales:"المبيعات",distinct_products:"المنتجات التي اشتراها العملاء",
     staffing:"الموظفون",staff_attendance:"حضور الموظفين",staff_schedule:"جدول الموظفين",
+    schedule_preview:"مقترح جدول العمل",
     staff_coverage:"تغطية الموظفين",team:"فريق الذكاء الاصطناعي",break_even:"نقطة التعادل",
     overview:"نظرة عامة على المقهى",owner_rules:"قواعد المالك",comparison:"مقارنة الفترات",
     unavailable:"تعذّر التحقق من السجلات المتاحة.",

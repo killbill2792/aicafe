@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 vi.mock("server-only",()=>({}));
-import { runSupervisorTurn } from "./runSupervisorTurn.server";
+import { runSupervisorTurn, validateSupervisorFinal } from "./runSupervisorTurn.server";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { RequestedGoal } from "./requestScope";
 
@@ -30,6 +30,23 @@ afterAll(()=>{if(key===undefined)delete process.env.OPENAI_API_KEY;
   else process.env.OPENAI_API_KEY=key;
   if(flag===undefined)delete process.env.SUPERVISOR_P3_COMPOSITION_ENABLED;
   else process.env.SUPERVISOR_P3_COMPOSITION_ENABLED=flag;});
+it("explains unsupported prior-month profitability without declaring that uploads are missing",()=>{
+  const period={...goal("custom","2026-08-22","2026-08-22")};
+  const call={name:"get_financials" as const,call_id:"c1",arguments:{
+    metric:"profit_margin",period:"custom",from:"2026-08-22",to:"2026-08-22",
+  }};
+  const result=validateSupervisorFinal({
+    headline:"Here is what I found",summary:"Based on the available café records",
+    fact_ids:[],task_ids:[],insight_ids:[],evidence_refs:[],
+  },[{status:"unavailable",missingInputs:["periodOutsideLoadedMonth"],
+    estimatedInputs:[],coverage:{},data:null,facts:[],tasks:[],insights:[],evidence:[]}],
+  ["get_financials"],"en",[period],[call]);
+  const words=result.blocks.filter(b=>b.type==="text").map(b=>b.text).join(" ");
+  expect(words).toContain("even when sales were uploaded");
+  expect(words).toContain("Historical costs and coverage");
+  expect(words).not.toContain("Missing or incomplete historical cost source");
+});
+
 function transportFactory(){
   const first=output([
     call("declare_request_scope",{goals:[goal()]},"scope"),

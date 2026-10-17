@@ -83,6 +83,14 @@ function missingMarginCoverage(goal:RequestedGoal,result:ToolEvidence|undefined,
   }
   const date=goal.period==="custom"&&goal.from?
     " ("+goal.from+(goal.to&&goal.to!==goal.from?" – "+goal.to:"")+")":"";
+  // Historical months can contain uploaded sales but the legacy profitability
+  // reader explicitly loads only the current month. This is a SOURCE CONTRACT
+  // limitation, not proof that the owner's historical data is absent.
+  if(categories.has("period"))return {
+    en:"Operating profit margin"+date+": this profitability reader cannot verify earlier months, even when sales were uploaded. Historical costs and coverage need a separate verified read.",
+    es:"Margen de beneficio operativo"+date+": este lector no puede verificar meses anteriores, aunque se hayan cargado ventas. Se requieren costos y cobertura históricos verificados.",
+    ar:"هامش الربح التشغيلي"+date+": لا يستطيع قارئ البيانات هذا التحقق من الأشهر السابقة حتى لو تم تحميل المبيعات. يلزم التحقق من التكاليف والتغطية التاريخية.",
+  }[locale];
   const causes=[...categories].map(k=>labels.items[k]);
   return labels.prefix+date+": "+labels.unavailable+
     (causes.length?"; "+labels.missing+" "+causes.join(", "):".");
@@ -186,7 +194,19 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       // Canonical business-cost coverage provides a specific, localized cause.
       const specific=goal.domain==="total_business_costs"?result?.insights[0]?.text:
         goal.domain==="profit_margin"?missingMarginCoverage(goal,result,locale):null;
-      supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
+      // Authenticated Olivia returns bounded typed setup blockers (e.g. no
+      // saved coverage or availability) even when a preview is unavailable.
+      // Do not discard those verified blockers and replace them with an
+      // unrelated generic request-for-dates clarification. These strings
+      // originate in the scheduling contract, never in model prose.
+      const scheduleBlockers=(goal.domain==="staff_schedule" ||
+        goal.domain==="schedule_preview") &&
+        executed[index]?.name==="olivia_schedule" && result?.status==="unavailable"
+        ? result.insights.filter(i=>i.id.endsWith(":blocker0") ||
+          /:blocker[1-4]$/.test(i.id)).slice(0,5).map(i=>i.text)
+        : [];
+      if(scheduleBlockers.length) supplementalTexts.push(...scheduleBlockers);
+      else supplementalTexts.push(specific??unavailableGoalText(goal.domain,locale));
       specificWarning=true;missingGoal=true;
       continue;
     }
@@ -246,6 +266,18 @@ export function validateSupervisorFinal(raw: unknown, results: ToolEvidence[], n
       const reason=result.insights.find(i=>i.id.endsWith(":coverage"))?.text;
       supplementalTexts.push(reason??labels.costCoverage);specificWarning=true;
     }
+  }
+  // Always disclose what a provisional Olivia preview did (and did not)
+  // use, independent of the model's optional insight-ID selection. This
+  // prevents chat-mentioned worker windows/opening hours from appearing saved.
+  if(goals.some(g=>g.domain==="schedule_preview") &&
+    executed.some((c,i)=>c.name==="olivia_schedule"&&
+      results[i]?.status!=="unavailable")){
+    supplementalTexts.push({
+      en:"This proposed schedule uses saved employee availability and coverage requirements. New hours mentioned only in chat were not saved or applied.",
+      es:"Este horario propuesto usa disponibilidad y cobertura guardadas. Los horarios mencionados solo en el chat no se guardaron ni aplicaron.",
+      ar:"يستخدم هذا الجدول المقترح التوفر ومتطلبات التغطية المحفوظة. لم تُحفظ أو تُطبق الساعات المذكورة في الدردشة فقط.",
+    }[locale]);
   }
   // Single-domain detailed answers retain the model's chosen additional facts. For
   // multi-domain responses, use one primary fact per goal rather than a nested dashboard.
@@ -360,14 +392,14 @@ export async function runSupervisorTurn(input: {
   let model = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim() || null;
   let p3AccessFallback=false;
+  let p3Failed=false;
   const priorUsage:SupervisorUsage={
     model,inputTokens:0,outputTokens:0,modelCallCount:0,toolCallCount:0,
   };
-  // P3 is default-off and owner-allowlisted. Every model attempt and canonical
-  // reader invocation consumes the SAME bounded turn budget as legacy fallback.
+  // P3 is default-off and owner-allowlisted. P3 and legacy share the
+  // authorized five-read cap, while model usage from both stages is recorded.
   if (process.env.SUPERVISOR_P3_COMPOSITION_ENABLED==="true") {
     let attemptedModels=0;
-    let p3Failed=false;
     let firstP3ModelDenied=false;
     let firstDeniedStatus:number|undefined;
     let firstDeniedCode:string|undefined;
@@ -443,15 +475,26 @@ export async function runSupervisorTurn(input: {
       legacyFallbackReason:p3Failed?"p3_failed":"p3_not_completed",
       modelCallCount:priorUsage.modelCallCount,toolCallCount:priorUsage.toolCallCount});
   }
-  // The independent semantic audit has its own counted attempt; preserve all
-  // three bounded conversation rounds for multi-step specialist follow-ups.
-  const maxModelAttempts=MAX_ROUNDS+(p3AccessFallback?1:
-    priorUsage.modelCallCount===0?1:0);
+  // Only a CLEAN, unproductive P3 planning handoff gets a fresh bounded
+  // legacy conversation + mandatory audit. A P3 that already attempted any
+  // café read, exhausted its own three rounds, or threw an integrity/provider
+  // error must NOT reset the turn budget and retry against different evidence.
+  // All attempts remain charged in usage; all stages share the five-read cap.
+  const cleanP3Handoff=!p3Failed && priorUsage.toolCallCount===0 &&
+    priorUsage.modelCallCount>0 && priorUsage.modelCallCount<MAX_ROUNDS;
+  const maxModelAttempts=cleanP3Handoff
+    ? priorUsage.modelCallCount+MAX_ROUNDS+1
+    : MAX_ROUNDS+(p3AccessFallback?1:priorUsage.modelCallCount===0?1:0);
   const usage:SupervisorUsage={...priorUsage};
+  // A rejected/full P3 composition is not a license for new model attempts.
+  // Preserve the existing bounded fail-closed behavior for forged handles and
+  // cross-clause operand swaps. Only a genuinely unproductive, shorter P3
+  // preflight can fall through to the separate audited specialist loop.
+  const p3Exhausted=priorUsage.modelCallCount>=MAX_ROUNDS;
   const remaining={en:"The scenario needs additional verified inputs or a new request.",
     es:"El escenario necesita más datos verificados o una nueva solicitud.",
     ar:"يحتاج السيناريو إلى مدخلات موثوقة إضافية أو طلب جديد."};
-  if(usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
+  if(p3Exhausted||usage.modelCallCount>=maxModelAttempts||usage.toolCallCount>=MAX_TOOLS)
     return {reply:{intent:"unknown",status:"unavailable",evidence:[],
       blocks:[{type:"warning",code:"SUPERVISOR_TURN_BUDGET",text:remaining[input.locale]}]},
       usage};
@@ -692,7 +735,11 @@ export async function runSupervisorTurn(input: {
           (classified.category==="provider_http"&&
             (classified.httpStatus===undefined||
             [408,409,429].includes(classified.httpStatus)||classified.httpStatus>=500));
-        if(!retry||attempt===1) throw classified;
+        // Even a clean P3 handoff has already spent provider attempts. The
+        // legacy stage can finish a completed response with its reserved scope
+        // audit and final answer, but cannot retry an incomplete/error Response
+        // after P3; preserve the original three-call regression cap.
+        if(!retry||attempt===1||priorUsage.modelCallCount>0) throw classified;
       } finally {clearTimeout(timeout);}
     }
     if (!payload) throw new SupervisorStageError("provider_invalid_payload","provider_response",{round:round+1});

@@ -252,6 +252,28 @@ describe("alex_pricing_review / alex_pricing_what_if (real pricing math, mocked 
     expect(result.insights.some(i => i.text.includes("conditional what-if only"))).toBe(true);
   });
 
+  it("supports a target-only price recommendation with zero ingredient edits", async () => {
+    const result = await execute("alex_pricing_what_if", {
+      product_name: "Latte 12 oz", product_id: null, changes: [],
+      selling_price_delta_cents: null, selling_price_replace_cents: null,
+      target_cost_ratio_bps: 3000, target_ingredient_margin_bps: null,
+    });
+    expect(result.status).not.toBe("unavailable");
+    expect(result.insights).toContainEqual(expect.objectContaining({
+      text: expect.stringContaining("Conditional target price"),
+    }));
+    expect(result.insights.some(i => i.text.includes("no price or recipe has been changed"))).toBe(true);
+  });
+
+  it("rejects a pricing what-if with neither edits nor targets", async () => {
+    const result = await execute("alex_pricing_what_if", {
+      product_name: "Latte 12 oz", product_id: null, changes: [],
+      selling_price_delta_cents: null, selling_price_replace_cents: null,
+      target_cost_ratio_bps: null, target_ingredient_margin_bps: null,
+    });
+    expect(result.status).toBe("unavailable");
+  });
+
   it("fails closed without calling Alex when both a name and an invalid change are absent", async () => {
     const result = await execute("alex_pricing_review", {
       selection: "specific_name", product_name: null, product_id: null, offset: 0, limit: 25 });

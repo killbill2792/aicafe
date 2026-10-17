@@ -741,7 +741,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       expect.objectContaining({type:"warning",code:"SUPERVISOR_TURN_BUDGET"}),
     ]));
   });
-  it("never exceeds the three-call model budget on a legacy retry after P3",async()=>{
+  it("never resets the bounded budget when a P3 failure reaches legacy",async()=>{
     const question="How much would this cost?";
     let calls=0;
     const transport=vi.fn(async()=>{
@@ -755,6 +755,7 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
     });
     const output=await run(transport,question).catch(error=>error);
     expect(output).not.toHaveProperty("reply");
+    expect(output).toMatchObject({category:"provider_incomplete"});
     expect(transport).toHaveBeenCalledTimes(3);
     expect(p1Reads).not.toHaveBeenCalled();
   });
