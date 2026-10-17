@@ -62,6 +62,41 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({invalidPayloadReason:"wrong_text_shape"}));
   });
 
+  it("tags which output item types were present when there was no message item at all",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"reasoning"}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["reasoning"],
+        messagePartTypes:undefined,outputTextPartCount:0}));
+  });
+
+  it("tags a refusal content part instead of an output_text part",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},
+      output:[{type:"message",content:[{type:"refusal",refusal:"cannot comply"}]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["message"],
+        messagePartTypes:["refusal"],outputTextPartCount:0}));
+  });
+
+  it("counts multiple output_text parts instead of the required single part",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",
+        content:[{type:"output_text",text:"{}"},{type:"output_text",text:"{}"}]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["message"],
+        messagePartTypes:["output_text"],outputTextPartCount:2}));
+  });
+
   it("reports unparseable_json for literally malformed JSON text",async()=>{
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"{not json"}]}]})));

@@ -36,6 +36,9 @@ export type SupervisorDiagnostic = {
   invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   schemaIssuePath?:string;
   schemaIssueCode?:string;
+  outputItemTypes?:string[];
+  messagePartTypes?:string[];
+  outputTextPartCount?:number;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -65,6 +68,16 @@ const safeProviderIdentifier=(value:unknown):string|undefined=>{
   const limited=value.slice(0,64);
   return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
 };
+/** OpenAI's own fixed, documented output item/content-part "type" enum values
+ * (e.g. "message", "reasoning", "output_text", "refusal"). Never model-generated
+ * content, café data or owner text; still bounded, deduped and allow-listed. */
+const safeTag=(value:unknown):string|undefined=>{
+  if(typeof value!=="string")return undefined;
+  const limited=value.slice(0,32);
+  return /^[a-zA-Z0-9_.-]+$/.test(limited)?limited:undefined;
+};
+const safeTagArray=(arr:unknown):string[]=>Array.isArray(arr)
+  ?[...new Set(arr.map(safeTag).filter((s):s is string=>!!s))].slice(0,8):[];
 /** Inspect only the provider's error.type and error.code in a non-2xx response.
  * No raw error body or error.message escapes this function. Malformed JSON is safe. */
 export async function readSafeProviderError(response:Response):Promise<Pick<SupervisorDiagnostic,
@@ -98,6 +111,9 @@ export class SupervisorStageError extends Error {
   readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   readonly schemaIssuePath?:string;
   readonly schemaIssueCode?:string;
+  readonly outputItemTypes?:string[];
+  readonly messagePartTypes?:string[];
+  readonly outputTextPartCount?:number;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -111,6 +127,13 @@ export class SupervisorStageError extends Error {
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
+    const outputItemTypes=safeTagArray(meta.outputItemTypes);
+    const messagePartTypes=safeTagArray(meta.messagePartTypes);
+    this.outputItemTypes=outputItemTypes.length?outputItemTypes:undefined;
+    this.messagePartTypes=messagePartTypes.length?messagePartTypes:undefined;
+    this.outputTextPartCount=typeof meta.outputTextPartCount==="number"&&
+      Number.isSafeInteger(meta.outputTextPartCount)&&meta.outputTextPartCount>=0?
+      meta.outputTextPartCount:undefined;
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -156,6 +179,11 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
+        ...(d.outputItemTypes&&safeTagArray(d.outputItemTypes).length?
+          {outputItemTypes:safeTagArray(d.outputItemTypes)}:{}),
+        ...(d.messagePartTypes&&safeTagArray(d.messagePartTypes).length?
+          {messagePartTypes:safeTagArray(d.messagePartTypes)}:{}),
+        ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -178,6 +206,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     providerRequestId:error.providerRequestId,
     invalidPayloadReason:error.invalidPayloadReason,
     schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
+    outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
+    outputTextPartCount:error.outputTextPartCount,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }

@@ -60,16 +60,25 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       if(raw.status!=="completed")
         throw new SupervisorStageError("provider_http","provider_response",
           {providerStatus:typeof raw.status==="string"?raw.status:undefined});
-      if(!Array.isArray(raw.output))
+      // Every prior "wrong_text_shape" sighting in production has been identical in
+      // shape, down to the attempt/model-call pairing — evidence of one structural
+      // cause, not a flaky one. These tags are the OpenAI protocol's own fixed,
+      // documented item/part "type" enum values (e.g. "message", "reasoning",
+      // "output_text", "refusal"); they are never model-generated content, café
+      // data or owner text, so recording them (bounded, deduped) is safe and is the
+      // only way left to pinpoint the exact shape without ever reading the payload.
+      const outputIsArray=Array.isArray(raw.output);
+      const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>}>=
+        outputIsArray?raw.output:[];
+      const messageParts=outputItems.filter(i=>i?.type==="message").flatMap(i=>i.content??[]);
+      const texts=messageParts.filter((p):p is {type:unknown;text:string}=>
+        p?.type==="output_text"&&typeof p.text==="string").map(p=>p.text);
+      if(!outputIsArray||texts.length!==1||texts[0].length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
-          {invalidPayloadReason:"wrong_text_shape"});
-      const texts=raw.output.filter((i:{type?:unknown})=>i?.type==="message")
-        .flatMap((i:{content?:Array<{type?:unknown;text?:unknown}>})=>i.content??[])
-        .filter((p:{type?:unknown;text?:unknown})=>p?.type==="output_text"&&typeof p.text==="string")
-        .map((p:{text:string})=>p.text);
-      if(texts.length!==1||texts[0].length>18000)
-        throw new SupervisorStageError("provider_invalid_payload","provider_response",
-          {invalidPayloadReason:"wrong_text_shape"});
+          {invalidPayloadReason:"wrong_text_shape",
+            outputItemTypes:outputItems.map(i=>i?.type) as string[],
+            messagePartTypes:messageParts.map(p=>p?.type) as string[],
+            outputTextPartCount:texts.length});
       let decoded:unknown;
       try{decoded=JSON.parse(texts[0]);}
       catch{throw new SupervisorStageError("provider_invalid_payload","provider_response",
@@ -99,6 +108,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       providerErrorCode:classified.providerErrorCode,requestName:input.name,
       invalidPayloadReason:classified.invalidPayloadReason,
       schemaIssuePath:classified.schemaIssuePath,schemaIssueCode:classified.schemaIssueCode,
+      outputItemTypes:classified.outputItemTypes,messagePartTypes:classified.messagePartTypes,
+      outputTextPartCount:classified.outputTextPartCount,
       attempt,modelCallCount:input.usage.modelCallCount});
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly
