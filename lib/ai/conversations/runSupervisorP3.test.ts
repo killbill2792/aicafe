@@ -227,6 +227,38 @@ describe("COMPOSE end-to-end compatibility-flagged Supervisor",()=>{
       .toBe(false);
     expect(output.usage.toolCallCount).toBe(1);
   });
+  it("read-only inspection keeps a missing sibling wage/burden warning",async()=>{
+    const question="Show Sophie's recorded wage and employer payroll burden";
+    const burden={id:"labor.payroll_burden",version:1,
+      purpose:"authorized_owner_employer_cost_review"};
+    p1Reads.mockImplementation(async(_tools:unknown,_id:unknown,raw:unknown)=>
+      (raw as {id:string}).id==="labor.employee_wages"
+        ?result(wageInput,workers)
+        :{status:"unavailable",value:null,reason:"unavailable_source"});
+    let step=0;
+    const provider=vi.fn(async()=>response([
+      {complete:true,clauses:[question]},
+      {complete:true,choices:[
+        {clause:question,capabilityId:"p3.labor.employee_wages.v1",
+          inputJson:JSON.stringify(wageInput),reason:null},
+        {clause:question,capabilityId:"p3.labor.payroll_burden.v1",
+          inputJson:JSON.stringify(burden),reason:null},
+      ]},
+      {complete:true,plans:[{coveredClauses:[question],
+        planJson:null,reason:"read_only"}]},
+    ][step++]));
+    const output=await run(provider,question);
+    expect(output.reply.status).toBe("partial");
+    expect(output.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"P3_READ_PARTIAL"}),
+      expect.objectContaining({type:"warning",code:"P3_MISSING_INPUT"}),
+    ]));
+    const text=output.reply.blocks.map(b=>"text" in b?b.text:"").join(" ");
+    expect(text).toContain("Sophie");
+    expect(text).toContain("$18.00");
+    expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
+    expect(output.usage.toolCallCount).toBe(2);
+  });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"unauthorized_or_unconfigured",
