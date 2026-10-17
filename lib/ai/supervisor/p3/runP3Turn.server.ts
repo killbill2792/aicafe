@@ -10,6 +10,8 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
+import { buildAlexP3Registrations } from "@/lib/pricing/alexP3Capabilities.server";
+import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
 import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
@@ -256,7 +258,9 @@ export async function tryP3SupervisorReadOnly(input:{
     !input.apiKey||identity.currency!=="USD")return null;
   const scope={role:"owner" as const,businessId:identity.businessId,
     identity:{...identity},tools,shadowEnabled:true};
-  const capabilityRegistry=createP3ReadRegistry();
+  const capabilityRegistry=createP3ReadRegistry([
+    ...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
+  ]);
   if(!capabilityRegistry.discoverSimulations(scope).some(x=>x.id===EXPRESSION_ID))
     return null;
   // Bracket independently fetched P1 selectors by an authoritative epoch.

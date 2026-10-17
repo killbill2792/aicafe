@@ -11,7 +11,9 @@ type ReadView = { blocks: SupervisorReplyBlock[]; evidence: EvidenceReference[] 
 type CatalogKey = keyof typeof enCatalog.SupervisorRegisteredRead;
 type PresentedField = "supplierName" | "itemName" | "priceCents" |
   "packageCount" | "name" | "label" | "amountCents" | "totalCents" |
-  "defaultHourlyWageCents" | "wageAmountCents" | "ingredientsCentsToday";
+  "defaultHourlyWageCents" | "wageAmountCents" | "ingredientsCentsToday" |
+  "currentPriceCents" | "reviewIngredientCostCents" | "currentRecommendationCents" |
+  "loadedLaborCostCents" | "shiftCount";
 const dictionaries = {
   en:enCatalog.SupervisorRegisteredRead,
   es:esCatalog.SupervisorRegisteredRead,
@@ -71,6 +73,14 @@ const sourcePresentation:Record<string,{
   "money.expense_entries":{
     heading:"source_money_expense_entries",fields:["amountCents"],
   },
+  "alex.pricing.review":{
+    heading:"source_alex_pricing_review",
+    fields:["name","currentPriceCents","reviewIngredientCostCents","currentRecommendationCents"],
+  },
+  "olivia.schedule.preview":{
+    heading:"source_olivia_schedule_preview",
+    fields:["name","loadedLaborCostCents","shiftCount"],
+  },
 };
 const fieldLabel:Record<PresentedField,CatalogKey> = {
   supplierName:"field_supplierName",itemName:"field_itemName",
@@ -80,6 +90,11 @@ const fieldLabel:Record<PresentedField,CatalogKey> = {
   defaultHourlyWageCents:"field_defaultHourlyWageCents",
   wageAmountCents:"field_wageAmountCents",
   ingredientsCentsToday:"field_ingredientsCentsToday",
+  currentPriceCents:"field_currentPriceCents",
+  reviewIngredientCostCents:"field_reviewIngredientCostCents",
+  currentRecommendationCents:"field_currentRecommendationCents",
+  loadedLaborCostCents:"field_loadedLaborCostCents",
+  shiftCount:"field_shiftCount",
 };
 const safeText=(value:string):string|null=>{
   const text=value.replace(/[\p{Cc}\p{Cf}]/gu," ").replace(/\s+/gu," ").trim();
