@@ -90,3 +90,13 @@ describe("Phase 4 audited privileged reply writer", () => {
     expect(await getExistingSupervisorReply({ ...scope, ownerUserId: "other" }, msg)).toBeNull();
   });
 });
+
+it("persists validated selector memory in the same idempotent reply and rejects another café",async()=>{
+  data.stored.clear(); data.inserts=0;
+  const investigationMemory={version:1 as const,businessId:scope.businessId,ownerStatements:["What about the latte?"],
+    reads:[{capabilityId:"p3.menu.catalog.v1",inputJson:'{"id":"menu.catalog","version":1,"purpose":"menu_catalog_review"}'}]};
+  const stored=await persistGroundedSupervisorReply(scope,msg,{...answer,investigationMemory});
+  expect(stored.grounding?.investigationMemory).toEqual(investigationMemory);
+  await expect(persistGroundedSupervisorReply(scope,{...msg,id:"different-owner-message"},
+    {...answer,investigationMemory:{...investigationMemory,businessId:"other"}})).rejects.toThrow(/scope/);
+});

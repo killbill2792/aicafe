@@ -83,6 +83,17 @@ describe("Retry usage accounting (atomic SQL contract + mocked RPC)",()=>{
       keys.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});
     }
   });
+  it("records the full bounded investigation including independent review",async()=>{
+    await recordSupervisorUsage({scope:{businessId:"b",ownerUserId:"o"},threadId:"t",
+      ownerMessageId:"investigation",usage:{model:"gpt-6-luna",inputTokens:1200,outputTokens:800,
+        modelCallCount:8,toolCallCount:5}});
+    expect(memory.increments.at(-1)).toMatchObject({p_model_call_count:8,p_tool_call_count:5});
+    const sql=readFileSync("supabase/migrations/20261017000072_supervisor_investigation_usage.sql","utf8");
+    expect(sql).toContain("p_model_call_count>8");
+    expect(sql).toContain("p_tool_call_count>5");
+    expect(sql).toContain("FROM PUBLIC,anon,authenticated");
+    expect(sql).toContain("TO service_role");
+  });
   it("migration 39 uses atomic conflict increment and service-role authorization only",()=>{
     const sql=readFileSync("supabase/migrations/20261010000039_supervisor_loop_usage.sql","utf8");
     expect(sql).toContain("ON CONFLICT (owner_message_id) DO UPDATE");

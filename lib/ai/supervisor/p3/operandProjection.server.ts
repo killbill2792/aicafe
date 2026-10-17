@@ -154,6 +154,8 @@ export function projectP1Evidence(
   evidence:readonly ShadowEvidence[],businessId:string,ownerGoal:string,
   locationId:string|null=null,ownerHistory:readonly string[]=[],
   atomicSnapshot?:AtomicP1SourceSnapshot,
+  entityPolicy:"owner_named"|"authorized_selection"="owner_named",
+  maxOperands=12,
 ):SourceProjection{
   const operands:Operand[]=[],bindings:Binding[]=[],missing:string[]=[];
   const choices:OperandChoice[]=[];
@@ -244,7 +246,7 @@ export function projectP1Evidence(
     for(const leaf of valuesForKey){
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
-      if(leaf.field!=="value"&&leaf.key!=="aggregate"&&
+      if(entityPolicy==="owner_named"&&leaf.field!=="value"&&leaf.key!=="aggregate"&&
         !namedCurrent.has(leaf.key)&&
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
@@ -273,7 +275,7 @@ export function projectP1Evidence(
       }
       // Keep reviewing repeated handles even after reaching the twelve-leaf
       // exposure limit; otherwise a late conflicting read could go undetected.
-      if(operands.length>=12)continue;
+      if(operands.length>=Math.min(120,Math.max(0,maxOperands)))continue;
       readSignatures.set(handle,readSignature);
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.

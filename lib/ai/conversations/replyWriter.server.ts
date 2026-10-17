@@ -46,6 +46,8 @@ export async function persistGroundedSupervisorReply(
   if (ownerMessage.role !== "owner" || ownerMessage.contentType !== "text" ||
       !ownerMessage.clientMessageId) throw new Error("Cannot respond without an owner message");
   const safe = validateGroundedReply(reply);
+  if(safe.investigationMemory && safe.investigationMemory.businessId!==scope.businessId)
+    throw new Error("Conversation memory scope mismatch");
   const existing = await getExistingSupervisorReply(scope, ownerMessage);
   if (existing) return existing;
   const admin = createAdminSupabaseClient();
@@ -56,6 +58,7 @@ export async function persistGroundedSupervisorReply(
     evidence: safe.evidence,
     ownerMessageId: ownerMessage.id,
     responder: "bounded-grounded-responses-supervisor-v2",
+    ...(safe.investigationMemory?{investigationMemory:safe.investigationMemory}:{}),
   };
   const { data, error } = await admin.from("ai_messages").insert({
     id, business_id: scope.businessId, owner_user_id: scope.ownerUserId,

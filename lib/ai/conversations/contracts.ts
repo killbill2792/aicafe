@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { investigationMemorySchema, type InvestigationMemory } from "./investigationMemory";
 
 /** The owner supplies content and retry keys, NEVER role, identity, tool names or evidence. */
 export const createThreadInput = z.strictObject({
@@ -69,6 +70,7 @@ export type SupervisorReplyBlock =
       href: string; source: EvidenceReference };
 
 export type GroundedSupervisorReply = {
+  investigationMemory?: InvestigationMemory;
   intent: SupervisorIntent;
   status: GroundingStatus;
   evidence: EvidenceReference[];
@@ -112,6 +114,7 @@ const taskBlockSchema = z.strictObject({
   source: evidenceReferenceSchema,
 });
 export const groundedReplySchema = z.strictObject({
+  investigationMemory: investigationMemorySchema.optional(),
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
     "operating_tasks", "expenses", "sales_quantity", "menu_catalog", "owner_rules", "unknown"]),
   status: z.enum(["verified", "estimated", "partial", "unavailable", "insufficient_evidence"]),

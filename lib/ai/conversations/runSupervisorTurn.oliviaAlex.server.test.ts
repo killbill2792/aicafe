@@ -1,3 +1,5 @@
+/** Compatibility-only regression suite. Default conversational runtime acceptance
+ * is in lib/ai/supervisor/investigation/runInvestigation.server.test.ts. */
 import { beforeAll, afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 vi.mock("@/lib/scheduling/oliviaCapabilities.server", () => ({
@@ -11,7 +13,7 @@ vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server", () => ({
   readAuthorizedAtomicP1SourceSnapshot: vi.fn(),
 }));
 
-import { runSupervisorTurn } from "./runSupervisorTurn.server";
+import { runLegacySupervisorTurn as runSupervisorTurn } from "./runSupervisorTurn.server";
 import { executeOliviaReadCapability } from "@/lib/scheduling/oliviaCapabilities.server";
 import { authorizedOwnerP1 } from "@/lib/metrics/p1Readers.server";
 import { readAuthorizedAtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";

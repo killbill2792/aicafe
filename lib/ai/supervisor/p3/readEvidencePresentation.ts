@@ -453,3 +453,15 @@ export function presentRegisteredReads(params:{
     text:t(locale,"reason_requestTooLarge")}],evidence:[]};
   return {blocks,evidence:refs.slice(0,8)};
 }
+
+/** Reuse the reviewed domain presentation contract for mandatory nonnumeric
+ * cautions even when the conversational model writes the main explanation. */
+export function registeredReadCautions(result:Record<string,unknown>,locale:Locale):string[]{
+  if(typeof result.id!=="string"||!sourcePresentation[result.id])return [];
+  const rows=Array.isArray(result.value)?result.value:[];
+  const cautionFields:PresentedField[]=["legalReviewUnverified","hasAdditionalCaveats","salaryAllocationIncluded",
+    "laborCostEstimated","assumptionCodes","costBasisEstimated"];
+  const allowed=sourcePresentation[result.id].fields;
+  return [...new Set(rows.filter(isRecord).flatMap(row=>cautionFields.filter(f=>allowed.includes(f))
+    .map(f=>displayedField(result.id as string,row,f,locale)).filter((v):v is string=>v!==null)))];
+}

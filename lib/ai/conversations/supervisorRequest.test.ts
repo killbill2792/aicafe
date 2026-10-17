@@ -7,7 +7,7 @@ const instructions=buildSupervisorInstructions({locale:"en",asOf:"2026-10-11",ti
 const input=[{role:"user",content:"What are my monthly bills?"}];
 const build=(model:string,round=0)=>buildSupervisorRequest({model,instructions,input,round});
 
-describe("Exact production Responses request model profiles",()=>{
+describe("Compatibility Responses request model profiles",()=>{
   it("includes Luna reasoning=none and preserves every strict field",()=>{
     const request=build("gpt-6-luna");
     expect(request.reasoning).toEqual({effort:"none"});
@@ -41,13 +41,12 @@ describe("Exact production Responses request model profiles",()=>{
       expect(_firstReasoning).toEqual(_laterReasoning);
       expect({...firstShared,tool_choice:"auto"}).toEqual(laterShared);
     });
-  it("production and optional provider-smoke use the same builder, not copied schemas",()=>{
-    const runner=readFileSync("lib/ai/conversations/runSupervisorTurn.server.ts","utf8");
+  it("the default runtime and optional smoke share the investigation request builder",()=>{
+    const runtime=readFileSync("lib/ai/supervisor/investigation/model.server.ts","utf8");
     const smoke=readFileSync("scripts/supervisor-provider-smoke.mjs","utf8");
-    expect(runner).toContain('from "./supervisorRequest.mjs"');
-    expect(runner).toContain("buildSupervisorRequest({model,instructions,input:conversation,round})");
-    expect(smoke).toContain('from "../lib/ai/conversations/supervisorRequest.mjs"');
-    expect(smoke).toContain("buildSupervisorRequest({");
+    expect(runtime).toContain("buildInvestigationRequest({");
+    expect(smoke).toContain("buildInvestigationRequest({");
+    expect(smoke).toContain("INVESTIGATION_STEP_JSON_SCHEMA");
     expect(smoke).not.toContain('reasoning:{effort:');
   });
 });

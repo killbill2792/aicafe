@@ -1,0 +1,42 @@
+# Conversational Supervisor: default iterative investigation
+
+Owner-authorized implementation after PR #108, based on main `ec1c214`. This supersedes the old preselect-all-reads P3 flow as the default owner conversation path. It implements cross-domain read/reason/simulate/advice conversation; effectful proposals, approval and execution remain separate services/phases.
+
+## Runtime and evidence
+
+`runSupervisorTurn` always calls `runInvestigationTurn`. The model can read a schema-discovered capability, inspect the result, select another source or nested collection, filter/group/aggregate records, compose the registered pure expression primitives, research public sources if connected, and finally answer. There is no owner-question classifier, finite supported-question menu, upfront requirement to declare every date/object, or rollout flag. The previous `runLegacySupervisorTurn` remains exported with its entire regression suite as compatibility evidence; old test fixtures explicitly select that implementation, while the new default-entrypoint suite exercises the conversational runtime.
+
+All existing P1 source input schemas are available, along with complete Alex pricing review, named recipe simulations, full canonical Olivia read contracts and named scheduling scenarios. A missing inventory feed remains missing. Public research uses the existing optional Brave provider and fixed endpoint; absent credentials/enablement are reported as unavailable, and snippets remain unverified leads rather than confirmed current menu prices. Query terms can come only from owner-authored/public profile context, not private staff or financial observations.
+
+Source previews are bounded. The generic record-inspection capability traverses only enumerated collections inside prior schema-validated source results, supports actual field filters and pagination, and returns the original records unchanged. It cannot access DB tables, arbitrary objects, hidden source fields, credentials or another tenant. A projection preserves its source contract and original quality. Source-owned numeric field/unit declarations allow pure generic count/sum/min/max/group calculations; unknown/null/fractional/incompatible units are not coerced into facts. Hourly wage analysis requires active, known hourly wages; salary conversion is never improvised. Recurring bills with different frequencies cannot be totaled as if equivalent.
+
+Expressions use only server-created source handles and owner-authored hypothetical quotes. No model arithmetic, SQL, JavaScript, generated registrations or business writes. Derived dataset results can be combined through registered, provenance-bound expression operands. Financial records retain actual/estimated/planned quality and source scope. Partial sales-minus-some-costs is conditional contribution, never canonical net profit. Existing profit, payroll, recipe and scheduling engines remain authoritative.
+
+## Conversation and answers
+
+Existing private conversation grounding now stores bounded structured memory: selected business, recent OWNER statements and successful validated read selectors. No observed balances, wages, derived financial values, model summaries, grants or execution authority are cached in this state. It is loaded only from prior Supervisor messages in the already-authorized owner/thread/café. Follow-ups reuse names, periods and scenario selectors while rereading canonical records. Scheduling can resolve a pronoun from this owner context; current explicit dates still constrain reads.
+
+The model writes free natural paragraphs categorized as source-backed explanation, general advice or targeted clarification. It is not limited to fixed headlines/summaries. Every numeric/date/money/link value in evidence narration must be an exact server-provided display token; forged sources/paths and literal asserted numbers are rejected. An independent model pass checks the complete original goal, cited results, current scenario/entity/period, advice versus observations and material caveats. Trusted source cautions (including legal review, salary allocation, estimates and ingredient-only scope) also survive deterministic rendering. This semantic review is defense in depth, not a guarantee of model infallibility.
+
+General workflow/business guidance needs no pretend café evidence. It is clearly labeled guidance. Clarifications are model-authored, specific and checked against existing context; provider/protocol failures do not turn into canned requests for dates. Transient provider failures throw safe existing stage errors, preserving request-key retry rather than persisting a fake business answer. Persisted, cited Team task records retain their exact canonical task cards/deep links; no model-authored task/action URL is used.
+
+## Budgets and publication boundary
+
+Five total executable read/projection/analysis/simulation/research operations, at most eight billed model attempts (including configured model-access fallback and independent review), 90 seconds overall and 18 seconds per provider request. The route allows 120 seconds. Model-facing observations are bounded to 60 KB; source arithmetic operates on validated server records rather than truncated previews. Repeated operations cannot reset budgets. Provider usage is reported even when a later stage fails. Production and the explicit provider smoke command share the same investigation wire builder/schema.
+
+Before returning a source-backed answer, reauthorize the selected café and reread the authoritative source epoch when installed. A tenant/timezone/currency/date change or source-epoch change invalidates earlier results. If the atomic RPC is not installed, unversioned observations stay provisional; other snapshot failures fail closed. Existing conversation RLS, owner access, same-origin checks, privileged reply validation and idempotent persistence remain in place. The memory uses existing JSON grounding. Additive migration `20261017000072_supervisor_investigation_usage.sql` aligns service-only atomic usage accounting with the eight-attempt bound; reconcile/apply it in staging before the owner-controlled production rollout. Disposable PostgreSQL CI verifies the bound, retry increments and tenant/role isolation. No new dependency, production setting, deployment or automatic merge is performed.
+
+## Acceptance evidence
+
+The default-entrypoint tests use mocked structured MODEL turns and authorized source fixtures, with real registry validation and canonical pricing/payroll/expression/dataset engines. They cover:
+
+- Catalog discovery → actual returned product ID → recipe economics + named worker wage + recorded burden → a novel contribution expression, with different quantities/time parameters and exact cents.
+- Recorded expense fields → filters excluding estimates → canonical aggregation, without a question-specific report function.
+- Hourly staff fields → filtered sums and counts → an average through the generic expression engine, excluding salary conversion.
+- Named recipe scenario → follow-up quantity change → newly read ingredient-price epoch and different computed outcome; no cached cost reuse.
+- Scheduling pronoun follow-up using persisted owner/scenario context.
+- Nested Team inbox projection/filtering → source-grounded answer → exact canonical task card.
+- EN/ES/AR general guidance; connected/unconnected public research with citation/uncertainty; blocked private-data search terms.
+- Tenant/source changes, explicit wrong periods, forged citations, unauthorized handles/SQL/writes, rejected semantic review, configured model fallback, shared operation/model budgets and a transport ignoring cancellation.
+
+The existing P1/P2/P3, money, scheduling, pricing, conversation and persistence suites remain regression checks. CI includes the new runtime/dataset tests in P3 verification and the baseline complete suite. Live provider compliance, natural-language judgment and an authenticated owner browser journey still require securely configured test credentials. Deterministic tests must not be represented as a live production acceptance or a promise to know unavailable stock/current competitor prices.

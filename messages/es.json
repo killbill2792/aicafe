@@ -1894,5 +1894,16 @@
     "field_cashWagesDifferenceCents": "Cambio en salarios modelados",
     "field_salaryAllocationIncluded": "Incluye equivalentes salariales asignados; no son ahorros incrementales en efectivo verificados",
     "field_laborCostEstimated": "Los costos laborales incluyen estimaciones"
-  }
+  },
+  "SupervisorInvestigation": {
+    "yes": "sí",
+    "no": "no",
+    "advice": "Orientación general y próximos pasos sugeridos; no son hallazgos verificados sobre tu cafetería.",
+    "conditional": "Escenario condicional con supuestos declarados; no es demanda observada ni beneficio verificado.",
+    "partial": "Basado en los registros citados. Siguen aplicándose sus límites de cobertura y los supuestos.",
+    "research": "Los fragmentos de búsqueda pública no están verificados; hay que confirmar fechas, tamaños y precios actuales.",
+    "estimated": "Algunos valores de las fuentes incluyen estimaciones.",
+    "unavailable": "No pude completar esa investigación de forma fiable. Inténtalo de nuevo; no se modificaron los registros del negocio.",
+    "budget": "Alcancé el límite de esta investigación. Podemos continuar con lo pendiente en otro mensaje; no se hicieron cambios en el negocio."
+}
 }

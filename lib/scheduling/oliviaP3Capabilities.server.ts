@@ -284,7 +284,7 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
     async read(scope: TrustedReadScope, rawInput: unknown) {
       const input = rawInput as z.output<typeof whatIfInputSchema>;
       if (scope.ownerClause && (!matchesOwnerScheduleDates(input, scope.ownerClause, scope.identity.asOf) ||
-        input.overrides.some(o => !isWholeNamedEntity(scope.ownerClause!, o.employeeName, []))))
+        input.overrides.some(o => !isWholeNamedEntity(scope.ownerContext ?? scope.ownerClause!, o.employeeName, []))))
         return { status: "unavailable" as const, value: null, reason: "invalid_input" };
       const resolution = await resolveEmployeeNames(input.overrides, scope.businessId);
       if (!resolution.ok) return { status: "unavailable" as const, value: null, reason: resolution.reason };

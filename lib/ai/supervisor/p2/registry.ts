@@ -17,6 +17,8 @@ export type TrustedReadScope = {
   shadowEnabled: boolean;
   /** Audited owner-authored clause, injected by the caller, never model input. */
   ownerClause?: string;
+  /** Same-thread owner-authored context; never model summaries or grants. */
+  ownerContext?: string;
 };
 type Limits = Readonly<{
   maxOperations: number; timeoutMs: number; maxResultBytes: number;

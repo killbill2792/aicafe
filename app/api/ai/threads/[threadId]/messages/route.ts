@@ -2,6 +2,7 @@ import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
+import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
 import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
@@ -12,6 +13,7 @@ import { createSupervisorDiagnosticLogger, classifySupervisorError, type Supervi
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 type RouteContext = { params: Promise<{ threadId: string }> };
 
 export async function GET(request: Request, context: RouteContext) {
@@ -67,6 +69,7 @@ export async function POST(request: Request, context: RouteContext) {
         text: input.text, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
+        investigationMemory: latestInvestigationMemory(messages,scope.businessId,message.id),
         readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
         onUsage: (usage) => { aggregatedUsage = usage; },
         onDiagnostic: (event) => {

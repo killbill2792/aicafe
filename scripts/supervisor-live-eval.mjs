@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** MANUAL PAID SEMANTIC TEST. Uses EXACT production Responses tool schemas, not probe tools. */
+/** MANUAL PAID LEGACY COMPATIBILITY SEMANTIC TEST. The default investigation runtime has separate entrypoint acceptance tests; this script checks the retained legacy tool contract. */
 import {readFileSync} from "node:fs";
 import {SUPERVISOR_FUNCTIONS} from "../lib/ai/conversations/supervisorFunctions.mjs";
 if(!process.env.OPENAI_API_KEY) {

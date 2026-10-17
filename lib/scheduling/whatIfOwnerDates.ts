@@ -38,5 +38,6 @@ export function matchesOwnerScheduleDates(input:{week:string;overrides:readonly 
   if(!days.length)return true; // Unspecified calendar constraints remain visible in the result.
   const today=new Date(asOf+"T12:00:00Z").getUTCDay();
   const expected=days.map(day=>add(asOf,(day-today+7)%7));
-  return dates.length>0 && dates.every(d=>expected.includes(d));
+  return dates.length?dates.every(d=>expected.includes(d)):
+    expected.every(d=>d>=input.week&&d<=add(input.week,6));
 }

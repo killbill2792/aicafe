@@ -1,0 +1,112 @@
+import {presentInvestigatedTasks} from "./taskPresentation";
+import {formatScenarioValue,formatScenarioAssumption} from "../p3/formatScenario";
+import {unit as expressionUnit} from "../p3/expression";
+import {registeredReadCautions} from "../p3/readEvidencePresentation";
+import {createHash} from "node:crypto";
+import type {EvidenceReference,GroundedSupervisorReply,SupervisorReplyBlock} from "@/lib/ai/conversations/contracts";
+import type {InvestigationAnswer} from "./protocol";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+export type Locale="en"|"es"|"ar";
+export type Observation={id:string;capabilityId:string;input:unknown;result:Record<string,unknown>;
+  reference:EvidenceReference|null;sourceContract?:string;display:Record<string,string>;datasetFields?:unknown;calculation?:boolean};
+export const investigationLabels=(locale:Locale)=>({en,es,ar}[locale].SupervisorInvestigation);
+const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
+const clean=(v:string)=>v.replace(/[\p{Cc}\p{Cf}]/gu," ").trim();
+/** Token values come only from validated tool output. Numeric text, dates,
+ * money and URLs cannot be introduced by the narration model. */
+export function observationDisplay(result:Record<string,unknown>,locale:Locale):Record<string,string>{
+  const display:Record<string,string>={};
+  const labels=investigationLabels(locale);
+  const walk=(v:unknown,path:string,depth:number)=>{
+    if(Object.keys(display).length>=400||depth>7)return;
+    const key=path.split(".").at(-1)??"";
+    if(/^(?:id|.*Id|.*Ids|sourceRevision|contract|selectorContractId|capabilityId|reason|purpose|source|formula)$/u.test(key))return;
+    if(v===null||v===undefined)return;
+    if(typeof v==="number"&&Number.isFinite(v)){
+      const money=/Cents$|_cents$/u.test(key)||key==="value"&&result.unit==="USD_cents";
+      const parentUnit=isRecord(result.value)?result.value.unit:undefined;
+      const datasetUnit=expressionUnit.safeParse(parentUnit);
+      if(result.id==="platform.dataset.analysis"&&key==="value"&&datasetUnit.success){
+        display[path]=formatScenarioValue(v,datasetUnit.data,locale);return;
+      }
+      if(/(?:Bps|BasisPoints)$/u.test(key)){
+        display[path]=new Intl.NumberFormat(locale,{style:"percent",maximumFractionDigits:2}).format(v/10000);
+        return;
+      }
+      display[path]=money||key==="value"&&parentUnit==="USD_cents"
+        ?new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(v/100)
+        :new Intl.NumberFormat(locale,{maximumFractionDigits:6}).format(v);
+    }else if(typeof v==="boolean")display[path]=v?labels.yes:labels.no;
+    else if(typeof v==="string"){
+      if(v.length>600||/^[a-f\d]{8}-[a-f\d-]{27,}$/iu.test(v))return;
+      if(/https?:\/\/|www\./iu.test(v)){
+        if(key!=="url"||result.id!=="public.research")return;
+        try{if(new URL(v).protocol!=="https:")return;}catch{return;}
+      }
+      display[path]=clean(v);
+    }else if(Array.isArray(v))v.slice(0,100).forEach((x,i)=>walk(x,path+"."+i,depth+1));
+    else if(isRecord(v))for(const [k,x] of Object.entries(v))
+      if(/^[a-zA-Z][a-zA-Z0-9_]*$/u.test(k))walk(x,path?path+"."+k:k,depth+1);
+  };
+  walk(result.value,"value",0);
+  if(isRecord(result.query))walk(result.query,"query",0);
+  if(isRecord(result.provenance)&&typeof result.provenance.asOf==="string")
+    display["provenance.asOf"]=clean(result.provenance.asOf);
+  if(result.capabilityId==="platform.scenario.expression.v1"&&Array.isArray(result.assumptions))
+    result.assumptions.forEach((a,i)=>{if(typeof a==="string")display["assumptions."+i]=formatScenarioAssumption(a,locale);});
+  return display;
+}
+export function observationReference(businessId:string,asOf:string,capabilityId:string,result:unknown):EvidenceReference{
+  return {source:"cafe_state",identifier:"investigation:"+createHash("sha256")
+    .update(JSON.stringify({businessId,asOf,capabilityId,result})).digest("hex").slice(0,32),asOf};
+}
+export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):
+  {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean}|null{
+  const byId=new Map(observations.map(o=>[o.id,o]));
+  if(!["en","es","ar"].includes(locale))return null;
+  const blocks:SupervisorReplyBlock[]=[],refs:EvidenceReference[]=[];
+  let adviceOnly=true;
+  for(const paragraph of answer.paragraphs){
+    if(paragraph.kind==="evidence"&&!paragraph.citations.length)return null;
+    if(paragraph.kind!=="evidence"&&paragraph.citations.length)return null;
+    const cited=paragraph.citations.map(id=>byId.get(id));
+    if(cited.some(o=>!o||o.result.status==="unavailable"))return null;
+    if(paragraph.kind==="evidence")adviceOnly=false;
+    let invalid=false;
+    const plain=paragraph.text.replace(/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}/gu,(_m,id:string,path:string)=>{
+      const observation=byId.get(id);
+      if(!paragraph.citations.includes(id)||!observation||!Object.hasOwn(observation.display,path))invalid=true;
+      return "";
+    });
+    if(invalid||/[\p{N}$€£¥%]|https?:\/\/|www\.|\{\{|\}\}/iu.test(plain))return null;
+    const text=paragraph.text.replace(/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}/gu,
+      (_m,id:string,path:string)=>byId.get(id)!.display[path]);
+    if(text.length>1200||!clean(text))return null;
+    blocks.push({type:"text",text:clean(text)});
+    for(const o of cited)if(o?.reference&&!refs.some(r=>r.identifier===o.reference!.identifier))refs.push(o.reference);
+  }
+  return {blocks,evidence:refs,adviceOnly};
+}
+export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
+  const rendered=renderInvestigationAnswer(answer,observations,locale);
+  if(!rendered)return null;
+  const labels=investigationLabels(locale);
+  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
+  const pure=cited.length>0&&cited.every(o=>o.calculation&&!o.reference);
+  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
+  const warnings:SupervisorReplyBlock[]=pure?[{type:"warning",code:"P3_CONDITIONAL",text:labels.conditional}]:
+    rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning",code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
+      [{type:"warning",code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}];
+  if(cited.some(o=>o.result.id==="public.research"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+  if(cited.some(o=>{
+    const q=o.result.quality;
+    return isRecord(q)&&Array.isArray(q.estimatedInputs)&&q.estimatedInputs.length>0;
+  }))warnings.push({type:"warning",code:"SUPERVISOR_ESTIMATED",text:labels.estimated});
+  for(const caution of new Set(cited.flatMap(o=>registeredReadCautions(o.result,locale))))
+    warnings.push({type:"warning",code:"SUPERVISOR_SOURCE_CAUTION",text:caution});
+  const cards=cited.flatMap(o=>o.reference?presentInvestigatedTasks(o.sourceContract,o.result.value,o.reference,locale):[])
+    .filter((card,i,all)=>card.type!=="task_card"||all.findIndex(c=>c.type==="task_card"&&c.taskId===card.taskId)===i).slice(0,3);
+  return {intent:pure?"profitability":"unknown",status,evidence:rendered.evidence,blocks:[...warnings,...rendered.blocks,...cards]};
+}
