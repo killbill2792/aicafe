@@ -1,3 +1,20 @@
+## Supervisor P3: register Olivia schedule preview and Alex pricing review (2026-10-17, PR #103; draft)
+
+**Gap closed:** `createP3ReadRegistry()` could only discover P1 financial sources; `sourceRegistry.server.ts` said "Olivia and Alex are added here only AFTER their own PRs are merged," confirmed still true on `main` by direct code read, not docs. Olivia's `olivia.schedule.preview` and Alex's `alex.pricing.batch_review.v1` (real, merged via #96/#97) were reachable only through the separate legacy tool loop, so P3's open-ended composition could never see scheduling/pricing evidence even though both existed and worked elsewhere.
+
+**What shipped:** `lib/scheduling/oliviaP3Capabilities.server.ts` and `lib/pricing/alexP3Capabilities.server.ts` — thin adapters that call each domain's own existing, unmodified `read()`/optimizer output and reshape it into the exact envelope `readEvidencePresentation.ts` requires (`result.id`, `provenance.asOf` matching the turn, `quality`). Wired into the one call site in `runP3Turn.server.ts`. New `sourcePresentation` entries + EN/ES/AR locale keys for the two new sources, reusing the existing generic cents/number formatting. Zero new scheduling or pricing math. Olivia's `schedule.whatIf` and Alex's `pricing.what_if` (simulate mode) are explicitly NOT included — left for a follow-up to keep this reviewable.
+
+**Verified in this session's sandbox (xlsx CDN-resolution workaround only, package.json/lockfile restored exactly before commit — confirmed by `git status`):** `tsc --noEmit` clean; full Vitest **190 files/1476 tests passed, 1 pre-existing skip, zero regressions** (baseline before this change: 187 files/1468 tests, confirmed in the same sandbox first); changed-file ESLint clean; `npm run build` clean; `git diff --check` clean. 8 new tests cover registry discovery, real success/failure/presentation-rendering for both adapters, and a wiring test proving the actual `runP3Turn.server.ts` registry call discovers both new ids alongside the pre-existing P1 sources.
+
+**Not done / explicit gates:**
+- [ ] Live owner-conversation test through the real enabled P3 path — no live OpenAI/Supabase credentials in this sandbox.
+- [ ] ES/AR translations are this session's own first-pass; need native-speaker review before shipping.
+- [ ] Simulate-mode (`schedule.whatIf`, `pricing.what_if`) registration — deliberately deferred, not forgotten.
+- [ ] Independent human review and explicit owner merge approval — **do not merge without it**.
+- Checked before starting: confirmed with the repo owner that no other session was concurrently working this exact integration; two prior PRs (#90, #97) built the underlying Olivia capability but explicitly deferred this wiring step.
+
+---
+
 ## Universal Supervisor P3 authoritative snapshot integration (2026-10-16, PR #94; draft acceptance)
 
 **Scope:** One owner-approved P3 completion branch from merged #87 + #93. Reuse the owner-only, single-statement PostgreSQL snapshot; convert P3's read-derived numeric operands only from the same MVCC epoch, never attach epochs to independently fetched P1 reads. Preserve scoped dynamic P2/P3 capability discovery, canonical recipe/payroll math, P3 flag default-off, conditional answers, locale and owner authorization. Recheck the epoch before responding, reject mixed epochs and unsupported coverage. Keep production untouched and PR #89 (Claude's Olivia branch) completely separate.
