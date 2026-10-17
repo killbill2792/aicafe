@@ -284,7 +284,7 @@ describe("Olivia P3 schedule-what-if registration", () => {
       purpose: "schedule_what_if", week: "2026-10-19",
       overrides: [{ kind: "temporary_unavailable", employeeName: "Ava", localDate: "2026-10-20" }],
     });
-    expect(raw).toMatchObject({ status: "partial", value: [{ name: "2026-10-19 (2026-10-20)" }] });
+    expect(raw).toMatchObject({ status: "partial", value: [{ name: "Ava — 2026-10-19 (2026-10-20)" }] });
   });
 
   it("presents a real coverage/cost delta as an owner-readable block (not raw internals)", async () => {

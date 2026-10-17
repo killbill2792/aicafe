@@ -272,7 +272,15 @@ export function buildOliviaP3Registrations(): readonly [ReadRegistration, ReadRe
       }
       const overrideDates = [...new Set(input.overrides.flatMap(o =>
         o.kind === "temporary_unavailable" || o.kind === "reduce_daily_minutes" ? [o.localDate] : []))];
-      const name = (overrideDates.length ? input.week + " (" + overrideDates.join(", ") + ")" : input.week)
+      // Resolving a VALID but WRONG name is a different failure than the staleness race
+      // above (e.g. capability selection names Ben when the owner asked about Ava) --
+      // nothing above can catch that, since it never claims to verify owner intent, only
+      // roster/simulation consistency. Echoing the actually-simulated worker name(s) back
+      // lets the owner self-verify, the same mitigation already used for the date below.
+      // Caught in review (PR #108, round 2).
+      const names = [...new Set(resolution.requestedNames.values())];
+      const name = (names.join(", ") + " — " +
+        (overrideDates.length ? input.week + " (" + overrideDates.join(", ") + ")" : input.week))
         .slice(0, 160);
       const legalReviewUnverified = [raw.baselineScenario, raw.alternateScenario]
         .some(s => s !== null && s.legalReview !== "verified_profile");
