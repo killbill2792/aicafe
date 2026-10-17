@@ -69,13 +69,24 @@ freshness remains unverified. The owner-supplied scenario is never persisted.
 
 ## Coverage and known limitations
 
-- Source prices are `ingredient_prices` latest effective date on the trusted
-  café-local business day. The snapshot does not include separately persisted
-  `menu_item_cost_fallbacks`, so no owner-entered total-cost fallback can be
-  attested with that revision yet. **That acceptance item is blocked** until
-  the platform/P1 owner adds an atomic source extension or an independently
-  reviewed same-statement pricing snapshot including fallback status and
-  origin; NEVER join independent fallback queries to this epoch.
+- Ingredient prices are `ingredient_prices` latest effective date on the
+  trusted café-local business day. **Prerequisite PR #98** extends P1's
+  `p1_authoritative_source_snapshot` to include owner-entered
+  `menu_item_cost_fallbacks` with the same revision, owner scope, source type,
+  confirmed/estimated status and bounded truncation. Once PR #98 is approved,
+  merged and its migration applied to the target environment, Alex uses
+  **complete positive recipe first**, otherwise a **positive owner total**.
+  Do not add them together or present owner totals as individual ingredients.
+  `ownerTotalFallbackCoverage` is explicit: old P1 installations that lack
+  the field still return missing/unavailable evidence, never a false zero.
+- **Manual-only demo:** where total cost exists but recipe is absent, Alex can
+  review each canonical menu product and run *price-only* / owner-target
+  what-ifs. It refuses milk substitutions, recipe quantity edits or supplier
+  ingredient sensitivity without a fully priced ingredient-level recipe.
+  Estimated manual totals are explicitly estimated; totals whose currency or
+  freshness cannot be independently proven remain partial and source-labeled.
+  The new P1 migration must be run after owner approval and staging checks,
+  not manually pushed to production from this PR.
 - Actual customer option mix, observed recent demand, labor, card fees,
   vendor contract confirmation, and competitor benchmarks are not proven
   by the snapshot. Ingredient-only contribution is **not true profit**.
