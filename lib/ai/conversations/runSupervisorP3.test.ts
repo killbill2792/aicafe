@@ -257,6 +257,40 @@ describe("COMPOSE end-to-end P3 Supervisor (runs unconditionally, no flag or all
     expect(output.reply.blocks.some(b=>b.type==="metric")).toBe(false);
     expect(output.usage.toolCallCount).toBe(2);
   });
+  it("never classifies a plain P1 operand read as a completed simulation -- " +
+    "completedSimulationClauses stays empty when every successful read is a " +
+    "raw P1 catalog value, not one of Alex/Olivia's registered simulations",async()=>{
+    const question=firstClause+" and "+secondClause;
+    const requests:Array<Record<string,unknown>>=[];
+    let step=0;
+    const provider=vi.fn(async(_url:string,init:RequestInit)=>{
+      requests.push(JSON.parse(init.body as string));
+      return response([
+        {complete:true,clauses:[firstClause,secondClause]},
+        {complete:true,choices:[
+          {clause:firstClause,capabilityId:"p3.menu.catalog.v1",
+            inputJson:JSON.stringify(menuInput),reason:null},
+          {clause:secondClause,capabilityId:"p3.labor.employee_wages.v1",
+            inputJson:JSON.stringify(wageInput),reason:null},
+        ]},
+        {complete:true,plans:[{coveredClauses:[firstClause,secondClause],
+          planJson:null,reason:"missing_input"}]},
+      ][step++]);
+    });
+    await run(provider,question);
+    const compositionPayload=JSON.parse(
+      (requests[2].input as Array<{content:string}>)[0].content,
+    ) as {readableSourceClauses:string[];completedSimulationClauses:string[]};
+    expect(compositionPayload.readableSourceClauses.sort())
+      .toEqual([firstClause,secondClause].sort());
+    // Both reads succeeded, but neither is a complete owner-parameterized
+    // simulation -- they're raw operand values the owner's actual arithmetic
+    // (extra lattes sold, extra paid minutes) still needs the expression
+    // engine to combine. Caught in review (round 2 of PR #106): conflating
+    // this with readableSourceClauses would have told the model these plain
+    // reads were already complete answers.
+    expect(compositionPayload.completedSimulationClauses).toEqual([]);
+  });
   it("COMPOSE-05: revoked owner / failed snapshot RPC never reuses earlier shadow reads",async()=>{
     atomicRead.mockResolvedValueOnce({
       status:"unavailable",reason:"unauthorized_or_unconfigured",

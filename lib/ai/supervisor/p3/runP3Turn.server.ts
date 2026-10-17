@@ -10,8 +10,10 @@ import { readAuthorizedAtomicP1SourceSnapshot } from
   "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { runP2ShadowWithScope, type ShadowEvidence } from "@/lib/ai/supervisor/p2/shadow.server";
 import { createP3ReadRegistry } from "./sourceRegistry.server";
-import { buildAlexP3Registrations } from "@/lib/pricing/alexP3Capabilities.server";
-import { buildOliviaP3Registrations } from "@/lib/scheduling/oliviaP3Capabilities.server";
+import { buildAlexP3Registrations,ALEX_P3_REVIEW_ID,ALEX_P3_WHATIF_ID } from
+  "@/lib/pricing/alexP3Capabilities.server";
+import { buildOliviaP3Registrations,OLIVIA_P3_SCHEDULE_PREVIEW_ID } from
+  "@/lib/scheduling/oliviaP3Capabilities.server";
 import { parseOwnerDateWindows, ownerDateWindowsFromContext } from "@/lib/ai/conversations/ownerDateIntent";
 import { projectP1Evidence } from "./operandProjection.server";
 import { enrichResolvedProductEconomics } from "./productEconomicsAdapter.server";
@@ -24,6 +26,18 @@ import { formatScenarioValue,formatScenarioAssumption,formatScenarioFormula } fr
 import type { ConversationalTurn } from "@/lib/ai/conversations/context";
 
 type Transport=(url:string,init:RequestInit)=>Promise<Response>;
+// The ONLY registered "read" capabilities whose successful result is already
+// a complete, bounded, owner-parameterized simulation -- never a raw P1
+// catalog operand (a wage, a sales figure) that still needs the expression
+// engine for whatever arithmetic the owner actually asked for. Confirmed
+// exhaustive by reading each registration's own file; a raw P1 reader is
+// never added here even if its own read succeeds. Caught in review (round 2
+// of PR #106): conflating this with readableSourceClauses (any successful
+// read at all) would have told the model a plain operand read -- e.g. "sum
+// my wages" -- was already a complete answer.
+const COMPLETED_SIMULATION_CAPABILITY_IDS=new Set<string>([
+  ALEX_P3_REVIEW_ID,ALEX_P3_WHATIF_ID,OLIVIA_P3_SCHEDULE_PREVIEW_ID,
+]);
 const coverage=z.strictObject({
   complete:z.boolean(),
   plans:z.array(z.strictObject({
@@ -76,6 +90,7 @@ async function modelComposition(input:{
     handle:string;unit:string;sourceQuality:string;entityName:string;
     entityId:string;field:string;matchedClause:string;
   }>;readableSourceClauses:readonly string[];
+  completedSimulationClauses:readonly string[];
   model:string;apiKey:string;transport:Transport;
 }):Promise<{plan:ReturnType<typeof coverage.parse>;tokens:{input:number;output:number}}|null>{
   const controller=new AbortController();
@@ -122,17 +137,21 @@ async function modelComposition(input:{
           "For a request to SHOW or LIST already authorized record fields with no arithmetic,",
           "choose planJson null and reason read_only ONLY for a clause in readableSourceClauses.",
           "This renders a provisional bounded source sample, never a complete count or effect.",
-          "A clause in readableSourceClauses may ALSO be a bounded owner-parameterized",
-          "what-if or simulation (a price change, a margin target, a schedule change) whose",
-          "registered capability ALREADY computed a complete result for that exact request --",
-          "not raw arithmetic for you to redo. Being phrased as a calculation does not by",
-          "itself disqualify it: if the clause is in readableSourceClauses, choose planJson",
-          "null and reason read_only for it too, so the already-computed result is shown,",
-          "rather than missing_input, which would discard a real completed answer.",
+          "completedSimulationClauses is DIFFERENT and NARROWER: a clause in it was answered by",
+          "a bounded owner-parameterized what-if or simulation (a price change, a margin target,",
+          "a schedule change) whose registered capability ALREADY computed a complete result for",
+          "that exact request -- not a raw source value for you to combine with anything else.",
+          "Being phrased as a calculation does not disqualify such a clause: if it is in",
+          "completedSimulationClauses, choose planJson null and reason read_only for it too, so",
+          "the already-computed result is shown, rather than missing_input, which would discard",
+          "a real completed answer. Never apply this to a clause that is ONLY in",
+          "readableSourceClauses (a raw operand value, e.g. a recorded wage or sales figure) --",
+          "that clause still needs the expression engine for any real arithmetic (sums, rates,",
+          "percentages) the owner actually asked for.",
           "Never classify a request for a business change/approval as a completed read.",
-          "If a clause needs genuinely new arithmetic across sources, or its calculation",
-          "lacks necessary operands and it is NOT in readableSourceClauses, choose null",
-          "and missing_input.",
+          "If a clause needs genuinely new arithmetic across sources, or its calculation lacks",
+          "necessary operands and it is in neither readableSourceClauses nor",
+          "completedSimulationClauses, choose null and missing_input.",
           "Writes or approvals are unsupported_action. Do not present a partial subtraction",
           "of revenue and wages as verified profit when ingredients/fees are missing.",
         ].join(" "),
@@ -143,6 +162,7 @@ async function modelComposition(input:{
           })),
           authorizedOperandChoices:input.operands,
           readableSourceClauses:input.readableSourceClauses,
+          completedSimulationClauses:input.completedSimulationClauses,
         })}],
         text:{format:{type:"json_schema",name:"p3_expression_plans",strict:true,
           schema:OUTPUT_SCHEMA}},
@@ -176,16 +196,24 @@ function unsupportedReasonWarnings(
   const warnings:SupervisorReplyBlock[]=[];
   if(reasons.has("missing_input")){
     const specific=new Set<string>();
+    // A clause whose failure reason isn't in the known map must never go
+    // unexplained just because a DIFFERENT clause's reason happened to be
+    // specific -- that would be a worse outcome than the single generic
+    // warning this replaced. Caught in review (round 2 of PR #106).
+    let hasUnmapped=false;
     for(const item of evidence){
       if(item.status!=="unavailable"||!item.capabilityId||!item.reason)continue;
       const text=specificCapabilityUnavailableReason(locale,item.reason);
       if(text)specific.add(text);
+      else hasUnmapped=true;
     }
-    if(specific.size)
-      for(const text of [...specific].slice(0,3))
-        warnings.push({type:"warning",code:"P3_MISSING_INPUT",text});
-    else warnings.push({type:"warning",code:"P3_MISSING_INPUT",
-      text:registeredReadReason(locale,"missing_input")});
+    // A turn covers at most 5 clauses total (coverage schema's own cap), so
+    // this never truncates a real distinct reason.
+    for(const text of [...specific].slice(0,5))
+      warnings.push({type:"warning",code:"P3_MISSING_INPUT",text});
+    if(!specific.size||hasUnmapped)
+      warnings.push({type:"warning",code:"P3_MISSING_INPUT",
+        text:registeredReadReason(locale,"missing_input")});
   }
   for(const reason of reasons){
     if(reason==="missing_input")continue;
@@ -376,6 +404,13 @@ export async function tryP3SupervisorReadOnly(input:{
     readableSourceClauses:[...new Set(shadow.evidence.filter(read=>
       ["verified","estimated","partial"].includes(read.status) &&
       read.capabilityId!==null && read.result!==null &&
+      !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
+        sibling.capabilityId!==null && sibling.status==="unavailable"))
+      .map(read=>read.clause))],
+    completedSimulationClauses:[...new Set(shadow.evidence.filter(read=>
+      ["verified","estimated","partial"].includes(read.status) &&
+      read.capabilityId!==null && COMPLETED_SIMULATION_CAPABILITY_IDS.has(read.capabilityId) &&
+      read.result!==null &&
       !shadow.evidence.some(sibling=>sibling.clause===read.clause &&
         sibling.capabilityId!==null && sibling.status==="unavailable"))
       .map(read=>read.clause))],

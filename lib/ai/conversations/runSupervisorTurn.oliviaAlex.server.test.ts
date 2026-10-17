@@ -302,6 +302,65 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
     expect(JSON.stringify(reply.blocks)).not.toContain("ambiguous_canonical_name_use_product_id");
   });
 
+  it("never drops a failed clause's explanation just because a DIFFERENT clause's " +
+    "failure reason happened to be specific -- the generic warning still covers " +
+    "whatever isn't in the known reason map", async () => {
+    const idA = avaId, idB = benId, ingredientId = "a0000000-0000-4000-8000-000000000100";
+    atomicRpc.mockResolvedValue({ status: "available", snapshot: {
+      contract: "p1.authoritative_snapshot.v1", businessId, revision: "100",
+      timezone: "America/Los_Angeles", currency: "USD",
+      payroll: { rate: 0.12, status: "confirmed", source: "business" },
+      sources: {
+        menu: [
+          { id: idA, name: "Latte 12 oz", price_cents: 525, is_active: true, category: "ESPRESSO_DRINK" },
+          { id: idB, name: "Latte 12 oz", price_cents: 550, is_active: true, category: "ESPRESSO_DRINK" },
+        ],
+        ingredients: [{ id: ingredientId, name: "Milk", base_unit: "ml" }],
+        ingredientPrices: [{ id: "a0000000-0000-4000-8000-000000000200", ingredient_id: ingredientId,
+          effective_from: "2026-09-01", cost_per_base_unit_micros: 100000, source: "manual" }],
+        recipes: [], employees: [], dailyRollups: [], expenses: [], recurringCosts: [], imports: [],
+      },
+      truncated: { menu: false, ingredients: false, ingredientPrices: false, recipes: false, employees: false,
+        dailyRollups: false, expenses: false, recurringCosts: false, imports: false },
+      coverage: "not_proven_by_revision",
+    } as AtomicP1SourceSnapshot });
+    const clauseA = "What if I raise the Latte 12 oz by 50 cents?";
+    const clauseB = "Can I see a schedule preview for next week?";
+    const transport = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { text?: { format?: { name?: string } } };
+      const schema = body.text?.format?.name;
+      if (schema === "p2_goal_audit") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, clauses: [clauseA, clauseB] }) }] }]);
+      if (schema === "p2_capability_selection") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, choices: [
+          { clause: clauseA, capabilityId: "p3.alex.pricing.what_if.v1",
+            inputJson: JSON.stringify({ purpose: "pricing_simulate",
+              product: { exactName: "Latte 12 oz" }, changes: [],
+              sellingPrice: { kind: "delta", deltaCents: 50 } }),
+            reason: null },
+          // A capability id the server registry does not recognize -- shadow.server.ts's
+          // own "unknown_capability" reason, which is deliberately NOT in the known
+          // reason map, to prove the fallback covers it.
+          { clause: clauseB, capabilityId: "p3.nonexistent.capability.v1",
+            inputJson: JSON.stringify({ purpose: "schedule_preview" }), reason: null },
+        ] }) }] }]);
+      if (schema === "p3_expression_plans") return response([{ type: "message", content: [
+        { type: "output_text", text: JSON.stringify({ complete: true, plans: [{
+          coveredClauses: [clauseA, clauseB], planJson: null, reason: "missing_input" }] }) }] }]);
+      throw new Error("unexpected transport call for schema " + String(schema));
+    });
+    const { reply } = await runSupervisorTurn({ ...base, text: clauseA + " " + clauseB }, transport);
+    const warnings = reply.blocks.filter(b => b.type === "warning" && b.code === "P3_MISSING_INPUT");
+    // Clause A's specific reason must still appear...
+    expect(warnings.some(b => b.type === "warning" &&
+      b.text.includes("More than one active menu item"))).toBe(true);
+    // ...and clause B's unmapped failure must NOT be silently dropped: the generic
+    // explanation covers it instead of vanishing entirely.
+    expect(warnings.some(b => b.type === "warning" &&
+      b.text.includes("Required records or inputs are missing"))).toBe(true);
+    expect(JSON.stringify(reply.blocks)).not.toContain("unknown_capability");
+  });
+
   it("a combined scheduling + pricing request preserves both goals in one reply", async () => {
     const scenario = {
       objective: "cash" as const, shifts: [], gaps: [{
