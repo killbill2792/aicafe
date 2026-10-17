@@ -25,7 +25,7 @@ const coverage=z.strictObject({
   plans:z.array(z.strictObject({
     coveredClauses:z.array(z.string().min(2).max(1000)).min(1).max(5),
     planJson:z.string().max(6000).nullable(),reason:z.enum([
-      "unsupported","missing_input","unsupported_action"]).nullable(),
+      "unsupported","missing_input","unsupported_action","read_only"]).nullable(),
   })).min(1).max(5),
 });
 const OUTPUT_SCHEMA={
@@ -39,7 +39,7 @@ const OUTPUT_SCHEMA={
         coveredClauses:{type:"array",minItems:1,maxItems:5,items:{type:"string"}},
         planJson:{type:["string","null"]},
         reason:{type:["string","null"],enum:[
-          "unsupported","missing_input","unsupported_action",null]},
+          "unsupported","missing_input","unsupported_action","read_only",null]},
       },
     }},
   },
@@ -71,7 +71,8 @@ async function modelComposition(input:{
   operands:Array<{
     handle:string;unit:string;sourceQuality:string;entityName:string;
     entityId:string;field:string;matchedClause:string;
-  }>;model:string;apiKey:string;transport:Transport;
+  }>;readableSourceClauses:readonly string[];
+  model:string;apiKey:string;transport:Transport;
 }):Promise<{plan:ReturnType<typeof coverage.parse>;tokens:{input:number;output:number}}|null>{
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),18000);
@@ -114,7 +115,11 @@ async function modelComposition(input:{
            "If employer burden is missing, do NOT assume 12 percent or claim loaded cost.",
            "Never claim observed sales, actual wages, source revisions, approvals or effects.",
           "Never use SQL, JavaScript, executors, hidden reads or new domain capabilities.",
-          "If the requested outcome lacks the necessary operands, choose null and missing_input.",
+          "For a request to SHOW or LIST already authorized record fields with no arithmetic,",
+          "choose planJson null and reason read_only ONLY for a clause in readableSourceClauses.",
+          "This renders a provisional bounded source sample, never a complete count or effect.",
+          "Never classify a request for a business change/approval as a completed read.",
+          "If a requested calculation lacks necessary operands, choose null and missing_input.",
           "Writes or approvals are unsupported_action. Do not present a partial subtraction",
           "of revenue and wages as verified profit when ingredients/fees are missing.",
         ].join(" "),
@@ -124,6 +129,7 @@ async function modelComposition(input:{
             role:h.role,text:h.text.slice(0,450),
           })),
           authorizedOperandChoices:input.operands,
+          readableSourceClauses:input.readableSourceClauses,
         })}],
         text:{format:{type:"json_schema",name:"p3_expression_plans",strict:true,
           schema:OUTPUT_SCHEMA}},
@@ -304,6 +310,10 @@ export async function tryP3SupervisorReadOnly(input:{
     })),
     model:input.model,apiKey:input.apiKey,
     transport:input.transport,
+    readableSourceClauses:[...new Set(shadow.evidence.filter(read=>
+      ["verified","estimated","partial"].includes(read.status) &&
+      read.capabilityId!==null &&
+      read.result!==null).map(read=>read.clause))],
     operands:projection.choices.map(choice=>{
       const v=projection.operands.find(o=>o.handle===choice.handle)!;
       return {...choice,unit:v.unit,
@@ -322,13 +332,16 @@ export async function tryP3SupervisorReadOnly(input:{
   let unsupportedGoals=0;
   const unsupportedReasons=new Set<"unsupported"|"missing_input"|"unsupported_action">();
   const incompleteReadClauses=new Set<string>();
+  const plainReadClauses=new Set<string>();
   const plannedSimulations=completion.plan.plans.filter(p=>p.planJson!==null).length;
   if(reported.toolCallCount+plannedSimulations>5)return null;
   for(const item of completion.plan.plans){
     if(!item.planJson){
       if(!item.reason)return null;
       unsupportedGoals+=item.coveredClauses.length;
-      unsupportedReasons.add(item.reason);
+      if(item.reason==="read_only")
+        for(const clause of item.coveredClauses)plainReadClauses.add(clause);
+      else unsupportedReasons.add(item.reason);
       continue;
     }
     // A multi-read clause may require more than one canonical source (e.g.
@@ -423,9 +436,11 @@ export async function tryP3SupervisorReadOnly(input:{
     evidence:shadow.evidence,
     includedClauses:[...completion.plan.plans.filter(p=>
       p.planJson===null&&p.reason==="unsupported")
-      .flatMap(p=>p.coveredClauses),...incompleteReadClauses],
+      .flatMap(p=>p.coveredClauses),...incompleteReadClauses,...plainReadClauses],
     businessId:identity.businessId,asOf:identity.asOf,locale:input.locale,
   });
+  if(plainReadClauses.size && !presentedReads.blocks.length)
+    unsupportedReasons.add("missing_input");
   const reasonText={
     en:{unsupported:"A registered capability cannot yet complete this requested outcome.",
       missing_input:"Required records or inputs are missing; I cannot calculate a reliable result.",
