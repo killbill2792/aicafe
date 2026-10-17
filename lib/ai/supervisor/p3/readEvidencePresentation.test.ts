@@ -32,14 +32,12 @@ describe("live registered source evidence presentation",()=>{
     expect(result.evidence[0].identifier).toMatch(/^p3:read:[a-f0-9]{32}$/u);
   });
   it("never displays missing numeric zero as a known cost and does not give total coverage",()=>{
-    const result=present([{...read({knownTotalCents:0,missingComponentCents:0,
+    const source=read({knownTotalCents:0,missingComponentCents:0,
       productName:"Latte",sampleCostCents:159},{
-        id:"money.business_costs",}),capabilityId:"p3.money.business_costs.v1",result:{
-        ...(read({knownTotalCents:0,missingComponentCents:0,
-          productName:"Latte",sampleCostCents:159}).result as Record<string,unknown>),
         id:"money.business_costs",
         quality:{missingInputs:["ingredient_prices_missing"],estimatedInputs:[],staleInputs:[]},
-      }}}]);
+      });
+    const result=present([{...source,capabilityId:"p3.money.business_costs.v1"}]);
     const all=result.blocks.map(b=>b.type==="text"||b.type==="warning"?b.text:"").join(" ");
     expect(all).not.toContain("$0.00");
     expect(all).toContain("Coverage and source revision");
