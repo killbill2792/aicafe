@@ -92,11 +92,11 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
       product: { exactName: "Oat Latte 16oz" }, changes: [],
       targetIngredientMarginBps: 7000 });
     expect(raw).toMatchObject({ status: "partial", id: "alex.pricing.what_if",
-      // The unapplied-target zero must be nulled out (never presented as a real "no
-      // impact" result), and the decision-critical ingredient-only caveat must survive
-      // the 2-code cap even though it is NOT in the first two array positions — both were
-      // real findings in review (round 4).
-      value: [expect.objectContaining({ ingredientContributionDeltaCents: null,
+      // Both unapplied-target zeros must be nulled out (never presented as a real "no
+      // change"/"no impact" result), and the decision-critical ingredient-only caveat
+      // must survive the 2-code cap even though it is NOT in the first two array
+      // positions — all real findings in review (rounds 4 and 6).
+      value: [expect.objectContaining({ priceDeltaCents: null, ingredientContributionDeltaCents: null,
         assumptionCodes: ["ingredient_only_excludes_labor_fees_rent_and_demand",
           "recorded_cost_freshness_not_proven"] })] });
     expect(mockSimulate).toHaveBeenCalledWith(scope, expect.objectContaining({
@@ -109,11 +109,13 @@ describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup 
     });
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(view.blocks.some(b => b.type === "text" && b.text.includes("$6.00"))).toBe(true);
-    // Never a misleading "Ingredient-only contribution change: $0.00" next to the nonzero
-    // target price — the field is omitted entirely, not shown as a false zero. (Price and
-    // ingredient-cost change are legitimately $0.00 here — nothing was actually applied —
-    // so only the contribution-change label itself is checked, not "$0.00" anywhere.)
+    // Never a misleading "Price change: $0.00" or "Ingredient-only contribution change:
+    // $0.00" next to the nonzero target price — both fields are omitted entirely, not
+    // shown as a false zero. (Ingredient cost change is legitimately $0.00 here, since
+    // this capability never allows ingredient changes at all, so only the other two
+    // labels are checked, not "$0.00" anywhere.)
     const allTextForZeroCheck = view.blocks.filter(b => b.type === "text").map(b => b.text).join(" ");
+    expect(allTextForZeroCheck).not.toContain("Price change");
     expect(allTextForZeroCheck).not.toContain("Ingredient-only contribution change");
     // The simulator's caveat is shown as localized plain language, never the raw internal
     // code — passing the raw code straight through to an owner (ES/AR included) was a real

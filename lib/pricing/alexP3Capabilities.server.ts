@@ -246,19 +246,23 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         ? value.assumptions.filter((a): a is string => typeof a === "string" && knownCodes.includes(a))
         : []);
       const assumptionCodes = ASSUMPTION_CODE_PRIORITY.filter(c => presentCodes.has(c)).slice(0, 2);
+      // A target-only request (no sellingPrice) never actually applies the target as a
+      // hypothetical price -- simulateFromAtomicSnapshot leaves "after" identical to
+      // "before" -- so both priceDeltaCents and ingredientContributionDeltaCents are
+      // always exactly 0 and would misleadingly read as "Price change: $0.00" / "no
+      // margin impact" right next to a nonzero targetPriceCents. Neither is a real
+      // zero, both are an unapplied scenario; null them instead of presenting a false
+      // zero. ingredientCostDeltaCents is NOT included here: changes is always forced
+      // empty for this capability, so that one genuinely never changes either way.
+      // Caught in review (rounds 4 and 6).
+      const targetOnly = input.sellingPrice === undefined;
       return {
         status: "partial" as const, id: "alex.pricing.what_if" as const,
         value: [{
-          name: value.name, priceDeltaCents: value.priceDeltaCents,
+          name: value.name,
+          priceDeltaCents: targetOnly ? null : value.priceDeltaCents,
           ingredientCostDeltaCents: value.ingredientCostDeltaCents,
-          // A target-only request (no sellingPrice) never actually applies the target as a
-          // hypothetical price -- simulateFromAtomicSnapshot leaves "after" identical to
-          // "before" -- so this is always exactly 0 and would misleadingly read as "no margin
-          // impact" next to a nonzero targetPriceCents. It's not a real zero, it's an
-          // unapplied scenario; null it instead of presenting a false zero. Caught in review
-          // (round 4).
-          ingredientContributionDeltaCents: input.sellingPrice === undefined
-            ? null : value.ingredientContributionDeltaCents,
+          ingredientContributionDeltaCents: targetOnly ? null : value.ingredientContributionDeltaCents,
           targetPriceCents: value.targetPriceCents,
           assumptionCodes,
         }],
