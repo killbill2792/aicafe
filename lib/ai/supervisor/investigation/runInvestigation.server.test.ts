@@ -44,10 +44,11 @@ function envelope(input:Record<string,unknown>,value:unknown){
       selectorContractId:id+".selector",selectorContractVersion:1,purpose:input.purpose,asOf,timezone:identity.timezone,sourceRevision:null},
     freshness:{asOf,capturedAt:null,stale:null}};
 }
-function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void){
+function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true){
   let next=0;
   return vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
     if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
@@ -141,7 +142,7 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 
   it("reports unconnected competitor research specifically and still offers useful analysis guidance",async()=>{
-    const transport=transportFor([read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices"}),
+    const transport=transportFor([read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices",ownerResearchClause:"nearby cafe menu prices"}),
       answer([{kind:"advice",text:"Live competitor research is not connected here. Compare equivalent sizes and locations before changing prices; I can analyze a menu you provide.",citations:[]}])],
       (context,step)=>{if(step===1)expect(JSON.stringify(context.observations)).toContain("research_not_connected");});
     const result=await runSupervisorTurn({...base,text:"Compare nearby cafe menu prices."},transport);
@@ -153,7 +154,7 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     vi.mocked(researchEnabled).mockReturnValue(true);
     vi.mocked(researchPublicSources).mockResolvedValue([{title:"Nearby café menu",url:"https://example.com/menu",snippet:"Latte listed at $5",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
     const result=await runSupervisorTurn({...base,text:"Research nearby cafe menu prices."},transportFor([
-      read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices"}),
+      read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices",ownerResearchClause:"nearby cafe menu prices"}),
       answer([{kind:"evidence",text:"This public menu is a lead: {{r1:value.0.url}}. Confirm the current size and price before comparing it with your own menu.",citations:["r1"]}])]));
     expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_PUBLIC_RESEARCH")).toBe(true);
     expect(JSON.stringify(result.reply.blocks)).toContain("https://example.com/menu");
@@ -221,7 +222,7 @@ it("blocks private staff terms from being sent to external research",async()=>{
   vi.mocked(researchEnabled).mockReturnValue(true);
   const result=await runSupervisorTurn({...base,text:"Compare local competitor prices."},transportFor([
     read("p3.labor.employee_wages.v1",query("labor.employee_wages")),
-    read("p3.public.research.v1",{purpose:"public_market_research",query:"Sophie wages 1800"}),
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"Sophie wages 1800",ownerResearchClause:"Compare local competitor prices."}),
     answer([{kind:"advice",text:"A public comparison should use equivalent menu sizes and locations; private staff data is not a public research source.",citations:[]}])],
   (context,step)=>{if(step===2)expect(JSON.stringify(context.observations)).toContain("research_query_contains_unapproved_terms");}));
   expect(researchPublicSources).not.toHaveBeenCalled();
@@ -387,9 +388,86 @@ it.each([
   const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices.",
     history:[{role:"owner",text:previous}],investigationMemory:{version:1,businessId:cafe,ownerStatements:[previous],reads:[]}},
     transportFor([
-      read("p3.public.research.v1",{purpose:"public_market_research",query:queryText}),
+      read("p3.public.research.v1",{purpose:"public_market_research",query:queryText,ownerResearchClause:"Research nearby supplier prices."}),
       answer([{kind:"advice",text:"Public supplier research must exclude private conversation details. I can compare publicly available supplier menus.",citations:[]}])],
     (context,step)=>{if(step===1)expect(JSON.stringify(context.observations)).toContain("research_query_contains_unapproved_terms");}));
   expect(researchPublicSources).not.toHaveBeenCalled();
   expect(result.reply.evidence).toEqual([]);
+});
+
+
+it.each(["Sophie earns 1800", "Our bank balance is 19437"])("excludes the private clause of a mixed research request: %s",async(privateClause)=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const text=privateClause+"; research nearby supplier prices";
+  await runSupervisorTurn({...base,text},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:privateClause+" supplier prices",ownerResearchClause:"research nearby supplier prices"}),
+    answer([{kind:"advice",text:"I can research public supplier prices while keeping the private part of your message out of that search.",citations:[]}])],
+    (context,step)=>{if(step===1)expect(JSON.stringify(context.observations)).toContain("research_query_contains_unapproved_terms");}));
+  expect(researchPublicSources).not.toHaveBeenCalled();
+});
+
+it("rejects a model quoting the whole mixed private/public utterance as its search clause",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const text="Sophie earns 1800 and research nearby supplier prices";
+  const result=await runSupervisorTurn({...base,text},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"Sophie 1800 supplier prices",ownerResearchClause:text}),
+    answer([{kind:"advice",text:"I will keep the payroll detail private and use only the public research portion of your request.",citations:[]}])],undefined,false));
+  expect(researchPublicSources).not.toHaveBeenCalled();
+  expect(result.usage.modelCallCount).toBe(4); // Privacy review uses the same bounded attempt ledger.
+});
+
+it("researches the public clause of a mixed request without sending its private terms",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  vi.mocked(researchPublicSources).mockResolvedValue([{title:"Supplier menu",url:"https://example.com/menu",snippet:"Public supplier menu",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
+  const result=await runSupervisorTurn({...base,text:"Sophie earns 1800; research nearby supplier prices"},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby supplier prices",ownerResearchClause:"research nearby supplier prices"}),
+    answer([{kind:"evidence",text:"Here is a public supplier lead: {{r1:value.0.url}}. Verify current prices before ordering.",citations:["r1"]}])]));
+  expect(researchPublicSources).toHaveBeenCalledWith("nearby supplier prices",expect.any(Function),expect.any(Number));
+  expect(result.usage.modelCallCount).toBe(4);
+});
+
+it("keeps a persisted date correction after its initial source read fails",async()=>{
+  const capabilityId="p3.money.expense_entries.v1",oldPeriod={from:"2026-10-01",to:"2026-10-01"},newPeriod={from:"2026-10-02",to:"2026-10-02"};
+  const memory={version:1 as const,businessId:cafe,ownerStatements:["Show entries for 2026-10-01"],
+    reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:oldPeriod}))}]};
+  p1.mockRejectedValueOnce(new Error("temporarily unavailable"));
+  const failed=await runSupervisorTurn({...base,text:"Use 2026-10-02 instead",investigationMemory:memory},transportFor([
+    read(capabilityId,query("money.expense_entries",{period:newPeriod})),
+    answer([{kind:"advice",text:"The source is temporarily unavailable. I will retain your corrected date for a retry.",citations:[]}])]));
+  expect(failed.reply.investigationMemory?.ownerStatements).toContain("Use 2026-10-02 instead");
+  p1.mockClear();
+  await runSupervisorTurn({...base,text:"Please retry",investigationMemory:failed.reply.investigationMemory},transportFor([
+    read(capabilityId,query("money.expense_entries",{period:oldPeriod})),
+    read(capabilityId,query("money.expense_entries",{period:newPeriod})),
+    answer([{kind:"evidence",text:"I retrieved the entries for your corrected date.",citations:["r1"]}])]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(p1.mock.calls[0][2]).toMatchObject({period:newPeriod});
+});
+
+it("rejects a multi-clause public-search scope even if the model privacy check would approve it",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const text="Sophie earns 1800; research nearby supplier prices";
+  await runSupervisorTurn({...base,text},transportFor([
+    read("p3.public.research.v1",{purpose:"public_market_research",query:"Sophie 1800 supplier prices",ownerResearchClause:text}),
+    answer([{kind:"advice",text:"The public search must use only the research clause and exclude the payroll detail.",citations:[]}])],
+    (context,step)=>{if(step===1)expect(JSON.stringify(context.observations)).toContain("research_clause_must_be_single");}));
+  expect(researchPublicSources).not.toHaveBeenCalled();
+});
+it("does not contact public search after a privacy-review timeout",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  vi.useFakeTimers();
+  try{
+    const scripted=transportFor([
+      read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby supplier prices",ownerResearchClause:"Research nearby supplier prices."}),
+      answer([{kind:"advice",text:"The public-query privacy check could not finish. I can offer general comparison guidance while research is unavailable.",citations:[]}])]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      return body.text.format.name==="supervisor_public_query_review"?new Promise<Response>(()=>{}):scripted(url,init);
+    });
+    const pending=runSupervisorTurn({...base,text:"Research nearby supplier prices."},transport);
+    await vi.advanceTimersByTimeAsync(7001);
+    const result=await pending;
+    expect(researchPublicSources).not.toHaveBeenCalled();
+    expect(result.usage.modelCallCount).toBe(4);
+  }finally{vi.useRealTimers();}
 });

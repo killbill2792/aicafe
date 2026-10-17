@@ -3,13 +3,13 @@ import type {PublicSource} from "./contracts";
 export function researchEnabled(){
  return process.env.SUPPLIER_RESEARCH_ENABLED==="true" && Boolean(process.env.BRAVE_SEARCH_API_KEY);
 }
-export async function researchPublicSources(query:string,fetcher:typeof fetch=fetch):Promise<PublicSource[]>{
+export async function researchPublicSources(query:string,fetcher:typeof fetch=fetch,timeoutMs=8000):Promise<PublicSource[]>{
  if(!researchEnabled())return [];
  // Only the fixed Brave endpoint is ever contacted: no user URL fetch / SSRF.
  const url=new URL("https://api.search.brave.com/res/v1/web/search");
  url.searchParams.set("q",query);url.searchParams.set("count","5");
  const controller=new AbortController();
- const timeout=setTimeout(()=>controller.abort(),8000);
+ const timeout=setTimeout(()=>controller.abort(),Math.max(1,Math.min(8000,timeoutMs)));
  try{
   const r=await fetcher(url.toString(),{
    signal:controller.signal,

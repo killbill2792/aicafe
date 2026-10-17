@@ -59,3 +59,9 @@ it("retains the calendar guard when a full operation budget reads only catalogs"
   const m={...memory({week:oldWeek}),reads};
   expect(matches({week:newWeek},"Change her hours",asOf,m,[...m.ownerStatements,"Change her hours"])).toBe(false);
 });
+
+it("prefers the latest persisted owner correction when old selectors survive a failed read",()=>{
+  const m={...memory({week:oldWeek}),ownerStatements:["Review the week of 2026-10-19","Use the week of 2026-10-26 instead"]};
+  expect(matches({week:newWeek},"Please retry",asOf,m,[...m.ownerStatements,"Please retry"])).toBe(true);
+  expect(matches({week:oldWeek},"Please retry",asOf,m,[...m.ownerStatements,"Please retry"])).toBe(false);
+});

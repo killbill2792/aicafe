@@ -24,7 +24,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
-import {investigationInstructions,reviewInstructions} from "./instructions";
+import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** Bound the MODEL preview, not the authoritative dataset used by calculators.
@@ -65,13 +65,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
     buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
     buildDatasetRegistration(datasets,identity.businessId),buildRecordsRegistration(()=>observations,identity.businessId),buildResearchRegistration(()=>[
-      input.text,
       ...observations.filter(o=>o.result.id==="business.profile").flatMap(o=>{
         const value=o.result.value;
         return record(value)&&Array.isArray(value.locations)?value.locations.filter(record)
           .flatMap(l=>[l.city,l.region,l.countryCode].filter((v):v is string=>typeof v==="string")):[];
       }),
-    ].join(" "))]);
+    ].join(" "),async(clause,query,publicLocationContext)=>{
+      const checked=await requestInvestigation({name:"supervisor_public_query_review",
+        schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
+        context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
+        apiKey:input.apiKey,model:input.model,transport,usage,
+        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage});
+      return checked?.safe===true;
+    })]);
   const manifest=registry.discover(scope);
   const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
   const attempted=new Set<string>();
@@ -98,6 +104,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           writes:"Business mutations and publication are not executable in this read/simulation conversation."},
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
+        remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
         remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback},
       apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage});
     if(!step)return failure();

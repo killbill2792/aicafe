@@ -60,19 +60,15 @@ export function investigationReadDatesMatch(input:unknown,current:string,asOf:st
       ranges.every(w=>w.from>=candidate.week&&w.to<=end);
   };
   if(hasDate(current))return matches(current);
-  // New owner turns after the persisted reply may have failed before saving
-  // memory. Their explicit replacement date still supersedes older selectors.
+  // Explicit owner corrections remain authoritative even if the corrected
+  // source read failed and the persisted selectors still describe the old scope.
   const prior=ownerStatements.slice(0,-1);
-  const savedLast=memory?.ownerStatements.at(-1);
-  const savedIndex=savedLast?prior.lastIndexOf(savedLast):-1;
-  const newer=savedIndex>=0?prior.slice(savedIndex+1):[];
-  const replacement=[...newer].reverse().find(hasDate);
-  if(replacement)return matches(replacement);
+  const previous=[...prior].reverse().find(hasDate);
+  if(previous)return matches(previous);
   const remembered=(memory?.reads??[]).map(readSelector).filter(s=>s?.kind===candidate.kind);
   if(remembered.length)return remembered.some(s=>s?.kind==="week"&&candidate.kind==="week"?
     s.week===candidate.week:s?.kind==="period"&&candidate.kind==="period"&&s.from===candidate.from&&s.to===candidate.to);
-  const previous=[...prior].reverse().find(hasDate);
-  return previous?matches(previous):true;
+  return true;
 }
 /** Preserve a period across intervening catalog reads. Once a turn successfully
  * reads a replacement calendar scope, older selectors of that shape expire. */
