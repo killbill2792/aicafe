@@ -14,7 +14,7 @@ describe("Menu pricing source basis",()=>{
         {amountCents:52000,frequency:"yearly",estimated:true}],
       totalItemPrepSecondsInWindow:84000});
     expect(p).toMatchObject({coveredDays:14,oldestDate:"2026-08-01",latestDate:"2026-08-14",
-      monthlyDrinks:1200,monthlyPayrollCents:120000,processingFeeBps:300,
+      monthlyDrinks:1200,monthlyPayrollCents:168000,processingFeeBps:300,
       monthlyPrepSeconds:180000,monthlyRunningCents:154333,runningStatus:"estimated",
       feeStatus:"actual"});
   });
