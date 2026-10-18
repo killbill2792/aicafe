@@ -1168,6 +1168,35 @@ it("treats the same unknown tool name selected again as potential progress once 
   expect(result.reply.status).not.toBe("unavailable");
 });
 
+it("keeps an extraction-verified claim in the §7 best-accumulated candidate instead of falling back to the stale pre-extraction one on exhaustion (Codex finding)",async()=>{
+  // The draft has TWO unmatched freehand numbers. The narrow extraction
+  // fallback (section 5) only ever targets the FIRST one ("$4.83"), for
+  // which a real formula/owner-quote exists -- it fixes that one claim,
+  // strictly improving the candidate from 2 masked claims to 1. The SECOND
+  // ("$900") has no citation, owner quote or formula and can never be
+  // resolved, so the turn keeps retrying the identical draft until it
+  // exhausts via the adaptive-budget repeat check. On exhaustion, the §7
+  // best-accumulated candidate must be the IMPROVED one (only "$900"
+  // masked) -- never the stale one cached before extraction ran (both
+  // masked), which would wrongly hide an already-verified claim.
+  const draft=answer([
+    {kind:"advice",text:"At 3 drinks and $1.61 each, that comes to $4.83.",citations:[]},
+    {kind:"advice",text:"Rent alone could run $900 more some months.",citations:[]},
+  ]);
+  const extractionResponse=response({extracted:{claim:"$4.83",formula:"units * price",
+    variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}});
+  const scripted=transportFor([draft,draft]);
+  const transport=async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_formula_extraction")return extractionResponse;
+    return scripted(url,init);
+  };
+  const result=await runSupervisorTurn({...base,
+    text:"If I sell 3 drinks at $1.61 each, what else could change?"},transport);
+  expect(JSON.stringify(result.reply.blocks)).toContain("$4.83");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("$900");
+});
+
 describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
   function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
     const result={id:"test.read",status:"verified",value};

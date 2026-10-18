@@ -184,10 +184,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // produced later in the SAME round (e.g. after the formula-extraction
   // fallback improves it) is compared and stored the exact same way as the
   // first one, rather than leaving an earlier, more-masked candidate stuck
-  // in bestAccumulated once a strictly better one exists.
+  // in bestAccumulated once a strictly better one exists. ">=", not ">":
+  // masking one fewer claim inside an already-surviving paragraph (the
+  // extraction fallback's whole point) changes that paragraph's CONTENT,
+  // never its block COUNT, so an improved candidate from later in the same
+  // round can tie the score of the one just recorded moments earlier --
+  // that tie must still favor the newer, strictly-more-verified candidate.
   const updateBestAccumulated=(candidate:GroundedSupervisorReply)=>{
     const score=candidate.blocks.length;
-    if(!bestAccumulated||score>bestAccumulated.score)bestAccumulated={score,blocks:candidate.blocks,
+    if(!bestAccumulated||score>=bestAccumulated.score)bestAccumulated={score,blocks:candidate.blocks,
       evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
       citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
