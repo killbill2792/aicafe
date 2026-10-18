@@ -372,9 +372,33 @@ it("reserves terminal synthesis and independent review after a malformed step re
   const result=await runSupervisorTurn({...base,text:"How should I price a new latte?"},transport);
   expect(result.reply.blocks).toContainEqual({type:"text",
     text:"Review the verified ingredient cost and the intended margin definition before proposing a selling price."});
-  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.usage.modelCallCount).toBe(7);
   expect(result.usage.toolCallCount).toBeLessThanOrEqual(5);
   expect(requests.slice(-2)).toEqual(["supervisor_investigation_final_answer","supervisor_investigation_review"]);
+});
+
+it("keeps a terminal answer and review after the fifth exploratory step needs a retry",async()=>{
+  const requests:string[]=[];
+  let stepCount=0;
+  const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));const name=body.text.format.name;
+    requests.push(name);
+    if(name==="supervisor_investigation_review")return response({supported:true,complete:true});
+    if(name==="supervisor_investigation_final_answer")return response({
+      paragraphs:[{kind:"advice",text:"I can give a conditional recommendation after confirming the cost basis and which margin is intended.",citations:[]}]});
+    stepCount++;
+    if(stepCount===5)return new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},
+      output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));
+    return response(read("execute_sql",{attempt:stepCount}));
+  });
+  const result=await runSupervisorTurn({...base,text:"What should I charge for a latte?"},transport);
+  expect(result.reply.blocks).toContainEqual({type:"text",
+    text:"I can give a conditional recommendation after confirming the cost basis and which margin is intended."});
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(requests.slice(-2)).toEqual(["supervisor_investigation_final_answer","supervisor_investigation_review"]);
+  expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_INVESTIGATION_LIMIT")).toBe(false);
+  expect(p1).not.toHaveBeenCalled();
 });
 
 it("keeps the independent review fail-closed even for a forced terminal answer",async()=>{
