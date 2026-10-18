@@ -81,7 +81,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
         context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
         apiKey:input.apiKey,model:input.model,transport,usage,
-        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        deadline:Math.min(deadline,Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       return checked?.safe===true;
     })]);
   const manifest=registry.discover(scope);
@@ -102,9 +102,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // Reserve one model attempt for an answer and one for its independent
     // evidence/coverage review. Provider retries also share this ledger.
     // Five real operations must never crowd out the final answer.
+    // In the worst case another selection takes a full provider timeout and
+    // the selected registered reader takes ten seconds. Those cannot consume
+    // the time reserved for the answer and independent evidence review.
+    const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*3+10000;
     const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
       usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
-      deadline-Date.now()<=INVESTIGATION_LIMITS.providerTimeoutMs*2;
+      deadline-Date.now()<=timeNeededForAnotherOperation;
     const step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
       instructions:finalizeOnly?investigationInstructions+
         " This is the FINAL investigation step. Answer now from observations; explain any precise missing source or request a specific essential clarification. Do not choose another tool, invent facts or claim changes.":investigationInstructions,
@@ -196,8 +200,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
               capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
-            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
-            onDiagnostic:input.onDiagnostic});
+            apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
+            onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
@@ -213,9 +217,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
         feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
-      usage.toolCallCount++;
-      input.onUsage?.({...usage});
       result=await registry.invoke(scope,step.capabilityId,args);
+      // The registry still enforces its own exact Zod schema, purpose, byte
+      // limits and date span. A rejected input never dispatched a domain read
+      // and must not use up the five real-operation allowance.
+      const rejectedBeforeDispatch=record(result)&&[
+        "invalid_request","input_limit","unsupported_period","unknown_capability",
+        "mode_disabled","unauthorized",
+      ].includes(String(result.reason));
+      if(!rejectedBeforeDispatch){
+        usage.toolCallCount++;
+        input.onUsage?.({...usage});
+      }
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
     if(readDomain&&!["invalid_request","input_limit","unknown_capability","unauthorized","mode_disabled"].includes(String(result.reason))){
