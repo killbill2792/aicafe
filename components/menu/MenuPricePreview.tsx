@@ -65,6 +65,11 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       basis.monthlyPrepSeconds:null,
     itemPrepSeconds:item.prepSeconds,
     processingFeeBps:values.processingFeeBps,
+    // Use exact saved fee totals only while that source assumption remains.
+    processingFeeNumeratorCents:values.processingFeeBps===basis.processingFeeBps?
+      basis.processingFeeNumeratorCents:null,
+    processingFeeDenominatorCents:values.processingFeeBps===basis.processingFeeBps?
+      basis.processingFeeDenominatorCents:null,
     targetOperatingMarginBps:basis.targetOperatingMarginBps,
   });
   function confirm(){
@@ -148,7 +153,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       <div>
         {input("running",t("priceBasisBills"),sourceLabel("running",basis.runningStatus),"usd")}
-        {basis.missingRunningCategories.length>0&&
+        {basis.missingRunningCategories.length>0&&values.monthlyRunningCents===null&&
           <p className="mt-2 text-sm text-warn" role="status">{t("priceBasisMissingCostDetail",{
             names:basis.missingRunningCategories
               .map(code=>categoryName(code as ExpenseCategoryCode)).join(", "),
@@ -159,7 +164,13 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       {input("drinks",t("priceBasisDrinks"),sourceLabel("drinks",basis.volumeStatus),"count")}
       {input("fee",t("priceBasisFees"),sourceLabel("fee",basis.feeStatus),"percent")}
     </div>
-    {basis.missingRunningCategories.length>0&&
+    {basis.missingRunningCategories.length>0&&values.monthlyRunningCents!==null&&
+      <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
+        {t("priceBasisSavedCostsIncomplete",{
+          count:basis.missingRunningCategories.length,
+        })}
+      </p>}
+    {basis.missingRunningCategories.length>0&&values.monthlyRunningCents===null&&
       <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
         {t("priceBasisMissingExpected",{
           count:basis.missingRunningCategories.length,
