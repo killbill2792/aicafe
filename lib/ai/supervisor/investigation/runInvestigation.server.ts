@@ -139,7 +139,13 @@ function calendar(asOf:string){
 export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:string;
   history:ConversationalTurn[];investigationMemory?:InvestigationMemory;
   apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
-  onDiagnostic?:(event:SupervisorDiagnostic)=>void};
+  onDiagnostic?:(event:SupervisorDiagnostic)=>void;
+  // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload. When the
+  // caller (the API route) already generated a per-turn correlation id for its
+  // own lifecycle debug points, it is passed in here so the WHOLE turn --
+  // route-level points and every investigation round -- shares exactly one id,
+  // instead of this loop minting a second, disconnected one.
+  debugRequestId?:string};
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
@@ -149,7 +155,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
   // production diagnostics logger; only ties this one turn's raw debug
   // points together so its whole round-by-round trace can be reconstructed.
-  const debugRequestId=randomUUID().slice(0,12);
+  // Reuses the caller's id (the API route's own turn-level debugRequestId)
+  // when supplied, so the round-by-round trace joins up with the rest of the
+  // request lifecycle instead of getting a second, unrelated id.
+  const debugRequestId=input.debugRequestId??randomUUID().slice(0,12);
   // The model's own last attempt at a direct answer, kept only as a safety
   // net for when the turn is about to exhaust anyway. Never a substitute for
   // a grounded answer: it only ever reaches the owner tagged "unverified",

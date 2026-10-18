@@ -1,6 +1,7 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError,logSupervisorDebugPayload} from "./diagnostics.server";
+import {SupervisorReplyValidationError} from "./replyValidation";
 describe("Sanitized Supervisor production diagnostics",()=>{
   it("includes a stable request correlation ID with safe stage/counters only",()=>{
     const written:string[]=[];
@@ -161,6 +162,30 @@ describe("Sanitized Supervisor production diagnostics",()=>{
       stage:"provider_response",category:"provider_incomplete",httpStatus:200,
       providerStatus:"incomplete",round:2,attempt:1});
   });
+  it("classifies a SupervisorReplyValidationError under its own reply_validation stage/category, carrying only the safe reason", () => {
+    const reply={intent:"profitability" as const,status:"verified" as const,evidence:[],
+      blocks:[{type:"text" as const,text:"PRIVATE café figure that must never reach the log"}]};
+    const error=new SupervisorReplyValidationError("missing_evidence",
+      "Supervisor response requires trusted evidence",reply);
+    const classified=classifySupervisorError(error,"reply_persistence");
+    expect(classified).toEqual({stage:"reply_validation",category:"reply_validation",
+      replyValidationReason:"missing_evidence"});
+    const lines:string[]=[];
+    createSupervisorDiagnosticLogger(line=>lines.push(line)).emit({...classified,model:"gpt-6-luna"});
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({stage:"reply_validation",category:"reply_validation",
+      replyValidationReason:"missing_evidence"});
+    expect(JSON.stringify(logged)).not.toContain("PRIVATE");
+  });
+  it("drops an unrecognized replyValidationReason from the sanitized log",()=>{
+    const lines:string[]=[];
+    createSupervisorDiagnosticLogger(line=>lines.push(line)).emit({
+      stage:"reply_validation",category:"reply_validation",
+      replyValidationReason:"PRIVATE not a real reason" as never});
+    const logged=JSON.parse(lines[0]);
+    expect(logged.replyValidationReason).toBeUndefined();
+    expect(JSON.stringify(logged)).not.toContain("PRIVATE");
+  });
 });
 
 describe("Scope reconciliation telemetry never logs utterances or task contents",()=>{
@@ -266,5 +291,44 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
     logSupervisorDebugPayload({point:"investigation_exhausted",requestId:"same-turn-id"},(l)=>lines.push(l));
     const requestIds=lines.map(l=>JSON.parse(l).requestId);
     expect(new Set(requestIds).size).toBe(1);
+  });
+  it("logs a turn_received point with the raw owner message and thread id, before the investigation loop runs",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"turn_received",requestId:"turn-id",
+      threadId:"thread-1",ownerQuestion:"What did Sophie earn this week?"},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"turn_received",requestId:"turn-id",
+      threadId:"thread-1",ownerQuestion:"What did Sophie earn this week?"});
+  });
+  it("logs a reply_validation_failed point with which check failed and the full reply shape that tripped it",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"reply_validation_failed",requestId:"turn-id",
+      reason:"missing_evidence",
+      reply:{intent:"profitability",status:"verified",evidence:[],
+        blocks:[{type:"text",text:"Unverified financial claim"}]}},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged.point).toBe("reply_validation_failed");
+    expect(logged.reason).toBe("missing_evidence");
+    expect(logged.reply.blocks[0].text).toBe("Unverified financial claim");
+  });
+  it("logs a persistence_result point distinguishing the real attempt from a fallback retry",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"persistence_result",requestId:"turn-id",ok:false},(l)=>lines.push(l));
+    logSupervisorDebugPayload({point:"persistence_result",requestId:"turn-id",ok:true,fallback:true},(l)=>lines.push(l));
+    const [first,second]=lines.map(l=>JSON.parse(l));
+    expect(first).toMatchObject({point:"persistence_result",ok:false});
+    expect(second).toMatchObject({point:"persistence_result",ok:true,fallback:true});
+  });
+  it("logs an http_response_sent point with the actual reply shape/status returned to the owner",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"http_response_sent",requestId:"turn-id",
+      httpStatus:201,replyStatus:"insufficient_evidence"},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"http_response_sent",httpStatus:201,
+      replyStatus:"insufficient_evidence"});
   });
 });
