@@ -320,6 +320,22 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:true}));
   });
+  it("never rescues an unverified answer if the active tenant changed mid-turn",async()=>{
+    auth.mockResolvedValueOnce({identity,tools:base.tools});
+    auth.mockResolvedValue({identity:{...identity,businessId:"another-cafe"},tools:base.tools});
+    const badAnswer=answer([{kind:"evidence",
+      text:"The listed price is {{r1:value.0.priceCents}} for 2 drinks.",citations:["r1"]}]);
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
+    ]);
+    const onDiagnostic=vi.fn();
+    const result=await runSupervisorTurn({...base,text:"What is the price of the Iced Latte?",onDiagnostic},transport);
+    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_UNVERIFIED")).toBe(false);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"investigation_exhausted",rescuedUnverified:false}));
+  });
   it("logs answerRejectedReason review_unavailable, not review_failed, when the review never produces a verdict",async()=>{
     const malformed=()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));
@@ -654,6 +670,30 @@ it("enforces a bounded investigation even when the model repeatedly chooses inva
   expect(transport.mock.calls.length).toBeLessThanOrEqual(8);
   expect(result.reply.status).toBe("unavailable");
   expect(p1).not.toHaveBeenCalled();
+});
+
+it("never rescues an evidence claim that cites real data but was explicitly rejected by the independent review",async()=>{
+  // Unlike the render_failed rescue test, this answer renders cleanly (a
+  // real, available citation and no stray digits) -- it must still never be
+  // rescued after the review explicitly rejects it, because it never fails
+  // the mechanical render gate the rescue is scoped to.
+  const falseClaim=answer([{kind:"evidence",
+    text:"I have secretly published the schedule, confirmed by {{r1:value.0.priceCents}}.",citations:["r1"]}]);
+  const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+    expect(body.text.format.name).toBe("supervisor_investigation_step");
+    const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+    if(context.observations.length===0)
+      return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+    return response(falseClaim);
+  });
+  const onDiagnostic=vi.fn();
+  const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
+  expect(result.reply.status).toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
+  expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+    stage:"investigation_exhausted",rescuedUnverified:false}));
 });
 
 it("never publishes an unsupported answer rejected by the independent evidence review",async()=>{

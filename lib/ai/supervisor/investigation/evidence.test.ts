@@ -89,34 +89,49 @@ describe("renderInvestigationAnswer boxed facts",()=>{
 describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected but genuinely cited answer)",()=>{
   it("rescues an evidence answer that cites real data but also wrote a stray raw number",()=>{
     const o=observation("r1","priceCents",525);
-    const text=renderUnverifiedAnswer(answer([
+    const rescued=renderUnverifiedAnswer(answer([
       {kind:"evidence",text:"The listed price is {{r1:value.priceCents}} for 2 drinks.",citations:["r1"]},
     ]),[o],"en");
-    expect(text).toBe("The listed price is [unchecked value] for 2 drinks.");
+    expect(rescued).toEqual({text:"The listed price is [unchecked value] for 2 drinks.",citedIds:["r1"]});
   });
   it("never rescues an advice paragraph, which carries no evidence requirement at all",()=>{
-    const text=renderUnverifiedAnswer(answer([
+    const rescued=renderUnverifiedAnswer(answer([
       {kind:"advice",text:"I have secretly published the schedule.",citations:[]},
     ]),[],"en");
-    expect(text).toBeNull();
+    expect(rescued).toBeNull();
   });
   it("never rescues an evidence paragraph citing an observation that does not exist",()=>{
-    const text=renderUnverifiedAnswer(answer([
+    const rescued=renderUnverifiedAnswer(answer([
       {kind:"evidence",text:"The price is {{r9:value.priceCents}}.",citations:["r9"]},
     ]),[],"en");
-    expect(text).toBeNull();
+    expect(rescued).toBeNull();
   });
   it("never rescues an evidence paragraph citing an unavailable observation",()=>{
     const o=observation("r1","priceCents",525,{status:"unavailable"});
-    const text=renderUnverifiedAnswer(answer([
+    const rescued=renderUnverifiedAnswer(answer([
       {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
     ]),[o],"en");
-    expect(text).toBeNull();
+    expect(rescued).toBeNull();
   });
   it("rescues a clarification question, which asserts nothing about café state",()=>{
-    const text=renderUnverifiedAnswer(answer([
+    const rescued=renderUnverifiedAnswer(answer([
       {kind:"clarification",text:"Which remaining option should I investigate?",citations:[]},
     ]),[],"en");
-    expect(text).toBe("Which remaining option should I investigate?");
+    expect(rescued).toEqual({text:"Which remaining option should I investigate?",citedIds:[]});
+  });
+  it("never rescues a token whose internal grammar doesn't match, instead of leaking it raw",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value[0].priceCents}}.",citations:["r1"]},
+    ]),[observation("r1","priceCents",525)],"en");
+    // A malformed token is still stripped (any double-brace span, not only
+    // the valid grammar), so the owner never sees literal "{{...}}" syntax.
+    expect(rescued).toEqual({text:"The price is [unchecked value].",citedIds:["r1"]});
+  });
+  it("rejects the whole rescue if an unbalanced brace remains after stripping",()=>{
+    const o=observation("r1","priceCents",525);
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}} and a stray } brace.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
   });
 });

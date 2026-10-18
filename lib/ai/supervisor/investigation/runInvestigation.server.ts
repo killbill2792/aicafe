@@ -77,24 +77,41 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // The model's own last attempt at a direct answer, kept only as a safety
   // net for when the turn is about to exhaust anyway. Never a substitute for
   // a grounded answer: it only ever reaches the owner tagged "unverified",
-  // with no metric/count/percent blocks and no evidence citations, so a
-  // mechanical citation/display-token or review rejection never silently
-  // throws away a genuine answer the owner could otherwise have seen.
-  let lastUnverifiedAnswer:string|null=null;
-  const failure=(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
+  // with no metric/count/percent blocks and no evidence citations. Only ever
+  // set from a round that failed mechanical rendering -- never from a round
+  // that reached the independent review, whose negative verdict is an
+  // actual finding, not a formatting slip, and must never be rescued.
+  let lastUnverifiedAnswer:{text:string;citedIds:string[]}|null=null;
+  const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
+    let rescue=budget&&!!lastUnverifiedAnswer;
+    if(rescue&&lastUnverifiedAnswer){
+      // A rescued answer can still describe real café data through its
+      // cited observations, so it must pass the exact same publication-time
+      // authorization/snapshot checks as a fully grounded answer -- never
+      // less scrutiny just because it is a safety net.
+      const latestOwner=await authorizedOwnerP1();
+      if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
+        latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf){
+        rescue=false;
+      }else if(atomic.status==="available"&&observations.some(o=>
+        lastUnverifiedAnswer!.citedIds.includes(o.id)&&o.requiresSnapshot)){
+        const latest=await readAuthorizedAtomicP1SourceSnapshot();
+        if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
+          latest.snapshot.revision!==atomic.snapshot.revision)rescue=false;
+      }
+    }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
-      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
-      rescuedUnverified:budget&&!!lastUnverifiedAnswer});
-    if(budget&&lastUnverifiedAnswer)return {reply:{intent:"unknown" as const,
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
+    if(rescue&&lastUnverifiedAnswer)return {reply:{intent:"unknown" as const,
       status:"insufficient_evidence" as const,evidence:[],
       blocks:[{type:"warning" as const,code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
-        {type:"text" as const,text:lastUnverifiedAnswer}]},usage:{...usage}};
+        {type:"text" as const,text:lastUnverifiedAnswer.text}]},usage:{...usage}};
     return {reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
       blocks:[{type:"warning" as const,code:budget?"SUPERVISOR_INVESTIGATION_LIMIT":"SUPERVISOR_INVESTIGATION_UNAVAILABLE",
         text:budget?labels.budget:labels.unavailable}]},usage:{...usage}};
   };
   const {identity,tools}=await authorizedOwnerP1();
-  if(!identity.businessId||identity.asOf!==input.asOf||identity.timezone!==input.timezone||!input.apiKey)return failure();
+  if(!identity.businessId||identity.asOf!==input.asOf||identity.timezone!==input.timezone||!input.apiKey)return await failure();
   const parsedMemory=investigationMemorySchema.safeParse(input.investigationMemory);
   const memory=parsedMemory.success&&parsedMemory.data.businessId===identity.businessId?parsedMemory.data:undefined;
   // Only authenticated same-thread owner statements can ground referents or hypotheticals.
@@ -103,7 +120,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const financialReadsAvailable=atomic.status==="available"||atomic.reason==="rpc_not_installed";
   if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
     atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))
-    return failure(false,"snapshot_mismatch");
+    return await failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
     ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
   const datasets=new Map<string,StoredDataset>();
@@ -158,7 +175,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)
-      return failure(true,"observations_too_large");
+      return await failure(true,"observations_too_large");
     // Reserve one model attempt for an answer and one for its independent
     // evidence/coverage review. Provider retries also share this ledger.
     // Five real operations must never crowd out the final answer.
@@ -238,7 +255,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         feedback="A previous investigation instruction could not be validated. Answer now with verified observations and the specific remaining limitation.";
         continue;
       }
-      return failure(false,"model_calls");
+      return await failure(false,"model_calls");
     }
     feedback=null;
     if(!isToolCallSignal(step)){
@@ -247,10 +264,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       const answer=step;
-      lastUnverifiedAnswer=renderUnverifiedAnswer(answer,observations,input.locale)??lastUnverifiedAnswer;
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
       if(!rendered||!reply){
+        // Only ever captured here -- a round that fails this mechanical gate
+        // never reaches the independent review below, so there is no
+        // negative verdict to contradict by keeping this as a fallback.
+        lastUnverifiedAnswer=renderUnverifiedAnswer(answer,observations,input.locale)??lastUnverifiedAnswer;
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
@@ -277,13 +297,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const latestOwner=await authorizedOwnerP1();
       if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
         latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)
-        return failure(false,"identity_mismatch");
+        return await failure(false,"identity_mismatch");
       if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))
-        return failure(false,"snapshot_mismatch");
+        return await failure(false,"snapshot_mismatch");
       if(atomic.status==="available"&&observations.some(o=>o.reference&&o.requiresSnapshot)){
         const latest=await readAuthorizedAtomicP1SourceSnapshot();
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
-          latest.snapshot.revision!==atomic.snapshot.revision)return failure(false,"snapshot_mismatch");
+          latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
@@ -421,5 +441,5 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     observations.push(observation);
   }
-  return failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
+  return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }

@@ -142,9 +142,17 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
  * to ground it -- that must still go through the full independent review,
  * never this safety net. Only evidence paragraphs whose every citation
  * resolves to a real, available observation, and clarification paragraphs
- * (a question, never a claim), are eligible. */
-export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):string|null{
+ * (a question, never a claim), are eligible. The caller must still treat
+ * this as unverified, not grounded: it is never called after an answer
+ * reached the independent review -- a review's negative verdict is an
+ * actual finding, not a formatting slip, and must never be rescued. The
+ * returned citedIds let the caller reapply the same publication-time
+ * authorization/snapshot check the fully grounded path uses, since this
+ * text can still describe real café data. */
+export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):
+  {text:string;citedIds:string[]}|null{
   const byId=new Map(observations.map(o=>[o.id,o]));
+  const citedIds=new Set<string>();
   for(const paragraph of answer.paragraphs){
     if(paragraph.kind==="advice")return null;
     if(paragraph.kind==="evidence"){
@@ -152,15 +160,24 @@ export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:r
       for(const id of paragraph.citations){
         const observation=byId.get(id);
         if(!observation||observation.result.status==="unavailable")return null;
+        citedIds.add(id);
       }
     }
   }
   const labels=investigationLabels(locale);
   const text=answer.paragraphs
-    .map(p=>clean(p.text.replace(/\{\{r\d+:[a-zA-Z0-9_.]+\}\}/gu,labels.unverifiedValue)))
+    // Any double-brace span, not only one matching the valid {{rN:path}}
+    // grammar: a malformed or alternate-syntax token (e.g. a stray bracket
+    // in the path) must never survive as literal implementation syntax in
+    // owner-facing text just because it didn't match the strict pattern.
+    .map(p=>clean(p.text.replace(/\{\{[^{}]*\}\}/gu,labels.unverifiedValue)))
     .filter(Boolean).join(" ");
+  // Any brace still present means an unresolved or unbalanced token we
+  // cannot safely show raw; reject the whole rescue rather than risk
+  // leaking placeholder syntax to the owner.
+  if(/[{}]/u.test(text))return null;
   const cleaned=clean(text);
-  return cleaned?cleaned.slice(0,1100):null;
+  return cleaned?{text:cleaned.slice(0,1100),citedIds:[...citedIds]}:null;
 }
 export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
   const rendered=renderInvestigationAnswer(answer,observations,locale);
