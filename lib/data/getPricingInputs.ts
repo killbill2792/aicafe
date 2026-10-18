@@ -6,7 +6,6 @@ import { evaluateRecipeCost, resolveProductCost, monthlyProcessingFeesForWindow,
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
 import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
-import { recurringCostMonthlyEquivalentCents } from "@/lib/expenses/recurringMonthlyTotal";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
  * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
@@ -23,18 +22,22 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const timezone = businessRow?.timezone ?? "America/Los_Angeles";
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
+  const firstOfMonth = todayDateStr.slice(0,7)+"-01";
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
-  const [itemsResult, rollupsResult, recurringResult, ordersResult] = await Promise.all([
+  const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
     supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    supabase.from("expenses").select("category_code, amount_cents, status")
+      .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
   ]);
   if (itemsResult.error) throw itemsResult.error;
   if (rollupsResult.error) throw rollupsResult.error;
   if (recurringResult.error) throw recurringResult.error;
   if (ordersResult.error) throw ordersResult.error;
+  if (expenseResult.error) throw expenseResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
   const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await Promise.all([
@@ -105,23 +108,12 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const activeOperatingCosts = (recurringResult.data ?? []).filter(
     (row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr),
   );
-  // Recurring entries may be weekly, quarterly or yearly. The Bill screen
-  // already normalizes them; Menu must not silently treat each as monthly.
-  const monthlyOperatingCostCents = activeOperatingCosts.reduce((sum,row) =>
-    sum + recurringCostMonthlyEquivalentCents({
-      amountCents:Number(row.amount_cents),
-      frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
-    }),0);
-  // This additional MENU preview basis does not alter historical bookkeeping
-  // or the stricter business-adjusted pricing mode. It uses only explicitly
-  // covered previous-period days so 14 imported days work without pretending
-  // that the other 76 days were zero-sales or zero-payroll days.
-  // Item quantities from this RPC cover the ENTIRE 90 days, whereas the
-  // preview covers only days explicitly flagged sales_data_status=actual.
-  // Never combine those mismatched periods to allocate payroll by prep time.
-  // Until per-item quantities are reconciled to the covered dates, use the
-  // explicitly labelled equal-per-drink fallback instead.
-  const totalItemPrepSecondsInWindow = 0;
+  // Actual expenses for the current month replace recurring estimates
+  // category by category. No double count across receipts and bill schedule.
+  // This also powers the owner-visible Menu price evidence panel.
+  // Payroll is projected from its own independently evidenced dates; it must
+  // not be diluted by dates that contain only POS sales evidence.
+  const totalItemPrepSecondsInWindow = 0; // period-aligned item mix unavailable
   const menuPriceBasis = menuPriceSourceBasis({
     days:(rollupsResult.data??[]).map(row=>({
       businessDate:row.business_date,
@@ -135,13 +127,21 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       cardFeesStatus:row.card_fees_status,
     })),
     recurring:activeOperatingCosts.map(row=>({
+      categoryCode:row.category_code,
       amountCents:Number(row.amount_cents),
       frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
       estimated:row.is_estimate,
     })),
+    expenses:(expenseResult.data??[]).map(row=>({
+      categoryCode:row.category_code,
+      amountCents:Number(row.amount_cents),
+      status:row.status as "actual"|"estimated",
+    })),
     totalItemPrepSecondsInWindow,
   });
-  const operatingCostsStatus = activeOperatingCosts.some((row) => row.is_estimate) ? "estimated" as const : "actual" as const;
+  const monthlyOperatingCostCents = menuPriceBasis.monthlyRunningCents ?? 0;
+  const operatingCostsStatus = menuPriceBasis.runningStatus==="recorded"
+    ? "actual" as const:"estimated" as const;
   const productCostsStatus =
     items.some((item) => item.unitsSoldInWindow > 0 && item.productCostStatus !== "READY")
       ? "missing" as const
