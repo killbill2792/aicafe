@@ -36,7 +36,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     supabase.from("expenses").select("category_code, amount_cents, status")
       .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
     supabase.from("expenses").select("category_code")
-      .eq("business_id",businessId)
+      .eq("business_id",businessId).eq("status","actual")
       .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
   ]);
   if (itemsResult.error) throw itemsResult.error;
