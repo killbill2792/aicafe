@@ -121,12 +121,19 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
 const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|[$€£¥]\s?\d[\d,]*(?:\.\d+)?%?|\d[\d,]*(?:\.\d+)?%|\b\d[\d,]*(?:\.\d+)?\b/gu;
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
-  {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;issues:ClaimIssue[]}|null{
+  {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
+    issues:ClaimIssue[];citedIds:string[]}|null{
   const byId=new Map(observations.map(o=>[o.id,o]));
   if(!["en","es","ar"].includes(locale))return null;
   const labels=investigationLabels(locale);
   const ownerText=options?.ownerText??"";
   const blocks:SupervisorReplyBlock[]=[],refs:EvidenceReference[]=[],issues:ClaimIssue[]=[];
+  // Only citations on a paragraph that actually SURVIVED claim-level
+  // rendering (Codex finding #4): a paragraph dropped for one hallucinated
+  // citation must never let its OTHER, real citation leak a task card or a
+  // caution into the final reply just because it was also named in the
+  // original (pre-render) paragraph list.
+  const survivingCitedIds=new Set<string>();
   let boxedCount=0;const boxedSignatures=new Set<string>();
   let adviceOnly=true,hasComputedClaim=false;
   answer.paragraphs.forEach((paragraph,paragraphIndex)=>{
@@ -229,6 +236,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     // paragraph may cite a source purely to NARRATE it (e.g. "that task
     // needs your review") with no value pulled out of it at all.
     for(const id of paragraph.citations){
+      survivingCitedIds.add(id);
       const o=byId.get(id);
       if(o?.reference&&!refs.some(r=>r.identifier===o.reference!.identifier))refs.push(o.reference);
     }
@@ -254,7 +262,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   });
   // §3: only fall back to "nothing to show" if literally nothing survived.
   if(!blocks.length)return null;
-  return {blocks,evidence:refs,adviceOnly,hasComputedClaim,issues};
+  return {blocks,evidence:refs,adviceOnly,hasComputedClaim,issues,citedIds:[...survivingCitedIds]};
 }
 /** A short, specific retry message (§5b/§6) naming the exact paragraph and
  * offending span/citation, built from the FIRST few claim issues found --
@@ -395,7 +403,10 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
   const rendered=renderInvestigationAnswer(answer,observations,locale,options);
   if(!rendered)return null;
   const labels=investigationLabels(locale);
-  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
+  // Codex finding #4: built from the citations that actually survived
+  // rendering, never from `answer.paragraphs` directly -- a dropped
+  // paragraph's citations must never contribute a task card or a caution.
+  const cited=observations.filter(o=>rendered.citedIds.includes(o.id));
   const pure=(cited.length>0&&cited.every(o=>o.calculation&&!o.reference))||rendered.hasComputedClaim;
   const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
   const warnings:SupervisorReplyBlock[]=[

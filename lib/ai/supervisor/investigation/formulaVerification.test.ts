@@ -55,6 +55,47 @@ describe("verifyFormulaEntry -- observation-pointer sources",()=>{
   });
 });
 
+describe("verifyFormulaEntry -- owner-quote matching is exact-boundary, not substring (Codex finding #3)",()=>{
+  it("never lets a declared source of \"10\" match inside an owner-written \"100\"",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"10",variables:{a:{value:10,source:"10"}}}),
+      "We sold 100 drinks yesterday.",[]);
+    expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
+  });
+  it("matches a legitimately-quoted number even when the owner's formatting differs ($1.45 owner text, 1.45 declared source)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"1.45",variables:{a:{value:1.45,source:"1.45"}}}),
+      "The special is $1.45 today.",[]);
+    expect(result).toEqual({ok:true,value:1.45});
+  });
+  it("matches a legitimately-quoted number in the other direction (1.45 owner text, $1.45 declared source)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"1.45",variables:{a:{value:1.45,source:"$1.45"}}}),
+      "The special is 1.45 today.",[]);
+    expect(result).toEqual({ok:true,value:1.45});
+  });
+});
+
+describe("verifyFormulaEntry -- unit-aware verification (Codex finding #1)",()=>{
+  it("rejects adding a plain unit count to a dollar amount even when the arithmetic is numerically correct",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"5",
+      variables:{a:{value:3,source:"3"},b:{value:2,source:"$2"}}}),
+      "I sold 3 drinks and spent $2 on supplies.",[]);
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+  it("still accepts a scalar multiplied by a money amount (a unit price times a quantity)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"units * price",claim:"4.83",
+      variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}),
+      "I sold 3 drinks at $1.61 each.",[]);
+    expect(result).toEqual({ok:true,value:4.83});
+  });
+  it("rejects adding a plain observation-pointer count to a money-pointer amount",()=>{
+    const count=observation("r1","quantitySoldLast28Days",10);
+    const price=observation("r2","priceCents",525);
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"535",
+      variables:{a:{value:10,source:"r1:value.quantitySoldLast28Days"},
+        b:{value:525,source:"r2:value.priceCents"}}}),"",[count,price]);
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+});
+
 describe("verifyFormulaEntry -- grammar failures surface as a specific reason",()=>{
   it("rejects an unsupported grammar instead of silently failing",()=>{
     const result=verifyFormulaEntry(entry({formula:"sum(a)",variables:{a:{value:1,source:"1"}}}),"I have 1 drink.",[]);

@@ -1,10 +1,11 @@
 import {describe,it,expect} from "vitest";
-import {evaluateFormula} from "./formulaExpression";
+import {evaluateFormula,evaluateFormulaUnits,type ArithmeticUnit} from "./formulaExpression";
 import {rat} from "./scenarioExpression";
 
 const vars=(entries:Record<string,number>)=>
   new Map(Object.entries(entries).map(([k,v])=>[k,rat(BigInt(v))] as const));
 const value=(r:{ok:true;value:{n:bigint;d:bigint}})=>Number(r.value.n)/Number(r.value.d);
+const units=(entries:Record<string,ArithmeticUnit>)=>new Map(Object.entries(entries));
 
 describe("evaluateFormula -- accepted grammar",()=>{
   it("evaluates a simple multiplication of two variables",()=>{
@@ -95,5 +96,36 @@ describe("evaluateFormula -- rejected grammar",()=>{
   it("rejects a formula longer than the maximum length",()=>{
     const result=evaluateFormula("a+".repeat(150)+"a",vars({a:1}));
     expect(result).toEqual({ok:false,reason:"too_long"});
+  });
+});
+
+describe("evaluateFormulaUnits -- coarse unit-compatibility checking",()=>{
+  it("accepts a scalar multiplied by a money amount, yielding money",()=>{
+    const result=evaluateFormulaUnits("unitsSold * pricePerUnit",units({unitsSold:"scalar",pricePerUnit:"money"}));
+    expect(result).toEqual({ok:true,unit:"money"});
+  });
+  it("accepts money plus money, yielding money",()=>{
+    const result=evaluateFormulaUnits("a + b",units({a:"money",b:"money"}));
+    expect(result).toEqual({ok:true,unit:"money"});
+  });
+  it("rejects adding a scalar count to a money amount",()=>{
+    const result=evaluateFormulaUnits("a + b",units({a:"scalar",b:"money"}));
+    expect(result).toEqual({ok:false,reason:"incompatible_units"});
+  });
+  it("rejects adding a percent to a money amount",()=>{
+    const result=evaluateFormulaUnits("a + b",units({a:"percent",b:"money"}));
+    expect(result).toEqual({ok:false,reason:"incompatible_units"});
+  });
+  it("accepts money divided by money, yielding a dimensionless scalar ratio",()=>{
+    const result=evaluateFormulaUnits("profit / revenue",units({profit:"money",revenue:"money"}));
+    expect(result).toEqual({ok:true,unit:"scalar"});
+  });
+  it("rejects multiplying two money amounts together",()=>{
+    const result=evaluateFormulaUnits("a * b",units({a:"money",b:"money"}));
+    expect(result).toEqual({ok:false,reason:"incompatible_units"});
+  });
+  it("propagates the failure through parentheses and nested operators",()=>{
+    const result=evaluateFormulaUnits("(a + b) * c",units({a:"scalar",b:"money",c:"scalar"}));
+    expect(result).toEqual({ok:false,reason:"incompatible_units"});
   });
 });

@@ -62,32 +62,70 @@ export function friendlyAgent(owner:string|undefined):"alex"|"olivia"|"leo"|"may
     default:return "supervisor";
   }
 }
+/** Resolves the actual record a display path points into (not just the raw
+ * numeric leaf), by walking the SAME observation's underlying value -- e.g.
+ * "value.0.priceCents" resolves to `value[0]`, the one menu item this price
+ * actually belongs to. `recordLocator` is the path with its last segment
+ * (the field name itself) dropped, and always starts with "value" (see
+ * `observationDisplay`'s walk). */
+function recordAt(value:unknown,recordLocator:string):unknown{
+  let cur=value;
+  for(const seg of recordLocator.split(".").slice(1)){
+    if(Array.isArray(cur))cur=cur[Number(seg)];
+    else if(record(cur))cur=cur[seg];
+    else return undefined;
+  }
+  return cur;
+}
+/** A record's own identity (its id, or the closest thing to one) and the
+ * period/scope it covers, when either is actually present in the data --
+ * used ONLY to tell apart genuinely different entities/periods that happen
+ * to share a field name (Codex finding #5), never to invent an identity the
+ * data doesn't actually carry. */
+function recordScope(node:unknown):string{
+  if(!record(node))return "";
+  const id=["id","productId","employeeId","ingredientId"].map(k=>node[k])
+    .find((v):v is string|number=>typeof v==="string"||typeof v==="number");
+  const scope=["spentOn","effectiveFrom","effective_from","period","wagePeriod"].map(k=>node[k])
+    .find((v):v is string=>typeof v==="string");
+  return (id===undefined?"":"id:"+id)+"|"+(scope??"");
+}
 /** A new failure category (§8): when the SAME field name (e.g. an hourly
- * wage) comes back with more than one distinct value across different
- * observations produced this turn, that is a genuine conflict for one fact
- * the owner's request treats as singular -- surfaced to the model as
- * context so it is nudged toward a clarification question instead of
- * silently resolving it itself (averaging, picking one). Purely additive
- * context; never blocks or changes the loop's own control flow. */
-function detectConflictingFacts(observations:readonly Observation[]):
+ * wage) comes back with more than one distinct value for the SAME entity
+ * and period across different observations produced this turn, that is a
+ * genuine conflict for one fact the owner's request treats as singular --
+ * surfaced to the model as context so it is nudged toward a clarification
+ * question instead of silently resolving it itself (averaging, picking
+ * one). Grouping by field name ALONE is not enough: a menu catalog with
+ * several different products, or an employee roster with several different
+ * wages, must never look like "several conflicting values for one fact"
+ * merely because they share a field name -- the entity (which record this
+ * value belongs to, via its own id or its position in the result) and its
+ * period/scope are part of the grouping key too. Purely additive context;
+ * never blocks or changes the loop's own control flow. */
+export function detectConflictingFacts(observations:readonly Observation[]):
   {field:string;values:{id:string;display:string}[]}[]{
-  const groups=new Map<string,{id:string;display:string;raw:number}[]>();
+  const groups=new Map<string,{field:string;id:string;display:string;raw:number}[]>();
   for(const o of observations){
     if(!o.displayKind)continue;
+    const input=record(o.input)?o.input:null;
+    const inputPeriod=input&&record(input.period)?JSON.stringify(input.period):"";
     for(const [path,kind] of Object.entries(o.displayKind)){
       if(kind!=="money"&&kind!=="percent")continue;
       const raw=o.displayRaw?.[path];
       if(typeof raw!=="number")continue;
       const field=o.capabilityId.split(".").slice(0,2).join(".")+":"+(path.split(".").at(-1)??path);
-      const list=groups.get(field)??[];
-      list.push({id:o.id,display:o.display[path]??String(raw),raw});
-      groups.set(field,list);
+      const recordLocator=path.split(".").slice(0,-1).join(".");
+      const key=field+"@"+recordLocator+"|"+recordScope(recordAt(o.result.value,recordLocator))+"|"+inputPeriod;
+      const list=groups.get(key)??[];
+      list.push({field,id:o.id,display:o.display[path]??String(raw),raw});
+      groups.set(key,list);
     }
   }
   const conflicts:{field:string;values:{id:string;display:string}[]}[]=[];
-  for(const [field,entries] of groups){
+  for(const entries of groups.values()){
     if(entries.length>1&&new Set(entries.map(e=>e.raw)).size>1)
-      conflicts.push({field,values:entries.map(({id,display})=>({id,display}))});
+      conflicts.push({field:entries[0].field,values:entries.map(({id,display})=>({id,display}))});
   }
   return conflicts.slice(0,5);
 }
@@ -377,8 +415,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       let answer=step;
       // Adaptive budget (section 1): an EXACT repeat of a previously-rejected
       // draft, with no new information, stops the loop immediately rather
-      // than waiting out the remaining budget.
-      const answerSignature=JSON.stringify(answer);
+      // than waiting out the remaining budget. "No new information" is tied
+      // to the OBSERVATION STATE at the time of that earlier rejection
+      // (Codex finding #2): if round N's draft cited an observation that
+      // didn't exist yet (rejected), and a later round's read actually
+      // produces it, resubmitting the identical draft is potential progress,
+      // not a repeat, even though the draft text itself is byte-identical.
+      const answerSignature=JSON.stringify({answer,observationCount:observations.length});
       if(answerSignature===lastRejectedAnswerSignature)return await failure(true,"no_progress");
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,

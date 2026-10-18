@@ -9,13 +9,14 @@ import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSource
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
 import {researchEnabled,researchPublicSources} from "@/lib/ai/suppliers/research.server";
 import {runSupervisorTurn} from "@/lib/ai/conversations/runSupervisorTurn.server";
-import {capabilityToolName,CALCULATE_TOOL_NAME} from "./runInvestigation.server";
+import {capabilityToolName,CALCULATE_TOOL_NAME,detectConflictingFacts} from "./runInvestigation.server";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
 import {readers,purposePolicies,type SupportedId} from "@/lib/metrics/p1Catalog";
 import type {AtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 import type {InvestigationAnswer} from "./protocol";
 import {EXPRESSION_ID} from "../p3/expression";
+import {observationDisplay,type Observation} from "./evidence";
 
 const cafe="a0000000-0000-4000-8000-000000000999",product="a0000000-0000-4000-8000-000000000001";
 const ingredient="a0000000-0000-4000-8000-000000000100",employee="a0000000-0000-4000-8000-000000000002";
@@ -1142,4 +1143,47 @@ it("does not apply an unrelated provider-failed scheduling date to financial rea
   await runSupervisorTurn({...base,text:"How much did we spend?",investigationMemory:state,
     history:[{role:"owner",text:"Expenses for 2026-10-01"},{role:"owner",text:"Schedule Ava for 2026-10-26"}]},transport);
   expect(p1).toHaveBeenCalledTimes(1);expect(p1.mock.calls[0][2]).toMatchObject({period:oldPeriod});
+});
+
+it("treats an identical rejected answer draft as potential progress once a new observation arrives (Codex finding #2)",async()=>{
+  // Round 0 cites r1 before it exists (hallucinated -- rejected). Round 1
+  // performs the read that actually creates r1. Round 2 resubmits the exact
+  // same draft text: this must NOT be mistaken for a repeat with no new
+  // information, since the observation state underneath it has changed.
+  const draft=answer([{kind:"evidence",text:"The listed price is {{r1:value.0.priceCents}}.",citations:["r1"]}]);
+  const transport=transportFor([draft,read("p3.menu.catalog.v1",query("menu.catalog")),draft]);
+  const result=await runSupervisorTurn({...base,text:"What's the listed price?"},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).toContain("5.25");
+});
+
+describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
+  function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
+    const result={id:"test.read",status:"verified",value};
+    const rendered=observationDisplay(result,"en");
+    return {id,capabilityId,input,result,reference:null,
+      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw};
+  }
+  it("never flags a menu catalog's many different products' prices as one conflicting fact",()=>{
+    const o=recordObservation("r1","p3.menu.catalog.v1",
+      [{id:"p1",priceCents:300},{id:"p2",priceCents:700},{id:"p3",priceCents:900}]);
+    expect(detectConflictingFacts([o])).toEqual([]);
+  });
+  it("never flags several employees' different wages as one conflicting fact",()=>{
+    const o=recordObservation("r1","p3.labor.employee_wages.v1",
+      [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
+    expect(detectConflictingFacts([o])).toEqual([]);
+  });
+  it("flags genuinely different values for the SAME entity's field across two separate reads",()=>{
+    const first=recordObservation("r1","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:1800});
+    const second=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:2200});
+    const conflicts=detectConflictingFacts([first,second]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r1","r2"]);
+  });
+  it("never flags two different employees' single-record wage reads as conflicting",()=>{
+    const don=recordObservation("r1","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:1800});
+    const ava=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"ava",defaultHourlyWageCents:2000});
+    expect(detectConflictingFacts([don,ava])).toEqual([]);
+  });
 });

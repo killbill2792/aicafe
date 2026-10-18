@@ -1,6 +1,6 @@
 import {describe,it,expect} from "vitest";
 import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,
-  buildClaimFeedback,buildUnresolvedNote,type Observation} from "./evidence";
+  buildClaimFeedback,buildUnresolvedNote,investigationReply,type Observation} from "./evidence";
 import type {InvestigationAnswer} from "./protocol";
 
 const ref=(id:string)=>({source:"cafe_state" as const,identifier:id,asOf:"2026-10-18"});
@@ -294,6 +294,31 @@ describe("buildClaimFeedback / buildUnresolvedNote (§5b/§6/§7)",()=>{
     expect(note).not.toBeNull();
     expect(note).not.toContain("$999.99");
     expect(note).toContain("1");
+  });
+});
+
+describe("investigationReply -- cards/cautions only from citations that survived rendering (Codex finding #4)",()=>{
+  it("never leaks a caution from a paragraph dropped for citing one real id alongside one hallucinated id",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:[],estimatedInputs:["wage"],staleInputs:[]}});
+    const result=investigationReply(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}} and also {{r9:value.priceCents}}.",citations:["r1","r9"]},
+      {kind:"advice",text:"Keep tracking your weekly sales regardless.",citations:[]},
+    ]),[o],"en");
+    expect(result).not.toBeNull();
+    // The whole paragraph citing r1+r9 is dropped (r9 is hallucinated) --
+    // r1's own estimated-inputs caution must never survive just because r1
+    // itself is real and was named in the original (pre-render) paragraph.
+    expect(JSON.stringify(result!.blocks)).not.toContain("SUPERVISOR_ESTIMATED");
+    expect(result!.evidence).toEqual([]);
+  });
+  it("still carries the caution/evidence for a citation on a paragraph that DID survive rendering",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:[],estimatedInputs:["wage"],staleInputs:[]}});
+    const result=investigationReply(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+    ]),[o],"en");
+    expect(result).not.toBeNull();
+    expect(JSON.stringify(result!.blocks)).toContain("SUPERVISOR_ESTIMATED");
+    expect(result!.evidence).toEqual([ref("r1")]);
   });
 });
 
