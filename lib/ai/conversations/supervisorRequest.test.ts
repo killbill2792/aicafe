@@ -46,7 +46,12 @@ describe("Compatibility Responses request model profiles",()=>{
     const smoke=readFileSync("scripts/supervisor-provider-smoke.mjs","utf8");
     expect(runtime).toContain("buildInvestigationRequest({");
     expect(smoke).toContain("buildInvestigationRequest({");
-    expect(smoke).toContain("INVESTIGATION_STEP_JSON_SCHEMA");
+    // The smoke exercises the real native function-calling shape: a tools
+    // payload plus a returned function_call item, not the removed
+    // action/capabilityId/argumentsJson/responseJson envelope.
+    expect(smoke).toContain("tools:[{name:toolName");
+    expect(smoke).toContain('x?.type==="function_call"');
+    expect(smoke).not.toContain("INVESTIGATION_STEP_JSON_SCHEMA");
     expect(smoke).not.toContain('reasoning:{effort:');
   });
 });

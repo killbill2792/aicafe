@@ -1,17 +1,31 @@
 #!/usr/bin/env node
 /** Paid, explicit provider-contract smoke. Never use customer data or print API response bodies. */
 import {SUPERVISOR_ENDPOINT} from "../lib/ai/conversations/supervisorRequest.mjs";
-import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA} from "../lib/ai/conversations/investigationRequest.mjs";
+import {buildInvestigationRequest} from "../lib/ai/conversations/investigationRequest.mjs";
 
 if(!process.env.OPENAI_API_KEY){
   console.error("NOT RUN: configure OPENAI_API_KEY securely, then npm run supervisor:provider-smoke");
   process.exit(2);
 }
 const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+// Exercises the actual production wire shape: a native function-calling tool
+// plus the direct {paragraphs:[...]} answer schema, matching
+// lib/ai/supervisor/investigation/model.server.ts exactly. This call is
+// instructed to use the tool, so a successful run proves the provider
+// accepts our tools payload and returns a real function_call item, not the
+// removed action/capabilityId/argumentsJson/responseJson envelope.
+const toolName="get_shift_handoff_tips";
 const request=buildInvestigationRequest({model,name:"supervisor_investigation_step",
-  schema:INVESTIGATION_STEP_JSON_SCHEMA,
-  instructions:"You are a café advisor. Return action answer, null capabilityId/argumentsJson and responseJson containing paragraphs [{kind:advice,text,citations:[]}]. Give qualitative general handoff advice, no invented café facts or numerical claims.",
-  context:{ownerRequest:"How could a café improve shift handoffs?",locale:"en",observations:[],remainingOperations:0},
+  schema:{type:"object",additionalProperties:false,required:["paragraphs"],
+    properties:{paragraphs:{type:"array",items:{type:"object",additionalProperties:false,
+      required:["kind","text","citations"],properties:{
+        kind:{type:"string",enum:["evidence","advice","clarification"]},
+        text:{type:"string"},citations:{type:"array",items:{type:"string"}}}}}}},
+  instructions:"You are a café advisor. For a question about improving shift handoffs, call the "+
+    toolName+" function with no arguments. Never answer this directly.",
+  context:{ownerRequest:"How could a café improve shift handoffs?",locale:"en",observations:[],remainingOperations:1},
+  tools:[{name:toolName,description:"Retrieve general shift-handoff improvement tips.",
+    parameters:{type:"object",additionalProperties:false,properties:{},required:[]}}],
   // Matches the production per-call cap (lib/ai/supervisor/investigation/model.server.ts)
   // when the turn's full output-token budget is still available.
   maxOutputTokens:6000,
@@ -40,27 +54,21 @@ try {
   const body=await response.json();
   const safeStatus=["completed","incomplete","failed","queued","in_progress"].includes(body.status)?
     body.status:"unknown";
-  const texts=(Array.isArray(body.output)?body.output:[]).filter(x=>x?.type==="message")
-    .flatMap(x=>x.content??[]).filter(x=>x?.type==="output_text").map(x=>x.text);
-  // Matches production (lib/ai/supervisor/investigation/model.server.ts): the
-  // provider may legitimately split a long JSON answer across multiple
-  // output_text parts in the same message; reassemble them before parsing.
-  const text=texts.join("");
-  let validAnswer=false;
+  const output=Array.isArray(body.output)?body.output:[];
+  const functionCalls=output.filter(x=>x?.type==="function_call");
+  let validToolCall=false;
   try{
-    const step=JSON.parse(text);
-    const answer=JSON.parse(step.responseJson);
-    validAnswer=texts.length>0&&step.action==="answer"&&step.capabilityId===null&&step.argumentsJson===null&&
-      Array.isArray(answer.paragraphs)&&answer.paragraphs.length>0&&answer.paragraphs.every(p=>
-        p.kind==="advice"&&typeof p.text==="string"&&Array.isArray(p.citations)&&p.citations.length===0);
-  }catch{/* Invalid output fails without printing the response body. */}
+    validToolCall=functionCalls.length===1&&functionCalls[0].name===toolName&&
+      typeof functionCalls[0].call_id==="string"&&
+      JSON.parse(functionCalls[0].arguments??"")&&typeof functionCalls[0].arguments==="string";
+  }catch{/* Invalid tool-call shape fails without printing the response body. */}
   const usage=body.usage??{};
   const safeToken=n=>Number.isSafeInteger(n)&&n>=0?n:null;
   console.log(JSON.stringify({model,
     httpStatus:response.status,providerStatus:safeStatus,
-    protocol:request.text.format.name,validAnswer,
+    protocol:request.text.format.name,toolsSent:request.tools?.length??0,validToolCall,
     inputTokens:safeToken(usage.input_tokens),outputTokens:safeToken(usage.output_tokens)}));
-  if(safeStatus!=="completed"||!validAnswer)process.exitCode=1;
+  if(safeStatus!=="completed"||!validToolCall)process.exitCode=1;
 }catch(e){
   console.error(JSON.stringify({category:e?.name==="TimeoutError"||e?.name==="AbortError"?
     "provider_timeout":"provider_request_failure",model}));
