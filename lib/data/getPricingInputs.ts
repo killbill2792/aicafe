@@ -23,21 +23,28 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const today = new Date();
   const todayDateStr = formatInTimeZone(today, timezone, "yyyy-MM-dd");
   const firstOfMonth = todayDateStr.slice(0,7)+"-01";
+  const [year,month]=todayDateStr.slice(0,7).split("-").map(Number);
+  const previousMonthStart=new Date(Date.UTC(year,month-2,1))
+    .toISOString().slice(0,10);
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
-  const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult] = await Promise.all([
+  const [itemsResult, rollupsResult, recurringResult, ordersResult, expenseResult, priorExpenseResult] = await Promise.all([
     supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
     supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
     supabase.from("expenses").select("category_code, amount_cents, status")
       .eq("business_id",businessId).gte("spent_on",firstOfMonth).lte("spent_on",todayDateStr),
+    supabase.from("expenses").select("category_code")
+      .eq("business_id",businessId)
+      .gte("spent_on",previousMonthStart).lt("spent_on",firstOfMonth),
   ]);
   if (itemsResult.error) throw itemsResult.error;
   if (rollupsResult.error) throw rollupsResult.error;
   if (recurringResult.error) throw recurringResult.error;
   if (ordersResult.error) throw ordersResult.error;
   if (expenseResult.error) throw expenseResult.error;
+  if (priorExpenseResult.error) throw priorExpenseResult.error;
   const rawItems = itemsResult.data ?? [];
   const itemIds = rawItems.map((item) => item.id);
   const [recipesResult, quantitiesResult, fallbackResult] = itemIds.length ? await Promise.all([
@@ -137,6 +144,8 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       amountCents:Number(row.amount_cents),
       status:row.status as "actual"|"estimated",
     })),
+    previousMonthExpenseCategories:(priorExpenseResult.data??[])
+      .map(row=>row.category_code),
     totalItemPrepSecondsInWindow,
   });
   const monthlyOperatingCostCents = menuPriceBasis.monthlyRunningCents ?? 0;
