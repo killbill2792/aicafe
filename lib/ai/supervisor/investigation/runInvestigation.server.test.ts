@@ -281,6 +281,30 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 });
 
+describe("direct-answer investigation rounds report why they were rejected",()=>{
+  it("logs answerRejectedReason render_failed when the proposed answer cites an unknown observation",async()=>{
+    const transport=transportFor([
+      answer([{kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]}]),
+    ]);
+    const onDiagnostic=vi.fn();
+    await runSupervisorTurn({...base,text:"What is the price of the Iced Latte?",onDiagnostic},transport);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
+      agent:"supervisor",answerRejectedReason:"render_failed"}));
+  });
+  it("logs answerRejectedReason review_failed when the independent review rejects a well-formed answer",async()=>{
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      return response(answer([{kind:"advice",text:"Consider reviewing pricing periodically.",citations:[]}]));
+    });
+    const onDiagnostic=vi.fn();
+    await runSupervisorTurn({...base,text:"Any pricing advice?",onDiagnostic},transport);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
+      agent:"supervisor",answerRejectedReason:"review_failed"}));
+  });
+});
+
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{
   olivia.mockImplementation(async(raw:unknown)=>{
     const request=raw as {capability:string};

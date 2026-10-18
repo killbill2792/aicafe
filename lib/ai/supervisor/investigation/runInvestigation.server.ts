@@ -237,12 +237,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const answer=step;
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
-      if(!rendered||!reply){feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";continue;}
+      if(!rendered||!reply){
+        feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
+        input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
+        continue;
+      }
       const review=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
         instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
           proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
-      if(!review||isToolCallSignal(review)||!review.supported||!review.complete){feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";continue;}
+      if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
+        feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";
+        input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"review_failed"});
+        continue;
+      }
       // Reauthorize at publication time. A changed café or epoch invalidates the
       // investigation; no data from the later snapshot is mixed with earlier reads.
       const latestOwner=await authorizedOwnerP1();

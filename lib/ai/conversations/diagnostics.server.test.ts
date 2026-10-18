@@ -128,6 +128,18 @@ describe("Sanitized Supervisor production diagnostics",()=>{
     expect(logged.messagePartTypes).toEqual(["output_text"]);
     expect(JSON.stringify(logged)).not.toContain("sk-abc123_secret-token");
   });
+  it("carries a safe answerRejectedReason but drops an unrecognized one",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    logger.emit({stage:"investigation_round",agent:"supervisor",modelCallCount:5,toolCallCount:3,
+      answerRejectedReason:"render_failed"});
+    logger.emit({stage:"investigation_round",agent:"supervisor",modelCallCount:6,toolCallCount:3,
+      answerRejectedReason:"PRIVATE not a real reason" as never});
+    const [first,second]=lines.map(line=>JSON.parse(line));
+    expect(first.answerRejectedReason).toBe("render_failed");
+    expect(second.answerRejectedReason).toBeUndefined();
+    expect(JSON.stringify(second)).not.toContain("PRIVATE");
+  });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",
       {httpStatus:200,providerStatus:"incomplete",round:2,attempt:1});
