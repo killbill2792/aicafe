@@ -9,7 +9,7 @@ const day=(n:number):MenuPriceSourceDay=>({
 });
 const basis=(days:MenuPriceSourceDay[],opts:Partial<Parameters<typeof menuPriceSourceBasis>[0]>={})=>
   menuPriceSourceBasis({days,recurring:[],expenses:[],previousMonthExpenseCategories:[],
-    totalItemPrepSecondsInWindow:0,asOfBusinessDate:"2026-10-17",...opts});
+    totalItemPrepSecondsInWindow:0,asOfBusinessDate:"2026-09-17",...opts});
 
 describe("Menu pricing source basis",()=>{
   it("uses 14 actual historical import days even when none are in the current month",()=>{
@@ -29,9 +29,9 @@ describe("Menu pricing source basis",()=>{
       ...day(i+1),businessDate:`2026-10-${String(i+1).padStart(2,"0")}`,
       drinksCount:10,cardFeesCents:100,
     }));
-    const p=basis([...historical,...recent]);
+    const p=basis([...historical,...recent],{asOfBusinessDate:"2026-10-17"});
     expect(p).toMatchObject({coveredDays:14,oldestDate:"2026-10-01",
-      latestDate:"2026-10-14",monthlyDrinks:300,processingFeeBps:100});
+      latestDate:"2026-10-14",monthlyDrinks:310,processingFeeBps:100});
   });
   it("withholds payroll when positive paid dates lack independently verified zero-day coverage",()=>{
     const sales=Array.from({length:14},(_,i)=>({
@@ -71,6 +71,16 @@ describe("Menu pricing source basis",()=>{
     expect(p.processingFeeBps).toBe(301);
     expect(p.processingFeeNumeratorCents).toBe(8414);
     expect(p.processingFeeDenominatorCents).toBe(280000);
+  });
+  it("scales covered sales to February, leap February, and 31-day calendar months",()=>{
+    const feb28=Array.from({length:14},(_,i)=>({
+      ...day(i+1),businessDate:`2027-02-${String(i+1).padStart(2,"0")}`,
+    }));
+    const feb29=feb28.map(d=>({...d,businessDate:d.businessDate.replace("2027","2028")}));
+    const march=feb28.map(d=>({...d,businessDate:d.businessDate.replace("2027-02","2027-03")}));
+    expect(basis(feb28,{asOfBusinessDate:"2027-02-20"}).monthlyDrinks).toBe(1120);
+    expect(basis(feb29,{asOfBusinessDate:"2028-02-20"}).monthlyDrinks).toBe(1160);
+    expect(basis(march,{asOfBusinessDate:"2027-03-20"}).monthlyDrinks).toBe(1240);
   });
   it("never treats the other 76 unimported days of a 90-day window as zero",()=>{
     const p=basis([day(1),day(2)]);
