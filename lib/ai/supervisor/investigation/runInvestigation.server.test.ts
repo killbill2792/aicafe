@@ -303,6 +303,20 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
       agent:"supervisor",answerRejectedReason:"review_failed"}));
   });
+  it("rescues a genuine answer as unverified, instead of discarding it, when it only fails our display-token formatting",async()=>{
+    const badAnswer=answer([{kind:"evidence",
+      text:"The listed price is {{r1:value.0.priceCents}} for 2 drinks.",citations:["r1"]}]);
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
+    ]);
+    const result=await runSupervisorTurn({...base,text:"What is the price of the Iced Latte?"},transport);
+    expect(result.reply.status).toBe("insufficient_evidence");
+    expect(result.reply.evidence).toEqual([]);
+    expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_UNVERIFIED"}));
+    expect(result.reply.blocks).toContainEqual({type:"text",
+      text:"The listed price is [unchecked value] for 2 drinks."});
+  });
   it("logs answerRejectedReason review_unavailable, not review_failed, when the review never produces a verdict",async()=>{
     const malformed=()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));

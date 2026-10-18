@@ -21,7 +21,7 @@ import {datasetOperands} from "./calculations.server";
 import {buildRecordsRegistration,recordCollections,RECORDS_ID} from "./records.server";
 import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
-  renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
+  renderInvestigationAnswer,renderUnverifiedAnswer,type Observation,type Locale} from "./evidence";
 import {answerSchema,reviewSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
@@ -74,9 +74,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
   const usage:InvestigationUsage={model:input.model,modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0};
   const labels=investigationLabels(input.locale);
+  // The model's own last attempt at a direct answer, kept only as a safety
+  // net for when the turn is about to exhaust anyway. Never a substitute for
+  // a grounded answer: it only ever reaches the owner tagged "unverified",
+  // with no metric/count/percent blocks and no evidence citations, so a
+  // mechanical citation/display-token or review rejection never silently
+  // throws away a genuine answer the owner could otherwise have seen.
+  let lastUnverifiedAnswer:string|null=null;
   const failure=(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+    if(budget&&lastUnverifiedAnswer)return {reply:{intent:"unknown" as const,
+      status:"insufficient_evidence" as const,evidence:[],
+      blocks:[{type:"warning" as const,code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
+        {type:"text" as const,text:lastUnverifiedAnswer}]},usage:{...usage}};
     return {reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
       blocks:[{type:"warning" as const,code:budget?"SUPERVISOR_INVESTIGATION_LIMIT":"SUPERVISOR_INVESTIGATION_UNAVAILABLE",
         text:budget?labels.budget:labels.unavailable}]},usage:{...usage}};
@@ -235,6 +246,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       const answer=step;
+      lastUnverifiedAnswer=renderUnverifiedAnswer(answer,observations,input.locale)??lastUnverifiedAnswer;
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
       if(!rendered||!reply){

@@ -129,6 +129,39 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   }
   return {blocks,evidence:refs,adviceOnly};
 }
+/** Last-resort text for when the investigation is about to give up with a
+ * genuine model answer in hand that merely failed our mechanical display-
+ * token formatting gate -- never thrown away silently just because the
+ * model wrote "$5.25" instead of the exact placeholder syntax. Strips every
+ * `{{rN:path}}` token outright (we have no validated display value to trust
+ * there, so it must never reach the owner as literal syntax or as a raw
+ * unverified number).
+ * Deliberately narrower than a plain formatting check: an "advice" paragraph
+ * carries no evidence requirement at all, so it is the one channel where the
+ * model could assert something false (an action it never took) with nothing
+ * to ground it -- that must still go through the full independent review,
+ * never this safety net. Only evidence paragraphs whose every citation
+ * resolves to a real, available observation, and clarification paragraphs
+ * (a question, never a claim), are eligible. */
+export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):string|null{
+  const byId=new Map(observations.map(o=>[o.id,o]));
+  for(const paragraph of answer.paragraphs){
+    if(paragraph.kind==="advice")return null;
+    if(paragraph.kind==="evidence"){
+      if(!paragraph.citations.length)return null;
+      for(const id of paragraph.citations){
+        const observation=byId.get(id);
+        if(!observation||observation.result.status==="unavailable")return null;
+      }
+    }
+  }
+  const labels=investigationLabels(locale);
+  const text=answer.paragraphs
+    .map(p=>clean(p.text.replace(/\{\{r\d+:[a-zA-Z0-9_.]+\}\}/gu,labels.unverifiedValue)))
+    .filter(Boolean).join(" ");
+  const cleaned=clean(text);
+  return cleaned?cleaned.slice(0,1100):null;
+}
 export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
   const rendered=renderInvestigationAnswer(answer,observations,locale);
   if(!rendered)return null;

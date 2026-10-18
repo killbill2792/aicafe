@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {observationDisplay,renderInvestigationAnswer,type Observation} from "./evidence";
+import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,type Observation} from "./evidence";
 import type {InvestigationAnswer} from "./protocol";
 
 const ref=(id:string)=>({source:"cafe_state" as const,identifier:id,asOf:"2026-10-18"});
@@ -83,5 +83,40 @@ describe("renderInvestigationAnswer boxed facts",()=>{
     const rendered=renderInvestigationAnswer(answer(paragraphs),observations,"en");
     const boxes=rendered!.blocks.filter(b=>b.type==="metric"||b.type==="percent");
     expect(boxes).toHaveLength(4);
+  });
+});
+
+describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected but genuinely cited answer)",()=>{
+  it("rescues an evidence answer that cites real data but also wrote a stray raw number",()=>{
+    const o=observation("r1","priceCents",525);
+    const text=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The listed price is {{r1:value.priceCents}} for 2 drinks.",citations:["r1"]},
+    ]),[o],"en");
+    expect(text).toBe("The listed price is [unchecked value] for 2 drinks.");
+  });
+  it("never rescues an advice paragraph, which carries no evidence requirement at all",()=>{
+    const text=renderUnverifiedAnswer(answer([
+      {kind:"advice",text:"I have secretly published the schedule.",citations:[]},
+    ]),[],"en");
+    expect(text).toBeNull();
+  });
+  it("never rescues an evidence paragraph citing an observation that does not exist",()=>{
+    const text=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r9:value.priceCents}}.",citations:["r9"]},
+    ]),[],"en");
+    expect(text).toBeNull();
+  });
+  it("never rescues an evidence paragraph citing an unavailable observation",()=>{
+    const o=observation("r1","priceCents",525,{status:"unavailable"});
+    const text=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+    ]),[o],"en");
+    expect(text).toBeNull();
+  });
+  it("rescues a clarification question, which asserts nothing about café state",()=>{
+    const text=renderUnverifiedAnswer(answer([
+      {kind:"clarification",text:"Which remaining option should I investigate?",citations:[]},
+    ]),[],"en");
+    expect(text).toBe("Which remaining option should I investigate?");
   });
 });
