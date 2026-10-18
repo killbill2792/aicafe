@@ -111,6 +111,8 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
         margin:(basis.targetOperatingMarginBps/100).toFixed(1),
         price:money(estimate.targetPriceCents),
       })}</p>}
+    {estimate.status!=="missing"&&basis.targetMarginStatus==="default"&&
+      <p className="mt-1 text-sm text-warn">{t("priceBasisTargetDefault")}</p>}
   </section><details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-2 rounded-2xl border border-line bg-paper p-3.5">
     <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
       {t("priceBasisTitle")}
@@ -119,6 +121,11 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     <div className="rounded-xl border border-line/60 bg-card p-3">
       <p className="text-sm font-bold text-ink-muted">{t("priceBasisHistoryTitle")}</p>
       <p className="mt-1 text-[17px] text-ink">{period}</p>
+      {basis.payrollCoveredDays>0&&basis.payrollOldestDate&&basis.payrollLatestDate&&
+        <p className="mt-1 text-sm text-ink-muted">{t("priceBasisPayrollWindow",{
+          days:basis.payrollCoveredDays,from:basis.payrollOldestDate,
+          to:basis.payrollLatestDate,
+        })}</p>}
       <p className="mt-1 text-sm text-ink-muted">{t("priceBasisHistoryCaveat")}</p>
     </div>
     <div className="mt-3 grid gap-2 md:grid-cols-2">
