@@ -152,6 +152,34 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     expect(onDiagnostic.mock.calls[0][0].invalidPayloadReason).toBeUndefined();
   });
 
+  it("recovers terminal answer JSON from a complete output-text prefix, but still requires downstream review",async()=>{
+    const schema=z.strictObject({paragraphs:z.array(z.strictObject({
+      kind:z.literal("clarification"),text:z.string(),citations:z.array(z.string()),
+    }))});
+    const value={paragraphs:[{kind:"clarification",text:"Which source should I use?",citations:[]}]};
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify(value)},
+        {type:"output_text",text:" duplicate output"},
+      ]}]})));
+    const result=await requestInvestigation({name:"supervisor_investigation_final_answer",schema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000,maxAttempts:1});
+    expect(result).toEqual(value);
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not spend the independent review reserve retrying a malformed terminal answer",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",
+        content:[{type:"output_text",text:"unparseable"}]}]})));
+    const result=await requestInvestigation({name:"supervisor_investigation_final_answer",schema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000,maxAttempts:1});
+    expect(result).toBeNull();
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
   it("never accepts a recovered prefix for the public-query privacy authorization gate, even when valid and schema-matching",async()=>{
     // supervisor_public_query_review's {safe:true} directly authorizes sending
     // the owner's clause to an external search provider. An authorization gate
