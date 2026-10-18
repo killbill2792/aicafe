@@ -62,6 +62,20 @@ describe("renderInvestigationAnswer boxed facts",()=>{
     const boxes=rendered!.blocks.filter(b=>b.type==="metric"||b.type==="percent");
     expect(boxes).toHaveLength(1);
   });
+  it("places each boxed fact immediately after its own paragraph, not batched at the end",()=>{
+    const revenue=observation("r1","priceCents",700);
+    const cost=observation("r2","priceCents",300);
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"Revenue is {{r1:value.priceCents}}.",citations:["r1"]},
+      {kind:"evidence",text:"Cost is {{r2:value.priceCents}}.",citations:["r2"]},
+    ]),[revenue,cost],"en");
+    expect(rendered!.blocks).toEqual([
+      {type:"text",text:"Revenue is $7.00."},
+      {type:"metric",label:"Amount",valueCents:700,source:ref("r1")},
+      {type:"text",text:"Cost is $3.00."},
+      {type:"metric",label:"Amount",valueCents:300,source:ref("r2")},
+    ]);
+  });
   it("caps boxed facts at four even with five distinct money citations",()=>{
     const observations=[1,2,3,4,5].map(n=>observation("r"+n,"priceCents",n*100));
     const paragraphs=observations.map(o=>(

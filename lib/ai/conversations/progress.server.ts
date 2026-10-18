@@ -11,15 +11,18 @@ export type SupervisorProgressAgent = NonNullable<SupervisorDiagnostic["agent"]>
  * only means the status bar stays stale, never a lost or corrupted reply. */
 export async function recordSupervisorProgress(params: {
   scope: ConversationScope; threadId: string; clientMessageId: string;
-  agent: SupervisorProgressAgent; stage: SupervisorProgressStage;
+  agent: SupervisorProgressAgent; stage: SupervisorProgressStage; step: number;
 }): Promise<void> {
   try {
     const admin = createAdminSupabaseClient();
-    await admin.from("ai_supervisor_progress").upsert({
-      thread_id: params.threadId, client_message_id: params.clientMessageId,
-      business_id: params.scope.businessId, owner_user_id: params.scope.ownerUserId,
-      agent: params.agent, stage: params.stage, updated_at: new Date().toISOString(),
-    }, { onConflict: "thread_id,client_message_id" });
+    // These calls are fire-and-forget and race each other in flight; the
+    // step-ordered RPC (not a plain upsert) keeps whichever write carries the
+    // highest step, so a slower earlier round can never overwrite a later one.
+    await admin.rpc("record_supervisor_progress", {
+      p_thread_id: params.threadId, p_client_message_id: params.clientMessageId,
+      p_business_id: params.scope.businessId, p_owner_user_id: params.scope.ownerUserId,
+      p_agent: params.agent, p_stage: params.stage, p_step: params.step,
+    });
   } catch { /* status is a UI nicety only; never surfaces to the owner turn. */ }
 }
 

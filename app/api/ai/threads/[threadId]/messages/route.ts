@@ -64,6 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
     const messages = (await service.listMessages(id, 0)).items;
     const history = compactConversationContext(messages, message.id);
     let aggregatedUsage: SupervisorUsage | null = null;
+    let progressStep = 0;
     let reply;
     try {
       const completed = await runSupervisorTurn({
@@ -78,9 +79,13 @@ export async function POST(request: Request, context: RouteContext) {
           diagnostics.emit(event);
           const progress=progressFromDiagnostic(event);
           // Fire-and-forget: a stale or missing status bar must never slow
-          // down or fail the owner's actual turn.
+          // down or fail the owner's actual turn. progressStep is strictly
+          // increasing per call, so the step-ordered write (see
+          // recordSupervisorProgress) can never let a slower earlier round
+          // overwrite a later one that happened to finish first.
           if (progress) void recordSupervisorProgress({
-            scope, threadId: id, clientMessageId: input.clientMessageId, ...progress,
+            scope, threadId: id, clientMessageId: input.clientMessageId,
+            step: ++progressStep, ...progress,
           });
         },
       });

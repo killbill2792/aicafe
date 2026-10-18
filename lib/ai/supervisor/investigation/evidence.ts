@@ -86,7 +86,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   if(!["en","es","ar"].includes(locale))return null;
   const labels=investigationLabels(locale);
   const blocks:SupervisorReplyBlock[]=[],refs:EvidenceReference[]=[];
-  const boxed:Extract<SupervisorReplyBlock,{type:"metric"|"percent"}>[]=[],boxedSignatures=new Set<string>();
+  let boxedCount=0;const boxedSignatures=new Set<string>();
   let adviceOnly=true;
   for(const paragraph of answer.paragraphs){
     if(paragraph.kind==="evidence"&&!paragraph.citations.length)return null;
@@ -107,24 +107,26 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     if(text.length>1200||!clean(text))return null;
     blocks.push({type:"text",text:clean(text)});
     for(const o of cited)if(o?.reference&&!refs.some(r=>r.identifier===o.reference!.identifier))refs.push(o.reference);
-    // A boxed fact echoes a number already stated in the sentence above; it
-    // never introduces a value the sentence didn't already cite. Capped so
+    // A boxed fact echoes a number already stated in the sentence just
+    // pushed above -- immediately after it, never batched at the end, so a
+    // multi-paragraph answer (revenue, then cost, then margin) keeps each
+    // box next to the sentence it belongs to instead of an ambiguous pile.
+    // Never introduces a value the sentence didn't already cite. Capped so
     // one answer never turns into a wall of boxes.
     if(paragraph.kind==="evidence")for(const {id,path} of matched){
-      if(boxed.length>=4)break;
+      if(boxedCount>=4)break;
       const observation=byId.get(id);
       const kind=observation?.displayKind?.[path];
       const rawValue=observation?.displayRaw?.[path];
       if(!observation?.reference||!kind||typeof rawValue!=="number")continue;
       const signature=observation.reference.identifier+":"+path;
       if(boxedSignatures.has(signature))continue;
-      boxedSignatures.add(signature);
-      boxed.push(kind==="money"
+      boxedSignatures.add(signature);boxedCount++;
+      blocks.push(kind==="money"
         ?{type:"metric",label:labels.factAmount,valueCents:rawValue,source:observation.reference}
         :{type:"percent",label:labels.factPercent,valueBps:rawValue,source:observation.reference});
     }
   }
-  blocks.push(...boxed);
   return {blocks,evidence:refs,adviceOnly};
 }
 export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
