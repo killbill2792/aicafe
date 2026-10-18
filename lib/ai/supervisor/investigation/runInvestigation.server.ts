@@ -77,11 +77,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           .flatMap(l=>[l.city,l.region,l.countryCode].filter((v):v is string=>typeof v==="string")):[];
       }),
     ].join(" "),async(clause,query,publicLocationContext)=>{
+      // A late privacy check may fail closed, but must never consume the
+      // attempt reserved for terminal synthesis or independent review.
+      if(usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2)return false;
       const checked=await requestInvestigation({name:"supervisor_public_query_review",
         schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
         context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
         apiKey:input.apiKey,model:input.model,transport,usage,
-        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage,onDiagnostic:input.onDiagnostic,maxAttempts:1});
       return checked?.safe===true;
     })]);
   const manifest=registry.discover(scope);
@@ -211,14 +214,21 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const key=readDomain+":"+investigationCalendarScope(args,readDomain)?.kind+":"+pending;
         let verdict=calendarReviews.get(key);
         if(!verdict){
+          // If only the final two attempts remain, refuse to guess the
+          // calendar relationship rather than spend the answer/review reserve.
+          if(usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2){
+            verdict="ambiguous";
+          }else{
           const reviewed=await requestInvestigation({name:"supervisor_calendar_context_review",
             schema:z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])}),
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
               capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
-            onDiagnostic:input.onDiagnostic});
-          verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
+            onDiagnostic:input.onDiagnostic,maxAttempts:1});
+          verdict=reviewed?.verdict??"ambiguous";
+          }
+          calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
           feedback="The failed-turn date correction could not be bound safely to this domain. Ask the specific unresolved calendar-context question, without choosing an old or unrelated period.";continue;
