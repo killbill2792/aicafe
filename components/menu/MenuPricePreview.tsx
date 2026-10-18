@@ -100,7 +100,18 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
   const period=basis.oldestDate&&basis.latestDate?t("priceBasisWindow",{
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
   }):t("priceBasisNoHistory");
-  return <details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-3 rounded-2xl border border-line bg-paper p-3.5">
+  return <><section className="mt-3 rounded-2xl border border-line bg-card p-3">
+    <p className="text-[17px] font-bold text-ink">{t("priceBasisProfit")}</p>
+    <p className="mt-1 font-headline text-3xl font-extrabold text-ink">
+      {money(estimate.allocatedProfitCents)}
+    </p>
+    {estimate.status==="missing"
+      ?<p className="mt-1 text-sm text-warn">{t("priceBasisIncomplete")}</p>
+      :<p className="mt-1 text-sm text-ink-muted">{t("priceBasisTarget",{
+        margin:(basis.targetOperatingMarginBps/100).toFixed(1),
+        price:money(estimate.targetPriceCents),
+      })}</p>}
+  </section><details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-2 rounded-2xl border border-line bg-paper p-3.5">
     <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
       {t("priceBasisTitle")}
     </summary>
@@ -143,5 +154,5 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
             t("priceBasisEqualAllocation"):t("priceBasisPrepAllocation")}</p></>}
       <p className="mt-2 text-sm leading-snug text-ink-muted">{t("priceBasisDisclaimer")}</p>
     </div>
-  </details>;
+  </details></>;
 }
