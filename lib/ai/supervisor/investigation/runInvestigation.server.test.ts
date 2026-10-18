@@ -426,8 +426,7 @@ it("does not count a byte-heavy but schema-valid expression rejected before simu
 it("retains a validated calendar selector after a dispatched domain reader returns unauthorized",async()=>{
   const chosenPeriod={from:"2026-10-12",to:"2026-10-12"};
   p1.mockImplementationOnce(async()=>{
-    return {status:"unavailable" as const,value:null,reason:"unauthorized"}
-      as Awaited<ReturnType<typeof executeP1Authorized>>;
+    return {status:"unavailable" as const,value:null,reason:"unauthorized"} as Awaited<ReturnType<typeof executeP1Authorized>>;
   });
   const result=await runSupervisorTurn({...base,text:"Show the recorded expenses for October 12, 2026."},transportFor([
     read("p3.money.expense_entries.v1",query("money.expense_entries",{period:chosenPeriod})),
