@@ -25,12 +25,27 @@ export type FormulaVerificationResult={ok:true;value:number}|{ok:false;failure:F
 const POINTER=/^(r\d+):([a-zA-Z0-9_.]+)$/u;
 const VARIABLE_NAME=/^[a-zA-Z_][a-zA-Z0-9_]{0,31}$/u;
 
+/** Unicode decimal-digit blocks this project's supported locales (en/es/ar)
+ * can actually produce or receive -- Arabic-Indic and Extended Arabic-Indic
+ * (Persian). Each Unicode "Nd" digit block is guaranteed to hold 0-9 in
+ * contiguous order, so a block's own start code point is enough to map any
+ * of its digits back to ASCII. An unsupported script's digit is left as-is
+ * and will simply fail to parse below (never silently misread). */
+const DIGIT_BLOCK_STARTS:readonly number[]=[0x0660,0x06f0];
+export function normalizeDigits(text:string):string{
+  return text.replace(/\p{Nd}/gu,(ch)=>{
+    const code=ch.codePointAt(0)!;
+    for(const start of DIGIT_BLOCK_STARTS)
+      if(code>=start&&code<=start+9)return String(code-start);
+    return ch;
+  });
+}
 /** Strips currency/percent/grouping decoration, keeping an exact numeric
  * snippet (sign, digits, at most one decimal point) -- or null if what
  * remains is not a single plain number. Never does unit conversion: a "%"
  * suffix is decoration only, the digits before it are used as written. */
 function parseNumericSnippet(text:string):{rat:Rat;decimals:number}|null{
-  const cleaned=text.replace(/[,%$€£¥\s]/gu,"");
+  const cleaned=normalizeDigits(text).replace(/[,%$€£¥\s]/gu,"");
   const match=/^(-?)(\d+)(?:\.(\d+))?$/u.exec(cleaned);
   if(!match)return null;
   const [,sign,whole,frac=""]=match;
@@ -66,9 +81,9 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * the exact matched span (so its OWN decoration -- which may differ from
  * the declared source's -- can inform the unit classification), or null if
  * no such span exists. */
-const OWNER_NUMERIC_SPAN=/[$€£¥]?\d[\d,]*(?:\.\d+)?%?/gu;
+const OWNER_NUMERIC_SPAN=/[$€£¥]?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?/gu;
 const WORD_CHAR=/[\p{L}\p{N}]/u;
-function findOwnerQuotedSpan(ownerText:string,source:string):string|null{
+export function findOwnerQuotedSpan(ownerText:string,source:string):string|null{
   const sourceParsed=parseNumericSnippet(source.trim());
   if(!sourceParsed)return null;
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){

@@ -1157,6 +1157,17 @@ it("treats an identical rejected answer draft as potential progress once a new o
   expect(JSON.stringify(result.reply.blocks)).toContain("5.25");
 });
 
+it("treats the same unknown tool name selected again as potential progress once a real read creates new observations in between (Codex finding)",async()=>{
+  // Round 0 selects an unregistered tool name (rejected: unknown). Round 1
+  // performs a real, successful read. Round 2 selects the EXACT SAME
+  // unregistered name again: this must NOT be mistaken for a stuck repeat
+  // with no new information, since a real read happened in between.
+  const unknown=read("totally.unknown.tool.v1",{});
+  const transport=transportFor([unknown,read("p3.menu.catalog.v1",query("menu.catalog")),unknown]);
+  const result=await runSupervisorTurn({...base,text:"What's on the menu?"},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
 describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
   function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
     const result={id:"test.read",status:"verified",value};
@@ -1185,5 +1196,16 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
     const don=recordObservation("r1","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:1800});
     const ava=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"ava",defaultHourlyWageCents:2000});
     expect(detectConflictingFacts([don,ava])).toEqual([]);
+  });
+  it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
+    const first=recordObservation("r1","p3.labor.employee_wages.v1",
+      [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
+    // Reordered: don is now at index 1, not index 0 -- the record's own
+    // stable id (employeeId) is unchanged, only its array POSITION differs.
+    const second=recordObservation("r2","p3.labor.employee_wages.v1",
+      [{employeeId:"ava",defaultHourlyWageCents:2000},{employeeId:"don",defaultHourlyWageCents:2200}]);
+    const conflicts=detectConflictingFacts([first,second]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r1","r2"]);
   });
 });

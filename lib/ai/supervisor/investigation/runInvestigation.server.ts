@@ -116,7 +116,15 @@ export function detectConflictingFacts(observations:readonly Observation[]):
       if(typeof raw!=="number")continue;
       const field=o.capabilityId.split(".").slice(0,2).join(".")+":"+(path.split(".").at(-1)??path);
       const recordLocator=path.split(".").slice(0,-1).join(".");
-      const key=field+"@"+recordLocator+"|"+recordScope(recordAt(o.result.value,recordLocator))+"|"+inputPeriod;
+      const scope=recordScope(recordAt(o.result.value,recordLocator));
+      // A record with its own stable identity (an id/employeeId/etc -- a
+      // non-empty "id:" prefix from recordScope) is grouped by THAT identity
+      // alone, never also by its array position: the same entity read at
+      // value.0 in one call and value.1 in a reordered/filtered call must
+      // land in the SAME group so a genuine conflict between them is still
+      // caught. Only a record with no identity to key on at all falls back
+      // to position (recordLocator) to keep its distinct records apart.
+      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod;
       const list=groups.get(key)??[];
       list.push({field,id:o.id,display:o.display[path]??String(raw),raw});
       groups.set(key,list);
@@ -172,6 +180,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // only when exhaustion leaves nothing cleaner to show (failure() below).
   let bestAccumulated:{score:number;blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];
     citedIds:string[];status:GroundedSupervisorReply["status"];intent:GroundedSupervisorReply["intent"]}|null=null;
+  // Shared by every place that records a §7 candidate, so a candidate
+  // produced later in the SAME round (e.g. after the formula-extraction
+  // fallback improves it) is compared and stored the exact same way as the
+  // first one, rather than leaving an earlier, more-masked candidate stuck
+  // in bestAccumulated once a strictly better one exists.
+  const updateBestAccumulated=(candidate:GroundedSupervisorReply)=>{
+    const score=candidate.blocks.length;
+    if(!bestAccumulated||score>bestAccumulated.score)bestAccumulated={score,blocks:candidate.blocks,
+      evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
+      citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
+  };
   const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
     let rescue=budget&&!!lastUnverifiedAnswer;
     if(rescue&&lastUnverifiedAnswer){
@@ -470,10 +489,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // Section 7: remember the best-surviving candidate across the WHOLE
         // loop, not just the final attempt, in case nothing cleaner ever
         // arrives before the budget runs out.
-        const score=rendered.blocks.length;
-        if(!bestAccumulated||score>bestAccumulated.score)bestAccumulated={score,blocks:reply.blocks,
-          evidence:reply.evidence,status:reply.status,intent:reply.intent,
-          citedIds:observations.filter(o=>o.reference&&reply!.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
+        updateBestAccumulated(reply);
         // Section 5: one bounded, narrow extraction attempt for the FIRST
         // plain unmatched number that has no cheap direct match (one already
         // matching a real observation gets told to cite it instead, per
@@ -496,6 +512,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             const reReply=investigationReply(patched,observations,input.locale,{ownerText});
             if(reRendered&&reReply&&reRendered.issues.length<rendered.issues.length){
               answer=patched;rendered=reRendered;reply=reReply;
+              // The just-improved candidate strictly dominates the one
+              // recorded above (fewer masked claims) -- update §7's
+              // best-so-far too, or exhaustion later in this same turn could
+              // still fall back to the STALE, more-masked pre-extraction
+              // version even though a verified, better one now exists.
+              updateBestAccumulated(reply);
             }
           }
         }
@@ -560,9 +582,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const capabilityId=toolNameToCapabilityId.get(step.name);
     if(!capabilityId){
       // Adaptive budget (section 1): the exact same unregistered tool name
-      // selected again, with no new information, stops the loop immediately.
-      if(step.name===lastUnknownToolName)return await failure(true,"no_progress");
-      lastUnknownToolName=step.name;
+      // selected again, with no new information, stops the loop immediately
+      // -- tied to the observation count at the time (Codex finding,
+      // mirroring the rejected-answer-signature fix), since a successful
+      // read performed in between genuinely is new information even though
+      // this exact unknown name was tried before.
+      const unknownToolSignature=step.name+":"+observations.length;
+      if(unknownToolSignature===lastUnknownToolName)return await failure(true,"no_progress");
+      lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
     }
     let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}

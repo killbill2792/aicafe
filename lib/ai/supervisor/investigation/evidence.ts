@@ -5,7 +5,7 @@ import {registeredReadCautions} from "../p3/readEvidencePresentation";
 import {createHash} from "node:crypto";
 import type {EvidenceReference,GroundedSupervisorReply,SupervisorReplyBlock} from "@/lib/ai/conversations/contracts";
 import type {InvestigationAnswer} from "./protocol";
-import {verifyFormulaEntry,type FormulaVerificationFailure} from "./formulaVerification";
+import {verifyFormulaEntry,findOwnerQuotedSpan,type FormulaVerificationFailure} from "./formulaVerification";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -92,7 +92,8 @@ export function observationReference(businessId:string,asOf:string,capabilityId:
  * answer, which the invariant in §3 already guarantees survives regardless. */
 export type ClaimIssue=
   |{kind:"dropped_paragraph";paragraphIndex:number;
-    reason:"hallucinated_citation"|"empty_citation_pull"|"invalid_token"|"uncited_evidence"|"citations_on_non_evidence";
+    reason:"hallucinated_citation"|"empty_citation_pull"|"invalid_token"|"uncited_evidence"|
+      "citations_on_non_evidence"|"unrecognized_numeral";
     id?:string;path?:string;validIds?:string[]}
   |{kind:"unmatched_number";paragraphIndex:number;text:string;matchedObservation:{id:string;path:string}|null}
   |{kind:"formula_failed";paragraphIndex:number;text:string;failure:FormulaVerificationFailure}
@@ -118,7 +119,11 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
  * currency/percent span -- matched in one pass so each is classified and
  * either kept or masked independently (§3's claim-level pass), never
  * discarding more than the one span/paragraph a problem actually concerns. */
-const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|[$€£¥]\s?\d[\d,]*(?:\.\d+)?%?|\d[\d,]*(?:\.\d+)?%|\b\d[\d,]*(?:\.\d+)?\b/gu;
+// \p{Nd}, not \d: \d only matches ASCII 0-9, which would let a non-ASCII
+// numeral (e.g. Arabic-Indic digits in Arabic-locale model output) slip
+// through completely undetected -- never reaching any of the checks below
+// at all, rather than being caught and masked by them.
+const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%|\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b/gu;
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
@@ -157,6 +162,16 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
           id:hallucinated,validIds:[...byId.keys()]});
         return;
       }
+    }
+    // Fail closed against any numeral CLAIM_SPAN's own matching failed to
+    // recognize as a span at all -- e.g. a script this regex's boundary
+    // handling doesn't cover. Checked on a COPY with every real match
+    // stripped out, so a legitimately-matched, soon-to-be-substituted span
+    // is never mistaken for a leftover; only a numeral the regex never even
+    // saw as a candidate trips this. Never silently let an unrecognized
+    // numeral reach the owner merely because our pattern missed it.
+    if(/\p{Nd}/u.test(paragraph.text.replace(CLAIM_SPAN,""))){
+      issues.push({kind:"dropped_paragraph",paragraphIndex,reason:"unrecognized_numeral"});return;
     }
     let dropped=false;
     const matched:{id:string;path:string}[]=[];
@@ -203,8 +218,14 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
         issues.push({kind:"business_claim_uncited",paragraphIndex,text:full});
         return labels.unverifiedValue;
       }
-      // §3: an exact echo of the owner's own words is not a new claim.
-      if(ownerText.includes(full))return full;
+      // §3: an exact echo of the owner's own words is not a new claim --
+      // but it must be a COMPLETE numeric span of theirs, never a substring
+      // match (so a freehand "10" must never pass just because an owner
+      // message containing "100" happens to contain that digit sequence).
+      // Shares the same boundary-aware, format-tolerant matching the
+      // formula path (§4b) already uses, rather than a second, divergent
+      // implementation of the same check.
+      if(findOwnerQuotedSpan(ownerText,full)!==null)return full;
       // §4b: a verified formula entry whose claim matches this exact span.
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
@@ -286,6 +307,9 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
           return at+"this is labeled evidence but cites nothing. Add a real citation or change its kind.";
         case "citations_on_non_evidence":
           return at+"advice/clarification paragraphs must not include citations. Remove them or change the kind.";
+        case "unrecognized_numeral":
+          return at+"this paragraph contains a numeral our checks could not recognize as a verifiable claim span. "+
+            "Rewrite any number using plain digits, cite a real observation, or remove the claim.";
       }
       case "unmatched_number":
         return issue.matchedObservation

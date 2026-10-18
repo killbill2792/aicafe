@@ -71,6 +71,16 @@ describe("verifyFormulaEntry -- owner-quote matching is exact-boundary, not subs
       "The special is 1.45 today.",[]);
     expect(result).toEqual({ok:true,value:1.45});
   });
+  it("matches an Arabic-Indic numeral owner quote against an ASCII-digit declared source (Codex finding, non-ASCII numerals)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"100",variables:{a:{value:100,source:"100"}}}),
+      "بعنا ١٠٠ مشروب.",[]);
+    expect(result).toEqual({ok:true,value:100});
+  });
+  it("still never lets a declared source of \"10\" match inside an Arabic-Indic owner-written \"١٠٠\"",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"10",variables:{a:{value:10,source:"10"}}}),
+      "بعنا ١٠٠ مشروب.",[]);
+    expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
+  });
 });
 
 describe("verifyFormulaEntry -- unit-aware verification (Codex finding #1)",()=>{

@@ -206,6 +206,22 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",
       text:"$5.25",matchedObservation:{id:"r1",path:"value.priceCents"}}));
   });
+  it("never lets a freehand number pass as an owner-echo via substring containment (Codex finding, owner-echo path)",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"You could set aside 10 for supplies.",citations:[]},
+    ]),[],"en",{ownerText:"We sold 100 drinks yesterday."});
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"10"}));
+  });
+  it("masks (drops the paragraph) a numeral CLAIM_SPAN does not recognize, instead of letting it through unchecked (Codex finding, non-ASCII numerals)",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"بعنا ١٠٠ مشروب اليوم.",citations:[]},
+      {kind:"advice",text:"This second paragraph has no numbers at all.",citations:[]},
+    ]),[],"ar");
+    expect(rendered!.blocks).toEqual([{type:"text",text:"This second paragraph has no numbers at all."}]);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"dropped_paragraph",
+      reason:"unrecognized_numeral"}));
+  });
 });
 
 describe("renderInvestigationAnswer -- unavailable-citation tolerance (§2)",()=>{
