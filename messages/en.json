@@ -505,7 +505,7 @@
     "priceBasisHistoryTitle": "Sales evidence used",
     "priceBasisWindow": "{days} covered days from {from} to {to}",
     "priceBasisNoHistory": "No sufficiently covered sales period found",
-    "priceBasisHistoryCaveat": "Past sales are projected to a 30-day month; missing dates are not treated as zero sales. This is not this month's actual profit.",
+    "priceBasisHistoryCaveat": "Past sales are projected across the current calendar month's days; missing dates are not treated as zero sales. This is not this month's actual profit.",
     "priceBasisBills": "Monthly bills and running costs",
     "priceBasisPayroll": "Monthly payroll including employer costs",
     "priceBasisDrinks": "Estimated drinks sold per month",
