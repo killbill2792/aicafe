@@ -49,6 +49,29 @@ describe("requestInvestigation output-token budget", ()=>{
   });
 });
 
+describe("nested review budget reservation",()=>{
+  it("never retries a calendar/privacy gate into the two final answer-review slots",async()=>{
+    const usage={model:"gpt-6-luna",modelCallCount:5,toolCallCount:2,inputTokens:0,outputTokens:0};
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:"malformed gate output"},
+      ]}]})));
+    const result=await requestInvestigation({name:"supervisor_public_query_review",
+      schema:z.strictObject({safe:z.boolean()}),instructions:"",context:{},apiKey:"k",
+      model:usage.model,usage,transport,deadline:Date.now()+90000,reserveModelCalls:2});
+    expect(result).toBeNull();
+    expect(usage.modelCallCount).toBe(6);
+    expect(transport).toHaveBeenCalledTimes(1);
+    // No second review attempt can steal the model calls reserved for answer
+    // generation and independent evidence audit.
+    const blocked=await requestInvestigation({name:"supervisor_calendar_context_review",
+      schema:z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])}),
+      instructions:"",context:{},apiKey:"k",model:usage.model,usage,transport,
+      deadline:Date.now()+90000,reserveModelCalls:2});
+    expect(blocked).toBeNull();expect(transport).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("requestInvestigation invalid-payload sub-reasons",()=>{
   const baseUsage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0});
   const schema=z.strictObject({x:z.string().min(2)});
