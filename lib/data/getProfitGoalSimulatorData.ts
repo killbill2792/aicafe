@@ -8,7 +8,7 @@ export type ProfitGoalSimulatorData = {
   currentOperatingMargin: number | null;
   currentMarginQuality: "actual" | "estimated" | "missing";
   canSimulate: boolean;
-  unavailableReason: "NOT_ENOUGH_SALES" | "MISSING_PROCESSING_FEES" | "MISSING_PRODUCT_COSTS" | null;
+  unavailableReason: "NOT_ENOUGH_SALES" | "MISSING_PROCESSING_FEES" | "MISSING_PRODUCT_COSTS" | "MISSING_OPERATING_COSTS" | null;
   economics: BusinessEconomicsInput | null;
   items: PricingItemInput[];
   business: PricingBusinessInput;
@@ -43,6 +43,7 @@ export async function getProfitGoalSimulatorData(): Promise<ProfitGoalSimulatorD
   if (pricing.business.daysWithSalesInWindow < 7) unavailableReason = "NOT_ENOUGH_SALES";
   else if (pricing.business.processingFeesStatus === "missing") unavailableReason = "MISSING_PROCESSING_FEES";
   else if (hasMissingProductCosts) unavailableReason = "MISSING_PRODUCT_COSTS";
+  else if (pricing.business.operatingCostsStatus === "missing") unavailableReason = "MISSING_OPERATING_COSTS";
 
   const economics: BusinessEconomicsInput | null =
     unavailableReason === null
