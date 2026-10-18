@@ -144,6 +144,13 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       {input("drinks",t("priceBasisDrinks"),status(basis.volumeStatus),"count")}
       {input("fee",t("priceBasisFees"),status(basis.feeStatus),"percent")}
     </div>
+    {basis.missingRunningCategories.length>0&&
+      <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
+        {t("priceBasisMissingExpected",{
+          count:basis.missingRunningCategories.length,
+          subtotal:formatCents(basis.runningKnownCents),
+        })}
+      </p>}
     <p className="mt-3 text-sm text-ink-muted">{t("priceBasisAvoidDoubleCount")}</p>
     {error&&<p role="alert" className="mt-2 text-[17px] text-warn">{t("priceBasisInvalid")}</p>}
     <button type="button" onClick={confirm}
@@ -169,6 +176,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
         })}</p>
           <p className="mt-2 text-sm text-ink-muted">{estimate.laborAllocation==="equal_drinks"?
             t("priceBasisEqualAllocation"):t("priceBasisPrepAllocation")}</p></>}
+      <p className="mt-2 text-sm leading-snug text-ink-muted">{t("priceBasisRounding")}</p>
       <p className="mt-2 text-sm leading-snug text-ink-muted">{t("priceBasisDisclaimer")}</p>
     </div>
   </details></>;
