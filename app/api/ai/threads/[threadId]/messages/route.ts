@@ -65,6 +65,11 @@ export async function POST(request: Request, context: RouteContext) {
     const history = compactConversationContext(messages, message.id);
     let aggregatedUsage: SupervisorUsage | null = null;
     let progressStep = 0;
+    // Fresh per POST invocation, not per browser retry click: a retried
+    // turn reuses the same clientMessageId (and progress row), but its
+    // writes must not be blocked by whatever step the previous, failed
+    // attempt happened to leave behind. See recordSupervisorProgress.
+    const progressAttempt = crypto.randomUUID();
     let reply;
     try {
       const completed = await runSupervisorTurn({
@@ -85,7 +90,7 @@ export async function POST(request: Request, context: RouteContext) {
           // overwrite a later one that happened to finish first.
           if (progress) void recordSupervisorProgress({
             scope, threadId: id, clientMessageId: input.clientMessageId,
-            step: ++progressStep, ...progress,
+            step: ++progressStep, attempt: progressAttempt, ...progress,
           });
         },
       });
