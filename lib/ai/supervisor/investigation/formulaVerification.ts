@@ -8,7 +8,7 @@
  * narrow failure -- never escalated into discarding more than the one
  * number it concerns (§3's core invariant). */
 import {rat,type Rat} from "@/lib/calc/scenarioExpression";
-import {evaluateFormula,evaluateFormulaUnits,type FormulaRejectionReason,
+import {evaluateFormulaScaled,formulaLiterals,type FormulaRejectionReason,
   type ArithmeticUnit} from "@/lib/calc/formulaExpression";
 import type {Observation,Locale} from "./evidence";
 import type {FormulaEntry} from "./protocol";
@@ -17,6 +17,7 @@ export type FormulaVerificationFailure=
   |{reason:"grammar";detail:FormulaRejectionReason}
   |{reason:"source_not_found";variable:string}
   |{reason:"source_unverifiable";variable:string}
+  |{reason:"ungrounded_literal"}
   |{reason:"incompatible_units"}
   |{reason:"unparseable_claim"}
   |{reason:"result_mismatch";computed:number;claimed:number};
@@ -114,8 +115,16 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * "1.234.567,89"), while a trailing separator with no digit after it (e.g.
  * ordinary end-of-sentence punctuation right after a digit, "...cost 0.")
  * is never consumed as part of the span. `parseNumericSnippet` alone
- * decides what a fully-captured span actually means. */
-const OWNER_NUMERIC_SPAN=/-?[$€£¥]?\p{Nd}(?:[,.]?\p{Nd})*%?/gu;
+ * decides what a fully-captured span actually means.
+ *
+ * `(?<!\p{Nd})` guarding the leading `-?` (hardening the sign fix above):
+ * without it, a plain hyphenated date or range the owner typed verbatim
+ * (e.g. "2026-10-05", or "pages 10-5") would have its SECOND digit run
+ * misread as negative -- the "-" there separates two numbers, it is not a
+ * minus sign, and it is always immediately preceded by a digit in exactly
+ * that case. A genuine negative figure ("cost -5 some months") never has a
+ * digit immediately before its "-", so this guard never affects it. */
+const OWNER_NUMERIC_SPAN=/(?<!\p{Nd})-?[$€£¥]?\p{Nd}(?:[,.]?\p{Nd})*%?/gu;
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
@@ -179,8 +188,16 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
 }
 export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   observations:readonly Observation[],locale:Locale):FormulaVerificationResult{
-  const resolved=new Map<string,Rat>();
-  const units=new Map<string,ArithmeticUnit>();
+  // Reject any bare numeric literal in the formula itself (Codex finding):
+  // "price * 999" with only `price` grounded would otherwise let an
+  // entirely model-invented "999" multiplier pass, since the formula still
+  // evaluates and a declared variable is still independently resolved --
+  // only the literal is never checked against anything real. Every NUMBER
+  // the formula uses must be a named, independently-resolved variable.
+  const literals=formulaLiterals(entry.formula);
+  if(literals===null)return {ok:false,failure:{reason:"grammar",detail:"unknown_character"}};
+  if(literals.length>0)return {ok:false,failure:{reason:"ungrounded_literal"}};
+  const resolved=new Map<string,{value:Rat;unit:ArithmeticUnit}>();
   for(const [name,declaration] of Object.entries(entry.variables)){
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
     const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
@@ -188,17 +205,22 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
       const pointer=POINTER.test(declaration.source);
       return {ok:false,failure:{reason:pointer?"source_not_found":"source_unverifiable",variable:name}};
     }
-    resolved.set(name,resolvedVariable.value);
-    units.set(name,resolvedVariable.unit);
+    resolved.set(name,resolvedVariable);
   }
-  const evaluated=evaluateFormula(entry.formula,resolved);
-  if(!evaluated.ok)return {ok:false,failure:{reason:"grammar",detail:evaluated.reason}};
-  // Unit-compatibility check (Codex finding #1): reject -- as an ordinary
-  // verification failure, never a thrown error -- any formula that combines
-  // incompatible dimensions (e.g. a unit count added to a dollar amount),
-  // even when the resulting NUMBER happens to match the claim.
-  const unitCheck=evaluateFormulaUnits(entry.formula,units);
-  if(!unitCheck.ok)return {ok:false,failure:{reason:"incompatible_units"}};
+  // One combined walk (Codex finding): computes the value AND propagates
+  // units together, so a percentage used as a multiplicative RATE against
+  // money ("$20 * 10%") is correctly scaled by /100 -- something evaluating
+  // value and units as two independent passes could never do, since
+  // neither pass alone sees both a node's value and its sibling's unit.
+  // Still rejects, as an ordinary verification failure never a thrown
+  // error, any formula combining incompatible dimensions (Codex finding
+  // #1, e.g. a unit count added to a dollar amount) even when the
+  // resulting NUMBER happens to match the claim.
+  const evaluated=evaluateFormulaScaled(entry.formula,resolved);
+  if(!evaluated.ok){
+    if(evaluated.reason==="incompatible_units")return {ok:false,failure:{reason:"incompatible_units"}};
+    return {ok:false,failure:{reason:"grammar",detail:evaluated.reason}};
+  }
   // Result-unit check (Codex finding): when the claim's own text is
   // EXPLICITLY decorated as money or percent (a "$"/"%" the model itself
   // chose to write), the computed formula's dimension must agree -- this is
@@ -211,7 +233,7 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   // and rejecting it would reintroduce the exact "AI dropped a symbol, so we
   // failed a correct answer" failure mode this whole effort exists to fix.
   const claimUnit=classifyOwnerUnit(entry.claim);
-  if(claimUnit!=="scalar"&&claimUnit!==unitCheck.unit)
+  if(claimUnit!=="scalar"&&claimUnit!==evaluated.unit)
     return {ok:false,failure:{reason:"incompatible_units"}};
   const claimed=parseNumericSnippet(entry.claim,locale);
   if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};

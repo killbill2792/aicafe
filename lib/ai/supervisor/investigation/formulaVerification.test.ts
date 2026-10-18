@@ -169,6 +169,55 @@ describe("verifyFormulaEntry -- money/percent pointer values normalized to human
   });
 });
 
+describe("verifyFormulaEntry -- rejects any ungrounded numeric literal in the formula itself (Codex finding)",()=>{
+  it("never lets a model-invented multiplier with no independent source pass verification",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price * 999",claim:"$999",
+      variables:{price:{value:1,source:"$1"}}}),"The item costs $1.",[],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"ungrounded_literal"}});
+  });
+  it("never lets a model-invented additive adjustment with no independent source pass verification",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price + 10000",claim:"$10001",
+      variables:{price:{value:1,source:"$1"}}}),"The item costs $1.",[],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"ungrounded_literal"}});
+  });
+});
+
+describe("verifyFormulaEntry -- percent applied as a multiplicative rate, not a raw factor (Codex finding)",()=>{
+  it("scales a percent-points rate by /100 when multiplying against money",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price * rate",claim:"$2",
+      variables:{price:{value:20,source:"$20"},rate:{value:10,source:"10%"}}}),
+      "The $20 price carries a 10% discount.",[],"en");
+    expect(result).toEqual({ok:true,value:2});
+  });
+  it("scales a percent-points rate by *100 when reversing a percentage through division",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price / rate",claim:"$25",
+      variables:{price:{value:20,source:"$20"},rate:{value:80,source:"80%"}}}),
+      "The $20 price is 80% of the original.",[],"en");
+    expect(result).toEqual({ok:true,value:25});
+  });
+  it("never lets the OLD unscaled total ($200 instead of $2) verify",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price * rate",claim:"$200",
+      variables:{price:{value:20,source:"$20"},rate:{value:10,source:"10%"}}}),
+      "The $20 price carries a 10% discount.",[],"en");
+    expect(result.ok).toBe(false);
+    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+  });
+  it("does NOT scale a plain scalar multiplied by a percent (counting rate-units, not a dimension change)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"count * rate",claim:"30%",
+      variables:{count:{value:3,source:"3"},rate:{value:10,source:"10%"}}}),
+      "Apply the 10% rate 3 times.",[],"en");
+    expect(result).toEqual({ok:true,value:30});
+  });
+});
+
+describe("findOwnerQuotedSpan -- a hyphenated date/range is never misread as a negative number (Codex finding hardening)",()=>{
+  it("still matches an unsigned day-of-month inside a plain ISO date the owner wrote verbatim",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"5",variables:{a:{value:5,source:"5"}}}),
+      "We opened on 2026-10-05.",[],"en");
+    expect(result).toEqual({ok:true,value:5});
+  });
+});
+
 describe("verifyFormulaEntry -- computed result unit must match an explicitly-decorated claim (Codex finding #1)",()=>{
   it("rejects a scalar result (drinks-count plus shift-count) dressed up as a dollar claim",()=>{
     const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"$5",

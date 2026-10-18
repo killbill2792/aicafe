@@ -158,6 +158,24 @@ export function evaluateFormula(formula:string,variables:ReadonlyMap<string,Rat>
   if(result.pos!==tokens.length)return {ok:false,reason:"unexpected_token"};
   return {ok:true,value:result.value};
 }
+/** Every bare numeric-literal token in `formula` (e.g. the "999" in
+ * "price * 999"). Used by the investigation loop's verifier (Codex finding)
+ * to reject a formula containing any constant that was never independently
+ * resolved as a variable: a formula may combine as many declared variables
+ * as it likes, but every NUMBER in it must trace back to a real, verified
+ * source (an owner quote or an observation), never one the model simply
+ * wrote into the formula string itself (e.g. "price * 999" with only
+ * `price` grounded would otherwise let 999 pass as an unverified
+ * multiplier). Returns null, same as a parse failure, only if the formula
+ * fails to tokenize at all -- `evaluateFormula`'s own grammar check already
+ * catches that case with a proper reason; this is purely an additional,
+ * narrower scan over the same tokens. */
+export function formulaLiterals(formula:string):string[]|null{
+  if(typeof formula!=="string"||formula.length===0||formula.length>MAX_FORMULA_LENGTH)return null;
+  const tokens=tokenize(formula);
+  if(!tokens)return null;
+  return tokens.filter(t=>t.type==="num").map(t=>t.text);
+}
 
 /** A deliberately coarse dimension for the investigation loop's formula
  * verifier (lib/ai/supervisor/investigation/formulaVerification.ts) -- just
@@ -276,4 +294,129 @@ export function evaluateFormulaUnits(formula:string,units:ReadonlyMap<string,Ari
   if(!result.ok)return result;
   if(result.pos!==tokens.length)return {ok:false,reason:"unexpected_token"};
   return {ok:true,unit:result.value};
+}
+
+type Scaled={value:Rat;unit:ArithmeticUnit};
+type ScaledParsed={ok:true;value:Scaled;pos:number}|{ok:false;reason:UnitRejectionReason};
+const HUNDRED=rat(BigInt(100));
+/** A percentage is stored, resolved and compared as raw percent-POINTS
+ * everywhere in this module (10 for "10%", never 0.10) -- consistent with
+ * how an owner writes it and how a basis-points observation pointer is
+ * normalized (formulaVerification.ts). But a percentage is only ever a
+ * multiplicative RATE, never a raw factor, when it multiplies or divides
+ * against a DIFFERENT dimension: "$20 * 10%" means $20 * (10/100) = $2, not
+ * $20 * 10 = $200 (Codex finding). combineMul/combineDiv already reject
+ * percent*percent and only ever pair percent with money (never scalar,
+ * which is left unscaled on purpose -- "3 * 10%" is just "30%", counting
+ * rate-units, not a dimension change), so the ONLY two cases needing a
+ * scale correction are exactly: multiplying money by percent (divide the
+ * raw product by 100), and dividing money BY a percent divisor specifically
+ * (multiply the raw quotient by 100 -- "reversing" a percentage, e.g. a $20
+ * price that is 80% of the original: 20/(80/100) = 20*100/80, never 20/80). */
+function parseExprScaled(state:ParseState,vars:ReadonlyMap<string,Scaled>):ScaledParsed{
+  const left=parseTermScaled(state,vars);
+  if(!left.ok)return left;
+  let pos=left.pos,value=left.value;
+  for(;;){
+    const token=state.tokens[pos];
+    if(!token||token.type!=="op"||(token.text!=="+"&&token.text!=="-"))break;
+    const rightResult=parseTermScaled({...state,pos:pos+1},vars);
+    if(!rightResult.ok)return rightResult;
+    const right=rightResult.value;
+    const unit=combineAdd(value.unit,right.unit);
+    if(!unit)return {ok:false,reason:"incompatible_units"};
+    const v=token.text==="+"?plus(value.value,right.value):minus(value.value,right.value);
+    if(abs(v.n)>BigInt("1000000000000000")*v.d)return {ok:false,reason:"numeric_overflow"};
+    value={value:v,unit};pos=rightResult.pos;
+  }
+  return {ok:true,value,pos};
+}
+function parseTermScaled(state:ParseState,vars:ReadonlyMap<string,Scaled>):ScaledParsed{
+  const left=parseFactorScaled(state,vars);
+  if(!left.ok)return left;
+  let pos=left.pos,value=left.value;
+  for(;;){
+    const token=state.tokens[pos];
+    if(!token||token.type!=="op"||(token.text!=="*"&&token.text!=="/"&&token.text!=="%"))break;
+    const rightResult=parseFactorScaled({...state,pos:pos+1},vars);
+    if(!rightResult.ok)return rightResult;
+    const right=rightResult.value;
+    let v:Rat,unit:ArithmeticUnit|null;
+    if(token.text==="*"){
+      unit=combineMul(value.unit,right.unit);
+      if(!unit)return {ok:false,reason:"incompatible_units"};
+      v=times(value.value,right.value);
+      // Scale ONLY the (money,percent)/(percent,money) combination -- never
+      // scalar*percent ("3 * 10%" is "30%", counting rate-units, not a
+      // dimension change needing /100; combineMul already allows that case
+      // through with no dimension change, same as scalar*money).
+      if((value.unit==="money"&&right.unit==="percent")||(value.unit==="percent"&&right.unit==="money"))
+        v=divided(v,HUNDRED);
+    }else if(token.text==="/"){
+      if(right.value.n===BigInt("0"))return {ok:false,reason:"division_by_zero"};
+      unit=combineDiv(value.unit,right.unit);
+      if(!unit)return {ok:false,reason:"incompatible_units"};
+      v=divided(value.value,right.value);
+      if(value.unit==="money"&&right.unit==="percent")v=times(v,HUNDRED);
+    }else{
+      if(right.value.n===BigInt("0"))return {ok:false,reason:"modulo_by_zero"};
+      unit=combineMod(value.unit,right.unit);
+      if(!unit)return {ok:false,reason:"incompatible_units"};
+      const q=floorDiv(value.value,right.value);
+      v=minus(value.value,times(rat(q),right.value));
+    }
+    if(abs(v.n)>BigInt("1000000000000000")*v.d)return {ok:false,reason:"numeric_overflow"};
+    value={value:v,unit};pos=rightResult.pos;
+  }
+  return {ok:true,value,pos};
+}
+function parseFactorScaled(state:ParseState,vars:ReadonlyMap<string,Scaled>):ScaledParsed{
+  if(state.depth>MAX_DEPTH)return {ok:false,reason:"stack_overflow"};
+  const token=state.tokens[state.pos];
+  if(!token)return {ok:false,reason:"unexpected_end"};
+  if(token.type==="op"&&token.text==="-"){
+    const inner=parseFactorScaled({tokens:state.tokens,pos:state.pos+1,depth:state.depth+1},vars);
+    if(!inner.ok)return inner;
+    return {ok:true,value:{value:minus(rat(BigInt("0")),inner.value.value),unit:inner.value.unit},pos:inner.pos};
+  }
+  if(token.type==="op"&&token.text==="+")
+    return parseFactorScaled({tokens:state.tokens,pos:state.pos+1,depth:state.depth+1},vars);
+  if(token.type==="lparen"){
+    const inner=parseExprScaled({tokens:state.tokens,pos:state.pos+1,depth:state.depth+1},vars);
+    if(!inner.ok)return inner;
+    const close=state.tokens[inner.pos];
+    if(!close||close.type!=="rparen")return {ok:false,reason:"unexpected_token"};
+    return {ok:true,value:inner.value,pos:inner.pos+1};
+  }
+  if(token.type==="num"){
+    const v=parseDecimalToRat(token.text);
+    if(!v)return {ok:false,reason:"malformed_number"};
+    return {ok:true,value:{value:v,unit:"scalar"},pos:state.pos+1};
+  }
+  if(token.type==="ident"){
+    const next=state.tokens[state.pos+1];
+    if(next&&next.type==="lparen")return {ok:false,reason:"unsupported_grammar"};
+    const value=vars.get(token.text);
+    if(value===undefined)return {ok:false,reason:"undeclared_identifier"};
+    return {ok:true,value,pos:state.pos+1};
+  }
+  return {ok:false,reason:"unexpected_token"};
+}
+/** Combines `evaluateFormula` and `evaluateFormulaUnits` into ONE walk that
+ * also applies the percent-as-a-rate scaling described above -- the two
+ * separate evaluators can't do this between them, since neither sees both
+ * a node's numeric value and its neighbor's unit at the same time. Used by
+ * the investigation loop's verifier in place of calling the other two
+ * separately. */
+export function evaluateFormulaScaled(formula:string,variables:ReadonlyMap<string,Scaled>):
+  {ok:true;value:Rat;unit:ArithmeticUnit}|{ok:false;reason:UnitRejectionReason}{
+  if(typeof formula!=="string"||formula.length===0)return {ok:false,reason:"empty"};
+  if(formula.length>MAX_FORMULA_LENGTH)return {ok:false,reason:"too_long"};
+  if(variables.size>MAX_VARIABLES)return {ok:false,reason:"too_many_variables"};
+  const tokens=tokenize(formula);
+  if(!tokens||tokens.length===0)return {ok:false,reason:"unknown_character"};
+  const result=parseExprScaled({tokens,pos:0,depth:0},variables);
+  if(!result.ok)return result;
+  if(result.pos!==tokens.length)return {ok:false,reason:"unexpected_token"};
+  return {ok:true,value:result.value.value,unit:result.value.unit};
 }

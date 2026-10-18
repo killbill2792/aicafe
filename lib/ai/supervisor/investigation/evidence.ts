@@ -123,7 +123,17 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
 // numeral (e.g. Arabic-Indic digits in Arabic-locale model output) slip
 // through completely undetected -- never reaching any of the checks below
 // at all, rather than being caught and masked by them.
-const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%|\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b/gu;
+// Leading `(?<!\p{Nd})-?` on each numeric branch (Codex finding): without
+// it, a genuinely negative verified result ("-$5") was captured as the
+// unsigned "$5", so `paragraph.formulas?.find(f=>f.claim===full)` below
+// could never match a formula entry whose own claim field correctly
+// included the sign -- masking an already-verified negative figure (a
+// real loss or decrease) instead of showing it. The `(?<!\p{Nd})` guard
+// stops a hyphenated date/range the model writes verbatim (e.g.
+// "2026-10-05") from having its second digit run misread as negative --
+// that hyphen is always preceded by a digit, which a genuine minus sign
+// never is.
+const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|(?<!\p{Nd})-?[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|(?<!\p{Nd})-?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%|(?<!\p{Nd})-?\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b/gu;
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
