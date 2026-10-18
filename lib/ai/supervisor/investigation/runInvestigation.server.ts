@@ -24,7 +24,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
-import type {SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorStageError,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -126,7 +126,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
       usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
       deadline-Date.now()<=timeNeededForAnotherOperation;
-    const step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
+    // A malformed selection may be retried by requestInvestigation. Both
+    // attempts must SHARE this capped window: never let the retry borrow the
+    // reader's 10s or the answer+audit's 36s (plus calendar-gate time).
+    const selectionDeadline=finalizeOnly?deadline:
+      deadline-(timeNeededForAnotherOperation-INVESTIGATION_LIMITS.providerTimeoutMs);
+    let step:z.infer<typeof stepSchema>|null;
+    try {
+      step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
       instructions:finalizeOnly?investigationInstructions+
         " This is the FINAL investigation step. Answer now from observations; explain any precise missing source or request a specific essential clarification. Do not choose another tool, invent facts or claim changes.":investigationInstructions,
       answerOnly:finalizeOnly,context:{ownerRequest:input.text,locale:input.locale,
@@ -139,16 +146,28 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
         remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
-      apiKey:input.apiKey,model:input.model,transport,usage,deadline,
+      apiKey:input.apiKey,model:input.model,transport,usage,deadline:selectionDeadline,
       // A malformed late planning response must not spend the two calls still
       // required to author and independently verify the final answer.
       reserveModelCalls:finalizeOnly?1:2,onUsage:input.onUsage,
       onDiagnostic:input.onDiagnostic});
+    }catch(error){
+      // A nonfinal selection that reached ONLY its reserved selection window
+      // can still finish with a normal, independently checked partial answer.
+      // Genuine transport/provider failures retain their existing error path.
+      if(!finalizeOnly&&error instanceof SupervisorStageError&&
+        error.category==="provider_timeout"&&Date.now()>=selectionDeadline-1000){
+        feedback="The selection budget was exhausted. Answer from validated observations; explain any missing input.";
+        continue;
+      }
+      throw error;
+    }
     if(!step){
       // Earlier malformed outputs already receive their bounded retry.
       // If that retry could not run because finalization slots are reserved,
       // switch to answer-only with the evidence collected so far.
-      if(!finalizeOnly&&usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2){
+      if(!finalizeOnly&&(usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
+        Date.now()>=selectionDeadline)){
         feedback="A previous investigation instruction could not be validated. Answer now with verified observations and the specific remaining limitation.";
         continue;
       }
