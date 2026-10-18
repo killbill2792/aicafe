@@ -386,8 +386,8 @@ it("reserves extra calendar-gate time when a failed owner correction may require
   const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
   try{
     const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the saved menu."],reads:[]};
-    const history=[{role:"owner",text:"Show the saved menu."},
-      {role:"owner",text:"Actually use 2026-10-12 instead."}];
+    const history=[{role:"owner" as const,text:"Show the saved menu."},
+      {role:"owner" as const,text:"Actually use 2026-10-12 instead."}];
     const transport=transportFor([
       read("p3.menu.catalog.v1",query("menu.catalog")),
       answer([{kind:"evidence",text:"The catalog's recorded latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
