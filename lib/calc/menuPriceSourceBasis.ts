@@ -58,6 +58,11 @@ export function menuPriceSourceBasis(input:{
   expenses: MenuPriceActualExpense[];
   previousMonthExpenseCategories: string[];
   totalItemPrepSecondsInWindow: number;
+  /** Trusted café-local current date; recent menu volume and fees use the last 28 days. */
+  asOfBusinessDate: string;
+  /** Dates with independently verified complete labor coverage, INCLUDING zero-payroll days.
+   * Never infer this from positive wages, sales data, or payroll-tax estimate status. */
+  laborCoveredDates?: string[];
 }):MenuPriceSourceBasis{
   // Canonical monthlyAmountForCategory: ALL recorded expense rows win over
   // recurring schedules, including estimated rows. Preserve estimate quality.
@@ -109,22 +114,38 @@ export function menuPriceSourceBasis(input:{
       seen.add(d.businessDate);return true;
     }).sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
   };
-  const allDays=dedupe(input.days);
-  const days=allDays.filter(d=>d.salesStatus==="actual");
+  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(input.asOfBusinessDate))
+    throw new Error("A valid café-local as-of date is required");
+  const end=input.asOfBusinessDate;
+  const start=new Date(Date.parse(end+"T00:00:00Z")-27*86400000)
+    .toISOString().slice(0,10);
+  const allDays=dedupe(input.days).filter(d=>d.businessDate<=end);
+  const recentDays=allDays.filter(d=>d.businessDate>=start);
+  // Canonical Menu economics use the last 28 calendar days when sufficient
+  // actual sales exist. Explicit historical-import fallback preserves cafés
+  // with >=7 observed days only in older periods; UI shows the source dates.
+  const sourceDays=recentDays.filter(d=>d.salesStatus==="actual").length>=7
+    ?recentDays:allDays;
+  const days=sourceDays.filter(d=>d.salesStatus==="actual");
   const coveredDays=days.length;
   const scale=coveredDays>0?30/coveredDays:0;
   const drinks=days.reduce((n,d)=>n+d.drinksCount,0);
   const monthlyDrinks=coveredDays>=7&&drinks>0?Math.round(drinks*scale):null;
 
-  const payrollDays=allDays.filter(d=>
-    (d.wagesCents>0||d.payrollTaxCents>0) &&
+  // Positive wage dates prove worked shifts, NOT that intervening zero-shift
+  // calendar dates were observed. Project only when a trusted independent
+  // import supplies explicit complete labor-covered dates. At present the
+  // caller supplies none, so payroll stays missing until owner what-if input.
+  const selectedDates=new Set(sourceDays.map(d=>d.businessDate));
+  const verifiedLaborDates=new Set((input.laborCoveredDates??[])
+    .filter(date=>selectedDates.has(date)));
+  const payrollDays=sourceDays.filter(d=>verifiedLaborDates.has(d.businessDate)&&
     finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
   const payrollCoveredDays=payrollDays.length;
   const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
-  // Less than 7 independently evidenced payroll days are insufficient to
-  // project a month. Never silently divide by the sales-covered denominator.
-  const monthlyPayrollCents=payrollCoveredDays>=7?
-    Math.round(payrollCents*30/payrollCoveredDays):null;
+  const monthlyPayrollCents=payrollCoveredDays>=7&&
+    payrollCoveredDays===verifiedLaborDates.size?
+      Math.round(payrollCents*30/payrollCoveredDays):null;
   const payrollStatus:MenuPriceSourceBasis["payrollStatus"]=
     monthlyPayrollCents===null?"missing":
       payrollDays.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated";
