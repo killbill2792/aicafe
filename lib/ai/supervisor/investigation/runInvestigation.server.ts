@@ -1,4 +1,5 @@
 import "server-only";
+import {randomUUID} from "node:crypto";
 import {z} from "zod";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
@@ -9,7 +10,7 @@ import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.
 import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
-import type {GroundedSupervisorReply,SupervisorReplyBlock} from "@/lib/ai/conversations/contracts";
+import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
 import {createP3ReadRegistry} from "../p3/sourceRegistry.server";
 import {projectP1Evidence} from "../p3/operandProjection.server";
 import {EXPRESSION_ID,planSchema} from "../p3/expression";
@@ -21,12 +22,15 @@ import {datasetOperands} from "./calculations.server";
 import {buildRecordsRegistration,recordCollections,RECORDS_ID} from "./records.server";
 import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
-  renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,type Observation,type Locale} from "./evidence";
-import {answerSchema,reviewSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
+  renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,buildClaimFeedback,
+  type Observation,type Locale,type ClaimIssue} from "./evidence";
+import {verifyFormulaEntry} from "./formulaVerification";
+import {answerSchema,reviewSchema,formulaExtractionSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
 import {SupervisorStageError,logSupervisorDebugPayload,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
-import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
+import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,
+  calendarContextReviewInstructions,formulaExtractionInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** Bound the MODEL preview, not the authoritative dataset used by calculators.
@@ -58,6 +62,35 @@ export function friendlyAgent(owner:string|undefined):"alex"|"olivia"|"leo"|"may
     default:return "supervisor";
   }
 }
+/** A new failure category (§8): when the SAME field name (e.g. an hourly
+ * wage) comes back with more than one distinct value across different
+ * observations produced this turn, that is a genuine conflict for one fact
+ * the owner's request treats as singular -- surfaced to the model as
+ * context so it is nudged toward a clarification question instead of
+ * silently resolving it itself (averaging, picking one). Purely additive
+ * context; never blocks or changes the loop's own control flow. */
+function detectConflictingFacts(observations:readonly Observation[]):
+  {field:string;values:{id:string;display:string}[]}[]{
+  const groups=new Map<string,{id:string;display:string;raw:number}[]>();
+  for(const o of observations){
+    if(!o.displayKind)continue;
+    for(const [path,kind] of Object.entries(o.displayKind)){
+      if(kind!=="money"&&kind!=="percent")continue;
+      const raw=o.displayRaw?.[path];
+      if(typeof raw!=="number")continue;
+      const field=o.capabilityId.split(".").slice(0,2).join(".")+":"+(path.split(".").at(-1)??path);
+      const list=groups.get(field)??[];
+      list.push({id:o.id,display:o.display[path]??String(raw),raw});
+      groups.set(field,list);
+    }
+  }
+  const conflicts:{field:string;values:{id:string;display:string}[]}[]=[];
+  for(const [field,entries] of groups){
+    if(entries.length>1&&new Set(entries.map(e=>e.raw)).size>1)
+      conflicts.push({field,values:entries.map(({id,display})=>({id,display}))});
+  }
+  return conflicts.slice(0,5);
+}
 function calendar(asOf:string){
   const add=(n:number)=>new Date(Date.parse(asOf+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
   const monday=add(-((new Date(asOf+"T12:00:00Z").getUTCDay()+6)%7));
@@ -74,6 +107,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
   const usage:InvestigationUsage={model:input.model,modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0};
   const labels=investigationLabels(input.locale);
+  // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
+  // logSupervisorDebugPayload. Shares no identifier with the sanitized
+  // production diagnostics logger; only ties this one turn's raw debug
+  // points together so its whole round-by-round trace can be reconstructed.
+  const debugRequestId=randomUUID().slice(0,12);
   // The model's own last attempt at a direct answer, kept only as a safety
   // net for when the turn is about to exhaust anyway. Never a substitute for
   // a grounded answer: it only ever reaches the owner tagged "unverified",
@@ -82,6 +120,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // that reached the independent review, whose negative verdict is an
   // actual finding, not a formatting slip, and must never be rescued.
   let lastUnverifiedAnswer:{text:string;citedIds:string[]}|null=null;
+  // §7: the best claim-level-masked candidate seen across the WHOLE loop,
+  // never just the final attempt. "Best" = most surviving content. Reused
+  // only when exhaustion leaves nothing cleaner to show (failure() below).
+  let bestAccumulated:{score:number;blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];
+    citedIds:string[];status:GroundedSupervisorReply["status"];intent:GroundedSupervisorReply["intent"]}|null=null;
   const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
     let rescue=budget&&!!lastUnverifiedAnswer;
     if(rescue&&lastUnverifiedAnswer){
@@ -100,13 +143,43 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           latest.snapshot.revision!==atomic.snapshot.revision)rescue=false;
       }
     }
+    // §7 fallback: only considered when the cleaner (zero-masking)
+    // lastUnverifiedAnswer rescue above is unavailable. Carries its own
+    // independent review (never shown unreviewed) and the same
+    // publication-time reauthorization as every other path.
+    let accumulatedRescue=!rescue&&budget&&!!bestAccumulated;
+    if(accumulatedRescue&&bestAccumulated){
+      const latestOwner=await authorizedOwnerP1();
+      if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
+        latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf){
+        accumulatedRescue=false;
+      }else if(atomic.status==="available"&&observations.some(o=>
+        bestAccumulated!.citedIds.includes(o.id)&&o.requiresSnapshot)){
+        const latest=await readAuthorizedAtomicP1SourceSnapshot();
+        if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
+          latest.snapshot.revision!==atomic.snapshot.revision)accumulatedRescue=false;
+      }
+      if(accumulatedRescue){
+        const accReview=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+          instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,
+            observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
+            proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
+          apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete)accumulatedRescue=false;
+      }
+    }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
-      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue||accumulatedRescue});
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
-    logSupervisorDebugPayload({point:"investigation_exhausted",ownerQuestion:input.text,
+    logSupervisorDebugPayload({point:"investigation_exhausted",requestId:debugRequestId,ownerQuestion:input.text,
       budget,exhaustionReason,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
-      rescuedUnverified:rescue,rescuedText:rescue&&lastUnverifiedAnswer?lastUnverifiedAnswer.text:null,
-      lastUnverifiedCandidate:lastUnverifiedAnswer});
+      rescuedUnverified:rescue||accumulatedRescue,rescuedText:rescue&&lastUnverifiedAnswer?lastUnverifiedAnswer.text:null,
+      lastUnverifiedCandidate:lastUnverifiedAnswer,accumulatedRescue,
+      accumulatedBlocks:accumulatedRescue&&bestAccumulated?bestAccumulated.blocks:null});
+    if(accumulatedRescue&&bestAccumulated){
+      return {reply:{intent:bestAccumulated.intent,status:bestAccumulated.status,
+        evidence:bestAccumulated.evidence,blocks:bestAccumulated.blocks},usage:{...usage}};
+    }
     if(rescue&&lastUnverifiedAnswer){
       const citedObservations=observations.filter(o=>lastUnverifiedAnswer!.citedIds.includes(o.id));
       // A pure owner-authored hypothetical (every citation a source-free
@@ -187,8 +260,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const attempted=new Set<string>();
   const calendarReviews=new Map<string,"applies"|"unrelated"|"ambiguous">();
   const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
+  const ownerText=scope.ownerContext;
   let feedback:string|null=null;
+  // §1 adaptive budget: a round that repeats a prior attempt verbatim, with
+  // no new information, stops the loop immediately rather than waiting out
+  // the remaining time/call budget. Tracks the exact unregistered tool name
+  // last rejected, and the exact direct-answer draft last rejected.
+  let lastUnknownToolName:string|null=null;
+  let lastRejectedAnswerSignature:string|null=null;
   for(let round=0;usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls-1&&Date.now()<deadline;round++){
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+    // Logs whatever specific retry feedback (§5b/§6) the PREVIOUS round's
+    // rejection carried into this one -- every feedback-setting site in the
+    // loop is captured here in one place, without needing a call at each.
+    if(feedback)logSupervisorDebugPayload({point:"retry_feedback",requestId:debugRequestId,round,feedback});
     const projection=projectP1Evidence(evidence,identity.businessId,input.text,null,ownerStatements,undefined,"authorized_selection",120);
     const aggregates=datasetOperands(observations,scope);
     const operands=[...projection.operands,...aggregates.operands];
@@ -249,7 +334,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
-        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
+        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback,
+        // New failure category: push toward a clarification question instead
+        // of silently averaging/picking one value, when the same fact has
+        // come back with more than one distinct value this turn.
+        conflictingFacts:detectConflictingFacts(observations)},
       apiKey:input.apiKey,model:input.model,transport,usage,deadline:selectionDeadline,
       selectionBudgetDeadline:!finalizeOnly,
       // A malformed late planning response must not spend the two calls still
@@ -285,17 +374,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // against answerSchema, with no second hand-written envelope around it.
       input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
-      const answer=step;
+      let answer=step;
+      // Adaptive budget (section 1): an EXACT repeat of a previously-rejected
+      // draft, with no new information, stops the loop immediately rather
+      // than waiting out the remaining budget.
+      const answerSignature=JSON.stringify(answer);
+      if(answerSignature===lastRejectedAnswerSignature)return await failure(true,"no_progress");
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
-      logSupervisorDebugPayload({point:"direct_answer_attempt",ownerQuestion:input.text,
-        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
+      logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,
+        ownerQuestion:input.text,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
         rawAnswerParagraphs:answer.paragraphs,
         availableObservations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,
           value:o.result.value,status:o.result.status,displayRaw:o.displayRaw}))});
-      const rendered=renderInvestigationAnswer(answer,observations,input.locale);
-      const reply=investigationReply(answer,observations,input.locale);
+      let rendered=renderInvestigationAnswer(answer,observations,input.locale,{ownerText});
+      let reply=investigationReply(answer,observations,input.locale,{ownerText});
       if(!rendered||!reply){
-        // A real citation only proves the id exists, not that the
+        // Nothing in this draft survived even claim-level masking (section 3)
+        // -- e.g. every paragraph was dropped for a structural citation
+        // problem. A real citation only proves the id exists, not that the
         // surrounding prose is actually supported by it or covers the
         // owner's goal -- run the exact same independent review a grounded
         // answer must pass before this candidate is ever trusted as a
@@ -313,6 +409,55 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             lastUnverifiedAnswer=rescued;
         }
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
+        lastRejectedAnswerSignature=answerSignature;
+        input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
+        continue;
+      }
+      if(rendered.issues.length){
+        // Section 7: remember the best-surviving candidate across the WHOLE
+        // loop, not just the final attempt, in case nothing cleaner ever
+        // arrives before the budget runs out.
+        const score=rendered.blocks.length;
+        if(!bestAccumulated||score>bestAccumulated.score)bestAccumulated={score,blocks:reply.blocks,
+          evidence:reply.evidence,status:reply.status,intent:reply.intent,
+          citedIds:observations.filter(o=>o.reference&&reply!.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
+        // Section 5: one bounded, narrow extraction attempt for the FIRST
+        // plain unmatched number that has no cheap direct match (one already
+        // matching a real observation gets told to cite it instead, per
+        // section 5b -- never routed through this heavier machinery).
+        const extractable=!finalizeOnly&&rendered.issues.find(
+          (i):i is ClaimIssue&{kind:"unmatched_number"}=>i.kind==="unmatched_number"&&!i.matchedObservation);
+        if(extractable){
+          const targetParagraph=answer.paragraphs[extractable.paragraphIndex];
+          const extraction=await requestInvestigation({name:"supervisor_formula_extraction",schema:formulaExtractionSchema,
+            instructions:formulaExtractionInstructions,
+            context:{ownerRequest:input.text,ownerStatements,paragraphText:targetParagraph?.text??"",
+              targetClaim:extractable.text,observations:views},
+            apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
+            onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+          const extracted=extraction&&!isToolCallSignal(extraction)?extraction.extracted:null;
+          if(extracted&&verifyFormulaEntry(extracted,ownerText,observations).ok){
+            const patched:InvestigationAnswer={paragraphs:answer.paragraphs.map((p,i)=>
+              i!==extractable.paragraphIndex?p:{...p,formulas:[...(p.formulas??[]),extracted]})};
+            const reRendered=renderInvestigationAnswer(patched,observations,input.locale,{ownerText});
+            const reReply=investigationReply(patched,observations,input.locale,{ownerText});
+            if(reRendered&&reReply&&reRendered.issues.length<rendered.issues.length){
+              answer=patched;rendered=reRendered;reply=reReply;
+            }
+          }
+        }
+      }
+      if(rendered.issues.length){
+        // Section 5b: ask before you mask. Budget remains (another round is
+        // still possible) -- always prefer a precise, specific retry over
+        // masking, which is reached only once retries are exhausted (the
+        // accumulated fallback inside failure()).
+        feedback=buildClaimFeedback(rendered.issues);
+        lastRejectedAnswerSignature=answerSignature;
+        // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+        logSupervisorDebugPayload({point:"claim_issues_retry",requestId:debugRequestId,round,
+          issues:rendered.issues,feedback});
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
         continue;
@@ -321,8 +466,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
           proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+      // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+      logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
+        supported:review&&!isToolCallSignal(review)?review.supported:null,
+        complete:review&&!isToolCallSignal(review)?review.complete:null});
       if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
         feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";
+        lastRejectedAnswerSignature=answerSignature;
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
           // A valid negative verdict (the reviewer actually judged the answer
@@ -356,10 +506,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     if(finalizeOnly){feedback="The last available turn must answer with available evidence, not request another operation.";continue;}
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
     const capabilityId=toolNameToCapabilityId.get(step.name);
-    if(!capabilityId){feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;}
+    if(!capabilityId){
+      // Adaptive budget (section 1): the exact same unregistered tool name
+      // selected again, with no new information, stops the loop immediately.
+      if(step.name===lastUnknownToolName)return await failure(true,"no_progress");
+      lastUnknownToolName=step.name;
+      feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
+    }
     let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}
     const signature=JSON.stringify([capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]);
-    if(attempted.has(signature)){feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;}
+    if(attempted.has(signature)){
+      // Unlike an unknown tool name or a rejected answer draft, a repeated
+      // signature here may be re-citing an ALREADY-SUCCESSFUL prior
+      // operation (harmless, just wasteful) rather than repeating a FAILED
+      // one -- so this stays a feedback-and-retry, never the adaptive
+      // budget's immediate stop (section 1), which is reserved for a round
+      // that repeats a prior failed attempt with no new information.
+      feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;
+    }
     attempted.add(signature);
     input.onDiagnostic?.({stage:"investigation_round",
       agent:friendlyAgent(capabilityId===EXPRESSION_ID?"platform":manifest.find(m=>m.id===capabilityId)?.owner),
@@ -481,6 +645,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         remembered.push({capabilityId,inputJson:JSON.stringify(args)});
     }
     observations.push(observation);
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+    logSupervisorDebugPayload({point:"capability_round",requestId:debugRequestId,round,
+      capabilityId,status:String(result.status),successful});
   }
   return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }

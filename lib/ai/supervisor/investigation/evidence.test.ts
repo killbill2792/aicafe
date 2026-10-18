@@ -1,5 +1,6 @@
 import {describe,it,expect} from "vitest";
-import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,type Observation} from "./evidence";
+import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,
+  buildClaimFeedback,buildUnresolvedNote,type Observation} from "./evidence";
 import type {InvestigationAnswer} from "./protocol";
 
 const ref=(id:string)=>({source:"cafe_state" as const,identifier:id,asOf:"2026-10-18"});
@@ -153,6 +154,146 @@ describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected b
       {kind:"evidence",text:"The price is {{r1:value.priceCents}} and a stray } brace.",citations:["r1"]},
     ]),[o],"en");
     expect(rescued).toBeNull();
+  });
+});
+
+describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
+  it("masks a single unmatched freehand number but keeps the rest of the sentence and the other paragraph",()=>{
+    const o=observation("r1","priceCents",525);
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"The recorded price is {{r1:value.priceCents}}.",citations:["r1"]},
+      {kind:"advice",text:"You could also try raising it by $2 next quarter.",citations:[]},
+    ]),[o],"en");
+    expect(rendered).not.toBeNull();
+    expect(rendered!.blocks).toContainEqual({type:"text",text:"The recorded price is $5.25."});
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("$2"))).toBe(false);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"$2"}));
+  });
+  it("keeps a freehand number that is an exact echo of the owner's own words",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"You mentioned 3 extra shifts; that is a meaningful change.",citations:[]},
+    ]),[],"en",{ownerText:"What if I added 3 extra shifts?"});
+    expect(rendered!.blocks).toEqual([{type:"text",text:"You mentioned 3 extra shifts; that is a meaningful change."}]);
+    expect(rendered!.issues).toEqual([]);
+  });
+  it("keeps a freehand number backed by a verified formula entry, tagged as a computed claim",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"At 3 drinks and $1.61 each, that comes to $4.83.",citations:[],
+        formulas:[{claim:"$4.83",formula:"units * price",
+          variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}]},
+    ]),[],"en",{ownerText:"If I sell 3 drinks at $1.61 each..."});
+    expect(rendered!.blocks).toEqual([{type:"text",text:"At 3 drinks and $1.61 each, that comes to $4.83."}]);
+    expect(rendered!.hasComputedClaim).toBe(true);
+    expect(rendered!.issues).toEqual([]);
+  });
+  it("masks a freehand number whose declared formula fails verification, without touching the rest",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"At 3 drinks and $1.61 each, that comes to $9.00.",citations:[],
+        formulas:[{claim:"$9.00",formula:"units * price",
+          variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}]},
+      {kind:"advice",text:"Either way, keep tracking your weekly sales.",citations:[]},
+    ]),[],"en",{ownerText:"If I sell 3 drinks at $1.61 each..."});
+    expect(rendered!.blocks).toContainEqual({type:"text",text:"Either way, keep tracking your weekly sales."});
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"formula_failed"}));
+  });
+  it("finds a cheap direct match against an already-produced observation before masking",()=>{
+    const o=observation("r1","priceCents",525);
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"Note the price is $5.25 on the current menu.",citations:[]},
+    ]),[o],"en");
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",
+      text:"$5.25",matchedObservation:{id:"r1",path:"value.priceCents"}}));
+  });
+});
+
+describe("renderInvestigationAnswer -- unavailable-citation tolerance (§2)",()=>{
+  it("renders fine when a paragraph only narrates an unavailable citation without pulling a value from it",()=>{
+    const o=observation("r1","priceCents",525,{status:"unavailable"});
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"That source is currently unavailable.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rendered).not.toBeNull();
+    expect(rendered!.blocks).toEqual([{type:"text",text:"That source is currently unavailable."}]);
+    expect(rendered!.issues).toEqual([]);
+  });
+  it("drops only the one paragraph that tries to pull a value out of an unavailable citation",()=>{
+    const unavailable=observation("r1","priceCents",525,{status:"unavailable"});
+    const available=observation("r2","priceCents",300);
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+      {kind:"evidence",text:"The cost is {{r2:value.priceCents}}.",citations:["r2"]},
+    ]),[unavailable,available],"en");
+    expect(rendered!.blocks).toEqual([{type:"text",text:"The cost is $3.00."},
+      {type:"metric",label:"Amount",valueCents:300,source:ref("r2")}]);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"dropped_paragraph",reason:"empty_citation_pull"}));
+  });
+  it("drops only the one paragraph citing an id that was never produced this turn, keeping the rest",()=>{
+    const o=observation("r1","priceCents",525);
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"The price is {{r9:value.priceCents}}.",citations:["r9"]},
+      {kind:"evidence",text:"The cost is {{r1:value.priceCents}}.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rendered!.blocks).toEqual([{type:"text",text:"The cost is $5.25."},
+      {type:"metric",label:"Amount",valueCents:525,source:ref("r1")}]);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"dropped_paragraph",
+      reason:"hallucinated_citation",id:"r9"}));
+  });
+  it("returns null only when literally nothing in the whole answer survived",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"evidence",text:"The price is {{r9:value.priceCents}}.",citations:["r9"]},
+    ]),[],"en");
+    expect(rendered).toBeNull();
+  });
+});
+
+describe("renderInvestigationAnswer -- business-specific claims (§3 non-negotiable rule)",()=>{
+  it("masks a specific claim about the owner's own business even when it is an exact echo of their words",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"Your margin is 45% right now.",citations:[]},
+    ]),[],"en",{ownerText:"Is my margin 45% right now?"});
+    expect(rendered!.blocks[0]).toMatchObject({type:"text",text:"Your margin is [unchecked value] right now."});
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited",text:"45%"}));
+  });
+  it("masks a specific uncited business claim even when the model mislabels the paragraph as a clarification",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"clarification",text:"Your margin looks like it's around 45%, is that right?",citations:[]},
+    ]),[],"en",{ownerText:"Is my margin 45%?"});
+    expect(rendered!.blocks[0]).toMatchObject({type:"text",
+      text:"Your margin looks like it's around [unchecked value], is that right?"});
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
+  });
+  it("never requires a citation for general, non-owner-specific language",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"A typical café margin runs around 60%.",citations:[]},
+    ]),[],"en",{ownerText:"How does this compare to typical cafés?"});
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number"}));
+  });
+});
+
+describe("buildClaimFeedback / buildUnresolvedNote (§5b/§6/§7)",()=>{
+  it("names the exact paragraph and the real observation a freehand number should have cited",()=>{
+    const feedback=buildClaimFeedback([{kind:"unmatched_number",paragraphIndex:0,text:"$5.25",
+      matchedObservation:{id:"r1",path:"value.priceCents"}}]);
+    expect(feedback).toContain("r1");
+    expect(feedback).toContain("$5.25");
+  });
+  it("lists the real valid ids for a hallucinated citation",()=>{
+    const feedback=buildClaimFeedback([{kind:"dropped_paragraph",paragraphIndex:0,
+      reason:"hallucinated_citation",id:"r9",validIds:["r1","r2"]}]);
+    expect(feedback).toContain("r9");
+    expect(feedback).toContain("r1");
+    expect(feedback).toContain("r2");
+  });
+  it("builds no unresolved note when nothing was masked",()=>{
+    expect(buildUnresolvedNote([],"en")).toBeNull();
+  });
+  it("builds an owner-facing note that never repeats the unverified value itself",()=>{
+    const note=buildUnresolvedNote([{kind:"unmatched_number",paragraphIndex:0,text:"$999.99",matchedObservation:null}],"en");
+    expect(note).not.toBeNull();
+    expect(note).not.toContain("$999.99");
+    expect(note).toContain("1");
   });
 });
 

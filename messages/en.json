@@ -1954,6 +1954,7 @@
     "externalUnverified": "Unverified public source",
     "financialUnavailable": "Financial amounts are unavailable in this view; the scheduling details remain usable.",
     "factAmount": "Amount",
-    "factPercent": "Percentage"
+    "factPercent": "Percentage",
+    "notConfirmed": "I wasn't able to confirm {count} part(s) of this answer in time; everything shown above has already been checked."
   }
 }

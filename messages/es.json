@@ -1954,6 +1954,7 @@
     "externalUnverified": "Fuente pública sin verificar",
     "financialUnavailable": "Los importes financieros no están disponibles en esta vista; los detalles de horarios siguen disponibles.",
     "factAmount": "Monto",
-    "factPercent": "Porcentaje"
+    "factPercent": "Porcentaje",
+    "notConfirmed": "No pude confirmar {count} parte(s) de esta respuesta a tiempo; todo lo mostrado arriba ya fue verificado."
   }
 }

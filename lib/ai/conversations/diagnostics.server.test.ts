@@ -223,4 +223,48 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
     expect(logged.ownerQuestion).toBe("What did Sophie earn this week?");
     expect(logged.rawAnswerParagraphs[0].text).toContain("Sophie earned");
   });
+  it("logs a per-round capability_round point with the capability and its result status",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"capability_round",requestId:"abc123",round:2,
+      capabilityId:"p3.menu.catalog.v1",status:"verified"},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"capability_round",requestId:"abc123",round:2,
+      capabilityId:"p3.menu.catalog.v1",status:"verified"});
+  });
+  it("logs a per-round retry_feedback point carrying the exact feedback text given to that round",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"retry_feedback",requestId:"abc123",round:3,
+      feedback:"Paragraph 1: the number \"$2\" has no citation..."},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged.point).toBe("retry_feedback");
+    expect(logged.feedback).toContain("Paragraph 1");
+  });
+  it("logs a per-round claim_issues_retry point with which gate rejected which claim and why",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"claim_issues_retry",requestId:"abc123",round:3,
+      issues:[{kind:"unmatched_number",paragraphIndex:0,text:"$2",matchedObservation:null}]},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged.point).toBe("claim_issues_retry");
+    expect(logged.issues[0]).toMatchObject({kind:"unmatched_number",text:"$2"});
+  });
+  it("logs a per-round review_verdict point distinct from the final exhaustion summary",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"review_verdict",requestId:"abc123",round:4,
+      supported:true,complete:false},(l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"review_verdict",round:4,supported:true,complete:false});
+  });
+  it("shares one requestId across every round's debug point for the same turn",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"capability_round",requestId:"same-turn-id",round:1},(l)=>lines.push(l));
+    logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:"same-turn-id",round:2},(l)=>lines.push(l));
+    logSupervisorDebugPayload({point:"investigation_exhausted",requestId:"same-turn-id"},(l)=>lines.push(l));
+    const requestIds=lines.map(l=>JSON.parse(l).requestId);
+    expect(new Set(requestIds).size).toBe(1);
+  });
 });

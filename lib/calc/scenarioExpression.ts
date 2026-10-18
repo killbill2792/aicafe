@@ -67,20 +67,23 @@ const unavailable=(reason:string):ExpressionOutcome=>({
   proposal:null,value:null,unit:null,currency:null,formula:[],assumptions:[],
   sourceHandles:[],missingInputs:[],reason,executedEffects:0,
 });
-type Rat={n:bigint;d:bigint};
+/** Exported so other deterministic-arithmetic modules (e.g. the investigation
+ * formula verifier) reuse this exact rational-number implementation instead
+ * of reimplementing floating-point-unsafe arithmetic. */
+export type Rat={n:bigint;d:bigint};
 type Item={v:Rat;u:Unit;p:Operand["period"];refs:Set<string>};
-const abs=(v:bigint)=>v<BigInt("0")?-v:v;
-function rat(n:bigint,d:bigint=BigInt("1")):Rat{
+export const abs=(v:bigint)=>v<BigInt("0")?-v:v;
+export function rat(n:bigint,d:bigint=BigInt("1")):Rat{
   if(d===BigInt("0"))throw new Error("division_by_zero");
   if(d<BigInt("0")){n=-n;d=-d;}
   let a=abs(n),b=d;
   while(b!==BigInt("0")){const x=a%b;a=b;b=x;}
   return {n:n/a,d:d/a};
 }
-const plus=(a:Rat,b:Rat)=>rat(a.n*b.d+b.n*a.d,a.d*b.d);
-const minus=(a:Rat,b:Rat)=>rat(a.n*b.d-b.n*a.d,a.d*b.d);
-const times=(a:Rat,b:Rat)=>rat(a.n*b.n,a.d*b.d);
-const divided=(a:Rat,b:Rat)=>rat(a.n*b.d,a.d*b.n);
+export const plus=(a:Rat,b:Rat)=>rat(a.n*b.d+b.n*a.d,a.d*b.d);
+export const minus=(a:Rat,b:Rat)=>rat(a.n*b.d-b.n*a.d,a.d*b.d);
+export const times=(a:Rat,b:Rat)=>rat(a.n*b.n,a.d*b.d);
+export const divided=(a:Rat,b:Rat)=>rat(a.n*b.d,a.d*b.n);
 const equalPeriod=(a:Item,b:Item)=>JSON.stringify(a.p)===JSON.stringify(b.p);
 const mergeRefs=(a:Item,b:Item)=>new Set([...a.refs,...b.refs]);
 /** Two independent café sources must share an explicit comparable period;

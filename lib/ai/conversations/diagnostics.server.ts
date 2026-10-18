@@ -52,7 +52,13 @@ export type SupervisorDiagnostic = {
   /** Exactly why runInvestigationTurn gave up and returned the budget/unavailable
    * reply, so a quiet "I reached the limit" no longer has to be reverse-engineered
    * from request duration alone. */
-  exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|"observations_too_large";
+  /** "no_progress": the adaptive budget (protocol.ts INVESTIGATION_LIMITS)
+   * stopped the loop immediately -- before exhausting the time/call budget
+   * -- because a round exactly repeated a prior attempt (same tool
+   * selection, or the identical already-rejected answer draft) with no new
+   * information, rather than waiting out the remaining budget. */
+  exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|
+    "observations_too_large"|"no_progress";
   /** Why a direct-answer investigation round was rejected and retried, so a
    * run of otherwise-identical "investigation_round agent:supervisor" lines
    * (previously indistinguishable) says whether the model's own citations/
@@ -79,7 +85,7 @@ const stages:readonly SupervisorStage[]=[
 ];
 const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
 const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
-  "snapshot_mismatch","observations_too_large"]);
+  "snapshot_mismatch","observations_too_large","no_progress"]);
 const answerRejectedReasons=new Set(["render_failed","review_failed","review_unavailable"]);
 const categories:readonly SupervisorErrorCategory[]=[
   "provider_http","provider_timeout","provider_incomplete","provider_invalid_payload",
@@ -278,7 +284,29 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  * had available) instead of guessed at round by round from metadata alone.
  * There are no real owners on this deployment yet, so the one flag below
  * is the only gate: flip SUPERVISOR_DEBUG_RAW_LOGGING off (or delete this
- * function) before any real owner's data ever flows through. */
+ * function) before any real owner's data ever flows through.
+ *
+ * The caller (runInvestigation.server.ts) logs one of these points for
+ * EVERY round of the loop, not only the final attempt and the exhaustion
+ * summary, all sharing one `requestId` per turn so a single owner
+ * question's entire trace -- which capability/tool was attempted, what
+ * came back, what retry feedback was given, and which gate
+ * (render/review/formula-verification) accepted or rejected the draft and
+ * why -- can be reconstructed end to end from a log export:
+ * - "capability_round": a read/calculate tool actually dispatched this
+ *   round, with its capabilityId and result status.
+ * - "retry_feedback": the specific feedback text carried INTO a round
+ *   (set by whatever gate rejected the previous round's attempt).
+ * - "claim_issues_retry": the claim-level issues (ClaimIssue[] from
+ *   evidence.ts) found in a direct-answer draft that is being retried
+ *   rather than accepted, with which gate (render/formula) found each one.
+ * - "direct_answer_attempt": the raw model-authored draft for this round
+ *   (unchanged from before).
+ * - "review_verdict": the independent reviewer's supported/complete
+ *   verdict for a clean (zero-issue) draft.
+ * - "investigation_exhausted": the final summary (unchanged from before). */
+export type SupervisorDebugPoint="capability_round"|"retry_feedback"|"claim_issues_retry"|
+  "direct_answer_attempt"|"review_verdict"|"investigation_exhausted";
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
