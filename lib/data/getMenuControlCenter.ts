@@ -4,6 +4,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
 import { getMenuItemsForEdit, type MenuItemForEdit } from "./getMenuItemsForEdit";
 import { getPricingInputs } from "./getPricingInputs";
+import type { MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
 import { buildPricingViewModel } from "@/lib/viewmodels/pricingViewModel";
 import {
   analyzePriceChangeSalesResponse,
@@ -34,7 +35,12 @@ export type MenuPricingEvidence = {
   nearbyMarket: NearbyMarketComparison;
 };
 
+export type MenuPricingBasis = MenuPriceSourceBasis & {
+  targetOperatingMarginBps: number;
+  targetMarginStatus: "default" | "confirmed";
+};
 export type MenuControlItem = MenuItemForEdit & {
+  pricingBasis?: MenuPricingBasis;
   pricing: PricingResult | null;
   pricingEvidence?: MenuPricingEvidence;
   unitsSold: number | null;
@@ -75,6 +81,12 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
   const businessId = await getActiveBusinessId(user.id);
   const pricingInputs = await getPricingInputs(supabase, businessId);
   const pricingById = new Map(buildPricingViewModel(pricingInputs).map((row) => [row.itemId, row.result]));
+  const pricingBasis: MenuPricingBasis = {
+    ...pricingInputs.menuPriceBasis,
+    targetOperatingMarginBps: Math.round(
+      (pricingInputs.business.targetOperatingMargin ?? 0.15) * 10000),
+    targetMarginStatus: pricingInputs.business.targetOperatingMarginStatus ?? "default",
+  };
   const inputById = new Map(pricingInputs.items.map((item) => [item.id, item]));
   const itemIds = items.map((item) => item.id);
 
@@ -257,6 +269,7 @@ export async function getMenuControlCenter(): Promise<MenuControlItem[]> {
     return {
       ...item,
       pricing,
+      pricingBasis,
       pricingEvidence: {
         costBenchmark: compareCostBasedPrice(item.priceCents, pricing?.baselinePriceCents ?? null),
         salesResponse: analyzePriceChangeSalesResponse(latestChange, salesEvidence),
