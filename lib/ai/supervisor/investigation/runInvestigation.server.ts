@@ -108,7 +108,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // In the worst case another selection takes a full provider timeout and
     // the selected registered reader takes ten seconds. Those cannot consume
     // the time reserved for the answer and independent evidence review.
-    const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*3+10000;
+    // A failed-turn owner correction may require an extra calendar-context
+    // model review (outside the reader's 10s timeout). This is possible only
+    // when a newer owner statement follows the last persisted reply.
+    const savedLast=memory?.ownerStatements.at(-1);
+    const priorOwnerStatements=ownerStatements.slice(0,-1);
+    const savedIndex=savedLast?priorOwnerStatements.lastIndexOf(savedLast):-1;
+    const mayNeedCalendarReview=savedIndex>=0&&savedIndex<priorOwnerStatements.length-1;
+    const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*
+      (mayNeedCalendarReview?4:3)+10000;
     const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
       usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
       deadline-Date.now()<=timeNeededForAnotherOperation;
@@ -233,18 +241,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
         feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
-      result=await registry.invoke(scope,step.capabilityId,args);
-      // The registry still enforces its own exact Zod schema, purpose, byte
-      // limits and date span. A rejected input never dispatched a domain read
-      // and must not use up the five real-operation allowance.
-      const rejectedBeforeDispatch=record(result)&&[
-        "invalid_request","input_limit","unsupported_period","unknown_capability",
-        "mode_disabled","unauthorized",
-      ].includes(String(result.reason));
-      if(!rejectedBeforeDispatch){
+      result=await registry.invoke(scope,step.capabilityId,args,()=>{
+        // Fired strictly after typed registry preflight, before reader execution.
+        // Domain failures still consume a real operation; malformed inputs do not.
         usage.toolCallCount++;
         input.onUsage?.({...usage});
-      }
+      });
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
     if(readDomain&&!["invalid_request","input_limit","unknown_capability","unauthorized","mode_disabled"].includes(String(result.reason))){
