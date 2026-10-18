@@ -38,7 +38,8 @@ function recoverFirstStep<T>(rawText:string,schema:z.ZodType<T>):T|undefined{
   return undefined;
 }
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
-  instructions:string;context:unknown;answerOnly?:boolean;reserveModelCalls?:number;model:string;apiKey:string;transport:InvestigationTransport;
+  instructions:string;context:unknown;answerOnly?:boolean;reserveModelCalls?:number;
+  selectionBudgetDeadline?:boolean;model:string;apiKey:string;transport:InvestigationTransport;
   usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
   // Nested semantic gates (public-search privacy / calendar clarification) must
@@ -51,11 +52,18 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
   input.usage.modelCallCount++;
   input.onUsage?.({...input.usage});
   const controller=new AbortController();
+  // Distinguish our shorter, explicit tool-selection reserve from the ordinary
+  // per-provider 18s timeout. A genuine provider timeout always propagates.
+  const remainingDeadlineMs=input.deadline-Date.now();
+  const cappedSelectionExpiry=input.selectionBudgetDeadline===true&&
+    remainingDeadlineMs<INVESTIGATION_LIMITS.providerTimeoutMs;
   let expire:()=>void=()=>{};
   const expired=new Promise<never>((_resolve,reject)=>{expire=()=>reject(
-    new SupervisorStageError("provider_timeout","provider_response",{timeout:true}));});
+    new SupervisorStageError("provider_timeout","provider_response",{
+      timeout:true,providerErrorCode:cappedSelectionExpiry?"investigation_selection_deadline":undefined,
+    }));});
   const timeout=setTimeout(()=>{controller.abort();expire();},Math.max(1,Math.min(
-    INVESTIGATION_LIMITS.providerTimeoutMs,input.deadline-Date.now())));
+    INVESTIGATION_LIMITS.providerTimeoutMs,remainingDeadlineMs)));
   try{
     return await Promise.race([(async()=>{
       // Clamp to what remains of the turn's own output-token backstop so one
