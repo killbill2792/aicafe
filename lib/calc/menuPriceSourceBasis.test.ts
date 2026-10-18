@@ -8,7 +8,7 @@ const day=(n:number):MenuPriceSourceDay=>({
   cardFeesCents:300,cardFeesStatus:"actual",
 });
 const basis=(days:MenuPriceSourceDay[],opts:Partial<Parameters<typeof menuPriceSourceBasis>[0]>={})=>
-  menuPriceSourceBasis({days,recurring:[],expenses:[],totalItemPrepSecondsInWindow:0,...opts});
+  menuPriceSourceBasis({days,recurring:[],expenses:[],previousMonthExpenseCategories:[],totalItemPrepSecondsInWindow:0,...opts});
 
 describe("Menu pricing source basis",()=>{
   it("uses 14 actual historical import days even when none are in the current month",()=>{
@@ -33,6 +33,26 @@ describe("Menu pricing source basis",()=>{
     expect(p.payrollStatus).toBe("missing");
     expect(p.feeStatus).toBe("missing");
     expect(p.monthlyDrinks).toBe(1200);
+  });
+  it("withholds full cost profit when a prior-month expected category lacks this month's amount",()=>{
+    const p=basis([],{
+      previousMonthExpenseCategories:["supplies"],
+      recurring:[{categoryCode:"rent",amountCents:100000,frequency:"monthly",estimated:false}],
+    });
+    expect(p).toMatchObject({
+      monthlyRunningCents:null,
+      runningKnownCents:100000,
+      missingRunningCategories:["supplies"],
+      runningStatus:"missing",
+    });
+  });
+  it("does not demand a prior-month one-time repair expense as recurring",()=>{
+    const p=basis([],{
+      previousMonthExpenseCategories:["repairs"],
+      recurring:[{categoryCode:"rent",amountCents:100000,frequency:"monthly",estimated:false}],
+    });
+    expect(p.monthlyRunningCents).toBe(100000);
+    expect(p.missingRunningCategories).toEqual([]);
   });
   it("keeps explicit zero recurring bill separate from missing",()=>{
     const p=basis([],{recurring:[
