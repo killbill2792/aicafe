@@ -10,6 +10,7 @@ import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/li
 import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { createSupervisorDiagnosticLogger, classifySupervisorError, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
+import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -63,6 +64,14 @@ export async function POST(request: Request, context: RouteContext) {
     const messages = (await service.listMessages(id, 0)).items;
     const history = compactConversationContext(messages, message.id);
     let aggregatedUsage: SupervisorUsage | null = null;
+    let progressStep = 0;
+    // Fresh per POST invocation, not per browser retry click: a retried
+    // turn reuses the same clientMessageId (and progress row), but its
+    // writes must not be blocked by whatever step the previous, failed
+    // attempt happened to leave behind. Epoch milliseconds (not a random
+    // id) so a strictly later attempt always outranks an earlier one. See
+    // recordSupervisorProgress.
+    const progressAttempt = Date.now();
     let reply;
     try {
       const completed = await runSupervisorTurn({
@@ -75,6 +84,16 @@ export async function POST(request: Request, context: RouteContext) {
         onDiagnostic: (event) => {
           stage=event.stage;
           diagnostics.emit(event);
+          const progress=progressFromDiagnostic(event);
+          // Fire-and-forget: a stale or missing status bar must never slow
+          // down or fail the owner's actual turn. progressStep is strictly
+          // increasing per call, so the step-ordered write (see
+          // recordSupervisorProgress) can never let a slower earlier round
+          // overwrite a later one that happened to finish first.
+          if (progress) void recordSupervisorProgress({
+            scope, threadId: id, clientMessageId: input.clientMessageId,
+            step: ++progressStep, attempt: progressAttempt, ...progress,
+          });
         },
       });
       reply = completed.reply;

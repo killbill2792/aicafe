@@ -38,6 +38,21 @@ describe("Phase 4 privileged reply validation", () => {
     expect(validateGroundedReply(notice)).toEqual(notice);
   });
 
+  it("applies the exact same grounding checks to percent blocks as metric/count", () => {
+    const percentReply: GroundedSupervisorReply = {
+      intent: "profitability", status: "verified", evidence: [source],
+      blocks: [{ type: "percent", label: "Margin", valueBps: 1200, source }],
+    };
+    expect(validateGroundedReply(percentReply).blocks).toHaveLength(1);
+    expect(() => validateGroundedReply({ ...percentReply, evidence: [] })).toThrow();
+    expect(() => validateGroundedReply({
+      ...percentReply, evidence: [{ ...source, identifier: "unrelated" }],
+    })).toThrow("exact grounding");
+    expect(() => validateGroundedReply({
+      ...percentReply, status: "insufficient_evidence", evidence: [],
+    })).toThrow("cannot contain factual metrics");
+  });
+
   it("persists only text-only source-free P3 conditional arithmetic without café evidence", () => {
     const pure: GroundedSupervisorReply = {
       intent: "profitability", status: "partial", evidence: [],

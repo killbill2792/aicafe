@@ -9,7 +9,8 @@ export type SupervisorStage =
   | "cafe_identity_loaded" | "provider_request" | "provider_response" | "provider_fallback"
   | "semantic_plan" | "capability_selected" | "grounded_answer" | "legacy_fallback"
   | "tool_call_parse" | "tool_execution" | "final_response_parse"
-  | "final_response_validation" | "scope_reconciliation" | "reply_persistence";
+  | "final_response_validation" | "scope_reconciliation" | "reply_persistence"
+  | "investigation_round" | "investigation_exhausted";
 export type SupervisorErrorCategory =
   | "provider_http" | "provider_timeout" | "provider_incomplete"
   | "provider_invalid_payload" | "invalid_tool_call" | "tool_execution"
@@ -44,6 +45,14 @@ export type SupervisorDiagnostic = {
   jsonErrorPosition?:number;
   validPrefixPartCount?:number;
   validPrefixMatchesSchema?:boolean;
+  /** Owner-safe "which AI Team member" label for an investigation round, never
+   * a raw capability id or café data. */
+  agent?:"alex"|"olivia"|"leo"|"maya"|"supervisor";
+  capabilityId?:string;
+  /** Exactly why runInvestigationTurn gave up and returned the budget/unavailable
+   * reply, so a quiet "I reached the limit" no longer has to be reverse-engineered
+   * from request duration alone. */
+  exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|"observations_too_large";
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -52,7 +61,11 @@ const stages:readonly SupervisorStage[]=[
   "provider_request","provider_response","provider_fallback","semantic_plan",
   "capability_selected","grounded_answer","legacy_fallback","tool_call_parse","tool_execution",
   "final_response_parse","final_response_validation","scope_reconciliation","reply_persistence",
+  "investigation_round","investigation_exhausted",
 ];
+const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
+const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
+  "snapshot_mismatch","observations_too_large"]);
 const categories:readonly SupervisorErrorCategory[]=[
   "provider_http","provider_timeout","provider_incomplete","provider_invalid_payload",
   "invalid_tool_call","tool_execution","final_output_missing","final_output_malformed",
@@ -215,6 +228,10 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.validPrefixPartCount)!==undefined?{validPrefixPartCount:d.validPrefixPartCount}:{}),
         ...(typeof d.validPrefixMatchesSchema==="boolean"?
           {validPrefixMatchesSchema:d.validPrefixMatchesSchema}:{}),
+        ...(d.agent&&agents.has(d.agent)?{agent:d.agent}:{}),
+        ...(safeProviderIdentifier(d.capabilityId)?{capabilityId:safeProviderIdentifier(d.capabilityId)}:{}),
+        ...(d.exhaustionReason&&exhaustionReasons.has(d.exhaustionReason)?
+          {exhaustionReason:d.exhaustionReason}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),

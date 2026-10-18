@@ -3,7 +3,7 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import type { EvidenceReference, SupervisorReplyBlock } from "@/lib/ai/conversations/contracts";
 export type Locale="en"|"es"|"ar";
-export type FactBlock=Extract<SupervisorReplyBlock,{type:"metric"|"count"}>;
+export type FactBlock=Extract<SupervisorReplyBlock,{type:"metric"|"count"|"percent"}>;
 export type ReplyGroup={kind:"facts";blocks:FactBlock[]} | {kind:"single";block:unknown};
 const labels:Record<Locale,Record<EvidenceReference["source"],string>>={
   en:{cafe_state:"Café records",historical_rollups:"Sales records",
@@ -30,8 +30,9 @@ const isFact=(value:unknown):value is FactBlock=>{
   if(typeof r.source!=="string" || !Object.hasOwn(labels.en,r.source) ||
     typeof r.asOf!=="string" || typeof r.identifier!=="string")return false;
   if(typeof b.label!=="string" || !b.label.trim())return false;
-  return b.type==="metric"?Number.isSafeInteger(b.valueCents):
-    b.type==="count"&&Number.isSafeInteger(b.value)&&Number(b.value)>=0;
+  if(b.type==="metric")return Number.isSafeInteger(b.valueCents);
+  if(b.type==="percent")return Number.isSafeInteger(b.valueBps);
+  return b.type==="count"&&Number.isSafeInteger(b.value)&&Number(b.value)>=0;
 };
 export function groupReplyBlocks(blocks:unknown[]):ReplyGroup[]{
   const groups:ReplyGroup[]=[];

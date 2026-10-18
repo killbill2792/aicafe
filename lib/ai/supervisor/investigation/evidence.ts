@@ -10,14 +10,23 @@ import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 export type Locale="en"|"es"|"ar";
 export type Observation={id:string;capabilityId:string;input:unknown;result:Record<string,unknown>;
-  reference:EvidenceReference|null;requiresSnapshot?:boolean;sourceContract?:string;display:Record<string,string>;datasetFields?:unknown;calculation?:boolean};
+  reference:EvidenceReference|null;requiresSnapshot?:boolean;sourceContract?:string;display:Record<string,string>;
+  /** Only set for a path observationDisplay classified as money (cents) or a
+   * percentage (basis points); used only to decide whether/how a cited number
+   * also earns a boxed fact alongside the answer's sentence, never to invent
+   * one. */
+  displayKind?:Record<string,"money"|"percent">;displayRaw?:Record<string,number>;
+  datasetFields?:unknown;calculation?:boolean};
 export const investigationLabels=(locale:Locale)=>({en,es,ar}[locale].SupervisorInvestigation);
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const clean=(v:string)=>v.replace(/[\p{Cc}\p{Cf}]/gu," ").trim();
 /** Token values come only from validated tool output. Numeric text, dates,
  * money and URLs cannot be introduced by the narration model. */
-export function observationDisplay(result:Record<string,unknown>,locale:Locale):Record<string,string>{
+export function observationDisplay(result:Record<string,unknown>,locale:Locale):
+  {display:Record<string,string>;kind:Record<string,"money"|"percent">;raw:Record<string,number>}{
   const display:Record<string,string>={};
+  const kind:Record<string,"money"|"percent">={};
+  const raw:Record<string,number>={};
   const labels=investigationLabels(locale);
   const walk=(v:unknown,path:string,depth:number)=>{
     if(Object.keys(display).length>=400||depth>7)return;
@@ -29,15 +38,21 @@ export function observationDisplay(result:Record<string,unknown>,locale:Locale):
       const parentUnit=isRecord(result.value)?result.value.unit:undefined;
       const datasetUnit=expressionUnit.safeParse(parentUnit);
       if(result.id==="platform.dataset.analysis"&&key==="value"&&datasetUnit.success){
-        display[path]=formatScenarioValue(v,datasetUnit.data,locale);return;
+        display[path]=formatScenarioValue(v,datasetUnit.data,locale);
+        if(datasetUnit.data==="USD_cents"){kind[path]="money";raw[path]=v;}
+        return;
       }
       if(/(?:Bps|BasisPoints)$/u.test(key)){
         display[path]=new Intl.NumberFormat(locale,{style:"percent",maximumFractionDigits:2}).format(v/10000);
+        kind[path]="percent";raw[path]=v;
         return;
       }
-      display[path]=money||key==="value"&&parentUnit==="USD_cents"
-        ?new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(v/100)
-        :new Intl.NumberFormat(locale,{maximumFractionDigits:6}).format(v);
+      if(money||key==="value"&&parentUnit==="USD_cents"){
+        display[path]=new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(v/100);
+        kind[path]="money";raw[path]=v;
+      }else{
+        display[path]=new Intl.NumberFormat(locale,{maximumFractionDigits:6}).format(v);
+      }
     }else if(typeof v==="boolean")display[path]=v?labels.yes:labels.no;
     else if(typeof v==="string"){
       if(v.length>600||/^[a-f\d]{8}-[a-f\d-]{27,}$/iu.test(v))return;
@@ -56,7 +71,7 @@ export function observationDisplay(result:Record<string,unknown>,locale:Locale):
     display["provenance.asOf"]=clean(result.provenance.asOf);
   if(result.capabilityId==="platform.scenario.expression.v1"&&Array.isArray(result.assumptions))
     result.assumptions.forEach((a,i)=>{if(typeof a==="string")display["assumptions."+i]=formatScenarioAssumption(a,locale);});
-  return display;
+  return {display,kind,raw};
 }
 export function observationReference(businessId:string,asOf:string,capabilityId:string,result:unknown,inheritedSource?:EvidenceReference["source"]):EvidenceReference{
   const provenance=isRecord(result)&&isRecord(result.provenance)?result.provenance:null;
@@ -69,7 +84,9 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean}|null{
   const byId=new Map(observations.map(o=>[o.id,o]));
   if(!["en","es","ar"].includes(locale))return null;
+  const labels=investigationLabels(locale);
   const blocks:SupervisorReplyBlock[]=[],refs:EvidenceReference[]=[];
+  let boxedCount=0;const boxedSignatures=new Set<string>();
   let adviceOnly=true;
   for(const paragraph of answer.paragraphs){
     if(paragraph.kind==="evidence"&&!paragraph.citations.length)return null;
@@ -84,11 +101,31 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       return "";
     });
     if(invalid||/[\p{N}$€£¥%]|https?:\/\/|www\.|\{\{|\}\}/iu.test(plain))return null;
+    const matched:{id:string;path:string}[]=[];
     const text=paragraph.text.replace(/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}/gu,
-      (_m,id:string,path:string)=>byId.get(id)!.display[path]);
+      (_m,id:string,path:string)=>{matched.push({id,path});return byId.get(id)!.display[path];});
     if(text.length>1200||!clean(text))return null;
     blocks.push({type:"text",text:clean(text)});
     for(const o of cited)if(o?.reference&&!refs.some(r=>r.identifier===o.reference!.identifier))refs.push(o.reference);
+    // A boxed fact echoes a number already stated in the sentence just
+    // pushed above -- immediately after it, never batched at the end, so a
+    // multi-paragraph answer (revenue, then cost, then margin) keeps each
+    // box next to the sentence it belongs to instead of an ambiguous pile.
+    // Never introduces a value the sentence didn't already cite. Capped so
+    // one answer never turns into a wall of boxes.
+    if(paragraph.kind==="evidence")for(const {id,path} of matched){
+      if(boxedCount>=4)break;
+      const observation=byId.get(id);
+      const kind=observation?.displayKind?.[path];
+      const rawValue=observation?.displayRaw?.[path];
+      if(!observation?.reference||!kind||typeof rawValue!=="number")continue;
+      const signature=observation.reference.identifier+":"+path;
+      if(boxedSignatures.has(signature))continue;
+      boxedSignatures.add(signature);boxedCount++;
+      blocks.push(kind==="money"
+        ?{type:"metric",label:labels.factAmount,valueCents:rawValue,source:observation.reference}
+        :{type:"percent",label:labels.factPercent,valueBps:rawValue,source:observation.reference});
+    }
   }
   return {blocks,evidence:refs,adviceOnly};
 }

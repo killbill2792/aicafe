@@ -45,6 +45,19 @@ export function capabilityToolName(capabilityId:string):string{
   return capabilityId.replace(/[^a-zA-Z0-9_-]/g,"_").slice(0,64);
 }
 export const CALCULATE_TOOL_NAME="calculate";
+/** Owner-safe "which AI Team member" label for a diagnostic/progress event.
+ * A registration's internal `owner` field is a domain prefix, not always a
+ * persona name; this is presentation only and never changes which capability
+ * actually runs. */
+export function friendlyAgent(owner:string|undefined):"alex"|"olivia"|"leo"|"maya"|"supervisor"{
+  switch(owner){
+    case "alex":case "menu":case "pricing":return "alex";
+    case "olivia":case "labor":return "olivia";
+    case "money":case "sales":return "leo";
+    case "maya":case "team":case "supplies":return "maya";
+    default:return "supervisor";
+  }
+}
 function calendar(asOf:string){
   const add=(n:number)=>new Date(Date.parse(asOf+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
   const monday=add(-((new Date(asOf+"T12:00:00Z").getUTCDay()+6)%7));
@@ -61,9 +74,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
   const usage:InvestigationUsage={model:input.model,modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0};
   const labels=investigationLabels(input.locale);
-  const failure=(budget=false)=>({reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
-    blocks:[{type:"warning" as const,code:budget?"SUPERVISOR_INVESTIGATION_LIMIT":"SUPERVISOR_INVESTIGATION_UNAVAILABLE",
-      text:budget?labels.budget:labels.unavailable}]},usage:{...usage}});
+  const failure=(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
+    input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+    return {reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
+      blocks:[{type:"warning" as const,code:budget?"SUPERVISOR_INVESTIGATION_LIMIT":"SUPERVISOR_INVESTIGATION_UNAVAILABLE",
+        text:budget?labels.budget:labels.unavailable}]},usage:{...usage}};
+  };
   const {identity,tools}=await authorizedOwnerP1();
   if(!identity.businessId||identity.asOf!==input.asOf||identity.timezone!==input.timezone||!input.apiKey)return failure();
   const parsedMemory=investigationMemorySchema.safeParse(input.investigationMemory);
@@ -73,7 +90,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const atomic=await readAuthorizedAtomicP1SourceSnapshot();
   const financialReadsAvailable=atomic.status==="available"||atomic.reason==="rpc_not_installed";
   if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
-    atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))return failure();
+    atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))
+    return failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
     ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
   const datasets=new Map<string,StoredDataset>();
@@ -127,7 +145,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const views=observations.map(o=>({id:o.id,capabilityId:o.capabilityId,input:o.input,
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
-    if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)return failure(true);
+    if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)
+      return failure(true,"observations_too_large");
     // Reserve one model attempt for an answer and one for its independent
     // evidence/coverage review. Provider retries also share this ledger.
     // Five real operations must never crowd out the final answer.
@@ -207,12 +226,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         feedback="A previous investigation instruction could not be validated. Answer now with verified observations and the specific remaining limitation.";
         continue;
       }
-      return failure();
+      return failure(false,"model_calls");
     }
     feedback=null;
     if(!isToolCallSignal(step)){
       // The model answered directly (no tool call) -- already schema-valid
       // against answerSchema, with no second hand-written envelope around it.
+      input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       const answer=step;
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
@@ -226,16 +247,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // investigation; no data from the later snapshot is mixed with earlier reads.
       const latestOwner=await authorizedOwnerP1();
       if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
-        latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)return failure();
-      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))return failure();
+        latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)
+        return failure(false,"identity_mismatch");
+      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))
+        return failure(false,"snapshot_mismatch");
       if(atomic.status==="available"&&observations.some(o=>o.reference&&o.requiresSnapshot)){
         const latest=await readAuthorizedAtomicP1SourceSnapshot();
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
-          latest.snapshot.revision!==atomic.snapshot.revision)return failure();
+          latest.snapshot.revision!==atomic.snapshot.revision)return failure(false,"snapshot_mismatch");
       }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
+      input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:reply.status,
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
     }
     if(finalizeOnly){feedback="The last available turn must answer with available evidence, not request another operation.";continue;}
@@ -246,6 +271,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const signature=JSON.stringify([capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]);
     if(attempted.has(signature)){feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;}
     attempted.add(signature);
+    input.onDiagnostic?.({stage:"investigation_round",
+      agent:friendlyAgent(capabilityId===EXPRESSION_ID?"platform":manifest.find(m=>m.id===capabilityId)?.owner),
+      capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     let result:unknown;
     let calculation=false;
     let readDomain:string|undefined;
@@ -337,14 +365,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       handle=>typeof handle==="string"&&!handle.startsWith("dataset:"));
     const parentObservation=parents[0];
     const inheritedSource=parents.some(o=>o.reference?.source==="unverified_external")?"unverified_external":parentObservation?.reference?.source;
+    const rendered=successful?observationDisplay(result,input.locale):{display:{},kind:{},raw:{}};
     const observation:Observation={id,capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
       reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,capabilityId,result,inheritedSource):null,
       requiresSnapshot:directSourceRequiresSnapshot||parents.some(o=>o.requiresSnapshot)||!calculation&&
         manifest.find(m=>m.id===capabilityId)?.currencyPolicy!=="independent",
-      display:successful?observationDisplay(result,input.locale):{},calculation};
-    if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
+      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw,calculation};
+    if(calculation&&typeof result.value==="number"&&typeof result.unit==="string"){
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);
+      if(result.unit==="USD_cents"){observation.displayKind!.value="money";observation.displayRaw!.value=result.value;}
+      else if(result.unit==="ratio_bps"){observation.displayKind!.value="percent";observation.displayRaw!.value=result.value;}
+    }
     if(successful&&!calculation){
       const quality=record(result.quality)?result.quality:null;
       if(quality&&Array.isArray(quality.missingInputs)&&Array.isArray(quality.estimatedInputs)&&Array.isArray(quality.staleInputs)){
@@ -360,5 +392,5 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     observations.push(observation);
   }
-  return failure(true);
+  return failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }
