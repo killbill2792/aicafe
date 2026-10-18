@@ -496,6 +496,7 @@
             "priceBasisTargetDefault": "Se utiliza el margen predeterminado del {margin}% de AI CAFE, no un objetivo confirmado por usted.",
     "priceBasisPayrollWindow": "La proyección de nómina usa {days} días de trabajo documentados por separado entre {from} y {to}.",
     "priceBasisMissingCostDetail": "Faltan algunos gastos mensuales previstos: {names}. El subtotal mensual conocido es {known}. Ingrese el total mensual completo, incluidos esos gastos, para completar la estimación.",
+    "priceBasisSavedCostsIncomplete": "Los gastos guardados aún carecen de {count} categorías de costos previstas. El importe confirmado solo se aplica a esta estimación en pantalla.",
         "priceBasisMissingExpected": "Faltan importes este mes para {count} categorías de gasto previstas. El subtotal registrado es {subtotal}. Ingrese el total mensual completo para completar la estimación sin contar costos dos veces.",
     "priceBasisRounding": "Las partidas se redondean solo para mostrarse. La ganancia y el precio objetivo se calculan con importes sin redondear.",
     "priceBasisOwnerAdjusted": "Ajustado por el propietario para esta estimación (no guardado)",
