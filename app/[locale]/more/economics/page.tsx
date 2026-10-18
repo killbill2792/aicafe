@@ -36,6 +36,7 @@ export default async function EconomicsPage() {
           unavailableSales: t("unavailableSales"),
           unavailableFees: t("unavailableFees"),
           unavailableCosts: t("unavailableCosts"),
+          unavailableOperating: t("unavailableOperating"),
           targetTested: t("targetTested"),
           item: t("item"),
           productCost: t("productCost"),
