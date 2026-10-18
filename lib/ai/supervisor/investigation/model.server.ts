@@ -1,25 +1,69 @@
 import "server-only";
 import {z} from "zod";
 import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
-import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
+import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA,INVESTIGATION_FINAL_STEP_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
 export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Response>;
 export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount:number;inputTokens:number;outputTokens:number};
+/** Accept the first complete, schema-valid step even when a provider puts a
+ * duplicate answer or trailing commentary inside the SAME output_text part.
+ * Checking only complete part-prefixes misses this production failure shape.
+ * Never use this on semantic approval/privacy verdicts. */
+function recoverFirstStep<T>(rawText:string,schema:z.ZodType<T>):T|undefined{
+  const start=rawText.search(/\S/);
+  if(start<0||rawText[start]!=="{")return undefined;
+  const closers:string[]=[];
+  let quoted=false,escaped=false;
+  for(let i=start;i<rawText.length;i++){
+    const ch=rawText[i];
+    if(quoted){
+      if(escaped)escaped=false;
+      else if(ch==="\\")escaped=true;
+      else if(ch==='"')quoted=false;
+      continue;
+    }
+    if(ch==='"'){quoted=true;continue;}
+    if(ch==="{"||ch==="["){closers.push(ch==="{"?"}":"]");continue;}
+    if(ch==="}"||ch==="]"){
+      if(closers.pop()!==ch)return undefined;
+      if(closers.length===0){
+        let candidate:unknown;
+        try{candidate=JSON.parse(rawText.slice(start,i+1));}catch{return undefined;}
+        const valid=schema.safeParse(candidate);
+        return valid.success?valid.data:undefined;
+      }
+    }
+  }
+  return undefined;
+}
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
-  instructions:string;context:unknown;model:string;apiKey:string;transport:InvestigationTransport;
+  instructions:string;context:unknown;answerOnly?:boolean;reserveModelCalls?:number;
+  selectionBudgetDeadline?:boolean;model:string;apiKey:string;transport:InvestigationTransport;
   usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
-  if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
+  // Nested semantic gates (public-search privacy / calendar clarification) must
+  // not spend the final answer and independent review's reserved model attempts.
+  // This applies to a gate's own malformed-output retry as well as its first call.
+  const maxCalls=INVESTIGATION_LIMITS.modelCalls-
+    Math.max(0,Math.min(2,input.reserveModelCalls??0));
+  if(input.usage.modelCallCount>=maxCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
   input.onUsage?.({...input.usage});
   const controller=new AbortController();
+  // Distinguish our shorter, explicit tool-selection reserve from the ordinary
+  // per-provider 18s timeout. A genuine provider timeout always propagates.
+  const remainingDeadlineMs=input.deadline-Date.now();
+  const cappedSelectionExpiry=input.selectionBudgetDeadline===true&&
+    remainingDeadlineMs<INVESTIGATION_LIMITS.providerTimeoutMs;
   let expire:()=>void=()=>{};
   const expired=new Promise<never>((_resolve,reject)=>{expire=()=>reject(
-    new SupervisorStageError("provider_timeout","provider_response",{timeout:true}));});
+    new SupervisorStageError("provider_timeout","provider_response",{
+      timeout:true,providerErrorCode:cappedSelectionExpiry?"investigation_selection_deadline":undefined,
+    }));});
   const timeout=setTimeout(()=>{controller.abort();expire();},Math.max(1,Math.min(
-    INVESTIGATION_LIMITS.providerTimeoutMs,input.deadline-Date.now())));
+    INVESTIGATION_LIMITS.providerTimeoutMs,remainingDeadlineMs)));
   try{
     return await Promise.race([(async()=>{
       // Clamp to what remains of the turn's own output-token backstop so one
@@ -30,7 +74,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
         body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
           instructions:input.instructions,context:input.context,maxOutputTokens,
-          schema:input.name==="supervisor_investigation_step"?INVESTIGATION_STEP_JSON_SCHEMA:
+          schema:input.name==="supervisor_investigation_step"?
+            input.answerOnly?INVESTIGATION_FINAL_STEP_JSON_SCHEMA:INVESTIGATION_STEP_JSON_SCHEMA:
             z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})})),
       });
       if(!response.ok){
@@ -133,6 +178,11 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"wrong_text_shape",...shapeMeta});
       if(!concatenatedTextParses){
+        // Real provider responses also duplicate an entire JSON step inside a
+        // single output_text part (the part-boundary prefix scan misses it).
+        // Recovery is only for requested investigative steps, never reviews.
+        if(allowPrefixRecovery&&acceptablePrefix===undefined)
+          acceptablePrefix=recoverFirstStep(text,input.schema);
         if(allowPrefixRecovery&&acceptablePrefix!==undefined){
           // Not an error: record it for observability (no category — this
           // path never retries or degrades the turn), then use the answer.

@@ -171,7 +171,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
      * This call has no database/HTTP effect handler: only reviewed pure simulations.
      */
     async invokeSimulation(scope:TrustedReadScope,id:string,rawInput:unknown,
-      trustedSourceContext:unknown) {
+      trustedSourceContext:unknown,onDispatch?:()=>void) {
       if(!scope.shadowEnabled || scope.role!=="owner" || !scope.businessId ||
          scope.businessId!==scope.identity.businessId ||
          scope.businessId==="11111111-1111-1111-1111-111111111111")
@@ -238,6 +238,9 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
            typeof o.sourcePurpose!=="string"||!b.purposes.includes(o.sourcePurpose))
           return unavailable("invalid_source_context");
       }
+      // Simulations use the same authoritative dispatch boundary as reads.
+      // Schema/byte/purpose/source-context rejection cannot consume operations.
+      onDispatch?.();
       let timer:ReturnType<typeof setTimeout>|undefined;
       try {
         const deadline=new Promise<{timeout:true}>(resolve=>{
@@ -261,7 +264,10 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       }catch{return unavailable("simulation_failure");}
       finally{if(timer)clearTimeout(timer);}
     },
-    async invoke(scope:TrustedReadScope,id:string,rawInput:unknown) {
+    /** Optional trusted observer fires only once registry input/scope/period
+     * preflight has succeeded, immediately before the actual reader dispatch.
+     * Domain-result reason strings cannot prove whether a handler ran. */
+    async invoke(scope:TrustedReadScope,id:string,rawInput:unknown,onDispatch?:()=>void) {
       if(!scope.shadowEnabled || scope.role!=="owner" || !scope.businessId ||
          scope.businessId!==scope.identity.businessId ||
          scope.businessId==="11111111-1111-1111-1111-111111111111")
@@ -281,6 +287,10 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
       if(period && Number.isFinite(Date.parse(period.from)) && Number.isFinite(Date.parse(period.to)) &&
         1+(Date.parse(period.to)-Date.parse(period.from))/86400000>def.budgets.maxRangeDays)
         return unavailable("unsupported_period");
+      // A reader can itself return "invalid_request", "unsupported_period"
+      // or "unauthorized" after actually running. Dispatch counting must be
+      // based on this trusted boundary, not those result reason strings.
+      onDispatch?.();
       let timer:ReturnType<typeof setTimeout>|undefined;
       try {
         const timedOut=new Promise<{timedOut:true}>(resolve=>{

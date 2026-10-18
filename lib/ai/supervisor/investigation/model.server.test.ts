@@ -49,6 +49,53 @@ describe("requestInvestigation output-token budget", ()=>{
   });
 });
 
+describe("nested review budget reservation",()=>{
+  it("never retries a calendar/privacy gate into the two final answer-review slots",async()=>{
+    const usage={model:"gpt-6-luna",modelCallCount:5,toolCallCount:2,inputTokens:0,outputTokens:0};
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:"malformed gate output"},
+      ]}]})));
+    const result=await requestInvestigation({name:"supervisor_public_query_review",
+      schema:z.strictObject({safe:z.boolean()}),instructions:"",context:{},apiKey:"k",
+      model:usage.model,usage,transport,deadline:Date.now()+90000,reserveModelCalls:2});
+    expect(result).toBeNull();
+    expect(usage.modelCallCount).toBe(6);
+    expect(transport).toHaveBeenCalledTimes(1);
+    // No second review attempt can steal the model calls reserved for answer
+    // generation and independent evidence audit.
+    const blocked=await requestInvestigation({name:"supervisor_calendar_context_review",
+      schema:z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])}),
+      instructions:"",context:{},apiKey:"k",model:usage.model,usage,transport,
+      deadline:Date.now()+90000,reserveModelCalls:2});
+    expect(blocked).toBeNull();expect(transport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("provider deadline attribution",()=>{
+  it("does not mistake an ordinary provider timeout for a capped selection window",async()=>{
+    vi.useFakeTimers();
+    try{
+      const transport=vi.fn(async()=>new Promise<Response>(()=>{}));
+      const usage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,
+        inputTokens:0,outputTokens:0});
+      const ordinary=requestInvestigation({name:"supervisor_investigation_step",
+        schema:z.strictObject({x:z.string()}),instructions:"",context:{},model:"gpt-6-luna",
+        apiKey:"k",transport,usage:usage(),deadline:Date.now()+INVESTIGATION_LIMITS.providerTimeoutMs+500,
+        selectionBudgetDeadline:true}).catch(e=>e);
+      await vi.advanceTimersByTimeAsync(INVESTIGATION_LIMITS.providerTimeoutMs+1);
+      expect(await ordinary).toMatchObject({category:"provider_timeout",providerErrorCode:undefined});
+      const capped=requestInvestigation({name:"supervisor_investigation_step",
+        schema:z.strictObject({x:z.string()}),instructions:"",context:{},model:"gpt-6-luna",
+        apiKey:"k",transport,usage:usage(),deadline:Date.now()+2500,
+        selectionBudgetDeadline:true}).catch(e=>e);
+      await vi.advanceTimersByTimeAsync(2501);
+      expect(await capped).toMatchObject({category:"provider_timeout",
+        providerErrorCode:"investigation_selection_deadline"});
+    }finally{vi.useRealTimers();}
+  });
+});
+
 describe("requestInvestigation invalid-payload sub-reasons",()=>{
   const baseUsage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0});
   const schema=z.strictObject({x:z.string().min(2)});
@@ -150,6 +197,52 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       {outputTextPartCount:2,validPrefixPartCount:1,validPrefixMatchesSchema:true}));
     expect(onDiagnostic.mock.calls[0][0].category).toBeUndefined();
     expect(onDiagnostic.mock.calls[0][0].invalidPayloadReason).toBeUndefined();
+  });
+
+  it("recovers production-style duplicated JSON even when both copies share a single output_text part",async()=>{
+    const valid=JSON.stringify({x:"the first validated step"});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:valid+valid},
+        {type:"output_text",text:" trailing generation"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const usage=baseUsage();
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage,
+      deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toEqual({x:"the first validated step"});
+    expect(usage.modelCallCount).toBe(1);expect(transport).toHaveBeenCalledTimes(1);
+    // No entire output_text part is a JSON prefix; recovery scans root
+    // boundaries, rather than losing an otherwise-valid instruction.
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      validPrefixPartCount:0,outputTextPartCount:2}));
+    expect(onDiagnostic.mock.calls[0][0].category).toBeUndefined();
+  });
+
+  it("recovers a JSON root split inside parts and duplicated within the last part",async()=>{
+    const valid=JSON.stringify({x:"validated instruction"});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:valid.slice(0,7)},
+        {type:"output_text",text:valid.slice(7)+valid},
+      ]}]})));
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000});
+    expect(result).toEqual({x:"validated instruction"});
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a broken first object instead of skipping to a later valid instruction",async()=>{
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:'{"x":broken}'+JSON.stringify({x:"later"})},
+      ]}]})));
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000});
+    expect(result).toBeNull();expect(transport).toHaveBeenCalledTimes(2);
   });
 
   it("never accepts a recovered prefix for the public-query privacy authorization gate, even when valid and schema-matching",async()=>{

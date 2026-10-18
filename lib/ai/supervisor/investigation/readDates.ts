@@ -45,6 +45,12 @@ function windows(text:string,asOf:string){
   const week=ownerScheduleWeek(text,asOf);
   return week?[{from:week,to:new Date(Date.parse(week+"T12:00:00Z")+6*86400000).toISOString().slice(0,10)}]:[];
 }
+/** Whether a same-thread owner statement could supply a corrected calendar
+ * window. Reuse the exact validated relative/explicit date grammar that the
+ * actual read selector guard uses; never classify owner business intent. */
+export function hasInvestigationOwnerCalendarDate(text:string,asOf:string):boolean{
+  return windows(text,asOf).length>0||hasOwnerScheduleDates(text,asOf);
+}
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
   memory:InvestigationMemory|undefined,_ownerStatements:readonly string[],domain:string,
   domainForRead:(capabilityId:string)=>string|undefined):boolean{

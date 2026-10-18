@@ -285,7 +285,8 @@ it("resolves a scheduling pronoun from owner/thread scenario memory without dema
   const second=await runSupervisorTurn({...base,text:"Make her cap 90 minutes instead.",investigationMemory:first.reply.investigationMemory},transportFor([{...cap(90),argumentsJson:JSON.stringify({purpose:"schedule_what_if",week:"2026-10-26",
       overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:90}]})},cap(90),final]));
   expect(olivia.mock.calls.every(([r])=>typeof r!=="object"||r===null||!("week" in r)||r.week===asOf)).toBe(true);
-  expect(second.usage.toolCallCount).toBe(2);
+  // Rejected week mismatch was not executed; only the valid what-if counts.
+  expect(second.usage.toolCallCount).toBe(1);
   expect(second.reply.status).toBe("partial");
   expect(JSON.stringify(second.reply.blocks)).toContain("90 minutes");
   expect(olivia).toHaveBeenLastCalledWith(expect.objectContaining({capability:"olivia.schedule.whatIf",
@@ -310,10 +311,271 @@ it("rejects wrong explicit periods before invoking the source reader",async()=>{
   expect(p1).not.toHaveBeenCalled();
 });
 
+it("answers and independently reviews a five-operation investigation despite a malformed provider attempt",async()=>{
+  const actions=[
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    read("p3.menu.product_economics.v1",query("menu.product_economics",{productId:product})),
+    read("p3.labor.employee_wages.v1",query("labor.employee_wages")),
+    read("p3.labor.payroll_burden.v1",query("labor.payroll_burden")),
+    read("p3.money.expense_entries.v1",query("money.expense_entries",{period})),
+    answer([{kind:"evidence",text:"The recorded item price is {{r2:value.priceCents}}.",citations:["r2"]}]),
+  ];
+  const inner=transportFor(actions,(ctx,step)=>{
+    if(step===5){
+      expect(ctx.finalizeOnly).toBe(true);
+      expect(ctx.remainingOperations).toBe(0);
+    }
+  });
+  let stepAttempt=0;
+  const transport=vi.fn(async(url:string,init:RequestInit)=>{
+    const request=JSON.parse(String(init.body));
+    if(request.text.format.name==="supervisor_investigation_step"){
+      stepAttempt++;
+      if(stepAttempt===1)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+          {type:"output_text",text:"invalid provider JSON"},
+        ]}]}));
+      if(stepAttempt===7){
+        expect(request.text.format.schema.properties.action.enum).toEqual(["answer"]);
+        expect(request.text.format.schema.properties.capabilityId.type).toBe("null");
+      }
+    }
+    return inner(url,init);
+  });
+  const result=await runSupervisorTurn({...base,text:"Investigate my Iced Latte's recorded price alongside staffing and expenses."},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  expect(result.usage.toolCallCount).toBe(5);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(transport).toHaveBeenCalledTimes(8);
+});
+
+it("does not charge malformed registered inputs that fail inside the registry",async()=>{
+  const transport=transportFor([
+    read("p3.menu.catalog.v1",{purpose:"not_allowed",ignored:"1"}),
+    read("p3.menu.catalog.v1",{purpose:"not_allowed",ignored:"2"}),
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"evidence",text:"The catalog includes {{r3:value.0.priceCents}} for the recorded latte.",citations:["r3"]}]),
+  ]);
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transport);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("counts a dispatched domain reader even when its result resembles a registry preflight rejection",async()=>{
+  // A domain's response reason is not a reliable dispatch indicator. This P1
+  // reader ran even though its *own* unavailable reason is unsupported_period.
+  p1.mockImplementationOnce(async()=>{
+    const unavailable= {status:"unavailable" as const,value:null,reason:"unsupported_period"};
+    return unavailable as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transportFor([
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"advice",text:"The recorded item price is unavailable from this source; check the saved menu before quoting a price.",citations:[]}]),
+  ]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("limits a malformed selection retry to the shared selection window and still finishes an evidenced answer",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    let stepCalls=0;
+    const inner=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The recorded latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(_context,i)=>{
+      if(i===0)clock=realNow+25000; // 65s remain: a normal read would fit.
+      if(i===1)expect(_context.finalizeOnly).toBe(true);
+    });
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body));
+      if(request.text.format.name==="supervisor_investigation_step"&&++stepCalls===2){
+        clock=realNow+44000; // Selection's shared deadline; 46s remain for reader+answer+audit.
+        return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},
+          output:[{type:"message",content:[{type:"output_text",text:"bad JSON"}]}]}));
+      }
+      return inner(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transport);
+    expect(result.reply.status).not.toBe("unavailable");
+    expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(stepCalls).toBe(3); // Initial read, malformed request, final answer.
+    expect(transport).toHaveBeenCalledTimes(4); // Plus independent review.
+  }finally{now.mockRestore();}
+});
+
+it("reserves extra calendar-gate time when a failed owner correction may require review",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the saved menu."],reads:[]};
+    const history=[{role:"owner" as const,text:"Show the saved menu."},
+      {role:"owner" as const,text:"Actually use 2026-10-12 instead."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog's recorded latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000; // 78s remain: enough without the extra calendar review, not with it.
+      if(i===1){
+        expect(context.finalizeOnly).toBe(true);
+        expect(context.remainingOperations).toBe(4);
+      }
+    });
+    const result=await runSupervisorTurn({...base,text:"What price was the latte?",
+      history,investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
+it("does not count a byte-heavy but schema-valid expression rejected before simulation dispatch",async()=>{
+  // A UTF-8 payload can fit the model's character-counted argumentsJson limit
+  // while exceeding the registry's 10 KB input cap. No calculator ran.
+  const plan=(suffix:string)=>({capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+    description:"Owner-only hypothetical with typed operands",
+    nodes:Array.from({length:22},(_,i)=>({op:"hypothetical",label:"咖".repeat(149)+suffix+i,
+      quotedNumber:"1",value:1,unit:"item"}))});
+  expect(JSON.stringify(plan("a")).length).toBeLessThan(8000);
+  expect(Buffer.byteLength(JSON.stringify(plan("a")))).toBeGreaterThan(10000);
+  const result=await runSupervisorTurn({...base,text:"Compare a hypothetical quantity of 1."},transportFor([
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("a")),responseJson:null},
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("b")),responseJson:null},
+    answer([{kind:"advice",text:"The proposed calculation exceeded the available source contract, so I cannot treat it as a verified business result.",citations:[]}]),
+  ]));
+  expect(result.usage.toolCallCount).toBe(0);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("retains a validated calendar selector after a dispatched domain reader returns unauthorized",async()=>{
+  const chosenPeriod={from:"2026-10-12",to:"2026-10-12"};
+  p1.mockImplementationOnce(async()=>{
+    return {status:"unavailable" as const,value:null,reason:"unauthorized"} as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"Show the recorded expenses for October 12, 2026."},transportFor([
+    read("p3.money.expense_entries.v1",query("money.expense_entries",{period:chosenPeriod})),
+    answer([{kind:"advice",text:"That recorded expense period is currently unavailable; the selected date is preserved for follow-up.",citations:[]}]),
+  ]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.investigationMemory?.calendarScopes).toContainEqual({
+    domain:"money",kind:"period",...chosenPeriod});
+});
+
+it("reserves calendar gate headroom despite a current standalone scheduling weekday",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the expenses."],reads:[]};
+    const history=[{role:"owner" as const,text:"Show the expenses."},
+      {role:"owner" as const,text:"Actually use 2026-10-12 instead."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The saved latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000;
+      if(i===1)expect(context.finalizeOnly).toBe(true);
+    });
+    const result=await runSupervisorTurn({...base,text:"Monday matters for the team. What is the latte price?",
+      history,investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
+it("does not reserve unused calendar-review time for an undated failed owner turn",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the saved menu."],reads:[]};
+    const history=[{role:"owner" as const,text:"Show the saved menu."},
+      {role:"owner" as const,text:"Please retry that."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      read("p3.labor.payroll_burden.v1",query("labor.payroll_burden")),
+      answer([{kind:"evidence",text:"The saved catalog lists the latte at {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000; // 78s remaining, sufficient without a calendar gate.
+      if(i===1)expect(context.finalizeOnly).toBe(false);
+    });
+    const result=await runSupervisorTurn({...base,text:"What price is the latte?",history,
+      investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(2);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
+it("preserves final answer and independent review when late public privacy gate has no attempt allowance",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const invalid=Array.from({length:5},(_,i)=>read("unknown.unregistered.capability."+i,{attempt:i}));
+  const steps=[...invalid,read("p3.public.research.v1",
+    {purpose:"public_market_research",query:"competitor cafe prices",ownerResearchClause:"Compare competitor cafe prices."}),
+    answer([{kind:"advice",text:"I cannot verify current competitor prices from the connected sources. Use a public menu comparison and verify the size.",citations:[]}])];
+  const transport=transportFor(steps);
+  const result=await runSupervisorTurn({...base,text:"Compare competitor cafe prices."},transport);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(transport).toHaveBeenCalledTimes(8);
+  expect(transport.mock.calls.filter(([,init])=>
+    JSON.parse(String(init.body)).text.format.name==="supervisor_public_query_review")).toHaveLength(0);
+  expect(researchPublicSources).not.toHaveBeenCalled();
+});
+
+it("starts finalizing while there is still time for a tool step plus two reviews",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const actions=[
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog lists the item at {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ];
+    const transport=transportFor(actions,(context,i)=>{
+      if(i===0)clock=realNow+27000; // 63 s remain (< 18 + 10 + 18 + 18).
+      if(i===1)expect(context.finalizeOnly).toBe(true);
+    });
+    const result=await runSupervisorTurn({...base,text:"What price is the latte?",},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
+it("recovers from a malformed late investigation step without stealing its independent final review",async()=>{
+  const invalid=Array.from({length:5},(_,i)=>read("unknown.test.capability."+i,{attempt:i}));
+  const inner=transportFor([...invalid,
+    answer([{kind:"advice",text:"The recorded sources are insufficient to give a validated price; confirm the correct product cost basis.",citations:[]}])]);
+  let steps=0,reviewed=false;
+  const transport=vi.fn(async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_investigation_review")reviewed=true;
+    if(body.text.format.name==="supervisor_investigation_step"&&++steps===6)
+      return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},
+        output:[{type:"message",content:[{type:"output_text",text:"bad json"}]}]}));
+    return inner(url,init);
+  });
+  const result=await runSupervisorTurn({...base,text:"Can you help review product pricing?"},transport);
+  expect(reviewed).toBe(true);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(result.usage.toolCallCount).toBe(0);
+});
+
 it("enforces a bounded investigation even when the model repeatedly chooses invalid tools",async()=>{
   const transport=vi.fn(async()=>response(read("execute_sql",{sql:"select 1"})));
   const result=await runSupervisorTurn({...base,text:"Investigate everything."},transport);
-  expect(result.usage.toolCallCount).toBe(5);
+  // Invalid model-selected capabilities do not count as executed operations.
+  // The bounded model-attempt ledger still prevents an endless invalid loop.
+  expect(result.usage.toolCallCount).toBe(0);
   expect(result.usage.modelCallCount).toBeLessThanOrEqual(8);
   expect(transport.mock.calls.length).toBeLessThanOrEqual(8);
   expect(result.reply.status).toBe("unavailable");
@@ -419,7 +681,8 @@ it.each(["EUR","AED"])("rejects source-free money relabeling for a %s cafe",asyn
   const result=await runSupervisorTurn({...base,text:"What if product price is 5 in our local currency?"},transport);
   expect(JSON.stringify(result.reply.blocks)).not.toContain("$5");
   expect(result.reply.evidence).toEqual([]);
-  expect(result.usage.toolCallCount).toBe(1);
+  // The unsupported-currency hypothetical never reached the calculator.
+  expect(result.usage.toolCallCount).toBe(0);
 });
 
 it.each(["top-level","nested"])("blocks a silent scheduling week change through %s selectors",async(shape)=>{

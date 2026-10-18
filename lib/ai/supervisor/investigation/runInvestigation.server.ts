@@ -6,7 +6,7 @@ import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.serv
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -24,7 +24,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
-import type {SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorStageError,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -81,7 +81,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
         context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
         apiKey:input.apiKey,model:input.model,transport,usage,
-        deadline:Math.min(deadline,Date.now()+7000),onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        // The public privacy review plus search share a ten-second reader
+        // timeout. Never borrow the answer/review's final 36 seconds.
+        deadline:Math.min(deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
+          Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       return checked?.safe===true;
     })]);
   const manifest=registry.discover(scope);
@@ -99,8 +102,44 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)return failure(true);
-    const step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
-      instructions:investigationInstructions,context:{ownerRequest:input.text,locale:input.locale,
+    // Reserve one model attempt for an answer and one for its independent
+    // evidence/coverage review. Provider retries also share this ledger.
+    // Five real operations must never crowd out the final answer.
+    // In the worst case another selection takes a full provider timeout and
+    // the selected registered reader takes ten seconds. Those cannot consume
+    // the time reserved for the answer and independent evidence review.
+    // A failed-turn owner correction may require an extra calendar-context
+    // model review (outside the reader's 10s timeout). This is possible only
+    // when a newer owner statement follows the last persisted reply.
+    const savedLast=memory?.ownerStatements.at(-1);
+    const priorOwnerStatements=ownerStatements.slice(0,-1);
+    const savedIndex=savedLast?priorOwnerStatements.lastIndexOf(savedLast):-1;
+    // Whether a current phrase is a period or a scheduling week depends on
+    // the *selected* typed capability, not a generic string check. Before
+    // selection we must conservatively reserve review time if an intervening
+    // owner statement contains any recognized dated correction. Undated
+    // retries still avoid this extra reservation.
+    const mayNeedCalendarReview=savedIndex>=0&&
+      priorOwnerStatements.slice(savedIndex+1).some(s=>hasInvestigationOwnerCalendarDate(s,identity.asOf));
+    const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*
+      (mayNeedCalendarReview?4:3)+10000;
+    const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
+      usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
+      deadline-Date.now()<=timeNeededForAnotherOperation;
+    // A malformed selection may be retried by requestInvestigation. Both
+    // attempts must SHARE this capped window: never let the retry borrow the
+    // reader's 10s or the answer+audit's 36s (plus calendar-gate time).
+    // Final drafting itself may retry on a malformed provider response. Give
+    // all drafting attempts one shared window, preserving an independent full
+    // provider slot to review the answer before publishing.
+    const selectionDeadline=finalizeOnly?deadline-INVESTIGATION_LIMITS.providerTimeoutMs:
+      deadline-(timeNeededForAnotherOperation-INVESTIGATION_LIMITS.providerTimeoutMs);
+    let step:z.infer<typeof stepSchema>|null;
+    try {
+      step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
+      instructions:finalizeOnly?investigationInstructions+
+        " This is the FINAL investigation step. Answer now from observations; explain any precise missing source or request a specific essential clarification. Do not choose another tool, invent facts or claim changes.":investigationInstructions,
+      answerOnly:finalizeOnly,context:{ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
@@ -109,10 +148,36 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
-        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback},
-      apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
+        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
+      apiKey:input.apiKey,model:input.model,transport,usage,deadline:selectionDeadline,
+      selectionBudgetDeadline:!finalizeOnly,
+      // A malformed late planning response must not spend the two calls still
+      // required to author and independently verify the final answer.
+      reserveModelCalls:finalizeOnly?1:2,onUsage:input.onUsage,
       onDiagnostic:input.onDiagnostic});
-    if(!step)return failure();
+    }catch(error){
+      // A nonfinal selection that reached ONLY its reserved selection window
+      // can still finish with a normal, independently checked partial answer.
+      // Genuine transport/provider failures retain their existing error path.
+      if(!finalizeOnly&&error instanceof SupervisorStageError&&
+        error.category==="provider_timeout"&&
+        error.providerErrorCode==="investigation_selection_deadline"){
+        feedback="The selection budget was exhausted. Answer from validated observations; explain any missing input.";
+        continue;
+      }
+      throw error;
+    }
+    if(!step){
+      // Earlier malformed outputs already receive their bounded retry.
+      // If that retry could not run because finalization slots are reserved,
+      // switch to answer-only with the evidence collected so far.
+      if(!finalizeOnly&&(usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
+        Date.now()>=selectionDeadline)){
+        feedback="A previous investigation instruction could not be validated. Answer now with verified observations and the specific remaining limitation.";
+        continue;
+      }
+      return failure();
+    }
     feedback=null;
     if(step.action==="answer"){
       if(step.capabilityId!==null||step.argumentsJson!==null||!step.responseJson){feedback="Invalid answer envelope; use responseJson only.";continue;}
@@ -143,9 +208,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
     }
+    if(finalizeOnly){feedback="The last available turn must answer with available evidence, not request another operation.";continue;}
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
-    usage.toolCallCount++;
-    input.onUsage?.({...usage});
     let args:unknown;try{args=JSON.parse(step.argumentsJson??"");}catch{feedback="Tool arguments must be valid JSON.";continue;}
     if(!step.capabilityId||step.responseJson!==null){feedback="Tool steps require a capability and argumentsJson, not a response.";continue;}
     const signature=JSON.stringify([step.action,step.capabilityId,args]);
@@ -154,6 +218,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     let result:unknown;
     let calculation=false;
     let readDomain:string|undefined;
+    let readDispatched=false;
     if(step.action==="calculate"){
       if(identity.currency!=="USD"){
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
@@ -166,7 +231,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
-        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))});
+        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))},()=>{
+        usage.toolCallCount++;
+        input.onUsage?.({...usage});
+      });
       const checked=simulationOutputSchema.safeParse(result);
       if(!checked.success){feedback="The calculator could not validate its result.";continue;}
       result=checked.data;
@@ -187,8 +255,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
               capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
-            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
-            onDiagnostic:input.onDiagnostic});
+            apiKey:input.apiKey,model:input.model,transport,usage,
+            deadline:deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
+            reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
@@ -204,10 +273,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
         feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
-      result=await registry.invoke(scope,step.capabilityId,args);
+      result=await registry.invoke(scope,step.capabilityId,args,()=>{
+        // Fired strictly after typed registry preflight, before reader execution.
+        // Domain failures still consume a real operation; malformed inputs do not.
+        readDispatched=true;
+        usage.toolCallCount++;
+        input.onUsage?.({...usage});
+      });
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
-    if(readDomain&&!["invalid_request","input_limit","unknown_capability","unauthorized","mode_disabled"].includes(String(result.reason))){
+    // Preserve a typed date/week selector whenever the real domain reader was
+    // dispatched, even if it returned an unavailable/unauthorized domain status.
+    // A result reason must never be mistaken for a registry preflight verdict.
+    if(readDomain&&readDispatched){
       const calendar=investigationCalendarScope(args,readDomain);
       if(calendar)calendarScopes.push(calendar);
     }
