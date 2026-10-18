@@ -125,9 +125,21 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
         remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
-      apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
+      apiKey:input.apiKey,model:input.model,transport,usage,deadline,
+      // A malformed late planning response must not spend the two calls still
+      // required to author and independently verify the final answer.
+      reserveModelCalls:finalizeOnly?1:2,onUsage:input.onUsage,
       onDiagnostic:input.onDiagnostic});
-    if(!step)return failure();
+    if(!step){
+      // Earlier malformed outputs already receive their bounded retry.
+      // If that retry could not run because finalization slots are reserved,
+      // switch to answer-only with the evidence collected so far.
+      if(!finalizeOnly&&usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2){
+        feedback="A previous investigation instruction could not be validated. Answer now with verified observations and the specific remaining limitation.";
+        continue;
+      }
+      return failure();
+    }
     feedback=null;
     if(step.action==="answer"){
       if(step.capabilityId!==null||step.argumentsJson!==null||!step.responseJson){feedback="Invalid answer envelope; use responseJson only.";continue;}
