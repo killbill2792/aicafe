@@ -6,7 +6,7 @@ import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.serv
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -114,7 +114,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const savedLast=memory?.ownerStatements.at(-1);
     const priorOwnerStatements=ownerStatements.slice(0,-1);
     const savedIndex=savedLast?priorOwnerStatements.lastIndexOf(savedLast):-1;
-    const mayNeedCalendarReview=savedIndex>=0&&savedIndex<priorOwnerStatements.length-1;
+    const mayNeedCalendarReview=savedIndex>=0&&
+      !hasInvestigationOwnerCalendarDate(input.text,identity.asOf)&&
+      priorOwnerStatements.slice(savedIndex+1).some(s=>hasInvestigationOwnerCalendarDate(s,identity.asOf));
     const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*
       (mayNeedCalendarReview?4:3)+10000;
     const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
@@ -197,12 +199,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
-      usage.toolCallCount++;
-      input.onUsage?.({...usage});
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
-        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))});
+        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))},()=>{
+        usage.toolCallCount++;
+        input.onUsage?.({...usage});
+      });
       const checked=simulationOutputSchema.safeParse(result);
       if(!checked.success){feedback="The calculator could not validate its result.";continue;}
       result=checked.data;
