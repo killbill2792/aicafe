@@ -36,9 +36,14 @@ export type SupervisorDiagnostic = {
   invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   schemaIssuePath?:string;
   schemaIssueCode?:string;
+  schemaIssueCount?:number;
   outputItemTypes?:string[];
   messagePartTypes?:string[];
   outputTextPartCount?:number;
+  jsonTextLength?:number;
+  jsonErrorPosition?:number;
+  validPrefixPartCount?:number;
+  validPrefixMatchesSchema?:boolean;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -113,9 +118,14 @@ export class SupervisorStageError extends Error {
   readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   readonly schemaIssuePath?:string;
   readonly schemaIssueCode?:string;
+  readonly schemaIssueCount?:number;
   readonly outputItemTypes?:string[];
   readonly messagePartTypes?:string[];
   readonly outputTextPartCount?:number;
+  readonly jsonTextLength?:number;
+  readonly jsonErrorPosition?:number;
+  readonly validPrefixPartCount?:number;
+  readonly validPrefixMatchesSchema?:boolean;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -129,6 +139,9 @@ export class SupervisorStageError extends Error {
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
+    this.schemaIssueCount=typeof meta.schemaIssueCount==="number"&&
+      Number.isSafeInteger(meta.schemaIssueCount)&&meta.schemaIssueCount>=0?
+      meta.schemaIssueCount:undefined;
     const outputItemTypes=safeEnumTagArray(meta.outputItemTypes,outputItemTypeEnum);
     const messagePartTypes=safeEnumTagArray(meta.messagePartTypes,messagePartTypeEnum);
     this.outputItemTypes=outputItemTypes.length?outputItemTypes:undefined;
@@ -136,6 +149,16 @@ export class SupervisorStageError extends Error {
     this.outputTextPartCount=typeof meta.outputTextPartCount==="number"&&
       Number.isSafeInteger(meta.outputTextPartCount)&&meta.outputTextPartCount>=0?
       meta.outputTextPartCount:undefined;
+    this.jsonTextLength=typeof meta.jsonTextLength==="number"&&
+      Number.isSafeInteger(meta.jsonTextLength)&&meta.jsonTextLength>=0?meta.jsonTextLength:undefined;
+    this.jsonErrorPosition=typeof meta.jsonErrorPosition==="number"&&
+      Number.isSafeInteger(meta.jsonErrorPosition)&&meta.jsonErrorPosition>=0?
+      meta.jsonErrorPosition:undefined;
+    this.validPrefixPartCount=typeof meta.validPrefixPartCount==="number"&&
+      Number.isSafeInteger(meta.validPrefixPartCount)&&meta.validPrefixPartCount>=0?
+      meta.validPrefixPartCount:undefined;
+    this.validPrefixMatchesSchema=typeof meta.validPrefixMatchesSchema==="boolean"?
+      meta.validPrefixMatchesSchema:undefined;
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -181,11 +204,17 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
+        ...(safeCount(d.schemaIssueCount)!==undefined?{schemaIssueCount:d.schemaIssueCount}:{}),
         ...(d.outputItemTypes&&safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum).length?
           {outputItemTypes:safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum)}:{}),
         ...(d.messagePartTypes&&safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum).length?
           {messagePartTypes:safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum)}:{}),
         ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
+        ...(safeCount(d.jsonTextLength)!==undefined?{jsonTextLength:d.jsonTextLength}:{}),
+        ...(safeCount(d.jsonErrorPosition)!==undefined?{jsonErrorPosition:d.jsonErrorPosition}:{}),
+        ...(safeCount(d.validPrefixPartCount)!==undefined?{validPrefixPartCount:d.validPrefixPartCount}:{}),
+        ...(typeof d.validPrefixMatchesSchema==="boolean"?
+          {validPrefixMatchesSchema:d.validPrefixMatchesSchema}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -208,8 +237,12 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     providerRequestId:error.providerRequestId,
     invalidPayloadReason:error.invalidPayloadReason,
     schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
+    schemaIssueCount:error.schemaIssueCount,
     outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
     outputTextPartCount:error.outputTextPartCount,
+    jsonTextLength:error.jsonTextLength,jsonErrorPosition:error.jsonErrorPosition,
+    validPrefixPartCount:error.validPrefixPartCount,
+    validPrefixMatchesSchema:error.validPrefixMatchesSchema,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }
