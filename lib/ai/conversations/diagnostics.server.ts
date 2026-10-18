@@ -277,12 +277,20 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  * end (the exact question, the model's literal answer text with its
  * citations unresolved, and the real values behind every observation it
  * had available) instead of guessed at round by round from metadata
- * alone. It is inert unless SUPERVISOR_DEBUG_RAW_LOGGING is explicitly
- * set to "true", so it can never fire by accident in an environment that
- * forgot to unset it. */
+ * alone. A single manually-set flag is a single point of failure --
+ * copying SUPERVISOR_DEBUG_RAW_LOGGING into a production project's env
+ * vars (by mistake, or by cloning a preview config) would be enough to
+ * leak it there. So this also requires VERCEL_ENV to read something
+ * other than "production": that variable is set by the platform itself
+ * per deployment, never hand-copied, so it keeps working as a second,
+ * independent guard even if the opt-in flag is set somewhere it should
+ * not be. Outside Vercel (no VERCEL_ENV at all, e.g. local dev) the flag
+ * alone still governs, since there is no production deployment to guard
+ * against. */
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
+  if(process.env.VERCEL_ENV==="production")return;
   sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
 }
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
