@@ -81,7 +81,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         schema:z.strictObject({safe:z.boolean()}),instructions:publicQueryReviewInstructions,
         context:{ownerRequest:input.text,quotedResearchClause:clause,proposedQuery:query,publicLocationContext},
         apiKey:input.apiKey,model:input.model,transport,usage,
-        deadline:Math.min(deadline,Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        // The public privacy review plus search share a ten-second reader
+        // timeout. Never borrow the answer/review's final 36 seconds.
+        deadline:Math.min(deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
+          Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       return checked?.safe===true;
     })]);
   const manifest=registry.discover(scope);
@@ -200,8 +203,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
               capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
-            apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
-            onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+            apiKey:input.apiKey,model:input.model,transport,usage,
+            deadline:deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
+            reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
