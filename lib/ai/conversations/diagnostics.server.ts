@@ -36,6 +36,7 @@ export type SupervisorDiagnostic = {
   invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   schemaIssuePath?:string;
   schemaIssueCode?:string;
+  schemaIssueCount?:number;
   outputItemTypes?:string[];
   messagePartTypes?:string[];
   outputTextPartCount?:number;
@@ -116,6 +117,7 @@ export class SupervisorStageError extends Error {
   readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
   readonly schemaIssuePath?:string;
   readonly schemaIssueCode?:string;
+  readonly schemaIssueCount?:number;
   readonly outputItemTypes?:string[];
   readonly messagePartTypes?:string[];
   readonly outputTextPartCount?:number;
@@ -135,6 +137,9 @@ export class SupervisorStageError extends Error {
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
+    this.schemaIssueCount=typeof meta.schemaIssueCount==="number"&&
+      Number.isSafeInteger(meta.schemaIssueCount)&&meta.schemaIssueCount>=0?
+      meta.schemaIssueCount:undefined;
     const outputItemTypes=safeEnumTagArray(meta.outputItemTypes,outputItemTypeEnum);
     const messagePartTypes=safeEnumTagArray(meta.messagePartTypes,messagePartTypeEnum);
     this.outputItemTypes=outputItemTypes.length?outputItemTypes:undefined;
@@ -194,6 +199,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),
+        ...(safeCount(d.schemaIssueCount)!==undefined?{schemaIssueCount:d.schemaIssueCount}:{}),
         ...(d.outputItemTypes&&safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum).length?
           {outputItemTypes:safeEnumTagArray(d.outputItemTypes,outputItemTypeEnum)}:{}),
         ...(d.messagePartTypes&&safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum).length?
@@ -224,6 +230,7 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     providerRequestId:error.providerRequestId,
     invalidPayloadReason:error.invalidPayloadReason,
     schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
+    schemaIssueCount:error.schemaIssueCount,
     outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
     outputTextPartCount:error.outputTextPartCount,
     jsonTextLength:error.jsonTextLength,jsonErrorPosition:error.jsonErrorPosition,

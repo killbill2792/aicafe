@@ -70,7 +70,7 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
       {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["reasoning"],
-        messagePartTypes:undefined,outputTextPartCount:0}));
+        messagePartTypes:undefined,outputTextPartCount:0,jsonTextLength:0}));
   });
 
   it("tags a refusal content part instead of an output_text part",async()=>{
@@ -85,7 +85,7 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         messagePartTypes:["refusal"],outputTextPartCount:0}));
   });
 
-  it("counts a too-long concatenated text as wrong_text_shape even when every part parses alone",async()=>{
+  it("counts a too-long concatenated text as wrong_text_shape even when every part parses alone, and still reports the full bundle",async()=>{
     const longHalf="x".repeat(9001);
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",
@@ -93,9 +93,13 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     const onDiagnostic=vi.fn();
     await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
       model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    // Every currently-known-safe signal is attached here too, even though the
+    // category is wrong_text_shape, not unparseable_json: a bare "x" repeated
+    // is not valid JSON on its own, so firstPartAloneParses is false.
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
       {invalidPayloadReason:"wrong_text_shape",outputItemTypes:["message"],
-        messagePartTypes:["output_text"],outputTextPartCount:2}));
+        messagePartTypes:["output_text"],outputTextPartCount:2,jsonTextLength:18002,
+        firstPartAloneParses:false}));
   });
 
   it("concatenates a JSON answer split across multiple output_text parts, in order, instead of rejecting it",async()=>{
@@ -154,12 +158,18 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       {invalidPayloadReason:"unparseable_json",outputTextPartCount:2,firstPartAloneParses:false}));
   });
 
-  it("reports schema_mismatch with the failing field path when JSON parses but fails the zod contract",async()=>{
+  it("reports schema_mismatch with the failing field path, issue count, AND the full shape bundle",async()=>{
     const transport=vi.fn(async()=>completed({x:""}));
     const onDiagnostic=vi.fn();
     await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
       model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    // Confirms the same comprehensive bundle (shape + parse signals) reaches every
+    // invalid-payload category, not just wrong_text_shape/unparseable_json: a
+    // schema_mismatch here still carries the output/message shape and text length,
+    // on top of its own schemaIssuePath/Code/Count.
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
-      {invalidPayloadReason:"schema_mismatch",schemaIssuePath:"x"}));
+      {invalidPayloadReason:"schema_mismatch",schemaIssuePath:"x",schemaIssueCode:"too_small",
+        schemaIssueCount:1,outputItemTypes:["message"],messagePartTypes:["output_text"],
+        outputTextPartCount:1,jsonTextLength:JSON.stringify({x:""}).length}));
   });
 });

@@ -60,16 +60,16 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       if(raw.status!=="completed")
         throw new SupervisorStageError("provider_http","provider_response",
           {providerStatus:typeof raw.status==="string"?raw.status:undefined});
-      // Production evidence (the sub-classification tags added alongside this
-      // comment previously) showed a "message" item with one or more genuine
-      // "output_text" parts every time: the provider legitimately splits a long
-      // JSON answer across multiple output_text parts in the same message, which
-      // is valid Responses API shape, not malformed output. Concatenate them in
-      // order rather than requiring exactly one. These tags are the OpenAI
+      // One malformed-output turn used to mean one new diagnostic field added to
+      // chase the last failure, then a day's wait for the next retry to find out
+      // what we still didn't capture. Instead, compute every currently-known-safe
+      // signal up front, in one pass, and attach the SAME bundle to whichever
+      // branch below actually throws — so the next unseen failure shape already
+      // carries full context on its first occurrence. These tags are the OpenAI
       // protocol's own fixed, documented item/part "type" enum values (e.g.
-      // "message", "reasoning", "output_text", "refusal"); never model-generated
-      // content, café data or owner text, so recording them (bounded, deduped)
-      // is safe and is what pinpointed this exact shape without reading the payload.
+      // "message", "reasoning", "output_text", "refusal"); a parse error's
+      // position is a numeric offset; none of this is ever model-generated
+      // content, café data or owner text.
       const outputIsArray=Array.isArray(raw.output);
       const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>}>=
         outputIsArray?raw.output:[];
@@ -77,40 +77,39 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       const texts=messageParts.filter((p):p is {type:unknown;text:string}=>
         p?.type==="output_text"&&typeof p.text==="string").map(p=>p.text);
       const text=texts.join("");
+      let decoded:unknown,jsonErrorPosition:number|undefined,concatenatedTextParses=false;
+      if(texts.length>0){
+        try{decoded=JSON.parse(text);concatenatedTextParses=true;}
+        catch(jsonError){
+          const position=jsonError instanceof SyntaxError?/position (\d+)/.exec(jsonError.message):null;
+          jsonErrorPosition=position?Number(position[1]):undefined;
+        }
+      }
+      // Distinguishes trailing noise after an already-complete first part from a
+      // JSON document genuinely fragmented mid-token — the two have very
+      // different fixes — without ever logging either part's content.
+      let firstPartAloneParses:boolean|undefined;
+      if(texts.length>1){
+        try{JSON.parse(texts[0]);firstPartAloneParses=true;}
+        catch{firstPartAloneParses=false;}
+      }
+      const shapeMeta={outputItemTypes:outputItems.map(i=>i?.type) as string[],
+        messagePartTypes:messageParts.map(p=>p?.type) as string[],
+        outputTextPartCount:texts.length,jsonTextLength:text.length,
+        jsonErrorPosition,firstPartAloneParses};
       if(!outputIsArray||texts.length===0||text.length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
-          {invalidPayloadReason:"wrong_text_shape",
-            outputItemTypes:outputItems.map(i=>i?.type) as string[],
-            messagePartTypes:messageParts.map(p=>p?.type) as string[],
-            outputTextPartCount:texts.length});
-      let decoded:unknown;
-      try{decoded=JSON.parse(text);}
-      catch(jsonError){
-        // The multi-part concatenation fix (above) eliminated wrong_text_shape in
-        // production, but the joined text can still fail to parse — evidence the
-        // provider is not a simple character-split of one JSON document. A
-        // SyntaxError's position is a numeric offset, never a content snippet, so
-        // it is safe to record; checking whether the FIRST part alone already
-        // parses (never logging its content) tells us whether later parts are
-        // trailing noise after a complete answer, or the JSON is genuinely
-        // fragmented mid-token — the two have very different fixes.
-        const position=jsonError instanceof SyntaxError?/position (\d+)/.exec(jsonError.message):null;
-        let firstPartAloneParses:boolean|undefined;
-        if(texts.length>1){
-          try{JSON.parse(texts[0]);firstPartAloneParses=true;}
-          catch{firstPartAloneParses=false;}
-        }
+          {invalidPayloadReason:"wrong_text_shape",...shapeMeta});
+      if(!concatenatedTextParses)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
-          {invalidPayloadReason:"unparseable_json",outputTextPartCount:texts.length,
-            jsonTextLength:text.length,jsonErrorPosition:position?Number(position[1]):undefined,
-            firstPartAloneParses});
-      }
+          {invalidPayloadReason:"unparseable_json",...shapeMeta});
       const parsed=input.schema.safeParse(decoded);
       if(!parsed.success){
         const issue=parsed.error.issues[0];
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
-          {invalidPayloadReason:"schema_mismatch",
-            schemaIssuePath:issue?.path.join(".")||undefined,schemaIssueCode:issue?.code});
+          {invalidPayloadReason:"schema_mismatch",...shapeMeta,
+            schemaIssuePath:issue?.path.join(".")||undefined,schemaIssueCode:issue?.code,
+            schemaIssueCount:parsed.error.issues.length});
       }
       return parsed.data;
     })(),expired]);
@@ -130,6 +129,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       providerErrorCode:classified.providerErrorCode,requestName:input.name,
       invalidPayloadReason:classified.invalidPayloadReason,
       schemaIssuePath:classified.schemaIssuePath,schemaIssueCode:classified.schemaIssueCode,
+      schemaIssueCount:classified.schemaIssueCount,
       outputItemTypes:classified.outputItemTypes,messagePartTypes:classified.messagePartTypes,
       outputTextPartCount:classified.outputTextPartCount,
       jsonTextLength:classified.jsonTextLength,jsonErrorPosition:classified.jsonErrorPosition,
