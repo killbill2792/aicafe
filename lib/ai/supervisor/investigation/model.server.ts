@@ -85,18 +85,28 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
           jsonErrorPosition=position?Number(position[1]):undefined;
         }
       }
-      // Distinguishes trailing noise after an already-complete first part from a
-      // JSON document genuinely fragmented mid-token — the two have very
-      // different fixes — without ever logging either part's content.
-      let firstPartAloneParses:boolean|undefined;
+      // Distinguishes trailing noise after an already-complete JSON prefix from a
+      // document genuinely fragmented mid-token — the two have very different
+      // fixes — without ever logging any part's content. Checks EVERY leading
+      // prefix of parts, not just the first part alone: valid JSON can span two
+      // or more parts before trailing noise begins. validPrefixMatchesSchema
+      // additionally confirms the longest valid prefix is a real schema-shaped
+      // answer, not merely coincidentally-valid JSON.
+      let validPrefixPartCount:number|undefined,validPrefixMatchesSchema:boolean|undefined;
       if(texts.length>1){
-        try{JSON.parse(texts[0]);firstPartAloneParses=true;}
-        catch{firstPartAloneParses=false;}
+        validPrefixPartCount=0;
+        for(let i=1;i<texts.length;i++){
+          try{
+            const prefix=JSON.parse(texts.slice(0,i).join(""));
+            validPrefixPartCount=i;
+            validPrefixMatchesSchema=input.schema.safeParse(prefix).success;
+          }catch{/* this prefix length is not valid JSON; a longer one still might be */}
+        }
       }
       const shapeMeta={outputItemTypes:outputItems.map(i=>i?.type) as string[],
         messagePartTypes:messageParts.map(p=>p?.type) as string[],
         outputTextPartCount:texts.length,jsonTextLength:text.length,
-        jsonErrorPosition,firstPartAloneParses};
+        jsonErrorPosition,validPrefixPartCount,validPrefixMatchesSchema};
       if(!outputIsArray||texts.length===0||text.length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"wrong_text_shape",...shapeMeta});
@@ -133,7 +143,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       outputItemTypes:classified.outputItemTypes,messagePartTypes:classified.messagePartTypes,
       outputTextPartCount:classified.outputTextPartCount,
       jsonTextLength:classified.jsonTextLength,jsonErrorPosition:classified.jsonErrorPosition,
-      firstPartAloneParses:classified.firstPartAloneParses,
+      validPrefixPartCount:classified.validPrefixPartCount,
+      validPrefixMatchesSchema:classified.validPrefixMatchesSchema,
       attempt,modelCallCount:input.usage.modelCallCount});
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly

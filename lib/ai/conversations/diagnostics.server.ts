@@ -42,7 +42,8 @@ export type SupervisorDiagnostic = {
   outputTextPartCount?:number;
   jsonTextLength?:number;
   jsonErrorPosition?:number;
-  firstPartAloneParses?:boolean;
+  validPrefixPartCount?:number;
+  validPrefixMatchesSchema?:boolean;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -123,7 +124,8 @@ export class SupervisorStageError extends Error {
   readonly outputTextPartCount?:number;
   readonly jsonTextLength?:number;
   readonly jsonErrorPosition?:number;
-  readonly firstPartAloneParses?:boolean;
+  readonly validPrefixPartCount?:number;
+  readonly validPrefixMatchesSchema?:boolean;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -152,8 +154,11 @@ export class SupervisorStageError extends Error {
     this.jsonErrorPosition=typeof meta.jsonErrorPosition==="number"&&
       Number.isSafeInteger(meta.jsonErrorPosition)&&meta.jsonErrorPosition>=0?
       meta.jsonErrorPosition:undefined;
-    this.firstPartAloneParses=typeof meta.firstPartAloneParses==="boolean"?
-      meta.firstPartAloneParses:undefined;
+    this.validPrefixPartCount=typeof meta.validPrefixPartCount==="number"&&
+      Number.isSafeInteger(meta.validPrefixPartCount)&&meta.validPrefixPartCount>=0?
+      meta.validPrefixPartCount:undefined;
+    this.validPrefixMatchesSchema=typeof meta.validPrefixMatchesSchema==="boolean"?
+      meta.validPrefixMatchesSchema:undefined;
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -207,7 +212,9 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
         ...(safeCount(d.jsonTextLength)!==undefined?{jsonTextLength:d.jsonTextLength}:{}),
         ...(safeCount(d.jsonErrorPosition)!==undefined?{jsonErrorPosition:d.jsonErrorPosition}:{}),
-        ...(typeof d.firstPartAloneParses==="boolean"?{firstPartAloneParses:d.firstPartAloneParses}:{}),
+        ...(safeCount(d.validPrefixPartCount)!==undefined?{validPrefixPartCount:d.validPrefixPartCount}:{}),
+        ...(typeof d.validPrefixMatchesSchema==="boolean"?
+          {validPrefixMatchesSchema:d.validPrefixMatchesSchema}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -234,7 +241,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
     outputTextPartCount:error.outputTextPartCount,
     jsonTextLength:error.jsonTextLength,jsonErrorPosition:error.jsonErrorPosition,
-    firstPartAloneParses:error.firstPartAloneParses,
+    validPrefixPartCount:error.validPrefixPartCount,
+    validPrefixMatchesSchema:error.validPrefixMatchesSchema,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }
