@@ -5,6 +5,8 @@ import { subDays } from "date-fns";
 import { evaluateRecipeCost, resolveProductCost, monthlyProcessingFeesForWindow, staffCostCentsForPeriod, type DailyFacts, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingFeeEstimate";
+import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menuPriceSourceBasis";
+import { recurringCostMonthlyEquivalentCents } from "@/lib/expenses/recurringMonthlyTotal";
 
 /** `productCostCents` is the fractional (unrounded) cost when `recipeStatus === "READY"`, and `0`
  * otherwise (safe for the aggregate sums below — a NO_RECIPE/MISSING_INGREDIENT_COST item should
@@ -15,7 +17,7 @@ import { trustedOrderCountForProcessingFeeEstimate } from "@/lib/pos/processingF
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; productCostStatus: RecipeCostStatus; productCostSource?: ProductCostSource | null; productCostQuality?: "actual" | "estimated"; unitsSoldInWindow: number };
 export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated"; operatingCostsStatus?: "actual" | "estimated" };
 
-export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput }> {
+export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
   if (businessError) throw businessError;
   const timezone = businessRow?.timezone ?? "America/Los_Angeles";
@@ -24,9 +26,9 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const windowDays = 90;
   const fromDateStr = formatInTimeZone(subDays(today, windowDays - 1), timezone, "yyyy-MM-dd");
   const [itemsResult, rollupsResult, recurringResult, ordersResult] = await Promise.all([
-    supabase.from("menu_items").select("id, name, price_cents, category").eq("business_id", businessId).eq("is_active", true),
-    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
-    supabase.from("recurring_costs").select("amount_cents, category_code, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
+    supabase.from("menu_items").select("id, name, price_cents, category, prep_seconds").eq("business_id", businessId).eq("is_active", true),
+    supabase.from("daily_rollups").select("business_date, net_sales_cents, orders_count, drinks_count, ingredients_cents, staff_wages_cents, staff_tax_cents, staff_tax_status, card_fees_cents, card_fees_status, sales_data_status, voids_cents").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
+    supabase.from("recurring_costs").select("amount_cents, category_code, frequency, active_from, active_to, is_estimate").eq("business_id", businessId).lte("active_from", todayDateStr),
     supabase.from("orders").select("business_date, pos_order_id, net_sales_cents, processing_fee_provider").eq("business_id", businessId).gte("business_date", fromDateStr).lte("business_date", todayDateStr),
   ]);
   if (itemsResult.error) throw itemsResult.error;
@@ -103,7 +105,38 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   const activeOperatingCosts = (recurringResult.data ?? []).filter(
     (row) => row.category_code !== "ingredients" && (!row.active_to || row.active_to >= todayDateStr),
   );
-  const monthlyOperatingCostCents = activeOperatingCosts.reduce((sum, row) => sum + row.amount_cents, 0);
+  // Recurring entries may be weekly, quarterly or yearly. The Bill screen
+  // already normalizes them; Menu must not silently treat each as monthly.
+  const monthlyOperatingCostCents = activeOperatingCosts.reduce((sum,row) =>
+    sum + recurringCostMonthlyEquivalentCents({
+      amountCents:Number(row.amount_cents),
+      frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
+    }),0);
+  // This additional MENU preview basis does not alter historical bookkeeping
+  // or the stricter business-adjusted pricing mode. It uses only explicitly
+  // covered previous-period days so 14 imported days work without pretending
+  // that the other 76 days were zero-sales or zero-payroll days.
+  const totalItemPrepSecondsInWindow = rawItems.reduce((sum,item)=>
+    sum+Math.max(0,Number(item.prep_seconds))*Math.max(0,units.get(item.id)??0),0);
+  const menuPriceBasis = menuPriceSourceBasis({
+    days:(rollupsResult.data??[]).map(row=>({
+      businessDate:row.business_date,
+      salesStatus:row.sales_data_status,
+      netSalesCents:Number(row.net_sales_cents),
+      drinksCount:Number(row.drinks_count),
+      wagesCents:Number(row.staff_wages_cents),
+      payrollTaxCents:Number(row.staff_tax_cents),
+      payrollTaxStatus:row.staff_tax_status,
+      cardFeesCents:Number(row.card_fees_cents),
+      cardFeesStatus:row.card_fees_status,
+    })),
+    recurring:activeOperatingCosts.map(row=>({
+      amountCents:Number(row.amount_cents),
+      frequency:row.frequency as "monthly"|"weekly"|"quarterly"|"yearly",
+      estimated:row.is_estimate,
+    })),
+    totalItemPrepSecondsInWindow,
+  });
   const operatingCostsStatus = activeOperatingCosts.some((row) => row.is_estimate) ? "estimated" as const : "actual" as const;
   const productCostsStatus =
     items.some((item) => item.unitsSoldInWindow > 0 && item.productCostStatus !== "READY")
@@ -112,7 +145,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
         ? "estimated" as const
         : "actual" as const;
   const monthlyVariableProductCostCents = Math.round(items.reduce((sum, item) => sum + item.unitsSoldInWindow * item.productCostCents, 0) * scale);
-  return { items, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.netSalesCents > 0).length, totalOrdersInWindow: trustedOrdersInWindow, monthlyRevenueCents, monthlyWagesCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus, productCostsStatus,
+  return { items, menuPriceBasis, business: { windowDays, daysWithSalesInWindow: days.filter((day) => day.netSalesCents > 0).length, totalOrdersInWindow: trustedOrdersInWindow, monthlyRevenueCents, monthlyWagesCents, monthlyStaffCostCents, monthlyOperatingCostCents, monthlyVariableProductCostCents, monthlyProcessingFeesCents, processingFeesStatus, productCostsStatus,
     targetOperatingMargin: Number(businessRow?.target_operating_margin ?? 0.15),
     targetOperatingMarginStatus: businessRow?.target_operating_margin_status ?? "default",
     payrollTaxRateStatus: businessRow?.payroll_tax_rate_status ?? "estimated",
