@@ -25,7 +25,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
 import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
 import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
 import type {SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
-import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
+import {investigationInstructions,finalizationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** Bound the MODEL preview, not the authoritative dataset used by calculators.
@@ -99,8 +99,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)return failure(true);
-    const step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
-      instructions:investigationInstructions,context:{ownerRequest:input.text,locale:input.locale,
+    // Keep the last two billed attempts for a real answer and its mandatory
+    // independent evidence/completeness review. Five successful operations,
+    // bad model choices and retried provider output must all terminate in the
+    // same reviewed answer path rather than another open-ended tool request.
+    const forceFinal=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
+      usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2;
+    const requestContext={ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
@@ -109,9 +114,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
-        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback},
-      apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
-      onDiagnostic:input.onDiagnostic});
+        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback};
+    let step:z.infer<typeof stepSchema>|null;
+    if(forceFinal){
+      // A dedicated schema cannot express a further tool call. Reserve the
+      // review slot: retrying a malformed terminal response would otherwise
+      // consume the last attempt and leave its claims unreviewed.
+      const terminal=await requestInvestigation({name:"supervisor_investigation_final_answer",
+        schema:answerSchema,instructions:finalizationInstructions,context:requestContext,
+        apiKey:input.apiKey,model:input.model,transport,usage,deadline,
+        onUsage:input.onUsage,onDiagnostic:input.onDiagnostic,maxAttempts:1});
+      step=terminal?{action:"answer",capabilityId:null,argumentsJson:null,
+        responseJson:JSON.stringify(terminal)}:null;
+    }else{
+      step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
+        instructions:investigationInstructions,context:requestContext,
+        apiKey:input.apiKey,model:input.model,transport,usage,deadline,
+        onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+    }
     if(!step)return failure();
     feedback=null;
     if(step.action==="answer"){
@@ -142,6 +162,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
+    }
+    if(usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2){
+      // Do not let a late read trigger an additional paid privacy/calendar
+      // verification that steals the final-answer or review attempt.
+      feedback="Two model attempts are reserved for a grounded final answer and its review. Use the observations already provided.";
+      continue;
     }
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
     usage.toolCallCount++;
@@ -250,5 +276,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     observations.push(observation);
   }
-  return failure(true);
+  // An invalid terminal response must not be presented as a verified result.
+  // This is an availability failure, not a request to keep investigating.
+  return failure();
 }
