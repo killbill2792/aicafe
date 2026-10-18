@@ -10,6 +10,7 @@ import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/li
 import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { createSupervisorDiagnosticLogger, classifySupervisorError, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
+import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -75,6 +76,12 @@ export async function POST(request: Request, context: RouteContext) {
         onDiagnostic: (event) => {
           stage=event.stage;
           diagnostics.emit(event);
+          const progress=progressFromDiagnostic(event);
+          // Fire-and-forget: a stale or missing status bar must never slow
+          // down or fail the owner's actual turn.
+          if (progress) void recordSupervisorProgress({
+            scope, threadId: id, clientMessageId: input.clientMessageId, ...progress,
+          });
         },
       });
       reply = completed.reply;

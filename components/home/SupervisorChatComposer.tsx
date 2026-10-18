@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
+import { parseAgentId } from "@/lib/operating/tasks";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
 import { Link } from "@/i18n/navigation";
 import { formatCents } from "@/lib/calc";
@@ -21,6 +22,8 @@ export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
   comingSoon: string; suggestions: string[];
   live: string; threads: string; newThread: string; empty: string; loading: string; sending: string;
+  statusAlexReading: string; statusLeoReading: string; statusOliviaReading: string;
+  statusMayaReading: string; statusSupervisorReading: string; statusSupervisorAnswering: string;
   retry: string; unavailable: string; more: string; you: string; supervisor: string; source: string; sourceCafe: string; sourcePricing: string; sourceTasks: string; sourceRules: string; sourceVerified: string;
   listening: string; voiceReview: string; voiceUnavailable: string; voiceStop: string;
   voiceProcessing: string; voicePermissionDenied: string; voiceNoSpeech: string;
@@ -52,6 +55,37 @@ async function loadMessages(id: string, offset = 0): Promise<ConversationPage<Co
     "/api/ai/threads/" + encodeURIComponent(id) + "/messages?offset=" + offset,
     { credentials: "same-origin", cache: "no-store" },
   ));
+}
+type SupervisorProgress = { agent: string; stage: string } | null;
+async function loadProgress(threadIdValue: string, clientMessageId: string, signal: AbortSignal):
+  Promise<SupervisorProgress> {
+  try {
+    const response = await fetch(
+      "/api/ai/threads/" + encodeURIComponent(threadIdValue) + "/progress?clientMessageId=" +
+        encodeURIComponent(clientMessageId),
+      { credentials: "same-origin", cache: "no-store", signal },
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as SupervisorProgress;
+    return data && typeof data.agent === "string" && typeof data.stage === "string" ? data : null;
+  } catch {
+    return null; // Live status is best-effort; a failed poll just keeps the last known text.
+  }
+}
+/** "Alex is checking your pricing…" etc. Only "reading"/"answering" ever render;
+ * "done"/"limited" arrive right as the real reply does, so the composer's own
+ * final message takes over before either would be shown. */
+function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress): string | null {
+  if (!status) return null;
+  if (status.stage === "answering") return copy.statusSupervisorAnswering;
+  if (status.stage !== "reading") return null;
+  switch (status.agent) {
+    case "alex": return copy.statusAlexReading;
+    case "leo": return copy.statusLeoReading;
+    case "olivia": return copy.statusOliviaReading;
+    case "maya": return copy.statusMayaReading;
+    default: return copy.statusSupervisorReading;
+  }
 }
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -157,6 +191,7 @@ export default function SupervisorChatComposer({
   const [elapsed, setElapsed] = useState(0);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -321,11 +356,21 @@ export default function SupervisorChatComposer({
       openAtTop.current = false;
       setDraft("");
     }
-    setSending(true); setError(false);
+    setSending(true); setError(false); setProgressStatus(null);
     let attemptedThreadId: string | null = null;
+    const progressAbort = new AbortController();
+    let progressTimer: ReturnType<typeof setInterval> | null = null;
     try {
       const id = await ensureThread();
       attemptedThreadId = id;
+      // Polls a separate, lightweight endpoint while the single POST below is
+      // still in flight -- the POST itself only resolves once the whole
+      // investigation finishes, so this is the only way to show live status.
+      progressTimer = setInterval(() => {
+        void loadProgress(id, clientMessageId, progressAbort.signal).then((status) => {
+          if (status) setProgressStatus(status);
+        });
+      }, 1200);
       const posted = await jsonFrom<MessageResponse>(await fetch(
         "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
           method: "POST", headers: { "content-type": "application/json" },
@@ -353,7 +398,9 @@ export default function SupervisorChatComposer({
       }
       setError(true);
     } finally {
-      setSending(false);
+      if (progressTimer) clearInterval(progressTimer);
+      progressAbort.abort();
+      setSending(false); setProgressStatus(null);
     }
   }
   async function loadOlder() {
@@ -585,8 +632,10 @@ export default function SupervisorChatComposer({
         </div>}
       </div>)}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
-        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />
-        {copy.sending}
+        {parseAgentId(progressStatus?.agent) ?
+          <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />}
+        {progressStatusText(copy, progressStatus) ?? copy.sending}
       </div>}
     </div>
     <div className="mt-auto shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
