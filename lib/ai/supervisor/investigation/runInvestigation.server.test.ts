@@ -380,6 +380,37 @@ it("counts a dispatched domain reader even when its result resembles a registry 
   expect(result.reply.status).not.toBe("unavailable");
 });
 
+it("limits a malformed selection retry to the shared selection window and still finishes an evidenced answer",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    let stepCalls=0;
+    const inner=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The recorded latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(_context,i)=>{
+      if(i===0)clock=realNow+25000; // 65s remain: a normal read would fit.
+      if(i===1)expect(_context.finalizeOnly).toBe(true);
+    });
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const request=JSON.parse(String(init.body));
+      if(request.text.format.name==="supervisor_investigation_step"&&++stepCalls===2){
+        clock=realNow+44000; // Selection's shared deadline; 46s remain for reader+answer+audit.
+        return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},
+          output:[{type:"message",content:[{type:"output_text",text:"bad JSON"}]}]}));
+      }
+      return inner(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transport);
+    expect(result.reply.status).not.toBe("unavailable");
+    expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(stepCalls).toBe(3); // Initial read, malformed request, final answer.
+    expect(transport).toHaveBeenCalledTimes(4); // Plus independent review.
+  }finally{now.mockRestore();}
+});
+
 it("reserves extra calendar-gate time when a failed owner correction may require review",async()=>{
   const realNow=Date.now();
   let clock=realNow;
