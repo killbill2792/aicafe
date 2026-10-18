@@ -8,18 +8,41 @@ const day=(n:number):MenuPriceSourceDay=>({
   cardFeesCents:300,cardFeesStatus:"actual",
 });
 const basis=(days:MenuPriceSourceDay[],opts:Partial<Parameters<typeof menuPriceSourceBasis>[0]>={})=>
-  menuPriceSourceBasis({days,recurring:[],expenses:[],previousMonthExpenseCategories:[],totalItemPrepSecondsInWindow:0,...opts});
+  menuPriceSourceBasis({days,recurring:[],expenses:[],previousMonthExpenseCategories:[],
+    totalItemPrepSecondsInWindow:0,asOfBusinessDate:"2026-10-17",...opts});
 
 describe("Menu pricing source basis",()=>{
   it("uses 14 actual historical import days even when none are in the current month",()=>{
     const p=basis(Array.from({length:14},(_,i)=>day(i+1)),{
       recurring:[{categoryCode:"rent",amountCents:150000,frequency:"monthly",estimated:false},
         {categoryCode:"software",amountCents:52000,frequency:"yearly",estimated:true}],
-      totalItemPrepSecondsInWindow:84000});
+      totalItemPrepSecondsInWindow:84000,
+      laborCoveredDates:Array.from({length:14},(_,i)=>day(i+1).businessDate)});
     expect(p).toMatchObject({coveredDays:14,oldestDate:"2026-08-01",latestDate:"2026-08-14",
       monthlyDrinks:1200,monthlyPayrollCents:168000,processingFeeBps:300,
       monthlyPrepSeconds:180000,monthlyRunningCents:154333,runningStatus:"estimated",
       feeStatus:"actual",payrollCoveredDays:14});
+  });
+  it("uses the canonical recent 28 calendar days when sufficiently covered",()=>{
+    const historical=Array.from({length:14},(_,i)=>day(i+1));
+    const recent=Array.from({length:14},(_,i)=>({
+      ...day(i+1),businessDate:`2026-10-${String(i+1).padStart(2,"0")}`,
+      drinksCount:10,cardFeesCents:100,
+    }));
+    const p=basis([...historical,...recent]);
+    expect(p).toMatchObject({coveredDays:14,oldestDate:"2026-10-01",
+      latestDate:"2026-10-14",monthlyDrinks:300,processingFeeBps:100});
+  });
+  it("withholds payroll when positive paid dates lack independently verified zero-day coverage",()=>{
+    const sales=Array.from({length:14},(_,i)=>({
+      ...day(i+1),wagesCents:i<10?5000:0,payrollTaxCents:i<10?600:0,
+    }));
+    const unverified=basis(sales);
+    expect(unverified.monthlyPayrollCents).toBeNull();
+    expect(unverified.payrollStatus).toBe("missing");
+    const verified=basis(sales,{laborCoveredDates:sales.map(d=>d.businessDate)});
+    expect(verified.payrollCoveredDays).toBe(14);
+    expect(verified.monthlyPayrollCents).toBe(120000);
   });
   it("never treats the other 76 unimported days of a 90-day window as zero",()=>{
     const p=basis([day(1),day(2)]);
@@ -100,10 +123,13 @@ describe("Menu pricing source basis",()=>{
     const sales=Array.from({length:14},(_,i)=>({...day(i+1),
       wagesCents:i<7?5000:0,payrollTaxCents:i<7?600:0}));
     const staffOnly={...day(15),salesStatus:"missing" as const,netSalesCents:0,drinksCount:0};
-    const p=basis([...sales,staffOnly]);
+    const p=basis([...sales,staffOnly],{
+      laborCoveredDates:[...sales,staffOnly].map(d=>d.businessDate),
+    });
     expect(p.coveredDays).toBe(14);
-    expect(p.payrollCoveredDays).toBe(8);
-    expect(p.monthlyPayrollCents).toBe(168000);
+    // Seven known $0 labor dates must stay in the calendar-day denominator.
+    expect(p.payrollCoveredDays).toBe(15);
+    expect(p.monthlyPayrollCents).toBe(89600);
     expect(p.monthlyDrinks).toBe(1200);
     expect(p.payrollLatestDate).toBe("2026-08-15");
   });
@@ -117,7 +143,7 @@ describe("Menu pricing source basis",()=>{
   it("does not extrapolate from just one or two staff-only dates",()=>{
     const sales=Array.from({length:14},(_,i)=>({...day(i+1),
       wagesCents:i<2?5000:0,payrollTaxCents:i<2?600:0}));
-    const p=basis(sales);
+    const p=basis(sales,{laborCoveredDates:sales.slice(0,2).map(d=>d.businessDate)});
     expect(p.monthlyDrinks).toBe(1200);
     expect(p.payrollCoveredDays).toBe(2);
     expect(p.monthlyPayrollCents).toBeNull();
