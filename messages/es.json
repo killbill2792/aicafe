@@ -498,6 +498,7 @@
     "priceBasisMissingCostDetail": "Faltan algunos gastos mensuales previstos: {names}. El subtotal mensual conocido es {known}. Ingrese el total mensual completo, incluidos esos gastos, para completar la estimación.",
         "priceBasisMissingExpected": "Faltan importes este mes para {count} categorías de gasto previstas. El subtotal registrado es {subtotal}. Ingrese el total mensual completo para completar la estimación sin contar costos dos veces.",
     "priceBasisRounding": "Las partidas se redondean solo para mostrarse. La ganancia y el precio objetivo se calculan con importes sin redondear.",
+    "priceBasisOwnerAdjusted": "Ajustado por el propietario para esta estimación (no guardado)",
     "priceBasisTitle": "Estimación del costo total · cifras utilizadas",
     "priceBasisHelp": "Se utilizan los gastos guardados y las ventas históricas disponibles. Revise los importes y confirme los cambios para ver otra estimación.",
     "priceBasisHistoryTitle": "Período de ventas utilizado",
