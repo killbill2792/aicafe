@@ -51,10 +51,10 @@ export const CALCULATE_TOOL_NAME="calculate";
  * actually runs. */
 export function friendlyAgent(owner:string|undefined):"alex"|"olivia"|"leo"|"maya"|"supervisor"{
   switch(owner){
-    case "alex":case "menu":return "alex";
+    case "alex":case "menu":case "pricing":return "alex";
     case "olivia":case "labor":return "olivia";
     case "money":case "sales":return "leo";
-    case "maya":case "team":return "maya";
+    case "maya":case "team":case "supplies":return "maya";
     default:return "supervisor";
   }
 }
