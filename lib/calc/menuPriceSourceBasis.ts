@@ -45,7 +45,7 @@ export function menuPriceSourceBasis(input:{
     ? input.recurring.reduce((sum,row)=>
         sum+recurringCostMonthlyEquivalentCents({amountCents:row.amountCents,
           frequency:row.frequency}),0) : null;
-  const runningStatus = monthlyRunningCents===null ? "missing" :
+  const runningStatus: MenuPriceSourceBasis["runningStatus"] = monthlyRunningCents===null ? "missing" :
     input.recurring.some(r=>r.estimated) ? "estimated" : "recorded";
 
   // Keep one rollup per date and fail closed on duplicate coverage records.
