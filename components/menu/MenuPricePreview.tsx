@@ -57,7 +57,8 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     monthlyRunningCents:values.monthlyRunningCents,
     monthlyPayrollCents:values.monthlyPayrollCents,
     monthlyDrinks:values.monthlyDrinks,
-    monthlyPrepSeconds:basis.monthlyPrepSeconds,
+    monthlyPrepSeconds:values.monthlyDrinks===basis.monthlyDrinks?
+      basis.monthlyPrepSeconds:null,
     itemPrepSeconds:item.prepSeconds,
     processingFeeBps:values.processingFeeBps,
     targetOperatingMarginBps:basis.targetOperatingMarginBps,
@@ -97,7 +98,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
   const period=basis.oldestDate&&basis.latestDate?t("priceBasisWindow",{
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
   }):t("priceBasisNoHistory");
-  return <details className="mt-3 rounded-2xl border border-line bg-paper p-3.5">
+  return <details defaultOpen={estimate.status==="missing"} className="mt-3 rounded-2xl border border-line bg-paper p-3.5">
     <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
       {t("priceBasisTitle")}
     </summary>
