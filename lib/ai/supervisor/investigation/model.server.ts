@@ -101,8 +101,14 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // that case — and forcing a full retry — is strictly worse than just
       // using it, so acceptablePrefix (the longest prefix that is BOTH valid
       // JSON and schema-valid) is accepted below instead of thrown away.
+      // EXCEPT for supervisor_public_query_review: that request is a privacy/
+      // safety authorization gate (its {safe:true} directly permits an
+      // external search of the owner's clause), and an authorization check
+      // must fail closed on any malformed output, never accept a leniently-
+      // recovered verdict from a response that was not entirely clean.
       let validPrefixPartCount:number|undefined,validPrefixMatchesSchema:boolean|undefined;
       let acceptablePrefix:T|undefined;
+      const allowPrefixRecovery=input.name!=="supervisor_public_query_review";
       if(texts.length>1){
         validPrefixPartCount=0;
         for(let i=1;i<texts.length;i++){
@@ -123,7 +129,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"wrong_text_shape",...shapeMeta});
       if(!concatenatedTextParses){
-        if(acceptablePrefix!==undefined){
+        if(allowPrefixRecovery&&acceptablePrefix!==undefined){
           // Not an error: record it for observability (no category — this
           // path never retries or degrades the turn), then use the answer.
           input.onDiagnostic?.({stage:"provider_response",requestName:input.name,...shapeMeta,

@@ -150,6 +150,26 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     expect(onDiagnostic.mock.calls[0][0].invalidPayloadReason).toBeUndefined();
   });
 
+  it("never accepts a recovered prefix for the public-query privacy authorization gate, even when valid and schema-matching",async()=>{
+    // supervisor_public_query_review's {safe:true} directly authorizes sending
+    // the owner's clause to an external search provider. An authorization gate
+    // must fail closed on ANY malformed output, never lenient-accept a verdict
+    // recovered from a response that was not entirely clean.
+    const privacySchema=z.strictObject({safe:z.boolean()});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({safe:true})},
+        {type:"output_text",text:" trailing"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const result=await requestInvestigation({name:"supervisor_public_query_review",schema:privacySchema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toBeNull();
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",validPrefixPartCount:1,validPrefixMatchesSchema:true}));
+  });
+
   it("never accepts a valid-JSON prefix that fails the schema contract, even when one exists",async()=>{
     // The first part is syntactically valid JSON but violates the schema (x
     // too short); a trailing part breaks the full concatenation. Confirms the
