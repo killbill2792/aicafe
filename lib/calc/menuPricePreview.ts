@@ -46,8 +46,11 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   const ingredientContributionCents = safeMoney(input.ingredientCents) &&
     Number.isSafeInteger(input.priceCents) && input.priceCents >= 0
       ? input.priceCents - input.ingredientCents : null;
-  const billsPerDrinkCents = safeMoney(input.monthlyRunningCents) && safeCount(input.monthlyDrinks)
-    ? rounded(input.monthlyRunningCents / input.monthlyDrinks) : null;
+  // Preserve sub-cent precision until the final profit/target computation.
+  // Individual allocations are rounded only for their display fields.
+  const rawBillsPerDrink = safeMoney(input.monthlyRunningCents) && safeCount(input.monthlyDrinks)
+    ? input.monthlyRunningCents / input.monthlyDrinks : null;
+  const billsPerDrinkCents = rawBillsPerDrink===null?null:rounded(rawBillsPerDrink);
 
   // Prefer documented prep-time attribution. If historical item prep-time mix
   // is unavailable, use equal per-drink distribution, conspicuously estimated.
@@ -57,22 +60,24 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   const laborAllocation: MenuPricePreviewResult["laborAllocation"] =
     !safeMoney(input.monthlyPayrollCents) || !safeCount(input.monthlyDrinks)
       ? null : byPrepTime ? "prep_time" : "equal_drinks";
-  const laborPerDrinkCents = laborAllocation === null ? null :
-    rounded(laborAllocation === "prep_time"
+  const rawLaborPerDrink = laborAllocation === null ? null :
+    laborAllocation === "prep_time"
       ? input.monthlyPayrollCents! * input.itemPrepSeconds / input.monthlyPrepSeconds!
-      : input.monthlyPayrollCents! / input.monthlyDrinks!);
-  const cardFeePerDrinkCents =
+      : input.monthlyPayrollCents! / input.monthlyDrinks!;
+  const laborPerDrinkCents = rawLaborPerDrink===null?null:rounded(rawLaborPerDrink);
+  const rawCardFeePerDrink =
     Number.isSafeInteger(input.priceCents) && input.priceCents >= 0 &&
     input.processingFeeBps !== null && Number.isSafeInteger(input.processingFeeBps) &&
     input.processingFeeBps >= 0 && input.processingFeeBps <= 10000
-      ? rounded(input.priceCents * input.processingFeeBps / 10000) : null;
+      ? input.priceCents * input.processingFeeBps / 10000 : null;
+  const cardFeePerDrinkCents=rawCardFeePerDrink===null?null:rounded(rawCardFeePerDrink);
 
   const complete = missing.length === 0 &&
     ingredientContributionCents !== null && billsPerDrinkCents !== null &&
     laborPerDrinkCents !== null && cardFeePerDrinkCents !== null;
   const allocatedProfitCents = complete
-    ? ingredientContributionCents! - billsPerDrinkCents! -
-      laborPerDrinkCents! - cardFeePerDrinkCents! : null;
+    ? rounded(ingredientContributionCents! - rawBillsPerDrink! -
+      rawLaborPerDrink! - rawCardFeePerDrink!) : null;
 
   // Price needed to cover the same assigned non-price costs at the owner's
   // margin target. This is a conditional scenario, not a market recommendation.
@@ -80,7 +85,7 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   const denominator = 10000 - (input.processingFeeBps ?? 0) - margin;
   const targetPrice = complete && Number.isSafeInteger(margin) &&
     margin >= 0 && margin < 10000 && denominator > 0
-      ? Math.ceil((input.ingredientCents! + billsPerDrinkCents! + laborPerDrinkCents!) *
+      ? Math.ceil((input.ingredientCents! + rawBillsPerDrink! + rawLaborPerDrink!) *
         10000 / denominator) : null;
   const targetPriceCents = targetPrice !== null &&
     Number.isSafeInteger(targetPrice) && targetPrice >= 0 && targetPrice <= 100_000_000
