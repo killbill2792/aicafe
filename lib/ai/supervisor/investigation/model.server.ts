@@ -38,10 +38,15 @@ function recoverFirstStep<T>(rawText:string,schema:z.ZodType<T>):T|undefined{
   return undefined;
 }
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
-  instructions:string;context:unknown;answerOnly?:boolean;model:string;apiKey:string;transport:InvestigationTransport;
+  instructions:string;context:unknown;answerOnly?:boolean;reserveModelCalls?:number;model:string;apiKey:string;transport:InvestigationTransport;
   usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
-  if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
+  // Nested semantic gates (public-search privacy / calendar clarification) must
+  // not spend the final answer and independent review's reserved model attempts.
+  // This applies to a gate's own malformed-output retry as well as its first call.
+  const maxCalls=INVESTIGATION_LIMITS.modelCalls-
+    Math.max(0,Math.min(2,input.reserveModelCalls??0));
+  if(input.usage.modelCallCount>=maxCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
   input.onUsage?.({...input.usage});
