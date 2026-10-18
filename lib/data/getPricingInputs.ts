@@ -14,7 +14,7 @@ import { menuPriceSourceBasis, type MenuPriceSourceBasis } from "@/lib/calc/menu
  * file now calls that same shared function instead of reimplementing its own cost+completeness
  * check, which previously could disagree with getMenuItemsForEdit's own READY/NO_RECIPE verdict. */
 export type PricingItemInput = { id: string; name: string; category: MenuItemCategoryCode; currentPriceCents: number; productCostCents: number; productCostStatus: RecipeCostStatus; productCostSource?: ProductCostSource | null; productCostQuality?: "actual" | "estimated"; unitsSoldInWindow: number };
-export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated"; operatingCostsStatus?: "actual" | "estimated" };
+export type PricingBusinessInput = { windowDays: number; daysWithSalesInWindow: number; totalOrdersInWindow: number; monthlyRevenueCents: number; monthlyWagesCents?: number; monthlyStaffCostCents: number; monthlyOperatingCostCents: number; monthlyVariableProductCostCents: number; monthlyProcessingFeesCents: number; processingFeesStatus: "actual" | "estimated" | "missing"; productCostsStatus?: "actual" | "estimated" | "missing"; targetOperatingMargin?: number; targetOperatingMarginStatus?: "default" | "confirmed"; payrollTaxRateStatus?: "estimated" | "confirmed"; payrollCostsStatus?: "actual" | "estimated"; operatingCostsStatus?: "actual" | "estimated" | "missing" };
 
 export async function getPricingInputs(supabase: SupabaseClient, businessId: string): Promise<{ items: PricingItemInput[]; business: PricingBusinessInput; menuPriceBasis: MenuPriceSourceBasis }> {
   const { data: businessRow, error: businessError } = await supabase.from("businesses").select("timezone, target_operating_margin, target_operating_margin_status, payroll_tax_rate_status").eq("id", businessId).single();
@@ -148,9 +148,13 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
       .map(row=>row.category_code),
     totalItemPrepSecondsInWindow,
   });
+  // Keep a zero placeholder solely for legacy numeric callers. The
+  // accompanying explicit missing status MUST be checked before any
+  // business-adjusted recommendation/simulation can use this number.
   const monthlyOperatingCostCents = menuPriceBasis.monthlyRunningCents ?? 0;
-  const operatingCostsStatus = menuPriceBasis.runningStatus==="recorded"
-    ? "actual" as const:"estimated" as const;
+  const operatingCostsStatus = menuPriceBasis.runningStatus==="missing"
+    ? "missing" as const : menuPriceBasis.runningStatus==="recorded"
+      ? "actual" as const:"estimated" as const;
   const productCostsStatus =
     items.some((item) => item.unitsSoldInWindow > 0 && item.productCostStatus !== "READY")
       ? "missing" as const
