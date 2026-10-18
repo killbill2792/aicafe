@@ -129,7 +129,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // A malformed selection may be retried by requestInvestigation. Both
     // attempts must SHARE this capped window: never let the retry borrow the
     // reader's 10s or the answer+audit's 36s (plus calendar-gate time).
-    const selectionDeadline=finalizeOnly?deadline:
+    // Final drafting itself may retry on a malformed provider response. Give
+    // all drafting attempts one shared window, preserving an independent full
+    // provider slot to review the answer before publishing.
+    const selectionDeadline=finalizeOnly?deadline-INVESTIGATION_LIMITS.providerTimeoutMs:
       deadline-(timeNeededForAnotherOperation-INVESTIGATION_LIMITS.providerTimeoutMs);
     let step:z.infer<typeof stepSchema>|null;
     try {
@@ -147,6 +150,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
         remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
       apiKey:input.apiKey,model:input.model,transport,usage,deadline:selectionDeadline,
+      selectionBudgetDeadline:!finalizeOnly,
       // A malformed late planning response must not spend the two calls still
       // required to author and independently verify the final answer.
       reserveModelCalls:finalizeOnly?1:2,onUsage:input.onUsage,
@@ -156,7 +160,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // can still finish with a normal, independently checked partial answer.
       // Genuine transport/provider failures retain their existing error path.
       if(!finalizeOnly&&error instanceof SupervisorStageError&&
-        error.category==="provider_timeout"&&Date.now()>=selectionDeadline-1000){
+        error.category==="provider_timeout"&&
+        error.providerErrorCode==="investigation_selection_deadline"){
         feedback="The selection budget was exhausted. Answer from validated observations; explain any missing input.";
         continue;
       }
