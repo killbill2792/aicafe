@@ -9,7 +9,7 @@ export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount
 export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
   instructions:string;context:unknown;model:string;apiKey:string;transport:InvestigationTransport;
   usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
-  onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
+  onDiagnostic?:(event:SupervisorDiagnostic)=>void;maxAttempts?:1|2},attempt=1):Promise<T|null>{
   if(input.usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
@@ -101,18 +101,16 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // that case — and forcing a full retry — is strictly worse than just
       // using it, so acceptablePrefix (the longest prefix that is BOTH valid
       // JSON and schema-valid) is accepted below instead of thrown away.
-      // ONLY for supervisor_investigation_step, though: that is the sole
-      // request whose payload is genuine answer content, and the only one
-      // production evidence actually supports leniency for. The other three
-      // requests (supervisor_investigation_review, supervisor_
-      // calendar_context_review, supervisor_public_query_review) are all
-      // semantic verdict/authorization gates — their schema can confirm a
+      // ONLY for conversational step and dedicated final-answer content.
+      // Independent review, calendar-context review and public-query review
+      // are semantic verdict/authorization gates — their schema can confirm a
       // prefix's *shape* (e.g. {supported:true,complete:true}) but not that
       // the verdict itself is trustworthy out of a response that was not
       // entirely clean, so they must keep the existing fail-closed behavior.
       let validPrefixPartCount:number|undefined,validPrefixMatchesSchema:boolean|undefined;
       let acceptablePrefix:T|undefined;
-      const allowPrefixRecovery=input.name==="supervisor_investigation_step";
+      const allowPrefixRecovery=input.name==="supervisor_investigation_step"||
+        input.name==="supervisor_investigation_final_answer";
       if(texts.length>1){
         validPrefixPartCount=0;
         for(let i=1;i<texts.length;i++){
@@ -182,7 +180,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
     // degrades to a graceful "unavailable" reply (handled by every call site's
     // existing null-check) instead of crashing the whole owner turn.
     if(classified.category==="provider_invalid_payload"||classified.category==="provider_incomplete"){
-      if(attempt<2)return requestInvestigation(input,attempt+1);
+      if(attempt<(input.maxAttempts??2))return requestInvestigation(input,attempt+1);
       return null;
     }
     throw classified;
