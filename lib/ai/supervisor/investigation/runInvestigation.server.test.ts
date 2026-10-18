@@ -405,6 +405,47 @@ it("reserves extra calendar-gate time when a failed owner correction may require
   }finally{now.mockRestore();}
 });
 
+it("does not count a byte-heavy but schema-valid expression rejected before simulation dispatch",async()=>{
+  // A UTF-8 payload can fit the model's character-counted argumentsJson limit
+  // while exceeding the registry's 10 KB input cap. No calculator ran.
+  const plan=(suffix:string)=>({capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+    description:"Owner-only hypothetical with typed operands",
+    nodes:Array.from({length:22},(_,i)=>({op:"hypothetical",label:"咖".repeat(149)+suffix+i,
+      quotedNumber:"1",value:1,unit:"item"}))});
+  expect(JSON.stringify(plan("a")).length).toBeLessThan(8000);
+  expect(Buffer.byteLength(JSON.stringify(plan("a")))).toBeGreaterThan(10000);
+  const result=await runSupervisorTurn({...base,text:"Compare a hypothetical quantity of 1."},transportFor([
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("a")),responseJson:null},
+    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("b")),responseJson:null},
+    answer([{kind:"advice",text:"The proposed calculation exceeded the available source contract, so I cannot treat it as a verified business result.",citations:[]}]),
+  ]));
+  expect(result.usage.toolCallCount).toBe(0);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("does not reserve unused calendar-review time for an undated failed owner turn",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the saved menu."],reads:[]};
+    const history=[{role:"owner" as const,text:"Show the saved menu."},
+      {role:"owner" as const,text:"Please retry that."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      read("p3.labor.payroll_burden.v1",query("labor.payroll_burden")),
+      answer([{kind:"evidence",text:"The saved catalog lists the latte at {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000; // 78s remaining, sufficient without a calendar gate.
+      if(i===1)expect(context.finalizeOnly).toBe(false);
+    });
+    const result=await runSupervisorTurn({...base,text:"What price is the latte?",history,
+      investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(2);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
 it("preserves final answer and independent review when late public privacy gate has no attempt allowance",async()=>{
   vi.mocked(researchEnabled).mockReturnValue(true);
   const invalid=Array.from({length:5},(_,i)=>read("unknown.unregistered.capability."+i,{attempt:i}));
