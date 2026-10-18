@@ -32,13 +32,17 @@ export type MenuPricePreviewResult = {
 
 const safeMoney = (v: number | null): v is number =>
   v !== null && Number.isSafeInteger(v) && v >= 0 && v <= 100_000_000_000;
+// Recipe evaluation legitimately yields fractional cents. Keep exact ingredient
+// costs until the final result; do not treat them as missing money.
+const safeRecipeCost = (v: number | null): v is number =>
+  v !== null && Number.isFinite(v) && v >= 0 && v <= 100_000_000_000;
 const safeCount = (v: number | null): v is number =>
   v !== null && Number.isSafeInteger(v) && v > 0 && v <= 100_000_000;
 const rounded = (n: number) => Math.round(n);
 
 export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreviewResult {
   const missing: MenuPricePreviewResult["missing"] = [];
-  if (!safeMoney(input.ingredientCents)) missing.push("ingredients");
+  if (!safeRecipeCost(input.ingredientCents)) missing.push("ingredients");
   if (!safeMoney(input.monthlyRunningCents)) missing.push("bills");
   if (!safeMoney(input.monthlyPayrollCents)) missing.push("payroll");
   if (!safeCount(input.monthlyDrinks)) missing.push("volume");
@@ -55,7 +59,7 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
     validBps?input.processingFeeBps!/10000:null;
   if(feeRate===null) missing.push("fees");
 
-  const ingredientContributionCents = safeMoney(input.ingredientCents) &&
+  const ingredientContributionCents = safeRecipeCost(input.ingredientCents) &&
     Number.isSafeInteger(input.priceCents) && input.priceCents >= 0
       ? input.priceCents - input.ingredientCents : null;
   // Preserve sub-cent precision until the final profit/target computation.
