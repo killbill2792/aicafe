@@ -1,0 +1,39 @@
+import { describe, it, expect } from "vitest";
+import { menuPricePreview } from "./menuPricePreview";
+
+const base = {
+  priceCents:700,ingredientCents:145,monthlyRunningCents:200000,
+  monthlyPayrollCents:300000,monthlyDrinks:2000,monthlyPrepSeconds:600000,
+  itemPrepSeconds:300,processingFeeBps:300,targetOperatingMarginBps:1500,
+};
+describe("Menu transparent fully allocated pricing estimate", () => {
+  it("uses saved bills, loaded payroll, prep-time share and card fees, not just ingredient benchmark",()=>{
+    const p=menuPricePreview(base);
+    expect(p).toMatchObject({status:"estimated",ingredientContributionCents:555,
+      billsPerDrinkCents:100,laborPerDrinkCents:150,
+      cardFeePerDrinkCents:21,allocatedProfitCents:284,
+      targetPriceCents:482,laborAllocation:"prep_time"});
+  });
+  it("makes every missing cost visible rather than pretending it is zero",()=>{
+    const p=menuPricePreview({...base,monthlyPayrollCents:null,monthlyDrinks:null,processingFeeBps:null});
+    expect(p.status).toBe("missing");
+    expect(p.missing).toEqual(["payroll","volume","fees"]);
+    expect(p.allocatedProfitCents).toBeNull();
+    expect(p.targetPriceCents).toBeNull();
+  });
+  it("distinguishes an explicitly entered zero from an absent value",()=>{
+    const p=menuPricePreview({...base,monthlyRunningCents:0,monthlyPayrollCents:0,processingFeeBps:0});
+    expect(p.status).toBe("estimated");
+    expect(p.allocatedProfitCents).toBe(555);
+  });
+  it("uses a disclosed average per drink if item-level prep evidence is missing",()=>{
+    const p=menuPricePreview({...base,monthlyPrepSeconds:null});
+    expect(p.laborAllocation).toBe("equal_drinks");
+    expect(p.laborPerDrinkCents).toBe(150);
+  });
+  it("never invents a target price when the owner margin plus fees leaves no room",()=>{
+    const p=menuPricePreview({...base,targetOperatingMarginBps:9900,processingFeeBps:200});
+    expect(p.allocatedProfitCents).not.toBeNull();
+    expect(p.targetPriceCents).toBeNull();
+  });
+});
