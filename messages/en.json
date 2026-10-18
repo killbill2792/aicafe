@@ -493,11 +493,11 @@
     "purchaseQuantity": "Package quantity",
     "purchaseUnit": "Package unit",
     "completePurchaseCost": "Enter both a valid purchase price and package quantity, or leave both blank.",
-            "priceBasisTargetDefault": "This uses AI CAFE's default {margin}% margin, not a profit goal you confirmed.",
+    "priceBasisTargetDefault": "This uses AI CAFE's default {margin}% margin, not a profit goal you confirmed.",
     "priceBasisPayrollWindow": "Payroll projection uses {days} separately evidenced labor days from {from} to {to}.",
     "priceBasisMissingCostDetail": "Some expected monthly costs are missing: {names}. The known monthly subtotal is {known}. Enter your complete monthly total, including those costs, to finish the estimate.",
     "priceBasisSavedCostsIncomplete": "Saved expenses still lack {count} expected cost categories. The confirmed amount applies only to this on-screen estimate.",
-        "priceBasisMissingExpected": "{count} expected expense category or categories have no amount this month. Your recorded subtotal is {subtotal}. Enter your full monthly bills total to complete this estimate, without counting recorded costs twice.",
+    "priceBasisMissingExpected": "{count} expected expense category or categories have no amount this month. Your recorded subtotal is {subtotal}. Enter your full monthly bills total to complete this estimate, without counting recorded costs twice.",
     "priceBasisRounding": "Individual cost shares are rounded for display. Final profit and target prices use unrounded allocations.",
     "priceBasisOwnerAdjusted": "Owner-adjusted for this estimate (not saved)",
     "priceBasisTitle": "Full-cost estimate · numbers used",
@@ -1950,6 +1950,8 @@
     "unavailable": "I could not complete that investigation reliably. Please try again; your business records were not changed.",
     "budget": "I reached the limit for this investigation. I can continue with the remaining part in a follow-up; no business changes were made.",
     "externalUnverified": "Unverified public source",
-    "financialUnavailable": "Financial amounts are unavailable in this view; the scheduling details remain usable."
+    "financialUnavailable": "Financial amounts are unavailable in this view; the scheduling details remain usable.",
+    "factAmount": "Amount",
+    "factPercent": "Percentage"
   }
 }

@@ -365,14 +365,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       handle=>typeof handle==="string"&&!handle.startsWith("dataset:"));
     const parentObservation=parents[0];
     const inheritedSource=parents.some(o=>o.reference?.source==="unverified_external")?"unverified_external":parentObservation?.reference?.source;
+    const rendered=successful?observationDisplay(result,input.locale):{display:{},kind:{},raw:{}};
     const observation:Observation={id,capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
       reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,capabilityId,result,inheritedSource):null,
       requiresSnapshot:directSourceRequiresSnapshot||parents.some(o=>o.requiresSnapshot)||!calculation&&
         manifest.find(m=>m.id===capabilityId)?.currencyPolicy!=="independent",
-      display:successful?observationDisplay(result,input.locale):{},calculation};
-    if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
+      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw,calculation};
+    if(calculation&&typeof result.value==="number"&&typeof result.unit==="string"){
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);
+      if(result.unit==="USD_cents"){observation.displayKind!.value="money";observation.displayRaw!.value=result.value;}
+      else if(result.unit==="ratio_bps"){observation.displayKind!.value="percent";observation.displayRaw!.value=result.value;}
+    }
     if(successful&&!calculation){
       const quality=record(result.quality)?result.quality:null;
       if(quality&&Array.isArray(quality.missingInputs)&&Array.isArray(quality.estimatedInputs)&&Array.isArray(quality.staleInputs)){
