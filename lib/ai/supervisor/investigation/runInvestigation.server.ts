@@ -114,8 +114,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const savedLast=memory?.ownerStatements.at(-1);
     const priorOwnerStatements=ownerStatements.slice(0,-1);
     const savedIndex=savedLast?priorOwnerStatements.lastIndexOf(savedLast):-1;
+    // Whether a current phrase is a period or a scheduling week depends on
+    // the *selected* typed capability, not a generic string check. Before
+    // selection we must conservatively reserve review time if an intervening
+    // owner statement contains any recognized dated correction. Undated
+    // retries still avoid this extra reservation.
     const mayNeedCalendarReview=savedIndex>=0&&
-      !hasInvestigationOwnerCalendarDate(input.text,identity.asOf)&&
       priorOwnerStatements.slice(savedIndex+1).some(s=>hasInvestigationOwnerCalendarDate(s,identity.asOf));
     const timeNeededForAnotherOperation=INVESTIGATION_LIMITS.providerTimeoutMs*
       (mayNeedCalendarReview?4:3)+10000;
@@ -190,6 +194,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     let result:unknown;
     let calculation=false;
     let readDomain:string|undefined;
+    let readDispatched=false;
     if(step.action==="calculate"){
       if(identity.currency!=="USD"){
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
@@ -247,12 +252,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result=await registry.invoke(scope,step.capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
         // Domain failures still consume a real operation; malformed inputs do not.
+        readDispatched=true;
         usage.toolCallCount++;
         input.onUsage?.({...usage});
       });
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
-    if(readDomain&&!["invalid_request","input_limit","unknown_capability","unauthorized","mode_disabled"].includes(String(result.reason))){
+    // Preserve a typed date/week selector whenever the real domain reader was
+    // dispatched, even if it returned an unavailable/unauthorized domain status.
+    // A result reason must never be mistaken for a registry preflight verdict.
+    if(readDomain&&readDispatched){
       const calendar=investigationCalendarScope(args,readDomain);
       if(calendar)calendarScopes.push(calendar);
     }
