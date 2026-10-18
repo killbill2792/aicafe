@@ -1949,6 +1949,8 @@
     "estimated": "Some source values include estimates.",
     "unavailable": "I could not complete that investigation reliably. Please try again; your business records were not changed.",
     "budget": "I reached the limit for this investigation. I can continue with the remaining part in a follow-up; no business changes were made.",
+    "unverifiedWarning": "I could not confirm this against your café's records in time. Treat the numbers and dates below as unchecked.",
+    "unverifiedValue": "[unchecked value]",
     "externalUnverified": "Unverified public source",
     "financialUnavailable": "Financial amounts are unavailable in this view; the scheduling details remain usable.",
     "factAmount": "Amount",

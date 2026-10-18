@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {observationDisplay,renderInvestigationAnswer,type Observation} from "./evidence";
+import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,type Observation} from "./evidence";
 import type {InvestigationAnswer} from "./protocol";
 
 const ref=(id:string)=>({source:"cafe_state" as const,identifier:id,asOf:"2026-10-18"});
@@ -83,5 +83,92 @@ describe("renderInvestigationAnswer boxed facts",()=>{
     const rendered=renderInvestigationAnswer(answer(paragraphs),observations,"en");
     const boxes=rendered!.blocks.filter(b=>b.type==="metric"||b.type==="percent");
     expect(boxes).toHaveLength(4);
+  });
+});
+
+describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected but genuinely cited answer)",()=>{
+  it("never rescues an evidence answer that also wrote a stray raw number outside any placeholder",()=>{
+    // The independent review the caller runs on this text is semantic, not
+    // a deterministic guarantee that a literal number traces to real data --
+    // a model-typed "2" (or a fabricated "$999") could read as perfectly
+    // plausible to that reviewer while being entirely unverified. Only text
+    // with zero numeric/currency/URL content left after stripping every
+    // placeholder is ever eligible, exactly like the strict renderer.
+    const o=observation("r1","priceCents",525);
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The listed price is {{r1:value.priceCents}} for 2 drinks.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues an advice paragraph, which carries no evidence requirement at all",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"advice",text:"I have secretly published the schedule.",citations:[]},
+    ]),[],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues an evidence paragraph citing an observation that does not exist",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r9:value.priceCents}}.",citations:["r9"]},
+    ]),[],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues an evidence paragraph citing an unavailable observation",()=>{
+    const o=observation("r1","priceCents",525,{status:"unavailable"});
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues a clarification paragraph, since the model's self-reported kind is not proof it is really just a question",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"clarification",text:"Which remaining option should I investigate?",citations:[]},
+    ]),[],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues a false claim mislabeled as a clarification, where only the kind differs from the advice case",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"clarification",text:"I have published 2 schedules.",citations:[]},
+    ]),[],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues an answer where only some paragraphs are cited evidence",()=>{
+    const o=observation("r1","priceCents",525);
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+      {kind:"advice",text:"Consider reviewing pricing periodically.",citations:[]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues a token whose internal grammar doesn't match, instead of leaking it raw",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value[0].priceCents}}.",citations:["r1"]},
+    ]),[observation("r1","priceCents",525)],"en");
+    // A malformed token is still stripped (any double-brace span, not only
+    // the valid grammar), so the owner never sees literal "{{...}}" syntax.
+    expect(rescued).toEqual({text:"The price is [unchecked value].",citedIds:["r1"]});
+  });
+  it("rejects the whole rescue if an unbalanced brace remains after stripping",()=>{
+    const o=observation("r1","priceCents",525);
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}} and a stray } brace.",citations:["r1"]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
+  });
+});
+
+describe("citationCautionWarnings (shared between the grounded and rescued reply paths)",()=>{
+  it("adds the estimated-inputs caution when any cited observation has estimated inputs",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:[],estimatedInputs:["wage"],staleInputs:[]}});
+    const warnings=citationCautionWarnings([o],"en");
+    expect(warnings).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_ESTIMATED"}));
+  });
+  it("adds the monetary-unavailable caution when any cited observation is missing monetary fields",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:["monetary_fields_unavailable"],estimatedInputs:[],staleInputs:[]}});
+    const warnings=citationCautionWarnings([o],"en");
+    expect(warnings).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE"}));
+  });
+  it("adds no cautions for an observation with none of the flagged qualities",()=>{
+    const o=observation("r1","priceCents",525);
+    expect(citationCautionWarnings([o],"en")).toEqual([]);
   });
 });

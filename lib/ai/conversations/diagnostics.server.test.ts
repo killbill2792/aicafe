@@ -143,6 +143,17 @@ describe("Sanitized Supervisor production diagnostics",()=>{
     expect(third.answerRejectedReason).toBeUndefined();
     expect(JSON.stringify(third)).not.toContain("PRIVATE");
   });
+  it("carries a typed rescuedUnverified boolean on investigation_exhausted",()=>{
+    const lines:string[]=[];
+    const logger=createSupervisorDiagnosticLogger(line=>lines.push(line));
+    logger.emit({stage:"investigation_exhausted",exhaustionReason:"model_calls",
+      modelCallCount:7,toolCallCount:4,rescuedUnverified:true});
+    logger.emit({stage:"investigation_exhausted",exhaustionReason:"model_calls",
+      modelCallCount:7,toolCallCount:0,rescuedUnverified:false});
+    const [first,second]=lines.map(line=>JSON.parse(line));
+    expect(first.rescuedUnverified).toBe(true);
+    expect(second.rescuedUnverified).toBe(false);
+  });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",
       {httpStatus:200,providerStatus:"incomplete",round:2,attempt:1});

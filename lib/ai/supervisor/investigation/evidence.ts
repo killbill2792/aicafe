@@ -129,17 +129,81 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   }
   return {blocks,evidence:refs,adviceOnly};
 }
-export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
-  const rendered=renderInvestigationAnswer(answer,observations,locale);
-  if(!rendered)return null;
+/** Last-resort text for when the investigation is about to give up with a
+ * genuine model answer in hand that merely failed our mechanical display-
+ * token formatting gate -- never thrown away silently just because the
+ * model wrote `{{r1:value[0].priceCents}}` (a plausible alternate syntax)
+ * instead of the one exact placeholder grammar the strict renderer accepts.
+ * Strips every double-brace span outright (we have no validated display
+ * value to trust there, so it must never reach the owner as literal
+ * syntax), then rejects the whole candidate if any digit, currency/percent
+ * symbol or URL remains anywhere in the surrounding prose: the independent
+ * review the caller still runs is a semantic "is this plausible" check, not
+ * a deterministic guarantee that a literal the model typed itself (a
+ * misremembered "$5.25", a fabricated "$999") traces to real data, so a
+ * raw number of the model's own making can never survive here -- only a
+ * genuinely cited value that merely used the wrong token syntax, now masked
+ * entirely rather than shown raw either way.
+ * Deliberately narrower than a plain formatting check: "advice" and
+ * "clarification" paragraphs carry no evidence requirement at all, and the
+ * model's own self-reported kind is not proof of intent -- a false action
+ * claim ("I published 2 schedules") mislabeled as a clarification would
+ * otherwise sail through untouched by the no-raw-digit rule this function
+ * does not re-apply. Only a paragraph of kind "evidence", whose every
+ * citation resolves to a real, available observation, is ever eligible.
+ * A real citation only proves the id exists, not that the surrounding
+ * prose is actually supported by it or covers the owner's goal, so the
+ * caller must still run this candidate through the same independent review
+ * a grounded answer passes (never the one already failed by a negative
+ * verdict from this exact answer -- that finding must never be
+ * contradicted) before trusting it as a rescue. The returned citedIds let
+ * the caller reapply the same publication-time
+ * authorization/snapshot check the fully grounded path uses, since this
+ * text can still describe real café data. */
+export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):
+  {text:string;citedIds:string[]}|null{
+  const byId=new Map(observations.map(o=>[o.id,o]));
+  const citedIds=new Set<string>();
+  for(const paragraph of answer.paragraphs){
+    if(paragraph.kind!=="evidence")return null;
+    if(!paragraph.citations.length)return null;
+    for(const id of paragraph.citations){
+      const observation=byId.get(id);
+      if(!observation||observation.result.status==="unavailable")return null;
+      citedIds.add(id);
+    }
+  }
   const labels=investigationLabels(locale);
-  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
-  const pure=cited.length>0&&cited.every(o=>o.calculation&&!o.reference);
-  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
-  const warnings:SupervisorReplyBlock[]=pure?[{type:"warning",code:"P3_CONDITIONAL",text:labels.conditional}]:
-    rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning",code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
-      [{type:"warning",code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}];
-  if(cited.some(o=>o.reference?.source==="unverified_external"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+  const text=answer.paragraphs
+    // Any double-brace span, not only one matching the valid {{rN:path}}
+    // grammar: a malformed or alternate-syntax token (e.g. a stray bracket
+    // in the path) must never survive as literal implementation syntax in
+    // owner-facing text just because it didn't match the strict pattern.
+    .map(p=>clean(p.text.replace(/\{\{[^{}]*\}\}/gu,labels.unverifiedValue)))
+    .filter(Boolean).join(" ");
+  // The independent review the caller runs on this text is a semantic
+  // check ("is this supported and complete"), never a deterministic
+  // guarantee that every literal number/date/URL traces to validated data
+  // -- a model-authored "$999" sitting outside any placeholder could read
+  // as perfectly plausible and "supported" to that reviewer while tracing
+  // to nothing real. Reject the whole rescue, exactly as the strict
+  // renderer would, if anything numeric/currency/URL-like (or an
+  // unresolved/unbalanced brace) remains after stripping every token.
+  if(/[\p{N}$€£¥%{}]|https?:\/\/|www\./iu.test(text))return null;
+  const cleaned=clean(text);
+  return cleaned?{text:cleaned.slice(0,1100),citedIds:[...citedIds]}:null;
+}
+/** Mandatory per-citation cautions -- unverified public research, monetary
+ * unavailability, estimated inputs, and any registered source's own
+ * caution -- that must survive on EVERY reply citing these observations,
+ * not only the fully grounded path. Shared with the unverified-answer
+ * rescue so a citation to, say, a labor-law-caveated schedule read never
+ * loses that caveat just because the surrounding prose failed rendering. */
+export function citationCautionWarnings(cited:readonly Observation[],locale:Locale):SupervisorReplyBlock[]{
+  const labels=investigationLabels(locale);
+  const warnings:SupervisorReplyBlock[]=[];
+  if(cited.some(o=>o.reference?.source==="unverified_external"))
+    warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
   if(cited.some(o=>isRecord(o.result.quality)&&Array.isArray(o.result.quality.missingInputs)&&
     o.result.quality.missingInputs.includes("monetary_fields_unavailable")))
     warnings.push({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE",text:labels.financialUnavailable});
@@ -149,6 +213,21 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
   }))warnings.push({type:"warning",code:"SUPERVISOR_ESTIMATED",text:labels.estimated});
   for(const caution of new Set(cited.flatMap(o=>registeredReadCautions(o.result,locale))))
     warnings.push({type:"warning",code:"SUPERVISOR_SOURCE_CAUTION",text:caution});
+  return warnings;
+}
+export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
+  const rendered=renderInvestigationAnswer(answer,observations,locale);
+  if(!rendered)return null;
+  const labels=investigationLabels(locale);
+  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
+  const pure=cited.length>0&&cited.every(o=>o.calculation&&!o.reference);
+  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
+  const warnings:SupervisorReplyBlock[]=[
+    ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:
+      rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning" as const,code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
+        [{type:"warning" as const,code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}]),
+    ...citationCautionWarnings(cited,locale),
+  ];
   const cards=cited.flatMap(o=>o.reference?presentInvestigatedTasks(o.sourceContract,o.result.value,o.reference,locale):[])
     .filter((card,i,all)=>card.type!=="task_card"||all.findIndex(c=>c.type==="task_card"&&c.taskId===card.taskId)===i).slice(0,3);
   return {intent:pure?"profitability":"unknown",status,evidence:rendered.evidence,blocks:[...warnings,...rendered.blocks,...cards]};
