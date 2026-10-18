@@ -63,6 +63,15 @@ describe("Menu pricing source basis",()=>{
     }));
     expect(basis(days).processingFeeBps).toBeNull();
   });
+  it("retains unrounded aggregate fee sums alongside the displayed bps",()=>{
+    const dates=Array.from({length:14},(_,i)=>({
+      ...day(i+1),netSalesCents:20000,cardFeesCents:601,
+    }));
+    const p=basis(dates);
+    expect(p.processingFeeBps).toBe(301);
+    expect(p.processingFeeNumeratorCents).toBe(8414);
+    expect(p.processingFeeDenominatorCents).toBe(280000);
+  });
   it("never treats the other 76 unimported days of a 90-day window as zero",()=>{
     const p=basis([day(1),day(2)]);
     expect(p).toMatchObject({coveredDays:2,monthlyDrinks:null,monthlyPayrollCents:null,
