@@ -250,7 +250,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
         feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
-          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"review_failed"});
+          modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
+          // A valid negative verdict (the reviewer actually judged the answer
+          // unsupported/incomplete) is a distinct signal from the review
+          // never having run at all (budget exhaustion or an unrecoverable
+          // malformed response) -- the latter must not be mistaken for the
+          // model repeatedly failing review when no reviewer ever weighed in.
+          answerRejectedReason:review&&!isToolCallSignal(review)?"review_failed":"review_unavailable"});
         continue;
       }
       // Reauthorize at publication time. A changed café or epoch invalidates the

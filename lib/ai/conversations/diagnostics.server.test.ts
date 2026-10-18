@@ -134,11 +134,14 @@ describe("Sanitized Supervisor production diagnostics",()=>{
     logger.emit({stage:"investigation_round",agent:"supervisor",modelCallCount:5,toolCallCount:3,
       answerRejectedReason:"render_failed"});
     logger.emit({stage:"investigation_round",agent:"supervisor",modelCallCount:6,toolCallCount:3,
+      answerRejectedReason:"review_unavailable"});
+    logger.emit({stage:"investigation_round",agent:"supervisor",modelCallCount:7,toolCallCount:3,
       answerRejectedReason:"PRIVATE not a real reason" as never});
-    const [first,second]=lines.map(line=>JSON.parse(line));
+    const [first,second,third]=lines.map(line=>JSON.parse(line));
     expect(first.answerRejectedReason).toBe("render_failed");
-    expect(second.answerRejectedReason).toBeUndefined();
-    expect(JSON.stringify(second)).not.toContain("PRIVATE");
+    expect(second.answerRejectedReason).toBe("review_unavailable");
+    expect(third.answerRejectedReason).toBeUndefined();
+    expect(JSON.stringify(third)).not.toContain("PRIVATE");
   });
   it("carries only sanitized typed provider status, stage and category",()=>{
     const error=new SupervisorStageError("provider_incomplete","provider_response",

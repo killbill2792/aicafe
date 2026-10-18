@@ -303,6 +303,21 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
       agent:"supervisor",answerRejectedReason:"review_failed"}));
   });
+  it("logs answerRejectedReason review_unavailable, not review_failed, when the review never produces a verdict",async()=>{
+    const malformed=()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")return malformed();
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      return response(answer([{kind:"advice",text:"Consider reviewing pricing periodically.",citations:[]}]));
+    });
+    const onDiagnostic=vi.fn();
+    await runSupervisorTurn({...base,text:"Any pricing advice?",onDiagnostic},transport);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
+      agent:"supervisor",answerRejectedReason:"review_unavailable"}));
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({answerRejectedReason:"review_failed"}));
+  });
 });
 
 it("resolves a scheduling pronoun from owner/thread scenario memory without demanding the name again",async()=>{
