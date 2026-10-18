@@ -147,6 +147,11 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
     previousMonthExpenseCategories:(priorExpenseResult.data??[])
       .map(row=>row.category_code),
     totalItemPrepSecondsInWindow,
+    asOfBusinessDate:todayDateStr,
+    // The current rollup does not persist an independent complete labor
+    // reporting interval including zero-work days. Never infer coverage
+    // from wages, sales, or tax estimates: keep payroll missing here so
+    // the owner must confirm an explicit what-if amount on this screen.
   });
   // Keep a zero placeholder solely for legacy numeric callers. The
   // accompanying explicit missing status MUST be checked before any
