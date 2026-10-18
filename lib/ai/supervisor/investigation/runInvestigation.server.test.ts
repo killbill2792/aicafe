@@ -400,6 +400,26 @@ it("starts finalizing while there is still time for a tool step plus two reviews
   }finally{now.mockRestore();}
 });
 
+it("recovers from a malformed late investigation step without stealing its independent final review",async()=>{
+  const invalid=Array.from({length:5},(_,i)=>read("unknown.test.capability."+i,{attempt:i}));
+  const inner=transportFor([...invalid,
+    answer([{kind:"advice",text:"The recorded sources are insufficient to give a validated price; confirm the correct product cost basis.",citations:[]}])]);
+  let steps=0,reviewed=false;
+  const transport=vi.fn(async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_investigation_review")reviewed=true;
+    if(body.text.format.name==="supervisor_investigation_step"&&++steps===6)
+      return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},
+        output:[{type:"message",content:[{type:"output_text",text:"bad json"}]}]}));
+    return inner(url,init);
+  });
+  const result=await runSupervisorTurn({...base,text:"Can you help review product pricing?"},transport);
+  expect(reviewed).toBe(true);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(result.usage.toolCallCount).toBe(0);
+});
+
 it("enforces a bounded investigation even when the model repeatedly chooses invalid tools",async()=>{
   const transport=vi.fn(async()=>response(read("execute_sql",{sql:"select 1"})));
   const result=await runSupervisorTurn({...base,text:"Investigate everything."},transport);
