@@ -14,6 +14,13 @@ describe("Menu transparent fully allocated pricing estimate", () => {
       cardFeePerDrinkCents:21,allocatedProfitCents:284,
       targetPriceCents:482,laborAllocation:"prep_time"});
   });
+  it("accepts fractional cents from a complete recipe and rounds only the final result",()=>{
+    const p=menuPricePreview({...base,ingredientCents:145.75});
+    expect(p.status).toBe("estimated");
+    expect(p.missing).not.toContain("ingredients");
+    expect(p.allocatedProfitCents).toBe(283);
+    expect(p.targetPriceCents).toBe(483);
+  });
   it("makes every missing cost visible rather than pretending it is zero",()=>{
     const p=menuPricePreview({...base,monthlyPayrollCents:null,monthlyDrinks:null,processingFeeBps:null});
     expect(p.status).toBe("missing");
