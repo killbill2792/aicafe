@@ -51,6 +51,25 @@ describe("Menu pricing source basis",()=>{
     expect(p.monthlyRunningCents).toBe(112000);
     expect(p.runningStatus).toBe("estimated");
   });
+  it("counts estimated expense rows and marks combined costs estimated",()=>{
+    const p=basis([],{recurring:[
+      {categoryCode:"rent",amountCents:120000,frequency:"monthly",estimated:false},
+      {categoryCode:"water",amountCents:10000,frequency:"monthly",estimated:false}],
+      expenses:[
+        {categoryCode:"rent",amountCents:75000,status:"actual"},
+        {categoryCode:"rent",amountCents:5000,status:"estimated"},
+        {categoryCode:"repairs",amountCents:18000,status:"estimated"}]});
+    // Rent expenses (80,000) replace scheduled rent (120,000).
+    // Estimated repairs remain included; water still uses its schedule.
+    expect(p.monthlyRunningCents).toBe(108000);
+    expect(p.runningStatus).toBe("estimated");
+  });
+  it("does not discard an estimated expense when no recurring cost exists",()=>{
+    const p=basis([],{expenses:[
+      {categoryCode:"other",amountCents:25000,status:"estimated"}]});
+    expect(p.monthlyRunningCents).toBe(25000);
+    expect(p.runningStatus).toBe("estimated");
+  });
   it("uses actual expenses alone when no recurring bill exists",()=>{
     const p=basis([],{expenses:[
       {categoryCode:"repairs",amountCents:8000,status:"actual"}]});
