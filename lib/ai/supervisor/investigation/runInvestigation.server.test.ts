@@ -121,6 +121,22 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(result.usage.toolCallCount).toBe(2);
   });
 
+  it("answers a named latte target-margin question from Alex's actual typed pricing engine",async()=>{
+    const transport=transportFor([
+      read("p3.alex.pricing.what_if.v1",{purpose:"pricing_simulate",
+        product:{exactName:"Iced Latte"},changes:[],targetIngredientMarginBps:700}),
+      answer([{kind:"evidence",
+        text:"The ingredient-only target selling price is {{r1:value.0.targetPriceCents}}. This excludes labor, card fees, rent and other overhead.",
+        citations:["r1"]}]),
+    ]);
+    const result=await runSupervisorTurn({...base,
+      text:"What should I charge for Iced Latte to target a seven percent ingredient margin?"},transport);
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("target selling price is $"))).toBe(true);
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("excludes labor"))).toBe(true);
+    expect(result.reply.evidence).toHaveLength(1);
+    expect(result.usage.modelCallCount).toBe(3); // Read, answer, independent review.
+  });
+
   it("carries the scenario through a pronoun-free follow-up and re-reads changed ingredient costs",async()=>{
     const scenario=(quantity:number)=>read("p3.alex.pricing.what_if.v1",{purpose:"pricing_simulate",product:{exactName:"Iced Latte"},
       changes:[{kind:"set_quantity",ingredientName:"Milk",quantity:{value:quantity,unit:"ml"}}]});
