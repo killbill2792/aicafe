@@ -114,7 +114,7 @@ export function menuPriceSourceBasis(input:{
       seen.add(d.businessDate);return true;
     }).sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
   };
-  if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(input.asOfBusinessDate))
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(input.asOfBusinessDate))
     throw new Error("A valid café-local as-of date is required");
   const end=input.asOfBusinessDate;
   const start=new Date(Date.parse(end+"T00:00:00Z")-27*86400000)
