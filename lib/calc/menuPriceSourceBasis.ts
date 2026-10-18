@@ -24,7 +24,7 @@ export type MenuPriceSourceBasis = {
   monthlyRunningCents: number | null;
   runningStatus: "recorded" | "estimated" | "missing";
   monthlyPayrollCents: number | null;
-  payrollStatus: "projected" | "missing";
+  payrollStatus: "projected" | "estimated" | "missing";
   monthlyDrinks: number | null;
   volumeStatus: "projected" | "missing";
   processingFeeBps: number | null;
@@ -78,7 +78,8 @@ export function menuPriceSourceBasis(input:{
     input.totalItemPrepSecondsInWindow>0
     ?Math.round(input.totalItemPrepSecondsInWindow*scale):null;
   return {monthlyRunningCents,runningStatus,monthlyPayrollCents,
-    payrollStatus:monthlyPayrollCents===null?"missing":"projected",
+    payrollStatus:monthlyPayrollCents===null?"missing":
+      days.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated",
     monthlyDrinks,volumeStatus:monthlyDrinks===null?"missing":"projected",
     processingFeeBps,feeStatus:processingFeeBps===null?"missing":
       feeSales.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
