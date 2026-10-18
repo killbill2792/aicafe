@@ -350,6 +350,56 @@ it("answers and independently reviews a five-operation investigation despite a m
   expect(transport).toHaveBeenCalledTimes(8);
 });
 
+it("does not charge malformed registered inputs that fail inside the registry",async()=>{
+  const transport=transportFor([
+    read("p3.menu.catalog.v1",{purpose:"not_allowed",ignored:"1"}),
+    read("p3.menu.catalog.v1",{purpose:"not_allowed",ignored:"2"}),
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"evidence",text:"The catalog includes {{r3:value.0.priceCents}} for the recorded latte.",citations:["r3"]}]),
+  ]);
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transport);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("preserves final answer and independent review when late public privacy gate has no attempt allowance",async()=>{
+  vi.mocked(researchEnabled).mockReturnValue(true);
+  const invalid=Array.from({length:5},(_,i)=>read("unknown.unregistered.capability."+i,{attempt:i}));
+  const steps=[...invalid,read("p3.public.research.v1",
+    {purpose:"public_market_research",query:"competitor cafe prices",ownerResearchClause:"Compare competitor cafe prices."}),
+    answer([{kind:"advice",text:"I cannot verify current competitor prices from the connected sources. Use a public menu comparison and verify the size.",citations:[]}])];
+  const transport=transportFor(steps);
+  const result=await runSupervisorTurn({...base,text:"Compare competitor cafe prices."},transport);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(transport).toHaveBeenCalledTimes(8);
+  expect(transport.mock.calls.filter(([,init])=>
+    JSON.parse(String(init.body)).text.format.name==="supervisor_public_query_review")).toHaveLength(0);
+  expect(researchPublicSources).not.toHaveBeenCalled();
+});
+
+it("starts finalizing while there is still time for a tool step plus two reviews",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const actions=[
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog lists the item at {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ];
+    const transport=transportFor(actions,(context,i)=>{
+      if(i===0)clock=realNow+27000; // 63 s remain (< 18 + 10 + 18 + 18).
+      if(i===1)expect(context.finalizeOnly).toBe(true);
+    });
+    const result=await runSupervisorTurn({...base,text:"What price is the latte?",},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
 it("enforces a bounded investigation even when the model repeatedly chooses invalid tools",async()=>{
   const transport=vi.fn(async()=>response(read("execute_sql",{sql:"select 1"})));
   const result=await runSupervisorTurn({...base,text:"Investigate everything."},transport);
