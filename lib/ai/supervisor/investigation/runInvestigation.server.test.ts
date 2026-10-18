@@ -320,6 +320,21 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:true}));
   });
+  it("preserves the public-research caution when rescuing an answer that cites an unverified external source",async()=>{
+    vi.mocked(researchEnabled).mockReturnValue(true);
+    vi.mocked(researchPublicSources).mockResolvedValue([{title:"Nearby café menu",url:"https://example.com/menu",
+      snippet:"Latte listed at $5",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
+    const badAnswer=answer([{kind:"evidence",
+      text:"This public menu is a lead: {{r1:value.0.url}}. It mentions 2 locations nearby.",citations:["r1"]}]);
+    const transport=transportFor([
+      read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices",ownerResearchClause:"nearby cafe menu prices"}),
+      badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
+    ]);
+    const result=await runSupervisorTurn({...base,text:"Research nearby cafe menu prices."},transport);
+    expect(result.reply.status).toBe("insufficient_evidence");
+    expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_UNVERIFIED")).toBe(true);
+    expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_PUBLIC_RESEARCH")).toBe(true);
+  });
   it("never rescues an unverified answer if the active tenant changed mid-turn",async()=>{
     auth.mockResolvedValueOnce({identity,tools:base.tools});
     auth.mockResolvedValue({identity:{...identity,businessId:"another-cafe"},tools:base.tools});

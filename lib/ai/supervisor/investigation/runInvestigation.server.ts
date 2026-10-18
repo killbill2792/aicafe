@@ -9,7 +9,7 @@ import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.
 import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
-import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
+import type {GroundedSupervisorReply,SupervisorReplyBlock} from "@/lib/ai/conversations/contracts";
 import {createP3ReadRegistry} from "../p3/sourceRegistry.server";
 import {projectP1Evidence} from "../p3/operandProjection.server";
 import {EXPRESSION_ID,planSchema} from "../p3/expression";
@@ -102,10 +102,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
-    if(rescue&&lastUnverifiedAnswer)return {reply:{intent:"unknown" as const,
-      status:"insufficient_evidence" as const,evidence:[],
-      blocks:[{type:"warning" as const,code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
-        {type:"text" as const,text:lastUnverifiedAnswer.text}]},usage:{...usage}};
+    if(rescue&&lastUnverifiedAnswer){
+      const citedObservations=observations.filter(o=>lastUnverifiedAnswer!.citedIds.includes(o.id));
+      const blocks:SupervisorReplyBlock[]=[{type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning}];
+      // The unverified warning only speaks to numbers/dates against café
+      // records; a citation to an unverified public search result carries
+      // its own, different caution that must not be dropped just because
+      // this path flattened the answer to plain text.
+      if(citedObservations.some(o=>o.reference?.source==="unverified_external"))
+        blocks.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+      blocks.push({type:"text",text:lastUnverifiedAnswer.text});
+      return {reply:{intent:"unknown" as const,status:"insufficient_evidence" as const,
+        evidence:[],blocks},usage:{...usage}};
+    }
     return {reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
       blocks:[{type:"warning" as const,code:budget?"SUPERVISOR_INVESTIGATION_LIMIT":"SUPERVISOR_INVESTIGATION_UNAVAILABLE",
         text:budget?labels.budget:labels.unavailable}]},usage:{...usage}};

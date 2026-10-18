@@ -136,13 +136,15 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
  * `{{rN:path}}` token outright (we have no validated display value to trust
  * there, so it must never reach the owner as literal syntax or as a raw
  * unverified number).
- * Deliberately narrower than a plain formatting check: an "advice" paragraph
- * carries no evidence requirement at all, so it is the one channel where the
- * model could assert something false (an action it never took) with nothing
- * to ground it -- that must still go through the full independent review,
- * never this safety net. Only evidence paragraphs whose every citation
- * resolves to a real, available observation, and clarification paragraphs
- * (a question, never a claim), are eligible. The caller must still treat
+ * Deliberately narrower than a plain formatting check: "advice" and
+ * "clarification" paragraphs carry no evidence requirement at all, and the
+ * model's own self-reported kind is not proof of intent -- a false action
+ * claim ("I published 2 schedules") mislabeled as a clarification would
+ * otherwise sail through untouched by the no-raw-digit rule this function
+ * does not re-apply. Only a paragraph of kind "evidence", whose every
+ * citation resolves to a real, available observation, is ever eligible;
+ * anything else must still go through the full independent review, never
+ * this safety net. The caller must still treat
  * this as unverified, not grounded: it is never called after an answer
  * reached the independent review -- a review's negative verdict is an
  * actual finding, not a formatting slip, and must never be rescued. The
@@ -154,14 +156,12 @@ export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:r
   const byId=new Map(observations.map(o=>[o.id,o]));
   const citedIds=new Set<string>();
   for(const paragraph of answer.paragraphs){
-    if(paragraph.kind==="advice")return null;
-    if(paragraph.kind==="evidence"){
-      if(!paragraph.citations.length)return null;
-      for(const id of paragraph.citations){
-        const observation=byId.get(id);
-        if(!observation||observation.result.status==="unavailable")return null;
-        citedIds.add(id);
-      }
+    if(paragraph.kind!=="evidence")return null;
+    if(!paragraph.citations.length)return null;
+    for(const id of paragraph.citations){
+      const observation=byId.get(id);
+      if(!observation||observation.result.status==="unavailable")return null;
+      citedIds.add(id);
     }
   }
   const labels=investigationLabels(locale);

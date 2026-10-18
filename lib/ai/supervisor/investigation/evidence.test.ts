@@ -113,11 +113,25 @@ describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected b
     ]),[o],"en");
     expect(rescued).toBeNull();
   });
-  it("rescues a clarification question, which asserts nothing about café state",()=>{
+  it("never rescues a clarification paragraph, since the model's self-reported kind is not proof it is really just a question",()=>{
     const rescued=renderUnverifiedAnswer(answer([
       {kind:"clarification",text:"Which remaining option should I investigate?",citations:[]},
     ]),[],"en");
-    expect(rescued).toEqual({text:"Which remaining option should I investigate?",citedIds:[]});
+    expect(rescued).toBeNull();
+  });
+  it("never rescues a false claim mislabeled as a clarification, where only the kind differs from the advice case",()=>{
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"clarification",text:"I have published 2 schedules.",citations:[]},
+    ]),[],"en");
+    expect(rescued).toBeNull();
+  });
+  it("never rescues an answer where only some paragraphs are cited evidence",()=>{
+    const o=observation("r1","priceCents",525);
+    const rescued=renderUnverifiedAnswer(answer([
+      {kind:"evidence",text:"The price is {{r1:value.priceCents}}.",citations:["r1"]},
+      {kind:"advice",text:"Consider reviewing pricing periodically.",citations:[]},
+    ]),[o],"en");
+    expect(rescued).toBeNull();
   });
   it("never rescues a token whose internal grammar doesn't match, instead of leaking it raw",()=>{
     const rescued=renderUnverifiedAnswer(answer([
