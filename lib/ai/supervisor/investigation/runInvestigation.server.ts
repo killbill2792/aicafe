@@ -103,8 +103,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // independent evidence/completeness review. Five successful operations,
     // bad model choices and retried provider output must all terminate in the
     // same reviewed answer path rather than another open-ended tool request.
+    // An exploratory step itself may consume TWO attempts on malformed output.
+    // Start finalization with three slots left, or that retry can steal the
+    // model slot needed for independent publication review.
     const forceFinal=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
-      usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2;
+      usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-3;
     const requestContext={ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
