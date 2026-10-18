@@ -348,7 +348,7 @@ it("reserves terminal synthesis and independent review after a malformed step re
     if(name==="supervisor_investigation_review")return response({supported:true,complete:true});
     if(name==="supervisor_investigation_final_answer")return response({
       paragraphs:[{kind:"advice",text:"Review the verified ingredient cost and the intended margin definition before proposing a selling price.",citations:[]}]});
-    if(first){first=false;return malformed();}
+    if(first){first=false;return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"not valid json"}]}]}));}
     // Use a distinct operation signature on every step so the model burns
     // through the executable limit before it volunteers an answer.
     return response(read("p3.menu.catalog.v1",query("menu.catalog",{attempt:requests.length})));
