@@ -72,6 +72,30 @@ describe("nested review budget reservation",()=>{
   });
 });
 
+describe("provider deadline attribution",()=>{
+  it("does not mistake an ordinary provider timeout for a capped selection window",async()=>{
+    vi.useFakeTimers();
+    try{
+      const transport=vi.fn(async()=>new Promise<Response>(()=>{}));
+      const usage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,
+        inputTokens:0,outputTokens:0});
+      const ordinary=requestInvestigation({name:"supervisor_investigation_step",
+        schema:z.strictObject({x:z.string()}),instructions:"",context:{},model:"gpt-6-luna",
+        apiKey:"k",transport,usage:usage(),deadline:Date.now()+INVESTIGATION_LIMITS.providerTimeoutMs+500,
+        selectionBudgetDeadline:true}).catch(e=>e);
+      await vi.advanceTimersByTimeAsync(INVESTIGATION_LIMITS.providerTimeoutMs+1);
+      expect(await ordinary).toMatchObject({category:"provider_timeout",providerErrorCode:undefined});
+      const capped=requestInvestigation({name:"supervisor_investigation_step",
+        schema:z.strictObject({x:z.string()}),instructions:"",context:{},model:"gpt-6-luna",
+        apiKey:"k",transport,usage:usage(),deadline:Date.now()+2500,
+        selectionBudgetDeadline:true}).catch(e=>e);
+      await vi.advanceTimersByTimeAsync(2501);
+      expect(await capped).toMatchObject({category:"provider_timeout",
+        providerErrorCode:"investigation_selection_deadline"});
+    }finally{vi.useRealTimers();}
+  });
+});
+
 describe("requestInvestigation invalid-payload sub-reasons",()=>{
   const baseUsage=()=>({model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0});
   const schema=z.strictObject({x:z.string().min(2)});
