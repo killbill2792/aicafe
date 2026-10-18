@@ -100,7 +100,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
   const period=basis.oldestDate&&basis.latestDate?t("priceBasisWindow",{
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
   }):t("priceBasisNoHistory");
-  return <details open={estimate.status==="missing"} className="mt-3 rounded-2xl border border-line bg-paper p-3.5">
+  return <details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-3 rounded-2xl border border-line bg-paper p-3.5">
     <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
       {t("priceBasisTitle")}
     </summary>
