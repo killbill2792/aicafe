@@ -493,7 +493,7 @@
     "purchaseQuantity": "كمية العبوة",
     "purchaseUnit": "وحدة العبوة",
     "completePurchaseCost": "أدخل سعر شراء وكمية عبوة صالحين، أو اترك الحقلين فارغين.",
-            "priceBasisTargetDefault": "يستخدم الحساب هامش AI CAFE الافتراضي 15%، وليس هدف ربح أكدته أنت.",
+            "priceBasisTargetDefault": "يستخدم الحساب هامش AI CAFE الافتراضي {margin}%، وليس هدف ربح أكدته أنت.",
     "priceBasisPayrollWindow": "يعتمد تقدير الرواتب على {days} يوم عمل مسجل بشكل مستقل من {from} إلى {to}.",
     "priceBasisTitle": "تقدير التكلفة الكاملة · الأرقام المستخدمة",
     "priceBasisHelp": "نستخدم المصروفات المحفوظة والمبيعات السابقة المتاحة. راجع الأرقام وأكد أي تغييرات لعرض تقدير جديد.",
