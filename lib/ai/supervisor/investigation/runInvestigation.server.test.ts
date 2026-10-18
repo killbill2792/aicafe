@@ -1225,6 +1225,29 @@ it("never lets a later round with strictly MORE unresolved claim issues overwrit
   expect(JSON.stringify(result.reply.blocks)).not.toContain("utilities might add");
 });
 
+it("marks the reply insufficient_evidence, not partial, when the only surviving content narrates an unavailable read with no reference to show (Codex finding)",async()=>{
+  // A real P1 read that comes back unavailable gets an observation id (r1)
+  // but, per production code, NO reference (only a successful read earns
+  // one). An evidence-kind paragraph that cites r1 purely to NARRATE the
+  // gap (no {{r1:...}} token pulling a value out of it) is fine per §2 and
+  // survives rendering -- but contributes nothing to `evidence`, since
+  // there is no reference to add. The reply must come out insufficient_evidence
+  // (nothing real backs it), not partial with zero evidence, which
+  // validateGroundedReply's final gate has no allowlist for and would
+  // otherwise reject outright.
+  p1.mockImplementationOnce(async()=>{
+    const unavailable={status:"unavailable" as const,value:null,reason:"unsupported_period"};
+    return unavailable as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transportFor([
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"evidence",text:"That source is currently unavailable, so I can't confirm the recorded price.",citations:["r1"]}]),
+  ]));
+  expect(result.reply.evidence).toEqual([]);
+  expect(result.reply.status).toBe("insufficient_evidence");
+  expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+});
+
 describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
   function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
     const result={id:"test.read",status:"verified",value};

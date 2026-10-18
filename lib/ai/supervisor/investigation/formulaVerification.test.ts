@@ -33,9 +33,9 @@ describe("verifyFormulaEntry -- owner-quoted sources",()=>{
 });
 
 describe("verifyFormulaEntry -- observation-pointer sources",()=>{
-  it("verifies a formula whose input resolves to a real observation's recorded field",()=>{
+  it("verifies a formula whose input resolves to a real observation's recorded field, normalized to dollars",()=>{
     const o=observation("r1","priceCents",525);
-    const result=verifyFormulaEntry(entry({formula:"priceCents / 100",claim:"5.25",
+    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"5.25",
       variables:{priceCents:{value:525,source:"r1:value.priceCents"}}}),"",[o],"en");
     expect(result).toEqual({ok:true,value:5.25});
   });
@@ -97,7 +97,7 @@ describe("verifyFormulaEntry -- locale-aware decimal separator (Codex finding)",
   });
   it("reads the model's own claim text in the same locale, even for a pointer-sourced (locale-independent) value",()=>{
     const o=observation("r1","priceCents",525);
-    const result=verifyFormulaEntry(entry({formula:"priceCents / 100",claim:"5,25",
+    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"5,25",
       variables:{priceCents:{value:525,source:"r1:value.priceCents"}}}),"",[o],"es");
     expect(result).toEqual({ok:true,value:5.25});
   });
@@ -141,6 +141,46 @@ describe("verifyFormulaEntry -- unit-aware verification (Codex finding #1)",()=>
       variables:{a:{value:10,source:"r1:value.quantitySoldLast28Days"},
         b:{value:525,source:"r2:value.priceCents"}}}),"",[count,price],"en");
     expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+});
+
+describe("verifyFormulaEntry -- money/percent pointer values normalized to human scale before combining (Codex finding #2)",()=>{
+  it("correctly sums a raw-cents price pointer with a dollar-scale owner quote",()=>{
+    const price=observation("r1","priceCents",300);
+    const result=verifyFormulaEntry(entry({formula:"price + extra",claim:"$5",
+      variables:{price:{value:3,source:"r1:value.priceCents"},extra:{value:2,source:"$2"}}}),
+      "Supplies add another $2 on top.",[price],"en");
+    expect(result).toEqual({ok:true,value:5});
+  });
+  it("never lets the SAME naively-scale-confused total (raw cents + dollars, added without conversion) verify just because the model's claim agrees with it",()=>{
+    const price=observation("r1","priceCents",300);
+    const result=verifyFormulaEntry(entry({formula:"price + extra",claim:"$302",
+      variables:{price:{value:300,source:"r1:value.priceCents"},extra:{value:2,source:"$2"}}}),
+      "Supplies add another $2 on top.",[price],"en");
+    expect(result.ok).toBe(false);
+    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+  });
+  it("normalizes a basis-points rate pointer to percent-points before combining with an owner-quoted percent",()=>{
+    const rate=observation("r1","rateBasisPoints",1000);
+    const result=verifyFormulaEntry(entry({formula:"rate + extra",claim:"12%",
+      variables:{rate:{value:10,source:"r1:value.rateBasisPoints"},extra:{value:2,source:"2%"}}}),
+      "Add another 2% on top of the recorded rate.",[rate],"en");
+    expect(result).toEqual({ok:true,value:12});
+  });
+});
+
+describe("verifyFormulaEntry -- computed result unit must match an explicitly-decorated claim (Codex finding #1)",()=>{
+  it("rejects a scalar result (drinks-count plus shift-count) dressed up as a dollar claim",()=>{
+    const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"$5",
+      variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
+      "I covered 3 drinks and 2 shifts.",[],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+  it("still accepts the same scalar result when the claim is left undecorated (no fabrication risk -- the number itself is still independently recomputed)",()=>{
+    const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"5",
+      variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
+      "I covered 3 drinks and 2 shifts.",[],"en");
+    expect(result).toEqual({ok:true,value:5});
   });
 });
 

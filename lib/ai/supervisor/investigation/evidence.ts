@@ -432,7 +432,21 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
   // paragraph's citations must never contribute a task card or a caution.
   const cited=observations.filter(o=>rendered.citedIds.includes(o.id));
   const pure=(cited.length>0&&cited.every(o=>o.calculation&&!o.reference))||rendered.hasComputedClaim;
-  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
+  // Codex finding: a surviving evidence-kind paragraph that only NARRATES an
+  // unavailable lookup (no token pulling a value out of it -- always fine,
+  // per §2) earns no EvidenceReference at all (there is nothing real to
+  // cite), so `rendered.evidence` stays empty even though `adviceOnly` is
+  // false. The original check only ever produced "insufficient_evidence"
+  // when `adviceOnly` was true, so this case fell through to "partial" with
+  // zero evidence -- a shape validateGroundedReply's final gate correctly
+  // has no allowlist for (unlike the pure-advice/pure-P3-conditional shapes
+  // below, which are allowlisted there specifically because THEY always
+  // have zero evidence by construction) and so rejected outright, replacing
+  // an honest "I couldn't retrieve this" explanation with the generic
+  // fallback. "insufficient_evidence" is simply the accurate status
+  // whenever nothing real backs the reply, regardless of paragraph kind.
+  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":
+    !rendered.adviceOnly&&rendered.evidence.length===0?"insufficient_evidence":"partial";
   const warnings:SupervisorReplyBlock[]=[
     ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:
       rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning" as const,code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):

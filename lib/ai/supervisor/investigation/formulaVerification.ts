@@ -148,10 +148,26 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     if(!observation||observation.result.status==="unavailable")return null;
     const raw=observation.displayRaw?.[path];
     if(typeof raw!=="number")return null;
+    const kind=observation.displayKind?.[path];
+    // Money is stored as integer CENTS and percent as integer BASIS POINTS
+    // everywhere in this project (CLAUDE.md rule #1; observationDisplay's
+    // own raw[] convention) -- but an owner-quoted money/percent source is
+    // always written in human-scale dollars/percent-points in prose (the
+    // owner never types "300" meaning $3.00). Normalizing a pointer-sourced
+    // money/percent value to that SAME human scale here, at resolution,
+    // keeps every variable of a given unit on one consistent scale before
+    // arithmetic ever runs. Without this, "price + extra" could combine a
+    // raw-cents pointer (300) with a dollar-scale owner quote (2) under the
+    // same coarse "money" tag -- and since we always recompute from the
+    // SAME scale-confused inputs the model used, our own verification would
+    // silently agree with the model's wrong total (Codex finding).
+    if(kind==="money"||kind==="percent"){
+      if(!Number.isInteger(raw))return null;
+      return {value:rat(BigInt(raw),BigInt(100)),unit:kind};
+    }
     const value=numberToRat(raw);
     if(!value)return null;
-    const kind=observation.displayKind?.[path];
-    return {value,unit:kind==="money"?"money":kind==="percent"?"percent":"scalar"};
+    return {value,unit:"scalar"};
   }
   if(!source)return null;
   const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale);
@@ -183,6 +199,20 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   // even when the resulting NUMBER happens to match the claim.
   const unitCheck=evaluateFormulaUnits(entry.formula,units);
   if(!unitCheck.ok)return {ok:false,failure:{reason:"incompatible_units"}};
+  // Result-unit check (Codex finding): when the claim's own text is
+  // EXPLICITLY decorated as money or percent (a "$"/"%" the model itself
+  // chose to write), the computed formula's dimension must agree -- this is
+  // what catches a scalar result (e.g. a drinks-count plus a shift-count)
+  // dressed up as a money claim like "$5". Deliberately never the reverse: a
+  // claim written as a bare, undecorated number is NOT rejected just because
+  // the formula happens to compute a money/percent dimension -- the NUMBER
+  // itself is always independently recomputed and compared below regardless
+  // of this check, so an undecorated claim carries no fabrication risk here,
+  // and rejecting it would reintroduce the exact "AI dropped a symbol, so we
+  // failed a correct answer" failure mode this whole effort exists to fix.
+  const claimUnit=classifyOwnerUnit(entry.claim);
+  if(claimUnit!=="scalar"&&claimUnit!==unitCheck.unit)
+    return {ok:false,failure:{reason:"incompatible_units"}};
   const claimed=parseNumericSnippet(entry.claim,locale);
   if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};
   const computedNumber=ratToNumber(evaluated.value);
