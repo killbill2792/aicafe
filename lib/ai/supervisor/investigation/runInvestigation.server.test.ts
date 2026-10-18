@@ -9,6 +9,7 @@ import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSource
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
 import {researchEnabled,researchPublicSources} from "@/lib/ai/suppliers/research.server";
 import {runSupervisorTurn} from "@/lib/ai/conversations/runSupervisorTurn.server";
+import {capabilityToolName,CALCULATE_TOOL_NAME} from "./runInvestigation.server";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
 import {readers,purposePolicies,type SupportedId} from "@/lib/metrics/p1Catalog";
 import type {AtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
@@ -35,8 +36,12 @@ const q={level:"high",missingInputs:[],estimatedInputs:[],staleInputs:[]};
 const period={from:"2026-10-01",to:asOf};
 const query=(id:SupportedId,extras:object={})=>({id,version:1,purpose:purposePolicies[id][0],...extras});
 const response=(data:unknown)=>new Response(JSON.stringify({status:"completed",usage:{input_tokens:10,output_tokens:10},output:[{type:"message",content:[{type:"output_text",text:JSON.stringify(data)}]}]}));
-const read=(capabilityId:string,args:unknown)=>({action:"read",capabilityId,argumentsJson:JSON.stringify(args),responseJson:null});
-const answer=(paragraphs:InvestigationAnswer["paragraphs"])=>({action:"answer",capabilityId:null,argumentsJson:null,responseJson:JSON.stringify({paragraphs})});
+// Opaque markers; transportFor alone knows how to turn one into a native
+// tool-call response or a direct structured-answer response, exactly as
+// production distinguishes the two.
+const read=(capabilityId:string,args:unknown)=>({__tool:true as const,capabilityId,args});
+const calculate=(plan:unknown)=>({__tool:true as const,capabilityId:EXPRESSION_ID,args:plan});
+const answer=(paragraphs:InvestigationAnswer["paragraphs"])=>({paragraphs});
 function envelope(input:Record<string,unknown>,value:unknown){
   const id=input.id as SupportedId;
   return {id,version:1,query:input,status:"partial",unit:"typed_record",valueKind:"record",value,
@@ -44,8 +49,10 @@ function envelope(input:Record<string,unknown>,value:unknown){
       selectorContractId:id+".selector",selectorContractVersion:1,purpose:input.purpose,asOf,timezone:identity.timezone,sourceRevision:null},
     freshness:{asOf,capturedAt:null,stale:null}};
 }
+const toolCallResponse=(name:string,args:unknown,callId:string)=>new Response(JSON.stringify({status:"completed",
+  usage:{input_tokens:10,output_tokens:10},output:[{type:"function_call",call_id:callId,name,arguments:JSON.stringify(args)}]}));
 function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true){
-  let next=0;
+  let next=0,callSeq=0;
   return vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
     if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
@@ -53,7 +60,15 @@ function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,s
     if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
-    return response(steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]))});
+    const entry=steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]);
+    if(entry&&typeof entry==="object"&&(entry as {__tool?:boolean}).__tool){
+      const tool=entry as {capabilityId:string;args:unknown};
+      callSeq++;
+      const name=tool.capabilityId===EXPRESSION_ID?CALCULATE_TOOL_NAME:capabilityToolName(tool.capabilityId);
+      return toolCallResponse(name,tool.args,"call_"+callSeq);
+    }
+    return response(entry);
+  });
 }
 let key:string|undefined;
 beforeAll(()=>{key=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="mock-key";});
@@ -92,7 +107,7 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
       read("p3.menu.product_economics.v1",query("menu.product_economics",{productId:product})),
       read("p3.labor.employee_wages.v1",query("labor.employee_wages")),
       read("p3.labor.payroll_burden.v1",query("labor.payroll_burden")),
-      {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan),responseJson:null},
+      calculate(plan),
       answer([{kind:"evidence",text:"Under your assumptions, the incremental contribution is {{r5:value}}. This excludes other costs and does not predict demand.",citations:["r5"]}]),
     ],(context,step)=>{
       if(step===1)expect(JSON.stringify(context.observations)).toContain(product);
@@ -190,10 +205,10 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,revision:"102"}});
     const result=await runSupervisorTurn({...base,text:"What is the recorded Iced Latte price?"},transportFor([
       read("p3.menu.product_economics.v1",query("menu.product_economics",{productId:product})),
-      {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({
+      calculate({
         capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
         description:"Direct observed menu-price operand",nodes:[{op:"source",handle:`menu.product_economics:${product}:priceCents`}]
-      }),responseJson:null},
+      }),
       answer([{kind:"evidence",text:"The recorded price is {{r2:value}}.",citations:["r2"]}])
     ]));
     // The answer cites ONLY the expression, not the originating P1 read.
@@ -336,8 +351,11 @@ it("answers and independently reviews a five-operation investigation despite a m
           {type:"output_text",text:"invalid provider JSON"},
         ]}]}));
       if(stepAttempt===7){
-        expect(request.text.format.schema.properties.action.enum).toEqual(["answer"]);
-        expect(request.text.format.schema.properties.capabilityId.type).toBe("null");
+        // The final, finalize-only round offers no tools at all, so a native
+        // function call is structurally impossible; the model can only answer
+        // directly in the plain paragraphs shape.
+        expect(request.tools).toBeUndefined();
+        expect(request.text.format.schema.properties.paragraphs).toBeDefined();
       }
     }
     return inner(url,init);
@@ -446,8 +464,8 @@ it("does not count a byte-heavy but schema-valid expression rejected before simu
   expect(JSON.stringify(plan("a")).length).toBeLessThan(8000);
   expect(Buffer.byteLength(JSON.stringify(plan("a")))).toBeGreaterThan(10000);
   const result=await runSupervisorTurn({...base,text:"Compare a hypothetical quantity of 1."},transportFor([
-    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("a")),responseJson:null},
-    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify(plan("b")),responseJson:null},
+    calculate(plan("a")),
+    calculate(plan("b")),
     answer([{kind:"advice",text:"The proposed calculation exceeded the available source contract, so I cannot treat it as a verified business result.",citations:[]}]),
   ]));
   expect(result.usage.toolCallCount).toBe(0);
@@ -628,8 +646,8 @@ it("derives a new aggregate-to-expression analysis across arbitrary wage paramet
     read("p3.labor.employee_wages.v1",query("labor.employee_wages")),
     read("p3.platform.dataset.analysis.v1",{purpose:"dataset_analysis",readId:"r1",operation:"sum",field:"defaultHourlyWageCents",groupBy:null,filters}),
     read("p3.platform.dataset.analysis.v1",{purpose:"dataset_analysis",readId:"r1",operation:"count",field:null,groupBy:null,filters}),
-    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
-      description:"Recorded hourly rate mean, excluding salary conversion",nodes:[{op:"source",handle:"dataset:r2:0"},{op:"source",handle:"dataset:r3:0"},{op:"divide"}]}),responseJson:null},
+    calculate({capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",
+      description:"Recorded hourly rate mean, excluding salary conversion",nodes:[{op:"source",handle:"dataset:r2:0"},{op:"source",handle:"dataset:r3:0"},{op:"divide"}]}),
     answer([{kind:"evidence",text:"The recorded hourly-rate average is {{r4:value}}. Salaried workers are excluded; this is not total loaded labor cost.",citations:["r4"]}])
   ]));
   expect(JSON.stringify(result.reply.blocks)).toContain("$21.00");
@@ -670,9 +688,9 @@ it.each(["EUR","AED"])("rejects source-free money relabeling for a %s cafe",asyn
   auth.mockResolvedValue({identity:{...identity,currency},tools:base.tools});
   atomic.mockResolvedValue({status:"available",snapshot:{...snapshot,currency}});
   const transport=transportFor([
-    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({capabilityId:EXPRESSION_ID,
+    calculate({capabilityId:EXPRESSION_ID,
       version:1,purpose:"no_external_sources",description:"Owner hypothetical product price",
-      nodes:[{op:"hypothetical",label:"product price",quotedNumber:"5",value:500,unit:"USD_cents"}]}),responseJson:null},
+      nodes:[{op:"hypothetical",label:"product price",quotedNumber:"5",value:500,unit:"USD_cents"}]}),
     answer([{kind:"advice",text:"This calculator does not support your cafe currency yet. I can explain the pricing approach without relabeling local amounts as dollars.",citations:[]}])],
     (context,step)=>{if(step===1){
       expect(context.observations).toEqual([]);
@@ -894,7 +912,7 @@ it("preserves public provenance through a dataset count and a subsequent express
   const result=await runSupervisorTurn({...base,text:"Research nearby supplier prices and count the returned public leads."},transportFor([
     read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby supplier prices",ownerResearchClause:"Research nearby supplier prices and count the returned public leads."}),
     read("p3.platform.dataset.analysis.v1",{purpose:"dataset_analysis",readId:"r1",operation:"count",field:null,groupBy:null,filters:[]}),
-    {action:"calculate",capabilityId:EXPRESSION_ID,argumentsJson:JSON.stringify({capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Count of returned public leads, not verified suppliers",nodes:[{op:"source",handle:"dataset:r2:0"}]}),responseJson:null},
+    calculate({capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Count of returned public leads, not verified suppliers",nodes:[{op:"source",handle:"dataset:r2:0"}]}),
     answer([{kind:"evidence",text:"The returned public-lead count is {{r3:value}}. These leads are unverified external results, not stock or confirmed supplier records.",citations:["r3"]}])]));
   expect(result.reply.evidence).toHaveLength(1);expect(result.reply.evidence[0].source).toBe("unverified_external");
   expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH"}));

@@ -1,11 +1,40 @@
 import "server-only";
 import {z} from "zod";
 import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
-import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA,INVESTIGATION_FINAL_STEP_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
+import {buildInvestigationRequest} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
 export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Response>;
 export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount:number;inputTokens:number;outputTokens:number};
+/** A capability exposed to the model as a real OpenAI function-calling tool,
+ * instead of a hand-rolled JSON envelope describing another JSON blob. */
+export type ToolDef={name:string;description:string;parameters:unknown};
+/** The model requested a registered tool by name/arguments through native
+ * function calling, rather than answering directly. */
+export type ToolCallSignal={type:"tool_call";name:string;arguments:string;callId:string};
+export function isToolCallSignal(v:unknown):v is ToolCallSignal{
+  return !!v&&typeof v==="object"&&(v as {type?:unknown}).type==="tool_call"&&
+    typeof (v as {name?:unknown}).name==="string"&&
+    typeof (v as {arguments?:unknown}).arguments==="string"&&
+    typeof (v as {callId?:unknown}).callId==="string";
+}
+/** OpenAI's structured-output strict mode only supports a limited JSON Schema
+ * subset. Length/range/pattern constraints are still enforced by our own zod
+ * parse after decoding; stripping them here only avoids a request-build
+ * rejection for schemas (like the free-form investigation answer) that carry
+ * them, exactly like the server already double-checks every other schema. */
+function stripUnsupportedJsonSchemaKeywords(node:unknown):unknown{
+  if(Array.isArray(node))return node.map(stripUnsupportedJsonSchemaKeywords);
+  if(!node||typeof node!=="object")return node;
+  const unsupported=new Set(["minLength","maxLength","pattern","minItems","maxItems",
+    "minimum","maximum","exclusiveMinimum","exclusiveMaximum","multipleOf","format"]);
+  const out:Record<string,unknown>={};
+  for(const [key,value] of Object.entries(node as Record<string,unknown>)){
+    if(unsupported.has(key))continue;
+    out[key]=stripUnsupportedJsonSchemaKeywords(value);
+  }
+  return out;
+}
 /** Accept the first complete, schema-valid step even when a provider puts a
  * duplicate answer or trailing commentary inside the SAME output_text part.
  * Checking only complete part-prefixes misses this production failure shape.
@@ -37,11 +66,24 @@ function recoverFirstStep<T>(rawText:string,schema:z.ZodType<T>):T|undefined{
   }
   return undefined;
 }
-export async function requestInvestigation<T>(input:{name:string;schema:z.ZodType<T>;
-  instructions:string;context:unknown;answerOnly?:boolean;reserveModelCalls?:number;
+type RequestInvestigationInput<T>={name:string;schema:z.ZodType<T>;
+  instructions:string;context:unknown;reserveModelCalls?:number;
   selectionBudgetDeadline?:boolean;model:string;apiKey:string;transport:InvestigationTransport;
   usage:InvestigationUsage;deadline:number;onUsage?:(usage:InvestigationUsage)=>void;
-  onDiagnostic?:(event:SupervisorDiagnostic)=>void},attempt=1):Promise<T|null>{
+  onDiagnostic?:(event:SupervisorDiagnostic)=>void;tools?:readonly ToolDef[]};
+/** Returns a plain T for every existing (no-`tools`) caller, or a
+ * ToolCallSignal when the model used native function calling instead of
+ * answering directly. Callers that never pass `tools` can safely narrow the
+ * result with `!isToolCallSignal(result)`, since one can never occur there. */
+export async function requestInvestigation<T>(input:RequestInvestigationInput<T>,attempt=1):
+  Promise<T|ToolCallSignal|null>{
+  return requestInvestigationCore(input,attempt);
+}
+/** Plain (non-overloaded) implementation. Recursive self-calls (retry,
+ * model-access fallback) go through this name so overload resolution never
+ * has to reconstruct which overload a spread/rebuilt input object matches. */
+async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,attempt=1):
+  Promise<T|ToolCallSignal|null>{
   // Nested semantic gates (public-search privacy / calendar clarification) must
   // not spend the final answer and independent review's reserved model attempts.
   // This applies to a gate's own malformed-output retry as well as its first call.
@@ -70,13 +112,14 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // call's max_output_tokens cannot push the turn's total past it.
       const maxOutputTokens=Math.max(500,Math.min(6000,
         INVESTIGATION_LIMITS.totalOutputTokens-input.usage.outputTokens));
+      const jsonSchema=stripUnsupportedJsonSchemaKeywords(
+        z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"}));
       const response=await input.transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
         body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
-          instructions:input.instructions,context:input.context,maxOutputTokens,
-          schema:input.name==="supervisor_investigation_step"?
-            input.answerOnly?INVESTIGATION_FINAL_STEP_JSON_SCHEMA:INVESTIGATION_STEP_JSON_SCHEMA:
-            z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})})),
+          instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
+          tools:input.tools?.map(t=>({name:t.name,description:t.description,
+            parameters:stripUnsupportedJsonSchemaKeywords(t.parameters)}))})),
       });
       if(!response.ok){
         const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
@@ -86,7 +129,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
           ["model_not_found","model_not_allowed","model_access_denied","model_not_available","model_not_accessible"].includes(code)){
           input.usage.model=fallback;
           clearTimeout(timeout);
-          return requestInvestigation({...input,model:fallback});
+          return requestInvestigationCore({...input,model:fallback});
         }
         throw new SupervisorStageError("provider_http","provider_response",
           {httpStatus:response.status,providerErrorCode:code||undefined});
@@ -116,8 +159,31 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // position is a numeric offset; none of this is ever model-generated
       // content, café data or owner text.
       const outputIsArray=Array.isArray(raw.output);
-      const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>}>=
-        outputIsArray?raw.output:[];
+      const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>;
+        name?:unknown;arguments?:unknown;call_id?:unknown}>=outputIsArray?raw.output:[];
+      // Native function calling: a real tool request is its own structured
+      // output item, never free text we have to parse/recover. Exactly one
+      // call is supported today; more than one is treated as not-yet-handled
+      // (parallel calls are a separate, later change) and retried like any
+      // other malformed-output case.
+      if(input.tools&&input.tools.length){
+        const functionCalls=outputItems.filter(i=>i?.type==="function_call");
+        if(functionCalls.length>1)
+          throw new SupervisorStageError("provider_invalid_payload","provider_response",
+            {invalidPayloadReason:"multiple_function_calls",
+              outputItemTypes:outputItems.map(i=>i?.type) as string[]});
+        if(functionCalls.length===1){
+          const call=functionCalls[0];
+          if(typeof call.name!=="string"||typeof call.arguments!=="string"||
+            typeof call.call_id!=="string")
+            throw new SupervisorStageError("provider_invalid_payload","provider_response",
+              {invalidPayloadReason:"malformed_function_call",
+                outputItemTypes:outputItems.map(i=>i?.type) as string[]});
+          const signal:ToolCallSignal={type:"tool_call",name:call.name,
+            arguments:call.arguments,callId:call.call_id};
+          return signal;
+        }
+      }
       const messageParts=outputItems.filter(i=>i?.type==="message").flatMap(i=>i.content??[]);
       const texts=messageParts.filter((p):p is {type:unknown;text:string}=>
         p?.type==="output_text"&&typeof p.text==="string").map(p=>p.text);
@@ -232,7 +298,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
     // degrades to a graceful "unavailable" reply (handled by every call site's
     // existing null-check) instead of crashing the whole owner turn.
     if(classified.category==="provider_invalid_payload"||classified.category==="provider_incomplete"){
-      if(attempt<2)return requestInvestigation(input,attempt+1);
+      if(attempt<2)return requestInvestigationCore(input,attempt+1);
       return null;
     }
     throw classified;

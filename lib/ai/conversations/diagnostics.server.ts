@@ -33,7 +33,7 @@ export type SupervisorDiagnostic = {
   groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence";
   legacyFallbackReason?:"p3_not_completed"|"p3_failed";
   requestName?:string;
-  invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
+  invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch"|"multiple_function_calls"|"malformed_function_call";
   schemaIssuePath?:string;
   schemaIssueCode?:string;
   schemaIssueCount?:number;
@@ -115,7 +115,7 @@ export class SupervisorStageError extends Error {
   readonly round?:number;
   readonly attempt?:number;
   readonly timeout:boolean;
-  readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch";
+  readonly invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch"|"multiple_function_calls"|"malformed_function_call";
   readonly schemaIssuePath?:string;
   readonly schemaIssueCode?:string;
   readonly schemaIssueCount?:number;
@@ -135,7 +135,7 @@ export class SupervisorStageError extends Error {
     this.providerErrorCode=safeProviderIdentifier(meta.providerErrorCode);
     this.providerRequestId=safeProviderIdentifier(meta.providerRequestId);
     this.round=meta.round;this.attempt=meta.attempt;this.timeout=meta.timeout===true;
-    this.invalidPayloadReason=["wrong_text_shape","unparseable_json","schema_mismatch"]
+    this.invalidPayloadReason=["wrong_text_shape","unparseable_json","schema_mismatch","multiple_function_calls","malformed_function_call"]
       .includes(meta.invalidPayloadReason as string)?meta.invalidPayloadReason:undefined;
     this.schemaIssuePath=safeProviderIdentifier(meta.schemaIssuePath);
     this.schemaIssueCode=safeProviderIdentifier(meta.schemaIssueCode);
@@ -200,7 +200,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           {legacyFallbackReason:d.legacyFallbackReason}:{}),
         ...(d.requestName && (investigationRequestNames as readonly string[]).includes(d.requestName)?
           {requestName:d.requestName}:{}),
-        ...(d.invalidPayloadReason && ["wrong_text_shape","unparseable_json","schema_mismatch"]
+        ...(d.invalidPayloadReason && ["wrong_text_shape","unparseable_json","schema_mismatch","multiple_function_calls","malformed_function_call"]
           .includes(d.invalidPayloadReason)?{invalidPayloadReason:d.invalidPayloadReason}:{}),
         ...(safeProviderIdentifier(d.schemaIssuePath)?{schemaIssuePath:safeProviderIdentifier(d.schemaIssuePath)}:{}),
         ...(safeProviderIdentifier(d.schemaIssueCode)?{schemaIssueCode:safeProviderIdentifier(d.schemaIssueCode)}:{}),

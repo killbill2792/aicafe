@@ -22,8 +22,9 @@ import {buildRecordsRegistration,recordCollections,RECORDS_ID} from "./records.s
 import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
   renderInvestigationAnswer,type Observation,type Locale} from "./evidence";
-import {stepSchema,answerSchema,reviewSchema,INVESTIGATION_LIMITS} from "./protocol";
-import {requestInvestigation,type InvestigationTransport,type InvestigationUsage} from "./model.server";
+import {answerSchema,reviewSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
+import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
+  type ToolDef,type ToolCallSignal} from "./model.server";
 import {SupervisorStageError,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
@@ -36,6 +37,14 @@ function preview(v:unknown,depth=0):unknown{
   if(record(v))return Object.fromEntries(Object.entries(v).slice(0,50).map(([k,x])=>[k,preview(x,depth+1)]));
   return typeof v==="string"?v.slice(0,600):v;
 }
+/** Native function-calling tool names must match OpenAI's ^[a-zA-Z0-9_-]+$
+ * (max 64 chars); capability ids use dots/colons the API rejects in a tool
+ * name. Exported so tests build mock tool-call responses with the exact
+ * same mapping production uses, instead of a second hand-maintained copy. */
+export function capabilityToolName(capabilityId:string):string{
+  return capabilityId.replace(/[^a-zA-Z0-9_-]/g,"_").slice(0,64);
+}
+export const CALCULATE_TOOL_NAME="calculate";
 function calendar(asOf:string){
   const add=(n:number)=>new Date(Date.parse(asOf+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
   const monday=add(-((new Date(asOf+"T12:00:00Z").getUTCDay()+6)%7));
@@ -85,9 +94,26 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // timeout. Never borrow the answer/review's final 36 seconds.
         deadline:Math.min(deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
           Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
-      return checked?.safe===true;
+      return !!checked&&!isToolCallSignal(checked)&&checked.safe===true;
     })]);
   const manifest=registry.discover(scope);
+  // Native function-calling tools: one per discovered read capability, plus
+  // the registered expression calculator. toolNameToCapabilityId maps a
+  // tool call's name back to the real capability/calculate id; the model
+  // never sees or invents the dotted capability id directly in a tool name.
+  const toolNameToCapabilityId=new Map<string,string>(
+    manifest.map(m=>[capabilityToolName(m.id),m.id] as const));
+  toolNameToCapabilityId.set(CALCULATE_TOOL_NAME,EXPRESSION_ID);
+  const investigationTools:ToolDef[]=[
+    ...manifest.map(m=>({name:capabilityToolName(m.id),
+      description:m.purpose.slice(0,1000),parameters:m.inputJsonSchema})),
+    {name:CALCULATE_TOOL_NAME,
+      description:"Combine already-authorized operand handles (from authorizedOperands) using the "+
+        "registered expression engine's typed postfix nodes: source(handle), hypothetical, convert, "+
+        "add/subtract/multiply/divide/ratio/scenario_delta/compare/loaded_labor. Never business arithmetic "+
+        "outside this calculator.",
+      parameters:z.toJSONSchema(planSchema,{unrepresentable:"any",reused:"inline"})},
+  ];
   const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
   const attempted=new Set<string>();
   const calendarReviews=new Map<string,"applies"|"unrelated"|"ambiguous">();
@@ -134,12 +160,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // provider slot to review the answer before publishing.
     const selectionDeadline=finalizeOnly?deadline-INVESTIGATION_LIMITS.providerTimeoutMs:
       deadline-(timeNeededForAnotherOperation-INVESTIGATION_LIMITS.providerTimeoutMs);
-    let step:z.infer<typeof stepSchema>|null;
+    let step:InvestigationAnswer|ToolCallSignal|null;
     try {
-      step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
+      step=await requestInvestigation({name:"supervisor_investigation_step",schema:answerSchema,
       instructions:finalizeOnly?investigationInstructions+
         " This is the FINAL investigation step. Answer now from observations; explain any precise missing source or request a specific essential clarification. Do not choose another tool, invent facts or claim changes.":investigationInstructions,
-      answerOnly:finalizeOnly,context:{ownerRequest:input.text,locale:input.locale,
+      // Native function calling: the model either calls one of these registered
+      // tools (mapped back to a real capability below) or, with none offered
+      // in a finalize-only round, must answer directly in the shape above --
+      // never a second hand-written envelope describing which path it took.
+      tools:finalizeOnly?undefined:investigationTools,
+      context:{ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
@@ -179,19 +210,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       return failure();
     }
     feedback=null;
-    if(step.action==="answer"){
-      if(step.capabilityId!==null||step.argumentsJson!==null||!step.responseJson){feedback="Invalid answer envelope; use responseJson only.";continue;}
-      let raw:unknown;try{raw=JSON.parse(step.responseJson);}catch{feedback="Answer JSON could not be read.";continue;}
-      const answer=answerSchema.safeParse(raw);
-      if(!answer.success){feedback="Answer paragraphs did not match the typed contract.";continue;}
-      const rendered=renderInvestigationAnswer(answer.data,observations,input.locale);
-      const reply=investigationReply(answer.data,observations,input.locale);
+    if(!isToolCallSignal(step)){
+      // The model answered directly (no tool call) -- already schema-valid
+      // against answerSchema, with no second hand-written envelope around it.
+      const answer=step;
+      const rendered=renderInvestigationAnswer(answer,observations,input.locale);
+      const reply=investigationReply(answer,observations,input.locale);
       if(!rendered||!reply){feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";continue;}
       const review=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
         instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
-          proposedAnswer:answer.data,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
+          proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
-      if(!review?.supported||!review.complete){feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";continue;}
+      if(!review||isToolCallSignal(review)||!review.supported||!review.complete){feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";continue;}
       // Reauthorize at publication time. A changed café or epoch invalidates the
       // investigation; no data from the later snapshot is mixed with earlier reads.
       const latestOwner=await authorizedOwnerP1();
@@ -210,21 +240,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     if(finalizeOnly){feedback="The last available turn must answer with available evidence, not request another operation.";continue;}
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
-    let args:unknown;try{args=JSON.parse(step.argumentsJson??"");}catch{feedback="Tool arguments must be valid JSON.";continue;}
-    if(!step.capabilityId||step.responseJson!==null){feedback="Tool steps require a capability and argumentsJson, not a response.";continue;}
-    const signature=JSON.stringify([step.action,step.capabilityId,args]);
+    const capabilityId=toolNameToCapabilityId.get(step.name);
+    if(!capabilityId){feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;}
+    let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}
+    const signature=JSON.stringify([capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]);
     if(attempted.has(signature)){feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;}
     attempted.add(signature);
     let result:unknown;
     let calculation=false;
     let readDomain:string|undefined;
     let readDispatched=false;
-    if(step.action==="calculate"){
+    if(capabilityId===EXPRESSION_ID){
       if(identity.currency!=="USD"){
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
       }
       const plan=planSchema.safeParse(args);
-      if(step.capabilityId!==EXPRESSION_ID||!plan.success){feedback="Select the registered expression contract and its typed nodes.";continue;}
+      if(!plan.success){feedback="Select the registered expression contract and its typed nodes.";continue;}
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
@@ -240,7 +271,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result=checked.data;
       calculation=true;
     }else{
-      readDomain=manifest.find(m=>m.id===step.capabilityId)?.owner;
+      readDomain=manifest.find(m=>m.id===capabilityId)?.owner;
       if(!readDomain){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
@@ -254,11 +285,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             schema:z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])}),
             instructions:calendarContextReviewInstructions,
             context:{currentOwnerRequest:input.text,pendingOwnerStatement:pending,ownerStatements,
-              capability:manifest.find(m=>m.id===step.capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
+              capability:manifest.find(m=>m.id===capabilityId),savedCalendarScopes:memory?.calendarScopes??[]},
             apiKey:input.apiKey,model:input.model,transport,usage,
             deadline:deadline-INVESTIGATION_LIMITS.providerTimeoutMs*2-10000,
             reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
-          verdict=reviewed?.verdict??"ambiguous";calendarReviews.set(key,verdict);
+          verdict=(reviewed&&!isToolCallSignal(reviewed)?reviewed.verdict:undefined)??"ambiguous";
+          calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
           feedback="The failed-turn date correction could not be bound safely to this domain. Ask the specific unresolved calendar-context question, without choosing an old or unrelated period.";continue;
@@ -269,11 +301,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         id=>manifest.find(m=>m.id===id)?.owner)){
         feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
       }
-      const currencyPolicy=manifest.find(m=>m.id===step.capabilityId)!.currencyPolicy;
+      const currencyPolicy=manifest.find(m=>m.id===capabilityId)!.currencyPolicy;
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
         feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
-      result=await registry.invoke(scope,step.capabilityId,args,()=>{
+      result=await registry.invoke(scope,capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
         // Domain failures still consume a real operation; malformed inputs do not.
         readDispatched=true;
@@ -305,26 +337,26 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       handle=>typeof handle==="string"&&!handle.startsWith("dataset:"));
     const parentObservation=parents[0];
     const inheritedSource=parents.some(o=>o.reference?.source==="unverified_external")?"unverified_external":parentObservation?.reference?.source;
-    const observation:Observation={id,capabilityId:step.capabilityId,input:args,result,
+    const observation:Observation={id,capabilityId,input:args,result,
       sourceContract:parentObservation?.sourceContract??(typeof result.id==="string"?result.id:undefined),
-      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,step.capabilityId,result,inheritedSource):null,
+      reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,capabilityId,result,inheritedSource):null,
       requiresSnapshot:directSourceRequiresSnapshot||parents.some(o=>o.requiresSnapshot)||!calculation&&
-        manifest.find(m=>m.id===step.capabilityId)?.currencyPolicy!=="independent",
+        manifest.find(m=>m.id===capabilityId)?.currencyPolicy!=="independent",
       display:successful?observationDisplay(result,input.locale):{},calculation};
     if(calculation&&typeof result.value==="number"&&typeof result.unit==="string")
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);
     if(successful&&!calculation){
       const quality=record(result.quality)?result.quality:null;
       if(quality&&Array.isArray(quality.missingInputs)&&Array.isArray(quality.estimatedInputs)&&Array.isArray(quality.staleInputs)){
-        const parent=step.capabilityId===RECORDS_ID&&typeof result.sourceReadId==="string"
+        const parent=capabilityId===RECORDS_ID&&typeof result.sourceReadId==="string"
           ?datasets.get(result.sourceReadId):undefined;
-        const sourceId=parent?.sourceId??(typeof result.id==="string"?result.id:step.capabilityId);
+        const sourceId=parent?.sourceId??(typeof result.id==="string"?result.id:capabilityId);
         const dataset=datasetFor(sourceId,result.value,quality as {missingInputs:string[];estimatedInputs:string[];staleInputs:string[]});
         if(dataset){datasets.set(id,{sourceId,dataset,revision:null});observation.datasetFields=dataset.fields;}
       }
-      evidence.push({clause:input.text,capabilityId:step.capabilityId,status:result.status as "partial"|"verified"|"estimated",result,reason:null});
-      if(!step.capabilityId.startsWith("p3.platform.")&&!step.capabilityId.startsWith("p3.public."))
-        remembered.push({capabilityId:step.capabilityId,inputJson:JSON.stringify(args)});
+      evidence.push({clause:input.text,capabilityId,status:result.status as "partial"|"verified"|"estimated",result,reason:null});
+      if(!capabilityId.startsWith("p3.platform.")&&!capabilityId.startsWith("p3.public."))
+        remembered.push({capabilityId,inputJson:JSON.stringify(args)});
     }
     observations.push(observation);
   }
