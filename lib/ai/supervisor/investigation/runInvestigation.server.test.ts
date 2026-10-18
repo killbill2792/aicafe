@@ -51,6 +51,12 @@ function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,s
     if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
     if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
     if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
+    if(body.text.format.name==="supervisor_investigation_final_answer"){
+      inspect?.(JSON.parse(body.input[0].content),next);
+      const selected=steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]);
+      expect(selected).toMatchObject({action:"answer"});
+      return response(JSON.parse((selected as ReturnType<typeof answer>).responseJson!));
+    }
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
     return response(steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]))});
@@ -308,6 +314,67 @@ it("rejects wrong explicit periods before invoking the source reader",async()=>{
     read("p3.money.expense_entries.v1",query("money.expense_entries",{period:{from:"2026-10-02",to:"2026-10-02"}})),
     answer([{kind:"clarification",text:"I need to verify that date selection before presenting a total.",citations:[]}])]));
   expect(p1).not.toHaveBeenCalled();
+});
+
+it("finishes with a reviewed, useful answer instead of a limit after repeated tool choices",async()=>{
+  const requests:string[]=[];
+  const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    requests.push(body.text.format.name);
+    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
+    if(body.text.format.name==="supervisor_investigation_final_answer")return response({
+      paragraphs:[{kind:"clarification",text:"Which recorded cost should I use for this drink before recommending its price?",citations:[]}]});
+    // The model keeps requesting the SAME irrelevant read; the runtime rejects
+    // duplicate execution and reserves the answer/review attempts.
+    return response(read("p3.menu.catalog.v1",query("menu.catalog")));
+  });
+  const result=await runSupervisorTurn({...base,text:"What should I charge for an almond latte to reach my target margin?"},transport);
+  expect(result.reply.blocks).toContainEqual({type:"text",
+    text:"Which recorded cost should I use for this drink before recommending its price?"});
+  expect(result.reply.status).toBe("insufficient_evidence");
+  expect(result.reply.blocks.some(b=>b.type==="warning"&&b.code==="SUPERVISOR_INVESTIGATION_LIMIT")).toBe(false);
+  expect(requests).toContain("supervisor_investigation_final_answer");
+  expect(requests.at(-1)).toBe("supervisor_investigation_review");
+  expect(result.usage.modelCallCount).toBeLessThanOrEqual(8);
+  expect(result.usage.toolCallCount).toBeLessThanOrEqual(5);
+});
+
+it("reserves terminal synthesis and independent review after a malformed step retry",async()=>{
+  const requests:string[]=[];
+  let first=true;
+  const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));const name=body.text.format.name;
+    requests.push(name);
+    if(name==="supervisor_investigation_review")return response({supported:true,complete:true});
+    if(name==="supervisor_investigation_final_answer")return response({
+      paragraphs:[{kind:"advice",text:"Review the verified ingredient cost and the intended margin definition before proposing a selling price.",citations:[]}]});
+    if(first){first=false;return malformed();}
+    // Use a distinct operation signature on every step so the model burns
+    // through the executable limit before it volunteers an answer.
+    return response(read("p3.menu.catalog.v1",query("menu.catalog",{attempt:requests.length})));
+  });
+  const result=await runSupervisorTurn({...base,text:"How should I price a new latte?"},transport);
+  expect(result.reply.blocks).toContainEqual({type:"text",
+    text:"Review the verified ingredient cost and the intended margin definition before proposing a selling price."});
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(result.usage.toolCallCount).toBeLessThanOrEqual(5);
+  expect(requests.slice(-2)).toEqual(["supervisor_investigation_final_answer","supervisor_investigation_review"]);
+});
+
+it("keeps the independent review fail-closed even for a forced terminal answer",async()=>{
+  const requests:string[]=[];
+  const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body)),name=body.text.format.name;
+    requests.push(name);
+    if(name==="supervisor_investigation_final_answer")return response({
+      paragraphs:[{kind:"advice",text:"I have already changed all the menu prices.",citations:[]}]});
+    if(name==="supervisor_investigation_review")return response({supported:false,complete:false});
+    return response(read("nonexistent.capability",{value:"unsafe"}));
+  });
+  const result=await runSupervisorTurn({...base,text:"Can you review my menu prices?"},transport);
+  expect(requests).toContain("supervisor_investigation_final_answer");
+  expect(result.reply.status).toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("already changed all");
 });
 
 it("enforces a bounded investigation even when the model repeatedly chooses invalid tools",async()=>{
