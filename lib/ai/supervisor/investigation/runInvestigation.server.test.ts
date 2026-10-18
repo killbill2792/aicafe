@@ -364,6 +364,45 @@ it("does not charge malformed registered inputs that fail inside the registry",a
   expect(result.reply.status).not.toBe("unavailable");
 });
 
+it("counts a dispatched domain reader even when its result resembles a registry preflight rejection",async()=>{
+  // A domain's response reason is not a reliable dispatch indicator. This P1
+  // reader ran even though its *own* unavailable reason is unsupported_period.
+  p1.mockResolvedValueOnce({status:"unavailable",value:null,reason:"unsupported_period"}
+    as Awaited<ReturnType<typeof executeP1Authorized>>);
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transportFor([
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"advice",text:"The recorded item price is unavailable from this source; check the saved menu before quoting a price.",citations:[]}]),
+  ]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("reserves extra calendar-gate time when a failed owner correction may require review",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the saved menu."],reads:[]};
+    const history=[{role:"owner",text:"Show the saved menu."},
+      {role:"owner",text:"Actually use 2026-10-12 instead."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog's recorded latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000; // 78s remain: enough without the extra calendar review, not with it.
+      if(i===1){
+        expect(context.finalizeOnly).toBe(true);
+        expect(context.remainingOperations).toBe(4);
+      }
+    });
+    const result=await runSupervisorTurn({...base,text:"What price was the latte?",
+      history,investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
 it("preserves final answer and independent review when late public privacy gate has no attempt allowance",async()=>{
   vi.mocked(researchEnabled).mockReturnValue(true);
   const invalid=Array.from({length:5},(_,i)=>read("unknown.unregistered.capability."+i,{attempt:i}));
