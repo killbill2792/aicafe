@@ -1,9 +1,7 @@
 import { recurringCostMonthlyEquivalentCents } from "@/lib/expenses/recurringMonthlyTotal";
+import { RUNNING_COST_CODES } from "@/lib/constants";
 
-/** Explicitly bounded historical evidence for a Menu-only monthly what-if.
- * A 14-day import from an earlier month is evidence, not a current-month actual.
- * No missing day may be treated as a zero-sales or zero-payroll day.
- */
+/** Monthly Menu planning basis only. Do not present projections as observed profit. */
 export type MenuPriceSourceDay = {
   businessDate: string;
   salesStatus: "actual" | "missing" | null;
@@ -16,9 +14,15 @@ export type MenuPriceSourceDay = {
   cardFeesStatus: "actual" | "estimated" | "missing" | null;
 };
 export type MenuPriceRecurringCost = {
+  categoryCode: string;
   amountCents: number;
   frequency: "monthly" | "weekly" | "quarterly" | "yearly";
   estimated: boolean;
+};
+export type MenuPriceActualExpense = {
+  categoryCode: string;
+  amountCents: number;
+  status: "actual" | "estimated";
 };
 export type MenuPriceSourceBasis = {
   monthlyRunningCents: number | null;
@@ -33,57 +37,97 @@ export type MenuPriceSourceBasis = {
   coveredDays: number;
   oldestDate: string | null;
   latestDate: string | null;
+  payrollCoveredDays: number;
+  payrollOldestDate: string | null;
+  payrollLatestDate: string | null;
 };
-
-/** Monthly equivalents are never added to loaded staff, ingredients or card fees. */
+const finiteNonnegative = (n:number)=>Number.isSafeInteger(n)&&n>=0;
+const runningCodes = new Set<string>(RUNNING_COST_CODES);
+/**
+ * The canonical "actual expense by category, otherwise recurring estimate"
+ * precedence applies here too. An owner receipt replaces a schedule amount,
+ * never adds on top of it. All expenses are caller-filtered to the same
+ * current calendar month and business.
+ */
 export function menuPriceSourceBasis(input:{
   days: MenuPriceSourceDay[];
   recurring: MenuPriceRecurringCost[];
+  expenses: MenuPriceActualExpense[];
   totalItemPrepSecondsInWindow: number;
 }):MenuPriceSourceBasis{
-  const monthlyRunningCents = input.recurring.length
-    ? input.recurring.reduce((sum,row)=>
-        sum+recurringCostMonthlyEquivalentCents({amountCents:row.amountCents,
-          frequency:row.frequency}),0) : null;
-  const runningStatus: MenuPriceSourceBasis["runningStatus"] = monthlyRunningCents===null ? "missing" :
-    input.recurring.some(r=>r.estimated) ? "estimated" : "recorded";
+  const actualByCategory = new Map<string,number>();
+  for(const row of input.expenses){
+    if(!runningCodes.has(row.categoryCode)||row.status!=="actual"||
+       !finiteNonnegative(row.amountCents))continue;
+    actualByCategory.set(row.categoryCode,
+      (actualByCategory.get(row.categoryCode)??0)+row.amountCents);
+  }
+  const recurringByCategory = new Map<string,{cents:number,estimated:boolean}>();
+  for(const row of input.recurring){
+    if(!runningCodes.has(row.categoryCode)||!finiteNonnegative(row.amountCents))continue;
+    const amount=recurringCostMonthlyEquivalentCents({amountCents:row.amountCents,
+      frequency:row.frequency});
+    const prior=recurringByCategory.get(row.categoryCode)??{cents:0,estimated:false};
+    recurringByCategory.set(row.categoryCode,{cents:prior.cents+amount,
+      estimated:prior.estimated||row.estimated});
+  }
+  const allCategories = new Set([...actualByCategory.keys(),...recurringByCategory.keys()]);
+  const monthlyRunningCents=allCategories.size===0?null:
+    [...allCategories].reduce((sum,category)=>
+      sum+(actualByCategory.get(category)??recurringByCategory.get(category)!.cents),0);
+  const runningStatus:MenuPriceSourceBasis["runningStatus"]=
+    monthlyRunningCents===null?"missing":
+    [...allCategories].every(c=>actualByCategory.has(c))?"recorded":"estimated";
 
-  // Keep one rollup per date and fail closed on duplicate coverage records.
-  const seen = new Set<string>();
-  const days=input.days.filter(d=>{
-    if(d.salesStatus!=="actual"||seen.has(d.businessDate))return false;
-    seen.add(d.businessDate);return true;
-  }).sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
+  // Split sales coverage from labor coverage. A staff-only rollup is valid
+  // payroll evidence but is never a covered sales day. Conversely, a sales
+  // day with no documented labor is NOT a zero-payroll day.
+  const dedupe=(rows:MenuPriceSourceDay[])=>{
+    const seen=new Set<string>();
+    return rows.filter(d=>{
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d.businessDate)||seen.has(d.businessDate))return false;
+      seen.add(d.businessDate);return true;
+    }).sort((a,b)=>a.businessDate.localeCompare(b.businessDate));
+  };
+  const allDays=dedupe(input.days);
+  const days=allDays.filter(d=>d.salesStatus==="actual");
   const coveredDays=days.length;
   const scale=coveredDays>0?30/coveredDays:0;
   const drinks=days.reduce((n,d)=>n+d.drinksCount,0);
   const monthlyDrinks=coveredDays>=7&&drinks>0?Math.round(drinks*scale):null;
 
-  const payroll=days.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
-  const hasPayrollEvidence=days.some(d=>d.wagesCents>0||d.payrollTaxCents>0)||
-    (days.length>0&&days.every(d=>d.payrollTaxStatus==="actual"));
-  const monthlyPayrollCents=coveredDays>=7&&hasPayrollEvidence
-    ?Math.round(payroll*scale):null;
+  const payrollDays=allDays.filter(d=>
+    (d.wagesCents>0||d.payrollTaxCents>0||d.payrollTaxStatus==="actual") &&
+    finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
+  const payrollCoveredDays=payrollDays.length;
+  const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
+  // Less than 7 independently evidenced payroll days are insufficient to
+  // project a month. Never silently divide by the sales-covered denominator.
+  const monthlyPayrollCents=payrollCoveredDays>=7?
+    Math.round(payrollCents*30/payrollCoveredDays):null;
+  const payrollStatus:MenuPriceSourceBasis["payrollStatus"]=
+    monthlyPayrollCents===null?"missing":
+      payrollDays.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated";
 
   const feeSales=days.filter(d=>d.netSalesCents>0);
   const feeReady=coveredDays>=7&&feeSales.length>0&&
     feeSales.every(d=>d.cardFeesStatus==="actual"||d.cardFeesStatus==="estimated");
   const revenue=feeSales.reduce((n,d)=>n+d.netSalesCents,0);
   const cardFees=feeSales.reduce((n,d)=>n+d.cardFeesCents,0);
-  const processingFeeBps=feeReady&&revenue>0
-    ?Math.round(10000*cardFees/revenue):null;
+  const processingFeeBps=feeReady&&revenue>0&&cardFees>=0?
+    Math.round(10000*cardFees/revenue):null;
 
   const monthlyPrepSeconds=monthlyDrinks!==null&&
     Number.isSafeInteger(input.totalItemPrepSecondsInWindow)&&
     input.totalItemPrepSecondsInWindow>0
     ?Math.round(input.totalItemPrepSecondsInWindow*scale):null;
-  return {monthlyRunningCents,runningStatus,monthlyPayrollCents,
-    payrollStatus:monthlyPayrollCents===null?"missing":
-      days.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated",
+  return {monthlyRunningCents,runningStatus,monthlyPayrollCents,payrollStatus,
     monthlyDrinks,volumeStatus:monthlyDrinks===null?"missing":"projected",
     processingFeeBps,feeStatus:processingFeeBps===null?"missing":
       feeSales.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
     monthlyPrepSeconds,coveredDays,
     oldestDate:days[0]?.businessDate??null,
-    latestDate:days[days.length-1]?.businessDate??null};
+    latestDate:days[days.length-1]?.businessDate??null,
+    payrollCoveredDays,payrollOldestDate:payrollDays[0]?.businessDate??null,
+    payrollLatestDate:payrollDays[payrollDays.length-1]?.businessDate??null};
 }
