@@ -348,6 +348,22 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:false}));
   });
+  it("preserves the conditional-scenario warning when rescuing a pure hypothetical calculation",async()=>{
+    const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"no_external_sources",
+      description:"Owner hypothetical extra drinks",
+      nodes:[{op:"hypothetical",label:"extra drinks",quotedNumber:"5",value:5,unit:"item"}]};
+    const badAnswer=answer([{kind:"evidence",
+      text:"Under this scenario, the result is {{r1:value[0]}}.",citations:["r1"]}]);
+    const transport=transportFor([
+      calculate(plan),
+      badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
+    ]);
+    const result=await runSupervisorTurn({...base,text:"What if we sold 5 more drinks?"},transport);
+    expect(result.reply.status).toBe("insufficient_evidence");
+    expect(result.reply.intent).toBe("profitability");
+    expect(result.reply.blocks[0]).toMatchObject({type:"warning",code:"P3_CONDITIONAL"});
+    expect(result.reply.evidence).toEqual([]);
+  });
   it("preserves the public-research caution when rescuing an answer that cites an unverified external source",async()=>{
     vi.mocked(researchEnabled).mockReturnValue(true);
     vi.mocked(researchPublicSources).mockResolvedValue([{title:"Nearby café menu",url:"https://example.com/menu",

@@ -104,15 +104,23 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
     if(rescue&&lastUnverifiedAnswer){
       const citedObservations=observations.filter(o=>lastUnverifiedAnswer!.citedIds.includes(o.id));
+      // A pure owner-authored hypothetical (every citation a source-free
+      // expression result, never a real café read) must still carry the
+      // same conditional-scenario disclaimer the grounded path always
+      // attaches, so it can never be mistaken for observed demand or
+      // verified profit just because this path flattened it to plain text.
+      const pure=citedObservations.length>0&&citedObservations.every(o=>o.calculation&&!o.reference);
       // The unverified warning only speaks to numbers/dates against café
       // records; every other mandatory caution a grounded reply would carry
       // for these same citations (unverified public research, estimated
       // inputs, monetary unavailability, a registered source's own caveat --
       // e.g. a labor-law note on a schedule read) must not be dropped just
       // because this path flattened the answer to plain text.
-      const blocks:SupervisorReplyBlock[]=[{type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
+      const blocks:SupervisorReplyBlock[]=[
+        ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:[]),
+        {type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
         ...citationCautionWarnings(citedObservations,input.locale),{type:"text",text:lastUnverifiedAnswer.text}];
-      return {reply:{intent:"unknown" as const,status:"insufficient_evidence" as const,
+      return {reply:{intent:pure?"profitability" as const:"unknown" as const,status:"insufficient_evidence" as const,
         evidence:[],blocks},usage:{...usage}};
     }
     return {reply:{intent:"unknown" as const,status:"unavailable" as const,evidence:[],
