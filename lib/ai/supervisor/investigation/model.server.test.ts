@@ -132,14 +132,16 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     // Production evidence: the provider can emit a complete, correct answer and
     // then trailing noise (observed as a likely repeat of its own answer) that
     // breaks the full concatenation. Discarding a verified-valid answer and
-    // forcing a retry is strictly worse than using it.
+    // forcing a retry is strictly worse than using it. Only true for
+    // supervisor_investigation_step: see the dedicated test below proving the
+    // semantic review/authorization gates never get this leniency.
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
         {type:"output_text",text:JSON.stringify({x:"ok"})},
         {type:"output_text",text:" trailing"},
       ]}]})));
     const onDiagnostic=vi.fn();
-    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,instructions:"",
       context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
     expect(result).toEqual({x:"ok"});
     // Still recorded for observability, but with no category/invalidPayloadReason:
@@ -170,6 +172,46 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       {invalidPayloadReason:"unparseable_json",validPrefixPartCount:1,validPrefixMatchesSchema:true}));
   });
 
+  it("never accepts a recovered prefix for the independent evidence/completeness review gate, even when valid and schema-matching",async()=>{
+    // supervisor_investigation_review's {supported,complete} is the independent
+    // evidence/coverage approval runInvestigationTurn uses to decide whether to
+    // publish an answer. A truncated-but-structurally-valid verdict here is not
+    // proof the model's full semantic review actually completed cleanly, so
+    // this gate must keep failing closed like every other semantic review.
+    const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean()});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({supported:true,complete:true})},
+        {type:"output_text",text:" trailing"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const result=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toBeNull();
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",validPrefixPartCount:1,validPrefixMatchesSchema:true}));
+  });
+
+  it("never accepts a recovered prefix for the calendar-context review gate, even when valid and schema-matching",async()=>{
+    // supervisor_calendar_context_review's verdict binds whether a remembered
+    // date correction applies; the same leniency here could bind an incorrect
+    // date from an unclean response, so it keeps the same fail-closed behavior.
+    const calendarSchema=z.strictObject({verdict:z.enum(["applies","unrelated","ambiguous"])});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({verdict:"applies"})},
+        {type:"output_text",text:" trailing"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const result=await requestInvestigation({name:"supervisor_calendar_context_review",schema:calendarSchema,
+      instructions:"",context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),
+      deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toBeNull();
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",validPrefixPartCount:1,validPrefixMatchesSchema:true}));
+  });
+
   it("never accepts a valid-JSON prefix that fails the schema contract, even when one exists",async()=>{
     // The first part is syntactically valid JSON but violates the schema (x
     // too short); a trailing part breaks the full concatenation. Confirms the
@@ -180,7 +222,7 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         {type:"output_text",text:" trailing"},
       ]}]})));
     const onDiagnostic=vi.fn();
-    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,instructions:"",
       context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
     expect(result).toBeNull();
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
@@ -214,7 +256,7 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         {type:"output_text",text:" trailing garbage"},
       ]}]})));
     const onDiagnostic=vi.fn();
-    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,instructions:"",
       context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
     expect(result).toEqual({x:"ok"});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(

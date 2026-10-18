@@ -101,14 +101,18 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // that case — and forcing a full retry — is strictly worse than just
       // using it, so acceptablePrefix (the longest prefix that is BOTH valid
       // JSON and schema-valid) is accepted below instead of thrown away.
-      // EXCEPT for supervisor_public_query_review: that request is a privacy/
-      // safety authorization gate (its {safe:true} directly permits an
-      // external search of the owner's clause), and an authorization check
-      // must fail closed on any malformed output, never accept a leniently-
-      // recovered verdict from a response that was not entirely clean.
+      // ONLY for supervisor_investigation_step, though: that is the sole
+      // request whose payload is genuine answer content, and the only one
+      // production evidence actually supports leniency for. The other three
+      // requests (supervisor_investigation_review, supervisor_
+      // calendar_context_review, supervisor_public_query_review) are all
+      // semantic verdict/authorization gates — their schema can confirm a
+      // prefix's *shape* (e.g. {supported:true,complete:true}) but not that
+      // the verdict itself is trustworthy out of a response that was not
+      // entirely clean, so they must keep the existing fail-closed behavior.
       let validPrefixPartCount:number|undefined,validPrefixMatchesSchema:boolean|undefined;
       let acceptablePrefix:T|undefined;
-      const allowPrefixRecovery=input.name!=="supervisor_public_query_review";
+      const allowPrefixRecovery=input.name==="supervisor_investigation_step";
       if(texts.length>1){
         validPrefixPartCount=0;
         for(let i=1;i<texts.length;i++){
