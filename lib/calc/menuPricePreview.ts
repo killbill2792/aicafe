@@ -12,6 +12,9 @@ export type MenuPricePreviewInput = {
   monthlyPrepSeconds: number | null;
   itemPrepSeconds: number;
   processingFeeBps: number | null;
+  /** Trusted actual fee sums; use them for exact arithmetic, not rounded bps. */
+  processingFeeNumeratorCents?: number | null;
+  processingFeeDenominatorCents?: number | null;
   targetOperatingMarginBps: number;
 };
 
@@ -39,9 +42,18 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   if (!safeMoney(input.monthlyRunningCents)) missing.push("bills");
   if (!safeMoney(input.monthlyPayrollCents)) missing.push("payroll");
   if (!safeCount(input.monthlyDrinks)) missing.push("volume");
-  if (!Number.isSafeInteger(input.processingFeeBps) ||
-      input.processingFeeBps === null || input.processingFeeBps < 0 ||
-      input.processingFeeBps > 10000) missing.push("fees");
+  const numerator=input.processingFeeNumeratorCents;
+  const denominatorCents=input.processingFeeDenominatorCents;
+  const exactRateAvailable=typeof numerator==="number"&&
+    typeof denominatorCents==="number"&&
+    Number.isSafeInteger(numerator)&&Number.isSafeInteger(denominatorCents)&&
+    denominatorCents>0&&numerator>=0&&numerator<=denominatorCents;
+  const validBps=input.processingFeeBps!==null&&
+    Number.isSafeInteger(input.processingFeeBps)&&
+    input.processingFeeBps>=0&&input.processingFeeBps<=10000;
+  const feeRate=exactRateAvailable?numerator/denominatorCents:
+    validBps?input.processingFeeBps!/10000:null;
+  if(feeRate===null) missing.push("fees");
 
   const ingredientContributionCents = safeMoney(input.ingredientCents) &&
     Number.isSafeInteger(input.priceCents) && input.priceCents >= 0
@@ -67,9 +79,7 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   const laborPerDrinkCents = rawLaborPerDrink===null?null:rounded(rawLaborPerDrink);
   const rawCardFeePerDrink =
     Number.isSafeInteger(input.priceCents) && input.priceCents >= 0 &&
-    input.processingFeeBps !== null && Number.isSafeInteger(input.processingFeeBps) &&
-    input.processingFeeBps >= 0 && input.processingFeeBps <= 10000
-      ? input.priceCents * input.processingFeeBps / 10000 : null;
+    feeRate!==null ? input.priceCents * feeRate : null;
   const cardFeePerDrinkCents=rawCardFeePerDrink===null?null:rounded(rawCardFeePerDrink);
 
   const complete = missing.length === 0 &&
@@ -82,11 +92,11 @@ export function menuPricePreview(input: MenuPricePreviewInput): MenuPricePreview
   // Price needed to cover the same assigned non-price costs at the owner's
   // margin target. This is a conditional scenario, not a market recommendation.
   const margin = input.targetOperatingMarginBps;
-  const denominator = 10000 - (input.processingFeeBps ?? 0) - margin;
+  const denominator = 1 - (feeRate ?? 0) - margin / 10000;
   const targetPrice = complete && Number.isSafeInteger(margin) &&
     margin >= 0 && margin < 10000 && denominator > 0
-      ? Math.ceil((input.ingredientCents! + rawBillsPerDrink! + rawLaborPerDrink!) *
-        10000 / denominator) : null;
+      ? Math.ceil((input.ingredientCents! + rawBillsPerDrink! + rawLaborPerDrink!) /
+        denominator) : null;
   const targetPriceCents = targetPrice !== null &&
     Number.isSafeInteger(targetPrice) && targetPrice >= 0 && targetPrice <= 100_000_000
       ? targetPrice : null;
