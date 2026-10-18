@@ -114,13 +114,44 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
     expect(onDiagnostic).not.toHaveBeenCalled();
   });
 
-  it("reports unparseable_json for literally malformed JSON text",async()=>{
+  it("reports unparseable_json for literally malformed JSON text, with its length and error position",async()=>{
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[{type:"output_text",text:"{not json"}]}]})));
     const onDiagnostic=vi.fn();
     await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
       model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
-    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({invalidPayloadReason:"unparseable_json"}));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",outputTextPartCount:1,jsonTextLength:9}));
+  });
+
+  it("reports that the first part alone parses when later parts are what broke the concatenation",async()=>{
+    // The first part is a complete, independently valid JSON answer; a second
+    // part of trailing text makes the CONCATENATED string unparseable even
+    // though the real answer was already complete on its own.
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({x:"ok"})},
+        {type:"output_text",text:" trailing"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",outputTextPartCount:2,firstPartAloneParses:true}));
+  });
+
+  it("reports that the first part alone does NOT parse when the JSON is genuinely fragmented across parts",async()=>{
+    const whole=JSON.stringify({x:"ok"});
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:whole.slice(0,3)},
+        {type:"output_text",text:"garbage that does not continue the JSON"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",outputTextPartCount:2,firstPartAloneParses:false}));
   });
 
   it("reports schema_mismatch with the failing field path when JSON parses but fails the zod contract",async()=>{

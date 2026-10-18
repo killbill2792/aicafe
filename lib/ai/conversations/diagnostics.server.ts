@@ -39,6 +39,9 @@ export type SupervisorDiagnostic = {
   outputItemTypes?:string[];
   messagePartTypes?:string[];
   outputTextPartCount?:number;
+  jsonTextLength?:number;
+  jsonErrorPosition?:number;
+  firstPartAloneParses?:boolean;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -116,6 +119,9 @@ export class SupervisorStageError extends Error {
   readonly outputItemTypes?:string[];
   readonly messagePartTypes?:string[];
   readonly outputTextPartCount?:number;
+  readonly jsonTextLength?:number;
+  readonly jsonErrorPosition?:number;
+  readonly firstPartAloneParses?:boolean;
   constructor(category:SupervisorErrorCategory,stage:SupervisorStage,meta:Partial<SupervisorDiagnostic>={}) {
     super("Supervisor internal failure: "+category);
     this.name="SupervisorStageError";
@@ -136,6 +142,13 @@ export class SupervisorStageError extends Error {
     this.outputTextPartCount=typeof meta.outputTextPartCount==="number"&&
       Number.isSafeInteger(meta.outputTextPartCount)&&meta.outputTextPartCount>=0?
       meta.outputTextPartCount:undefined;
+    this.jsonTextLength=typeof meta.jsonTextLength==="number"&&
+      Number.isSafeInteger(meta.jsonTextLength)&&meta.jsonTextLength>=0?meta.jsonTextLength:undefined;
+    this.jsonErrorPosition=typeof meta.jsonErrorPosition==="number"&&
+      Number.isSafeInteger(meta.jsonErrorPosition)&&meta.jsonErrorPosition>=0?
+      meta.jsonErrorPosition:undefined;
+    this.firstPartAloneParses=typeof meta.firstPartAloneParses==="boolean"?
+      meta.firstPartAloneParses:undefined;
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
@@ -186,6 +199,9 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(d.messagePartTypes&&safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum).length?
           {messagePartTypes:safeEnumTagArray(d.messagePartTypes,messagePartTypeEnum)}:{}),
         ...(safeCount(d.outputTextPartCount)!==undefined?{outputTextPartCount:d.outputTextPartCount}:{}),
+        ...(safeCount(d.jsonTextLength)!==undefined?{jsonTextLength:d.jsonTextLength}:{}),
+        ...(safeCount(d.jsonErrorPosition)!==undefined?{jsonErrorPosition:d.jsonErrorPosition}:{}),
+        ...(typeof d.firstPartAloneParses==="boolean"?{firstPartAloneParses:d.firstPartAloneParses}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -210,6 +226,8 @@ export function classifySupervisorError(error:unknown,stage:SupervisorStage):Sup
     schemaIssuePath:error.schemaIssuePath,schemaIssueCode:error.schemaIssueCode,
     outputItemTypes:error.outputItemTypes,messagePartTypes:error.messagePartTypes,
     outputTextPartCount:error.outputTextPartCount,
+    jsonTextLength:error.jsonTextLength,jsonErrorPosition:error.jsonErrorPosition,
+    firstPartAloneParses:error.firstPartAloneParses,
   };
   return {stage,category:stage==="reply_persistence"?"reply_persistence":"unexpected"};
 }

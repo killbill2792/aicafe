@@ -85,8 +85,26 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
             outputTextPartCount:texts.length});
       let decoded:unknown;
       try{decoded=JSON.parse(text);}
-      catch{throw new SupervisorStageError("provider_invalid_payload","provider_response",
-        {invalidPayloadReason:"unparseable_json"});}
+      catch(jsonError){
+        // The multi-part concatenation fix (above) eliminated wrong_text_shape in
+        // production, but the joined text can still fail to parse — evidence the
+        // provider is not a simple character-split of one JSON document. A
+        // SyntaxError's position is a numeric offset, never a content snippet, so
+        // it is safe to record; checking whether the FIRST part alone already
+        // parses (never logging its content) tells us whether later parts are
+        // trailing noise after a complete answer, or the JSON is genuinely
+        // fragmented mid-token — the two have very different fixes.
+        const position=jsonError instanceof SyntaxError?/position (\d+)/.exec(jsonError.message):null;
+        let firstPartAloneParses:boolean|undefined;
+        if(texts.length>1){
+          try{JSON.parse(texts[0]);firstPartAloneParses=true;}
+          catch{firstPartAloneParses=false;}
+        }
+        throw new SupervisorStageError("provider_invalid_payload","provider_response",
+          {invalidPayloadReason:"unparseable_json",outputTextPartCount:texts.length,
+            jsonTextLength:text.length,jsonErrorPosition:position?Number(position[1]):undefined,
+            firstPartAloneParses});
+      }
       const parsed=input.schema.safeParse(decoded);
       if(!parsed.success){
         const issue=parsed.error.issues[0];
@@ -114,6 +132,8 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       schemaIssuePath:classified.schemaIssuePath,schemaIssueCode:classified.schemaIssueCode,
       outputItemTypes:classified.outputItemTypes,messagePartTypes:classified.messagePartTypes,
       outputTextPartCount:classified.outputTextPartCount,
+      jsonTextLength:classified.jsonTextLength,jsonErrorPosition:classified.jsonErrorPosition,
+      firstPartAloneParses:classified.firstPartAloneParses,
       attempt,modelCallCount:input.usage.modelCallCount});
     // The model producing malformed JSON or an incomplete turn is a one-time
     // hiccup in its own output, not an infrastructure failure. Give it exactly
