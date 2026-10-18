@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,type Observation} from "./evidence";
+import {observationDisplay,renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,type Observation} from "./evidence";
 import type {InvestigationAnswer} from "./protocol";
 
 const ref=(id:string)=>({source:"cafe_state" as const,identifier:id,asOf:"2026-10-18"});
@@ -147,5 +147,22 @@ describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected b
       {kind:"evidence",text:"The price is {{r1:value.priceCents}} and a stray } brace.",citations:["r1"]},
     ]),[o],"en");
     expect(rescued).toBeNull();
+  });
+});
+
+describe("citationCautionWarnings (shared between the grounded and rescued reply paths)",()=>{
+  it("adds the estimated-inputs caution when any cited observation has estimated inputs",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:[],estimatedInputs:["wage"],staleInputs:[]}});
+    const warnings=citationCautionWarnings([o],"en");
+    expect(warnings).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_ESTIMATED"}));
+  });
+  it("adds the monetary-unavailable caution when any cited observation is missing monetary fields",()=>{
+    const o=observation("r1","priceCents",525,{quality:{missingInputs:["monetary_fields_unavailable"],estimatedInputs:[],staleInputs:[]}});
+    const warnings=citationCautionWarnings([o],"en");
+    expect(warnings).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE"}));
+  });
+  it("adds no cautions for an observation with none of the flagged qualities",()=>{
+    const o=observation("r1","priceCents",525);
+    expect(citationCautionWarnings([o],"en")).toEqual([]);
   });
 });

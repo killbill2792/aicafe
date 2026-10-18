@@ -142,13 +142,14 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
  * claim ("I published 2 schedules") mislabeled as a clarification would
  * otherwise sail through untouched by the no-raw-digit rule this function
  * does not re-apply. Only a paragraph of kind "evidence", whose every
- * citation resolves to a real, available observation, is ever eligible;
- * anything else must still go through the full independent review, never
- * this safety net. The caller must still treat
- * this as unverified, not grounded: it is never called after an answer
- * reached the independent review -- a review's negative verdict is an
- * actual finding, not a formatting slip, and must never be rescued. The
- * returned citedIds let the caller reapply the same publication-time
+ * citation resolves to a real, available observation, is ever eligible.
+ * A real citation only proves the id exists, not that the surrounding
+ * prose is actually supported by it or covers the owner's goal, so the
+ * caller must still run this candidate through the same independent review
+ * a grounded answer passes (never the one already failed by a negative
+ * verdict from this exact answer -- that finding must never be
+ * contradicted) before trusting it as a rescue. The returned citedIds let
+ * the caller reapply the same publication-time
  * authorization/snapshot check the fully grounded path uses, since this
  * text can still describe real café data. */
 export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):
@@ -179,17 +180,17 @@ export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:r
   const cleaned=clean(text);
   return cleaned?{text:cleaned.slice(0,1100),citedIds:[...citedIds]}:null;
 }
-export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
-  const rendered=renderInvestigationAnswer(answer,observations,locale);
-  if(!rendered)return null;
+/** Mandatory per-citation cautions -- unverified public research, monetary
+ * unavailability, estimated inputs, and any registered source's own
+ * caution -- that must survive on EVERY reply citing these observations,
+ * not only the fully grounded path. Shared with the unverified-answer
+ * rescue so a citation to, say, a labor-law-caveated schedule read never
+ * loses that caveat just because the surrounding prose failed rendering. */
+export function citationCautionWarnings(cited:readonly Observation[],locale:Locale):SupervisorReplyBlock[]{
   const labels=investigationLabels(locale);
-  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
-  const pure=cited.length>0&&cited.every(o=>o.calculation&&!o.reference);
-  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
-  const warnings:SupervisorReplyBlock[]=pure?[{type:"warning",code:"P3_CONDITIONAL",text:labels.conditional}]:
-    rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning",code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
-      [{type:"warning",code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}];
-  if(cited.some(o=>o.reference?.source==="unverified_external"))warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
+  const warnings:SupervisorReplyBlock[]=[];
+  if(cited.some(o=>o.reference?.source==="unverified_external"))
+    warnings.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
   if(cited.some(o=>isRecord(o.result.quality)&&Array.isArray(o.result.quality.missingInputs)&&
     o.result.quality.missingInputs.includes("monetary_fields_unavailable")))
     warnings.push({type:"warning",code:"SUPERVISOR_MONETARY_UNAVAILABLE",text:labels.financialUnavailable});
@@ -199,6 +200,21 @@ export function investigationReply(answer:InvestigationAnswer,observations:reado
   }))warnings.push({type:"warning",code:"SUPERVISOR_ESTIMATED",text:labels.estimated});
   for(const caution of new Set(cited.flatMap(o=>registeredReadCautions(o.result,locale))))
     warnings.push({type:"warning",code:"SUPERVISOR_SOURCE_CAUTION",text:caution});
+  return warnings;
+}
+export function investigationReply(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale):GroundedSupervisorReply|null{
+  const rendered=renderInvestigationAnswer(answer,observations,locale);
+  if(!rendered)return null;
+  const labels=investigationLabels(locale);
+  const cited=observations.filter(o=>answer.paragraphs.some(p=>p.citations.includes(o.id)));
+  const pure=cited.length>0&&cited.every(o=>o.calculation&&!o.reference);
+  const status=rendered.adviceOnly&&!answer.paragraphs.some(p=>p.kind==="advice")?"insufficient_evidence":"partial";
+  const warnings:SupervisorReplyBlock[]=[
+    ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:
+      rendered.adviceOnly?(answer.paragraphs.some(p=>p.kind==="advice")?[{type:"warning" as const,code:"SUPERVISOR_ADVICE",text:labels.advice}]:[]):
+        [{type:"warning" as const,code:"SUPERVISOR_EVIDENCE_LIMITS",text:labels.partial}]),
+    ...citationCautionWarnings(cited,locale),
+  ];
   const cards=cited.flatMap(o=>o.reference?presentInvestigatedTasks(o.sourceContract,o.result.value,o.reference,locale):[])
     .filter((card,i,all)=>card.type!=="task_card"||all.findIndex(c=>c.type==="task_card"&&c.taskId===card.taskId)===i).slice(0,3);
   return {intent:pure?"profitability":"unknown",status,evidence:rendered.evidence,blocks:[...warnings,...rendered.blocks,...cards]};

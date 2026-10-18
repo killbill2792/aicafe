@@ -320,6 +320,29 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:true}));
   });
+  it("never rescues a render-failed claim whose citation is real but the claim itself was rejected by the rescue's own review",async()=>{
+    // Unlike the earlier review_failed test, this answer fails the strict
+    // renderer first (a raw digit outside the placeholder), so it is the
+    // rescue path's own independent review -- not the primary one -- that
+    // must catch an unsupported claim dressed up with a real citation.
+    const falseClaim=answer([{kind:"evidence",
+      text:"I have published 2 shifts, confirmed by {{r1:value.0.priceCents}}.",citations:["r1"]}]);
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+      if(context.observations.length===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+      return response(falseClaim);
+    });
+    const onDiagnostic=vi.fn();
+    const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
+    expect(result.reply.status).toBe("unavailable");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("published");
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"investigation_exhausted",rescuedUnverified:false}));
+  });
   it("preserves the public-research caution when rescuing an answer that cites an unverified external source",async()=>{
     vi.mocked(researchEnabled).mockReturnValue(true);
     vi.mocked(researchPublicSources).mockResolvedValue([{title:"Nearby café menu",url:"https://example.com/menu",

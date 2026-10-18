@@ -21,7 +21,7 @@ import {datasetOperands} from "./calculations.server";
 import {buildRecordsRegistration,recordCollections,RECORDS_ID} from "./records.server";
 import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
-  renderInvestigationAnswer,renderUnverifiedAnswer,type Observation,type Locale} from "./evidence";
+  renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,type Observation,type Locale} from "./evidence";
 import {answerSchema,reviewSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
@@ -104,14 +104,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
     if(rescue&&lastUnverifiedAnswer){
       const citedObservations=observations.filter(o=>lastUnverifiedAnswer!.citedIds.includes(o.id));
-      const blocks:SupervisorReplyBlock[]=[{type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning}];
       // The unverified warning only speaks to numbers/dates against café
-      // records; a citation to an unverified public search result carries
-      // its own, different caution that must not be dropped just because
-      // this path flattened the answer to plain text.
-      if(citedObservations.some(o=>o.reference?.source==="unverified_external"))
-        blocks.push({type:"warning",code:"SUPERVISOR_PUBLIC_RESEARCH",text:labels.research});
-      blocks.push({type:"text",text:lastUnverifiedAnswer.text});
+      // records; every other mandatory caution a grounded reply would carry
+      // for these same citations (unverified public research, estimated
+      // inputs, monetary unavailability, a registered source's own caveat --
+      // e.g. a labor-law note on a schedule read) must not be dropped just
+      // because this path flattened the answer to plain text.
+      const blocks:SupervisorReplyBlock[]=[{type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
+        ...citationCautionWarnings(citedObservations,input.locale),{type:"text",text:lastUnverifiedAnswer.text}];
       return {reply:{intent:"unknown" as const,status:"insufficient_evidence" as const,
         evidence:[],blocks},usage:{...usage}};
     }
@@ -276,10 +276,23 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
       if(!rendered||!reply){
-        // Only ever captured here -- a round that fails this mechanical gate
-        // never reaches the independent review below, so there is no
-        // negative verdict to contradict by keeping this as a fallback.
-        lastUnverifiedAnswer=renderUnverifiedAnswer(answer,observations,input.locale)??lastUnverifiedAnswer;
+        // A real citation only proves the id exists, not that the
+        // surrounding prose is actually supported by it or covers the
+        // owner's goal -- run the exact same independent review a grounded
+        // answer must pass before this candidate is ever trusted as a
+        // rescue, using the stripped text in place of the rendered blocks
+        // the strict renderer never produced. Never cache anything the
+        // review could not confirm, and never spend budget on this extra
+        // call unless there is a real citation-grounded candidate to check.
+        const rescued=renderUnverifiedAnswer(answer,observations,input.locale);
+        if(rescued){
+          const rescueReview=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+            instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
+              proposedAnswer:answer,renderedAnswer:[{type:"text",text:rescued.text}]},
+            apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+          if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported&&rescueReview.complete)
+            lastUnverifiedAnswer=rescued;
+        }
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
