@@ -99,8 +99,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)return failure(true);
+    // Reserve one model attempt for an answer and one for its independent
+    // evidence/coverage review. Provider retries also share this ledger.
+    // Five real operations must never crowd out the final answer.
+    const finalizeOnly=usage.toolCallCount>=INVESTIGATION_LIMITS.operations||
+      usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-2||
+      deadline-Date.now()<=INVESTIGATION_LIMITS.providerTimeoutMs*2;
     const step=await requestInvestigation({name:"supervisor_investigation_step",schema:stepSchema,
-      instructions:investigationInstructions,context:{ownerRequest:input.text,locale:input.locale,
+      instructions:finalizeOnly?investigationInstructions+
+        " This is the FINAL investigation step. Answer now from observations; explain any precise missing source or request a specific essential clarification. Do not choose another tool, invent facts or claim changes.":investigationInstructions,
+      answerOnly:finalizeOnly,context:{ownerRequest:input.text,locale:input.locale,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.map(m=>({id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
@@ -109,7 +117,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
-        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,feedback},
+        remainingOperations:INVESTIGATION_LIMITS.operations-usage.toolCallCount,finalizeOnly,feedback},
       apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,
       onDiagnostic:input.onDiagnostic});
     if(!step)return failure();
@@ -143,9 +151,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
     }
+    if(finalizeOnly){feedback="The last available turn must answer with available evidence, not request another operation.";continue;}
     if(usage.toolCallCount>=INVESTIGATION_LIMITS.operations){feedback="No operations remain. Give a partial answer or the specific missing input from observations.";continue;}
-    usage.toolCallCount++;
-    input.onUsage?.({...usage});
     let args:unknown;try{args=JSON.parse(step.argumentsJson??"");}catch{feedback="Tool arguments must be valid JSON.";continue;}
     if(!step.capabilityId||step.responseJson!==null){feedback="Tool steps require a capability and argumentsJson, not a response.";continue;}
     const signature=JSON.stringify([step.action,step.capabilityId,args]);
@@ -163,6 +170,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
+      usage.toolCallCount++;
+      input.onUsage?.({...usage});
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
@@ -204,6 +213,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
         feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
       }
+      usage.toolCallCount++;
+      input.onUsage?.({...usage});
       result=await registry.invoke(scope,step.capabilityId,args);
     }
     if(!record(result)){feedback="The tool result was invalid.";continue;}
