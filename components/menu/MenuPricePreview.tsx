@@ -44,6 +44,8 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     monthlyDrinks:number|null;processingFeeBps:number|null;
   }|null>(null);
   const [error,setError]=useState(false);
+  const [expanded,setExpanded]=useState(!basis || basis.monthlyPayrollCents===null ||
+    basis.monthlyRunningCents===null || basis.monthlyDrinks===null || basis.processingFeeBps===null);
   if(!basis)return null;
   const values=confirmed??{
     monthlyRunningCents:basis.monthlyRunningCents,
