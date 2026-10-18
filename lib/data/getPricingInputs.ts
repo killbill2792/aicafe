@@ -116,8 +116,12 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   // or the stricter business-adjusted pricing mode. It uses only explicitly
   // covered previous-period days so 14 imported days work without pretending
   // that the other 76 days were zero-sales or zero-payroll days.
-  const totalItemPrepSecondsInWindow = rawItems.reduce((sum,item)=>
-    sum+Math.max(0,Number(item.prep_seconds))*Math.max(0,units.get(item.id)??0),0);
+  // Item quantities from this RPC cover the ENTIRE 90 days, whereas the
+  // preview covers only days explicitly flagged sales_data_status=actual.
+  // Never combine those mismatched periods to allocate payroll by prep time.
+  // Until per-item quantities are reconciled to the covered dates, use the
+  // explicitly labelled equal-per-drink fallback instead.
+  const totalItemPrepSecondsInWindow = 0;
   const menuPriceBasis = menuPriceSourceBasis({
     days:(rollupsResult.data??[]).map(row=>({
       businessDate:row.business_date,
