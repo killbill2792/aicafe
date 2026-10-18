@@ -21,6 +21,7 @@ type Labels = {
   unavailableSales: string;
   unavailableFees: string;
   unavailableCosts: string;
+  unavailableOperating: string;
   targetTested: string;
   item: string;
   productCost: string;
@@ -80,7 +81,9 @@ export default function ProfitGoalSimulator({
         ? labels.unavailableFees
         : data.unavailableReason === "MISSING_PRODUCT_COSTS"
           ? labels.unavailableCosts
-          : null;
+          : data.unavailableReason === "MISSING_OPERATING_COSTS"
+            ? labels.unavailableOperating
+            : null;
 
   return (
     <div className="flex flex-col gap-4">
