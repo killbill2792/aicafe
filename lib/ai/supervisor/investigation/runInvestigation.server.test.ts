@@ -285,7 +285,8 @@ it("resolves a scheduling pronoun from owner/thread scenario memory without dema
   const second=await runSupervisorTurn({...base,text:"Make her cap 90 minutes instead.",investigationMemory:first.reply.investigationMemory},transportFor([{...cap(90),argumentsJson:JSON.stringify({purpose:"schedule_what_if",week:"2026-10-26",
       overrides:[{kind:"reduce_weekly_minutes",employeeName:"Ava",maxWeeklyMinutes:90}]})},cap(90),final]));
   expect(olivia.mock.calls.every(([r])=>typeof r!=="object"||r===null||!("week" in r)||r.week===asOf)).toBe(true);
-  expect(second.usage.toolCallCount).toBe(2);
+  // Rejected week mismatch was not executed; only the valid what-if counts.
+  expect(second.usage.toolCallCount).toBe(1);
   expect(second.reply.status).toBe("partial");
   expect(JSON.stringify(second.reply.blocks)).toContain("90 minutes");
   expect(olivia).toHaveBeenLastCalledWith(expect.objectContaining({capability:"olivia.schedule.whatIf",
@@ -460,7 +461,8 @@ it.each(["EUR","AED"])("rejects source-free money relabeling for a %s cafe",asyn
   const result=await runSupervisorTurn({...base,text:"What if product price is 5 in our local currency?"},transport);
   expect(JSON.stringify(result.reply.blocks)).not.toContain("$5");
   expect(result.reply.evidence).toEqual([]);
-  expect(result.usage.toolCallCount).toBe(1);
+  // The unsupported-currency hypothetical never reached the calculator.
+  expect(result.usage.toolCallCount).toBe(0);
 });
 
 it.each(["top-level","nested"])("blocks a silent scheduling week change through %s selectors",async(shape)=>{
