@@ -310,10 +310,51 @@ it("rejects wrong explicit periods before invoking the source reader",async()=>{
   expect(p1).not.toHaveBeenCalled();
 });
 
+it("answers and independently reviews a five-operation investigation despite a malformed provider attempt",async()=>{
+  const actions=[
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    read("p3.menu.product_economics.v1",query("menu.product_economics",{productId:product})),
+    read("p3.labor.employee_wages.v1",query("labor.employee_wages")),
+    read("p3.labor.payroll_burden.v1",query("labor.payroll_burden")),
+    read("p3.money.expense_entries.v1",query("money.expense_entries",{period})),
+    answer([{kind:"evidence",text:"The recorded item price is {{r2:value.priceCents}}.",citations:["r2"]}]),
+  ];
+  const inner=transportFor(actions,(ctx,step)=>{
+    if(step===5){
+      expect(ctx.finalizeOnly).toBe(true);
+      expect(ctx.remainingOperations).toBe(0);
+    }
+  });
+  let stepAttempt=0;
+  const transport=vi.fn(async(url:string,init:RequestInit)=>{
+    const request=JSON.parse(String(init.body));
+    if(request.text.format.name==="supervisor_investigation_step"){
+      stepAttempt++;
+      if(stepAttempt===1)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+          {type:"output_text",text:"invalid provider JSON"},
+        ]}]}));
+      if(stepAttempt===7){
+        expect(request.text.format.schema.properties.action.enum).toEqual(["answer"]);
+        expect(request.text.format.schema.properties.capabilityId.type).toBe("null");
+      }
+    }
+    return inner(url,init);
+  });
+  const result=await runSupervisorTurn({...base,text:"Investigate my Iced Latte's recorded price alongside staffing and expenses."},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  expect(result.usage.toolCallCount).toBe(5);
+  expect(result.usage.modelCallCount).toBe(8);
+  expect(transport).toHaveBeenCalledTimes(8);
+});
+
 it("enforces a bounded investigation even when the model repeatedly chooses invalid tools",async()=>{
   const transport=vi.fn(async()=>response(read("execute_sql",{sql:"select 1"})));
   const result=await runSupervisorTurn({...base,text:"Investigate everything."},transport);
-  expect(result.usage.toolCallCount).toBe(5);
+  // Invalid model-selected capabilities do not count as executed operations.
+  // The bounded model-attempt ledger still prevents an endless invalid loop.
+  expect(result.usage.toolCallCount).toBe(0);
   expect(result.usage.modelCallCount).toBeLessThanOrEqual(8);
   expect(transport.mock.calls.length).toBeLessThanOrEqual(8);
   expect(result.reply.status).toBe("unavailable");
