@@ -132,10 +132,18 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
 /** Last-resort text for when the investigation is about to give up with a
  * genuine model answer in hand that merely failed our mechanical display-
  * token formatting gate -- never thrown away silently just because the
- * model wrote "$5.25" instead of the exact placeholder syntax. Strips every
- * `{{rN:path}}` token outright (we have no validated display value to trust
- * there, so it must never reach the owner as literal syntax or as a raw
- * unverified number).
+ * model wrote `{{r1:value[0].priceCents}}` (a plausible alternate syntax)
+ * instead of the one exact placeholder grammar the strict renderer accepts.
+ * Strips every double-brace span outright (we have no validated display
+ * value to trust there, so it must never reach the owner as literal
+ * syntax), then rejects the whole candidate if any digit, currency/percent
+ * symbol or URL remains anywhere in the surrounding prose: the independent
+ * review the caller still runs is a semantic "is this plausible" check, not
+ * a deterministic guarantee that a literal the model typed itself (a
+ * misremembered "$5.25", a fabricated "$999") traces to real data, so a
+ * raw number of the model's own making can never survive here -- only a
+ * genuinely cited value that merely used the wrong token syntax, now masked
+ * entirely rather than shown raw either way.
  * Deliberately narrower than a plain formatting check: "advice" and
  * "clarification" paragraphs carry no evidence requirement at all, and the
  * model's own self-reported kind is not proof of intent -- a false action
@@ -173,10 +181,15 @@ export function renderUnverifiedAnswer(answer:InvestigationAnswer,observations:r
     // owner-facing text just because it didn't match the strict pattern.
     .map(p=>clean(p.text.replace(/\{\{[^{}]*\}\}/gu,labels.unverifiedValue)))
     .filter(Boolean).join(" ");
-  // Any brace still present means an unresolved or unbalanced token we
-  // cannot safely show raw; reject the whole rescue rather than risk
-  // leaking placeholder syntax to the owner.
-  if(/[{}]/u.test(text))return null;
+  // The independent review the caller runs on this text is a semantic
+  // check ("is this supported and complete"), never a deterministic
+  // guarantee that every literal number/date/URL traces to validated data
+  // -- a model-authored "$999" sitting outside any placeholder could read
+  // as perfectly plausible and "supported" to that reviewer while tracing
+  // to nothing real. Reject the whole rescue, exactly as the strict
+  // renderer would, if anything numeric/currency/URL-like (or an
+  // unresolved/unbalanced brace) remains after stripping every token.
+  if(/[\p{N}$€£¥%{}]|https?:\/\/|www\./iu.test(text))return null;
   const cleaned=clean(text);
   return cleaned?{text:cleaned.slice(0,1100),citedIds:[...citedIds]}:null;
 }

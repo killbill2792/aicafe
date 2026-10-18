@@ -304,8 +304,12 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
       agent:"supervisor",answerRejectedReason:"review_failed"}));
   });
   it("rescues a genuine answer as unverified, instead of discarding it, when it only fails our display-token formatting",async()=>{
+    // A malformed token (bracket syntax, not the strict {{rN:path}} grammar)
+    // fails the strict renderer but is still fully stripped by the rescue,
+    // and the surrounding prose carries no raw digit/currency/URL of its
+    // own -- the one shape of render_failed this safety net can ever cover.
     const badAnswer=answer([{kind:"evidence",
-      text:"The listed price is {{r1:value.0.priceCents}} for 2 drinks.",citations:["r1"]}]);
+      text:"The listed price is {{r1:value[0].priceCents}} today.",citations:["r1"]}]);
     const transport=transportFor([
       read("p3.menu.catalog.v1",query("menu.catalog")),
       badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
@@ -316,17 +320,18 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(result.reply.evidence).toEqual([]);
     expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_UNVERIFIED"}));
     expect(result.reply.blocks).toContainEqual({type:"text",
-      text:"The listed price is [unchecked value] for 2 drinks."});
+      text:"The listed price is [unchecked value] today."});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:true}));
   });
   it("never rescues a render-failed claim whose citation is real but the claim itself was rejected by the rescue's own review",async()=>{
     // Unlike the earlier review_failed test, this answer fails the strict
-    // renderer first (a raw digit outside the placeholder), so it is the
-    // rescue path's own independent review -- not the primary one -- that
-    // must catch an unsupported claim dressed up with a real citation.
+    // renderer first (a malformed token), so it is the rescue path's own
+    // independent review -- not the primary one -- that must catch an
+    // unsupported claim dressed up with a real citation. No raw digit of
+    // its own, so renderUnverifiedAnswer itself would otherwise accept it.
     const falseClaim=answer([{kind:"evidence",
-      text:"I have published 2 shifts, confirmed by {{r1:value.0.priceCents}}.",citations:["r1"]}]);
+      text:"I have published shifts already, confirmed by {{r1:value[0].priceCents}}.",citations:["r1"]}]);
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));
       if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
@@ -348,7 +353,7 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     vi.mocked(researchPublicSources).mockResolvedValue([{title:"Nearby café menu",url:"https://example.com/menu",
       snippet:"Latte listed at $5",queriedAt:"2026-10-19T12:00:00Z",evidenceStatus:"unverified_search_snippet"}]);
     const badAnswer=answer([{kind:"evidence",
-      text:"This public menu is a lead: {{r1:value.0.url}}. It mentions 2 locations nearby.",citations:["r1"]}]);
+      text:"This public menu is a lead: {{r1:value[0].url}}. Confirm it directly.",citations:["r1"]}]);
     const transport=transportFor([
       read("p3.public.research.v1",{purpose:"public_market_research",query:"nearby cafe menu prices",ownerResearchClause:"nearby cafe menu prices"}),
       badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
@@ -362,7 +367,7 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     auth.mockResolvedValueOnce({identity,tools:base.tools});
     auth.mockResolvedValue({identity:{...identity,businessId:"another-cafe"},tools:base.tools});
     const badAnswer=answer([{kind:"evidence",
-      text:"The listed price is {{r1:value.0.priceCents}} for 2 drinks.",citations:["r1"]}]);
+      text:"The listed price is {{r1:value[0].priceCents}} today.",citations:["r1"]}]);
     const transport=transportFor([
       read("p3.menu.catalog.v1",query("menu.catalog")),
       badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,

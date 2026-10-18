@@ -87,12 +87,18 @@ describe("renderInvestigationAnswer boxed facts",()=>{
 });
 
 describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected but genuinely cited answer)",()=>{
-  it("rescues an evidence answer that cites real data but also wrote a stray raw number",()=>{
+  it("never rescues an evidence answer that also wrote a stray raw number outside any placeholder",()=>{
+    // The independent review the caller runs on this text is semantic, not
+    // a deterministic guarantee that a literal number traces to real data --
+    // a model-typed "2" (or a fabricated "$999") could read as perfectly
+    // plausible to that reviewer while being entirely unverified. Only text
+    // with zero numeric/currency/URL content left after stripping every
+    // placeholder is ever eligible, exactly like the strict renderer.
     const o=observation("r1","priceCents",525);
     const rescued=renderUnverifiedAnswer(answer([
       {kind:"evidence",text:"The listed price is {{r1:value.priceCents}} for 2 drinks.",citations:["r1"]},
     ]),[o],"en");
-    expect(rescued).toEqual({text:"The listed price is [unchecked value] for 2 drinks.",citedIds:["r1"]});
+    expect(rescued).toBeNull();
   });
   it("never rescues an advice paragraph, which carries no evidence requirement at all",()=>{
     const rescued=renderUnverifiedAnswer(answer([
