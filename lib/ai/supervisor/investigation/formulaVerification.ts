@@ -7,7 +7,7 @@
  * claimed. Anything that doesn't check out is reported as a specific,
  * narrow failure -- never escalated into discarding more than the one
  * number it concerns (§3's core invariant). */
-import {rat,type Rat} from "@/lib/calc/scenarioExpression";
+import {rat,times,type Rat} from "@/lib/calc/scenarioExpression";
 import {evaluateFormulaScaled,formulaLiterals,type FormulaRejectionReason,
   type ArithmeticUnit} from "@/lib/calc/formulaExpression";
 import type {Observation,Locale} from "./evidence";
@@ -19,7 +19,9 @@ export type FormulaVerificationFailure=
   |{reason:"source_unverifiable";variable:string}
   |{reason:"ungrounded_literal"}
   |{reason:"incompatible_units"}
+  |{reason:"incompatible_periods"}
   |{reason:"unparseable_claim"}
+  |{reason:"sub_cent_precision"}
   |{reason:"result_mismatch";computed:number;claimed:number};
 export type FormulaVerificationResult={ok:true;value:number}|{ok:false;failure:FormulaVerificationFailure};
 
@@ -138,17 +140,28 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   }
   return null;
 }
-/** Resolve one declared variable's value AND unit from its OWN independent
- * source, never from the model's claimed `value` field. A pointer resolves
- * against a real observation's recorded raw field (its unit taken from the
- * same money/percent classification `observationDisplay` already computed);
- * anything else must be a complete, token-bounded excerpt of the owner's own
- * message text (its unit taken from that matched span's own decoration,
- * falling back to the declared source text's decoration only when the
- * matched span itself carries none -- e.g. the owner wrote "1.45" but the
- * source was declared as "$1.45"). */
+const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
+/** The time-period scope of a pointer-sourced observation's own read input,
+ * if it had one -- "" (never clashing with anything) for a periodless
+ * capability or an owner-quoted value, which belongs to no specific data
+ * period at all. Mirrors the exact extraction `detectConflictingFacts`
+ * (runInvestigation.server.ts) already uses for the same `input.period`
+ * shape, so two different period representations of the "same" scope are
+ * never treated as different by one check and the same by the other. */
+function resolvedPeriod(input:unknown):string{
+  return isRecord(input)&&isRecord(input.period)?JSON.stringify(input.period):"";
+}
+/** Resolve one declared variable's value, unit AND source period from its
+ * OWN independent source, never from the model's claimed `value` field. A
+ * pointer resolves against a real observation's recorded raw field (its
+ * unit taken from the same money/percent classification `observationDisplay`
+ * already computed); anything else must be a complete, token-bounded excerpt
+ * of the owner's own message text (its unit taken from that matched span's
+ * own decoration, falling back to the declared source text's decoration
+ * only when the matched span itself carries none -- e.g. the owner wrote
+ * "1.45" but the source was declared as "$1.45"). */
 function resolveVariable(source:string,observations:readonly Observation[],ownerText:string,locale:Locale):
-  {value:Rat;unit:ArithmeticUnit}|null{
+  {value:Rat;unit:ArithmeticUnit;period:string}|null{
   const byId=new Map(observations.map(o=>[o.id,o] as const));
   const pointer=POINTER.exec(source);
   if(pointer){
@@ -158,6 +171,7 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     const raw=observation.displayRaw?.[path];
     if(typeof raw!=="number")return null;
     const kind=observation.displayKind?.[path];
+    const period=resolvedPeriod(observation.input);
     // Money is stored as integer CENTS and percent as integer BASIS POINTS
     // everywhere in this project (CLAUDE.md rule #1; observationDisplay's
     // own raw[] convention) -- but an owner-quoted money/percent source is
@@ -172,11 +186,11 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     // silently agree with the model's wrong total (Codex finding).
     if(kind==="money"||kind==="percent"){
       if(!Number.isInteger(raw))return null;
-      return {value:rat(BigInt(raw),BigInt(100)),unit:kind};
+      return {value:rat(BigInt(raw),BigInt(100)),unit:kind,period};
     }
     const value=numberToRat(raw);
     if(!value)return null;
-    return {value,unit:"scalar"};
+    return {value,unit:"scalar",period};
   }
   if(!source)return null;
   const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale);
@@ -184,7 +198,7 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
   const parsed=parseNumericSnippet(source,locale);
   if(!parsed)return null;
   const spanUnit=classifyOwnerUnit(matchedSpan);
-  return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source)};
+  return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source),period:""};
 }
 export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   observations:readonly Observation[],locale:Locale):FormulaVerificationResult{
@@ -198,6 +212,7 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   if(literals===null)return {ok:false,failure:{reason:"grammar",detail:"unknown_character"}};
   if(literals.length>0)return {ok:false,failure:{reason:"ungrounded_literal"}};
   const resolved=new Map<string,{value:Rat;unit:ArithmeticUnit}>();
+  const periods=new Set<string>();
   for(const [name,declaration] of Object.entries(entry.variables)){
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
     const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
@@ -206,7 +221,17 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
       return {ok:false,failure:{reason:pointer?"source_not_found":"source_unverifiable",variable:name}};
     }
     resolved.set(name,resolvedVariable);
+    if(resolvedVariable.period)periods.add(resolvedVariable.period);
   }
+  // Temporal-compatibility check (Codex finding): two pointer-sourced
+  // variables from DIFFERENT, real data periods combined in one formula
+  // (e.g. subtracting last month's costs from today's revenue) could
+  // otherwise verify as "profit" just because both operands share the same
+  // coarse money dimension -- the unit check has no notion of time at all.
+  // A periodless value (an owner quote, or a periodless capability's
+  // reading) never clashes with anything, since it belongs to no specific
+  // data window; only two DIFFERENT real periods together are rejected.
+  if(periods.size>1)return {ok:false,failure:{reason:"incompatible_periods"}};
   // One combined walk (Codex finding): computes the value AND propagates
   // units together, so a percentage used as a multiplicative RATE against
   // money ("$20 * 10%") is correctly scaled by /100 -- something evaluating
@@ -242,5 +267,17 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   const tolerance=0.5*Math.pow(10,-claimed.decimals)+1e-9;
   if(Math.abs(computedNumber-claimedNumber)>tolerance)
     return {ok:false,failure:{reason:"result_mismatch",computed:computedNumber,claimed:claimedNumber}};
+  // Cent-precision check (Codex finding): money is integer cents everywhere
+  // in this project (CLAUDE.md rule #1) -- "$9.67 / 2" recomputes EXACTLY to
+  // 4.835, which could otherwise verify a claim written with that same
+  // sub-cent precision even though no real dollar amount is ever worth a
+  // fraction of a cent. Checked on the independently-RECOMPUTED rational
+  // value (exact, never float-rounded), not by counting the claim text's
+  // own decimal digits -- a claim written as "$4.830" is a perfectly valid
+  // whole-cent amount (483 cents) despite its trailing zero.
+  if(evaluated.unit==="money"){
+    const cents=times(evaluated.value,rat(BigInt(100)));
+    if(cents.d!==BigInt(1))return {ok:false,failure:{reason:"sub_cent_precision"}};
+  }
   return {ok:true,value:computedNumber};
 }

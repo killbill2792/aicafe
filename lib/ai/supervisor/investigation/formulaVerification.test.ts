@@ -3,10 +3,10 @@ import {verifyFormulaEntry} from "./formulaVerification";
 import {observationDisplay,type Observation} from "./evidence";
 import type {FormulaEntry} from "./protocol";
 
-function observation(id:string,path:string,raw:number,status="verified"):Observation{
+function observation(id:string,path:string,raw:number,status="verified",input:unknown={}):Observation{
   const result={id:"test.read",status,value:{[path]:raw}};
   const rendered=observationDisplay(result,"en");
-  return {id,capabilityId:"p3.test.read.v1",input:{},result,reference:null,
+  return {id,capabilityId:"p3.test.read.v1",input,result,reference:null,
     display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw};
 }
 const entry=(e:Partial<FormulaEntry>):FormulaEntry=>({claim:"4.83",formula:"a",variables:{a:{value:4.83,source:"$4.83"}},...e});
@@ -230,6 +230,57 @@ describe("verifyFormulaEntry -- computed result unit must match an explicitly-de
       variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
       "I covered 3 drinks and 2 shifts.",[],"en");
     expect(result).toEqual({ok:true,value:5});
+  });
+  it("rejects a scalar result dressed up as a claim whose unit is written as a WORD, not a symbol (Codex finding)",()=>{
+    // CLAIM_SPAN (evidence.ts) now folds a trailing currency WORD into the
+    // matched claim text, so this reaches verifyFormulaEntry as the full
+    // "5 dollars" (not a bare, undecorated "5") -- confirming the result-
+    // unit check above actually sees that decoration via classifyOwnerUnit.
+    const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"5 dollars",
+      variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
+      "I covered 3 drinks and 2 shifts.",[],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+});
+
+describe("verifyFormulaEntry -- rejects combining data from two different real periods (Codex finding)",()=>{
+  it("never lets a formula subtract one period's observation from another's and call it verified",()=>{
+    const thisMonth=observation("r1","priceCents",2000,"verified",{period:{from:"2026-10-01",to:"2026-10-18"}});
+    const lastMonth=observation("r2","priceCents",1500,"verified",{period:{from:"2026-09-01",to:"2026-09-30"}});
+    const result=verifyFormulaEntry(entry({formula:"revenue - cost",claim:"$5",
+      variables:{revenue:{value:20,source:"r1:value.priceCents"},cost:{value:15,source:"r2:value.priceCents"}}}),
+      "",[thisMonth,lastMonth],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+  it("still verifies when both pointers share the exact same period",()=>{
+    const revenue=observation("r1","priceCents",2000,"verified",{period:{from:"2026-10-01",to:"2026-10-18"}});
+    const cost=observation("r2","priceCents",1500,"verified",{period:{from:"2026-10-01",to:"2026-10-18"}});
+    const result=verifyFormulaEntry(entry({formula:"revenue - cost",claim:"$5",
+      variables:{revenue:{value:20,source:"r1:value.priceCents"},cost:{value:15,source:"r2:value.priceCents"}}}),
+      "",[revenue,cost],"en");
+    expect(result).toEqual({ok:true,value:5});
+  });
+  it("never flags a periodless owner quote combined with a single perioded pointer as a clash",()=>{
+    const revenue=observation("r1","priceCents",2000,"verified",{period:{from:"2026-10-01",to:"2026-10-18"}});
+    const result=verifyFormulaEntry(entry({formula:"revenue - extra",claim:"$15",
+      variables:{revenue:{value:20,source:"r1:value.priceCents"},extra:{value:5,source:"$5"}}}),
+      "I also spent $5 on supplies.",[revenue],"en");
+    expect(result).toEqual({ok:true,value:15});
+  });
+});
+
+describe("verifyFormulaEntry -- rejects a sub-cent money claim (Codex finding)",()=>{
+  it("never lets an exact sub-cent result ($9.67 / 2 = $4.835) verify, even though it matches the claim precisely",()=>{
+    const result=verifyFormulaEntry(entry({formula:"total / split",claim:"$4.835",
+      variables:{total:{value:9.67,source:"$9.67"},split:{value:2,source:"2"}}}),
+      "Split the $9.67 bill 2 ways.",[],"en");
+    expect(result).toEqual({ok:false,failure:{reason:"sub_cent_precision"}});
+  });
+  it("still accepts a whole-cent money result even when the claim is written with a trailing zero",()=>{
+    const result=verifyFormulaEntry(entry({formula:"price",claim:"$4.830",
+      variables:{price:{value:4.83,source:"$4.83"}}}),
+      "The price is $4.83.",[],"en");
+    expect(result).toEqual({ok:true,value:4.83});
   });
 });
 

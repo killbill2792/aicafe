@@ -170,6 +170,13 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("$2"))).toBe(false);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"$2"}));
   });
+  it("masks a word-decorated unit span as a whole, not leaving the word dangling after the digits (Codex finding, claim spans capture written units)",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"That change is worth about 5 dollars.",citations:[]},
+    ]),[],"en");
+    expect(rendered!.blocks).toEqual([{type:"text",text:"That change is worth about [unchecked value]."}]);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"5 dollars"}));
+  });
   it("keeps a freehand number that is an exact echo of the owner's own words",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"You mentioned 3 extra shifts; that is a meaningful change.",citations:[]},

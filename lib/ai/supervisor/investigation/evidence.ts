@@ -133,7 +133,18 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
 // "2026-10-05") from having its second digit run misread as negative --
 // that hyphen is always preceded by a digit, which a genuine minus sign
 // never is.
-const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|(?<!\p{Nd})-?[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|(?<!\p{Nd})-?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%|(?<!\p{Nd})-?\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b/gu;
+// A unit written as a WORD, or a "%" separated from its digits by
+// whitespace, outside the digit run itself (Codex finding): "5 dollars" or
+// Spanish "5 %" previously had only the bare "5" captured as the claim
+// span, so `classifyOwnerUnit` -- and the result-unit check in
+// `verifyFormulaEntry` that depends on it -- never saw the decoration at
+// all and treated the claim as an undecorated scalar, letting two
+// unrelated scalar inputs (e.g. 3 drinks + 2 shifts) verify a claim
+// visibly written as money. Allowing optional whitespace before "%", and
+// an optional trailing currency word (mirroring `classifyOwnerUnit`'s own
+// word list exactly), folds that decoration into the span so it can never
+// bypass the check this way.
+const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|(?<!\p{Nd})-?[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|(?<!\p{Nd})-?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\s?%|(?<!\p{Nd})-?\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b(?:\s(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b)?/giu;
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
