@@ -493,7 +493,7 @@
     "purchaseQuantity": "Package quantity",
     "purchaseUnit": "Package unit",
     "completePurchaseCost": "Enter both a valid purchase price and package quantity, or leave both blank.",
-            "priceBasisTargetDefault": "This uses AI CAFE's default 15% margin, not a profit goal you confirmed.",
+            "priceBasisTargetDefault": "This uses AI CAFE's default {margin}% margin, not a profit goal you confirmed.",
     "priceBasisPayrollWindow": "Payroll projection uses {days} separately evidenced labor days from {from} to {to}.",
     "priceBasisTitle": "Full-cost estimate · numbers used",
     "priceBasisHelp": "Your saved expenses and historical sales are used when available. Check each amount and confirm any changes to see a new estimate.",
