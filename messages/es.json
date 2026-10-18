@@ -505,7 +505,7 @@
     "priceBasisHistoryTitle": "Período de ventas utilizado",
     "priceBasisWindow": "{days} días con datos entre {from} y {to}",
     "priceBasisNoHistory": "No se encontró un período de ventas con datos suficientes",
-    "priceBasisHistoryCaveat": "Las ventas anteriores se proyectan a 30 días; los días sin datos no se cuentan como ventas cero. No es la ganancia real de este mes.",
+    "priceBasisHistoryCaveat": "Las ventas anteriores se proyectan según los días del mes calendario actual; los días sin datos no se cuentan como ventas cero. No es la ganancia real de este mes.",
     "priceBasisBills": "Facturas y gastos operativos mensuales",
     "priceBasisPayroll": "Nómina mensual, incluidos los costos del empleador",
     "priceBasisDrinks": "Bebidas mensuales estimadas",
