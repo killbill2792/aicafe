@@ -1,5 +1,6 @@
 import { recurringCostMonthlyEquivalentCents } from "@/lib/expenses/recurringMonthlyTotal";
 import { RUNNING_COST_CODES } from "@/lib/constants";
+import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
 
 /** Monthly Menu planning basis only. Do not present projections as observed profit. */
 export type MenuPriceSourceDay = {
@@ -26,6 +27,8 @@ export type MenuPriceActualExpense = {
 };
 export type MenuPriceSourceBasis = {
   monthlyRunningCents: number | null;
+  runningKnownCents: number;
+  missingRunningCategories: string[];
   runningStatus: "recorded" | "estimated" | "missing";
   monthlyPayrollCents: number | null;
   payrollStatus: "projected" | "estimated" | "missing";
@@ -53,6 +56,7 @@ export function menuPriceSourceBasis(input:{
   days: MenuPriceSourceDay[];
   recurring: MenuPriceRecurringCost[];
   expenses: MenuPriceActualExpense[];
+  previousMonthExpenseCategories: string[];
   totalItemPrepSecondsInWindow: number;
 }):MenuPriceSourceBasis{
   // Canonical monthlyAmountForCategory: ALL recorded expense rows win over
@@ -76,9 +80,18 @@ export function menuPriceSourceBasis(input:{
       estimated:prior.estimated||row.estimated});
   }
   const allCategories = new Set([...expenseByCategory.keys(),...recurringByCategory.keys()]);
-  const monthlyRunningCents=allCategories.size===0?null:
-    [...allCategories].reduce((sum,category)=>
-      sum+(expenseByCategory.get(category)?.cents??recurringByCategory.get(category)!.cents),0);
+  const runningKnownCents=[...allCategories].reduce((sum,category)=>
+    sum+(expenseByCategory.get(category)?.cents??recurringByCategory.get(category)!.cents),0);
+  // Same expected-cost contract as the canonical Money snapshot: a regular
+  // category with an expense in the prior month is not silently $0 because
+  // the current month has no evidence or recurring fallback yet.
+  const missingRunningCategories=RUNNING_COST_CODES.filter(category=>
+    !allCategories.has(category)&&isExpectedCostCategory(category,{
+      hasActiveRecurring:false,
+      hadActualPreviousMonth:input.previousMonthExpenseCategories.includes(category),
+    }));
+  const monthlyRunningCents=allCategories.size===0||missingRunningCategories.length>0?
+    null:runningKnownCents;
   const runningStatus:MenuPriceSourceBasis["runningStatus"]=
     monthlyRunningCents===null?"missing":
     [...allCategories].every(category=>{
@@ -128,7 +141,7 @@ export function menuPriceSourceBasis(input:{
     Number.isSafeInteger(input.totalItemPrepSecondsInWindow)&&
     input.totalItemPrepSecondsInWindow>0
     ?Math.round(input.totalItemPrepSecondsInWindow*scale):null;
-  return {monthlyRunningCents,runningStatus,monthlyPayrollCents,payrollStatus,
+  return {monthlyRunningCents,runningKnownCents,missingRunningCategories,runningStatus,monthlyPayrollCents,payrollStatus,
     monthlyDrinks,volumeStatus:monthlyDrinks===null?"missing":"projected",
     processingFeeBps,feeStatus:processingFeeBps===null?"missing":
       feeSales.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
