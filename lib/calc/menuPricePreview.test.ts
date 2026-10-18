@@ -36,4 +36,18 @@ describe("Menu transparent fully allocated pricing estimate", () => {
     expect(p.allocatedProfitCents).not.toBeNull();
     expect(p.targetPriceCents).toBeNull();
   });
+  it("retains sub-cent precision through final profit and conditional target rounding",()=>{
+    const p=menuPricePreview({
+      ...base,priceCents:100,ingredientCents:20,
+      monthlyRunningCents:2,monthlyPayrollCents:2,monthlyDrinks:5,
+      monthlyPrepSeconds:null,processingFeeBps:40,targetOperatingMarginBps:5000,
+    });
+    // Three 0.4-cent allocations display as 0 cents apiece, but their
+    // combined 1.2 cents must not disappear from the final result.
+    expect(p).toMatchObject({
+      billsPerDrinkCents:0,laborPerDrinkCents:0,cardFeePerDrinkCents:0,
+      allocatedProfitCents:79,targetPriceCents:42,
+    });
+  });
+
 });
