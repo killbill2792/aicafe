@@ -1272,6 +1272,7 @@
     "unavailableSales": "At least 7 sales days are needed before AI Cafe runs this business-wide pricing simulation.",
     "unavailableFees": "Processing fees are incomplete, so the simulator would overstate profit. Add actual fees or confirm an estimate first.",
     "unavailableCosts": "Some sold menu items are missing product costs, so the simulator would overstate profit.",
+    "unavailableOperating": "Add or confirm the missing monthly operating costs (rent, bills and supplies) before AI CAFE can calculate a reliable operating margin or run this price simulation.",
     "targetTested": "Testing {target}",
     "item": "Item",
     "productCost": "Product cost",
