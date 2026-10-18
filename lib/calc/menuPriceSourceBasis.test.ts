@@ -44,6 +44,25 @@ describe("Menu pricing source basis",()=>{
     expect(verified.payrollCoveredDays).toBe(14);
     expect(verified.monthlyPayrollCents).toBe(120000);
   });
+  it("includes zero and refunded covered sales days in the effective fee ratio",()=>{
+    const days=Array.from({length:14},(_,i)=>day(i+1));
+    days[12]={...days[12],netSalesCents:0,cardFeesCents:500};
+    days[13]={...days[13],netSalesCents:-1000,cardFeesCents:-30};
+    const p=basis(days);
+    // (12 * 300 + 500 - 30) / (12 * 10000 - 1000) = 342 bps.
+    expect(p.processingFeeBps).toBe(342);
+    expect(p.feeStatus).toBe("actual");
+    const incomplete=basis(days.map((d,i)=>i===12?{
+      ...d,cardFeesStatus:"missing" as const}:d));
+    expect(incomplete.processingFeeBps).toBeNull();
+    expect(incomplete.feeStatus).toBe("missing");
+  });
+  it("withholds a fee rate when the covered-day aggregate net sales are nonpositive",()=>{
+    const days=Array.from({length:14},(_,i)=>({
+      ...day(i+1),netSalesCents:-100,cardFeesCents:100,
+    }));
+    expect(basis(days).processingFeeBps).toBeNull();
+  });
   it("never treats the other 76 unimported days of a 90-day window as zero",()=>{
     const p=basis([day(1),day(2)]);
     expect(p).toMatchObject({coveredDays:2,monthlyDrinks:null,monthlyPayrollCents:null,
