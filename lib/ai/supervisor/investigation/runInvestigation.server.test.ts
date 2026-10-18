@@ -423,6 +423,44 @@ it("does not count a byte-heavy but schema-valid expression rejected before simu
   expect(result.reply.status).not.toBe("unavailable");
 });
 
+it("retains a validated calendar selector after a dispatched domain reader returns unauthorized",async()=>{
+  const chosenPeriod={from:"2026-10-12",to:"2026-10-12"};
+  p1.mockImplementationOnce(async()=>{
+    return {status:"unavailable" as const,value:null,reason:"unauthorized"}
+      as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"Show the recorded expenses for October 12, 2026."},transportFor([
+    read("p3.money.expense_entries.v1",query("money.expense_entries",{period:chosenPeriod})),
+    answer([{kind:"advice",text:"That recorded expense period is currently unavailable; the selected date is preserved for follow-up.",citations:[]}]),
+  ]));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(result.usage.toolCallCount).toBe(1);
+  expect(result.reply.investigationMemory?.calendarScopes).toContainEqual({
+    domain:"money",kind:"period",...chosenPeriod});
+});
+
+it("reserves calendar gate headroom despite a current standalone scheduling weekday",async()=>{
+  const realNow=Date.now();
+  let clock=realNow;
+  const now=vi.spyOn(Date,"now").mockImplementation(()=>clock);
+  try{
+    const memory={version:1 as const,businessId:cafe,ownerStatements:["Show the expenses."],reads:[]};
+    const history=[{role:"owner" as const,text:"Show the expenses."},
+      {role:"owner" as const,text:"Actually use 2026-10-12 instead."}];
+    const transport=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The saved latte price is {{r1:value.0.priceCents}}.",citations:["r1"]}]),
+    ],(context,i)=>{
+      if(i===0)clock=realNow+12000;
+      if(i===1)expect(context.finalizeOnly).toBe(true);
+    });
+    const result=await runSupervisorTurn({...base,text:"Monday matters for the team. What is the latte price?",
+      history,investigationMemory:memory},transport);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(result.reply.status).not.toBe("unavailable");
+  }finally{now.mockRestore();}
+});
+
 it("does not reserve unused calendar-review time for an undated failed owner turn",async()=>{
   const realNow=Date.now();
   let clock=realNow;
