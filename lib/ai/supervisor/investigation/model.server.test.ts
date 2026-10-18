@@ -128,21 +128,43 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       {invalidPayloadReason:"unparseable_json",outputTextPartCount:1,jsonTextLength:9}));
   });
 
-  it("reports a valid 1-part JSON prefix when later parts are what broke the concatenation",async()=>{
-    // The first part is a complete, independently valid JSON answer; a second
-    // part of trailing text makes the CONCATENATED string unparseable even
-    // though the real answer was already complete on its own.
+  it("accepts a complete, schema-valid 1-part JSON prefix instead of discarding it over trailing noise",async()=>{
+    // Production evidence: the provider can emit a complete, correct answer and
+    // then trailing noise (observed as a likely repeat of its own answer) that
+    // breaks the full concatenation. Discarding a verified-valid answer and
+    // forcing a retry is strictly worse than using it.
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
         {type:"output_text",text:JSON.stringify({x:"ok"})},
         {type:"output_text",text:" trailing"},
       ]}]})));
     const onDiagnostic=vi.fn();
-    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
-      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+      context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toEqual({x:"ok"});
+    // Still recorded for observability, but with no category/invalidPayloadReason:
+    // this path never retries or degrades the turn, so it is not an error.
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
-      {invalidPayloadReason:"unparseable_json",outputTextPartCount:2,
-        validPrefixPartCount:1,validPrefixMatchesSchema:true}));
+      {outputTextPartCount:2,validPrefixPartCount:1,validPrefixMatchesSchema:true}));
+    expect(onDiagnostic.mock.calls[0][0].category).toBeUndefined();
+    expect(onDiagnostic.mock.calls[0][0].invalidPayloadReason).toBeUndefined();
+  });
+
+  it("never accepts a valid-JSON prefix that fails the schema contract, even when one exists",async()=>{
+    // The first part is syntactically valid JSON but violates the schema (x
+    // too short); a trailing part breaks the full concatenation. Confirms the
+    // recovery path only accepts a prefix that is BOTH valid JSON AND schema-valid.
+    const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
+      usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
+        {type:"output_text",text:JSON.stringify({x:""})},
+        {type:"output_text",text:" trailing"},
+      ]}]})));
+    const onDiagnostic=vi.fn();
+    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+      context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toBeNull();
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
+      {invalidPayloadReason:"unparseable_json",validPrefixPartCount:1,validPrefixMatchesSchema:false}));
   });
 
   it("finds no valid prefix at any length when the JSON is genuinely fragmented across parts",async()=>{
@@ -159,11 +181,11 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
       {invalidPayloadReason:"unparseable_json",outputTextPartCount:2,validPrefixPartCount:0}));
   });
 
-  it("finds a valid 2-part JSON prefix even when the first part alone does not parse, with trailing noise in a third part",async()=>{
+  it("accepts a valid 2-part JSON prefix even when the first part alone does not parse, with trailing noise in a third part",async()=>{
     // This is the case a check of texts[0] alone would get wrong: no single
     // part parses by itself, but the first TWO parts together form a complete,
     // schema-valid answer, with a third part of trailing noise after it —
-    // not genuine mid-token fragmentation.
+    // not genuine mid-token fragmentation, so it is accepted.
     const whole=JSON.stringify({x:"ok"});
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"completed",
       usage:{input_tokens:5,output_tokens:5},output:[{type:"message",content:[
@@ -172,11 +194,11 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         {type:"output_text",text:" trailing garbage"},
       ]}]})));
     const onDiagnostic=vi.fn();
-    await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",context:{},
-      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    const result=await requestInvestigation({name:"supervisor_investigation_review",schema,instructions:"",
+      context:{},model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000,onDiagnostic});
+    expect(result).toEqual({x:"ok"});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining(
-      {invalidPayloadReason:"unparseable_json",outputTextPartCount:3,
-        validPrefixPartCount:2,validPrefixMatchesSchema:true}));
+      {outputTextPartCount:3,validPrefixPartCount:2,validPrefixMatchesSchema:true}));
   });
 
   it("reports schema_mismatch with the failing field path, issue count, AND the full shape bundle",async()=>{

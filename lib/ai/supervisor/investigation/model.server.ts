@@ -92,15 +92,27 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       // or more parts before trailing noise begins. validPrefixMatchesSchema
       // additionally confirms the longest valid prefix is a real schema-shaped
       // answer, not merely coincidentally-valid JSON.
+      //
+      // Production evidence (gathered via these exact fields): about half of
+      // unparseable_json failures have a complete, schema-valid answer sitting
+      // in a leading prefix, with the provider then emitting trailing noise
+      // (observed as a likely repeat/duplicate of its own answer) that breaks
+      // the full concatenation. Discarding a verified, schema-valid answer in
+      // that case — and forcing a full retry — is strictly worse than just
+      // using it, so acceptablePrefix (the longest prefix that is BOTH valid
+      // JSON and schema-valid) is accepted below instead of thrown away.
       let validPrefixPartCount:number|undefined,validPrefixMatchesSchema:boolean|undefined;
+      let acceptablePrefix:T|undefined;
       if(texts.length>1){
         validPrefixPartCount=0;
         for(let i=1;i<texts.length;i++){
-          try{
-            const prefix=JSON.parse(texts.slice(0,i).join(""));
-            validPrefixPartCount=i;
-            validPrefixMatchesSchema=input.schema.safeParse(prefix).success;
-          }catch{/* this prefix length is not valid JSON; a longer one still might be */}
+          let prefix:unknown;
+          try{prefix=JSON.parse(texts.slice(0,i).join(""));}
+          catch{continue;/* this prefix length is not valid JSON; a longer one still might be */}
+          validPrefixPartCount=i;
+          const prefixParsed=input.schema.safeParse(prefix);
+          validPrefixMatchesSchema=prefixParsed.success;
+          if(prefixParsed.success)acceptablePrefix=prefixParsed.data;
         }
       }
       const shapeMeta={outputItemTypes:outputItems.map(i=>i?.type) as string[],
@@ -110,9 +122,17 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
       if(!outputIsArray||texts.length===0||text.length>18000)
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"wrong_text_shape",...shapeMeta});
-      if(!concatenatedTextParses)
+      if(!concatenatedTextParses){
+        if(acceptablePrefix!==undefined){
+          // Not an error: record it for observability (no category — this
+          // path never retries or degrades the turn), then use the answer.
+          input.onDiagnostic?.({stage:"provider_response",requestName:input.name,...shapeMeta,
+            attempt,modelCallCount:input.usage.modelCallCount});
+          return acceptablePrefix;
+        }
         throw new SupervisorStageError("provider_invalid_payload","provider_response",
           {invalidPayloadReason:"unparseable_json",...shapeMeta});
+      }
       const parsed=input.schema.safeParse(decoded);
       if(!parsed.success){
         const issue=parsed.error.issues[0];
