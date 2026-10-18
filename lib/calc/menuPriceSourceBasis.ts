@@ -55,12 +55,16 @@ export function menuPriceSourceBasis(input:{
   expenses: MenuPriceActualExpense[];
   totalItemPrepSecondsInWindow: number;
 }):MenuPriceSourceBasis{
-  const actualByCategory = new Map<string,number>();
+  // Canonical monthlyAmountForCategory: ALL recorded expense rows win over
+  // recurring schedules, including estimated rows. Preserve estimate quality.
+  const expenseByCategory = new Map<string,{cents:number,estimated:boolean}>();
   for(const row of input.expenses){
-    if(!runningCodes.has(row.categoryCode)||row.status!=="actual"||
-       !finiteNonnegative(row.amountCents))continue;
-    actualByCategory.set(row.categoryCode,
-      (actualByCategory.get(row.categoryCode)??0)+row.amountCents);
+    if(!runningCodes.has(row.categoryCode)||!finiteNonnegative(row.amountCents))continue;
+    const prior=expenseByCategory.get(row.categoryCode)??{cents:0,estimated:false};
+    expenseByCategory.set(row.categoryCode,{
+      cents:prior.cents+row.amountCents,
+      estimated:prior.estimated||row.status==="estimated",
+    });
   }
   const recurringByCategory = new Map<string,{cents:number,estimated:boolean}>();
   for(const row of input.recurring){
@@ -71,13 +75,16 @@ export function menuPriceSourceBasis(input:{
     recurringByCategory.set(row.categoryCode,{cents:prior.cents+amount,
       estimated:prior.estimated||row.estimated});
   }
-  const allCategories = new Set([...actualByCategory.keys(),...recurringByCategory.keys()]);
+  const allCategories = new Set([...expenseByCategory.keys(),...recurringByCategory.keys()]);
   const monthlyRunningCents=allCategories.size===0?null:
     [...allCategories].reduce((sum,category)=>
-      sum+(actualByCategory.get(category)??recurringByCategory.get(category)!.cents),0);
+      sum+(expenseByCategory.get(category)?.cents??recurringByCategory.get(category)!.cents),0);
   const runningStatus:MenuPriceSourceBasis["runningStatus"]=
     monthlyRunningCents===null?"missing":
-    [...allCategories].every(c=>actualByCategory.has(c))?"recorded":"estimated";
+    [...allCategories].every(category=>{
+      const expense=expenseByCategory.get(category);
+      return expense!==undefined&&!expense.estimated;
+    })?"recorded":"estimated";
 
   // Split sales coverage from labor coverage. A staff-only rollup is valid
   // payroll evidence but is never a covered sales day. Conversely, a sales
