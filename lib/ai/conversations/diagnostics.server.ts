@@ -53,6 +53,14 @@ export type SupervisorDiagnostic = {
    * reply, so a quiet "I reached the limit" no longer has to be reverse-engineered
    * from request duration alone. */
   exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|"observations_too_large";
+  /** Why a direct-answer investigation round was rejected and retried, so a
+   * run of otherwise-identical "investigation_round agent:supervisor" lines
+   * (previously indistinguishable) says whether the model's own citations/
+   * display tokens failed validation, an independently reviewed answer was
+   * judged unsupported/incomplete, or the review itself never ran (budget
+   * exhaustion or an unrecoverable malformed response) -- never conflated
+   * with an actual negative verdict. */
+  answerRejectedReason?:"render_failed"|"review_failed"|"review_unavailable";
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -66,6 +74,7 @@ const stages:readonly SupervisorStage[]=[
 const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
 const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
   "snapshot_mismatch","observations_too_large"]);
+const answerRejectedReasons=new Set(["render_failed","review_failed","review_unavailable"]);
 const categories:readonly SupervisorErrorCategory[]=[
   "provider_http","provider_timeout","provider_incomplete","provider_invalid_payload",
   "invalid_tool_call","tool_execution","final_output_missing","final_output_malformed",
@@ -232,6 +241,8 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeProviderIdentifier(d.capabilityId)?{capabilityId:safeProviderIdentifier(d.capabilityId)}:{}),
         ...(d.exhaustionReason&&exhaustionReasons.has(d.exhaustionReason)?
           {exhaustionReason:d.exhaustionReason}:{}),
+        ...(d.answerRejectedReason&&answerRejectedReasons.has(d.answerRejectedReason)?
+          {answerRejectedReason:d.answerRejectedReason}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
