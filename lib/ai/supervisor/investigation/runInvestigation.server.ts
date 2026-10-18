@@ -25,7 +25,7 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
 import {answerSchema,reviewSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
-import {SupervisorStageError,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorStageError,logSupervisorDebugPayload,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {investigationInstructions,reviewInstructions,publicQueryReviewInstructions,calendarContextReviewInstructions} from "./instructions";
 
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -102,6 +102,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue});
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+    logSupervisorDebugPayload({point:"investigation_exhausted",ownerQuestion:input.text,
+      budget,exhaustionReason,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
+      rescuedUnverified:rescue,rescuedText:rescue&&lastUnverifiedAnswer?lastUnverifiedAnswer.text:null,
+      lastUnverifiedCandidate:lastUnverifiedAnswer});
     if(rescue&&lastUnverifiedAnswer){
       const citedObservations=observations.filter(o=>lastUnverifiedAnswer!.citedIds.includes(o.id));
       // A pure owner-authored hypothetical (every citation a source-free
@@ -281,6 +286,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       const answer=step;
+      // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+      logSupervisorDebugPayload({point:"direct_answer_attempt",ownerQuestion:input.text,
+        modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
+        rawAnswerParagraphs:answer.paragraphs,
+        availableObservations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,
+          value:o.result.value,status:o.result.status,displayRaw:o.displayRaw}))});
       const rendered=renderInvestigationAnswer(answer,observations,input.locale);
       const reply=investigationReply(answer,observations,input.locale);
       if(!rendered||!reply){

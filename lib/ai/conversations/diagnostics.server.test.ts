@@ -1,6 +1,6 @@
-import {describe,expect,it,vi} from "vitest";
+import {afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
-import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError} from "./diagnostics.server";
+import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError,logSupervisorDebugPayload} from "./diagnostics.server";
 describe("Sanitized Supervisor production diagnostics",()=>{
   it("includes a stable request correlation ID with safe stage/counters only",()=>{
     const written:string[]=[];
@@ -192,5 +192,54 @@ describe("Scope reconciliation telemetry never logs utterances or task contents"
     const d=JSON.parse(lines[0]);
     expect(d.reconciliationOutcome).toBeUndefined();
     expect(JSON.stringify(d)).not.toMatch(/PRIVATE|Latte|secret|sensitive-id|business_id/);
+  });
+});
+
+describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
+  const previousFlag=process.env.SUPERVISOR_DEBUG_RAW_LOGGING;
+  const previousVercelEnv=process.env.VERCEL_ENV;
+  afterEach(()=>{
+    if(previousFlag===undefined)delete process.env.SUPERVISOR_DEBUG_RAW_LOGGING;
+    else process.env.SUPERVISOR_DEBUG_RAW_LOGGING=previousFlag;
+    if(previousVercelEnv===undefined)delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV=previousVercelEnv;
+  });
+  it("stays silent unless SUPERVISOR_DEBUG_RAW_LOGGING is exactly \"true\"",()=>{
+    const lines:string[]=[];
+    delete process.env.VERCEL_ENV;
+    delete process.env.SUPERVISOR_DEBUG_RAW_LOGGING;
+    logSupervisorDebugPayload({ownerQuestion:"What did Sophie earn this week?"},(l)=>lines.push(l));
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="TRUE";
+    logSupervisorDebugPayload({ownerQuestion:"What did Sophie earn this week?"},(l)=>lines.push(l));
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="false";
+    logSupervisorDebugPayload({ownerQuestion:"What did Sophie earn this week?"},(l)=>lines.push(l));
+    expect(lines).toHaveLength(0);
+  });
+  it("stays silent on a production Vercel deployment even if the flag is set there by mistake",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    process.env.VERCEL_ENV="production";
+    logSupervisorDebugPayload({ownerQuestion:"What did Sophie earn this week?"},(l)=>lines.push(l));
+    expect(lines).toHaveLength(0);
+  });
+  it("logs the raw, unsanitized payload verbatim once explicitly enabled on a non-production deployment",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    process.env.VERCEL_ENV="preview";
+    logSupervisorDebugPayload({point:"direct_answer_attempt",ownerQuestion:"What did Sophie earn this week?",
+      rawAnswerParagraphs:[{kind:"evidence",text:"Sophie earned {{r1:value.wageCents}}.",citations:["r1"]}]},
+      (l)=>lines.push(l));
+    expect(lines).toHaveLength(1);
+    const logged=JSON.parse(lines[0]);
+    expect(logged.event).toBe("supervisor_turn_debug_test_only");
+    expect(logged.ownerQuestion).toBe("What did Sophie earn this week?");
+    expect(logged.rawAnswerParagraphs[0].text).toContain("Sophie earned");
+  });
+  it("logs the raw payload when enabled outside Vercel entirely (no VERCEL_ENV at all)",()=>{
+    const lines:string[]=[];
+    delete process.env.VERCEL_ENV;
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({ownerQuestion:"local dev question"},(l)=>lines.push(l));
+    expect(lines).toHaveLength(1);
   });
 });

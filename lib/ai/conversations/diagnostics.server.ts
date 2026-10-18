@@ -264,6 +264,35 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
     },
   };
 }
+/** ============================================================
+ * TEMPORARY, TEST-ENVIRONMENT-ONLY. DO NOT ENABLE WHERE ANY REAL OWNER'S
+ * DATA FLOWS THROUGH. DELETE THIS FUNCTION AND EVERY CALL SITE ONCE A
+ * REAL OWNER USES THIS APP.
+ * ==============================================================
+ * Every other diagnostic in this file is deliberately sanitized -- never
+ * the owner's question, never café/employee data, never the model's own
+ * text -- because that is what reaches a general-purpose, exportable log
+ * stream. This function is the one deliberate exception, added only to
+ * let a test environment's investigation failures be reconstructed end to
+ * end (the exact question, the model's literal answer text with its
+ * citations unresolved, and the real values behind every observation it
+ * had available) instead of guessed at round by round from metadata
+ * alone. A single manually-set flag is a single point of failure --
+ * copying SUPERVISOR_DEBUG_RAW_LOGGING into a production project's env
+ * vars (by mistake, or by cloning a preview config) would be enough to
+ * leak it there. So this also requires VERCEL_ENV to read something
+ * other than "production": that variable is set by the platform itself
+ * per deployment, never hand-copied, so it keeps working as a second,
+ * independent guard even if the opt-in flag is set somewhere it should
+ * not be. Outside Vercel (no VERCEL_ENV at all, e.g. local dev) the flag
+ * alone still governs, since there is no production deployment to guard
+ * against. */
+export function logSupervisorDebugPayload(payload:Record<string,unknown>,
+  sink:(line:string)=>void=(line)=>console.info(line)):void{
+  if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
+  if(process.env.VERCEL_ENV==="production")return;
+  sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
+}
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
   if(error instanceof SupervisorStageError) return {
     stage:error.stage,category:error.category,httpStatus:error.httpStatus,
