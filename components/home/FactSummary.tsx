@@ -9,6 +9,14 @@ function factValueText(block:FactBlock,locale:Locale):string{
   if(block.type==="percent")return new Intl.NumberFormat(locale,{style:"percent",maximumFractionDigits:1}).format(block.valueBps/10000);
   return new Intl.NumberFormat(locale).format(block.value);
 }
+/** A cost, loss or negative percentage must never render in the color
+ * reserved for profit/positive change; "count" is never negative (schema-
+ * enforced), so it always stays neutral. */
+function factValueColor(block:FactBlock):string{
+  if(block.type==="metric")return block.valueCents>0?"text-good":block.valueCents<0?"text-warn":"text-ink";
+  if(block.type==="percent")return block.valueBps>0?"text-good":block.valueBps<0?"text-warn":"text-ink";
+  return "text-ink";
+}
 export default function FactSummary({blocks,locale,sourceText}:{blocks:FactBlock[];locale:Locale;sourceText:string}){
   if(!blocks.length)return null;
   const many=blocks.length>1;
@@ -20,12 +28,12 @@ export default function FactSummary({blocks,locale,sourceText}:{blocks:FactBlock
       className={many?"grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2":"block"}>
       {blocks.map((block,i)=> <div key={i} className="min-w-0">
         <p className="break-words text-[14px] font-semibold leading-snug text-ink-muted">{block.label}</p>
-        <p className="mt-1 break-words font-headline text-[24px] font-extrabold leading-tight tracking-tight text-good">
+        <p className={"mt-1 break-words font-headline text-[24px] font-extrabold leading-tight tracking-tight "+factValueColor(block)}>
           {factValueText(block,locale)}
         </p>
         {block.type==="percent" && <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#E4EDE2]" role="presentation">
-          <div className="h-full rounded-full bg-good transition-[width]"
-            style={{width:Math.max(0,Math.min(100,block.valueBps/100))+"%"}} />
+          <div className={"h-full rounded-full transition-[width] "+(block.valueBps<0?"bg-warn":"bg-good")}
+            style={{width:Math.max(0,Math.min(100,Math.abs(block.valueBps)/100))+"%"}} />
         </div>}
       </div>)}
     </div>

@@ -68,8 +68,10 @@ export async function POST(request: Request, context: RouteContext) {
     // Fresh per POST invocation, not per browser retry click: a retried
     // turn reuses the same clientMessageId (and progress row), but its
     // writes must not be blocked by whatever step the previous, failed
-    // attempt happened to leave behind. See recordSupervisorProgress.
-    const progressAttempt = crypto.randomUUID();
+    // attempt happened to leave behind. Epoch milliseconds (not a random
+    // id) so a strictly later attempt always outranks an earlier one. See
+    // recordSupervisorProgress.
+    const progressAttempt = Date.now();
     let reply;
     try {
       const completed = await runSupervisorTurn({

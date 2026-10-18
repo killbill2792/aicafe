@@ -11,7 +11,7 @@ export type SupervisorProgressAgent = NonNullable<SupervisorDiagnostic["agent"]>
  * only means the status bar stays stale, never a lost or corrupted reply. */
 export async function recordSupervisorProgress(params: {
   scope: ConversationScope; threadId: string; clientMessageId: string;
-  agent: SupervisorProgressAgent; stage: SupervisorProgressStage; step: number; attempt: string;
+  agent: SupervisorProgressAgent; stage: SupervisorProgressStage; step: number; attempt: number;
 }): Promise<void> {
   try {
     const admin = createAdminSupabaseClient();
