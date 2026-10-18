@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 import { formatCents } from "@/lib/calc";
 import { menuPricePreview } from "@/lib/calc/menuPricePreview";
 import type { MenuControlItem } from "@/lib/data/getMenuControlCenter";
+import type { ExpenseCategoryCode } from "@/lib/constants";
 
 /** Transparent, owner-confirmable WHAT-IF. This does not overwrite receipts,
  * payroll, POS or the saved menu price. Confirmed values last only until
@@ -31,6 +32,7 @@ function feeBps(raw:string):number|null{
 }
 export default function MenuPricePreview({item}:{item:MenuControlItem}){
   const t=useTranslations("Menu");
+  const categoryName=useTranslations("Categories");
   const basis=item.pricingBasis;
   const initial:Fields={
     running:dollars(basis?.monthlyRunningCents??null),
@@ -129,7 +131,15 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       <p className="mt-1 text-sm text-ink-muted">{t("priceBasisHistoryCaveat")}</p>
     </div>
     <div className="mt-3 grid gap-2 md:grid-cols-2">
-      {input("running",t("priceBasisBills"),status(basis.runningStatus),"usd")}
+      <div>
+        {input("running",t("priceBasisBills"),status(basis.runningStatus),"usd")}
+        {basis.missingRunningCategories.length>0&&
+          <p className="mt-2 text-sm text-warn" role="status">{t("priceBasisMissingCostDetail",{
+            names:basis.missingRunningCategories
+              .map(code=>categoryName(code as ExpenseCategoryCode)).join(", "),
+            known:money(basis.runningKnownCents),
+          })}</p>}
+      </div>
       {input("payroll",t("priceBasisPayroll"),status(basis.payrollStatus),"usd")}
       {input("drinks",t("priceBasisDrinks"),status(basis.volumeStatus),"count")}
       {input("fee",t("priceBasisFees"),status(basis.feeStatus),"percent")}
