@@ -35,6 +35,9 @@ export type MenuPriceSourceBasis = {
   monthlyDrinks: number | null;
   volumeStatus: "projected" | "missing";
   processingFeeBps: number | null;
+  /** Exact observed fee rate, before basis-point rounding for display. */
+  processingFeeNumeratorCents: number | null;
+  processingFeeDenominatorCents: number | null;
   feeStatus: "actual" | "estimated" | "missing";
   monthlyPrepSeconds: number | null;
   coveredDays: number;
@@ -165,11 +168,13 @@ export function menuPriceSourceBasis(input:{
     Number.isSafeInteger(d.netSalesCents)&&Number.isSafeInteger(d.cardFeesCents));
   const revenue=days.reduce((n,d)=>n+d.netSalesCents,0);
   const cardFees=days.reduce((n,d)=>n+d.cardFeesCents,0);
-  const effectiveFeeBps=feeReady&&Number.isSafeInteger(revenue)&&revenue>0&&
-    Number.isSafeInteger(cardFees)&&cardFees>=0?
-      Math.round(10000*cardFees/revenue):null;
-  const processingFeeBps=effectiveFeeBps!==null&&effectiveFeeBps<=10000?
-    effectiveFeeBps:null;
+  const exactFeeReady=feeReady&&Number.isSafeInteger(revenue)&&revenue>0&&
+    Number.isSafeInteger(cardFees)&&cardFees>=0&&cardFees<=revenue;
+  const processingFeeBps=exactFeeReady?
+    Math.round(10000*cardFees/revenue):null;
+  // Keep raw integer numerator/denominator for per-drink precision.
+  const processingFeeNumeratorCents=exactFeeReady?cardFees:null;
+  const processingFeeDenominatorCents=exactFeeReady?revenue:null;
 
   const monthlyPrepSeconds=monthlyDrinks!==null&&
     Number.isSafeInteger(input.totalItemPrepSecondsInWindow)&&
@@ -177,7 +182,8 @@ export function menuPriceSourceBasis(input:{
     ?Math.round(input.totalItemPrepSecondsInWindow*scale):null;
   return {monthlyRunningCents,runningKnownCents,missingRunningCategories,runningStatus,monthlyPayrollCents,payrollStatus,
     monthlyDrinks,volumeStatus:monthlyDrinks===null?"missing":"projected",
-    processingFeeBps,feeStatus:processingFeeBps===null?"missing":
+    processingFeeBps,processingFeeNumeratorCents,processingFeeDenominatorCents,
+    feeStatus:processingFeeBps===null?"missing":
       days.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
     monthlyPrepSeconds,coveredDays,
     oldestDate:days[0]?.businessDate??null,
