@@ -140,6 +140,16 @@ describe("Menu pricing source basis",()=>{
     expect(p.payrollCoveredDays).toBe(0);
     expect(p.monthlyPayrollCents).toBeNull();
   });
+  it("does not project from gapped or incomplete covered labor intervals",()=>{
+    const sales=Array.from({length:14},(_,i)=>day(i+1));
+    const gapped=basis(sales,{laborCoveredDates:[1,2,3,4,5,8,9,10]
+      .map(n=>day(n).businessDate)});
+    expect(gapped.monthlyPayrollCents).toBeNull();
+    const withMissingRollup=basis(sales.slice(0,13),{
+      laborCoveredDates:sales.map(d=>d.businessDate),
+    });
+    expect(withMissingRollup.monthlyPayrollCents).toBeNull();
+  });
   it("does not extrapolate from just one or two staff-only dates",()=>{
     const sales=Array.from({length:14},(_,i)=>({...day(i+1),
       wagesCents:i<2?5000:0,payrollTaxCents:i<2?600:0}));
