@@ -157,13 +157,19 @@ export function menuPriceSourceBasis(input:{
     monthlyPayrollCents===null?"missing":
       payrollDays.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated";
 
-  const feeSales=days.filter(d=>d.netSalesCents>0);
-  const feeReady=coveredDays>=7&&feeSales.length>0&&
-    feeSales.every(d=>d.cardFeesStatus==="actual"||d.cardFeesStatus==="estimated");
-  const revenue=feeSales.reduce((n,d)=>n+d.netSalesCents,0);
-  const cardFees=feeSales.reduce((n,d)=>n+d.cardFeesCents,0);
-  const processingFeeBps=feeReady&&revenue>0&&cardFees>=0?
-    Math.round(10000*cardFees/revenue):null;
+  // Canonical effective card rate: sum ALL covered-day processing fees
+  // divided by sum ALL covered-day net sales. Refunded/negative-sale days
+  // and zero-sale fee adjustments must not disappear from either side.
+  const feeReady=coveredDays>=7&&days.every(d=>
+    (d.cardFeesStatus==="actual"||d.cardFeesStatus==="estimated")&&
+    Number.isSafeInteger(d.netSalesCents)&&Number.isSafeInteger(d.cardFeesCents));
+  const revenue=days.reduce((n,d)=>n+d.netSalesCents,0);
+  const cardFees=days.reduce((n,d)=>n+d.cardFeesCents,0);
+  const effectiveFeeBps=feeReady&&Number.isSafeInteger(revenue)&&revenue>0&&
+    Number.isSafeInteger(cardFees)&&cardFees>=0?
+      Math.round(10000*cardFees/revenue):null;
+  const processingFeeBps=effectiveFeeBps!==null&&effectiveFeeBps<=10000?
+    effectiveFeeBps:null;
 
   const monthlyPrepSeconds=monthlyDrinks!==null&&
     Number.isSafeInteger(input.totalItemPrepSecondsInWindow)&&
@@ -172,7 +178,7 @@ export function menuPriceSourceBasis(input:{
   return {monthlyRunningCents,runningKnownCents,missingRunningCategories,runningStatus,monthlyPayrollCents,payrollStatus,
     monthlyDrinks,volumeStatus:monthlyDrinks===null?"missing":"projected",
     processingFeeBps,feeStatus:processingFeeBps===null?"missing":
-      feeSales.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
+      days.every(d=>d.cardFeesStatus==="actual")?"actual":"estimated",
     monthlyPrepSeconds,coveredDays,
     oldestDate:days[0]?.businessDate??null,
     latestDate:days[days.length-1]?.businessDate??null,
