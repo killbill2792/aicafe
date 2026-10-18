@@ -136,15 +136,22 @@ export function menuPriceSourceBasis(input:{
   // calendar dates were observed. Project only when a trusted independent
   // import supplies explicit complete labor-covered dates. At present the
   // caller supplies none, so payroll stays missing until owner what-if input.
-  const selectedDates=new Set(sourceDays.map(d=>d.businessDate));
+  const useRecentWindow=sourceDays===recentDays;
+  // Preserve verified dates with missing rollups so a partial source can
+  // NEVER silently shrink the calendar denominator. The independently
+  // covered interval must be consecutive, including real zero-work dates.
   const verifiedLaborDates=new Set((input.laborCoveredDates??[])
-    .filter(date=>selectedDates.has(date)));
+    .filter(date=>date<=end&&(!useRecentWindow||date>=start)));
+  const orderedLaborDates=[...verifiedLaborDates].sort();
+  const continuousLaborCoverage=orderedLaborDates.every((date,i)=>
+    i===0||Date.parse(date+"T00:00:00Z")-
+      Date.parse(orderedLaborDates[i-1]+"T00:00:00Z")===86400000);
   const payrollDays=sourceDays.filter(d=>verifiedLaborDates.has(d.businessDate)&&
     finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
   const payrollCoveredDays=payrollDays.length;
   const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
   const monthlyPayrollCents=payrollCoveredDays>=7&&
-    payrollCoveredDays===verifiedLaborDates.size?
+    continuousLaborCoverage&&payrollCoveredDays===verifiedLaborDates.size?
       Math.round(payrollCents*30/payrollCoveredDays):null;
   const payrollStatus:MenuPriceSourceBasis["payrollStatus"]=
     monthlyPayrollCents===null?"missing":
