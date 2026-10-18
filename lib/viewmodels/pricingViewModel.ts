@@ -11,12 +11,13 @@ export function buildPricingViewModel(input: { items: PricingItemInput[]; busine
     const categoryPeers: CategoryPeerStats = peers.length >= MIN_CATEGORY_PEERS ? { medianPriceCents: median(peers.map((peer) => peer.currentPriceCents)), medianProductCostPercent: median(peers.map((peer) => peer.productCostCents / peer.currentPriceCents)) } : null;
     const posSignal = { daysWithSalesInWindow: input.business.daysWithSalesInWindow, windowDays: input.business.windowDays, totalOrdersInWindow: input.business.totalOrdersInWindow, itemUnitsSoldInWindow: item.unitsSoldInWindow, monthlyRevenueCents: input.business.monthlyRevenueCents };
     const profile = getPricingProfile(item.category);
-    const businessEconomicsComplete = input.business.processingFeesStatus !== "missing" && input.business.productCostsStatus !== "missing";
+    const businessEconomicsComplete = input.business.processingFeesStatus !== "missing" && input.business.productCostsStatus !== "missing" && input.business.operatingCostsStatus !== "missing";
     const economics = businessEconomicsComplete ? { monthlyRevenueCents: input.business.monthlyRevenueCents, monthlyVariableProductCostCents: input.business.monthlyVariableProductCostCents, monthlyStaffCostCents: input.business.monthlyStaffCostCents, monthlyOperatingCostCents: input.business.monthlyOperatingCostCents, monthlyProcessingFeesCents: input.business.monthlyProcessingFeesCents } : null;
     return { itemId: item.id, result: suggestPrice({ productCostCents: item.productCostCents, currentPriceCents: item.currentPriceCents, productCostStatus: item.productCostStatus, profile, posSignal, economics, categoryPeers,
       businessEconomicsMissingInputs: [
         ...(input.business.processingFeesStatus === "missing" ? ["processingFees"] : []),
         ...(input.business.productCostsStatus === "missing" ? ["productCosts"] : []),
+        ...(input.business.operatingCostsStatus === "missing" ? ["operatingCosts"] : []),
       ],
       businessEconomicsEstimatedInputs: [
         ...(input.business.processingFeesStatus === "estimated" ? ["processingFees"] : []),

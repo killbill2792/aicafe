@@ -44,6 +44,16 @@ describe("pricing processing-fee quality", () => {
     expect(result.dataQuality.missingInputs).toContain("processingFees");
   });
 
+  it("refuses business-adjusted guidance when monthly operating costs are missing", () => {
+    const result=buildPricingViewModel({
+      items:[item],
+      business:{...business,monthlyOperatingCostCents:0,operatingCostsStatus:"missing"},
+    })[0].result;
+    expect(result.calculationMode).toBe("BENCHMARK");
+    expect(result.businessAdjustmentFactor).toBe(1);
+    expect(result.dataQuality.missingInputs).toContain("operatingCosts");
+  });
+
   it("reserves estimated fee provenance without treating it as missing", () => {
     const result = buildPricingViewModel({ items: [item], business: { ...business, processingFeesStatus: "estimated" } })[0].result;
     expect(result.calculationMode).toBe("BUSINESS_ADJUSTED");

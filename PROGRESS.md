@@ -1,3 +1,13 @@
+## Menu transparent monthly-cost pricing preview (2026-10-17, draft PR)
+
+**Owner journey:** Open Hot Latte ($7.00 selling price, $1.45 ingredient cost) after importing only 14 earlier sales days and saving monthly bills/payroll. The Menu now shows exactly which monthly bills, projected payroll, historic drink-volume and fee rate are used, with an on-screen confirmation/what-if box. It computes a cautiously labeled allocated-profit estimate and conditional target price when inputs are sufficient; otherwise it names the missing inputs rather than showing a false total. No menu price or underlying finance source is changed.
+
+**Implementation:** Menu reads recurring bill records, normalizes weekly/quarterly/annual frequency, projects documented historical sale-covered days (not missing days), uses wage+employer tax rollups, and attaches source quality plus the saved target operating margin to each menu size. New pure unit-tested `lib/calc/menuPriceSourceBasis.ts` and `lib/calc/menuPricePreview.ts` enforce source/estimate distinctions, prep-weighted labor allocation with labeled equal-drink fallback, and valid zero vs missing. New `MenuPricePreview` component provides EN/ES/AR owner controls. The Menu's original ingredient-only benchmark is intentionally retained as a separate signal; it is never relabeled as true profit or an advised discount.
+
+**Safety and release gates:** Confirmation is currently an explicitly **on-screen only** what-if, not a persisted business input; do not claim durable saving. Must confirm CI (typecheck, full tests, build, locales, lint), inspect final PR diff and obtain independent review and owner approval. Live authenticated café verification, real 14-day historical data, and precise payroll/fee source coverage need external environment review. No production changes or migrations. Follow-up: persisted, source-versioned owner assumptions should be a separately reviewed authorization/data-model slice, not silently written to ledger records.
+
+---
+
 ## Supervisor P3: register Olivia schedule preview and Alex pricing review (2026-10-17, PR #103; draft)
 
 **Gap closed:** `createP3ReadRegistry()` could only discover P1 financial sources; `sourceRegistry.server.ts` said "Olivia and Alex are added here only AFTER their own PRs are merged," confirmed still true on `main` by direct code read, not docs. Olivia's `olivia.schedule.preview` and Alex's `alex.pricing.batch_review.v1` (real, merged via #96/#97) were reachable only through the separate legacy tool loop, so P3's open-ended composition could never see scheduling/pricing evidence even though both existed and worked elsewhere.
