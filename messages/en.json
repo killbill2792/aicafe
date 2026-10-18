@@ -498,6 +498,7 @@
     "priceBasisMissingCostDetail": "Some expected monthly costs are missing: {names}. The known monthly subtotal is {known}. Enter your complete monthly total, including those costs, to finish the estimate.",
         "priceBasisMissingExpected": "{count} expected expense category or categories have no amount this month. Your recorded subtotal is {subtotal}. Enter your full monthly bills total to complete this estimate, without counting recorded costs twice.",
     "priceBasisRounding": "Individual cost shares are rounded for display. Final profit and target prices use unrounded allocations.",
+    "priceBasisOwnerAdjusted": "Owner-adjusted for this estimate (not saved)",
     "priceBasisTitle": "Full-cost estimate · numbers used",
     "priceBasisHelp": "Your saved expenses and historical sales are used when available. Check each amount and confirm any changes to see a new estimate.",
     "priceBasisHistoryTitle": "Sales evidence used",
