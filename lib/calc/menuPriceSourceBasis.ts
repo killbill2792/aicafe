@@ -97,7 +97,7 @@ export function menuPriceSourceBasis(input:{
   const monthlyDrinks=coveredDays>=7&&drinks>0?Math.round(drinks*scale):null;
 
   const payrollDays=allDays.filter(d=>
-    (d.wagesCents>0||d.payrollTaxCents>0||d.payrollTaxStatus==="actual") &&
+    (d.wagesCents>0||d.payrollTaxCents>0) &&
     finiteNonnegative(d.wagesCents)&&finiteNonnegative(d.payrollTaxCents));
   const payrollCoveredDays=payrollDays.length;
   const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
