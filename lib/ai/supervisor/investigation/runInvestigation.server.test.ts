@@ -310,12 +310,15 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
       read("p3.menu.catalog.v1",query("menu.catalog")),
       badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,badAnswer,
     ]);
-    const result=await runSupervisorTurn({...base,text:"What is the price of the Iced Latte?"},transport);
+    const onDiagnostic=vi.fn();
+    const result=await runSupervisorTurn({...base,text:"What is the price of the Iced Latte?",onDiagnostic},transport);
     expect(result.reply.status).toBe("insufficient_evidence");
     expect(result.reply.evidence).toEqual([]);
     expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_UNVERIFIED"}));
     expect(result.reply.blocks).toContainEqual({type:"text",
       text:"The listed price is [unchecked value] for 2 drinks."});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"investigation_exhausted",rescuedUnverified:true}));
   });
   it("logs answerRejectedReason review_unavailable, not review_failed, when the review never produces a verdict",async()=>{
     const malformed=()=>new Response(JSON.stringify({status:"completed",
@@ -658,9 +661,12 @@ it("never publishes an unsupported answer rejected by the independent evidence r
     const body=JSON.parse(String(init.body));
     return body.text.format.name==="supervisor_investigation_review"?response({supported:false,complete:false}):
       response(answer([{kind:"advice",text:"I have secretly published the schedule.",citations:[]}]))});
-  const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?"},transport);
+  const onDiagnostic=vi.fn();
+  const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
   expect(result.reply.status).toBe("unavailable");
   expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
+  expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+    stage:"investigation_exhausted",rescuedUnverified:false}));
 });
 
 it("rechecks the active tenant before publishing any investigated evidence",async()=>{

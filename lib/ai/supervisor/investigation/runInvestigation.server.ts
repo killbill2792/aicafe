@@ -83,7 +83,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   let lastUnverifiedAnswer:string|null=null;
   const failure=(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
-      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+      modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
+      rescuedUnverified:budget&&!!lastUnverifiedAnswer});
     if(budget&&lastUnverifiedAnswer)return {reply:{intent:"unknown" as const,
       status:"insufficient_evidence" as const,evidence:[],
       blocks:[{type:"warning" as const,code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},

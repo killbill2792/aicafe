@@ -61,6 +61,12 @@ export type SupervisorDiagnostic = {
    * exhaustion or an unrecoverable malformed response) -- never conflated
    * with an actual negative verdict. */
   answerRejectedReason?:"render_failed"|"review_failed"|"review_unavailable";
+  /** Set on investigation_exhausted when the turn still surfaced the model's
+   * own last answer, labeled unverified, instead of the generic budget
+   * message -- so a log of this failure says whether the owner actually saw
+   * something or truly got nothing, without having to guess from the stored
+   * reply itself. */
+  rescuedUnverified?:boolean;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -243,6 +249,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           {exhaustionReason:d.exhaustionReason}:{}),
         ...(d.answerRejectedReason&&answerRejectedReasons.has(d.answerRejectedReason)?
           {answerRejectedReason:d.answerRejectedReason}:{}),
+        ...(typeof d.rescuedUnverified==="boolean"?{rescuedUnverified:d.rescuedUnverified}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
