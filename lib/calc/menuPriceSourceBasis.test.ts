@@ -46,8 +46,8 @@ describe("Menu pricing source basis",()=>{
   });
   it("includes zero and refunded covered sales days in the effective fee ratio",()=>{
     const days=Array.from({length:14},(_,i)=>day(i+1));
-    days[12]={...days[12],netSalesCents:0,cardFeesCents:500};
-    days[13]={...days[13],netSalesCents:-1000,cardFeesCents:-30};
+    days[12]={...day(13),netSalesCents:0,cardFeesCents:500};
+    days[13]={...day(14),netSalesCents:-1000,cardFeesCents:-30};
     const p=basis(days);
     // (12 * 300 + 500 - 30) / (12 * 10000 - 1000) = 342 bps.
     expect(p.processingFeeBps).toBe(342);
