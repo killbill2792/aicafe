@@ -1197,6 +1197,34 @@ it("keeps an extraction-verified claim in the §7 best-accumulated candidate ins
   expect(JSON.stringify(result.reply.blocks)).not.toContain("$900");
 });
 
+it("never lets a later round with strictly MORE unresolved claim issues overwrite a cleaner earlier §7 candidate on a block-count tie (Codex finding)",async()=>{
+  // Round 1: one paragraph, ONE unmatched freehand number -- masked, so 1
+  // issue, 1 surviving block. Round 2: a DIFFERENT draft (so it is never
+  // mistaken for a stale repeat), still a single paragraph, but with TWO
+  // unmatched freehand numbers -- masking both still renders to the SAME 1
+  // block (masking replaces text within a paragraph, it never splits one
+  // paragraph into more blocks), while carrying 2 issues, strictly worse.
+  // Resubmitting round 2's own draft unchanged a third time trips the
+  // adaptive-budget repeat-stop. On exhaustion, the §7 best-accumulated
+  // candidate must still be ROUND 1's strictly cleaner draft -- a bare
+  // block-count tie must never let round 2's worse draft overwrite it.
+  const draft1=answer([{kind:"advice",text:"Rent alone could run $900 more some months.",citations:[]}]);
+  const draft2=answer([{kind:"advice",
+    text:"Rent could run $900 more, and utilities might add $300 too.",citations:[]}]);
+  // A fresh Response per call: the extraction step runs once per round here
+  // (round 1 and round 2 each have an extractable issue), and a Response's
+  // body can only be read once.
+  const scripted=transportFor([draft1,draft2,draft2]);
+  const transport=async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_formula_extraction")return response({extracted:null});
+    return scripted(url,init);
+  };
+  const result=await runSupervisorTurn({...base,text:"What else could change?"},transport);
+  expect(JSON.stringify(result.reply.blocks)).toContain("Rent alone could run");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("utilities might add");
+});
+
 describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
   function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
     const result={id:"test.read",status:"verified",value};

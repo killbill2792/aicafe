@@ -176,25 +176,31 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // actual finding, not a formatting slip, and must never be rescued.
   let lastUnverifiedAnswer:{text:string;citedIds:string[]}|null=null;
   // §7: the best claim-level-masked candidate seen across the WHOLE loop,
-  // never just the final attempt. "Best" = most surviving content. Reused
-  // only when exhaustion leaves nothing cleaner to show (failure() below).
-  let bestAccumulated:{score:number;blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];
-    citedIds:string[];status:GroundedSupervisorReply["status"];intent:GroundedSupervisorReply["intent"]}|null=null;
-  // Shared by every place that records a §7 candidate, so a candidate
-  // produced later in the SAME round (e.g. after the formula-extraction
-  // fallback improves it) is compared and stored the exact same way as the
-  // first one, rather than leaving an earlier, more-masked candidate stuck
-  // in bestAccumulated once a strictly better one exists. ">=", not ">":
-  // masking one fewer claim inside an already-surviving paragraph (the
-  // extraction fallback's whole point) changes that paragraph's CONTENT,
-  // never its block COUNT, so an improved candidate from later in the same
-  // round can tie the score of the one just recorded moments earlier --
-  // that tie must still favor the newer, strictly-more-verified candidate.
-  const updateBestAccumulated=(candidate:GroundedSupervisorReply)=>{
+  // never just the final attempt. "Best" = fewest unresolved claim issues,
+  // ties broken by most surviving content. Reused only when exhaustion
+  // leaves nothing cleaner to show (failure() below).
+  let bestAccumulated:{issueCount:number;score:number;blocks:SupervisorReplyBlock[];
+    evidence:EvidenceReference[];citedIds:string[];status:GroundedSupervisorReply["status"];
+    intent:GroundedSupervisorReply["intent"]}|null=null;
+  // Shared by every place that records a §7 candidate: both the pre-extraction
+  // candidate recorded on every issue-bearing round, and a same-round,
+  // post-extraction candidate that strictly improves on it. Comparing on
+  // issueCount FIRST (fewer unresolved claims always wins), block count only
+  // as a tie-break, fixes two opposite failures a bare block-count compare
+  // had (Codex findings): a `>` compare kept a stale, more-masked candidate
+  // when extraction fixed one claim without changing the block count (same
+  // round, issueCount strictly drops -- now correctly wins); a later `>=`
+  // fix then let a WORSE, unrelated later round with strictly MORE unresolved
+  // issues overwrite a cleaner earlier one merely because both happened to
+  // render the same number of blocks (now correctly rejected, since a higher
+  // issueCount never replaces a lower one regardless of block count).
+  const updateBestAccumulated=(candidate:GroundedSupervisorReply,issueCount:number)=>{
     const score=candidate.blocks.length;
-    if(!bestAccumulated||score>=bestAccumulated.score)bestAccumulated={score,blocks:candidate.blocks,
-      evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
-      citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
+    if(!bestAccumulated||issueCount<bestAccumulated.issueCount||
+      (issueCount===bestAccumulated.issueCount&&score>=bestAccumulated.score))
+      bestAccumulated={issueCount,score,blocks:candidate.blocks,
+        evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
+        citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
   const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
     let rescue=budget&&!!lastUnverifiedAnswer;
@@ -494,7 +500,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // Section 7: remember the best-surviving candidate across the WHOLE
         // loop, not just the final attempt, in case nothing cleaner ever
         // arrives before the budget runs out.
-        updateBestAccumulated(reply);
+        updateBestAccumulated(reply,rendered.issues.length);
         // Section 5: one bounded, narrow extraction attempt for the FIRST
         // plain unmatched number that has no cheap direct match (one already
         // matching a real observation gets told to cite it instead, per
@@ -510,7 +516,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
             onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           const extracted=extraction&&!isToolCallSignal(extraction)?extraction.extracted:null;
-          if(extracted&&verifyFormulaEntry(extracted,ownerText,observations).ok){
+          if(extracted&&verifyFormulaEntry(extracted,ownerText,observations,input.locale).ok){
             const patched:InvestigationAnswer={paragraphs:answer.paragraphs.map((p,i)=>
               i!==extractable.paragraphIndex?p:{...p,formulas:[...(p.formulas??[]),extracted]})};
             const reRendered=renderInvestigationAnswer(patched,observations,input.locale,{ownerText});
@@ -522,7 +528,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               // best-so-far too, or exhaustion later in this same turn could
               // still fall back to the STALE, more-masked pre-extraction
               // version even though a verified, better one now exists.
-              updateBestAccumulated(reply);
+              updateBestAccumulated(reply,reRendered.issues.length);
             }
           }
         }

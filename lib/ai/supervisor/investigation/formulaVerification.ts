@@ -10,7 +10,7 @@
 import {rat,type Rat} from "@/lib/calc/scenarioExpression";
 import {evaluateFormula,evaluateFormulaUnits,type FormulaRejectionReason,
   type ArithmeticUnit} from "@/lib/calc/formulaExpression";
-import type {Observation} from "./evidence";
+import type {Observation,Locale} from "./evidence";
 import type {FormulaEntry} from "./protocol";
 
 export type FormulaVerificationFailure=
@@ -43,9 +43,20 @@ export function normalizeDigits(text:string):string{
 /** Strips currency/percent/grouping decoration, keeping an exact numeric
  * snippet (sign, digits, at most one decimal point) -- or null if what
  * remains is not a single plain number. Never does unit conversion: a "%"
- * suffix is decoration only, the digits before it are used as written. */
-function parseNumericSnippet(text:string):{rat:Rat;decimals:number}|null{
-  const cleaned=normalizeDigits(text).replace(/[,%$€£¥\s]/gu,"");
+ * suffix is decoration only, the digits before it are used as written.
+ *
+ * Locale-aware (Codex finding): `es` writes the DECIMAL separator as "," and
+ * groups thousands with "." (e.g. "1.610,25"); `en`/`ar` do the reverse
+ * (e.g. "1,610.25", confirmed via this project's own `Intl.NumberFormat`
+ * output for each locale). Blindly stripping every comma -- as before --
+ * read an es owner's "1,61" (one dollar sixty-one) as the integer 161, a
+ * 100x error that could let a model's declared source silently pass
+ * verification against the wrong value. */
+function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
+  const stripped=normalizeDigits(text).replace(/[%$€£¥\s]/gu,"");
+  const cleaned=locale==="es"
+    ?stripped.replace(/\./gu,"").replace(",",".")
+    :stripped.replace(/,/gu,"");
   const match=/^(-?)(\d+)(?:\.(\d+))?$/u.exec(cleaned);
   if(!match)return null;
   const [,sign,whole,frac=""]=match;
@@ -53,11 +64,19 @@ function parseNumericSnippet(text:string):{rat:Rat;decimals:number}|null{
   const d=BigInt(10)**BigInt(frac.length);
   return {rat:rat(n,d),decimals:frac.length};
 }
+// `v.toString()` is plain JS number formatting -- always period-decimal,
+// never locale text, never grouped -- so this must NEVER go through
+// `parseNumericSnippet`'s locale-aware cleanup (an es-locale caller would
+// wrongly strip its only "." as a thousands-grouping character).
 function numberToRat(v:number):Rat|null{
   if(!Number.isFinite(v))return null;
   if(Number.isInteger(v))return rat(BigInt(v));
-  const parsed=parseNumericSnippet(v.toString());
-  return parsed?parsed.rat:null;
+  const match=/^(-?)(\d+)\.(\d+)$/u.exec(v.toString());
+  if(!match)return null;
+  const [,sign,whole,frac]=match;
+  const n=BigInt(whole+frac)*(sign==="-"?BigInt(-1):BigInt(1));
+  const d=BigInt(10)**BigInt(frac.length);
+  return rat(n,d);
 }
 function ratToNumber(r:Rat):number{
   return Number(r.n)/Number(r.d);
@@ -80,17 +99,32 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * the already-normalized numeric cores rather than the raw text. Returns
  * the exact matched span (so its OWN decoration -- which may differ from
  * the declared source's -- can inform the unit classification), or null if
- * no such span exists. */
-const OWNER_NUMERIC_SPAN=/[$€£¥]?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?/gu;
+ * no such span exists.
+ *
+ * Leading `-?` (Codex finding): without it, an owner-written "-$5" matched
+ * only the unsigned "$5", so a model's declared positive "5" could wrongly
+ * verify against what the owner actually stated as a negative figure (a
+ * loss/decrease silently read as a gain). The sign is now part of the
+ * match, so the word-boundary check below (on the character immediately
+ * before the match) correctly covers it too, with no further change.
+ * `(?:[,.]?\p{Nd})*` (not `[\p{Nd},]*(?:\.\p{Nd}+)?`): each repetition is
+ * either a bare digit or a separator immediately followed by a digit, since
+ * -- once locale decides which of "," and "." is the decimal separator --
+ * either may legitimately appear anywhere in a grouped number (e.g. es
+ * "1.234.567,89"), while a trailing separator with no digit after it (e.g.
+ * ordinary end-of-sentence punctuation right after a digit, "...cost 0.")
+ * is never consumed as part of the span. `parseNumericSnippet` alone
+ * decides what a fully-captured span actually means. */
+const OWNER_NUMERIC_SPAN=/-?[$€£¥]?\p{Nd}(?:[,.]?\p{Nd})*%?/gu;
 const WORD_CHAR=/[\p{L}\p{N}]/u;
-export function findOwnerQuotedSpan(ownerText:string,source:string):string|null{
-  const sourceParsed=parseNumericSnippet(source.trim());
+export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale):string|null{
+  const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     const text=match[0],start=match.index,end=start+text.length;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
-    const candidate=parseNumericSnippet(text);
+    const candidate=parseNumericSnippet(text,locale);
     if(candidate&&candidate.rat.n===sourceParsed.rat.n&&candidate.rat.d===sourceParsed.rat.d)return text;
   }
   return null;
@@ -104,7 +138,7 @@ export function findOwnerQuotedSpan(ownerText:string,source:string):string|null{
  * falling back to the declared source text's decoration only when the
  * matched span itself carries none -- e.g. the owner wrote "1.45" but the
  * source was declared as "$1.45"). */
-function resolveVariable(source:string,observations:readonly Observation[],ownerText:string):
+function resolveVariable(source:string,observations:readonly Observation[],ownerText:string,locale:Locale):
   {value:Rat;unit:ArithmeticUnit}|null{
   const byId=new Map(observations.map(o=>[o.id,o] as const));
   const pointer=POINTER.exec(source);
@@ -120,20 +154,20 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     return {value,unit:kind==="money"?"money":kind==="percent"?"percent":"scalar"};
   }
   if(!source)return null;
-  const matchedSpan=findOwnerQuotedSpan(ownerText,source);
+  const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale);
   if(matchedSpan===null)return null;
-  const parsed=parseNumericSnippet(source);
+  const parsed=parseNumericSnippet(source,locale);
   if(!parsed)return null;
   const spanUnit=classifyOwnerUnit(matchedSpan);
   return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source)};
 }
 export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
-  observations:readonly Observation[]):FormulaVerificationResult{
+  observations:readonly Observation[],locale:Locale):FormulaVerificationResult{
   const resolved=new Map<string,Rat>();
   const units=new Map<string,ArithmeticUnit>();
   for(const [name,declaration] of Object.entries(entry.variables)){
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
-    const resolvedVariable=resolveVariable(declaration.source,observations,ownerText);
+    const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
     if(resolvedVariable===null){
       const pointer=POINTER.test(declaration.source);
       return {ok:false,failure:{reason:pointer?"source_not_found":"source_unverifiable",variable:name}};
@@ -149,7 +183,7 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   // even when the resulting NUMBER happens to match the claim.
   const unitCheck=evaluateFormulaUnits(entry.formula,units);
   if(!unitCheck.ok)return {ok:false,failure:{reason:"incompatible_units"}};
-  const claimed=parseNumericSnippet(entry.claim);
+  const claimed=parseNumericSnippet(entry.claim,locale);
   if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};
   const computedNumber=ratToNumber(evaluated.value);
   const claimedNumber=ratToNumber(claimed.rat);

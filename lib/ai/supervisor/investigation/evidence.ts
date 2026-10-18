@@ -225,11 +225,11 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       // Shares the same boundary-aware, format-tolerant matching the
       // formula path (§4b) already uses, rather than a second, divergent
       // implementation of the same check.
-      if(findOwnerQuotedSpan(ownerText,full)!==null)return full;
+      if(findOwnerQuotedSpan(ownerText,full,locale)!==null)return full;
       // §4b: a verified formula entry whose claim matches this exact span.
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
-        const verified=verifyFormulaEntry(formulaEntry,ownerText,observations);
+        const verified=verifyFormulaEntry(formulaEntry,ownerText,observations,locale);
         if(verified.ok){hasComputedClaim=true;return full;}
         issues.push({kind:"formula_failed",paragraphIndex,text:full,failure:verified.failure});
         return labels.unverifiedValue;
