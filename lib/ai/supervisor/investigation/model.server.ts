@@ -1,7 +1,7 @@
 import "server-only";
 import {z} from "zod";
 import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
-import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
+import {buildInvestigationRequest,INVESTIGATION_STEP_JSON_SCHEMA,INVESTIGATION_ANSWER_JSON_SCHEMA} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
 export type InvestigationTransport=(url:string,init:RequestInit)=>Promise<Response>;
@@ -31,6 +31,7 @@ export async function requestInvestigation<T>(input:{name:string;schema:z.ZodTyp
         body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
           instructions:input.instructions,context:input.context,maxOutputTokens,
           schema:input.name==="supervisor_investigation_step"?INVESTIGATION_STEP_JSON_SCHEMA:
+            input.name==="supervisor_investigation_final_answer"?INVESTIGATION_ANSWER_JSON_SCHEMA:
             z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})})),
       });
       if(!response.ok){
