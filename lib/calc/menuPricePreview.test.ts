@@ -31,6 +31,17 @@ describe("Menu transparent fully allocated pricing estimate", () => {
     expect(p.laborAllocation).toBe("equal_drinks");
     expect(p.laborPerDrinkCents).toBe(150);
   });
+  it("uses the exact observed fee fraction until final cent rounding",()=>{
+    const nearHalf={...base,priceCents:700,ingredientCents:10,
+      monthlyRunningCents:9,monthlyPayrollCents:0,monthlyDrinks:20,
+      monthlyPrepSeconds:null,processingFeeBps:301};
+    const roundedBps=menuPricePreview(nearHalf);
+    const exact=menuPricePreview({...nearHalf,
+      processingFeeNumeratorCents:601,processingFeeDenominatorCents:20000});
+    expect(roundedBps.allocatedProfitCents).toBe(668);
+    expect(exact.allocatedProfitCents).toBe(669);
+    expect(exact.cardFeePerDrinkCents).toBe(21);
+  });
   it("never invents a target price when the owner margin plus fees leaves no room",()=>{
     const p=menuPricePreview({...base,targetOperatingMarginBps:9900,processingFeeBps:200});
     expect(p.allocatedProfitCents).not.toBeNull();
