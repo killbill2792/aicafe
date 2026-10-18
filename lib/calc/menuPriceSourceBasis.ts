@@ -120,6 +120,10 @@ export function menuPriceSourceBasis(input:{
   if(!/^\d{4}-\d{2}-\d{2}$/.test(input.asOfBusinessDate))
     throw new Error("A valid café-local as-of date is required");
   const end=input.asOfBusinessDate;
+  // Running bills are saved for a calendar month, so normalize historical
+  // daily volume and staff evidence to this month's true number of days.
+  const daysInMonth=new Date(Date.UTC(
+    Number(end.slice(0,4)),Number(end.slice(5,7)),0)).getUTCDate();
   const start=new Date(Date.parse(end+"T00:00:00Z")-27*86400000)
     .toISOString().slice(0,10);
   const allDays=dedupe(input.days).filter(d=>d.businessDate<=end);
@@ -131,7 +135,7 @@ export function menuPriceSourceBasis(input:{
     ?recentDays:allDays;
   const days=sourceDays.filter(d=>d.salesStatus==="actual");
   const coveredDays=days.length;
-  const scale=coveredDays>0?30/coveredDays:0;
+  const scale=coveredDays>0?daysInMonth/coveredDays:0;
   const drinks=days.reduce((n,d)=>n+d.drinksCount,0);
   const monthlyDrinks=coveredDays>=7&&drinks>0?Math.round(drinks*scale):null;
 
@@ -155,7 +159,7 @@ export function menuPriceSourceBasis(input:{
   const payrollCents=payrollDays.reduce((n,d)=>n+d.wagesCents+d.payrollTaxCents,0);
   const monthlyPayrollCents=payrollCoveredDays>=7&&
     continuousLaborCoverage&&payrollCoveredDays===verifiedLaborDates.size?
-      Math.round(payrollCents*30/payrollCoveredDays):null;
+      Math.round(payrollCents*daysInMonth/payrollCoveredDays):null;
   const payrollStatus:MenuPriceSourceBasis["payrollStatus"]=
     monthlyPayrollCents===null?"missing":
       payrollDays.every(d=>d.payrollTaxStatus==="actual")?"projected":"estimated";
