@@ -98,6 +98,21 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     t(key==="recorded"||key==="actual"?"priceBasisSaved":
       key==="projected"?"priceBasisProjected":
       key==="estimated"?"priceBasisEstimated":"priceBasisNotAvailable");
+  // Once the owner confirms changed what-if values, do not present those
+  // values as though they came from saved payroll or accounting records.
+  const sourceLabel=(field:keyof Fields,source:"recorded"|"estimated"|"missing"|"projected"|"actual")=>{
+    if(confirmed!==null){
+      const isChanged=field==="running"
+        ? confirmed.monthlyRunningCents!==basis.monthlyRunningCents
+        : field==="payroll"
+          ? confirmed.monthlyPayrollCents!==basis.monthlyPayrollCents
+          : field==="drinks"
+            ? confirmed.monthlyDrinks!==basis.monthlyDrinks
+            : confirmed.processingFeeBps!==basis.processingFeeBps;
+      if(isChanged)return t("priceBasisOwnerAdjusted");
+    }
+    return status(source);
+  };
   const money=(n:number|null)=>n===null?t("priceBasisMissing"):formatCents(n);
   const period=basis.oldestDate&&basis.latestDate?t("priceBasisWindow",{
     from:basis.oldestDate,to:basis.latestDate,days:basis.coveredDays,
@@ -132,7 +147,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     </div>
     <div className="mt-3 grid gap-2 md:grid-cols-2">
       <div>
-        {input("running",t("priceBasisBills"),status(basis.runningStatus),"usd")}
+        {input("running",t("priceBasisBills"),sourceLabel("running",basis.runningStatus),"usd")}
         {basis.missingRunningCategories.length>0&&
           <p className="mt-2 text-sm text-warn" role="status">{t("priceBasisMissingCostDetail",{
             names:basis.missingRunningCategories
@@ -140,9 +155,9 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
             known:money(basis.runningKnownCents),
           })}</p>}
       </div>
-      {input("payroll",t("priceBasisPayroll"),status(basis.payrollStatus),"usd")}
-      {input("drinks",t("priceBasisDrinks"),status(basis.volumeStatus),"count")}
-      {input("fee",t("priceBasisFees"),status(basis.feeStatus),"percent")}
+      {input("payroll",t("priceBasisPayroll"),sourceLabel("payroll",basis.payrollStatus),"usd")}
+      {input("drinks",t("priceBasisDrinks"),sourceLabel("drinks",basis.volumeStatus),"count")}
+      {input("fee",t("priceBasisFees"),sourceLabel("fee",basis.feeStatus),"percent")}
     </div>
     {basis.missingRunningCategories.length>0&&
       <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
