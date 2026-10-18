@@ -367,8 +367,10 @@ it("does not charge malformed registered inputs that fail inside the registry",a
 it("counts a dispatched domain reader even when its result resembles a registry preflight rejection",async()=>{
   // A domain's response reason is not a reliable dispatch indicator. This P1
   // reader ran even though its *own* unavailable reason is unsupported_period.
-  p1.mockResolvedValueOnce({status:"unavailable",value:null,reason:"unsupported_period"}
-    as Awaited<ReturnType<typeof executeP1Authorized>>);
+  p1.mockImplementationOnce(async()=>{
+    const unavailable= {status:"unavailable" as const,value:null,reason:"unsupported_period"};
+    return unavailable as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
   const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transportFor([
     read("p3.menu.catalog.v1",query("menu.catalog")),
     answer([{kind:"advice",text:"The recorded item price is unavailable from this source; check the saved menu before quoting a price.",citations:[]}]),
