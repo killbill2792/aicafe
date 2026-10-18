@@ -68,6 +68,13 @@ describe("Menu pricing source basis",()=>{
     expect(p.monthlyDrinks).toBe(1200);
     expect(p.payrollLatestDate).toBe("2026-08-15");
   });
+  it("does not confuse actual zero employer-tax entries with observed wages",()=>{
+    const sales=Array.from({length:14},(_,i)=>({...day(i+1),
+      wagesCents:0,payrollTaxCents:0,payrollTaxStatus:"actual" as const}));
+    const p=basis(sales);
+    expect(p.payrollCoveredDays).toBe(0);
+    expect(p.monthlyPayrollCents).toBeNull();
+  });
   it("does not extrapolate from just one or two staff-only dates",()=>{
     const sales=Array.from({length:14},(_,i)=>({...day(i+1),
       wagesCents:i<2?5000:0,payrollTaxCents:i<2?600:0}));
