@@ -112,7 +112,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
         price:money(estimate.targetPriceCents),
       })}</p>}
     {estimate.status!=="missing"&&basis.targetMarginStatus==="default"&&
-      <p className="mt-1 text-sm text-warn">{t("priceBasisTargetDefault")}</p>}
+      <p className="mt-1 text-sm text-warn">{t("priceBasisTargetDefault",{margin:(basis.targetOperatingMarginBps/100).toFixed(1)})}</p>}
   </section><details open={expanded} onToggle={event=>setExpanded(event.currentTarget.open)} className="mt-2 rounded-2xl border border-line bg-paper p-3.5">
     <summary className="min-h-12 cursor-pointer text-[17px] font-extrabold text-ink">
       {t("priceBasisTitle")}
