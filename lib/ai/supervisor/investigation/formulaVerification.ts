@@ -136,6 +136,144 @@ export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null
   return null;
 }
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
+const TRAILING_NUMERIC_SPAN=new RegExp(String.raw`(?:${NUMERIC_SPAN})\\s*/** Independent verification for a model-declared "show your work" formula
+ * (docs §4b/§5). We never trust the model's own claimed result: every
+ * variable's source is independently resolved (an exact owner-message quote,
+ * or a real observation field, never a value the model merely asserts), the
+ * formula is evaluated ourselves through the closed-grammar evaluator, and
+ * the recomputed value is compared against what the paragraph's prose
+ * claimed. Anything that doesn't check out is reported as a specific,
+ * narrow failure -- never escalated into discarding more than the one
+ * number it concerns (§3's core invariant). */
+import {rat,times,type Rat} from "@/lib/calc/scenarioExpression";
+import {evaluateFormulaScaled,formulaLiterals,formulaVariableNames,type FormulaRejectionReason,
+  type ArithmeticUnit} from "@/lib/calc/formulaExpression";
+import type {Observation,Locale} from "./evidence";
+import type {FormulaEntry} from "./protocol";
+
+export type FormulaVerificationFailure=
+  |{reason:"grammar";detail:FormulaRejectionReason}
+  |{reason:"source_not_found";variable:string}
+  |{reason:"source_unverifiable";variable:string}
+  |{reason:"ungrounded_literal"}
+  |{reason:"unused_variable";variable:string}
+  |{reason:"requires_registered_calculator"}
+  |{reason:"incompatible_units"}
+  |{reason:"incompatible_periods"}
+  |{reason:"unparseable_claim"}
+  |{reason:"sub_cent_precision"}
+  |{reason:"result_mismatch";computed:number;claimed:number};
+export type FormulaVerificationResult={ok:true;value:number}|{ok:false;failure:FormulaVerificationFailure};
+
+const POINTER=/^(r\d+):([a-zA-Z0-9_.]+)$/u;
+const VARIABLE_NAME=/^[a-zA-Z_][a-zA-Z0-9_]{0,31}$/u;
+
+/** Unicode decimal-digit blocks this project's supported locales (en/es/ar)
+ * can actually produce or receive -- Arabic-Indic and Extended Arabic-Indic
+ * (Persian). Each Unicode "Nd" digit block is guaranteed to hold 0-9 in
+ * contiguous order, so a block's own start code point is enough to map any
+ * of its digits back to ASCII. An unsupported script's digit is left as-is
+ * and will simply fail to parse below (never silently misread). */
+const DIGIT_BLOCK_STARTS:readonly number[]=[0x0660,0x06f0];
+export function normalizeDigits(text:string):string{
+  return text.replace(/\p{Nd}/gu,(ch)=>{
+    const code=ch.codePointAt(0)!;
+    for(const start of DIGIT_BLOCK_STARTS)
+      if(code>=start&&code<=start+9)return String(code-start);
+    return ch;
+  });
+}
+/** Strips currency/percent/grouping decoration, keeping an exact numeric
+ * snippet (sign, digits, at most one decimal point) -- or null if what
+ * remains is not a single plain number. Never does unit conversion: a "%"
+ * suffix is decoration only, the digits before it are used as written.
+ *
+ * Locale-aware (Codex finding): `es` writes the DECIMAL separator as "," and
+ * groups thousands with "." (e.g. "1.610,25"); `en`/`ar` do the reverse
+ * (e.g. "1,610.25", confirmed via this project's own `Intl.NumberFormat`
+ * output for each locale). Blindly stripping every comma -- as before --
+ * read an es owner's "1,61" (one dollar sixty-one) as the integer 161, a
+ * 100x error that could let a model's declared source silently pass
+ * verification against the wrong value. */
+function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
+  const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
+  const stripped=normalizeDigits(text).replace(/[−﹣－]/gu,"-").replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
+  const cleaned=locale==="es"
+    ?(/^[-]?\./u.test(stripped)?stripped:stripped.replace(/\./gu,"").replace(",","."))
+    :stripped.replace(/,/gu,"");
+  const match=/^(-?)(\d*)(?:\.(\d+))?$/u.exec(cleaned);
+  if(!match||(!match[2]&&!match[3]))return null;
+  const [,sign,whole,frac=""]=match;
+  const n=BigInt((whole||"0")+frac)*(sign==="-"?BigInt(-1):BigInt(1));
+  const decimals=frac.length+(subunit?2:0);
+  const d=BigInt(10)**BigInt(decimals);
+  return {rat:rat(n,d),decimals};
+}
+// `v.toString()` is plain JS number formatting -- always period-decimal,
+// never locale text, never grouped -- so this must NEVER go through
+// `parseNumericSnippet`'s locale-aware cleanup (an es-locale caller would
+// wrongly strip its only "." as a thousands-grouping character).
+function numberToRat(v:number):Rat|null{
+  if(!Number.isFinite(v))return null;
+  if(Number.isInteger(v))return rat(BigInt(v));
+  const match=/^(-?)(\d+)\.(\d+)$/u.exec(v.toString());
+  if(!match)return null;
+  const [,sign,whole,frac]=match;
+  const n=BigInt(whole+frac)*(sign==="-"?BigInt(-1):BigInt(1));
+  const d=BigInt(10)**BigInt(frac.length);
+  return rat(n,d);
+}
+function ratToNumber(r:Rat):number{
+  return Number(r.n)/Number(r.d);
+}
+/** A deliberately coarse classification of an owner-quoted span's own
+ * decoration (reused verbatim as this formula's per-variable unit -- see
+ * `ArithmeticUnit`). Never does unit CONVERSION, only recognition, mirroring
+ * `parseNumericSnippet`'s own "decoration only" rule. */
+function moneyCurrency(text:string):string{
+  if(/€/u.test(text))return "EUR";
+  if(/£/u.test(text))return "GBP";
+  if(/¥/u.test(text))return "JPY";
+  return classifyOwnerUnit(text)==="money"?"USD":"";
+}
+function classifyOwnerUnit(text:string):ArithmeticUnit{
+  if(/[%٪]/u.test(text))return "percent";
+  if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|دولارات|دولار|سنتات|سنت/iu.test(text))return "money";
+  return "scalar";
+}
+/** A complete, token-bounded numeric/currency/percent span in the owner's
+ * message whose numeric VALUE equals the declared source's own value --
+ * never a substring match (so a declared source of "10" must never match
+ * inside an owner-written "100"), while still tolerating reasonable
+ * formatting differences (currency symbol present on only one side,
+ * thousands separators, equivalent decimal representations) by comparing
+ * the already-normalized numeric cores rather than the raw text. Returns
+ * the exact matched span (so its OWN decoration -- which may differ from
+ * the declared source's -- can inform the unit classification), or null if
+ * no such span exists.
+ *
+ * Generated echoes may omit a unit, but cannot add one. Numeric formula
+ * source lookup also tolerates source-side decoration; resolution still
+ * takes units exclusively from the owner's matched span. Numeric boundaries support
+ * Unicode letters/digits; signs remain attached to genuine negatives. */
+// Shared with claim rendering so units cannot fall outside the checked span.
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$€£¥]\s*)?(?:[-−﹣－]\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+/** Dates and clock times are indivisible claims. Checking each digit group
+ * as a separate owner echo can authorize a date/time the owner never gave.
+ * Use the same grammar for both the owner's sources and model output. */
+export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2}|\s*[aApP]\.?[mM]\.?)?)?|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{2,4}|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP]\.?[mM]\.?)?)(?![\p{L}\p{N}])`;
+const TEMPORAL_SPANS=new RegExp(STRUCTURED_TEMPORAL_SPAN,"giu");
+const COMPLETE_TEMPORAL_SPAN=new RegExp("^(?:"+STRUCTURED_TEMPORAL_SPAN+")$","iu");
+export function isStructuredTemporalSpan(text:string):boolean{
+  return COMPLETE_TEMPORAL_SPAN.test(text);
+}
+export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null{
+  const value=normalizeDigits(claim).toLocaleLowerCase();
+  for(const found of ownerText.matchAll(TEMPORAL_SPANS))
+    if(normalizeDigits(found[0]).toLocaleLowerCase()===value)return found[0];
+  return null;
+}
+,"iu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
   options?:{numericSourceOnly?:boolean}):string|null{
@@ -146,6 +284,11 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   for(let i=0;i<numericMatches.length;i++){
     const match=numericMatches[i];
     const text=match[0],start=match.index,end=start+text.length;
+    // A hyphen between two nearby numeric spans is a RANGE separator, not
+    // evidence that the upper endpoint is negative ("$5 - $10" != "-$10").
+    // Only reject ambiguous signed matches; a real negative after a word
+    // ("from $5 to -$10") remains an independently quoted negative.
+    if(/^[-−﹣－]/u.test(text)&&TRAILING_NUMERIC_SPAN.test(ownerText.slice(0,start)))continue;
     // A hyphen after a previous numeric span is a range/subtraction
     // separator, not proof that the upper endpoint is a negative value.
     // This includes '$5 - $10' and '$5-$10', while keeping 'loss: -$10'.
