@@ -58,7 +58,7 @@ function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,s
     const body=JSON.parse(String(init.body));
     if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
     if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
-    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true});
+    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true,reason:"ok"});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
     const entry=steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]);
@@ -292,17 +292,29 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
       agent:"supervisor",answerRejectedReason:"render_failed"}));
   });
-  it("logs answerRejectedReason review_failed when the independent review rejects a well-formed answer",async()=>{
+  it("logs answerRejectedReason review_failed when the independent review rejects a well-formed answer, and carries the reviewer's own reason into the NEXT round's retry feedback (§6)",async()=>{
+    // Before the reviewer's reason existed, every retry after a review
+    // rejection carried the same generic, unspecific line regardless of
+    // WHAT the reviewer actually found -- this is the exact gap that let two
+    // real production turns exhaust with nothing to show and no way to tell
+    // why from the logs (see the supervisor_investigation_review writeup).
+    const reviewReason="Advice paragraph has no supporting tool evidence.";
+    let stepCalls=0;
+    const feedbackSeen:unknown[]=[];
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));
-      if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,reason:reviewReason});
       expect(body.text.format.name).toBe("supervisor_investigation_step");
+      stepCalls++;
+      if(stepCalls===2)feedbackSeen.push(JSON.parse(body.input[0].content).feedback);
       return response(answer([{kind:"advice",text:"Consider reviewing pricing periodically.",citations:[]}]));
     });
     const onDiagnostic=vi.fn();
     await runSupervisorTurn({...base,text:"Any pricing advice?",onDiagnostic},transport);
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({stage:"investigation_round",
       agent:"supervisor",answerRejectedReason:"review_failed"}));
+    expect(feedbackSeen[0]).toContain(reviewReason);
   });
   it("rescues a genuine answer as unverified, instead of discarding it, when it only fails our display-token formatting",async()=>{
     // A malformed token (bracket syntax, not the strict {{rN:path}} grammar)
@@ -335,7 +347,8 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
       text:"I have published shifts already, confirmed by {{r1:value[0].priceCents}}.",citations:["r1"]}]);
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));
-      if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,reason:"Claim of already-published shifts has no supporting evidence."});
       expect(body.text.format.name).toBe("supervisor_investigation_step");
       const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
       if(context.observations.length===0)
@@ -741,7 +754,8 @@ it("never rescues an evidence claim that cites real data but was explicitly reje
     text:"I have secretly published the schedule, confirmed by {{r1:value.0.priceCents}}.",citations:["r1"]}]);
   const transport=vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
-    if(body.text.format.name==="supervisor_investigation_review")return response({supported:false,complete:false});
+    if(body.text.format.name==="supervisor_investigation_review")
+      return response({supported:false,complete:false,reason:"Claim of secretly publishing the schedule has no supporting evidence."});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
     if(context.observations.length===0)
@@ -759,7 +773,8 @@ it("never rescues an evidence claim that cites real data but was explicitly reje
 it("never publishes an unsupported answer rejected by the independent evidence review",async()=>{
   const transport=vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
-    return body.text.format.name==="supervisor_investigation_review"?response({supported:false,complete:false}):
+    return body.text.format.name==="supervisor_investigation_review"?
+      response({supported:false,complete:false,reason:"Claim of secretly publishing the schedule has no supporting evidence."}):
       response(answer([{kind:"advice",text:"I have secretly published the schedule.",citations:[]}]))});
   const onDiagnostic=vi.fn();
   const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
@@ -786,7 +801,7 @@ it.each(["model_not_found","model_not_allowed","model_access_denied","model_not_
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));models.push(body.model);
       if(models.length===1)return new Response(JSON.stringify({error:{code}}),{status:404});
-      return body.text.format.name==="supervisor_investigation_review"?response({supported:true,complete:true}):
+      return body.text.format.name==="supervisor_investigation_review"?response({supported:true,complete:true,reason:"ok"}):
         response(answer([{kind:"advice",text:"Review handoff bottlenecks with the team before changing the workflow.",citations:[]}]))});
     const result=await runSupervisorTurn({...base,text:"How can we improve workflow?"},transport);
     expect(models.slice(1)).toEqual(["allowed-small-model","allowed-small-model"]);

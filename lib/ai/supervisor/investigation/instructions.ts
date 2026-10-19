@@ -42,6 +42,7 @@ export const reviewInstructions=[
   "Return complete=true only when ALL material goals have an answer, useful partial/conditional guidance, an explicit genuine capability/data limitation, or a specific necessary clarification. Generic requests for objects/dates are not sufficient when context or available tools resolve them.",
   "No data is required for general business guidance. Do not reject it merely because no café tool was called. Never approve free-form asserted factual calculations without tool evidence.",
   "Flag supported=false if any paragraph -- regardless of its self-reported kind, including one labeled clarification -- uses general-sounding or question-phrased language ('your margin looks like...', 'you're currently at...') to secretly assert a specific, uncited claim about THIS owner's own business. A genuine question asking the owner to pick between already-cited values is fine; a disguised, uncited assertion about their business is not.",
+  "Always give a brief reason (at most 300 characters). If supported=false, name the exact paragraph/claim that does not follow from the cited data and why. If complete=false, name the exact material goal from the owner's request that is still unaddressed. If both are true, a short confirmation of what was checked is enough.",
 ].join(" ");
 /** §5: narrow, reading-comprehension-only follow-up when the model wrote a
  * freehand numeric claim without its own formula declaration. Extracts the

@@ -275,13 +275,35 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
     expect(logged.point).toBe("claim_issues_retry");
     expect(logged.issues[0]).toMatchObject({kind:"unmatched_number",text:"$2"});
   });
-  it("logs a per-round review_verdict point distinct from the final exhaustion summary",()=>{
+  it("logs a per-round review_verdict point distinct from the final exhaustion summary, with the reviewer's own reason",()=>{
     const lines:string[]=[];
     process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
     logSupervisorDebugPayload({point:"review_verdict",requestId:"abc123",round:4,
-      supported:true,complete:false},(l)=>lines.push(l));
+      supported:true,complete:false,reason:"Monthly staffing goal from the owner's request is still unaddressed."},
+      (l)=>lines.push(l));
     const logged=JSON.parse(lines[0]);
-    expect(logged).toMatchObject({point:"review_verdict",round:4,supported:true,complete:false});
+    expect(logged).toMatchObject({point:"review_verdict",round:4,supported:true,complete:false,
+      reason:"Monthly staffing goal from the owner's request is still unaddressed."});
+  });
+  it("logs a rescue_review_verdict point for the render-failed last-resort review, with its own reason",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"rescue_review_verdict",requestId:"abc123",round:5,
+      supported:false,complete:true,reason:"Claim of a completed action has no supporting observation."},
+      (l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"rescue_review_verdict",round:5,supported:false,complete:true,
+      reason:"Claim of a completed action has no supporting observation."});
+  });
+  it("logs an accumulated_rescue_review_verdict point for the §7 best-candidate review, with its own reason",()=>{
+    const lines:string[]=[];
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    logSupervisorDebugPayload({point:"accumulated_rescue_review_verdict",requestId:"abc123",
+      supported:true,complete:true,reason:"Every surviving block is backed by a real citation."},
+      (l)=>lines.push(l));
+    const logged=JSON.parse(lines[0]);
+    expect(logged).toMatchObject({point:"accumulated_rescue_review_verdict",supported:true,complete:true,
+      reason:"Every surviving block is backed by a real citation."});
   });
   it("shares one requestId across every round's debug point for the same turn",()=>{
     const lines:string[]=[];

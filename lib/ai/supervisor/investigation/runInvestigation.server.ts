@@ -25,7 +25,8 @@ import {observationDisplay,observationReference,investigationLabels,investigatio
   renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,buildClaimFeedback,
   type Observation,type Locale,type ClaimIssue} from "./evidence";
 import {verifyFormulaEntry,observationPeriod,resolvedPeriod} from "./formulaVerification";
-import {answerSchema,reviewSchema,formulaExtractionSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
+import {answerSchema,reviewSchema,formulaExtractionSchema,INVESTIGATION_LIMITS,
+  type InvestigationAnswer,type ReviewVerdict} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
 import {SupervisorStageError,logSupervisorDebugPayload,type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
@@ -268,11 +269,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           latest.snapshot.revision!==atomic.snapshot.revision)accumulatedRescue=false;
       }
       if(accumulatedRescue){
-        const accReview=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+        const accReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
           instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,
             observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
             proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
           apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+        // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+        logSupervisorDebugPayload({point:"accumulated_rescue_review_verdict",requestId:debugRequestId,
+          supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
+          complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
+          reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
         if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete)accumulatedRescue=false;
       }
     }
@@ -482,7 +488,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // against answerSchema, with no second hand-written envelope around it.
       input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
-      let answer=step;
+      let answer:InvestigationAnswer=step;
       // Adaptive budget (section 1): an EXACT repeat of a previously-rejected
       // draft, with no new information, stops the loop immediately rather
       // than waiting out the remaining budget. "No new information" is tied
@@ -514,10 +520,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // call unless there is a real citation-grounded candidate to check.
         const rescued=renderUnverifiedAnswer(answer,observations,input.locale);
         if(rescued){
-          const rescueReview=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+          const rescueReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
             instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
               proposedAnswer:answer,renderedAnswer:[{type:"text",text:rescued.text}]},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+          // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+          logSupervisorDebugPayload({point:"rescue_review_verdict",requestId:debugRequestId,round,
+            supported:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.supported:null,
+            complete:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.complete:null,
+            reason:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.reason:null});
           if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported&&rescueReview.complete)
             lastUnverifiedAnswer=rescued;
         }
@@ -578,16 +589,26 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,answerRejectedReason:"render_failed"});
         continue;
       }
-      const review=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
+      const review:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
         instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
           proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
+      const reviewReason:string|null=review&&!isToolCallSignal(review)?review.reason:null;
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
-        complete:review&&!isToolCallSignal(review)?review.complete:null});
+        complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
       if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
-        feedback="The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";
+        // A valid verdict always carries its own specific reason now (§6):
+        // name exactly what the reviewer found, instead of the generic line
+        // that used to be the only signal across every retry (production
+        // incident: two otherwise-clean, well-cited drafts were rejected
+        // with no way to tell why, and exhausted repeating the same
+        // unspecific feedback until the call budget ran out).
+        feedback=reviewReason?
+          "The independent review found this specific issue: \""+reviewReason+
+            "\". Correct exactly that, or ask the specific unresolved question.":
+          "The answer failed independent evidence or full-goal coverage review. Correct it or ask the specific unresolved question.";
         lastRejectedAnswerSignature=answerSignature;
         input.onDiagnostic?.({stage:"investigation_round",agent:"supervisor",
           modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
