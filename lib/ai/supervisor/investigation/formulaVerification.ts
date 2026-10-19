@@ -136,7 +136,6 @@ export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null
   return null;
 }
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
-const TRAILING_NUMERIC_SPAN=new RegExp(String.raw`(?:${NUMERIC_SPAN})\s*$`,"iu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
   options?:{numericSourceOnly?:boolean}):string|null{
@@ -146,7 +145,6 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     const text=match[0],start=match.index,end=start+text.length;
     // A dash between nearby numeric spans is a range separator, not a sign.
-    if(/^[-−﹣－]/u.test(text)&&TRAILING_NUMERIC_SPAN.test(ownerText.slice(0,start)))continue;
     // Do not treat an individual year, month, day, hour, or minute as
     // an independently authored owner number.
     if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
