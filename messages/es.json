@@ -739,7 +739,10 @@
     "deleteAccount": "Eliminar cuenta",
     "cafeProfile": "Perfil del café",
     "processingFees": "Comisiones de procesamiento",
-    "economics": "Simulador de meta de ganancia"
+    "economics": "Simulador de meta de ganancia",
+    "signOut": "Cerrar sesión",
+    "signingOut": "Cerrando sesión…",
+    "signOutError": "No se pudo cerrar sesión. Inténtalo de nuevo."
   },
   "BreakEven": {
     "title": "Plan de punto de equilibrio",
@@ -1084,7 +1087,14 @@
     "sending": "Enviando…",
     "checkEmail": "Revisa tu correo — enviamos un enlace a {email}. Tócalo para iniciar sesión.",
     "error": "Eso no funcionó. Verifica el correo e inténtalo de nuevo.",
-    "notConfigured": "El inicio de sesión aún no está conectado. Agrega las claves de Supabase en .env.local primero."
+    "notConfigured": "El inicio de sesión aún no está conectado. Agrega las claves de Supabase en .env.local primero.",
+    "passwordLabel": "Contraseña",
+    "forgotPassword": "¿Olvidaste tu contraseña?",
+    "signIn": "Iniciar sesión",
+    "useMagicLink": "Entrar con enlace por correo",
+    "usePassword": "Entrar con contraseña",
+    "noAccount": "¿Nuevo en AI Café?",
+    "createAccount": "Crear cuenta"
   },
   "Operations": {
     "teamTitle": "Tu equipo de IA",
@@ -1956,5 +1966,44 @@
     "factAmount": "Monto",
     "factPercent": "Porcentaje",
     "notConfirmed": "No pude confirmar {count} parte(s) de esta respuesta a tiempo; todo lo mostrado arriba ya fue verificado."
+  },
+  "SignUp": {
+    "title": "Crea tu cuenta de café",
+    "subtitle": "Configura un espacio privado para tu café.",
+    "fullName": "Nombre completo",
+    "cafeName": "Nombre del café",
+    "email": "Correo electrónico",
+    "password": "Contraseña",
+    "confirmPassword": "Confirmar contraseña",
+    "passwordHint": "Usa al menos 8 caracteres.",
+    "requiredFields": "Escribe tu nombre y el del café.",
+    "passwordTooShort": "La contraseña debe tener al menos 8 caracteres.",
+    "passwordMismatch": "Las contraseñas no coinciden.",
+    "notConfigured": "El registro aún no está disponible.",
+    "creating": "Creando cuenta…",
+    "createAccount": "Crear cuenta",
+    "checkEmail": "Revisa {email} para confirmar tu cuenta y continuar.",
+    "goToSignIn": "Ir a inicio de sesión",
+    "alreadyHaveAccount": "¿Ya tienes cuenta?",
+    "signIn": "Iniciar sesión",
+    "backToSignIn": "Volver a iniciar sesión",
+    "error": "Ocurrió un error. Inténtalo de nuevo."
+  },
+  "PasswordRecovery": {
+    "email": "Correo electrónico",
+    "newPassword": "Nueva contraseña",
+    "confirmPassword": "Confirmar nueva contraseña",
+    "requestTitle": "Restablecer contraseña",
+    "requestSubtitle": "Te enviaremos un enlace por correo.",
+    "updateTitle": "Elige una nueva contraseña",
+    "sendResetLink": "Enviar enlace",
+    "updatePassword": "Actualizar contraseña",
+    "backToSignIn": "Volver a iniciar sesión",
+    "emailSent": "Si existe una cuenta con ese correo, se envió un enlace de recuperación.",
+    "passwordTooShort": "Usa al menos 8 caracteres.",
+    "passwordMismatch": "Las contraseñas no coinciden.",
+    "notConfigured": "La recuperación no está disponible.",
+    "error": "Ocurrió un error. Inténtalo de nuevo.",
+    "working": "Procesando…"
   }
 }
