@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import {recordSupervisorPrivateTrace} from "./privateTrace.server";
 import { GOAL_DOMAINS, type RequestedGoal, type ScopeReconciliationOutcome } from "./requestScope";
 import { SupervisorReplyValidationError, type ReplyValidationFailureReason } from "./replyValidation";
 
@@ -206,8 +207,8 @@ export class SupervisorStageError extends Error {
   }
 }
 /** Called with a fresh correlation ID for every POST, not an owner or café identifier. */
-export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=console.info) {
-  const requestId=randomUUID().slice(0,12);
+export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=console.info,
+  requestId=randomUUID().slice(0,12)) {
   return {
     requestId,
     emit(d:SupervisorDiagnostic) {
@@ -278,6 +279,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
             {reconciliationOutcome:d.reconciliationOutcome}:{}),
         }:{}),
       };
+      recordSupervisorPrivateTrace({point:"diagnostic",...data});
       sink(JSON.stringify(data));
     },
   };
@@ -354,6 +356,8 @@ export type SupervisorDebugPoint="turn_received"|"capability_round"|"tool_reques
  * Owner-private complete traces require a separate access-controlled store. */
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
+  // Private RLS-backed capture is independent of console diagnostic verbosity.
+  recordSupervisorPrivateTrace(payload);
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
   if(process.env.NODE_ENV==="test"){
     sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
@@ -363,6 +367,7 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   const allowId=(v:unknown)=>typeof v==="string"&&/^[a-zA-Z0-9_.:-]{1,80}$/u.test(v);
   const points:ReadonlySet<string>=new Set([
     "turn_received","capability_round","tool_request","tool_result","parallel_batch",
+    "model_request","model_response","model_response_error","calculator_rejected","calculator_result","round_context",
     "retry_feedback","claim_issues_retry","direct_answer_attempt","review_verdict",
     "rescue_review_verdict","accumulated_rescue_review_verdict","investigation_exhausted",
     "reply_validation_failed","persistence_result","http_response_sent"]);
@@ -378,6 +383,12 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   if(typeof payload.outcome==="string"&&
     ["rejected_preflight","concurrent"].includes(payload.outcome))
     safe.outcome=payload.outcome;
+  // Named reason codes are safe to emit in production; arbitrary reason text is not.
+  const calculatorReasons=new Set(["unsupported_currency","invalid_plan","unknown_operand",
+    "invalid_source_context","simulation_input_rejected","calculator_invalid_result",
+    "invalid_calculator_result","calculation_unavailable","source_context_error"]);
+  if(typeof payload.reasonCode==="string"&&calculatorReasons.has(payload.reasonCode))
+    safe.reasonCode=payload.reasonCode;
   for(const key of ["successful","supported","complete","dispatched","parallel"])
     if(typeof payload[key]==="boolean")safe[key]=payload[key];
   sink(JSON.stringify(safe));
