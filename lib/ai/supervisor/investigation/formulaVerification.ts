@@ -148,8 +148,8 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
     // did not state a negative ten-dollar figure. Treat the endpoint as
     // positive for exact-echo matching while preserving genuine negatives
     // such as "loss: -$10". Never make an assumed sign into evidence.
-    const rangeEndpoint=/^[-−﹣－]\\s*/u.test(match[0])&&/\\p{Nd}\\s*$/u.test(ownerText.slice(0,start));
-    const text=rangeEndpoint?match[0].replace(/^[-−﹣－]\\s*/u,""):match[0];
+    const rangeEndpoint=/^[-−﹣－]\s*/u.test(match[0])&&/\p{Nd}\s*$/u.test(ownerText.slice(0,start));
+    const text=rangeEndpoint?match[0].replace(/^[-−﹣－]\s*/u,""):match[0];
     // Do not treat an individual year, month, day, hour, or minute as
     // an independently authored owner number.
     if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
