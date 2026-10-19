@@ -15,7 +15,7 @@ export default function SignOutButton({ labels }: { labels: { signOut: string; s
     setPending(true);
     setError(false);
     try {
-      const { error: signOutError } = await createBrowserSupabaseClient().auth.signOut();
+      const { error: signOutError } = await createBrowserSupabaseClient().auth.signOut({ scope: "local" });
       if (signOutError) throw signOutError;
       router.replace("/login");
       router.refresh();
