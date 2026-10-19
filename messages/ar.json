@@ -739,7 +739,10 @@
     "deleteAccount": "حذف الحساب",
     "cafeProfile": "ملف المقهى",
     "processingFees": "رسوم معالجة الدفع",
-    "economics": "محاكي هدف الربح"
+    "economics": "محاكي هدف الربح",
+    "signOut": "تسجيل الخروج",
+    "signingOut": "جارٍ تسجيل الخروج…",
+    "signOutError": "تعذر تسجيل الخروج. حاول مرة أخرى."
   },
   "BreakEven": {
     "title": "خطة نقطة التعادل",
@@ -1084,7 +1087,14 @@
     "sending": "جارٍ الإرسال…",
     "checkEmail": "تحقق من بريدك الإلكتروني — أرسلنا رابطًا إلى {email}. اضغط عليه لتسجيل الدخول.",
     "error": "لم ينجح ذلك. تحقق من البريد الإلكتروني وحاول مرة أخرى.",
-    "notConfigured": "تسجيل الدخول غير مفعّل بعد. أضف مفاتيح Supabase إلى .env.local أولًا."
+    "notConfigured": "تسجيل الدخول غير مفعّل بعد. أضف مفاتيح Supabase إلى .env.local أولًا.",
+    "passwordLabel": "كلمة المرور",
+    "forgotPassword": "هل نسيت كلمة المرور؟",
+    "signIn": "تسجيل الدخول",
+    "useMagicLink": "الدخول برابط عبر البريد",
+    "usePassword": "الدخول بكلمة المرور",
+    "noAccount": "جديد في AI Café؟",
+    "createAccount": "إنشاء حساب"
   },
   "Operations": {
     "teamTitle": "فريقك بالذكاء الاصطناعي",
@@ -1956,5 +1966,44 @@
     "factAmount": "المبلغ",
     "factPercent": "النسبة",
     "notConfirmed": "لم أتمكن من تأكيد {count} جزء/أجزاء من هذه الإجابة في الوقت المتاح؛ كل ما ظهر أعلاه جرى التحقق منه."
+  },
+  "SignUp": {
+    "title": "أنشئ حساب مقهاك",
+    "subtitle": "أعد مساحة خاصة وآمنة لمقهاك.",
+    "fullName": "الاسم الكامل",
+    "cafeName": "اسم المقهى",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "confirmPassword": "تأكيد كلمة المرور",
+    "passwordHint": "استخدم 8 أحرف على الأقل.",
+    "requiredFields": "أدخل اسمك واسم المقهى.",
+    "passwordTooShort": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+    "notConfigured": "إنشاء الحساب غير متاح الآن.",
+    "creating": "جارٍ إنشاء الحساب…",
+    "createAccount": "إنشاء حساب",
+    "checkEmail": "تحقق من بريدك {email} لتأكيد حسابك ثم تابع.",
+    "goToSignIn": "الانتقال لتسجيل الدخول",
+    "alreadyHaveAccount": "لديك حساب بالفعل؟",
+    "signIn": "تسجيل الدخول",
+    "backToSignIn": "العودة لتسجيل الدخول",
+    "error": "حدث خطأ. حاول مرة أخرى."
+  },
+  "PasswordRecovery": {
+    "email": "البريد الإلكتروني",
+    "newPassword": "كلمة المرور الجديدة",
+    "confirmPassword": "تأكيد كلمة المرور الجديدة",
+    "requestTitle": "إعادة تعيين كلمة المرور",
+    "requestSubtitle": "سنرسل رابط إعادة التعيين إلى بريدك.",
+    "updateTitle": "اختر كلمة مرور جديدة",
+    "sendResetLink": "إرسال رابط التعيين",
+    "updatePassword": "تحديث كلمة المرور",
+    "backToSignIn": "العودة لتسجيل الدخول",
+    "emailSent": "إذا كان هذا البريد مسجلاً، فسيصلك رابط لإعادة تعيين كلمة المرور.",
+    "passwordTooShort": "استخدم 8 أحرف على الأقل.",
+    "passwordMismatch": "كلمتا المرور غير متطابقتين.",
+    "notConfigured": "إعادة التعيين غير متاحة الآن.",
+    "error": "حدث خطأ. حاول مرة أخرى.",
+    "working": "جارٍ التنفيذ…"
   }
 }
