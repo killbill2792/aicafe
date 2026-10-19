@@ -77,7 +77,28 @@ REVOKE ALL ON FUNCTION public.purge_expired_supervisor_turn_traces()
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.purge_expired_supervisor_turn_traces()
   TO service_role;
-DO $$
+-- SECURITY DEFINER reads only a Boolean scheduler health flag. It grants no
+-- access to cron metadata or the private trace table itself.
+CREATE OR REPLACE FUNCTION public.supervisor_private_trace_retention_ready()
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $
+DECLARE ready boolean:=false;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron')
+  THEN RETURN false; END IF;
+  EXECUTE 'SELECT EXISTS (SELECT 1 FROM cron.job WHERE jobname='
+    || quote_literal('aicafe-supervisor-private-traces-hourly-purge')
+    || ' AND active IS TRUE)' INTO ready;
+  RETURN coalesce(ready,false);
+EXCEPTION WHEN OTHERS THEN
+  RETURN false;
+END;
+$;
+REVOKE ALL ON FUNCTION public.supervisor_private_trace_retention_ready()
+  FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.supervisor_private_trace_retention_ready()
+  TO authenticated;
+
+DO $
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron') THEN
     PERFORM cron.schedule('aicafe-supervisor-private-traces-hourly-purge',
