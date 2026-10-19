@@ -286,6 +286,7 @@ export function projectP1Evidence(
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
       if(entityPolicy==="owner_named"&&leaf.field!=="value"&&leaf.key!=="aggregate"&&
+        leaf.key!=="value"&&
         !namedCurrent.has(leaf.key)&&
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
