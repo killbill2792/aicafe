@@ -17,9 +17,12 @@ const secretKey=/(^|[_-])(authorization|password|secret|api[_-]?key|access[_-]?t
 /** No raw bearer, quoted password or provider-key-shaped token can be retained. */
 function redactSecretsInText(value:string):string {
   return value
+    // Header bodies (Basic, Bearer, cookies) can contain multiple tokens. An
+    // isolated label-value replacement is NOT sufficient for Basic credentials.
+    .replace(/\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:\s*[^\r\n]+/giu,"[credential_header_removed]")
     .replace(/\b(?:sk-(?:proj-)?[a-zA-Z0-9_-]{8,}|sb_secret_[a-zA-Z0-9_-]{8,}|github_pat_[a-zA-Z0-9_-]{8,}|gh[pousr]_[a-zA-Z0-9_]{8,}|vercel_[a-zA-Z0-9_-]{16,})\b/gu,"[credential_removed]")
     .replace(/\bBearer\s+[a-zA-Z0-9._~+/-]{8,}=?\b/giu,"Bearer [credential_removed]")
-    .replace(/(\b(?:password|passphrase|api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|session[\s_-]?token|authorization|secret)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
+    .replace(/(\b(?:password|passphrase|api[\s_-]?(?:key|token)|access[\s_-]?token|refresh[\s_-]?token|session[\s_-]?token|authorization|secret)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
       (_match:string,label:string)=>label+"[credential_removed]")
     .replace(/(https?:\/\/[^/:@\s]+:)[^@\s/]+@/giu,"$1[credential_removed]@");
 }
@@ -80,6 +83,15 @@ export async function persistSupervisorPrivateTrace(input:{
 }):Promise<void>{
   const {createServerSupabaseClient}=await import("@/lib/supabase/server");
   const client=await createServerSupabaseClient();
+  // Never persist private owner/model data without a confirmed, active
+  // server-side TTL purge. Merely creating a timestamp is not retention.
+  const {data:retentionReady,error:retentionError}=await client.rpc(
+    "supervisor_private_trace_retention_ready");
+  if(retentionError||retentionReady!==true){
+    console.info(JSON.stringify({event:"supervisor_private_trace",
+      status:"retention_not_active",requestId:input.requestId}));
+    return;
+  }
   const {error}=await client.from("supervisor_turn_traces").insert({
     business_id:input.scope.businessId,
     owner_user_id:input.scope.ownerUserId,
