@@ -143,13 +143,18 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   if(!sourceParsed)return null;
   const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)].map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
-    const text=match[0],start=match.index,end=start+text.length;
-    // A dash between nearby numeric spans is a range separator, not a sign.
+    const start=match.index,end=start+match[0].length;
+    // In "$5 - $10" and "$5-$10", the dash is a separator; the owner
+    // did not state a negative ten-dollar figure. Treat the endpoint as
+    // positive for exact-echo matching while preserving genuine negatives
+    // such as "loss: -$10". Never make an assumed sign into evidence.
+    const rangeEndpoint=/^[-−﹣－]\\s*/u.test(match[0])&&/\\p{Nd}\\s*$/u.test(ownerText.slice(0,start));
+    const text=rangeEndpoint?match[0].replace(/^[-−﹣－]\\s*/u,""):match[0];
     // Do not treat an individual year, month, day, hour, or minute as
     // an independently authored owner number.
     if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
-    if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
+    if((!rangeEndpoint&&before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
     const candidate=parseNumericSnippet(text,locale);
     const sourceUnit=classifyOwnerUnit(source),candidateUnit=classifyOwnerUnit(text);
     if(sourceUnit!=="scalar"&&sourceUnit!==candidateUnit&&
