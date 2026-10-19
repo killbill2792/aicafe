@@ -40,9 +40,11 @@ export async function ensureOwnBusiness(): Promise<{ businessId: string } | { er
   }
 
   const admin = createAdminSupabaseClient();
+  // Registration metadata is display input only; the authenticated user determines ownership.
+  const requestedName = typeof user.user_metadata?.cafe_name === "string" ? user.user_metadata.cafe_name.trim().slice(0, 80) : "";
   const { data: business, error: businessError } = await admin
     .from("businesses")
-    .insert({ name: "My café", is_demo: false })
+    .insert({ name: requestedName || "My café", is_demo: false })
     .select("id")
     .single();
   if (businessError || !business) return { error: businessError?.message ?? "Could not create your business." };
