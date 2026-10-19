@@ -104,10 +104,13 @@ export type ClaimIssue=
  * which are only for general/hypothetical numbers (§3's one non-negotiable
  * rule). English-pattern heuristic; the independent reviewer
  * (reviewInstructions) is the semantic backstop for other phrasings/locales. */
-const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée]\b|\b(?:tu|tus|su|sus|nuestro|nuestra|nuestros|nuestras)\s+(?:ganancia|margen|ventas?|ingresos?|costos?|costes?|precios?|nómina|nomina|beneficios?|caf[ée])\b|(?:ربحك|أرباحك|مبيعاتك|إيراداتك|تكاليفك|تكلفتك|أسعارك|سعرك|مقه[اى]ك|مقهاك|رواتبك|الربح\s+الخاص\s+بك)/iu;
-/** Bare quantity words are not part of NUMERIC_SPAN. A typed amount
- * supplied by the owner never licenses a different visible count unit. */
-const QUANTITY_AFTER=/^\s*(?:employees?|staff|workers?|people|persons?|shifts?|drinks?|cups?|items?|orders?|hours?|minutes?|days?|weeks?|months?|products?|customers?|empleados?|empleadas?|trabajadores?|personas?|turnos?|bebidas?|tazas?|pedidos?|horas?|minutos?|días?|semanas?|meses?|productos?|clientes?|موظفين|موظف|عمال|عامل|ورديات|مشروبات|أكواب|طلبات|ساعات|دقائق|أيام|أسابيع|أشهر|منتجات|عملاء)(?=$|[\s.,!?؛،])/iu;
+const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée](?![\p{L}\p{N}])|\b(?:tu|tus|su|sus|nuestro|nuestra|nuestros|nuestras|este|esta)\s+(?:ganancia|margen|ventas?|ingresos?|costos?|costes?|precios?|nómina|nomina|beneficios?|caf[ée]|cafeter[ií]a|negocio)(?![\p{L}\p{N}])|(?:ربحك|أرباحك|مبيعاتك|إيراداتك|تكاليفك|تكلفتك|أسعارك|سعرك|مقه[اى]ك|مقهاك|رواتبك|الربح\s+الخاص\s+بك)/iu;
+/** When an echo omits the owner's explicit money/percent unit, accept it
+ * only as a bare, sentence-terminated value. Allowing arbitrary trailing
+ * words would license "5 new employees" from "$5"; enumerating quantity
+ * nouns or adjective positions cannot be safe across en/es/ar. For a value
+ * inside a larger phrase, cite the typed calculator or source instead. */
+const IS_BARE_ECHO_END=/^\s*(?:$|[.,!?;:)\]}؟؛،])/u;
 const TYPED_AMOUNT=/[$€£¥%٪]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|دولار|سنت/iu;
 /** Finds an exact, already-produced observation display value matching a
  * freehand span the model wrote itself -- the §5b "cheap direct check"
@@ -231,7 +234,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       // implementation of the same check.
       const quoted=findOwnerQuotedSpan(ownerText,full,locale);
        const following=paragraph.text.slice(matchOffset+full.length);
-       if(quoted!==null&&!(QUANTITY_AFTER.test(following)&&TYPED_AMOUNT.test(quoted)))return full;
+       if(quoted!==null&&!(TYPED_AMOUNT.test(quoted)&&!TYPED_AMOUNT.test(full)&&!IS_BARE_ECHO_END.test(following)))return full;
       // §4b: a verified formula entry whose claim matches this exact span.
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
