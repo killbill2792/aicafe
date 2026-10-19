@@ -51,3 +51,39 @@ WITH CHECK (
       AND mb.user_id=auth.uid() AND mb.role='owner'
   )
 );
+
+
+-- Housekeeping: immediate owner-scoped purge during new owner turns plus
+-- recurring server-side deletion when pg_cron is available. Provision pg_cron
+-- before activating private capture; without it, 14-day deletion is not ensured.
+GRANT DELETE ON public.supervisor_turn_traces TO authenticated;
+CREATE POLICY "owner deletes own expired supervisor traces"
+ON public.supervisor_turn_traces FOR DELETE TO authenticated
+USING (
+  owner_user_id=auth.uid() AND expires_at<=now()
+  AND EXISTS (
+    SELECT 1 FROM public.memberships mb
+    WHERE mb.business_id=supervisor_turn_traces.business_id
+      AND mb.user_id=auth.uid() AND mb.role='owner'
+  )
+);
+CREATE OR REPLACE FUNCTION public.purge_expired_supervisor_turn_traces()
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+BEGIN
+  DELETE FROM public.supervisor_turn_traces WHERE expires_at<=now();
+END;
+$$;
+REVOKE ALL ON FUNCTION public.purge_expired_supervisor_turn_traces()
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.purge_expired_supervisor_turn_traces()
+  TO service_role;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname='pg_cron') THEN
+    PERFORM cron.schedule('aicafe-supervisor-private-traces-hourly-purge',
+      '11 * * * *','SELECT public.purge_expired_supervisor_turn_traces()');
+  ELSE
+    RAISE NOTICE 'Enable pg_cron and schedule hourly purge before private tracing is enabled';
+  END IF;
+END;
+$$;
