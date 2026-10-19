@@ -141,8 +141,6 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   options?:{numericSourceOnly?:boolean}):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
-  const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)]
-    .map(m=>({start:m.index,end:m.index+m[0].length}));
   const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)].map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     const text=match[0],start=match.index,end=start+text.length;
