@@ -488,3 +488,33 @@ describe("self-review: whole decimal and signed claim spans",()=>{
     expect(rendered.issues).toEqual([expect.objectContaining({kind:"unmatched_number",text:claim})]);
   });
 });
+
+
+describe("PR127 Unicode owner-specific facts and modifier-resistant echoes",()=>{
+  it.each([
+    ["en","This café has $5 of profit.","$5"],
+    ["es","Tu café tiene una ganancia de $5.","$5"],
+    ["es","Esta cafetería tiene $5 de ganancias.","$5"],
+    ["ar","ربحك هو $5.","$5"],
+  ] as const)("does not accept uncited business result in %s", (locale,text,ownerText)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
+  });
+  it.each([
+    ["en","Schedule 5 new employees."],
+    ["es","Programa 5 nuevos empleados."],
+    ["ar","جدول 5 من الموظفين."],
+    ["en","Hire 5 very experienced baristas."],
+  ] as const)("does not treat $5 as a quantity in %s", (locale,text)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText:"$5"})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number"}));
+  });
+  it("never echoes an owner-written Unicode negative as a positive",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider $5.",citations:[]}]),[],"en",{ownerText:"−$5"})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number"}));
+  });
+  it("keeps a literal negative echo with a Unicode minus",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider −$5.",citations:[]}]),[],"en",{ownerText:"−$5"})!;
+    expect(rendered.issues).toEqual([]);
+  });
+});
