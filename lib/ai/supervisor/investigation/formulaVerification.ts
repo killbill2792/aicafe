@@ -56,7 +56,8 @@ export function normalizeDigits(text:string):string{
  * 100x error that could let a model's declared source silently pass
  * verification against the wrong value. */
 function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
-  const stripped=normalizeDigits(text).replace(/[%$€£¥\s]/gu,"");
+  const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
+  const stripped=normalizeDigits(text).replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
   const cleaned=locale==="es"
     ?stripped.replace(/\./gu,"").replace(",",".")
     :stripped.replace(/,/gu,"");
@@ -64,8 +65,9 @@ function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number
   if(!match)return null;
   const [,sign,whole,frac=""]=match;
   const n=BigInt(whole+frac)*(sign==="-"?BigInt(-1):BigInt(1));
-  const d=BigInt(10)**BigInt(frac.length);
-  return {rat:rat(n,d),decimals:frac.length};
+  const decimals=frac.length+(subunit?2:0);
+  const d=BigInt(10)**BigInt(decimals);
+  return {rat:rat(n,d),decimals};
 }
 // `v.toString()` is plain JS number formatting -- always period-decimal,
 // never locale text, never grouped -- so this must NEVER go through
@@ -88,9 +90,15 @@ function ratToNumber(r:Rat):number{
  * decoration (reused verbatim as this formula's per-variable unit -- see
  * `ArithmeticUnit`). Never does unit CONVERSION, only recognition, mirroring
  * `parseNumericSnippet`'s own "decoration only" rule. */
+function moneyCurrency(text:string):string{
+  if(/€/u.test(text))return "EUR";
+  if(/£/u.test(text))return "GBP";
+  if(/¥/u.test(text))return "JPY";
+  return classifyOwnerUnit(text)==="money"?"USD":"";
+}
 function classifyOwnerUnit(text:string):ArithmeticUnit{
-  if(/%/u.test(text))return "percent";
-  if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b/iu.test(text))return "money";
+  if(/[%٪]/u.test(text))return "percent";
+  if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|دولارات|دولار|سنتات|سنت/iu.test(text))return "money";
   return "scalar";
 }
 /** A complete, token-bounded numeric/currency/percent span in the owner's
@@ -104,29 +112,12 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * the declared source's -- can inform the unit classification), or null if
  * no such span exists.
  *
- * Leading `-?` (Codex finding): without it, an owner-written "-$5" matched
- * only the unsigned "$5", so a model's declared positive "5" could wrongly
- * verify against what the owner actually stated as a negative figure (a
- * loss/decrease silently read as a gain). The sign is now part of the
- * match, so the word-boundary check below (on the character immediately
- * before the match) correctly covers it too, with no further change.
- * `(?:[,.]?\p{Nd})*` (not `[\p{Nd},]*(?:\.\p{Nd}+)?`): each repetition is
- * either a bare digit or a separator immediately followed by a digit, since
- * -- once locale decides which of "," and "." is the decimal separator --
- * either may legitimately appear anywhere in a grouped number (e.g. es
- * "1.234.567,89"), while a trailing separator with no digit after it (e.g.
- * ordinary end-of-sentence punctuation right after a digit, "...cost 0.")
- * is never consumed as part of the span. `parseNumericSnippet` alone
- * decides what a fully-captured span actually means.
- *
- * `(?<!\p{Nd})` guarding the leading `-?` (hardening the sign fix above):
- * without it, a plain hyphenated date or range the owner typed verbatim
- * (e.g. "2026-10-05", or "pages 10-5") would have its SECOND digit run
- * misread as negative -- the "-" there separates two numbers, it is not a
- * minus sign, and it is always immediately preceded by a digit in exactly
- * that case. A genuine negative figure ("cost -5 some months") never has a
- * digit immediately before its "-", so this guard never affects it. */
-const OWNER_NUMERIC_SPAN=/(?<!\p{Nd})-?[$€£¥]?\p{Nd}(?:[,.]?\p{Nd})*%?/gu;
+ * Units may be omitted on one side for formatting tolerance, but two
+ * incompatible explicit units never match. Numeric boundaries support
+ * Unicode letters/digits; signs remain attached to genuine negatives. */
+// Shared with claim rendering so units cannot fall outside the checked span.
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])-?(?:[$€£¥]\s*)?\p{Nd}(?:[,.]?\p{Nd})*(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
@@ -136,6 +127,9 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
     const candidate=parseNumericSnippet(text,locale);
+    const sourceUnit=classifyOwnerUnit(source),candidateUnit=classifyOwnerUnit(text);
+    if(sourceUnit!=="scalar"&&candidateUnit!=="scalar"&&sourceUnit!==candidateUnit)continue;
+    if(sourceUnit==="money"&&candidateUnit==="money"&&moneyCurrency(source)!==moneyCurrency(text))continue;
     if(candidate&&candidate.rat.n===sourceParsed.rat.n&&candidate.rat.d===sourceParsed.rat.d)return text;
   }
   return null;
@@ -143,8 +137,8 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** The time-period scope of a pointer-sourced observation's own read input,
  * if it had one -- "" (never clashing with anything) for a periodless
- * capability or an owner-quoted value, which belongs to no specific data
- * period at all. Mirrors the exact extraction `detectConflictingFacts`
+ * capability. Owner quotes have unknown scope and cannot be mixed with dated
+ * pointers in this fallback; use the registered typed calculator instead. Mirrors the exact extraction `detectConflictingFacts`
  * (runInvestigation.server.ts) already uses for the same `input.period`
  * shape, so two different period representations of the "same" scope are
  * never treated as different by one check and the same by the other. */
@@ -161,7 +155,7 @@ function resolvedPeriod(input:unknown):string{
  * only when the matched span itself carries none -- e.g. the owner wrote
  * "1.45" but the source was declared as "$1.45"). */
 function resolveVariable(source:string,observations:readonly Observation[],ownerText:string,locale:Locale):
-  {value:Rat;unit:ArithmeticUnit;period:string}|null{
+  {value:Rat;unit:ArithmeticUnit;period:string;currency:string}|null{
   const byId=new Map(observations.map(o=>[o.id,o] as const));
   const pointer=POINTER.exec(source);
   if(pointer){
@@ -186,11 +180,11 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     // silently agree with the model's wrong total (Codex finding).
     if(kind==="money"||kind==="percent"){
       if(!Number.isInteger(raw))return null;
-      return {value:rat(BigInt(raw),BigInt(100)),unit:kind,period};
+      return {value:rat(BigInt(raw),BigInt(100)),unit:kind,period,currency:kind==="money"?"USD":""};
     }
     const value=numberToRat(raw);
     if(!value)return null;
-    return {value,unit:"scalar",period};
+    return {value,unit:"scalar",period,currency:""};
   }
   if(!source)return null;
   const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale);
@@ -198,7 +192,8 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
   const parsed=parseNumericSnippet(source,locale);
   if(!parsed)return null;
   const spanUnit=classifyOwnerUnit(matchedSpan);
-  return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source),period:""};
+  return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source),period:"",
+    currency:moneyCurrency(spanUnit!=="scalar"?matchedSpan:source)};
 }
 export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   observations:readonly Observation[],locale:Locale):FormulaVerificationResult{
@@ -213,6 +208,8 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   if(literals.length>0)return {ok:false,failure:{reason:"ungrounded_literal"}};
   const resolved=new Map<string,{value:Rat;unit:ArithmeticUnit}>();
   const periods=new Set<string>();
+  const currencies=new Set<string>();
+  let hasOwnerQuote=false;
   for(const [name,declaration] of Object.entries(entry.variables)){
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
     const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
@@ -220,18 +217,16 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
       const pointer=POINTER.test(declaration.source);
       return {ok:false,failure:{reason:pointer?"source_not_found":"source_unverifiable",variable:name}};
     }
+    if(!POINTER.test(declaration.source))hasOwnerQuote=true;
     resolved.set(name,resolvedVariable);
     if(resolvedVariable.period)periods.add(resolvedVariable.period);
+    if(resolvedVariable.currency)currencies.add(resolvedVariable.currency);
   }
-  // Temporal-compatibility check (Codex finding): two pointer-sourced
-  // variables from DIFFERENT, real data periods combined in one formula
-  // (e.g. subtracting last month's costs from today's revenue) could
-  // otherwise verify as "profit" just because both operands share the same
-  // coarse money dimension -- the unit check has no notion of time at all.
-  // A periodless value (an owner quote, or a periodless capability's
-  // reading) never clashes with anything, since it belongs to no specific
-  // data window; only two DIFFERENT real periods together are rejected.
-  if(periods.size>1)return {ok:false,failure:{reason:"incompatible_periods"}};
+  if(currencies.size>1)return {ok:false,failure:{reason:"incompatible_units"}};
+  // A numeric owner quote does not establish its temporal scope. Never
+  // silently combine it with dated data, even if only one pointer is used.
+  if(periods.size>1||(hasOwnerQuote&&periods.size>0))
+    return {ok:false,failure:{reason:"incompatible_periods"}};
   // One combined walk (Codex finding): computes the value AND propagates
   // units together, so a percentage used as a multiplicative RATE against
   // money ("$20 * 10%") is correctly scaled by /100 -- something evaluating
@@ -260,6 +255,8 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   const claimUnit=classifyOwnerUnit(entry.claim);
   if(claimUnit!=="scalar"&&claimUnit!==evaluated.unit)
     return {ok:false,failure:{reason:"incompatible_units"}};
+  if(claimUnit==="money"&&currencies.size>0&&!currencies.has(moneyCurrency(entry.claim)))
+    return {ok:false,failure:{reason:"incompatible_units"}};
   const claimed=parseNumericSnippet(entry.claim,locale);
   if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};
   const computedNumber=ratToNumber(evaluated.value);
@@ -280,4 +277,12 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
     if(cents.d!==BigInt(1))return {ok:false,failure:{reason:"sub_cent_precision"}};
   }
   return {ok:true,value:computedNumber};
+}
+
+/** Call only after verification succeeded; every source has then resolved. */
+export function formulaObservationIds(entry:FormulaEntry):string[]{
+  return [...new Set(Object.values(entry.variables).flatMap(v=>{
+    const pointer=POINTER.exec(v.source);
+    return pointer?[pointer[1]]:[];
+  }))];
 }

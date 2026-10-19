@@ -230,14 +230,14 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"10"}));
   });
-  it("masks (drops the paragraph) a numeral CLAIM_SPAN does not recognize, instead of letting it through unchecked (Codex finding, non-ASCII numerals)",()=>{
+  it("masks an unverified Arabic numeral while preserving the surrounding paragraph",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"بعنا ١٠٠ مشروب اليوم.",citations:[]},
       {kind:"advice",text:"This second paragraph has no numbers at all.",citations:[]},
     ]),[],"ar");
-    expect(rendered!.blocks).toEqual([{type:"text",text:"This second paragraph has no numbers at all."}]);
-    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"dropped_paragraph",
-      reason:"unrecognized_numeral"}));
+    expect(rendered!.blocks).toEqual([{type:"text",text:"بعنا [قيمة غير مؤكدة] مشروب اليوم."},
+      {type:"text",text:"This second paragraph has no numbers at all."}]);
+    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"١٠٠"}));
   });
 });
 
@@ -369,5 +369,52 @@ describe("citationCautionWarnings (shared between the grounded and rescued reply
   it("adds no cautions for an observation with none of the flagged qualities",()=>{
     const o=observation("r1","priceCents",525);
     expect(citationCautionWarnings([o],"en")).toEqual([]);
+  });
+});
+
+describe("PR127 review provenance and multilingual unit boundaries",()=>{
+  it.each(["advice","clarification"] as const)("retains formula sources and cautions in %s",kind=>{
+    const source=observation("r1","priceCents",1000,{quality:{estimatedInputs:["price"]}});
+    source.reference={...ref("external-price"),source:"unverified_external"};
+    const other=observation("r2","priceCents",500);
+    const a=answer([{kind,text:"The modeled difference is $5.",citations:[],formulas:[{
+      claim:"$5",formula:"a - b",variables:{a:{value:10,source:"r1:value.priceCents"},b:{value:5,source:"r2:value.priceCents"}}}]}]);
+    const rendered=renderInvestigationAnswer(a,[source,other],"en")!;
+    expect(rendered.issues).toEqual([]);
+    expect(rendered.citedIds).toEqual(["r1","r2"]);
+    expect(rendered.evidence).toEqual([source.reference,other.reference]);
+    const reply=investigationReply(a,[source,other],"en")!;
+    expect(reply.evidence).toEqual([source.reference,other.reference]);
+    expect(reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({code:"SUPERVISOR_PUBLIC_RESEARCH"}),
+      expect.objectContaining({code:"SUPERVISOR_ESTIMATED"}),
+    ]));
+  });
+  it("does not retain sources from a discarded formula paragraph",()=>{
+    const source=observation("r1","priceCents",1000);
+    const a=answer([{kind:"advice",text:"The difference is $6. {{bad}}",citations:[],formulas:[{
+      claim:"$6",formula:"a - b",variables:{a:{value:10,source:"r1:value.priceCents"},b:{value:4,source:"$4"}}}]},
+      {kind:"advice",text:"Check the source.",citations:[]}]);
+    const rendered=renderInvestigationAnswer(a,[source],"en",{ownerText:"Assume $4."})!;
+    expect(rendered.citedIds).toEqual([]);
+    expect(rendered.hasComputedClaim).toBe(false);
+  });
+  it.each([
+    ["$5","5%"],["5%","$5"],["5 dollars","5 %"],
+    ["5 دولارات","5٪"],["5٪","5 دولارات"],["$5","€5"],["5 cents","5 dollars"],
+  ])("does not echo %s as %s",(ownerText,claim)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText})!;
+    expect(rendered.issues).toHaveLength(1);
+    expect(rendered.blocks[0]).not.toEqual({type:"text",text:"Consider "+claim+"."});
+  });
+  it.each(["5 دولارات","5 دولار","5٪","5 ٪"])("checks the complete Arabic claim %s",claim=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"النتيجة "+claim+".",citations:[],formulas:[{
+      claim,formula:"a + b",variables:{a:{value:3,source:"3"},b:{value:2,source:"2"}}}]}]),[],"ar",{ownerText:"3 drinks and 2 shifts"})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"formula_failed",text:claim,
+      failure:{reason:"incompatible_units"}}));
+  });
+  it.each(["$5","5 dollars","5 دولارات","5٪"])("keeps compatible complete echoes: %s",claim=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText:claim})!;
+    expect(rendered.issues).toEqual([]);
   });
 });

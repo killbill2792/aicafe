@@ -5,7 +5,7 @@ import {registeredReadCautions} from "../p3/readEvidencePresentation";
 import {createHash} from "node:crypto";
 import type {EvidenceReference,GroundedSupervisorReply,SupervisorReplyBlock} from "@/lib/ai/conversations/contracts";
 import type {InvestigationAnswer} from "./protocol";
-import {verifyFormulaEntry,findOwnerQuotedSpan,type FormulaVerificationFailure} from "./formulaVerification";
+import {verifyFormulaEntry,findOwnerQuotedSpan,formulaObservationIds,NUMERIC_SPAN,type FormulaVerificationFailure} from "./formulaVerification";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -119,32 +119,10 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
  * currency/percent span -- matched in one pass so each is classified and
  * either kept or masked independently (§3's claim-level pass), never
  * discarding more than the one span/paragraph a problem actually concerns. */
-// \p{Nd}, not \d: \d only matches ASCII 0-9, which would let a non-ASCII
-// numeral (e.g. Arabic-Indic digits in Arabic-locale model output) slip
-// through completely undetected -- never reaching any of the checks below
-// at all, rather than being caught and masked by them.
-// Leading `(?<!\p{Nd})-?` on each numeric branch (Codex finding): without
-// it, a genuinely negative verified result ("-$5") was captured as the
-// unsigned "$5", so `paragraph.formulas?.find(f=>f.claim===full)` below
-// could never match a formula entry whose own claim field correctly
-// included the sign -- masking an already-verified negative figure (a
-// real loss or decrease) instead of showing it. The `(?<!\p{Nd})` guard
-// stops a hyphenated date/range the model writes verbatim (e.g.
-// "2026-10-05") from having its second digit run misread as negative --
-// that hyphen is always preceded by a digit, which a genuine minus sign
-// never is.
-// A unit written as a WORD, or a "%" separated from its digits by
-// whitespace, outside the digit run itself (Codex finding): "5 dollars" or
-// Spanish "5 %" previously had only the bare "5" captured as the claim
-// span, so `classifyOwnerUnit` -- and the result-unit check in
-// `verifyFormulaEntry` that depends on it -- never saw the decoration at
-// all and treated the claim as an undecorated scalar, letting two
-// unrelated scalar inputs (e.g. 3 drinks + 2 shifts) verify a claim
-// visibly written as money. Allowing optional whitespace before "%", and
-// an optional trailing currency word (mirroring `classifyOwnerUnit`'s own
-// word list exactly), folds that decoration into the span so it can never
-// bypass the check this way.
-const CLAIM_SPAN=/\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|(?<!\p{Nd})-?[$€£¥]\s?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?%?|(?<!\p{Nd})-?\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\s?%|(?<!\p{Nd})-?\b\p{Nd}[\p{Nd},]*(?:\.\p{Nd}+)?\b(?:\s(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b)?/giu;
+// Use the same Unicode numeric/unit grammar as owner-source verification.
+// Capturing visible currency words and percent signs inside the claim keeps
+// the unit check effective in English, Spanish and Arabic alike.
+const CLAIM_SPAN=new RegExp(String.raw`\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|${NUMERIC_SPAN}`,"giu");
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
@@ -194,7 +172,8 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     if(/\p{Nd}/u.test(paragraph.text.replace(CLAIM_SPAN,""))){
       issues.push({kind:"dropped_paragraph",paragraphIndex,reason:"unrecognized_numeral"});return;
     }
-    let dropped=false;
+    let dropped=false,paragraphComputed=false;
+    const formulaCitedIds=new Set<string>();
     const matched:{id:string;path:string}[]=[];
     const businessSpecific=BUSINESS_SPECIFIC.test(paragraph.text);
     const text=paragraph.text.replace(CLAIM_SPAN,(full:string,tokenId?:string,tokenPath?:string)=>{
@@ -251,7 +230,11 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
         const verified=verifyFormulaEntry(formulaEntry,ownerText,observations,locale);
-        if(verified.ok){hasComputedClaim=true;return full;}
+        if(verified.ok){
+          paragraphComputed=true;
+          for(const id of formulaObservationIds(formulaEntry))formulaCitedIds.add(id);
+          return full;
+        }
         issues.push({kind:"formula_failed",paragraphIndex,text:full,failure:verified.failure});
         return labels.unverifiedValue;
       }
@@ -271,13 +254,14 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     if(/\{\{|\}\}/u.test(text))return;
     const cleanedText=clean(text);
     if(!cleanedText||cleanedText.length>1200)return;
-    if(paragraph.kind==="evidence")adviceOnly=false;
+    if(paragraph.kind==="evidence"||formulaCitedIds.size>0)adviceOnly=false;
+    hasComputedClaim ||= paragraphComputed;
     blocks.push({type:"text",text:cleanedText});
     // Every citation on a surviving paragraph earns its evidence reference,
     // not only one actually substituted via a {{rN:path}} token -- a
     // paragraph may cite a source purely to NARRATE it (e.g. "that task
     // needs your review") with no value pulled out of it at all.
-    for(const id of paragraph.citations){
+    for(const id of new Set([...paragraph.citations,...formulaCitedIds])){
       survivingCitedIds.add(id);
       const o=byId.get(id);
       if(o?.reference&&!refs.some(r=>r.identifier===o.reference!.identifier))refs.push(o.reference);

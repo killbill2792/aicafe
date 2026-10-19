@@ -260,12 +260,12 @@ describe("verifyFormulaEntry -- rejects combining data from two different real p
       "",[revenue,cost],"en");
     expect(result).toEqual({ok:true,value:5});
   });
-  it("never flags a periodless owner quote combined with a single perioded pointer as a clash",()=>{
+  it("rejects an owner quote whose compatibility with a dated pointer is unproven",()=>{
     const revenue=observation("r1","priceCents",2000,"verified",{period:{from:"2026-10-01",to:"2026-10-18"}});
     const result=verifyFormulaEntry(entry({formula:"revenue - extra",claim:"$15",
       variables:{revenue:{value:20,source:"r1:value.priceCents"},extra:{value:5,source:"$5"}}}),
       "I also spent $5 on supplies.",[revenue],"en");
-    expect(result).toEqual({ok:true,value:15});
+    expect(result).toEqual({ok:false,failure:{reason:"incompatible_periods"}});
   });
 });
 
@@ -293,5 +293,30 @@ describe("verifyFormulaEntry -- grammar failures surface as a specific reason",(
     const result=verifyFormulaEntry(entry({formula:"a / b",
       variables:{a:{value:1,source:"1"},b:{value:0,source:"0"}}}),"1 over 0.",[],"en");
     expect(result).toEqual({ok:false,failure:{reason:"grammar",detail:"division_by_zero"}});
+  });
+});
+
+describe("dated owner operands",()=>{
+  it.each(["Last month I spent $5.","Hoy gasté $5.","أنفقت $5 الشهر الماضي."])("rejects unknown quote scope: %s",ownerText=>{
+    const revenue=observation("r1","priceCents",2000,"verified",{period:{from:"2026-10-18",to:"2026-10-18"}});
+    expect(verifyFormulaEntry(entry({formula:"revenue - cost",claim:"$15",variables:{
+      revenue:{value:20,source:"r1:value.priceCents"},cost:{value:5,source:"$5"}}}),ownerText,[revenue],"en"))
+      .toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+});
+
+describe("currency and monetary subunits",()=>{
+  it("keeps cents on their real dollar scale",()=>{
+    expect(verifyFormulaEntry(entry({claim:"$0.05",formula:"a",variables:{a:{value:5,source:"5 cents"}}}),
+      "Assume 5 cents.",[],"en")).toEqual({ok:true,value:0.05});
+  });
+  it("rejects adding different currencies",()=>{
+    expect(verifyFormulaEntry(entry({claim:"$10",formula:"a + b",variables:{
+      a:{value:5,source:"$5"},b:{value:5,source:"€5"}}}),"Assume $5 and €5.",[],"en"))
+      .toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+  it("rejects relabeling euros as dollars",()=>{
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a",variables:{a:{value:5,source:"€5"}}}),
+      "Assume €5.",[],"en")).toEqual({ok:false,failure:{reason:"incompatible_units"}});
   });
 });
