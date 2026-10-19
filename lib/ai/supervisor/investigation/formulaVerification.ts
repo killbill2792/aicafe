@@ -59,7 +59,7 @@ export function normalizeDigits(text:string):string{
  * verification against the wrong value. */
 function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
   const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
-  const stripped=normalizeDigits(text).replace(/[−﹣－]/gu,"-").replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
+  const stripped=normalizeDigits(text).replace(/[−﹣－]/gu,"-").replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|oz|ml|kg|lbs?|cl|pt|qt|gal|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
   const cleaned=locale==="es"
     ?(/^[-]?\./u.test(stripped)?stripped:stripped.replace(/\./gu,"").replace(",","."))
     :stripped.replace(/,/gu,"");
@@ -119,7 +119,14 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * takes units exclusively from the owner's matched span. Numeric boundaries support
  * Unicode letters/digits; signs remain attached to genuine negatives. */
 // Shared with claim rendering so units cannot fall outside the checked span.
-export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$€£¥]\s*)?(?:[-−﹣－]\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+// Measurement-unit words (oz/ml/kg/lb/cl/pt/qt/gal) are recognized here for
+// the same reason the currency words are: a café owner's own stated drink
+// size ("12oz") must be a complete, checkable span -- never leftover digits
+// that trip the unrecognized-numeral fail-closed check in evidence.ts and
+// drop the whole paragraph just because the model echoed the owner's own
+// "12oz" back verbatim (production incident: "how much should I charge for
+// latte 12oz..." lost its entire answer this way).
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$€£¥]\s*)?(?:[-−﹣－]\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|oz|ml|kg|lbs?|cl|pt|qt|gal|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
 /** Dates and clock times are indivisible claims. Checking each digit group
  * as a separate owner echo can authorize a date/time the owner never gave.
  * Use the same grammar for both the owner's sources and model output. */
