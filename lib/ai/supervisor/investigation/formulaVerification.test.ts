@@ -471,3 +471,21 @@ describe("temporal components never authorize a formula source",()=>{
     expect(findOwnerQuotedSpan("2026-10-19 and $5.","$5","en")).toBe("$5");
   });
 });
+
+describe("ambiguous hyphens are not independently authored losses",()=>{
+  it.each([
+    ["between $5 - $10","-$10","en"],
+    ["between $5 -$10","-$10","en"],
+    ["$5  - $10","-$10","en"],
+    ["entre 5 - 10 dólares","-10 dólares","es"],
+  ] as const)("does not authorize negative %s from positive range %s",(owner,claim,locale)=>{
+    expect(findOwnerQuotedSpan(owner,claim,locale)).toBeNull();
+  });
+  it.each([
+    ["from $5 to -$10","-$10","en"],
+    ["loss of -$10","-$10","en"],
+    ["-$10","-$10","en"],
+  ] as const)("still recognizes genuine quoted loss %s",(owner,claim,locale)=>{
+    expect(findOwnerQuotedSpan(owner,claim,locale)).not.toBeNull();
+  });
+});
