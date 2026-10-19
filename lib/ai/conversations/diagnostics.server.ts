@@ -343,7 +343,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  *   the database.
  * - "http_response_sent": the final reply status/shape actually returned to
  *   the owner in the HTTP response, not just "the request succeeded". */
-export type SupervisorDebugPoint="turn_received"|"capability_round"|"retry_feedback"|
+export type SupervisorDebugPoint="turn_received"|"capability_round"|"tool_request"|"tool_result"|"parallel_batch"|"retry_feedback"|
   "claim_issues_retry"|"direct_answer_attempt"|"review_verdict"|"rescue_review_verdict"|
   "accumulated_rescue_review_verdict"|"investigation_exhausted"|
   "reply_validation_failed"|"persistence_result"|"http_response_sent";

@@ -12,6 +12,7 @@ import {investigationMemorySchema,investigationOwnerStatements,type Investigatio
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
 import {createP3ReadRegistry,isRedundantModelRead} from "../p3/sourceRegistry.server";
+import {values,type SupportedId} from "@/lib/metrics/p1Catalog";
 import {projectP1Evidence} from "../p3/operandProjection.server";
 import {EXPRESSION_ID,planSchema} from "../p3/expression";
 import {simulationOutputSchema} from "../p3/simulateRegistration.server";
@@ -353,6 +354,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       return !!checked&&!isToolCallSignal(checked)&&checked.safe===true;
     })]);
   const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
+  const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
   // Native function-calling tools: one per discovered read capability, plus
   // the registered expression calculator. toolNameToCapabilityId maps a
   // tool call's name back to the real capability/calculate id; the model
@@ -483,6 +485,96 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       return await failure(false,"model_calls");
     }
     feedback=null;
+    if(isToolCallSignal(step)&&step.calls&&step.calls.length>1){
+      // Native multi-call selections may dispatch only independent P1 reads.
+      // Domain simulations, calculations, derived dataset/record inspections,
+      // and requests that need a previous result stay in the normal serial
+      // loop. The entire batch is preflighted BEFORE any reader starts.
+      const selected=step.calls.map(call=>{
+        const capabilityId=toolNameToCapabilityId.get(call.name);
+        const definition=manifest.find(m=>m.id===capabilityId);
+        let args:unknown;
+        try{args=JSON.parse(call.arguments);}catch{return null;}
+        return capabilityId&&definition&&independentP1Ids.has(capabilityId)?
+          {call,capabilityId,definition,args}:null;
+      });
+      const requests=selected.filter((v):v is NonNullable<typeof v>=>v!==null);
+      const signatures=requests.map(v=>JSON.stringify(["read",v.capabilityId,v.args]));
+      const sourceSelections=requests.map(v=>JSON.stringify([
+        v.definition.canonicalReaderIds,
+        record(v.args)&&record(v.args.period)?v.args.period:null,
+        record(v.args)?v.args.productId??null:null,
+        record(v.args)?v.args.page??null:null,
+      ]));
+      const canDispatch=requests.length===step.calls.length&&
+        usage.toolCallCount+requests.length<=INVESTIGATION_LIMITS.operations&&
+        new Set(signatures).size===signatures.length&&
+        new Set(sourceSelections).size===sourceSelections.length&&
+        signatures.every(sig=>!attempted.has(sig))&&
+        requests.every(v=>
+          (v.definition.currencyPolicy==="independent"||
+            identity.currency==="USD"&&financialReadsAvailable)&&
+          investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,ownerStatements,
+            v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
+          !pendingOwnerCalendarCorrection(v.args,input.text,identity.asOf,memory,ownerStatements));
+      if(!canDispatch){
+        feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
+        logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
+          outcome:"rejected_preflight",requested:step.calls.map(c=>c.name)});
+        continue;
+      }
+      for(const signature of signatures)attempted.add(signature);
+      logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
+        outcome:"concurrent",requested:requests.map(v=>v.capabilityId)});
+      // Each registry invocation validates its own typed parameters, scope
+      // and time budget. Promise.all preserves the model's requested order
+      // for stable r1/r2 citation IDs even if a later reader finishes first.
+      const completed=await Promise.all(requests.map(async selectedRead=>{
+        let dispatched=false;
+        const result=await registry.invoke(scope,selectedRead.capabilityId,selectedRead.args,()=>{
+          dispatched=true;
+          usage.toolCallCount++;
+          input.onUsage?.({...usage});
+        });
+        return {...selectedRead,result,dispatched};
+      }));
+      for(const item of completed){
+        const {capabilityId,args,result,dispatched,definition,call}=item;
+        if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
+        if(dispatched){
+          const cal=investigationCalendarScope(args,definition.owner);
+          if(cal)calendarScopes.push(cal);
+        }
+        const id="r"+(observations.length+1);
+        const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
+        const rendered=successful?observationDisplay(result,input.locale):{display:{},kind:{},raw:{}};
+        const observation:Observation={id,capabilityId,input:args,result,
+          sourceContract:typeof result.id==="string"?result.id:undefined,
+          reference:successful?observationReference(identity.businessId,identity.asOf,capabilityId,result):null,
+          requiresSnapshot:definition.currencyPolicy!=="independent",
+          display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw,calculation:false};
+        if(successful){
+          const quality=record(result.quality)?result.quality:null;
+          if(quality&&Array.isArray(quality.missingInputs)&&Array.isArray(quality.estimatedInputs)&&
+            Array.isArray(quality.staleInputs)){
+            const sourceId=typeof result.id==="string"?result.id:capabilityId;
+            const dataset=datasetFor(sourceId,result.value,quality as {
+              missingInputs:string[];estimatedInputs:string[];staleInputs:string[]});
+            if(dataset){datasets.set(id,{sourceId,dataset,revision:null});observation.datasetFields=dataset.fields;}
+          }
+          evidence.push({clause:input.text,capabilityId,
+            status:result.status as "partial"|"verified"|"estimated",result,reason:null});
+          remembered.push({capabilityId,inputJson:JSON.stringify(args)});
+        }
+        observations.push(observation);
+        logSupervisorDebugPayload({point:"tool_result",requestId:debugRequestId,round,
+          callId:call.callId,capabilityId,toolArguments:args,result,observationId:id,
+          dispatched,parallel:true});
+        input.onDiagnostic?.({stage:"investigation_round",agent:friendlyAgent(definition.owner),
+          capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
+      }
+      continue;
+    }
     if(!isToolCallSignal(step)){
       // The model answered directly (no tool call) -- already schema-valid
       // against answerSchema, with no second hand-written envelope around it.
@@ -667,6 +759,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;
     }
     attempted.add(signature);
+    logSupervisorDebugPayload({point:"tool_request",requestId:debugRequestId,round,
+      callId:step.callId,capabilityId,toolArguments:args,parallel:false});
     input.onDiagnostic?.({stage:"investigation_round",
       agent:friendlyAgent(capabilityId===EXPRESSION_ID?"platform":manifest.find(m=>m.id===capabilityId)?.owner),
       capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
@@ -793,7 +887,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     observations.push(observation);
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"capability_round",requestId:debugRequestId,round,
-      capabilityId,status:String(result.status),successful});
+      capabilityId,callId:step.callId,toolArguments:args,rawResult:result,
+      observationId:id,status:String(result.status),successful});
   }
   return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }

@@ -4,7 +4,9 @@
 - [x] Prevent an extra model-facing scalar monthly-bills selection while preserving the legacy registered capability.
 - [x] Keep independent formula verification and direct specific mismatch feedback to the registered calculator.
 - [x] Safely normalize known structured citation decorations; unknown claims remain fail-closed.
-- [ ] Complete native multi-call execution and bounded tracing; prove CI and Codex review on final head.
+- [x] Native Responses parallel tool-call selection, preflight and bounded concurrent independent P1 reads.
+- [x] Gated full per-operation debug trace with stable call IDs, selected inputs, outputs and observation IDs.
+- [ ] Prove CI, deterministic regression tests and Codex review on final head.
 - No new dependencies, migrations, cross-business data sharing or new model-operated business writes.
 
 ## Menu transparent monthly-cost pricing preview (2026-10-17, draft PR)

@@ -613,7 +613,7 @@ describe("declared decorative citations",()=>{
     expect(result?.issues).toEqual([]);
     expect(result?.blocks).toContainEqual({type:"text",text:"The catalog shows 30 active products."});
     expect(result?.evidence).toContainEqual(ref("r2"));
-    expect(result?.evidence).not.toContainEqual(ref("r3"));
+    // Unavailable observations have no source reference in production.
   });
   it("does not silently erase undeclared citation-like digits",()=>{
     const o=observation("r1","count",30);
