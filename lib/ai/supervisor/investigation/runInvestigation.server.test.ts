@@ -1456,7 +1456,7 @@ describe("canonical source operands and native concurrent reads",()=>{
       calculate(plan),
       answer([{kind:"evidence",text:"The monthly recurring amount is {{r2:value}}.",citations:["r2"]}]),
     ],(ctx,step)=>{
-      expect(ctx.capabilities.some((x:{id:string})=>x.id==="p3.money.recurring_monthly_bills_cents.v1")).toBe(false);
+      expect((ctx.capabilities as {id:string}[]).some(x=>x.id==="p3.money.recurring_monthly_bills_cents.v1")).toBe(false);
       if(step===1)
         expect(ctx.authorizedOperands).toEqual(expect.arrayContaining([
           expect.objectContaining({handle,unit:"USD_cents"})]));
