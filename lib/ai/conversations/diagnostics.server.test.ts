@@ -2,6 +2,7 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError,logSupervisorDebugPayload} from "./diagnostics.server";
 import {SupervisorReplyValidationError} from "./replyValidation";
+import {withSupervisorPrivateTrace} from "./privateTrace.server";
 describe("Sanitized Supervisor production diagnostics",()=>{
   it("includes a stable request correlation ID with safe stage/counters only",()=>{
     const written:string[]=[];
@@ -352,6 +353,27 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
     const logged=JSON.parse(lines[0]);
     expect(logged).toMatchObject({point:"http_response_sent",httpStatus:201,
       replyStatus:"insufficient_evidence"});
+  });
+});
+
+describe("authenticated private trace buffer",()=>{
+  it("keeps exact diagnostic parameters but strips credential properties",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
+    try{
+      let collected:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"calculator_rejected",reasonCode:"unknown_operand",
+          toolArguments:{nodes:[{op:"source",handle:"unknown"}]},
+          ownerQuestion:"What are my wages?",authorization:"Bearer sensitive"});
+      },async trace=>{collected=trace;});
+      expect(collected).not.toBeNull();
+      const content=JSON.stringify(collected);
+      expect(content).toContain("unknown_operand");
+      expect(content).toContain("What are my wages?");
+      expect(content).not.toContain("Bearer sensitive");
+      expect(collected!.events).toHaveLength(1);
+    }finally{vi.unstubAllEnvs();}
   });
 });
 
