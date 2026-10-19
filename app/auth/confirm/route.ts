@@ -32,6 +32,10 @@ export async function GET(request: Request) {
       },
     },
   });
-  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
-  return error ? NextResponse.redirect(fallback) : response;
+  try {
+    const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+    return error ? NextResponse.redirect(fallback) : response;
+  } catch {
+    return NextResponse.redirect(fallback);
+  }
 }
