@@ -155,7 +155,7 @@ export function resolvedPeriod(input:unknown):string{
  * analysis stores its source-read ID rather than copying the original dates
  * into its own input. Never interpret missing, cyclic or incompatible
  * lineage as an unscoped numerical fact. */
-function observationPeriod(observation:Observation,observations:readonly Observation[],
+export function observationPeriod(observation:Observation,observations:readonly Observation[],
   seen:ReadonlySet<string>=new Set()):string|null{
   if(seen.has(observation.id))return null;
   const visited=new Set(seen);visited.add(observation.id);
