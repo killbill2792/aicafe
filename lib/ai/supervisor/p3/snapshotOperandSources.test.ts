@@ -303,6 +303,16 @@ describe("authoritative P3 source projection",()=>{
       handle:"money.monthly_bills:value:totalCents",sourceRevision:"25"});
     expect(projectP1Evidence([originals[0]],cafe,originals[0].clause,null,[],underlying)
       .operands[0].value).toBe(750000);
+    const distinctClause="Use the same monthly bill figure with payroll";
+    const split=projectP1Evidence([originals[0],
+      {...originals[1],clause:distinctClause}],cafe,
+      "What are my bills and what if payroll changes?",null,[],underlying);
+    expect(split.operands).toHaveLength(1);
+    expect(split.choices).toEqual(expect.arrayContaining([
+      expect.objectContaining({matchedClause:originals[0].clause}),
+      expect.objectContaining({matchedClause:distinctClause,
+        handle:"money.monthly_bills:value:totalCents"}),
+    ]));
   });
   it("deduplicates all profitability and spending scalar aliases against structured financial facts",()=>{
     const period={from:"2026-10-01",to:"2026-10-15"};
@@ -343,6 +353,19 @@ describe("authoritative P3 source projection",()=>{
     expect(grouped.operands.map(o=>o.sourceId).sort()).toEqual([
       "money.profitability","money.profitability","money.profitability",
       "money.recorded_spending"]);
+    // The compatibility planner can choose the structured parent and a
+    // scalar alias for separate clauses of the same owner request. Deduping
+    // must preserve each clause's authorization for the canonical operand.
+    const splitFacts=facts.map((fact,i)=>({...fact,clause:"owner clause "+i}));
+    const split=projectP1Evidence(splitFacts,cafe,
+      "Compare sales, spending, total costs and profit",null,[],undefined,
+      "authorized_selection");
+    expect(split.operands).toHaveLength(4);
+    for(const [idx,field] of [[1,"totalCents"],[3,"netSalesCents"],
+      [4,"totalCostsCents"],[5,"ownerProfitCents"]] as const)
+      expect(split.choices).toEqual(expect.arrayContaining([
+        expect.objectContaining({field,matchedClause:"owner clause "+idx}),
+      ]));
     const conflicting=facts.map(x=>x);
     conflicting[1]={...facts[1],result:{...(facts[1].result as Record<string,unknown>),value:18001}};
     const invalid=projectP1Evidence(conflicting,cafe,
