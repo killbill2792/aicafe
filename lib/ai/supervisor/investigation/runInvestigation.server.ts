@@ -151,8 +151,11 @@ export function detectConflictingFacts(observations:readonly Observation[]):
       // the measured entity. Distinct group labels must never conflict.
       const measuredRecord=recordAt(o.result.value,recordLocator);
       const groupIdentity=o.capabilityId===DATASET_ID&&record(measuredRecord)&&
-        Object.hasOwn(measuredRecord,"group")?"|group:"+JSON.stringify(measuredRecord.group):"";
-      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod+"|"+analysisIdentity+groupIdentity;
+        Object.hasOwn(measuredRecord,"group")?"group:"+JSON.stringify(measuredRecord.group):null;
+      // Dataset group labels REPLACE positional array indices, otherwise
+      // reordering the same groups hides a real disagreement on one label.
+      const recordIdentity=groupIdentity??(scope.startsWith("id:")?scope:recordLocator+"|"+scope);
+      const key=field+"@"+recordIdentity+"|"+inputPeriod+"|"+analysisIdentity;
       const list=groups.get(key)??[];
       list.push({field,id:o.id,display:o.display[path]??String(raw),raw});
       groups.set(key,list);
