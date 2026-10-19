@@ -120,6 +120,21 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * Unicode letters/digits; signs remain attached to genuine negatives. */
 // Shared with claim rendering so units cannot fall outside the checked span.
 export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$€£¥]\s*)?(?:[-−﹣－]\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+/** Dates and clock times are indivisible claims. Checking each digit group
+ * as a separate owner echo can authorize a date/time the owner never gave.
+ * Use the same grammar for both the owner's sources and model output. */
+export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2})?)?|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)(?![\p{L}\p{N}])`;
+const TEMPORAL_SPANS=new RegExp(STRUCTURED_TEMPORAL_SPAN,"giu");
+const COMPLETE_TEMPORAL_SPAN=new RegExp("^(?:"+STRUCTURED_TEMPORAL_SPAN+")$","iu");
+export function isStructuredTemporalSpan(text:string):boolean{
+  return COMPLETE_TEMPORAL_SPAN.test(text);
+}
+export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null{
+  const value=normalizeDigits(claim).toLocaleLowerCase();
+  for(const found of ownerText.matchAll(TEMPORAL_SPANS))
+    if(normalizeDigits(found[0]).toLocaleLowerCase()===value)return found[0];
+  return null;
+}
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
@@ -129,6 +144,9 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     const text=match[0],start=match.index,end=start+text.length;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
+    // A component of an ISO/slash date or clock time is not a standalone
+    // quantity that can support a different statement or formula operand.
+    if([...ownerText.matchAll(TEMPORAL_SPANS)].some(span=>start<span.index+span[0].length&&end>span.index))continue;
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
     const candidate=parseNumericSnippet(text,locale);
     const sourceUnit=classifyOwnerUnit(source),candidateUnit=classifyOwnerUnit(text);
