@@ -17,7 +17,7 @@ import {EXPRESSION_ID,planSchema} from "../p3/expression";
 import {simulationOutputSchema} from "../p3/simulateRegistration.server";
 import {formatScenarioValue} from "../p3/formatScenario";
 import type {ShadowEvidence} from "../p2/shadow.server";
-import {buildDatasetRegistration,datasetFor,type StoredDataset} from "./datasets.server";
+import {buildDatasetRegistration,datasetFor,DATASET_ID,type StoredDataset} from "./datasets.server";
 import {datasetOperands} from "./calculations.server";
 import {buildRecordsRegistration,recordCollections,RECORDS_ID} from "./records.server";
 import {buildResearchRegistration} from "./research.server";
@@ -90,6 +90,14 @@ function recordScope(node:unknown):string{
     .find((v):v is string=>typeof v==="string");
   return (id===undefined?"":"id:"+id)+"|"+(scope??"");
 }
+/** Stable selector identity for derived data: order of JSON object keys must not
+ * turn the same analysis into two different facts. Arrays retain their order. */
+function canonicalSelector(value:unknown):unknown{
+  if(Array.isArray(value))return value.map(canonicalSelector);
+  if(record(value))return Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b))
+    .map(([k,v])=>[k,canonicalSelector(v)]));
+  return value;
+}
 /** A new failure category (§8): when the SAME field name (e.g. an hourly
  * wage) comes back with more than one distinct value for the SAME entity
  * and period across different observations produced this turn, that is a
@@ -123,7 +131,15 @@ export function detectConflictingFacts(observations:readonly Observation[]):
       // land in the SAME group so a genuine conflict between them is still
       // caught. Only a record with no identity to key on at all falls back
       // to position (recordLocator) to keep its distinct records apart.
-      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod;
+      // A dataset total represents a particular query over a particular
+      // authorized source, not every other aggregate for the same month.
+      // Group only matching source-read ID + complete analysis selector.
+      const datasetValue=record(o.result.value)?o.result.value:null;
+      const analysisIdentity=o.capabilityId===DATASET_ID?JSON.stringify({
+        source:datasetValue?.sourceReadId,
+        selector:canonicalSelector(o.input),
+      }):"";
+      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod+"|"+analysisIdentity;
       const list=groups.get(key)??[];
       list.push({field,id:o.id,display:o.display[path]??String(raw),raw});
       groups.set(key,list);
