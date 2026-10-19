@@ -311,7 +311,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         const timedOut=new Promise<{timedOut:true}>(resolve=>{
           timer=setTimeout(()=>resolve({timedOut:true}),def.budgets.timeoutMs);
         });
-        const read=Promise.resolve().then(()=>def.read(scope,input.data))
+        const read=Promise.resolve().then(()=>def.read(scope,input))
           .then(value=>({timedOut:false as const,value}));
         const settled=await Promise.race([read,timedOut]);
         // Platform timeout is not a domain reader output, so never parse it
@@ -359,7 +359,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
             !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
             !canonicalReader || !sourceValid || !readerValid ||
             typeof p.purpose!=="string" ||
-            p.purpose!==(input.data as {purpose?:string}).purpose ||
+            p.purpose!==(input as {purpose?:string}).purpose ||
             !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))
