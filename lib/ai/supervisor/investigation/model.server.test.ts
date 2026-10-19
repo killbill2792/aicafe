@@ -371,3 +371,70 @@ describe("requestInvestigation invalid-payload sub-reasons",()=>{
         outputTextPartCount:1,jsonTextLength:JSON.stringify({x:""}).length}));
   });
 });
+
+describe("strict-mode JSON Schema shape sent to the provider (production incident)",()=>{
+  // Production bug: a zod `.record()` field (dynamic keys, no fixed
+  // `properties`) and a zod `.optional()` field (absent from `required`)
+  // both make OpenAI's structured-output strict mode reject the WHOLE
+  // request with a 400 "invalid_json_schema" -- on every single call using
+  // that schema, regardless of what the model would have said. This walks
+  // the actual wire schema `requestInvestigation` builds and asserts the
+  // two invariants strict mode requires, recursively, so a future field
+  // added to any investigation schema regresses here instead of in
+  // production against every real owner question.
+  // A dynamic-keyed field (zod `.record()`) has no fixed `properties` at
+  // all -- Zod represents it with `propertyNames`/a schema-valued
+  // `additionalProperties` instead of a plain `true`/`false` -- so it can
+  // never be "closed" into required/properties the way a merely-optional
+  // field can. The only real fix is never sending such a field at all
+  // (protocol.ts's `formulaEntrySchema.variables` is now an array, not a
+  // record, for exactly this reason); this helper still asserts its
+  // absence everywhere, so a new record field anywhere regresses here.
+  function assertStrictModeCompatible(node:unknown,path=""):void{
+    if(Array.isArray(node)){node.forEach((n,i)=>assertStrictModeCompatible(n,path+"["+i+"]"));return;}
+    if(!node||typeof node!=="object")return;
+    const obj=node as Record<string,unknown>;
+    expect(obj.propertyNames,path+" must never use dynamic/record-style keys").toBeUndefined();
+    if(obj.type==="object"&&typeof obj.additionalProperties==="object")
+      expect(obj.additionalProperties,path+" additionalProperties must be a boolean, never a schema (record-style keys)").toBe(false);
+    if(obj.type==="object"&&obj.properties&&typeof obj.properties==="object"){
+      const propertyKeys=Object.keys(obj.properties as Record<string,unknown>);
+      const required=Array.isArray(obj.required)?obj.required as string[]:[];
+      expect(required.sort(),path+" every declared property must be required").toEqual([...propertyKeys].sort());
+    }
+    for(const [key,value] of Object.entries(obj))assertStrictModeCompatible(value,path+"."+key);
+  }
+  it("closes a merely-optional field into a fully-required, nullable shape",async()=>{
+    const schema=z.strictObject({
+      fixed:z.string(),
+      // Mirrors the exact production shape that broke: a field only
+      // present on some paragraphs (answerSchema's `formulas`).
+      sometimes:z.array(z.string()).max(3).optional(),
+    });
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      bodies.push(JSON.parse(String(init.body)));
+      return completed({fixed:"ok",sometimes:null});
+    });
+    await requestInvestigation({name:"supervisor_investigation_step",schema,instructions:"",context:{},
+      model:"gpt-6-luna",apiKey:"k",transport,
+      usage:{model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0},
+      deadline:Date.now()+90000});
+    const sent=(bodies[0].text as {format:{schema:unknown}}).format.schema;
+    assertStrictModeCompatible(sent);
+  });
+  it("sends the real production answerSchema fully closed, with no record-shaped fields anywhere",async()=>{
+    const {answerSchema}=await import("./protocol");
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      bodies.push(JSON.parse(String(init.body)));
+      return completed({paragraphs:[{kind:"advice",text:"ok",citations:[]}]});
+    });
+    await requestInvestigation({name:"supervisor_investigation_step",schema:answerSchema,instructions:"",
+      context:{},model:"gpt-6-luna",apiKey:"k",transport,
+      usage:{model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0},
+      deadline:Date.now()+90000});
+    const sent=(bodies[0].text as {format:{schema:unknown}}).format.schema;
+    assertStrictModeCompatible(sent);
+  });
+});

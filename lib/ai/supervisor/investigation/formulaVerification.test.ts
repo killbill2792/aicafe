@@ -9,7 +9,20 @@ function observation(id:string,path:string,raw:number,status="verified",input:un
   return {id,capabilityId:"p3.test.read.v1",input,result,reference:null,
     display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw};
 }
-const entry=(e:Partial<FormulaEntry>):FormulaEntry=>({claim:"4.83",formula:"a",variables:{a:{value:4.83,source:"$4.83"}},...e});
+// Test shorthand only: a map keyed by variable name reads far better in a
+// table of cases than a repeated {name,value,source} array. The real
+// FormulaEntry (protocol.ts) stores `variables` as an array -- the ONLY
+// shape OpenAI's structured-output strict JSON Schema mode can accept,
+// since a map's dynamic keys have no fixed `properties` at all (the actual
+// production bug this shape exists to avoid regressing on) -- so this
+// helper is the one place that converts the convenient shorthand to it.
+type VariableShorthand=Record<string,{value:number;source:string}>;
+const entry=(e:Partial<Omit<FormulaEntry,"variables">>&{variables?:VariableShorthand}):FormulaEntry=>{
+  const {variables,...rest}=e;
+  const vars=variables??{a:{value:4.83,source:"$4.83"}};
+  return {claim:"4.83",formula:"a",...rest,
+    variables:Object.entries(vars).map(([name,v])=>({name,...v}))};
+};
 
 describe("verifyFormulaEntry -- owner-quoted sources",()=>{
   it("verifies a formula whose inputs are exact owner quotes and whose result matches the claim",()=>{

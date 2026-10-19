@@ -35,6 +35,37 @@ function stripUnsupportedJsonSchemaKeywords(node:unknown):unknown{
   }
   return out;
 }
+/** OpenAI's structured-output strict mode also requires EVERY declared
+ * property to appear in `required` -- a zod `.optional()`/`.nullish()`
+ * field (e.g. a paragraph's `formulas`, present only when there is a
+ * freehand claim to verify) is otherwise an outright request-build
+ * rejection ("invalid_json_schema") on EVERY call using that schema, not a
+ * generation-time problem the model could ever work around (production
+ * incident: every real owner question failed this way the moment such a
+ * field existed anywhere in answerSchema). Reshapes only the WIRE schema
+ * sent to the provider -- our own zod parse of what the model actually
+ * returns still decides what is genuinely optional for the rest of this
+ * module -- by moving every such property into `required` and allowing it
+ * to be explicitly `null` instead, the same transform OpenAI's own SDK
+ * helpers apply to a zod/Pydantic optional field for exactly this reason. */
+function closeRequiredForStrictMode(node:unknown):unknown{
+  if(Array.isArray(node))return node.map(closeRequiredForStrictMode);
+  if(!node||typeof node!=="object")return node;
+  const out:Record<string,unknown>={};
+  for(const [key,value] of Object.entries(node as Record<string,unknown>))
+    out[key]=closeRequiredForStrictMode(value);
+  if(out.type==="object"&&out.properties&&typeof out.properties==="object"){
+    const required=new Set(Array.isArray(out.required)?out.required as string[]:[]);
+    const properties:Record<string,unknown>={};
+    for(const [key,propertySchema] of Object.entries(out.properties as Record<string,unknown>)){
+      properties[key]=required.has(key)?propertySchema:{anyOf:[propertySchema,{type:"null"}]};
+      required.add(key);
+    }
+    out.properties=properties;
+    out.required=[...required];
+  }
+  return out;
+}
 /** Accept the first complete, schema-valid step even when a provider puts a
  * duplicate answer or trailing commentary inside the SAME output_text part.
  * Checking only complete part-prefixes misses this production failure shape.
@@ -112,14 +143,14 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       // call's max_output_tokens cannot push the turn's total past it.
       const maxOutputTokens=Math.max(500,Math.min(6000,
         INVESTIGATION_LIMITS.totalOutputTokens-input.usage.outputTokens));
-      const jsonSchema=stripUnsupportedJsonSchemaKeywords(
-        z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"}));
+      const jsonSchema=closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(
+        z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})));
       const response=await input.transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
         body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
           instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
           tools:input.tools?.map(t=>({name:t.name,description:t.description,
-            parameters:stripUnsupportedJsonSchemaKeywords(t.parameters)}))})),
+            parameters:closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(t.parameters))}))})),
       });
       if(!response.ok){
         const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();

@@ -274,7 +274,8 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   const periods=new Set<string>();
   const currencies=new Set<string>();
   let hasOwnerQuote=false;
-  for(const [name,declaration] of Object.entries(entry.variables)){
+  for(const declaration of entry.variables){
+    const name=declaration.name;
     if(!usedNames.has(name))return {ok:false,failure:{reason:"unused_variable",variable:name}};
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
     const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
@@ -346,7 +347,7 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
 
 /** Call only after verification succeeded; every source has then resolved. */
 export function formulaObservationIds(entry:FormulaEntry):string[]{
-  return [...new Set(Object.values(entry.variables).flatMap(v=>{
+  return [...new Set(entry.variables.flatMap(v=>{
     const pointer=POINTER.exec(v.source);
     return pointer?[pointer[1]]:[];
   }))];
