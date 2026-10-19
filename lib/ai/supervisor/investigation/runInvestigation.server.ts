@@ -758,7 +758,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
         latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)
         return await failure(false,"identity_mismatch");
-      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))
+      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply!.evidence.some(r=>r.identifier===o.reference?.identifier)))
         return await failure(false,"snapshot_mismatch");
       if(atomic.status==="available"&&observations.some(o=>o.reference&&o.requiresSnapshot)){
         const latest=await readAuthorizedAtomicP1SourceSnapshot();
