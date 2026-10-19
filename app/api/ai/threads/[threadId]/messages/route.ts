@@ -54,13 +54,18 @@ export async function POST(request: Request, context: RouteContext) {
     const thread = await service.getThread(id);
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
     traceOwner={scope,threadId:id,ownerMessageId:message.id};
+    logSupervisorDebugPayload({point:"owner_message_persisted",requestId:debugRequestId,
+      threadId:id,ownerMessageId:message.id,clientMessageId:input.clientMessageId,
+      message,ownerRequest:input,ownerScope:{businessId:scope.businessId,ownerUserId:scope.ownerUserId}});
     stage="owner_message_persisted";
     diagnostics.emit({stage,model});
     const previousReply = await getExistingSupervisorReply(scope, message);
     if (previousReply) {
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"http_response_sent",requestId:debugRequestId,
-        httpStatus:200,replyStatus:previousReply.grounding?.status,replayed:true});
+        httpStatus:200,replyStatus:previousReply.grounding?.status,replayed:true,
+        ownerMessage:message,returnedReply:previousReply,
+        replyStatusBody:"complete"});
       return conversationJson({ message, reply: previousReply, replyStatus: "complete" }, 200);
     }
     if (thread.title === null) {
@@ -128,7 +133,8 @@ export async function POST(request: Request, context: RouteContext) {
     try {
       stored = await persistGroundedSupervisorReply(scope, message, reply);
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
-      logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,ok:true});
+      logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,
+        ok:true,ownerMessage:message,replyInput:reply,storedReply:stored});
     } catch (persistError) {
       if (!(persistError instanceof SupervisorReplyValidationError)) {
         // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
@@ -154,7 +160,7 @@ export async function POST(request: Request, context: RouteContext) {
         stored = await persistGroundedSupervisorReply(scope, message, fallback);
         // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
         logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,
-          ok:true,fallback:true});
+          ok:true,fallback:true,ownerMessage:message,storedReply:stored});
       } catch (fallbackPersistError) {
         // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
         logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,
@@ -164,11 +170,16 @@ export async function POST(request: Request, context: RouteContext) {
     }
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"http_response_sent",requestId:debugRequestId,
-      httpStatus:201,replyStatus:stored.grounding?.status});
+      httpStatus:201,replyStatus:stored.grounding?.status,
+      responseBody:{message,reply:stored,replyStatus:"complete"},aggregatedUsage});
     return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
   } catch(error) {
     diagnostics.emit({...classifySupervisorError(error,stage),model});
-    return conversationError(error);
+    const response=conversationError(error);
+    logSupervisorDebugPayload({point:"http_response_error",requestId:debugRequestId,
+      httpStatus:response.status,stage,errorName:error instanceof Error?error.name:"unknown",
+      errorCode:error instanceof ConversationApiError?error.code:undefined});
+    return response;
   }
   },async(trace)=>{
     if(traceOwner)await persistSupervisorPrivateTrace({...traceOwner,requestId:debugRequestId,trace});
