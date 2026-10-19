@@ -454,7 +454,7 @@ describe("native parallel tool selection",()=>{
     const result=await requestInvestigation({name:"supervisor_investigation_step",schema,
       instructions:"",context:{},tools:[{name:"p3_menu_catalog_v1",description:"menu",parameters:{type:"object",properties:{}}},
         {name:"p3_labor_employee_wages_v1",description:"labor",parameters:{type:"object",properties:{}}}],
-      model:"gpt-6-luna",apiKey:"k",transport,usage:baseUsage(),deadline:Date.now()+90000});
+      model:"gpt-6-luna",apiKey:"k",transport,usage:{model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0},deadline:Date.now()+90000});
     expect(result).toMatchObject({type:"tool_call",callId:"a",
       calls:[{callId:"a"},{callId:"b"}]});
     expect(bodies[0].parallel_tool_calls).toBe(true);
