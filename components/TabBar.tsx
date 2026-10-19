@@ -3,12 +3,13 @@
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
+import { isAuthPath } from "@/lib/auth/authRoutes";
 
 export default function TabBar() {
   const t = useTranslations("Nav");
   const pathname = usePathname();
 
-  if (pathname === "/login") return null;
+  if (isAuthPath(pathname)) return null;
 
   return (
     <nav
