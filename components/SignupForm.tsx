@@ -46,7 +46,7 @@ export default function SignupForm() {
         email: email.trim().toLowerCase(),
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}&next=/${locale}/onboarding`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}&flow=signup`,
           // Display information only. Authorization still comes from trusted memberships/RLS.
           data: { full_name: fullName.trim(), cafe_name: cafeName.trim() },
         },
