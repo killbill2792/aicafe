@@ -113,6 +113,10 @@ const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée](?![\p{L}
  * nouns or adjective positions cannot be safe across en/es/ar. For a value
  * inside a larger phrase, cite the typed calculator or source instead. */
 const IS_BARE_ECHO_END=/^\s*(?:$|[.,!?;:)\]}؟؛،])/u;
+/** Untyped repetition of a typed amount is only safe without a preceding
+ * quantity label or other business-specific qualifier. A small allowlist of
+ * neutral introductory verbs avoids reinterpreting $5 as "employees: 5". */
+const IS_NEUTRAL_ECHO_PREFIX=/^\s*(?:(?:consider|assume|suppose|imagine|use|take|considera|considere|supongamos|افترض|اعتبر)\s*)?$/iu;
 const TYPED_AMOUNT=/[$€£¥%٪]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|دولار|سنت/iu;
 /** Finds an exact, already-produced observation display value matching a
  * freehand span the model wrote itself -- the §5b "cheap direct check"
@@ -235,8 +239,10 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       // formula path (§4b) already uses, rather than a second, divergent
       // implementation of the same check.
       const quoted=findOwnerQuotedSpan(ownerText,full,locale);
+       const preceding=paragraph.text.slice(0,matchOffset);
        const following=paragraph.text.slice(matchOffset+full.length);
-       if(quoted!==null&&!(TYPED_AMOUNT.test(quoted)&&!TYPED_AMOUNT.test(full)&&!IS_BARE_ECHO_END.test(following)))return full;
+       if(quoted!==null&&!(TYPED_AMOUNT.test(quoted)&&!TYPED_AMOUNT.test(full)&&
+         (!IS_NEUTRAL_ECHO_PREFIX.test(preceding)||!IS_BARE_ECHO_END.test(following))))return full;
       // §4b: a verified formula entry whose claim matches this exact span.
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
