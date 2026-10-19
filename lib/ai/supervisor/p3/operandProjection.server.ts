@@ -190,7 +190,14 @@ export function projectP1Evidence(
   const billConflict=duplicatedBill&&(a?.value?.totalCents!==b?.value||
     a?.provenance?.asOf!==b?.provenance?.asOf||
     a?.provenance?.timezone!==b?.provenance?.timezone||
-    JSON.stringify(a?.query)!==JSON.stringify(b?.query));
+    // Scalar and structured aliases have intentionally different query IDs,
+    // purposes and granularity schema; those are not independent selectors.
+    // The monthly-bills reader has no date/product/page argument at all, so
+    // identity, time and reported value determine compatibility here.
+    (structuredBill?.result as {actuality?:string}|undefined)?.actuality!==
+      (scalarBill?.result as {actuality?:string}|undefined)?.actuality||
+    JSON.stringify((structuredBill?.result as {quality?:unknown}|undefined)?.quality)!==
+      JSON.stringify((scalarBill?.result as {quality?:unknown}|undefined)?.quality));
   const currentGoal=ownerGoal;
   // A revision is trusted ONLY alongside the same owner-scoped SQL snapshot.
   // Never label independently obtained shadow reads with that revision.
