@@ -212,10 +212,10 @@ describe("verifyFormulaEntry -- percent applied as a multiplicative rate, not a 
 });
 
 describe("findOwnerQuotedSpan -- a hyphenated date/range is never misread as a negative number (Codex finding hardening)",()=>{
-  it("still matches an unsigned day-of-month inside a plain ISO date the owner wrote verbatim",()=>{
+  it("does not treat a day-of-month inside an ISO date as an independent numeric source",()=>{
     const result=verifyFormulaEntry(entry({formula:"a",claim:"5",variables:{a:{value:5,source:"5"}}}),
       "We opened on 2026-10-05.",[],"en");
-    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
+    expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
   });
 });
 
