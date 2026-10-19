@@ -419,6 +419,31 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
   });
 });
 
+describe("PR127 multilingual and typed-echo Codex regressions",()=>{
+  it.each([
+    ["en","$5","Schedule 5 employees."],
+    ["en","5%","Schedule 5 employees."],
+    ["es","$5","Programa 5 empleados."],
+    ["ar","5٪","جدول 5 موظفين."],
+  ] as const)("does not relabel %s owner's %s into a count", (locale,ownerText,text)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number"}));
+  });
+  it.each([
+    ["es","Tu ganancia es $5.","¿Tu ganancia es $5?"],
+    ["es","Nuestra venta es $5.","Nuestra venta es $5."],
+    ["ar","ربحك $5.","ربحك $5."],
+    ["ar","مبيعاتك 5٪.","مبيعاتك 5٪."],
+  ] as const)("never licenses own-business results in %s from an owner echo", (locale,text,ownerText)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
+  });
+  it("preserves an untyped neutral repetition of the original money amount",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 5.",citations:[]}]),[],"en",{ownerText:"$5"})!;
+    expect(rendered.issues).toEqual([]);
+  });
+});
+
 describe("PR127 second-review rendering regressions",()=>{
   it.each(["$5","5%","5 dollars","5٪","5 دولارات"])("does not echo a count as %s",claim=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText:"5 employees"})!;
