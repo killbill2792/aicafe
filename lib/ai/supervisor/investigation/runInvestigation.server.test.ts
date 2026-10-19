@@ -1296,13 +1296,17 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
       [{id:"one",amountCents:1000}],{period:{from:"2026-09-01",to:"2026-09-30"}});
     const source2=recordObservation("r2","p3.money.expense_entries.v1",
       [{id:"two",amountCents:2000}],{period:{from:"2026-10-01",to:"2026-10-31"}});
-    const analyzed=(id:string,sourceReadId:string,value:number):Observation=>
-      recordObservation(id,"p3.platform.dataset.analysis.v1",
-        {groups:[{group:null,value}],unit:"USD_cents",sourceReadId},
-        {readId:sourceReadId});
+    const analyzed=(id:string,sourceReadId:string,value:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value}],unit:"USD_cents",sourceReadId}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{readId:sourceReadId},result,
+        reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
     const first=analyzed("r3","r1",1000);
     const second=analyzed("r4","r2",2000);
     expect(detectConflictingFacts([source1,source2,first,second])).toEqual([]);
+    expect(detectConflictingFacts([source1,first,analyzed("r5","r1",2200)])).toHaveLength(1);
   });
   it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
     const first=recordObservation("r1","p3.labor.employee_wages.v1",
