@@ -518,3 +518,29 @@ describe("PR127 Unicode owner-specific facts and modifier-resistant echoes",()=>
     expect(rendered.issues).toEqual([]);
   });
 });
+
+
+describe("PR127 unitless typed-owner echo requires neutral context on BOTH sides",()=>{
+  it.each([
+    ["en","Recommended employees: 5."],
+    ["en","Recommended new employees: 5."],
+    ["es","Empleados recomendados: 5."],
+    ["ar","عدد الموظفين: 5."],
+    ["en","Hire 5 new employees."],
+  ] as const)("masks relabeled typed owner amount in %s", (locale,text)=>{
+    const out=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText:"$5"})!;
+    expect(out.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"5"}));
+  });
+  it.each(["$5","5%"])("keeps a neutral standalone echo of an owner typed %s",ownerText=>{
+    const out=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 5.",citations:[]}]),[],"en",{ownerText})!;
+    expect(out.issues).toEqual([]);
+  });
+  it.each([
+    ["en","Our café has profit of $5."],
+    ["es","Mi ganancia es $5."],
+    ["es","Mis ventas son $5."],
+  ] as const)("guards additional own-business phrasing in %s", (locale,text)=>{
+    const out=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],locale,{ownerText:"$5"})!;
+    expect(out.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
+  });
+});
