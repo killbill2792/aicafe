@@ -321,8 +321,17 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  *   rather than accepted, with which gate (render/formula) found each one.
  * - "direct_answer_attempt": the raw model-authored draft for this round
  *   (unchanged from before).
- * - "review_verdict": the independent reviewer's supported/complete
- *   verdict for a clean (zero-issue) draft.
+ * - "review_verdict": the independent reviewer's supported/complete verdict
+ *   AND its reason, for a clean (zero-issue) draft -- the main, in-loop
+ *   review that can still retry with that reason as specific feedback.
+ * - "rescue_review_verdict": the independent reviewer's verdict and reason
+ *   for the narrow last-resort renderUnverifiedAnswer rescue (a draft that
+ *   failed strict rendering but may still be a genuine, honest answer).
+ *   Terminal -- there is no further retry for this specific candidate, but
+ *   the reason still explains why it was or was not used as the fallback.
+ * - "accumulated_rescue_review_verdict": the independent reviewer's verdict
+ *   and reason for the §7 best-accumulated-candidate rescue, checked only
+ *   once the loop has already exhausted its budget.
  * - "investigation_exhausted": the final summary (unchanged from before).
  * - "reply_validation_failed": validateGroundedReply's final gate rejected
  *   the reply the investigation loop produced -- which exact check failed,
@@ -335,7 +344,8 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  * - "http_response_sent": the final reply status/shape actually returned to
  *   the owner in the HTTP response, not just "the request succeeded". */
 export type SupervisorDebugPoint="turn_received"|"capability_round"|"retry_feedback"|
-  "claim_issues_retry"|"direct_answer_attempt"|"review_verdict"|"investigation_exhausted"|
+  "claim_issues_retry"|"direct_answer_attempt"|"review_verdict"|"rescue_review_verdict"|
+  "accumulated_rescue_review_verdict"|"investigation_exhausted"|
   "reply_validation_failed"|"persistence_result"|"http_response_sent";
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{

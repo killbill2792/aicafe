@@ -45,7 +45,25 @@ export const answerSchema=z.strictObject({
     formulas:z.array(formulaEntrySchema).max(5).nullish(),
   })).min(1).max(8),
 });
-export const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean()});
+// `reason` is mandatory (never optional) so the independent reviewer's
+// verdict is never a bare, unexplained pass/fail again: before this field
+// existed, a `supported:false`/`complete:false` discarded the WHOLE draft
+// with no record anywhere of WHICH claim or goal the reviewer judged
+// against -- every retry repeated the same generic feedback, burning the
+// call budget with nothing more specific to correct (production incident:
+// two otherwise-clean, well-cited drafts were rejected and exhausted with
+// no way to tell why from the logs alone).
+export const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean(),
+  reason:z.string().min(1).max(300)});
+// Named explicitly (rather than inferred inline at each call site): giving
+// `review`/`rescueReview`/`accReview` an explicit annotation in
+// runInvestigation.server.ts avoids TypeScript's control-flow narrowing
+// re-deriving this union's shape from scratch at every `.reason`/`.supported`/
+// `.complete` access -- repeating that enough times in one function body
+// (once `reason` added a third narrowing of the same union) tipped an
+// internal inference limit and produced spurious "implicitly any, declared
+// in its own initializer" errors with no actual circular reference.
+export type ReviewVerdict=z.infer<typeof reviewSchema>;
 export type InvestigationAnswer=z.infer<typeof answerSchema>;
 /** §5: a narrow, reading-comprehension-only follow-up call that tries to
  * express ONE paragraph's already-written freehand claim as the same
