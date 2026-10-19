@@ -381,12 +381,15 @@ describe("authenticated private trace buffer",()=>{
       let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
         logSupervisorDebugPayload({point:"turn_received",
-          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567",
+          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567\nAuthorization: Basic dXNlcjpwYXNz\nCookie: session=my-cookie-session\nmy API token is MYAPITOKENVALUE",
           parameters:{rows:Array.from({length:180},(_,i)=>({item:i}))}});
       },async trace=>{payload=trace;});
       const serialized=JSON.stringify(payload);
       expect(serialized).not.toContain("VERYSECRET0123456789");
       expect(serialized).not.toContain("sk-proj-abcdefghi1234567");
+      expect(serialized).not.toContain("dXNlcjpwYXNz");
+      expect(serialized).not.toContain("my-cookie-session");
+      expect(serialized).not.toContain("MYAPITOKENVALUE");
       expect(payload!.droppedCount).toBe(0);
       expect((payload!.events[0].parameters as {rows:unknown[]}).rows).toHaveLength(180);
     }finally{vi.unstubAllEnvs();}
