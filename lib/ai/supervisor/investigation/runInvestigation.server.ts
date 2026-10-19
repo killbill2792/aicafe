@@ -237,7 +237,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
         citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
-  const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
+  const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"]):
+    Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>=>{
     let rescue=budget&&!!lastUnverifiedAnswer;
     if(rescue&&lastUnverifiedAnswer){
       // A rescued answer can still describe real café data through its
@@ -764,7 +765,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
-      if(!review.complete)reply={...reply,status:"partial"};
+      if(!review.complete)reply={...reply!,status:"partial"};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
@@ -848,7 +849,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       result=checked.data;
       logSupervisorDebugPayload({point:"calculator_result",requestId:debugRequestId,round,
-        toolArguments:args,result,reasonCode:result.status==="unavailable"?
+        toolArguments:args,result,reasonCode:checked.data.status==="unavailable"?
           "calculation_unavailable":undefined,executed:true});
       calculation=true;
     }else{
