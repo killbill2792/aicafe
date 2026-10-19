@@ -375,6 +375,22 @@ describe("authenticated private trace buffer",()=>{
       expect(raw.body.apiKey).toBe("[credential_removed]");
     }finally{vi.unstubAllEnvs();}
   });
+  it("redacts secrets pasted into owner text and retains deep arrays without silent loss",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",
+          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567",
+          parameters:{rows:Array.from({length:180},(_,i)=>({item:i}))}});
+      },async trace=>{payload=trace;});
+      const serialized=JSON.stringify(payload);
+      expect(serialized).not.toContain("VERYSECRET0123456789");
+      expect(serialized).not.toContain("sk-proj-abcdefghi1234567");
+      expect(payload!.droppedCount).toBe(0);
+      expect((payload!.events[0].parameters as {rows:unknown[]}).rows).toHaveLength(180);
+    }finally{vi.unstubAllEnvs();}
+  });
   it("keeps exact diagnostic parameters but strips credential properties",async()=>{
     vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
     vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
