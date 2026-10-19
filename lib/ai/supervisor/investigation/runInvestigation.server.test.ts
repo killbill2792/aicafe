@@ -295,6 +295,7 @@ describe("review verdict publication policy",()=>{
     const result=await runSupervisorTurn({...base,text:"Help review my business decisions."},transport);
     expect(result.reply.status).toBe("partial");
     expect(JSON.stringify(result.reply.blocks)).toContain("Compare the verified inputs");
+    expect(JSON.stringify(result.reply.blocks)).toContain("Other parts of the owner request remain unanswered.");
     expect(result.reply.status).not.toBe("unavailable");
   });
   it("returns an honest reply for complete-only verdict without publishing unsupported claims",async()=>{
