@@ -56,7 +56,7 @@ export const extractors:Partial<Record<SupportedId,Extractor>>={
   // through older scalar P1 aliases. Extract them once from the validated
   // observation; never ask the model to run the same reader a second time.
   "money.monthly_bills":v=>isObject(v)&&integer(v.totalCents)?
-    [{key:"aggregate",name:"monthly recurring bills",field:"totalCents",
+    [{key:"value",name:"monthly recurring bills",field:"totalCents",
       value:v.totalCents,unit:"USD_cents" as const}]:[],
   "money.recorded_spending":v=>isObject(v)&&integer(v.totalCents)?
     [{key:"aggregate",name:"recorded spending",field:"totalCents",
