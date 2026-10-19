@@ -3,6 +3,7 @@ vi.mock("server-only",()=>({}));
 import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError,logSupervisorDebugPayload} from "./diagnostics.server";
 import {SupervisorReplyValidationError} from "./replyValidation";
 import {withSupervisorPrivateTrace} from "./privateTrace.server";
+import {gunzipSync} from "node:zlib";
 describe("Sanitized Supervisor production diagnostics",()=>{
   it("includes a stable request correlation ID with safe stage/counters only",()=>{
     const written:string[]=[];
@@ -357,6 +358,23 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
 });
 
 describe("authenticated private trace buffer",()=>{
+  it("preserves large model inputs via compressed private events without dropping them",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",requestName:"supervisor_investigation_step",
+          body:{input:"a".repeat(90000),apiKey:"do-not-store"}});
+      },async trace=>{payload=trace;});
+      expect(payload!.droppedCount).toBe(0);
+      expect(payload!.events).toHaveLength(1);
+      const item=payload!.events[0];
+      expect(item.encoding).toBe("gzip-base64");
+      const raw=JSON.parse(gunzipSync(Buffer.from(item.data as string,"base64")).toString("utf8"));
+      expect(raw.body.input).toHaveLength(90000);
+      expect(raw.body.apiKey).toBe("[credential_removed]");
+    }finally{vi.unstubAllEnvs();}
+  });
   it("keeps exact diagnostic parameters but strips credential properties",async()=>{
     vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
     vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
