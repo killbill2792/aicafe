@@ -509,13 +509,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           {call,capabilityId,definition,args}:null;
       });
       const requests=selected.filter((v):v is NonNullable<typeof v>=>v!==null);
-      const signatures=requests.map(v=>JSON.stringify(["read",v.capabilityId,v.args]));
-      const sourceSelections=requests.map(v=>JSON.stringify([
+      // JSON object-key order is not part of an authorized selector. Compare
+      // normalized selectors before dispatch so two equivalent period reads
+      // cannot run concurrently and consume separate operation slots.
+      const signatures=requests.map(v=>JSON.stringify(
+        canonicalSelector(["read",v.capabilityId,v.args])));
+      const sourceSelections=requests.map(v=>JSON.stringify(canonicalSelector([
         v.definition.canonicalReaderIds,
         record(v.args)&&record(v.args.period)?v.args.period:null,
         record(v.args)?v.args.productId??null:null,
         record(v.args)?v.args.page??null:null,
-      ]));
+      ])));
       const canDispatch=requests.length===step.calls.length&&
         usage.toolCallCount+requests.length<=INVESTIGATION_LIMITS.operations&&
         new Set(signatures).size===signatures.length&&
@@ -758,7 +762,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
     }
     let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}
-    const signature=JSON.stringify([capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]);
+    const signature=JSON.stringify(canonicalSelector([
+      capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
     if(attempted.has(signature)){
       // Unlike an unknown tool name or a rejected answer draft, a repeated
       // signature here may be re-citing an ALREADY-SUCCESSFUL prior
