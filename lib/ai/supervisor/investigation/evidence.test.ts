@@ -419,6 +419,33 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
   });
 });
 
+describe("measurement-unit-suffixed sizes are a recognized span, not leftover digits (production incident)",()=>{
+  it.each(["12oz","12 oz","20ml","1.5kg","2lb","2lbs"])(
+    "does not drop a whole paragraph for echoing the owner's own %s",size=>{
+      const rendered=renderInvestigationAnswer(answer([
+        {kind:"advice",text:"Noted for the "+size+" item.",citations:[]},
+      ]),[],"en",{ownerText:"My item is "+size+"."});
+      expect(rendered).not.toBeNull();
+      expect(rendered!.blocks).toEqual([{type:"text",text:"Noted for the "+size+" item."}]);
+      expect(rendered!.issues).toEqual([]);
+    });
+  it("still masks a size the owner never stated, rather than treating it as safe prose",()=>{
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"Consider pricing the 20oz the same way.",citations:[]},
+    ]),[],"en",{ownerText:"My latte is 12oz."})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"20oz"}));
+  });
+  it("still drops the whole paragraph for a genuinely unrecognized numeral elsewhere in the same text",()=>{
+    // "12oz" itself is now recognized; this confirms the fail-closed
+    // unrecognized_numeral path still fires for something CLAIM_SPAN truly
+    // cannot match at all (never silently widened into a general escape hatch).
+    const rendered=renderInvestigationAnswer(answer([
+      {kind:"advice",text:"The 12oz cup is item #42A.",citations:[]},
+    ]),[],"en",{ownerText:"My latte is 12oz."});
+    expect(rendered).toBeNull();
+  });
+});
+
 describe("PR127 multilingual and typed-echo Codex regressions",()=>{
   it.each([
     ["en","$5","Schedule 5 employees."],

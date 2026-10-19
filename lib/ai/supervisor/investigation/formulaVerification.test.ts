@@ -232,6 +232,19 @@ describe("findOwnerQuotedSpan -- a hyphenated date/range is never misread as a n
   });
 });
 
+describe("findOwnerQuotedSpan -- measurement-unit-suffixed sizes are a complete span (production incident)",()=>{
+  it.each(["12oz","12 oz","20ml","1.5kg","2lb","2lbs"])(
+    "matches the owner's own %s exactly, unit attached",size=>{
+      expect(findOwnerQuotedSpan("My latte is "+size+".",size,"en")).toBe(size);
+    });
+  it("never matches a different size, even with the same unit",()=>{
+    expect(findOwnerQuotedSpan("My latte is 12oz.","20oz","en")).toBeNull();
+  });
+  it("still never turns the measurement unit itself into evidence of a dollar amount",()=>{
+    expect(findOwnerQuotedSpan("My latte is 12oz.","$12","en")).toBeNull();
+  });
+});
+
 describe("verifyFormulaEntry -- computed result unit must match an explicitly-decorated claim (Codex finding #1)",()=>{
   it("rejects a scalar result (drinks-count plus shift-count) dressed up as a dollar claim",()=>{
     const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"$5",
