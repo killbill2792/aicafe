@@ -13,6 +13,7 @@ import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/convers
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
+import {withSupervisorPrivateTrace,persistSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,14 +34,11 @@ export async function GET(request: Request, context: RouteContext) {
 
 /** Bounded Responses tool loop. Only server-authorized read-only evidence enters model context. */
 export async function POST(request: Request, context: RouteContext) {
-  const diagnostics=createSupervisorDiagnosticLogger();
-  const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
-  // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload in
-  // diagnostics.server.ts. One id per owner turn, generated here (not inside
-  // the investigation loop) and passed down into it, so the loop's own
-  // round-by-round debug trace and this route's lifecycle points share
-  // exactly one id instead of two disconnected ones.
   const debugRequestId=randomUUID().slice(0,12);
+  let traceOwner:{scope:{businessId:string;ownerUserId:string};threadId:string;ownerMessageId:string}|null=null;
+  return withSupervisorPrivateTrace(async()=>{
+  const diagnostics=createSupervisorDiagnosticLogger(console.info,debugRequestId);
+  const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
   let stage:SupervisorStage="conversation_auth";
   diagnostics.emit({stage,model});
   try {
@@ -55,6 +53,7 @@ export async function POST(request: Request, context: RouteContext) {
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
+    traceOwner={scope,threadId:id,ownerMessageId:message.id};
     stage="owner_message_persisted";
     diagnostics.emit({stage,model});
     const previousReply = await getExistingSupervisorReply(scope, message);
@@ -171,4 +170,7 @@ export async function POST(request: Request, context: RouteContext) {
     diagnostics.emit({...classifySupervisorError(error,stage),model});
     return conversationError(error);
   }
+  },async(trace)=>{
+    if(traceOwner)await persistSupervisorPrivateTrace({...traceOwner,requestId:debugRequestId,trace});
+  });
 }
