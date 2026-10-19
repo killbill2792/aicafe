@@ -354,3 +354,25 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
       replyStatus:"insufficient_evidence"});
   });
 });
+
+describe("test-only raw investigation trace security boundary",()=>{
+  it("emits allowlisted metadata, never raw staff or tool data, in production",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"tool_result",requestId:"safe123",round:1,
+        callId:"a1",capabilityId:"p3.money.monthly_bills.v1",
+        toolArguments:{secret:"bank-access-token",employee:"Sophie"},
+        result:{value:{employee:"Sophie",wageCents:2500}},
+        rawAnswerParagraphs:["private café fact"]},line=>lines.push(line));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({event:"supervisor_turn_debug_metadata",
+        point:"tool_result",requestId:"safe123",round:1,callId:"a1",
+        capabilityId:"p3.money.monthly_bills.v1"});
+      expect(lines[0]).not.toMatch(/bank-access-token|Sophie|2500|private café fact/);
+      expect(JSON.parse(lines[0])).not.toHaveProperty("result");
+      expect(JSON.parse(lines[0])).not.toHaveProperty("toolArguments");
+    }finally{vi.unstubAllEnvs();}
+  });
+});

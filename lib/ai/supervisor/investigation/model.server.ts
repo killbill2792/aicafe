@@ -11,7 +11,10 @@ export type InvestigationUsage={model:string;modelCallCount:number;toolCallCount
 export type ToolDef={name:string;description:string;parameters:unknown};
 /** The model requested a registered tool by name/arguments through native
  * function calling, rather than answering directly. */
-export type ToolCallSignal={type:"tool_call";name:string;arguments:string;callId:string};
+export type ToolCallSignal={type:"tool_call";name:string;arguments:string;callId:string;
+  /** Native multi-call selection. The first call is duplicated in calls[0];
+   * this keeps the one-call narrowing contract intact for all review gates. */
+  calls?:readonly {name:string;arguments:string;callId:string}[]};
 export function isToolCallSignal(v:unknown):v is ToolCallSignal{
   return !!v&&typeof v==="object"&&(v as {type?:unknown}).type==="tool_call"&&
     typeof (v as {name?:unknown}).name==="string"&&
@@ -192,27 +195,28 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       const outputIsArray=Array.isArray(raw.output);
       const outputItems:Array<{type?:unknown;content?:Array<{type?:unknown;text?:unknown}>;
         name?:unknown;arguments?:unknown;call_id?:unknown}>=outputIsArray?raw.output:[];
-      // Native function calling: a real tool request is its own structured
-      // output item, never free text we have to parse/recover. Exactly one
-      // call is supported today; more than one is treated as not-yet-handled
-      // (parallel calls are a separate, later change) and retried like any
-      // other malformed-output case.
+      // Native function calls are separate typed provider output items. Return
+      // all calls together; the dispatcher owns dependency and scope checks.
       if(input.tools&&input.tools.length){
         const functionCalls=outputItems.filter(i=>i?.type==="function_call");
-        if(functionCalls.length>1)
+        if(functionCalls.length>INVESTIGATION_LIMITS.operations)
           throw new SupervisorStageError("provider_invalid_payload","provider_response",
             {invalidPayloadReason:"multiple_function_calls",
               outputItemTypes:outputItems.map(i=>i?.type) as string[]});
-        if(functionCalls.length===1){
-          const call=functionCalls[0];
-          if(typeof call.name!=="string"||typeof call.arguments!=="string"||
-            typeof call.call_id!=="string")
+        if(functionCalls.length){
+          if(functionCalls.some(call=>typeof call.name!=="string"||
+            typeof call.arguments!=="string"||typeof call.call_id!=="string"))
             throw new SupervisorStageError("provider_invalid_payload","provider_response",
               {invalidPayloadReason:"malformed_function_call",
                 outputItemTypes:outputItems.map(i=>i?.type) as string[]});
-          const signal:ToolCallSignal={type:"tool_call",name:call.name,
-            arguments:call.arguments,callId:call.call_id};
-          return signal;
+          const calls=functionCalls.map(call=>({name:call.name as string,
+            arguments:call.arguments as string,callId:call.call_id as string}));
+          if(new Set(calls.map(call=>call.callId)).size!==calls.length)
+            throw new SupervisorStageError("provider_invalid_payload","provider_response",
+              {invalidPayloadReason:"malformed_function_call",
+                outputItemTypes:outputItems.map(i=>i?.type) as string[]});
+          return {type:"tool_call" as const,...calls[0],
+            ...(calls.length>1?{calls}: {})};
         }
       }
       const messageParts=outputItems.filter(i=>i?.type==="message").flatMap(i=>i.content??[]);

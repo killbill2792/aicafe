@@ -153,7 +153,38 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
     budgets:def.budgets,availability:def.availability,
     requiresApproval:def.requiresApproval,effectPolicy:def.effectPolicy,
   })));
+  // The exact same scope/schema/purpose/period checks gate both a batch
+  // preflight and the eventual dispatch. Never start one parallel sibling
+  // while another is known to fail the registered input contract.
+  const readPreflight=(scope:TrustedReadScope,id:string,rawInput:unknown)=>{
+    if(!scope.shadowEnabled || scope.role!=="owner" || !scope.businessId ||
+       scope.businessId!==scope.identity.businessId ||
+       scope.businessId==="11111111-1111-1111-1111-111111111111")
+      return {ok:false as const,response:unavailable("unauthorized")};
+    const def=byId.get(id);
+    if(!def)return {ok:false as const,response:unavailable("unknown_capability")};
+    if(def.mode!=="read" || def.availability!=="shadow")
+      return {ok:false as const,response:unavailable("mode_disabled")};
+    let bytes:number;
+    try{bytes=Buffer.byteLength(JSON.stringify(rawInput));}
+    catch{return {ok:false as const,response:unavailable("invalid_request")};}
+    if(bytes>def.budgets.maxInputBytes)
+      return {ok:false as const,response:unavailable("input_limit")};
+    const input=def.inputSchema.safeParse(rawInput);
+    if(!input.success || discardedOutputKeys(rawInput,input.data) ||
+       !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
+      return {ok:false as const,response:unavailable("invalid_request")};
+    const period=(input.data as {period?:{from:string;to:string}}).period;
+    if(period && Number.isFinite(Date.parse(period.from)) && Number.isFinite(Date.parse(period.to)) &&
+       1+(Date.parse(period.to)-Date.parse(period.from))/86400000>def.budgets.maxRangeDays)
+      return {ok:false as const,response:unavailable("unsupported_period")};
+    return {ok:true as const,def,input:input.data};
+  };
   return Object.freeze({
+    /** Input-only preflight. No reader, simulation or effect is executed. */
+    preflightRead(scope:TrustedReadScope,id:string,rawInput:unknown):boolean {
+      return readPreflight(scope,id,rawInput).ok;
+    },
     discover(scope:TrustedReadScope) {
       if(!scope.shadowEnabled || scope.role!=="owner" ||
          !scope.businessId || scope.businessId!==scope.identity.businessId ||
@@ -268,25 +299,9 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
      * preflight has succeeded, immediately before the actual reader dispatch.
      * Domain-result reason strings cannot prove whether a handler ran. */
     async invoke(scope:TrustedReadScope,id:string,rawInput:unknown,onDispatch?:()=>void) {
-      if(!scope.shadowEnabled || scope.role!=="owner" || !scope.businessId ||
-         scope.businessId!==scope.identity.businessId ||
-         scope.businessId==="11111111-1111-1111-1111-111111111111")
-        return unavailable("unauthorized");
-      const def=byId.get(id);
-      if(!def)return unavailable("unknown_capability");
-      if(def.mode!=="read" || def.availability!=="shadow")return unavailable("mode_disabled");
-      let bytes:number;
-      try {bytes=Buffer.byteLength(JSON.stringify(rawInput));}
-      catch{return unavailable("invalid_request");}
-      if(bytes>def.budgets.maxInputBytes)return unavailable("input_limit");
-      const input=def.inputSchema.safeParse(rawInput);
-      if(!input.success || discardedOutputKeys(rawInput,input.data) ||
-         !def.allowedPurposes.includes((input.data as {purpose?:string}).purpose??""))
-        return unavailable("invalid_request");
-      const period=(input.data as {period?:{from:string;to:string}}).period;
-      if(period && Number.isFinite(Date.parse(period.from)) && Number.isFinite(Date.parse(period.to)) &&
-        1+(Date.parse(period.to)-Date.parse(period.from))/86400000>def.budgets.maxRangeDays)
-        return unavailable("unsupported_period");
+      const prepared=readPreflight(scope,id,rawInput);
+      if(!prepared.ok)return prepared.response;
+      const {def,input}=prepared;
       // A reader can itself return "invalid_request", "unsupported_period"
       // or "unauthorized" after actually running. Dispatch counting must be
       // based on this trusted boundary, not those result reason strings.
@@ -296,7 +311,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         const timedOut=new Promise<{timedOut:true}>(resolve=>{
           timer=setTimeout(()=>resolve({timedOut:true}),def.budgets.timeoutMs);
         });
-        const read=Promise.resolve().then(()=>def.read(scope,input.data))
+        const read=Promise.resolve().then(()=>def.read(scope,input))
           .then(value=>({timedOut:false as const,value}));
         const settled=await Promise.race([read,timedOut]);
         // Platform timeout is not a domain reader output, so never parse it
@@ -344,7 +359,7 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
             !/^\d{4}-\d{2}-\d{2}$/.test(p.asOf) ||
             !canonicalReader || !sourceValid || !readerValid ||
             typeof p.purpose!=="string" ||
-            p.purpose!==(input.data as {purpose?:string}).purpose ||
+            p.purpose!==(input as {purpose?:string}).purpose ||
             !validRevision ||
             !q || arrays.some(items=>!Array.isArray(items) ||
               items.some((item:unknown)=>typeof item!=="string")))

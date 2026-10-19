@@ -1,4 +1,5 @@
 import "server-only";
+import {CANONICAL_ALIASES} from "../investigation/canonicalCapabilities";
 import { outputFor } from "@/lib/metrics/p1Readers.server";
 import { metricUnits,purposePolicies,readers,sourcePolicies,
   values,type SupportedId } from "@/lib/metrics/p1Catalog";
@@ -52,6 +53,20 @@ function dailySums(value:unknown,fields:readonly {
 }
 /** Domain-owned allowlisted value/units, not model-requested arbitrary object paths. */
 export const extractors:Partial<Record<SupportedId,Extractor>>={
+  // These structured totals already contain the same monetary facts exposed
+  // through older scalar P1 aliases. Extract them once from the validated
+  // observation; never ask the model to run the same reader a second time.
+  "money.monthly_bills":v=>isObject(v)&&integer(v.totalCents)?
+    [{key:"value",name:"monthly recurring bills",field:"totalCents",
+      value:v.totalCents,unit:"USD_cents" as const}]:[],
+  "money.recorded_spending":v=>isObject(v)&&integer(v.totalCents)?
+    [{key:"aggregate",name:"recorded spending",field:"totalCents",
+      value:v.totalCents,unit:"USD_cents" as const}]:[],
+  "money.profitability":v=>isObject(v)?
+    (["netSalesCents","totalCostsCents","ownerProfitCents"] as const).flatMap(field=>
+      integer(v[field])?[{key:"aggregate",name:"financial performance",
+        field,value:v[field] as number,unit:"USD_cents" as const}]:[]):[],
+
   "menu.catalog":v=>rows(v).flatMap(row=>
     row.active===true&&row.priceStatus==="recorded"&&integer(row.priceCents)?
       [{key:text(row.id),name:text(row.name),field:"priceCents",
@@ -164,6 +179,68 @@ export function projectP1Evidence(
   // not silently assigned to every clause from the first matching read.
   const conflictingHandles=new Set<string>();
   const readSignatures=new Map<string,string>();
+  // Compatibility P3 can receive both scalar and structured projections of
+  // getMonthlyBills(). They are one fact, never two independent operands.
+  // A scalar and structured projection of one registered reader are NOT
+  // independent calculation operands. Canonicalize EVERY reviewed alias,
+  // comparing the true owner-scoped selector (period) rather than the two
+  // intentionally different tool IDs/purpose/format arguments. Never silently
+  // reconcile changed values, coverage or revision across independent reads.
+  const redundantAliases=new Set<ShadowEvidence>();
+  const conflictedAliases=new Set<ShadowEvidence>();
+  // A scalar alias can have been selected for a different owner clause than
+  // its canonical structured parent. Reuse the value without dropping the
+  // clause authorization that the compatibility planner requires.
+  const aliasClauseBindings=new Map<ShadowEvidence,{field:string;clause:string}[]>();
+  const rec=(v:unknown):v is Record<string,unknown>=>isObject(v);
+  const scopeOf=(e:ShadowEvidence)=>{
+    const value=rec(e.result)?e.result:{};
+    const query=rec(value.query)?value.query:{};
+    const provenance=rec(value.provenance)?value.provenance:{};
+    return {period:JSON.stringify(query.period??null),
+      asOf:provenance.asOf,timezone:provenance.timezone,
+      revision:provenance.sourceRevision,
+      reader:provenance.canonicalReaderId,
+      actuality:value.actuality,
+      quality:JSON.stringify(value.quality??null)};
+  };
+  for(const [alias,spec] of Object.entries(CANONICAL_ALIASES)){
+    const scalarReads=evidence.filter(e=>e.capabilityId===alias&&
+      e.result&&e.status!=="unavailable");
+    const structuredReads=evidence.filter(e=>e.capabilityId===spec.parent&&
+      e.result&&e.status!=="unavailable");
+    for(const scalar of scalarReads){
+      const childScope=scopeOf(scalar);
+      const samePeriod=structuredReads.filter(parent=>
+        scopeOf(parent).period===childScope.period);
+      if(!samePeriod.length)continue;
+      const compatible=samePeriod.every(parent=>{
+        const p=rec(parent.result)?parent.result:{};
+        const c=rec(scalar.result)?scalar.result:{};
+        const parentValue=rec(p.value)?p.value:{};
+        const parentScope=scopeOf(parent);
+        return Number.isSafeInteger(parentValue[spec.field])&&
+          parentValue[spec.field]===c.value&&
+          parentScope.reader===childScope.reader&&
+          parentScope.asOf===childScope.asOf&&
+          parentScope.timezone===childScope.timezone&&
+          parentScope.revision===childScope.revision&&
+          parentScope.actuality===childScope.actuality&&
+          parentScope.quality===childScope.quality;
+      });
+      if(compatible){
+        redundantAliases.add(scalar);
+        for(const parent of samePeriod){
+          const existing=aliasClauseBindings.get(parent)??[];
+          existing.push({field:spec.field,clause:scalar.clause});
+          aliasClauseBindings.set(parent,existing);
+        }
+      }else{
+        conflictedAliases.add(scalar);
+        for(const parent of samePeriod)conflictedAliases.add(parent);
+      }
+    }
+  }
   const currentGoal=ownerGoal;
   // A revision is trusted ONLY alongside the same owner-scoped SQL snapshot.
   // Never label independently obtained shadow reads with that revision.
@@ -175,6 +252,11 @@ export function projectP1Evidence(
     if(!capability?.startsWith("p3.")||!capability.endsWith(".v1")||
       !item.result||typeof item.result!=="object")continue;
     const key=capability.slice(3,-3) as SupportedId;
+    if(conflictedAliases.has(item)){
+      if(!missing.includes("conflicting_canonical_read_alias"))missing.push("conflicting_canonical_read_alias");
+      continue;
+    }
+    if(redundantAliases.has(item))continue;
     if(!(key in values))continue;
     const parsed=outputFor(key).safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
@@ -247,6 +329,8 @@ export function projectP1Evidence(
       // Names in record-valued sources must be anchored in the owner's question;
       // otherwise a model could select another employee or product by mistake.
       if(entityPolicy==="owner_named"&&leaf.field!=="value"&&leaf.key!=="aggregate"&&
+        !(key==="money.monthly_bills"&&leaf.key==="value")&&
+        leaf.key!=="value"&&
         !namedCurrent.has(leaf.key)&&
         !(uniqueHistorical&&namedHistory.has(leaf.key)))
         continue;
@@ -254,32 +338,53 @@ export function projectP1Evidence(
       // clauses for different date windows must NEVER reuse a first clause's
       // value just because the domain, entity and field names are identical.
       const p=result.query.period;
-      const handle=key+":"+leaf.key+":"+leaf.field+
+      // The structured and scalar monthly-bills IDs are two projections of
+      // ONE underlying reader. They must never become two arithmetic inputs
+      // just because the P3 compatibility runner can still discover both.
+      const sameMonthlyFact=key==="money.monthly_bills"||
+        key==="money.recurring_monthly_bills_cents";
+      const canonicalKey=sameMonthlyFact?"money.monthly_bills":key;
+      const canonicalField=sameMonthlyFact?"totalCents":leaf.field;
+      const handle=canonicalKey+":"+leaf.key+":"+canonicalField+
         (p?":"+p.from+":"+p.to:"");
+      // Equal source epochs/values deduplicate, but differing values, dates
+      // or quality still conflict and remove the operand fail-closed.
+      const signature=sameMonthlyFact?JSON.stringify({
+        reader:"getMonthlyBills",revision:atomicSnapshot?.revision??null,
+        asOf:provenance.asOf,period:p??null,value:leaf.value,
+        quality:result.quality,missing:snapshotValue?.missingInputs??[],
+        stale:snapshotValue?.staleInputs??[],
+      }):readSignature;
       if(handle.length>120)continue;
       // Same registered handle can legitimately be mentioned by several
       // clauses. Keep one trusted numeric operand but preserve EVERY clause
       // association so a plan cannot borrow it from an unrelated clause.
       const choice={handle,entityId:leaf.key,entityName:leaf.name,
         field:leaf.field,matchedClause:item.clause};
+      const associatedClauses=new Set([item.clause,
+        ...(aliasClauseBindings.get(item)??[]).filter(b=>b.field===leaf.field)
+          .map(b=>b.clause)]);
       const previous=operands.find(o=>o.handle===handle);
       if(previous){
-        if(readSignatures.get(handle)!==readSignature){
+        if(readSignatures.get(handle)!==signature){
           conflictingHandles.add(handle);
           missing.push("conflicting_source_snapshot:"+key);
           continue;
         }
-        if(!choices.some(c=>c.handle===handle&&c.matchedClause===item.clause))
-          choices.push(choice);
+        for(const matchedClause of associatedClauses)
+          if(!choices.some(c=>c.handle===handle&&c.matchedClause===matchedClause))
+            choices.push({...choice,matchedClause});
         continue;
       }
       // Keep reviewing repeated handles even after reaching the twelve-leaf
       // exposure limit; otherwise a late conflicting read could go undetected.
       if(operands.length>=Math.min(120,Math.max(0,maxOperands)))continue;
-      readSignatures.set(handle,readSignature);
+      readSignatures.set(handle,signature);
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
-      choices.push(choice);
+      for(const matchedClause of associatedClauses)
+        if(!choices.some(c=>c.handle===handle&&c.matchedClause===matchedClause))
+          choices.push({...choice,matchedClause});
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,

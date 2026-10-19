@@ -1,3 +1,14 @@
+## Universal Supervisor canonical evidence, native multi-call and grounded tracing — Issue #131 (2026-10-19, PR in review)
+- [x] Audit P1 alias families and preserve all original P1 tool contracts.
+- [x] Add field-aware descriptions and canonical monthly-bills cents extraction from one atomic snapshot.
+- [x] Prevent an extra model-facing scalar monthly-bills selection while preserving the legacy registered capability.
+- [x] Keep independent formula verification and direct specific mismatch feedback to the registered calculator.
+- [x] Safely normalize known structured citation decorations; unknown claims remain fail-closed.
+- [x] Native Responses parallel tool-call selection, preflight and bounded concurrent independent P1 reads.
+- [x] Gated full per-operation debug trace with stable call IDs, selected inputs, outputs and observation IDs.
+- [ ] Prove CI, deterministic regression tests and Codex review on final head.
+- No new dependencies, migrations, cross-business data sharing or new model-operated business writes.
+
 ## Menu transparent monthly-cost pricing preview (2026-10-17, draft PR)
 
 **Owner journey:** Open Hot Latte ($7.00 selling price, $1.45 ingredient cost) after importing only 14 earlier sales days and saving monthly bills/payroll. The Menu now shows exactly which monthly bills, projected payroll, historic drink-volume and fee rate are used, with an on-screen confirmation/what-if box. It computes a cautiously labeled allocated-profit estimate and conditional target price when inputs are sufficient; otherwise it names the missing inputs rather than showing a false total. No menu price or underlying finance source is changed.

@@ -1391,3 +1391,140 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
     expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r1","r2"]);
   });
 });
+
+describe("canonical source operands and native concurrent reads",()=>{
+  it("dispatches independent native P1 calls in parallel in one model round",async()=>{
+    const prior=p1.getMockImplementation()!;
+    let active=0,overlap=false;
+    p1.mockImplementation(async(a,b,c)=>{
+      active++;
+      if(active>1)overlap=true;
+      await new Promise<void>(resolve=>setTimeout(resolve,2));
+      const output=await prior(a,b,c);
+      active--;
+      return output;
+    });
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:true,reason:"Both observations support the quoted facts."});
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      if(steps++===0){
+        expect(body.parallel_tool_calls).toBe(true);
+        return new Response(JSON.stringify({status:"completed",
+          usage:{input_tokens:10,output_tokens:10},output:[
+            {type:"function_call",call_id:"a",name:capabilityToolName("p3.menu.catalog.v1"),
+              arguments:JSON.stringify(query("menu.catalog"))},
+            {type:"function_call",call_id:"b",name:capabilityToolName("p3.labor.employee_wages.v1"),
+              arguments:JSON.stringify(query("labor.employee_wages"))}]}));
+      }
+      const context=JSON.parse(body.input[0].content);
+      expect(context.observations).toHaveLength(2);
+      expect(context.observations.map((v:{id:string})=>v.id)).toEqual(["r1","r2"]);
+      return response(answer([{kind:"evidence",
+        text:"The listed latte price is {{r1:value.0.priceCents}} and the recorded hourly wage is {{r2:value.0.defaultHourlyWageCents}}.",
+        citations:["r1","r2"]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"Compare my Iced Latte price with hourly wages."},transport);
+    expect(overlap).toBe(true);
+    expect(p1).toHaveBeenCalledTimes(2);
+    expect(result.usage.toolCallCount).toBe(2);
+    expect(result.usage.modelCallCount).toBe(3);
+    expect(result.reply.status).not.toBe("unavailable");
+  });
+
+  it("preflights every sibling and dispatches none when one schema is invalid",async()=>{
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:true,reason:"Clarification is safe."});
+      if(steps++===0)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},output:[
+          {type:"function_call",call_id:"a",name:capabilityToolName("p3.menu.catalog.v1"),
+            arguments:JSON.stringify(query("menu.catalog"))},
+          {type:"function_call",call_id:"b",name:capabilityToolName("p3.labor.employee_wages.v1"),
+            arguments:JSON.stringify({...query("labor.employee_wages"),unknownProperty:"forbidden"})}]}));
+      return response(answer([{kind:"clarification",
+        text:"Which product and staffing comparison should I investigate?",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare my menu and worker wages."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+  });
+
+  it("rejects a parallel batch of semantically identical selectors with reversed date keys",async()=>{
+    const periodA={from:"2026-10-01",to:"2026-10-15"};
+    const periodB={to:"2026-10-15",from:"2026-10-01"};
+    const first=query("money.expense_entries",{period:periodA});
+    const second={period:periodB,purpose:first.purpose,version:1,id:"money.expense_entries"};
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:true,reason:"A clarification is safe."});
+      if(steps++===0)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},output:[
+          {type:"function_call",call_id:"a",name:capabilityToolName("p3.money.expense_entries.v1"),
+            arguments:JSON.stringify(first)},
+          {type:"function_call",call_id:"b",name:capabilityToolName("p3.money.expense_entries.v1"),
+            arguments:JSON.stringify(second)}]}));
+      return response(answer([{kind:"clarification",
+        text:"Which expense breakdown should I review?",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Review my spending from October 1 through October 15."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+  });
+
+  it("rejects serial repeats even when equivalent JSON keys arrive in another order",async()=>{
+    const initial=query("menu.catalog");
+    const reordered={purpose:initial.purpose,version:1,id:"menu.catalog"};
+    const result=await runSupervisorTurn({...base,text:"What is my Iced Latte price?"},
+      transportFor([
+        read("p3.menu.catalog.v1",initial),
+        read("p3.menu.catalog.v1",reordered),
+        answer([{kind:"evidence",text:"The recorded listed price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  });
+
+  it("uses the structured monthly-bills read as a snapshot-backed cents calculator operand",async()=>{
+    const original=p1.getMockImplementation()!;
+    p1.mockImplementation(async(a,b,c)=>{
+      const requested=c as {id?:string};
+      if(requested.id==="money.monthly_bills")
+        return envelope(c as Record<string,unknown>,{totalCents:746700}) as Awaited<ReturnType<typeof executeP1Authorized>>;
+      return original(a,b,c);
+    });
+    const recurring={...snapshot,sources:{...snapshot.sources,
+      recurringCosts:[{id:"a0000000-0000-4000-8000-000000000888",label:"Monthly bills",
+        amount_cents:746700,frequency:"monthly" as const,is_estimate:false,
+        active_from:"2026-01-01",active_to:null}]}};
+    atomic.mockResolvedValue({status:"available",snapshot:recurring});
+    const handle="money.monthly_bills:value:totalCents";
+    const plan={capabilityId:EXPRESSION_ID,version:1,
+      purpose:"preauthorized_operands",description:"Read the verified monthly total as an authorized cents operand.",
+      nodes:[{op:"source",handle}]};
+    const transport=transportFor([
+      read("p3.money.monthly_bills.v1",query("money.monthly_bills")),
+      calculate(plan),
+      answer([{kind:"evidence",text:"The monthly recurring amount is {{r2:value}}.",citations:["r2"]}]),
+    ],(ctx,step)=>{
+      expect((ctx.capabilities as {id:string}[]).some(x=>x.id==="p3.money.recurring_monthly_bills_cents.v1")).toBe(false);
+      if(step===1)
+        expect(ctx.authorizedOperands).toEqual(expect.arrayContaining([
+          expect.objectContaining({handle,unit:"USD_cents"})]));
+    });
+    const result=await runSupervisorTurn({...base,text:"What is my recorded recurring monthly total?"},transport);
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(result.usage.toolCallCount).toBe(2);
+    expect(JSON.stringify(result.reply.blocks)).toContain("$7,467.00");
+  });
+});

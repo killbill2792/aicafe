@@ -438,3 +438,25 @@ describe("strict-mode JSON Schema shape sent to the provider (production inciden
     assertStrictModeCompatible(sent);
   });
 });
+
+describe("native parallel tool selection",()=>{
+  it("preserves both validated function calls in one response and advertises parallel support",async()=>{
+    const schema=z.strictObject({paragraphs:z.array(z.unknown())});
+    const bodies:Record<string,unknown>[]=[];
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({status:"completed",usage:{input_tokens:5,output_tokens:5},
+        output:[{type:"function_call",name:"p3_menu_catalog_v1",call_id:"a",
+            arguments:'{"id":"menu.catalog"}'},
+          {type:"function_call",name:"p3_labor_employee_wages_v1",call_id:"b",
+            arguments:'{"id":"labor.employee_wages"}'}]}));
+    });
+    const result=await requestInvestigation({name:"supervisor_investigation_step",schema,
+      instructions:"",context:{},tools:[{name:"p3_menu_catalog_v1",description:"menu",parameters:{type:"object",properties:{}}},
+        {name:"p3_labor_employee_wages_v1",description:"labor",parameters:{type:"object",properties:{}}}],
+      model:"gpt-6-luna",apiKey:"k",transport,usage:{model:"gpt-6-luna",modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0},deadline:Date.now()+90000});
+    expect(result).toMatchObject({type:"tool_call",callId:"a",
+      calls:[{callId:"a"},{callId:"b"}]});
+    expect(bodies[0].parallel_tool_calls).toBe(true);
+  });
+});
