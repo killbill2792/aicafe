@@ -29,7 +29,7 @@ function redactSecretsInText(value:string):string {
     .replace(/(https?:\/\/[^/:@\s]+:)[^@\s/]+@/giu,"$1[credential_removed]@")
     // A transaction line must not become a diagnostic log, even when an
     // owner pastes it into a chat request rather than using the bank importer.
-    .replace(/(^|\n)\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+[^\r\n]{1,160}?\s+(?:-?\s*[$€£]\s*[\d,]+\.\d{2}|-?[\d,]+\.\d{2})(?=\s*(?:\n|$))/gmu,
+    .replace(/(^|[\s:])\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+[^\r\n]{1,160}?\s+(?:-?\s*[$€£]\s*[\d,]+\.\d{2}|-?[\d,]+\.\d{2})(?=\s*(?:\n|$))/gmu,
       "$1[bank_line_removed]")
     .replace(/\bdata:image\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/giu,"[inline_image_removed]");
 }
