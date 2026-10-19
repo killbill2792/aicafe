@@ -347,10 +347,40 @@ export type SupervisorDebugPoint="turn_received"|"capability_round"|"tool_reques
   "claim_issues_retry"|"direct_answer_attempt"|"review_verdict"|"rescue_review_verdict"|
   "accumulated_rescue_review_verdict"|"investigation_exhausted"|
   "reply_validation_failed"|"persistence_result"|"http_response_sent";
+/** Raw debugging is allowed ONLY under NODE_ENV=test, even when a stale
+ * feature flag is accidentally enabled on a deployment. Production emits
+ * a minimal, strictly allowlisted step trace with no prompts, values,
+ * employee names, wages, argument JSON, or raw OpenAI reply text.
+ * Owner-private complete traces require a separate access-controlled store. */
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
-  sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
+  if(process.env.NODE_ENV==="test"){
+    sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
+    return;
+  }
+  const safe:Record<string,unknown>={event:"supervisor_turn_debug_metadata"};
+  const allowId=(v:unknown)=>typeof v==="string"&&/^[a-zA-Z0-9_.:-]{1,80}$/u.test(v);
+  const points:ReadonlySet<string>=new Set([
+    "turn_received","capability_round","tool_request","tool_result","parallel_batch",
+    "retry_feedback","claim_issues_retry","direct_answer_attempt","review_verdict",
+    "rescue_review_verdict","accumulated_rescue_review_verdict","investigation_exhausted",
+    "reply_validation_failed","persistence_result","http_response_sent"]);
+  if(typeof payload.point==="string"&&points.has(payload.point))safe.point=payload.point;
+  for(const key of ["requestId","capabilityId","observationId","callId"])
+    if(allowId(payload[key]))safe[key]=payload[key];
+  for(const key of ["round","modelCallCount","toolCallCount"])
+    if(typeof payload[key]==="number"&&Number.isSafeInteger(payload[key])&&payload[key]>=0)
+      safe[key]=payload[key];
+  if(typeof payload.status==="string"&&
+    ["verified","partial","estimated","conditional","unavailable","failed"].includes(payload.status))
+    safe.status=payload.status;
+  if(typeof payload.outcome==="string"&&
+    ["rejected_preflight","concurrent"].includes(payload.outcome))
+    safe.outcome=payload.outcome;
+  for(const key of ["successful","supported","complete","dispatched","parallel"])
+    if(typeof payload[key]==="boolean")safe[key]=payload[key];
+  sink(JSON.stringify(safe));
 }
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
   // A genuinely new failure category (never the catch-all "unexpected"):
