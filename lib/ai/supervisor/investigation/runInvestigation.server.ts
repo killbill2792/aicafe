@@ -282,7 +282,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete)accumulatedRescue=false;
+        if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
+          accumulatedRescue=false;
+        else if(!accReview.complete && bestAccumulated)
+          bestAccumulated={...bestAccumulated,status:"partial"};
       }
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
@@ -406,6 +409,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const views=observations.map(o=>({id:o.id,capabilityId:o.capabilityId,input:o.input,
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
+    logSupervisorDebugPayload({point:"round_context",requestId:debugRequestId,round,
+      observations:views,authorizedOperands:operands,bindings,availableCapabilities:manifest.map(m=>m.id),
+      previousFeedback:feedback,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)
       return await failure(true,"observations_too_large");
     // Reserve one model attempt for an answer and one for its independent
@@ -638,7 +644,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             supported:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.supported:null,
             complete:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.complete:null,
             reason:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.reason:null});
-          if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported&&rescueReview.complete)
+          if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported)
             lastUnverifiedAnswer=rescued;
         }
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
@@ -707,7 +713,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
-      if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
+      if(!review||isToolCallSignal(review)||!review.supported){
         // A valid verdict always carries its own specific reason now (§6):
         // name exactly what the reviewer found, instead of the generic line
         // that used to be the only signal across every retry (production
@@ -742,6 +748,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
+      if(!review.complete)reply={...reply,status:"partial"};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
@@ -789,13 +796,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     let readDispatched=false;
     if(capabilityId===EXPRESSION_ID){
       if(identity.currency!=="USD"){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"unsupported_currency",toolArguments:args,authorizedOperands:operands});
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
       }
       const plan=planSchema.safeParse(args);
-      if(!plan.success){feedback="Select the registered expression contract and its typed nodes.";continue;}
+      if(!plan.success){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"invalid_plan",toolArguments:args,issues:plan.error.issues});
+        feedback="Select the registered expression contract and its typed nodes.";continue;
+      }
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
-      if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
+      if(selected.length!==handles.size||selected.length>12){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"unknown_operand",toolArguments:args,requestedHandles:[...handles],
+          authorizedHandles:operands.map(o=>o.handle)});
+        feedback="One or more operand handles were not authorized, or the expression is too large.";continue;
+      }
       calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!=null).map(o=>
         resolvedPeriod({period:{from:o.period!.from,to:o.period!.to}}));
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
@@ -806,8 +824,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         input.onUsage?.({...usage});
       });
       const checked=simulationOutputSchema.safeParse(result);
-      if(!checked.success){feedback="The calculator could not validate its result.";continue;}
+      if(!checked.success){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"calculator_invalid_result",toolArguments:args,rawResult:result,
+          issues:checked.error.issues});
+        feedback="The calculator could not validate its result.";continue;
+      }
       result=checked.data;
+      logSupervisorDebugPayload({point:"calculator_result",requestId:debugRequestId,round,
+        toolArguments:args,result,reasonCode:result.status==="unavailable"?
+          "calculation_unavailable":undefined,executed:true});
       calculation=true;
     }else{
       readDomain=manifest.find(m=>m.id===capabilityId)?.owner;
