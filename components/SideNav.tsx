@@ -3,6 +3,7 @@
 import { useTranslations } from "next-intl";
 import { Link, usePathname } from "@/i18n/navigation";
 import { NAV_TABS, isNavTabActive } from "@/components/shared/navTabs";
+import { isAuthPath } from "@/lib/auth/authRoutes";
 
 /** Desktop/tablet counterpart to TabBar — same 5 destinations, same wording, same icons (shared
  * via NAV_TABS), just laid out as a fixed left column instead of a bottom bar, since a bottom tab
@@ -11,7 +12,7 @@ export default function SideNav({ cafeName, languageSwitch }: { cafeName: string
   const t = useTranslations("Nav");
   const pathname = usePathname();
 
-  if (pathname === "/login") return null;
+  if (isAuthPath(pathname)) return null;
 
   return (
     <nav aria-label={t("ariaLabel")} className="sticky top-0 hidden h-screen w-sidenav shrink-0 flex-col gap-1 border-e border-[#CDBCA7] bg-[#E9DDCE] px-3 py-6 md:flex">
