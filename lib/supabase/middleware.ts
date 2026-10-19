@@ -20,9 +20,15 @@ export async function refreshSupabaseSession(request: NextRequest, response: Nex
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet, headers) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        // Prevent a CDN from caching a response carrying another owner's refreshed session.
+        if (headers) {
+          for (const [key, value] of Object.entries(headers)) {
+            if (value) response.headers.set(key, String(value));
+          }
+        }
       },
     },
   });
