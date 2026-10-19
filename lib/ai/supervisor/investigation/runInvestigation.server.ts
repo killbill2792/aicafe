@@ -573,15 +573,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // for stable r1/r2 citation IDs even if a later reader finishes first.
       const completed=await Promise.all(requests.map(async selectedRead=>{
         let dispatched=false;
+        const operationStartedAt=Date.now();
         const result=await registry.invoke(scope,selectedRead.capabilityId,selectedRead.args,()=>{
           dispatched=true;
           usage.toolCallCount++;
           input.onUsage?.({...usage});
         });
-        return {...selectedRead,result,dispatched};
+        return {...selectedRead,result,dispatched,durationMs:Date.now()-operationStartedAt};
       }));
       for(const item of completed){
-        const {capabilityId,args,result,dispatched,definition,call}=item;
+        const {capabilityId,args,result,dispatched,durationMs,definition,call}=item;
         if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
         if(dispatched){
           const cal=investigationCalendarScope(args,definition.owner);
@@ -611,7 +612,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations.push(observation);
         logSupervisorDebugPayload({point:"tool_result",requestId:debugRequestId,round,
           callId:call.callId,capabilityId,toolArguments:args,result,observationId:id,
-          dispatched,parallel:true});
+          dispatched,parallel:true,durationMs});
         input.onDiagnostic?.({stage:"investigation_round",agent:friendlyAgent(definition.owner),
           capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       }
@@ -641,6 +642,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           value:o.result.value,status:o.result.status,displayRaw:o.displayRaw}))});
       let rendered=renderInvestigationAnswer(answer,observations,input.locale,{ownerText});
       let reply=investigationReply(answer,observations,input.locale,{ownerText});
+      logSupervisorDebugPayload({point:"answer_rendered",requestId:debugRequestId,round,
+        rawAnswer:answer,renderedAnswer:rendered,replyCandidate:reply,
+        availableObservationIds:observations.map(o=>o.id)});
       if(!rendered||!reply){
         // Nothing in this draft survived even claim-level masking (section 3)
         // -- e.g. every paragraph was dropped for a structural citation
@@ -826,6 +830,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       agent:friendlyAgent(capabilityId===EXPRESSION_ID?"platform":manifest.find(m=>m.id===capabilityId)?.owner),
       capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     let result:unknown;
+    const operationStartedAt=Date.now();
     let calculation=false;
     let calculationPeriods:string[]=[];
     let readDomain:string|undefined;
@@ -968,7 +973,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"capability_round",requestId:debugRequestId,round,
       capabilityId,callId:step.callId,toolArguments:args,rawResult:result,
-      observationId:id,status:String(result.status),successful});
+      observationId:id,status:String(result.status),successful,
+      durationMs:Date.now()-operationStartedAt,dispatched:calculation||readDispatched});
   }
   return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }
