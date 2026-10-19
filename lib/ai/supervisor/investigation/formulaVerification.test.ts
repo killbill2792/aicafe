@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {verifyFormulaEntry,findOwnerQuotedSpan} from "./formulaVerification";
+import {verifyFormulaEntry,findOwnerQuotedSpan,resolvedPeriod} from "./formulaVerification";
 import {observationDisplay,type Observation} from "./evidence";
 import type {FormulaEntry} from "./protocol";
 
@@ -432,5 +432,30 @@ describe("PR127 derived period lineage and Unicode sign regressions",()=>{
   it.each(["−$5","﹣$5","－$5"])("treats %s as a negative owner amount, never positive",owner=>{
     expect(findOwnerQuotedSpan(owner,"$5","en")).toBeNull();
     expect(findOwnerQuotedSpan(owner,"-$5","en")).not.toBeNull();
+  });
+});
+
+
+describe("PR127 registered direct calculation handle scope",()=>{
+  const sep={period:{from:"2026-09-01",to:"2026-09-30"}};
+  const oct={period:{from:"2026-10-01",to:"2026-10-31"}};
+  function directCalc():Observation{
+    const result={status:"conditional",value:1000,unit:"USD_cents",
+      sourceHandles:["sales.daily:aggregate:netSalesCents:2026-09-01:2026-09-30"]};
+    return {id:"r1",capabilityId:"p3.platform.expression",input:{},result,reference:null,
+      calculation:true,sourcePeriods:[resolvedPeriod(sep)],display:{"value":"$10.00"},
+      displayKind:{value:"money"},displayRaw:{value:1000}};
+  }
+  const formula=entry({claim:"$5",formula:"a - b",variables:{
+    a:{value:10,source:"r1:value"},b:{value:5,source:"r2:value.priceCents"}}});
+  it("rejects mixing September direct-handle computation with October read",()=>{
+    const october=observation("r2","priceCents",500,"verified",oct);
+    expect(verifyFormulaEntry(formula,"",[directCalc(),october],"en"))
+      .toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+  it("accepts direct-handle calculation alongside another September read",()=>{
+    const september=observation("r2","priceCents",500,"verified",sep);
+    expect(verifyFormulaEntry(formula,"",[directCalc(),september],"en"))
+      .toEqual({ok:true,value:5});
   });
 });
