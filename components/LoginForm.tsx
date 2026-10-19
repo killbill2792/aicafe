@@ -3,14 +3,12 @@
 import { useState, type FormEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
-import { useSearchParams } from "next/navigation";
 import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-export default function LoginForm() {
+export default function LoginForm({ callbackError = false }: { callbackError?: boolean }) {
   const t = useTranslations("Login");
   const locale = useLocale();
   const router = useRouter();
-  const callbackError = useSearchParams().get("error") === "auth";
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [email, setEmail] = useState("");
