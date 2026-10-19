@@ -25,8 +25,10 @@ USING (
   owner_user_id=auth.uid() AND expires_at>now()
   AND EXISTS (
     SELECT 1 FROM public.ai_messages m
-    WHERE m.id=owner_message_id AND m.thread_id=thread_id
-      AND m.business_id=business_id AND m.owner_user_id=owner_user_id
+    WHERE m.id=supervisor_turn_traces.owner_message_id
+      AND m.thread_id=supervisor_turn_traces.thread_id
+      AND m.business_id=supervisor_turn_traces.business_id
+      AND m.owner_user_id=supervisor_turn_traces.owner_user_id
       AND m.role='owner'
   )
   AND EXISTS (
@@ -41,8 +43,10 @@ WITH CHECK (
   owner_user_id=auth.uid() AND expires_at<=now()+interval '14 days'
   AND EXISTS (
     SELECT 1 FROM public.ai_messages m
-    WHERE m.id=owner_message_id AND m.thread_id=thread_id
-      AND m.business_id=business_id AND m.owner_user_id=owner_user_id
+    WHERE m.id=supervisor_turn_traces.owner_message_id
+      AND m.thread_id=supervisor_turn_traces.thread_id
+      AND m.business_id=supervisor_turn_traces.business_id
+      AND m.owner_user_id=supervisor_turn_traces.owner_user_id
       AND m.role='owner'
   )
   AND EXISTS (
