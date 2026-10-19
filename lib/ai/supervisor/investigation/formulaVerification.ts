@@ -62,10 +62,10 @@ function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number
   const cleaned=locale==="es"
     ?stripped.replace(/\./gu,"").replace(",",".")
     :stripped.replace(/,/gu,"");
-  const match=/^(-?)(\d+)(?:\.(\d+))?$/u.exec(cleaned);
-  if(!match)return null;
+  const match=/^(-?)(\d*)(?:\.(\d+))?$/u.exec(cleaned);
+  if(!match||(!match[2]&&!match[3]))return null;
   const [,sign,whole,frac=""]=match;
-  const n=BigInt(whole+frac)*(sign==="-"?BigInt(-1):BigInt(1));
+  const n=BigInt((whole||"0")+frac)*(sign==="-"?BigInt(-1):BigInt(1));
   const decimals=frac.length+(subunit?2:0);
   const d=BigInt(10)**BigInt(decimals);
   return {rat:rat(n,d),decimals};
@@ -118,7 +118,7 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * takes units exclusively from the owner's matched span. Numeric boundaries support
  * Unicode letters/digits; signs remain attached to genuine negatives. */
 // Shared with claim rendering so units cannot fall outside the checked span.
-export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])-?(?:[$€£¥]\s*)?\p{Nd}(?:[,.٫٬]?\p{Nd})*(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:-\s*)?(?:[$€£¥]\s*)?(?:-\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,

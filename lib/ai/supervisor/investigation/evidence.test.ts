@@ -456,3 +456,10 @@ describe("PR127 second-review rendering regressions",()=>{
     expect(reply.blocks).not.toContainEqual(expect.objectContaining({code:"SUPERVISOR_ESTIMATED"}));
   });
 });
+
+describe("self-review: whole decimal and signed claim spans",()=>{
+  it.each([".50 dollars","- $5","$-5"])("checks the complete generated span %s",claim=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en")!;
+    expect(rendered.issues).toEqual([expect.objectContaining({kind:"unmatched_number",text:claim})]);
+  });
+});

@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {verifyFormulaEntry} from "./formulaVerification";
+import {verifyFormulaEntry,findOwnerQuotedSpan} from "./formulaVerification";
 import {observationDisplay,type Observation} from "./evidence";
 import type {FormulaEntry} from "./protocol";
 
@@ -340,5 +340,20 @@ describe("PR127 second-review source boundaries",()=>{
     expect(verifyFormulaEntry(entry({claim:"$5",formula:"a",variables:{
       a:{value:5,source:"$5"},b:{value:10,source:"r2:value.priceCents"}}}),"Assume $5.",[source],"en"))
       .toEqual({ok:false,failure:{reason:"unused_variable",variable:"b"}});
+  });
+});
+
+describe("self-review: leading decimals and spaced negative signs",()=>{
+  it.each([".50 dollars","٫٥٠ دولار"])("does not authorize a fifty-dollar echo from %s",owner=>{
+    expect(findOwnerQuotedSpan(owner,"50 dollars","en")).toBeNull();
+    expect(findOwnerQuotedSpan(owner,"$0.50","en")).not.toBeNull();
+  });
+  it("preserves a Spanish leading decimal",()=>{
+    expect(findOwnerQuotedSpan(",50 dólares","50 dólares","es")).toBeNull();
+    expect(findOwnerQuotedSpan(",50 dólares","0,50 dólares","es")).not.toBeNull();
+  });
+  it.each(["- $5","$-5","$ - 5"])("does not authorize a positive echo from %s",owner=>{
+    expect(findOwnerQuotedSpan(owner,"$5","en")).toBeNull();
+    expect(findOwnerQuotedSpan(owner,"-$5","en")).not.toBeNull();
   });
 });
