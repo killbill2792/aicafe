@@ -104,7 +104,11 @@ export type ClaimIssue=
  * which are only for general/hypothetical numbers (§3's one non-negotiable
  * rule). English-pattern heuristic; the independent reviewer
  * (reviewInstructions) is the semantic backstop for other phrasings/locales. */
-const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée]\b/iu;
+const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée]\b|\b(?:tu|tus|su|sus|nuestro|nuestra|nuestros|nuestras)\s+(?:ganancia|margen|ventas?|ingresos?|costos?|costes?|precios?|nómina|nomina|beneficios?|caf[ée])\b|(?:ربحك|أرباحك|مبيعاتك|إيراداتك|تكاليفك|تكلفتك|أسعارك|سعرك|مقه[اى]ك|مقهاك|رواتبك|الربح\s+الخاص\s+بك)/iu;
+/** Bare quantity words are not part of NUMERIC_SPAN. A typed amount
+ * supplied by the owner never licenses a different visible count unit. */
+const QUANTITY_AFTER=/^\s*(?:employees?|staff|workers?|people|persons?|shifts?|drinks?|cups?|items?|orders?|hours?|minutes?|days?|weeks?|months?|products?|customers?|empleados?|empleadas?|trabajadores?|personas?|turnos?|bebidas?|tazas?|pedidos?|horas?|minutos?|días?|semanas?|meses?|productos?|clientes?|موظفين|موظف|عمال|عامل|ورديات|مشروبات|أكواب|طلبات|ساعات|دقائق|أيام|أسابيع|أشهر|منتجات|عملاء)(?=$|[\s.,!?؛،])/iu;
+const TYPED_AMOUNT=/[$€£¥%٪]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|دولار|سنت/iu;
 /** Finds an exact, already-produced observation display value matching a
  * freehand span the model wrote itself -- the §5b "cheap direct check"
  * done BEFORE any heavier formula/extraction verification. A match here
@@ -176,7 +180,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     const formulaCitedIds=new Set<string>();
     const matched:{id:string;path:string}[]=[];
     const businessSpecific=BUSINESS_SPECIFIC.test(paragraph.text);
-    const text=paragraph.text.replace(CLAIM_SPAN,(full:string,tokenId?:string,tokenPath?:string)=>{
+    const text=paragraph.text.replace(CLAIM_SPAN,(full:string,tokenId?:string,tokenPath?:string,matchOffset?:number)=>{
       if(tokenId!==undefined&&tokenPath!==undefined){
         // §2: tell apart a citation to an id never produced this turn
         // (hallucinated) from a real id whose lookup came back with no
@@ -225,7 +229,9 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
       // Shares the same boundary-aware, format-tolerant matching the
       // formula path (§4b) already uses, rather than a second, divergent
       // implementation of the same check.
-      if(findOwnerQuotedSpan(ownerText,full,locale)!==null)return full;
+      const quoted=findOwnerQuotedSpan(ownerText,full,locale);
+       const following=paragraph.text.slice(matchOffset+full.length);
+       if(quoted!==null&&!(QUANTITY_AFTER.test(following)&&TYPED_AMOUNT.test(quoted)))return full;
       // §4b: a verified formula entry whose claim matches this exact span.
       const formulaEntry=paragraph.formulas?.find(f=>f.claim===full);
       if(formulaEntry){
