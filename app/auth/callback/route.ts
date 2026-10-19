@@ -6,8 +6,11 @@ import { NextResponse } from "next/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const locale = searchParams.get("locale") ?? "en";
-  const next = searchParams.get("next") ?? `/${locale}`;
+  const requestedLocale = searchParams.get("locale");
+  const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
+  const candidate = searchParams.get("next") ?? `/${locale}`;
+  // Only allow app-local destinations; no open redirects after authentication.
+  const next = candidate.startsWith(`/${locale}`) && !candidate.startsWith("//") && !candidate.includes("\\") && !candidate.includes("%") ? candidate : `/${locale}`;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
