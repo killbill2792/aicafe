@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
@@ -7,9 +8,10 @@ import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
 import { getExistingSupervisorReply, persistGroundedSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
+import { SupervisorReplyValidationError, buildReplyValidationFallbackReply } from "@/lib/ai/conversations/replyValidation";
 import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/conversations/contracts";
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
-import { createSupervisorDiagnosticLogger, classifySupervisorError, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
+import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 
 export const runtime = "nodejs";
@@ -33,6 +35,12 @@ export async function GET(request: Request, context: RouteContext) {
 export async function POST(request: Request, context: RouteContext) {
   const diagnostics=createSupervisorDiagnosticLogger();
   const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+  // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload in
+  // diagnostics.server.ts. One id per owner turn, generated here (not inside
+  // the investigation loop) and passed down into it, so the loop's own
+  // round-by-round debug trace and this route's lifecycle points share
+  // exactly one id instead of two disconnected ones.
+  const debugRequestId=randomUUID().slice(0,12);
   let stage:SupervisorStage="conversation_auth";
   diagnostics.emit({stage,model});
   try {
@@ -41,13 +49,21 @@ export async function POST(request: Request, context: RouteContext) {
     const { threadId } = await context.params;
     const id = parseInput(threadIdInput, threadId);
     const input = parseInput(addOwnerMessageInput, await readBoundedJson(request));
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+    logSupervisorDebugPayload({point:"turn_received",requestId:debugRequestId,
+      threadId:id,ownerQuestion:input.text});
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
     stage="owner_message_persisted";
     diagnostics.emit({stage,model});
     const previousReply = await getExistingSupervisorReply(scope, message);
-    if (previousReply) return conversationJson({ message, reply: previousReply, replyStatus: "complete" }, 200);
+    if (previousReply) {
+      // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+      logSupervisorDebugPayload({point:"http_response_sent",requestId:debugRequestId,
+        httpStatus:200,replyStatus:previousReply.grounding?.status,replayed:true});
+      return conversationJson({ message, reply: previousReply, replyStatus: "complete" }, 200);
+    }
     if (thread.title === null) {
       try {
         await labelSupervisorThread(scope, id, message.text ?? input.text);
@@ -79,6 +95,7 @@ export async function POST(request: Request, context: RouteContext) {
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
         investigationMemory: latestInvestigationMemory(messages,scope.businessId,message.id),
+        debugRequestId,
         readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),
         onUsage: (usage) => { aggregatedUsage = usage; },
         onDiagnostic: (event) => {
@@ -108,7 +125,47 @@ export async function POST(request: Request, context: RouteContext) {
     }
     stage="reply_persistence";
     diagnostics.emit({stage,model});
-    const stored = await persistGroundedSupervisorReply(scope, message, reply);
+    let stored: Awaited<ReturnType<typeof persistGroundedSupervisorReply>>;
+    try {
+      stored = await persistGroundedSupervisorReply(scope, message, reply);
+      // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+      logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,ok:true});
+    } catch (persistError) {
+      if (!(persistError instanceof SupervisorReplyValidationError)) {
+        // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+        logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,ok:false});
+        throw persistError;
+      }
+      // This gate firing always indicates a genuine upstream bug (a reply
+      // asserting a fact with no real grounding behind it), never a normal
+      // "couldn't verify" case -- those are already handled earlier in the
+      // pipeline. It must stay loud internally (full raw detail, same
+      // temporary debug mechanism as every investigation round) while
+      // degrading gracefully for the owner: no raw/generic error, just a
+      // safe, minimal, honest fallback reply in the same spirit as the
+      // investigation loop's own exhaustion fallback.
+      stage="reply_validation";
+      diagnostics.emit({...classifySupervisorError(persistError,stage),model});
+      // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+      logSupervisorDebugPayload({point:"reply_validation_failed",requestId:debugRequestId,
+        reason:persistError.reason,reply:persistError.reply});
+      const fallback = buildReplyValidationFallbackReply(input.locale);
+      stage="reply_persistence";
+      try {
+        stored = await persistGroundedSupervisorReply(scope, message, fallback);
+        // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+        logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,
+          ok:true,fallback:true});
+      } catch (fallbackPersistError) {
+        // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+        logSupervisorDebugPayload({point:"persistence_result",requestId:debugRequestId,
+          ok:false,fallback:true});
+        throw fallbackPersistError;
+      }
+    }
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
+    logSupervisorDebugPayload({point:"http_response_sent",requestId:debugRequestId,
+      httpStatus:201,replyStatus:stored.grounding?.status});
     return conversationJson({ message, reply: stored, replyStatus: "complete" }, 201);
   } catch(error) {
     diagnostics.emit({...classifySupervisorError(error,stage),model});

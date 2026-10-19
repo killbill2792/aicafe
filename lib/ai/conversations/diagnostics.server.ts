@@ -1,6 +1,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { GOAL_DOMAINS, type RequestedGoal, type ScopeReconciliationOutcome } from "./requestScope";
+import { SupervisorReplyValidationError, type ReplyValidationFailureReason } from "./replyValidation";
 
 /** Only this allow-listed metadata may reach the production log. Never log errors' messages,
  * OpenAI payloads, prompts, café data, employee data or credentials. */
@@ -10,12 +11,12 @@ export type SupervisorStage =
   | "semantic_plan" | "capability_selected" | "grounded_answer" | "legacy_fallback"
   | "tool_call_parse" | "tool_execution" | "final_response_parse"
   | "final_response_validation" | "scope_reconciliation" | "reply_persistence"
-  | "investigation_round" | "investigation_exhausted";
+  | "investigation_round" | "investigation_exhausted" | "reply_validation";
 export type SupervisorErrorCategory =
   | "provider_http" | "provider_timeout" | "provider_incomplete"
   | "provider_invalid_payload" | "invalid_tool_call" | "tool_execution"
   | "final_output_missing" | "final_output_malformed" | "final_output_validation"
-  | "reply_persistence" | "unexpected";
+  | "reply_persistence" | "reply_validation" | "unexpected";
 export type SupervisorDiagnostic = {
   stage:SupervisorStage; category?:SupervisorErrorCategory;
   model?:string;httpStatus?:number;providerStatus?:string;
@@ -52,7 +53,13 @@ export type SupervisorDiagnostic = {
   /** Exactly why runInvestigationTurn gave up and returned the budget/unavailable
    * reply, so a quiet "I reached the limit" no longer has to be reverse-engineered
    * from request duration alone. */
-  exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|"observations_too_large";
+  /** "no_progress": the adaptive budget (protocol.ts INVESTIGATION_LIMITS)
+   * stopped the loop immediately -- before exhausting the time/call budget
+   * -- because a round exactly repeated a prior attempt (same tool
+   * selection, or the identical already-rejected answer draft) with no new
+   * information, rather than waiting out the remaining budget. */
+  exhaustionReason?:"model_calls"|"operations"|"time"|"identity_mismatch"|"snapshot_mismatch"|
+    "observations_too_large"|"no_progress";
   /** Why a direct-answer investigation round was rejected and retried, so a
    * run of otherwise-identical "investigation_round agent:supervisor" lines
    * (previously indistinguishable) says whether the model's own citations/
@@ -67,6 +74,13 @@ export type SupervisorDiagnostic = {
    * something or truly got nothing, without having to guess from the stored
    * reply itself. */
   rescuedUnverified?:boolean;
+  /** Set on stage "reply_validation": exactly which validateGroundedReply
+   * check rejected the final reply before it could be persisted/shown. This
+   * gate firing always indicates a genuine upstream bug (a reply asserting a
+   * fact with no real grounding behind it), never a normal "couldn't verify"
+   * case -- those are handled earlier. Never carries the reply's own text,
+   * evidence or café data; see SupervisorReplyValidationError. */
+  replyValidationReason?:ReplyValidationFailureReason;
 };
 const investigationRequestNames=["supervisor_investigation_step","supervisor_investigation_review",
   "supervisor_calendar_context_review","supervisor_public_query_review"] as const;
@@ -75,16 +89,18 @@ const stages:readonly SupervisorStage[]=[
   "provider_request","provider_response","provider_fallback","semantic_plan",
   "capability_selected","grounded_answer","legacy_fallback","tool_call_parse","tool_execution",
   "final_response_parse","final_response_validation","scope_reconciliation","reply_persistence",
-  "investigation_round","investigation_exhausted",
+  "investigation_round","investigation_exhausted","reply_validation",
 ];
 const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
 const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
-  "snapshot_mismatch","observations_too_large"]);
+  "snapshot_mismatch","observations_too_large","no_progress"]);
 const answerRejectedReasons=new Set(["render_failed","review_failed","review_unavailable"]);
+const replyValidationReasons=new Set<ReplyValidationFailureReason>(
+  ["missing_evidence","insufficient_evidence_with_metrics","missing_grounding_reference"]);
 const categories:readonly SupervisorErrorCategory[]=[
   "provider_http","provider_timeout","provider_incomplete","provider_invalid_payload",
   "invalid_tool_call","tool_execution","final_output_missing","final_output_malformed",
-  "final_output_validation","reply_persistence","unexpected",
+  "final_output_validation","reply_persistence","reply_validation","unexpected",
 ];
 const outcomes:readonly ScopeReconciliationOutcome[]=[
   "accepted","audit_incomplete","audit_ambiguous","declared_goal_missing","semantic_conflict",
@@ -250,6 +266,8 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(d.answerRejectedReason&&answerRejectedReasons.has(d.answerRejectedReason)?
           {answerRejectedReason:d.answerRejectedReason}:{}),
         ...(typeof d.rescuedUnverified==="boolean"?{rescuedUnverified:d.rescuedUnverified}:{}),
+        ...(d.replyValidationReason&&replyValidationReasons.has(d.replyValidationReason)?
+          {replyValidationReason:d.replyValidationReason}:{}),
         ...(d.stage==="scope_reconciliation"?{
           declaredGoalDomains:safeDomains(d.declaredGoalDomains),
           auditedGoalDomains:safeDomains(d.auditedGoalDomains),
@@ -278,13 +296,61 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
  * had available) instead of guessed at round by round from metadata alone.
  * There are no real owners on this deployment yet, so the one flag below
  * is the only gate: flip SUPERVISOR_DEBUG_RAW_LOGGING off (or delete this
- * function) before any real owner's data ever flows through. */
+ * function) before any real owner's data ever flows through.
+ *
+ * The investigation loop (runInvestigation.server.ts) logs one of these
+ * points for EVERY round of the loop, not only the final attempt and the
+ * exhaustion summary; the API route (messages/route.ts) logs the remaining
+ * points that cover the rest of the request lifecycle -- the moment the
+ * owner's turn starts, the final reply-validation gate's outcome, whether
+ * persistence succeeded, and what was actually sent back in the HTTP
+ * response. ALL of these share one `debugRequestId` per turn (generated once
+ * in the route and passed down into the investigation loop, never a second,
+ * separately-generated id) so a single owner question's entire trace --
+ * from the raw request in, through every round's capability/tool/retry/
+ * review decision, to the exact reply persisted and returned -- can be
+ * reconstructed end to end from one log export:
+ * - "turn_received": the route has parsed the owner's POST and is about to
+ *   start the turn, with the raw owner message text and thread id.
+ * - "capability_round": a read/calculate tool actually dispatched this
+ *   round, with its capabilityId and result status.
+ * - "retry_feedback": the specific feedback text carried INTO a round
+ *   (set by whatever gate rejected the previous round's attempt).
+ * - "claim_issues_retry": the claim-level issues (ClaimIssue[] from
+ *   evidence.ts) found in a direct-answer draft that is being retried
+ *   rather than accepted, with which gate (render/formula) found each one.
+ * - "direct_answer_attempt": the raw model-authored draft for this round
+ *   (unchanged from before).
+ * - "review_verdict": the independent reviewer's supported/complete
+ *   verdict for a clean (zero-issue) draft.
+ * - "investigation_exhausted": the final summary (unchanged from before).
+ * - "reply_validation_failed": validateGroundedReply's final gate rejected
+ *   the reply the investigation loop produced -- which exact check failed,
+ *   and the full reply shape that tripped it. Always a bug signal; the
+ *   turn still degrades gracefully for the owner (see replyValidation.ts's
+ *   buildReplyValidationFallbackReply and messages/route.ts).
+ * - "persistence_result": whether the reply (the real one, or the graceful
+ *   fallback built after a reply_validation_failed) was actually written to
+ *   the database.
+ * - "http_response_sent": the final reply status/shape actually returned to
+ *   the owner in the HTTP response, not just "the request succeeded". */
+export type SupervisorDebugPoint="turn_received"|"capability_round"|"retry_feedback"|
+  "claim_issues_retry"|"direct_answer_attempt"|"review_verdict"|"investigation_exhausted"|
+  "reply_validation_failed"|"persistence_result"|"http_response_sent";
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
   sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
 }
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
+  // A genuinely new failure category (never the catch-all "unexpected"):
+  // validateGroundedReply's final safety gate rejected a reply that should
+  // never have reached it. Only the machine-readable reason is carried here
+  // -- never the reply's own text, evidence or café data (see
+  // SupervisorReplyValidationError and the raw debug capture alongside it).
+  if(error instanceof SupervisorReplyValidationError) return {
+    stage:"reply_validation",category:"reply_validation",replyValidationReason:error.reason,
+  };
   if(error instanceof SupervisorStageError) return {
     stage:error.stage,category:error.category,httpStatus:error.httpStatus,
     providerStatus:error.providerStatus,round:error.round,attempt:error.attempt,timeout:error.timeout,

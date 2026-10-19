@@ -9,13 +9,14 @@ import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSource
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
 import {researchEnabled,researchPublicSources} from "@/lib/ai/suppliers/research.server";
 import {runSupervisorTurn} from "@/lib/ai/conversations/runSupervisorTurn.server";
-import {capabilityToolName,CALCULATE_TOOL_NAME} from "./runInvestigation.server";
+import {capabilityToolName,CALCULATE_TOOL_NAME,detectConflictingFacts} from "./runInvestigation.server";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
 import {readers,purposePolicies,type SupportedId} from "@/lib/metrics/p1Catalog";
 import type {AtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 import type {InvestigationAnswer} from "./protocol";
 import {EXPRESSION_ID} from "../p3/expression";
+import {observationDisplay,type Observation} from "./evidence";
 
 const cafe="a0000000-0000-4000-8000-000000000999",product="a0000000-0000-4000-8000-000000000001";
 const ingredient="a0000000-0000-4000-8000-000000000100",employee="a0000000-0000-4000-8000-000000000002";
@@ -1142,4 +1143,236 @@ it("does not apply an unrelated provider-failed scheduling date to financial rea
   await runSupervisorTurn({...base,text:"How much did we spend?",investigationMemory:state,
     history:[{role:"owner",text:"Expenses for 2026-10-01"},{role:"owner",text:"Schedule Ava for 2026-10-26"}]},transport);
   expect(p1).toHaveBeenCalledTimes(1);expect(p1.mock.calls[0][2]).toMatchObject({period:oldPeriod});
+});
+
+it("treats an identical rejected answer draft as potential progress once a new observation arrives (Codex finding #2)",async()=>{
+  // Round 0 cites r1 before it exists (hallucinated -- rejected). Round 1
+  // performs the read that actually creates r1. Round 2 resubmits the exact
+  // same draft text: this must NOT be mistaken for a repeat with no new
+  // information, since the observation state underneath it has changed.
+  const draft=answer([{kind:"evidence",text:"The listed price is {{r1:value.0.priceCents}}.",citations:["r1"]}]);
+  const transport=transportFor([draft,read("p3.menu.catalog.v1",query("menu.catalog")),draft]);
+  const result=await runSupervisorTurn({...base,text:"What's the listed price?"},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+  expect(JSON.stringify(result.reply.blocks)).toContain("5.25");
+});
+
+it("treats the same unknown tool name selected again as potential progress once a real read creates new observations in between (Codex finding)",async()=>{
+  // Round 0 selects an unregistered tool name (rejected: unknown). Round 1
+  // performs a real, successful read. Round 2 selects the EXACT SAME
+  // unregistered name again: this must NOT be mistaken for a stuck repeat
+  // with no new information, since a real read happened in between.
+  const unknown=read("totally.unknown.tool.v1",{});
+  const transport=transportFor([unknown,read("p3.menu.catalog.v1",query("menu.catalog")),unknown]);
+  const result=await runSupervisorTurn({...base,text:"What's on the menu?"},transport);
+  expect(result.reply.status).not.toBe("unavailable");
+});
+
+it("keeps an extraction-verified claim in the §7 best-accumulated candidate instead of falling back to the stale pre-extraction one on exhaustion (Codex finding)",async()=>{
+  // The draft has TWO unmatched freehand numbers. The narrow extraction
+  // fallback (section 5) only ever targets the FIRST one ("$4.83"), for
+  // which a real formula/owner-quote exists -- it fixes that one claim,
+  // strictly improving the candidate from 2 masked claims to 1. The SECOND
+  // ("$900") has no citation, owner quote or formula and can never be
+  // resolved, so the turn keeps retrying the identical draft until it
+  // exhausts via the adaptive-budget repeat check. On exhaustion, the §7
+  // best-accumulated candidate must be the IMPROVED one (only "$900"
+  // masked) -- never the stale one cached before extraction ran (both
+  // masked), which would wrongly hide an already-verified claim.
+  const draft=answer([
+    {kind:"advice",text:"With $3 and $1.83, that comes to $4.83.",citations:[]},
+    {kind:"advice",text:"Rent alone could run $900 more some months.",citations:[]},
+  ]);
+  const extractionResponse=response({extracted:{claim:"$4.83",formula:"a + b",
+    variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}});
+  const scripted=transportFor([draft,draft]);
+  const transport=async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_formula_extraction")return extractionResponse;
+    return scripted(url,init);
+  };
+  const result=await runSupervisorTurn({...base,
+    text:"With $3 and $1.83, what else could change?"},transport);
+  expect(JSON.stringify(result.reply.blocks)).toContain("$4.83");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("$900");
+});
+
+it("never lets a later round with strictly MORE unresolved claim issues overwrite a cleaner earlier §7 candidate on a block-count tie (Codex finding)",async()=>{
+  // Round 1: one paragraph, ONE unmatched freehand number -- masked, so 1
+  // issue, 1 surviving block. Round 2: a DIFFERENT draft (so it is never
+  // mistaken for a stale repeat), still a single paragraph, but with TWO
+  // unmatched freehand numbers -- masking both still renders to the SAME 1
+  // block (masking replaces text within a paragraph, it never splits one
+  // paragraph into more blocks), while carrying 2 issues, strictly worse.
+  // Resubmitting round 2's own draft unchanged a third time trips the
+  // adaptive-budget repeat-stop. On exhaustion, the §7 best-accumulated
+  // candidate must still be ROUND 1's strictly cleaner draft -- a bare
+  // block-count tie must never let round 2's worse draft overwrite it.
+  const draft1=answer([{kind:"advice",text:"Rent alone could run $900 more some months.",citations:[]}]);
+  const draft2=answer([{kind:"advice",
+    text:"Rent could run $900 more, and utilities might add $300 too.",citations:[]}]);
+  // A fresh Response per call: the extraction step runs once per round here
+  // (round 1 and round 2 each have an extractable issue), and a Response's
+  // body can only be read once.
+  const scripted=transportFor([draft1,draft2,draft2]);
+  const transport=async(url:string,init:RequestInit)=>{
+    const body=JSON.parse(String(init.body));
+    if(body.text.format.name==="supervisor_formula_extraction")return response({extracted:null});
+    return scripted(url,init);
+  };
+  const result=await runSupervisorTurn({...base,text:"What else could change?"},transport);
+  expect(JSON.stringify(result.reply.blocks)).toContain("Rent alone could run");
+  expect(JSON.stringify(result.reply.blocks)).not.toContain("utilities might add");
+});
+
+it("marks the reply insufficient_evidence, not partial, when the only surviving content narrates an unavailable read with no reference to show (Codex finding)",async()=>{
+  // A real P1 read that comes back unavailable gets an observation id (r1)
+  // but, per production code, NO reference (only a successful read earns
+  // one). An evidence-kind paragraph that cites r1 purely to NARRATE the
+  // gap (no {{r1:...}} token pulling a value out of it) is fine per §2 and
+  // survives rendering -- but contributes nothing to `evidence`, since
+  // there is no reference to add. The reply must come out insufficient_evidence
+  // (nothing real backs it), not partial with zero evidence, which
+  // validateGroundedReply's final gate has no allowlist for and would
+  // otherwise reject outright.
+  p1.mockImplementationOnce(async()=>{
+    const unavailable={status:"unavailable" as const,value:null,reason:"unsupported_period"};
+    return unavailable as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+  const result=await runSupervisorTurn({...base,text:"What is the recorded latte price?"},transportFor([
+    read("p3.menu.catalog.v1",query("menu.catalog")),
+    answer([{kind:"evidence",text:"That source is currently unavailable, so I can't confirm the recorded price.",citations:["r1"]}]),
+  ]));
+  expect(result.reply.evidence).toEqual([]);
+  expect(result.reply.status).toBe("insufficient_evidence");
+  expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+});
+
+describe("detectConflictingFacts -- grouped by entity and period, not field name alone (Codex finding #5)",()=>{
+  function recordObservation(id:string,capabilityId:string,value:unknown,input:unknown={}):Observation{
+    const result={id:"test.read",status:"verified",value};
+    const rendered=observationDisplay(result,"en");
+    return {id,capabilityId,input,result,reference:null,
+      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw};
+  }
+  it("never flags a menu catalog's many different products' prices as one conflicting fact",()=>{
+    const o=recordObservation("r1","p3.menu.catalog.v1",
+      [{id:"p1",priceCents:300},{id:"p2",priceCents:700},{id:"p3",priceCents:900}]);
+    expect(detectConflictingFacts([o])).toEqual([]);
+  });
+  it("never flags several employees' different wages as one conflicting fact",()=>{
+    const o=recordObservation("r1","p3.labor.employee_wages.v1",
+      [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
+    expect(detectConflictingFacts([o])).toEqual([]);
+  });
+  it("flags genuinely different values for the SAME entity's field across two separate reads",()=>{
+    const first=recordObservation("r1","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:1800});
+    const second=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:2200});
+    const conflicts=detectConflictingFacts([first,second]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r1","r2"]);
+  });
+  it("never flags two different employees' single-record wage reads as conflicting",()=>{
+    const don=recordObservation("r1","p3.labor.employee_wages.v1",{employeeId:"don",defaultHourlyWageCents:1800});
+    const ava=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"ava",defaultHourlyWageCents:2000});
+    expect(detectConflictingFacts([don,ava])).toEqual([]);
+  });
+  it("does not conflate two distinct schedule weeks, including nested request selectors",()=>{
+    const monday=recordObservation("r1","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:10000}],{week:"2026-10-19"});
+    const nextWeek=recordObservation("r2","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:20000}],{request:{week:"2026-10-26"}});
+    expect(detectConflictingFacts([monday,nextWeek])).toEqual([]);
+  });
+  it("still detects a genuine conflict for the same schedule week",()=>{
+    const first=recordObservation("r1","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:10000}],{week:"2026-10-19"});
+    const second=recordObservation("r2","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:20000}],{request:{week:"2026-10-19"}});
+    expect(detectConflictingFacts([first,second])).toHaveLength(1);
+  });
+  it("does not flag distinct source months for derived dataset totals",()=>{
+    const source1=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"one",amountCents:1000}],{period:{from:"2026-09-01",to:"2026-09-30"}});
+    const source2=recordObservation("r2","p3.money.expense_entries.v1",
+      [{id:"two",amountCents:2000}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const analyzed=(id:string,sourceReadId:string,value:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value}],unit:"USD_cents",sourceReadId}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{readId:sourceReadId},result,
+        reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
+    const first=analyzed("r3","r1",1000);
+    const second=analyzed("r4","r2",2000);
+    expect(detectConflictingFacts([source1,source2,first,second])).toEqual([]);
+    expect(detectConflictingFacts([source1,first,analyzed("r5","r1",2200)])).toHaveLength(1);
+  });
+  it("separates derived analyses by source, operation, field and filter selector",()=>{
+    const period={period:{from:"2026-10-01",to:"2026-10-31"}};
+    const base1=recordObservation("r1","p3.money.expense_entries.v1",[],period);
+    const base2=recordObservation("r2","p3.money.expense_entries.v1",[],period);
+    const analysis=(id:string,sourceReadId:string,operation:string,field:string,filters:unknown[],v:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value:v}],unit:"USD_cents",sourceReadId,operation,field}};
+      const display=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",
+        input:{readId:sourceReadId,purpose:"dataset_analysis",operation,field,filters},
+        result,reference:null,display:display.display,displayKind:display.kind,displayRaw:display.raw};
+    };
+    const sum=analysis("r3","r1","sum","amountCents",[],1000);
+    const max=analysis("r4","r1","max","amountCents",[],600);
+    const differentField=analysis("r5","r1","sum","otherCents",[],300);
+    const differentFilter=analysis("r6","r1","sum","amountCents",[{field:"categoryCode",value:"rent"}],500);
+    const differentRead=analysis("r7","r2","sum","amountCents",[],2000);
+    expect(detectConflictingFacts([base1,base2,sum,max,differentField,differentFilter,differentRead])).toEqual([]);
+    const changed=analysis("r8","r1","sum","amountCents",[],1400);
+    expect(detectConflictingFacts([base1,sum,changed])).toHaveLength(1);
+  });
+  it("compares derived grouped totals by group label, regardless of output order",()=>{
+    const source=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"a",amountCents:100},{id:"b",amountCents:200}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const analyzed=(id:string,groups:{group:string;value:number}[]):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups,unit:"USD_cents",sourceReadId:"r1"}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{
+        readId:"r1",purpose:"dataset_analysis",operation:"sum",field:"amountCents",groupBy:"category",filters:[]},
+        result,reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
+    const first=analyzed("r2",[{group:"milk",value:100},{group:"coffee",value:200}]);
+    const sameReordered=analyzed("r3",[{group:"coffee",value:200},{group:"milk",value:100}]);
+    expect(detectConflictingFacts([source,first,sameReordered])).toEqual([]);
+    const changed=analyzed("r4",[{group:"coffee",value:200},{group:"milk",value:150}]);
+    const conflicts=detectConflictingFacts([source,first,changed]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r2","r4"]);
+  });
+  it("treats reordered AND-filters as equivalent but distinct filters as separate analyses",()=>{
+    const source=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"a",amountCents:100}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const a={field:"category",operator:"eq",value:"supplies"};
+    const b={field:"status",operator:"eq",value:"actual"};
+    const analyzed=(id:string,filters:object[],value:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value}],unit:"USD_cents",sourceReadId:"r1"}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{
+        readId:"r1",purpose:"dataset_analysis",operation:"sum",field:"amountCents",groupBy:null,filters},
+        result,reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
+    expect(detectConflictingFacts([source,analyzed("r2",[a,b],100),analyzed("r3",[b,a],200)])).toHaveLength(1);
+    expect(detectConflictingFacts([source,analyzed("r2",[a,b],100),analyzed("r3",[a],200)])).toEqual([]);
+  });
+  it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
+    const first=recordObservation("r1","p3.labor.employee_wages.v1",
+      [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
+    // Reordered: don is now at index 1, not index 0 -- the record's own
+    // stable id (employeeId) is unchanged, only its array POSITION differs.
+    const second=recordObservation("r2","p3.labor.employee_wages.v1",
+      [{employeeId:"ava",defaultHourlyWageCents:2000},{employeeId:"don",defaultHourlyWageCents:2200}]);
+    const conflicts=detectConflictingFacts([first,second]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r1","r2"]);
+  });
 });

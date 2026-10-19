@@ -34,6 +34,7 @@ vi.mock("@/lib/ai/conversations/replyWriter.server",()=>({
 }));
 import {POST} from "./route";
 import {SupervisorStageError} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorReplyValidationError} from "@/lib/ai/conversations/replyValidation";
 const request=(text:string)=>new Request("https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
   method:"POST",headers:{origin:"https://cafe.test","content-type":"application/json"},
   body:JSON.stringify({clientMessageId:mocks.message.clientMessageId,text,locale:"en"}),
@@ -120,5 +121,55 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
     const response=await POST(request(mocks.message.text),ctx);
     expect(response.status).toBe(500);
     expect(mocks.persist).not.toHaveBeenCalled();
+  });
+  it("degrades a validateGroundedReply gate failure into a graceful insufficient_evidence reply instead of a raw error, while logging it loudly behind the debug flag",async()=>{
+    const reported:string[]=[];
+    const logger=vi.spyOn(console,"info").mockImplementation(message=>reported.push(String(message)));
+    const previousFlag=process.env.SUPERVISOR_DEBUG_RAW_LOGGING;
+    process.env.SUPERVISOR_DEBUG_RAW_LOGGING="true";
+    try{
+      const buggyReply={intent:"profitability" as const,status:"verified" as const,evidence:[],
+        blocks:[{type:"text" as const,text:"Unverified financial claim"}]};
+      mocks.persist
+        .mockRejectedValueOnce(new SupervisorReplyValidationError("missing_evidence",
+          "Supervisor response requires trusted evidence",buggyReply))
+        .mockImplementationOnce(async(_scope,_message,reply)=>({
+          ...mocks.message,id:"fallback-reply",role:"supervisor",blocks:reply.blocks,
+          grounding:{status:reply.status},
+        }));
+      const response=await POST(request(mocks.message.text),ctx);
+      expect(response.status).toBe(201);
+      const body=await response.json();
+      expect(body.reply.id).toBe("fallback-reply");
+      expect(mocks.persist).toHaveBeenCalledTimes(2);
+      const fallbackReply=mocks.persist.mock.calls[1][2];
+      expect(fallbackReply.status).toBe("insufficient_evidence");
+      expect(fallbackReply.blocks.every((b:{type:string})=>b.type==="warning"||b.type==="text")).toBe(true);
+      const rows=reported.map(value=>JSON.parse(value));
+      expect(rows).toEqual(expect.arrayContaining([
+        expect.objectContaining({stage:"reply_validation",category:"reply_validation",
+          replyValidationReason:"missing_evidence"}),
+      ]));
+      const debugRows=rows.filter(r=>r.event==="supervisor_turn_debug_test_only");
+      const failurePoint=debugRows.find(r=>r.point==="reply_validation_failed");
+      expect(failurePoint).toMatchObject({reason:"missing_evidence"});
+      expect(failurePoint.reply.blocks[0].text).toBe("Unverified financial claim");
+      // The first (rejected) attempt failed VALIDATION, not persistence -- that
+      // is already captured by the reply_validation_failed point above, so the
+      // only persistence_result point here is the successful fallback write.
+      expect(debugRows.filter(r=>r.point==="persistence_result")).toEqual([
+        expect.objectContaining({ok:true,fallback:true}),
+      ]);
+      expect(debugRows.some(r=>r.point==="turn_received")).toBe(true);
+      expect(debugRows.some(r=>r.point==="http_response_sent"&&r.httpStatus===201&&
+        r.replyStatus==="insufficient_evidence")).toBe(true);
+      // Every debug point for this turn shares one correlation id across the
+      // full lifecycle, not just the investigation rounds.
+      expect(new Set(debugRows.map(r=>r.requestId)).size).toBe(1);
+    }finally{
+      logger.mockRestore();
+      if(previousFlag===undefined)delete process.env.SUPERVISOR_DEBUG_RAW_LOGGING;
+      else process.env.SUPERVISOR_DEBUG_RAW_LOGGING=previousFlag;
+    }
   });
 });

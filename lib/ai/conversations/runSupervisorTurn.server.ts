@@ -844,7 +844,12 @@ export async function runLegacySupervisorTurn(input: {
  * natural evidence-grounded synthesis. No rollout flag or question router. The
  * previous P3/legacy implementation remains exported for compatibility proof. */
 export async function runSupervisorTurn(
-  input:Parameters<typeof runLegacySupervisorTurn>[0] & {investigationMemory?:InvestigationMemory},
+  input:Parameters<typeof runLegacySupervisorTurn>[0] & {investigationMemory?:InvestigationMemory;
+    // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload in
+    // diagnostics.server.ts. The API route's own per-turn correlation id,
+    // threaded through so the investigation loop's round-by-round debug
+    // trace shares it rather than minting a second, disconnected id.
+    debugRequestId?:string},
   transport:Transport=fetch,
 ):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
   const apiKey=process.env.OPENAI_API_KEY;

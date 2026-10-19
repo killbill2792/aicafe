@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { supervisorReplyIdFor, validateGroundedReply } from "./replyValidation";
+import { supervisorReplyIdFor, validateGroundedReply, SupervisorReplyValidationError,
+  buildReplyValidationFallbackReply } from "./replyValidation";
 import type { GroundedSupervisorReply } from "./contracts";
 
 const source = { source: "cafe_state" as const, identifier: "profitability:2026-10-10", asOf: "2026-10-10" };
@@ -82,5 +83,42 @@ describe("Phase 4 privileged reply validation", () => {
     expect(() => validateGroundedReply({
       ...valid, blocks: [{ type: "text", text: "Approved", action: "apply_price" }],
     } as unknown as GroundedSupervisorReply)).toThrow();
+  });
+
+  it("throws a distinguishable SupervisorReplyValidationError, tagged with exactly which check failed, instead of a plain Error", () => {
+    const missingEvidence = (() => {
+      try { validateGroundedReply({ ...valid, evidence: [] }); return null; }
+      catch (error) { return error; }
+    })();
+    expect(missingEvidence).toBeInstanceOf(SupervisorReplyValidationError);
+    expect((missingEvidence as SupervisorReplyValidationError).reason).toBe("missing_evidence");
+    expect((missingEvidence as SupervisorReplyValidationError).reply.intent).toBe("profitability");
+
+    const insufficientWithMetrics = (() => {
+      try { validateGroundedReply({ ...valid, status: "insufficient_evidence", evidence: [] }); return null; }
+      catch (error) { return error; }
+    })();
+    expect(insufficientWithMetrics).toBeInstanceOf(SupervisorReplyValidationError);
+    expect((insufficientWithMetrics as SupervisorReplyValidationError).reason)
+      .toBe("insufficient_evidence_with_metrics");
+
+    const missingGroundingRef = (() => {
+      try {
+        validateGroundedReply({ ...valid, evidence: [{ ...source, identifier: "unrelated" }] });
+        return null;
+      } catch (error) { return error; }
+    })();
+    expect(missingGroundingRef).toBeInstanceOf(SupervisorReplyValidationError);
+    expect((missingGroundingRef as SupervisorReplyValidationError).reason).toBe("missing_grounding_reference");
+  });
+
+  it("builds a graceful insufficient_evidence fallback, in every supported locale, that itself passes validateGroundedReply cleanly (no infinite failure loop)", () => {
+    for (const locale of ["en", "es", "ar"] as const) {
+      const fallback = buildReplyValidationFallbackReply(locale);
+      expect(fallback.status).toBe("insufficient_evidence");
+      expect(fallback.evidence).toEqual([]);
+      expect(fallback.blocks.every((b) => b.type === "warning" || b.type === "text")).toBe(true);
+      expect(validateGroundedReply(fallback)).toEqual(fallback);
+    }
   });
 });

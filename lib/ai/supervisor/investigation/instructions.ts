@@ -27,6 +27,11 @@ export const investigationInstructions=[
   "Retain material missing/estimated inputs, unverified legal review, salary allocation versus incremental cash, ingredient-only cost scope, source freshness, partial coverage and unverified public snippets. Unknown is not zero.",
   "Address EVERY material part of the owner request: result, explicit missing information, proposed next step, or one targeted clarification. Do not silently omit a second domain.",
   "Operational limits are supplied. Reserve calls for the final answer and its independent evidence check, plus the additional privacy check before any public search. If remaining operations are zero, answer honestly from available evidence.",
+  "Prefer calling the calculate function for ANY owner-stated arithmetic before writing a final answer -- a verified in-loop result is the strongest kind of citation. This is a strong preference, not a hard requirement: you may still answer directly with freehand arithmetic when you show your work.",
+  "If an evidence/advice/clarification paragraph states a freehand numeric/currency/percent figure you computed yourself rather than citing, add a sibling 'formulas' entry for THAT exact number: {claim: the exact text as written (e.g. \"$4.83\"), formula: a plain expression using only named variables and + - * / % ( ), variables: {name: {value, source}}}. `source` must be either an exact excerpt of the owner's own message, or a real \"rN:path\" observation pointer -- never a value you merely assert. One formula entry per number; never bundle several figures into one entry.",
+  "Fallback formulas support only explicitly money/percent-typed operands and results. For quantities (drinks, workers, shifts, time, volume, ratios), use the registered typed calculate function; never treat their numeric cores as interchangeable scalars. Fallback formulas cannot mix owner-quoted operands with dated observation pointers because a numeric quote alone does not establish its period. Use the registered calculate function with explicit scoped operands for those scenarios. Keep currencies compatible and visible units faithful to their sources.",
+  "A number presented as a specific fact about THIS owner's business (\"your café\", \"you're currently at\", \"yours\") must always be backed by a real citation -- never by an owner quote or a formula, which are only for general or hypothetical numbers.",
+  "If you find multiple distinct, conflicting values for what the owner's request treats as one single fact for one entity (e.g. three different wage figures for the same employee), do not silently pick one or average them -- surface this as a specific clarification question listing the values and asking the owner which is correct.",
 ].join(" ");
 export const reviewInstructions=[
   "Independently verify this proposed café assistant answer against the ORIGINAL owner request, same-thread owner context and supplied tool observations.",
@@ -36,6 +41,17 @@ export const reviewInstructions=[
   "Material caveats must survive: incomplete coverage, estimates, salary allocation versus cash, unverified legal profile, ingredient-only cost scope, unknown stock and unverified public snippets.",
   "Return complete=true only when ALL material goals have an answer, useful partial/conditional guidance, an explicit genuine capability/data limitation, or a specific necessary clarification. Generic requests for objects/dates are not sufficient when context or available tools resolve them.",
   "No data is required for general business guidance. Do not reject it merely because no café tool was called. Never approve free-form asserted factual calculations without tool evidence.",
+  "Flag supported=false if any paragraph -- regardless of its self-reported kind, including one labeled clarification -- uses general-sounding or question-phrased language ('your margin looks like...', 'you're currently at...') to secretly assert a specific, uncited claim about THIS owner's own business. A genuine question asking the owner to pick between already-cited values is fine; a disguised, uncited assertion about their business is not.",
+].join(" ");
+/** §5: narrow, reading-comprehension-only follow-up when the model wrote a
+ * freehand numeric claim without its own formula declaration. Extracts the
+ * SAME shape, never judges or trusts it -- the server independently
+ * verifies every source and recomputes the arithmetic itself afterward. */
+export const formulaExtractionInstructions=[
+  "Read the supplied paragraph text and the one exact numeric/currency/percent span named as targetClaim within it.",
+  "If that span's value is arithmetic derived from other numbers already present in the paragraph, the owner's message, or a supplied observation, express it as {formula, variables} using only named variables and the operators + - * / % ( ) -- no function calls, no other identifiers.",
+  "Each variable's source must be an exact excerpt of the owner's own message text, or a real \"rN:path\" observation pointer from the supplied observations -- never a value you invent.",
+  "Return extracted:null if the span cannot be expressed this way (it is not simple arithmetic over already-stated numbers, or its inputs are not actually present in the owner's message or a real observation). Do not guess or approximate.",
 ].join(" ");
 
 export const publicQueryReviewInstructions=[
