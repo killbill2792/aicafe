@@ -285,6 +285,29 @@ describe("verifyFormulaEntry -- rejects a sub-cent money claim (Codex finding)",
   });
 });
 
+describe("verifyFormulaEntry -- money/percent tolerance is a fixed half-unit, never scaled by the claim's own decimal count (self-review finding)",()=>{
+  it("rejects a round-number money claim that is actually 40 cents off",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$500",
+      variables:{a:{value:3,source:"$3"},b:{value:496.60,source:"$496.60"}}}),
+      "Assume $3 and $496.60.",[],"en");
+    expect(result.ok).toBe(false);
+    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+  });
+  it("rejects a round-number percent claim that is actually 0.4 points off",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"50%",
+      variables:{a:{value:30,source:"30%"},b:{value:19.6,source:"19.6%"}}}),
+      "Assume 30% and 19.6%.",[],"en");
+    expect(result.ok).toBe(false);
+    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+  });
+  it("still accepts a round-number claim within half a cent of the true result",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$500",
+      variables:{a:{value:3,source:"$3"},b:{value:497,source:"$497"}}}),
+      "Assume $3 and $497.",[],"en");
+    expect(result).toEqual({ok:true,value:500});
+  });
+});
+
 describe("verifyFormulaEntry -- grammar failures surface as a specific reason",()=>{
   it("rejects an unsupported grammar instead of silently failing",()=>{
     const result=verifyFormulaEntry(entry({formula:"sum(a)",variables:{a:{value:1,source:"1"}}}),"I have 1 drink.",[],"en");

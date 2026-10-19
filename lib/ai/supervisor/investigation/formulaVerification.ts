@@ -321,7 +321,12 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};
   const computedNumber=ratToNumber(evaluated.value);
   const claimedNumber=ratToNumber(claimed.rat);
-  const tolerance=0.5*Math.pow(10,-claimed.decimals)+1e-9;
+  // Fixed at half the smallest real unit (a cent, or a percent's equivalent
+  // basis-point scale) -- NEVER derived from however many decimals the claim
+  // text happened to use. A claim written as "$500" (zero decimals) must not
+  // get a +/-$0.50 band just because it omitted its cents; that would let a
+  // true $499.60 silently verify as "$500" (self-review finding).
+  const tolerance=0.005+1e-9;
   if(Math.abs(computedNumber-claimedNumber)>tolerance)
     return {ok:false,failure:{reason:"result_mismatch",computed:computedNumber,claimed:claimedNumber}};
   // Cent-precision check (Codex finding): money is integer cents everywhere
