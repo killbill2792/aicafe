@@ -136,6 +136,12 @@ export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null
   return null;
 }
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
+/** Dates and times are indivisible claims, never separate numeric echoes. */
+export const STRUCTURED_DATE_TIME=String.raw`(?<![\p{L}\p{N}])(?:(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4})(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP][mM])?)?|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP][mM])?)(?![\p{L}\p{N}])`;
+const OWNER_STRUCTURED_DATE_TIME=new RegExp(STRUCTURED_DATE_TIME,"giu");
+export function ownerQuotedStructuredDateTime(ownerText:string,source:string):boolean{
+  return [...ownerText.matchAll(OWNER_STRUCTURED_DATE_TIME)].some(m=>m[0].toLocaleLowerCase()===source.toLocaleLowerCase());
+}
 /** Date/time components are not independent numeric facts. Never use a
  * year, month, day, minute or second inside a structured owner timestamp as
  * evidence for a standalone quantity or a rearranged date. This grammar is
@@ -150,10 +156,12 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
   const structured=[...ownerText.matchAll(OWNER_STRUCTURED_SPAN)].map(m=>({start:m.index,end:m.index+m[0].length}));
+  const structuredRanges=[...ownerText.matchAll(OWNER_STRUCTURED_DATE_TIME)].map(m=>[m.index,m.index+m[0].length] as const);
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     // Reject any numeric fragment of a date/time, regardless of locale.
     if(structured.some(s=>match.index<s.end&&match.index+match[0].length>s.start))continue;
     const text=match[0],start=match.index,end=start+text.length;
+    if(structuredRanges.some(([a,b])=>start<b&&end>a))continue;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
     // A component of an ISO/slash date or clock time is not a standalone
     // quantity that can support a different statement or formula operand.
