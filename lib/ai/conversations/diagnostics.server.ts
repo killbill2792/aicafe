@@ -354,7 +354,7 @@ export type SupervisorDebugPoint="turn_received"|"capability_round"|"tool_reques
  * Owner-private complete traces require a separate access-controlled store. */
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
-  if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
+  if(process.env.NODE_ENV!=="test" || process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
   if(process.env.NODE_ENV==="test"){
     sink(JSON.stringify({event:"supervisor_turn_debug_test_only",...payload}));
     return;
