@@ -177,6 +177,11 @@ export function formulaLiterals(formula:string):string[]|null{
   return tokens.filter(t=>t.type==="num").map(t=>t.text);
 }
 
+/** Identifiers in the same closed token grammar used by evaluation. */
+export function formulaVariableNames(formula:string):string[]{
+  return [...new Set((tokenize(formula)??[]).flatMap(t=>t.type==="ident"?[t.text]:[]))];
+}
+
 /** A deliberately coarse dimension for the investigation loop's formula
  * verifier (lib/ai/supervisor/investigation/formulaVerification.ts) -- just
  * enough to catch semantically-nonsensical arithmetic (adding a unit count

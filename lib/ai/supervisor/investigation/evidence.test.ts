@@ -418,3 +418,41 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
     expect(rendered.issues).toEqual([]);
   });
 });
+
+describe("PR127 second-review rendering regressions",()=>{
+  it.each(["$5","5%","5 dollars","5٪","5 دولارات"])("does not echo a count as %s",claim=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText:"5 employees"})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:claim}));
+  });
+  it("keeps a generated echo that omits the owner's currency symbol",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 5.",citations:[]}]),[],"en",{ownerText:"$5"})!;
+    expect(rendered.issues).toEqual([]);
+  });
+  it("checks an Arabic decimal/grouped value as one claim rather than numeric fragments",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"السعر ١٬٦١٠٫٢٥ دولار.",citations:[]}]),[],"ar")!;
+    expect(rendered.issues).toEqual([expect.objectContaining({kind:"unmatched_number",text:"١٬٦١٠٫٢٥ دولار"})]);
+    expect(rendered.blocks).toEqual([{type:"text",text:"السعر [قيمة غير مؤكدة]."}]);
+  });
+  it("never echoes the fractional tail of a grouped Arabic owner amount as a whole money value",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 25 dollars.",citations:[]}]),[],"ar",{ownerText:"١٬٦١٠٫٢٥ دولار"})!;
+    expect(rendered.issues).toHaveLength(1);
+  });
+  it("keeps a complete Arabic owner amount with compatible units",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"السعر ١٬٦١٠٫٢٥ دولار.",citations:[]}]),[],"ar",{ownerText:"١٬٦١٠٫٢٥ دولار"})!;
+    expect(rendered.issues).toEqual([]);
+  });
+  it("never attaches evidence or cautions from an unused declared pointer",()=>{
+    const source=observation("r2","priceCents",1000,{quality:{estimatedInputs:["price"]}});
+    source.reference={...ref("external-price"),source:"unverified_external"};
+    const a=answer([{kind:"advice",text:"The modeled value is $5.",citations:[],formulas:[{
+      claim:"$5",formula:"a",variables:{a:{value:5,source:"r1:value.priceCents"},b:{value:10,source:"r2:value.priceCents"}}}]}]);
+    const used=observation("r1","priceCents",500);
+    const rendered=renderInvestigationAnswer(a,[used,source],"en")!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"formula_failed",failure:{reason:"unused_variable",variable:"b"}}));
+    expect(rendered.citedIds).toEqual([]);
+    const reply=investigationReply(a,[used,source],"en")!;
+    expect(reply.evidence).toEqual([]);
+    expect(reply.blocks).not.toContainEqual(expect.objectContaining({code:"SUPERVISOR_PUBLIC_RESEARCH"}));
+    expect(reply.blocks).not.toContainEqual(expect.objectContaining({code:"SUPERVISOR_ESTIMATED"}));
+  });
+});

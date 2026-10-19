@@ -8,7 +8,7 @@
  * narrow failure -- never escalated into discarding more than the one
  * number it concerns (§3's core invariant). */
 import {rat,times,type Rat} from "@/lib/calc/scenarioExpression";
-import {evaluateFormulaScaled,formulaLiterals,type FormulaRejectionReason,
+import {evaluateFormulaScaled,formulaLiterals,formulaVariableNames,type FormulaRejectionReason,
   type ArithmeticUnit} from "@/lib/calc/formulaExpression";
 import type {Observation,Locale} from "./evidence";
 import type {FormulaEntry} from "./protocol";
@@ -18,6 +18,7 @@ export type FormulaVerificationFailure=
   |{reason:"source_not_found";variable:string}
   |{reason:"source_unverifiable";variable:string}
   |{reason:"ungrounded_literal"}
+  |{reason:"unused_variable";variable:string}
   |{reason:"incompatible_units"}
   |{reason:"incompatible_periods"}
   |{reason:"unparseable_claim"}
@@ -57,7 +58,7 @@ export function normalizeDigits(text:string):string{
  * verification against the wrong value. */
 function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
   const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
-  const stripped=normalizeDigits(text).replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
+  const stripped=normalizeDigits(text).replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
   const cleaned=locale==="es"
     ?stripped.replace(/\./gu,"").replace(",",".")
     :stripped.replace(/,/gu,"");
@@ -112,14 +113,16 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * the declared source's -- can inform the unit classification), or null if
  * no such span exists.
  *
- * Units may be omitted on one side for formatting tolerance, but two
- * incompatible explicit units never match. Numeric boundaries support
+ * Generated echoes may omit a unit, but cannot add one. Numeric formula
+ * source lookup also tolerates source-side decoration; resolution still
+ * takes units exclusively from the owner's matched span. Numeric boundaries support
  * Unicode letters/digits; signs remain attached to genuine negatives. */
 // Shared with claim rendering so units cannot fall outside the checked span.
-export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])-?(?:[$€£¥]\s*)?\p{Nd}(?:[,.]?\p{Nd})*(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])-?(?:[$€£¥]\s*)?\p{Nd}(?:[,.٫٬]?\p{Nd})*(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
-export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale):string|null{
+export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
+  options?:{numericSourceOnly?:boolean}):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
@@ -128,7 +131,8 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
     const candidate=parseNumericSnippet(text,locale);
     const sourceUnit=classifyOwnerUnit(source),candidateUnit=classifyOwnerUnit(text);
-    if(sourceUnit!=="scalar"&&candidateUnit!=="scalar"&&sourceUnit!==candidateUnit)continue;
+    if(sourceUnit!=="scalar"&&sourceUnit!==candidateUnit&&
+      !(options?.numericSourceOnly&&candidateUnit==="scalar"))continue;
     if(sourceUnit==="money"&&candidateUnit==="money"&&moneyCurrency(source)!==moneyCurrency(text))continue;
     if(candidate&&candidate.rat.n===sourceParsed.rat.n&&candidate.rat.d===sourceParsed.rat.d)return text;
   }
@@ -151,9 +155,8 @@ function resolvedPeriod(input:unknown):string{
  * unit taken from the same money/percent classification `observationDisplay`
  * already computed); anything else must be a complete, token-bounded excerpt
  * of the owner's own message text (its unit taken from that matched span's
- * own decoration, falling back to the declared source text's decoration
- * only when the matched span itself carries none -- e.g. the owner wrote
- * "1.45" but the source was declared as "$1.45"). */
+ * own decoration. A unit added only in a model declaration is never
+ * evidence that the owner's undecorated number had that unit). */
 function resolveVariable(source:string,observations:readonly Observation[],ownerText:string,locale:Locale):
   {value:Rat;unit:ArithmeticUnit;period:string;currency:string}|null{
   const byId=new Map(observations.map(o=>[o.id,o] as const));
@@ -187,13 +190,13 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     return {value,unit:"scalar",period,currency:""};
   }
   if(!source)return null;
-  const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale);
+  const matchedSpan=findOwnerQuotedSpan(ownerText,source,locale,{numericSourceOnly:true});
   if(matchedSpan===null)return null;
   const parsed=parseNumericSnippet(source,locale);
   if(!parsed)return null;
   const spanUnit=classifyOwnerUnit(matchedSpan);
-  return {value:parsed.rat,unit:spanUnit!=="scalar"?spanUnit:classifyOwnerUnit(source),period:"",
-    currency:moneyCurrency(spanUnit!=="scalar"?matchedSpan:source)};
+  return {value:parsed.rat,unit:spanUnit,period:"",
+    currency:moneyCurrency(matchedSpan)};
 }
 export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   observations:readonly Observation[],locale:Locale):FormulaVerificationResult{
@@ -206,11 +209,13 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
   const literals=formulaLiterals(entry.formula);
   if(literals===null)return {ok:false,failure:{reason:"grammar",detail:"unknown_character"}};
   if(literals.length>0)return {ok:false,failure:{reason:"ungrounded_literal"}};
+  const usedNames=new Set(formulaVariableNames(entry.formula));
   const resolved=new Map<string,{value:Rat;unit:ArithmeticUnit}>();
   const periods=new Set<string>();
   const currencies=new Set<string>();
   let hasOwnerQuote=false;
   for(const [name,declaration] of Object.entries(entry.variables)){
+    if(!usedNames.has(name))return {ok:false,failure:{reason:"unused_variable",variable:name}};
     if(!VARIABLE_NAME.test(name))return {ok:false,failure:{reason:"source_unverifiable",variable:name}};
     const resolvedVariable=resolveVariable(declaration.source,observations,ownerText,locale);
     if(resolvedVariable===null){

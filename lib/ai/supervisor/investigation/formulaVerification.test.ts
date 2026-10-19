@@ -320,3 +320,25 @@ describe("currency and monetary subunits",()=>{
       "Assume €5.",[],"en")).toEqual({ok:false,failure:{reason:"incompatible_units"}});
   });
 });
+
+describe("PR127 second-review source boundaries",()=>{
+  it("never invents an operand's money dimension from model source decoration",()=>{
+    expect(verifyFormulaEntry(entry({claim:"$10",formula:"a + a",variables:{a:{value:5,source:"$5"}}}),
+      "I have 5 employees.",[],"en")).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+  });
+  it.each(["25 dollars","610 dollars","1 dollar"])("rejects a fragment of an Arabic-formatted owner amount: %s",source=>{
+    expect(verifyFormulaEntry(entry({claim:"25",formula:"a",variables:{a:{value:25,source}}}),
+      "السعر ١٬٦١٠٫٢٥ دولار.",[],"ar")).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
+  });
+  it.each(["ar","en","es"] as const)("reads Arabic grouping/decimal punctuation as a whole amount in %s",locale=>{
+    const text=locale==="es"?"1610,25":"1610.25";
+    expect(verifyFormulaEntry(entry({claim:text,formula:"a",variables:{a:{value:1610.25,source:text}}}),
+      "السعر ١٬٦١٠٫٢٥ دولار.",[],locale)).toEqual({ok:true,value:1610.25});
+  });
+  it("rejects an unused pointer declaration",()=>{
+    const source=observation("r2","priceCents",1000);
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a",variables:{
+      a:{value:5,source:"$5"},b:{value:10,source:"r2:value.priceCents"}}}),"Assume $5.",[source],"en"))
+      .toEqual({ok:false,failure:{reason:"unused_variable",variable:"b"}});
+  });
+});
