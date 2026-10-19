@@ -142,7 +142,7 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 /** Preserve registered calendar selectors across flat and nested readers.
  * A week and a financial range are distinct scopes, never silently equal. */
-function resolvedPeriod(input:unknown):string{
+export function resolvedPeriod(input:unknown):string{
   if(!isRecord(input))return "";
   const scopes=[input,...(isRecord(input.request)?[input.request]:[])];
   const selectors=scopes.flatMap(scope=>[
