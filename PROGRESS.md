@@ -2810,3 +2810,20 @@ Second Codex review on 1fa1973 found three further defects: an echo could add a 
 Self-review additionally found that a leading decimal (.50) could be read as its integer tail (50), and a separated/post-currency minus sign could be lost. Whole-span recognition and exact parsing now preserve both, with EN/ES/AR and rendered-claim regressions. The three Codex findings are implemented; targeted evaluator/verifier/renderer regression coverage is green. Complete final tests, build and the next review/checks are being run on the final pushed state.
 
 Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted top-level/nested scheduling-week selectors, and Spanish dot-leading decimals. Fix: quantity/ratio arithmetic must use the existing registered typed calculator; fallback verification accepts only explicitly money/percent-typed inputs and results. This deliberately closes the unsafe untyped path while retaining per-claim masking and the primary open-ended calculation engine. Period comparison now includes top-level and nested request periods/weeks, and Spanish dot-leading decimals retain fractional scale. Regression fixtures now use typed monetary fallback examples; actual registered quantity journeys remain covered by runtime tests. Revalidating the final state and continuing review/CI before owner-requested merge.
+
+## 2026-10-19 — Supervisor private trace / reviewer publication (PR pending)
+
+- Add owner-bound investigation events in an RLS-protected table: owner request, route stages, model request/response
+  payloads, observed operands, calculator validation reasons, reviewer decisions, reply persistence and HTTP delivery.
+  Bearer tokens, API keys, passwords and session cookies are never recorded; public Vercel logs remain metadata only.
+- Migration: 20261020000001_supervisor_private_turn_traces.sql. Activate after RLS review with
+  SUPERVISOR_PRIVATE_TRACE_ENABLED=true. Authenticated owners can retrieve their private traces from
+  GET /api/ai/threads/{threadId}/traces?requestId={id}. Each trace expires after 14 days.
+  Trace byte/event bounds and dropped_count explicitly identify incomplete captures.
+- A reviewer verdict of supported=true and complete=false publishes a partial sourced answer.
+  A complete-but-unsupported draft instead returns a non-factual insufficiency response; no false business
+  claims or completed actions are published on a boolean OR alone.
+- Typed operand support for every readable numeric business field is NOT completed here: raw strings, IDs,
+  unsupported numerical unit types, schedule durations, and wage periods need reviewed conversion contracts.
+  Treat this as outstanding scope, not a passing acceptance criterion.
+- Release requires final-head CI and independent review, migration/RLS test, and live owner trial.
