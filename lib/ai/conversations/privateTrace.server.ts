@@ -1,6 +1,5 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
-import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type {ConversationScope} from "./contracts";
 
 /**
@@ -28,7 +27,7 @@ function redact(value:unknown,depth=0):unknown {
 export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):void {
   const state=context.getStore();
   if(!state)return;
-  const entry={sequence:state.nextSequence++,at:new Date().toISOString(),...redact(payload) as Record<string,unknown>};
+  const entry={sequence:state.nextSequence++,at:new Date().toISOString(),...(redact(payload) as Record<string,unknown>)};
   let encoded:string;
   try{encoded=JSON.stringify(entry);}catch{state.droppedCount++;return;}
   if(encoded.length>MAX_EVENT_BYTES||state.events.length>=MAX_EVENTS||
@@ -57,6 +56,7 @@ export async function persistSupervisorPrivateTrace(input:{
   scope:ConversationScope;threadId:string;ownerMessageId:string;requestId:string;
   trace:PrivateTurnTrace;
 }):Promise<void>{
+  const {createServerSupabaseClient}=await import("@/lib/supabase/server");
   const client=await createServerSupabaseClient();
   const {error}=await client.from("supervisor_turn_traces").insert({
     business_id:input.scope.businessId,
