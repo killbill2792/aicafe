@@ -25,7 +25,7 @@ describe("canonical capability grouping",()=>{
   it("describes actual schema fields without copying café data",()=>{
     const schema=z.toJSONSchema(z.strictObject({value:z.strictObject({
       totalCents:z.number().int(),active:z.boolean()})}));
-    expect(describeSourceFields(schema)).toContain("totalCents:number (USD cents)");
+    expect(describeSourceFields(schema)).toContain("totalCents:integer (USD cents)");
     expect(describeSourceFields(schema)).toContain("active:boolean");
   });
 });
