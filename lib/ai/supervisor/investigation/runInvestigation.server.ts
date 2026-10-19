@@ -24,7 +24,7 @@ import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
   renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,buildClaimFeedback,
   type Observation,type Locale,type ClaimIssue} from "./evidence";
-import {verifyFormulaEntry,observationPeriod} from "./formulaVerification";
+import {verifyFormulaEntry,observationPeriod,resolvedPeriod} from "./formulaVerification";
 import {answerSchema,reviewSchema,formulaExtractionSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
@@ -619,6 +619,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     let result:unknown;
     let calculation=false;
+    let calculationPeriods:string[]=[];
     let readDomain:string|undefined;
     let readDispatched=false;
     if(capabilityId===EXPRESSION_ID){
@@ -630,6 +631,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
+      calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!==null).map(o=>
+        resolvedPeriod({period:{from:o.period!.from,to:o.period!.to}}));
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
@@ -714,7 +717,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       reference:successful&&!pure?observationReference(identity.businessId,identity.asOf,capabilityId,result,inheritedSource):null,
       requiresSnapshot:directSourceRequiresSnapshot||parents.some(o=>o.requiresSnapshot)||!calculation&&
         manifest.find(m=>m.id===capabilityId)?.currencyPolicy!=="independent",
-      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw,calculation};
+      display:rendered.display,displayKind:rendered.kind,displayRaw:rendered.raw,calculation,
+      sourcePeriods:calculation?calculationPeriods:undefined};
     if(calculation&&typeof result.value==="number"&&typeof result.unit==="string"){
       observation.display.value=formatScenarioValue(result.value,result.unit as z.infer<typeof import("../p3/expression").unit>,input.locale);
       if(result.unit==="USD_cents"){observation.displayKind!.value="money";observation.displayRaw!.value=result.value;}
