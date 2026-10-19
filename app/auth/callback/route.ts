@@ -1,37 +1,39 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { authFlow, authLocale, safeCallbackDestination } from "@/lib/auth/callbackUtils";
 
-/** Magic-link landing page: exchanges the emailed code for a session, then sends the owner home. */
+/** Backward-compatible PKCE callback for existing magic links and email confirmations. */
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+  const locale = authLocale(searchParams.get("locale"));
+  const flow = authFlow(searchParams.get("flow"));
+  const next = safeCallbackDestination(locale, searchParams.get("next"), flow);
   const code = searchParams.get("code");
-  const requestedLocale = searchParams.get("locale");
-  const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
-  const candidate = searchParams.get("next") ?? `/${locale}`;
-  // Only allow app-local destinations; no open redirects after authentication.
-  const next = candidate.startsWith(`/${locale}`) && !candidate.startsWith("//") && !candidate.includes("\\") && !candidate.includes("%") ? candidate : `/${locale}`;
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  if (code && supabaseUrl && supabaseAnonKey) {
-    const cookieStore = await cookies();
-    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options));
-        },
-      },
-    });
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`);
-    }
+  const url = new URL(next, origin);
+  const fallback = new URL(`/${locale}/login?error=auth`, origin);
+  if (!code || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    return NextResponse.redirect(fallback);
   }
 
-  return NextResponse.redirect(`${origin}/${locale}/login?error=auth`);
+  const response = NextResponse.redirect(url);
+  const cookieStore = await cookies();
+  const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
+    cookies: {
+      getAll() { return cookieStore.getAll(); },
+      setAll(cookiesToSet, headers) {
+        cookiesToSet.forEach(({ name, value, options }) => {
+          cookieStore.set(name, value, options);
+          response.cookies.set(name, value, options);
+        });
+        if (headers) {
+          for (const [key, value] of Object.entries(headers)) {
+            if (value) response.headers.set(key, String(value));
+          }
+        }
+      },
+    },
+  });
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  return error ? NextResponse.redirect(fallback) : response;
 }
