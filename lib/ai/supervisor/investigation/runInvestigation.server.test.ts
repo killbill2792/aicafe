@@ -1434,6 +1434,27 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(result.reply.status).not.toBe("unavailable");
   });
 
+  it("preflights every sibling and dispatches none when one schema is invalid",async()=>{
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:true,reason:"Clarification is safe."});
+      if(steps++===0)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},output:[
+          {type:"function_call",call_id:"a",name:capabilityToolName("p3.menu.catalog.v1"),
+            arguments:JSON.stringify(query("menu.catalog"))},
+          {type:"function_call",call_id:"b",name:capabilityToolName("p3.labor.employee_wages.v1"),
+            arguments:JSON.stringify({...query("labor.employee_wages"),unknownProperty:"forbidden"})}]}));
+      return response(answer([{kind:"clarification",
+        text:"Which product and staffing comparison should I investigate?",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare my menu and worker wages."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+  });
+
   it("rejects a parallel batch of semantically identical selectors with reversed date keys",async()=>{
     const periodA={from:"2026-10-01",to:"2026-10-15"};
     const periodB={to:"2026-10-15",from:"2026-10-01"};
