@@ -600,3 +600,26 @@ describe("PR127 atomic owner date/time and unrestricted Spanish possessives",()=
       expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited",text:"$5"}));
     });
 });
+
+describe("declared decorative citations",()=>{
+  it("preserves a verified count when the model appends r1/r2/r3 in prose",()=>{
+    const catalog=observation("r1","count",63);
+    const count=observation("r2","count",30);
+    const unavailable=observation("r3","count",0,{status:"unavailable"});
+    const draft=answer([{kind:"evidence",
+      text:"The catalog shows {{r2:value.count}} active products. 〔r1〕〔r2〕〔r3〕",
+      citations:["r1","r2","r3"]}]);
+    const result=renderInvestigationAnswer(draft,[catalog,count,unavailable],"en");
+    expect(result?.issues).toEqual([]);
+    expect(result?.blocks).toContainEqual({type:"text",text:"The catalog shows 30 active products."});
+    expect(result?.evidence).toContainEqual(ref("r2"));
+    expect(result?.evidence).not.toContainEqual(ref("r3"));
+  });
+  it("does not silently erase undeclared citation-like digits",()=>{
+    const o=observation("r1","count",30);
+    const result=renderInvestigationAnswer(answer([{kind:"evidence",
+      text:"Found {{r1:value.count}} items 〔r9〕.",citations:["r1"]}]),[o],"en");
+    expect(result?.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({kind:"dropped_paragraph",reason:"unrecognized_numeral"})]));
+  });
+});

@@ -52,6 +52,8 @@ function dailySums(value:unknown,fields:readonly {
 }
 /** Domain-owned allowlisted value/units, not model-requested arbitrary object paths. */
 export const extractors:Partial<Record<SupportedId,Extractor>>={
+  "money.monthly_bills":v=>isObject(v)&&integer(v.totalCents)?
+    [{key:"value",name:"recorded monthly recurring bills",field:"totalCents",value:v.totalCents,unit:"USD_cents"}]:[],
   "menu.catalog":v=>rows(v).flatMap(row=>
     row.active===true&&row.priceStatus==="recorded"&&integer(row.priceCents)?
       [{key:text(row.id),name:text(row.name),field:"priceCents",

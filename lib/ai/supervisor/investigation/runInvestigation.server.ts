@@ -11,7 +11,7 @@ import {investigationReadDatesMatch,rememberInvestigationReads,investigationCale
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
-import {createP3ReadRegistry} from "../p3/sourceRegistry.server";
+import {createP3ReadRegistry,isRedundantModelRead} from "../p3/sourceRegistry.server";
 import {projectP1Evidence} from "../p3/operandProjection.server";
 import {EXPRESSION_ID,planSchema} from "../p3/expression";
 import {simulationOutputSchema} from "../p3/simulateRegistration.server";
@@ -352,7 +352,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           Date.now()+7000),reserveModelCalls:2,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       return !!checked&&!isToolCallSignal(checked)&&checked.safe===true;
     })]);
-  const manifest=registry.discover(scope);
+  const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
   // Native function-calling tools: one per discovered read capability, plus
   // the registered expression calculator. toolNameToCapabilityId maps a
   // tool call's name back to the real capability/calculate id; the model

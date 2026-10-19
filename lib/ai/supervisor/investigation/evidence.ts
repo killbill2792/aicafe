@@ -136,6 +136,17 @@ function findDirectObservationMatch(spanText:string,observations:readonly Observ
 // Capturing visible currency words and percent signs inside the claim keeps
 // the unit check effective in English, Spanish and Arabic alike.
 const CLAIM_SPAN=new RegExp(String.raw`\{\{(r\d+):([a-zA-Z0-9_.]+)\}\}|https?:\/\/\S+|www\.\S+|${STRUCTURED_TEMPORAL_SPAN}|${NUMERIC_SPAN}`,"giu");
+/** Recognize *only* explicitly declared, existing citation markers as prose
+ * decoration. Unknown/mismatched markers stay in place and fail the numeric
+ * guard, rather than silently authorizing invented references. */
+export function stripDeclaredCitationDecorations(text:string,citations:readonly string[],
+  known:ReadonlySet<string>):string{
+  return text.replace(/〔(r\d+)〕|［(r\d+)］|\[(r\d+)\]/gu,
+    (original:string,a:string|undefined,b:string|undefined,c:string|undefined)=>{
+      const id=a??b??c;
+      return id&&known.has(id)&&citations.includes(id)?"":original;
+    }).replace(/\s{2,}/gu," ").trim();
+}
 export function renderInvestigationAnswer(answer:InvestigationAnswer,observations:readonly Observation[],locale:Locale,
   options?:{ownerText?:string}):
   {blocks:SupervisorReplyBlock[];evidence:EvidenceReference[];adviceOnly:boolean;hasComputedClaim:boolean;
@@ -153,7 +164,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
   const survivingCitedIds=new Set<string>();
   let boxedCount=0;const boxedSignatures=new Set<string>();
   let adviceOnly=true,hasComputedClaim=false;
-  answer.paragraphs.forEach((paragraph,paragraphIndex)=>{
+  answer.paragraphs.map(p=>({...p,text:stripDeclaredCitationDecorations(p.text,p.citations,new Set(byId.keys()))})).forEach((paragraph,paragraphIndex)=>{
     // Structural mismatches between a paragraph's self-reported kind and its
     // citations drop only THAT paragraph (§3's invariant), never the whole
     // answer.
@@ -350,9 +361,12 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
             "Cite a real observation, quote the owner's exact words, supply a formula with its sources, or remove it.";
       case "formula_failed":
         if(issue.failure.reason==="requires_registered_calculator")return at+
-          "the quantity behind \""+issue.text+"\" requires typed quantity units. Call the registered calculate function with scoped, unit-aware operands and cite its display result.";
+          "the quantity behind \""+issue.text+"\" requires typed quantity units. Call platform.scenario.expression.v1 with authorized operand handles, then cite its result.";
+        if(issue.failure.reason==="result_mismatch")return at+
+          "the claim \""+issue.text+"\" disagrees with independent arithmetic (computed "+
+          issue.failure.computed+"). Call platform.scenario.expression.v1 with the authorized source handles and your intended operation. Use ONLY the returned result; otherwise remove the unsupported claim.";
         return at+"the formula behind \""+issue.text+"\" failed verification ("+issue.failure.reason+
-          "). Recompute it through the calculator or correct the formula/sources, or remove the claim.";
+          "). Call platform.scenario.expression.v1 with authorized operands, or correct the verifiable inputs and remove the unsupported number.";
       case "business_claim_uncited":
         return at+"\""+issue.text+"\" is phrased as a specific fact about the owner's own business "+
           "but has no real citation. A claim about THIS café must cite real data, never a quote or formula.";

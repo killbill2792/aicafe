@@ -3,6 +3,7 @@ import type { SupportedId } from "@/lib/metrics/p1Catalog";
 import type { Operand } from "./expression";
 import { evaluateRecipeCost,ingredientUsdUsGallonCents } from "@/lib/calc/ingredients";
 import { roundHalfUpToCent } from "@/lib/calc/money";
+import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import { staffCostLoadedCents } from "@/lib/calc/staff";
 
 /**
@@ -129,6 +130,23 @@ export function extractAtomicSnapshot(
 ):SnapshotExtraction|null{
   if(snapshot.currency!=="USD")return blocked("unsupported_currency");
   switch(key){
+    case "money.monthly_bills":
+    case "money.recurring_monthly_bills_cents": {
+      // The same snapshot, amount and monthly-normalization policy serve
+      // both reporting and calculator projection; never infer empty = zero.
+      if(snapshot.truncated.recurringCosts)return blocked("snapshot_recurring_costs_truncated");
+      const active=snapshot.sources.recurringCosts.filter(row=>row.active_to===null);
+      if(!active.length)return blocked("recurring_bills_not_configured");
+      if(active.some(row=>!safe(row.amount_cents)))return blocked("invalid_recurring_amount");
+      const total=totalMonthlyRecurringCostsCents(active.map(row=>({
+        amountCents:row.amount_cents,frequency:row.frequency,
+      })));
+      if(!safe(total))return blocked("invalid_monthly_recurring_total");
+      return result([{key:"value",name:"recorded monthly recurring bills",
+        field:key==="money.monthly_bills"?"totalCents":"value",
+        value:total,unit:"USD_cents"}],["complete_operating_cost_coverage_not_proven"],
+        active.some(row=>row.is_estimate)?["estimated_recurring_costs"]:[]);
+    }
     case "menu.catalog":
       if(snapshot.truncated.menu)return blocked("snapshot_menu_truncated");
       return result(snapshot.sources.menu.filter(row=>row.is_active&&
