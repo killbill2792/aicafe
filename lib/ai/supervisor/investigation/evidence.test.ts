@@ -544,3 +544,32 @@ describe("PR127 unitless typed-owner echo requires neutral context on BOTH sides
     expect(out.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
   });
 });
+
+
+describe("PR127 atomic owner date/time and unrestricted Spanish possessives",()=>{
+  it.each([
+    ["2026-10-19","2026-19-10"],
+    ["10/19/2026","19/10/2026"],
+    ["10/19","19/10"],
+    ["10:30","30:10"],
+    ["2026-10-19T10:30","2026-10-19T30:10"],
+  ])("rejects reassembled temporal claim %s -> %s", (ownerText,claim)=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:claim}));
+    expect(JSON.stringify(rendered.blocks)).not.toContain(claim);
+  });
+  it.each(["2026-10-19","10/19/2026","10/19","10:30","2026-10-19T10:30"])(
+    "keeps the owner's unchanged structured temporal value %s",claim=>{
+      const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText:claim})!;
+      expect(rendered.issues).toEqual([]);
+    });
+  it("does not treat date components as independently quoted numbers",()=>{
+    const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 19.",citations:[]}]),[],"en",{ownerText:"2026-10-19"})!;
+    expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"19"}));
+  });
+  it.each(["Mis empleados cuestan $5.","Mi alquiler es $5.","Tu proveedor cobra $5."])(
+    "requires an actual citation for Spanish owner facts: %s",text=>{
+      const rendered=renderInvestigationAnswer(answer([{kind:"advice",text,citations:[]}]),[],"es",{ownerText:"Assume $5."})!;
+      expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited",text:"$5"}));
+    });
+});
