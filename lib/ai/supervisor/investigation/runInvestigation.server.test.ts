@@ -1308,6 +1308,27 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
     expect(detectConflictingFacts([source1,source2,first,second])).toEqual([]);
     expect(detectConflictingFacts([source1,first,analyzed("r5","r1",2200)])).toHaveLength(1);
   });
+  it("separates derived analyses by source, operation, field and filter selector",()=>{
+    const period={period:{from:"2026-10-01",to:"2026-10-31"}};
+    const base1=recordObservation("r1","p3.money.expense_entries.v1",[],period);
+    const base2=recordObservation("r2","p3.money.expense_entries.v1",[],period);
+    const analysis=(id:string,sourceReadId:string,operation:string,field:string,filters:unknown[],v:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value:v}],unit:"USD_cents",sourceReadId,operation,field}};
+      const display=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",
+        input:{readId:sourceReadId,purpose:"dataset_analysis",operation,field,filters},
+        result,reference:null,display:display.display,displayKind:display.kind,displayRaw:display.raw};
+    };
+    const sum=analysis("r3","r1","sum","amountCents",[],1000);
+    const max=analysis("r4","r1","max","amountCents",[],600);
+    const differentField=analysis("r5","r1","sum","otherCents",[],300);
+    const differentFilter=analysis("r6","r1","sum","amountCents",[{field:"categoryCode",value:"rent"}],500);
+    const differentRead=analysis("r7","r2","sum","amountCents",[],2000);
+    expect(detectConflictingFacts([base1,base2,sum,max,differentField,differentFilter,differentRead])).toEqual([]);
+    const changed=analysis("r8","r1","sum","amountCents",[],1400);
+    expect(detectConflictingFacts([base1,sum,changed])).toHaveLength(1);
+  });
   it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
     const first=recordObservation("r1","p3.labor.employee_wages.v1",
       [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
