@@ -619,7 +619,8 @@ describe("declared decorative citations",()=>{
     const o=observation("r1","count",30);
     const result=renderInvestigationAnswer(answer([{kind:"evidence",
       text:"Found {{r1:value.count}} items 〔r9〕.",citations:["r1"]}]),[o],"en");
-    expect(result?.issues).toEqual(expect.arrayContaining([
-      expect.objectContaining({kind:"dropped_paragraph",reason:"unrecognized_numeral"})]));
+    // An entirely rejected paragraph produces no rendered reply. This is the
+    // intended fail-closed behavior for an unknown marker.
+    expect(result).toBeNull();
   });
 });
