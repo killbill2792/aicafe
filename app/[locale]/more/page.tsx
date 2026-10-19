@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth/requireUser";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import PageShell from "@/components/shared/PageShell";
+import SignOutButton from "@/components/more/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ export default async function MorePage() {
           </Link>
         ))}
       </div>
+      <div className="rounded-card-lg bg-card px-2"><SignOutButton labels={{ signOut: t("signOut"), signingOut: t("signingOut"), error: t("signOutError") }} /></div>
     </PageShell>
   );
 }
