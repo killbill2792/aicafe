@@ -123,7 +123,7 @@ export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$�
 /** Dates and clock times are indivisible claims. Checking each digit group
  * as a separate owner echo can authorize a date/time the owner never gave.
  * Use the same grammar for both the owner's sources and model output. */
-export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{4})(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2})?)?|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)(?![\p{L}\p{N}])`;
+export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2}|\s*[aApP]\.?[mM]\.?)?)?|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{2,4}|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP]\.?[mM]\.?)?)(?![\p{L}\p{N}])`;
 const TEMPORAL_SPANS=new RegExp(STRUCTURED_TEMPORAL_SPAN,"giu");
 const COMPLETE_TEMPORAL_SPAN=new RegExp("^(?:"+STRUCTURED_TEMPORAL_SPAN+")$","iu");
 export function isStructuredTemporalSpan(text:string):boolean{
@@ -143,9 +143,11 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   if(!sourceParsed)return null;
   const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)]
     .map(m=>({start:m.index,end:m.index+m[0].length}));
+  const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)].map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
     const text=match[0],start=match.index,end=start+text.length;
-    // Dates, years and clock times only count as complete quoted values.
+    // Do not treat an individual year, month, day, hour, or minute as
+    // an independently authored owner number.
     if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
