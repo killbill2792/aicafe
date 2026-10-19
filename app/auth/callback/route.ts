@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { authFlow, authLocale, safeCallbackDestination } from "@/lib/auth/callbackUtils";
+import { authFlow, authLocale, authTokenType, safeCallbackDestination, tokenDestination } from "@/lib/auth/callbackUtils";
 
 /** Backward-compatible PKCE callback for existing magic links and email confirmations. */
 export async function GET(request: Request) {
@@ -10,13 +10,15 @@ export async function GET(request: Request) {
   const flow = authFlow(searchParams.get("flow"));
   const next = safeCallbackDestination(locale, searchParams.get("next"), flow);
   const code = searchParams.get("code");
+  const tokenHash = searchParams.get("token_hash");
+  const tokenType = authTokenType(searchParams.get("type"));
   const url = new URL(next, origin);
   const fallback = new URL(`/${locale}/login?error=auth`, origin);
-  if (!code || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  if ((!code && !(tokenHash && tokenType)) || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     return NextResponse.redirect(fallback);
   }
 
-  const response = NextResponse.redirect(url);
+  const response = NextResponse.redirect(tokenHash && tokenType ? new URL(tokenDestination(locale, tokenType), origin) : url);
   const cookieStore = await cookies();
   const supabase = createServerClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
     cookies: {
@@ -34,6 +36,8 @@ export async function GET(request: Request) {
       },
     },
   });
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { error } = tokenHash && tokenType
+    ? await supabase.auth.verifyOtp({ type: tokenType, token_hash: tokenHash })
+    : await supabase.auth.exchangeCodeForSession(code!);
   return error ? NextResponse.redirect(fallback) : response;
 }
