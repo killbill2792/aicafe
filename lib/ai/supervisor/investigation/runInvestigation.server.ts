@@ -24,7 +24,7 @@ import {buildResearchRegistration} from "./research.server";
 import {observationDisplay,observationReference,investigationLabels,investigationReply,
   renderInvestigationAnswer,renderUnverifiedAnswer,citationCautionWarnings,buildClaimFeedback,
   type Observation,type Locale,type ClaimIssue} from "./evidence";
-import {verifyFormulaEntry,resolvedPeriod} from "./formulaVerification";
+import {verifyFormulaEntry,observationPeriod} from "./formulaVerification";
 import {answerSchema,reviewSchema,formulaExtractionSchema,INVESTIGATION_LIMITS,type InvestigationAnswer} from "./protocol";
 import {requestInvestigation,isToolCallSignal,type InvestigationTransport,type InvestigationUsage,
   type ToolDef,type ToolCallSignal} from "./model.server";
@@ -108,7 +108,7 @@ export function detectConflictingFacts(observations:readonly Observation[]):
   const groups=new Map<string,{field:string;id:string;display:string;raw:number}[]>();
   for(const o of observations){
     if(!o.displayKind)continue;
-    const inputPeriod=resolvedPeriod(o.input);
+    const inputPeriod=observationPeriod(o,observations)??"unresolved:"+o.id;
     for(const [path,kind] of Object.entries(o.displayKind)){
       if(kind!=="money"&&kind!=="percent")continue;
       const raw=o.displayRaw?.[path];
