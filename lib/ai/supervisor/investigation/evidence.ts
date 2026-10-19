@@ -17,7 +17,9 @@ export type Observation={id:string;capabilityId:string;input:unknown;result:Reco
    * also earns a boxed fact alongside the answer's sentence, never to invent
    * one. */
   displayKind?:Record<string,"money"|"percent">;displayRaw?:Record<string,number>;
-  datasetFields?:unknown;calculation?:boolean};
+  datasetFields?:unknown;calculation?:boolean;
+  /** Source period keys are attached only by the trusted registered calculator dispatcher. */
+  sourcePeriods?:readonly string[];}
 export const investigationLabels=(locale:Locale)=>({en,es,ar}[locale].SupervisorInvestigation);
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const clean=(v:string)=>v.replace(/[\p{Cc}\p{Cf}]/gu," ").trim();
