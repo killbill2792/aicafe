@@ -304,6 +304,53 @@ describe("authoritative P3 source projection",()=>{
     expect(projectP1Evidence([originals[0]],cafe,originals[0].clause,null,[],underlying)
       .operands[0].value).toBe(750000);
   });
+  it("deduplicates all profitability and spending scalar aliases against structured financial facts",()=>{
+    const period={from:"2026-10-01",to:"2026-10-15"};
+    const rows=[
+      ["money.recorded_spending",{totalCents:18000}],
+      ["money.recorded_spending_cents",18000],
+      ["money.profitability",{netSalesCents:90000,totalCostsCents:60000,
+        ownerProfitCents:30000,operatingMargin:1/3,coveredSalesDays:15,expectedSalesDays:15}],
+      ["sales.net_sales_cents",90000],
+      ["money.total_costs_cents",60000],
+      ["money.owner_profit_cents",30000],
+    ] as const;
+    const facts:ShadowEvidence[]=rows.map(([id,value])=>{
+      const purposeById:Record<string,string>={
+        "money.recorded_spending":"recorded_actual_spending",
+        "money.recorded_spending_cents":"actual_expense_entries_total",
+        "money.profitability":"actual_period_financial_review",
+        "sales.net_sales_cents":"actual_period_net_sales",
+        "money.total_costs_cents":"actual_period_total_costs",
+        "money.owner_profit_cents":"actual_period_owner_profit",
+      };
+      return {clause:"Summarize my sales and expenses for the period",
+        capabilityId:"p3."+id+".v1",status:"partial",reason:null,
+        result:{status:"partial",id,version:1,
+          query:{id,version:1,purpose:purposeById[id],period},
+          unit:typeof value==="number"?"USD_cents":"typed_record",
+          valueKind:typeof value==="number"?"money_cents":"record",
+          value,quality,completeness:"partial",actuality:"actual",
+          provenance:{canonicalReaderId:readers[id],readerContractVersion:1,
+            selectorContractId:id+".selector",selectorContractVersion:1,
+            purpose:purposeById[id],asOf,timezone:"America/Los_Angeles",
+            sourceRevision:null},freshness:{asOf,capturedAt:null,stale:null}}};
+    });
+    const grouped=projectP1Evidence(facts,cafe,"Summarize my sales and expenses for the period",
+      null,[],undefined,"authorized_selection");
+    expect(grouped.missing).not.toContain("conflicting_canonical_read_alias");
+    expect(grouped.operands).toHaveLength(4);
+    expect(grouped.operands.map(o=>o.sourceId).sort()).toEqual([
+      "money.profitability","money.profitability","money.profitability",
+      "money.recorded_spending"]);
+    const conflicting=facts.map(x=>x);
+    conflicting[1]={...facts[1],result:{...(facts[1].result as Record<string,unknown>),value:18001}};
+    const invalid=projectP1Evidence(conflicting,cafe,
+      "Summarize my sales and expenses for the period",null,[],undefined,"authorized_selection");
+    expect(invalid.missing).toContain("conflicting_canonical_read_alias");
+    expect(invalid.operands.every(o=>o.sourceId!=="money.recorded_spending"&&
+      o.sourceId!=="money.recorded_spending_cents")).toBe(true);
+  });
   it("does not attach an epoch to an independently fetched unsupported supplier quote",()=>{
     const input={clause:"Compare oat milk",capabilityId:"p3.supplies.quotes.v1",
       status:"partial" as const,reason:null,
