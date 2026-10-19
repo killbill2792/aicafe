@@ -392,3 +392,45 @@ describe("third review: scheduling scope and leading decimals",()=>{
       .toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
 });
+
+
+describe("PR127 derived period lineage and Unicode sign regressions",()=>{
+  function money(id:string,cents:number,input:unknown={}):Observation{
+    return observation(id,"priceCents",cents,"verified",input);
+  }
+  function dataset(id:string,sourceReadId:string,cents:number):Observation{
+    const result={id:"platform.dataset.analysis",status:"partial",
+      value:{groups:[{group:null,value:cents}],unit:"USD_cents",sourceReadId,operation:"sum",field:"priceCents"}};
+    const displayed=observationDisplay(result,"en");
+    return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{readId:sourceReadId},result,reference:null,
+      display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+  }
+  it("rejects a derived monthly total combined with a pointer from another month",()=>{
+    const october=money("r1",1000,{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const sum=dataset("r2","r1",1000);
+    const september=money("r3",500,{period:{from:"2026-09-01",to:"2026-09-30"}});
+    const actual=verifyFormulaEntry(entry({claim:"$5",formula:"a - b",variables:{
+      a:{value:10,source:"r2:value.groups.0.value"},b:{value:5,source:"r3:value.priceCents"}
+    }}),"",[october,sum,september],"en");
+    expect(actual).toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+  it("allows a derived result and direct read within the same month",()=>{
+    const period={period:{from:"2026-10-01",to:"2026-10-31"}};
+    const read=money("r1",1000,period);
+    const sum=dataset("r2","r1",1000);
+    const other=money("r3",500,period);
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a - b",variables:{
+      a:{value:10,source:"r2:value.groups.0.value"},b:{value:5,source:"r3:value.priceCents"}
+    }}),"",[read,sum,other],"en")).toEqual({ok:true,value:5});
+  });
+  it("rejects a derived result whose referenced source is missing",()=>{
+    const sum=dataset("r2","r99",1000);
+    expect(verifyFormulaEntry(entry({claim:"$10",formula:"a",variables:{
+      a:{value:10,source:"r2:value.groups.0.value"}
+    }}),"",[sum],"en").ok).toBe(false);
+  });
+  it.each(["−$5","﹣$5","－$5"])("treats %s as a negative owner amount, never positive",owner=>{
+    expect(findOwnerQuotedSpan(owner,"$5","en")).toBeNull();
+    expect(findOwnerQuotedSpan(owner,"-$5","en")).not.toBeNull();
+  });
+});
