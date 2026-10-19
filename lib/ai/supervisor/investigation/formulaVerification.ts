@@ -59,7 +59,7 @@ export function normalizeDigits(text:string):string{
  * verification against the wrong value. */
 function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number}|null{
   const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
-  const stripped=normalizeDigits(text).replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
+  const stripped=normalizeDigits(text).replace(/[−﹣－]/gu,"-").replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
   const cleaned=locale==="es"
     ?(/^[-]?\./u.test(stripped)?stripped:stripped.replace(/\./gu,"").replace(",","."))
     :stripped.replace(/,/gu,"");
@@ -119,7 +119,7 @@ function classifyOwnerUnit(text:string):ArithmeticUnit{
  * takes units exclusively from the owner's matched span. Numeric boundaries support
  * Unicode letters/digits; signs remain attached to genuine negatives. */
 // Shared with claim rendering so units cannot fall outside the checked span.
-export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:-\s*)?(?:[$€£¥]\s*)?(?:-\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
+export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$€£¥]\s*)?(?:[-−﹣－]\s*)?(?:\p{Nd}(?:[,.٫٬]?\p{Nd})*|[.,٫]\p{Nd}+)(?:\s*(?:[%٪]|(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)(?!\p{L})))?(?![\p{L}\p{N}])`;
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
@@ -151,6 +151,37 @@ export function resolvedPeriod(input:unknown):string{
   ]);
   return [...new Set(selectors)].sort().join("|");
 }
+/** Carry authoritative temporal scope through derived results. Dataset
+ * analysis stores its source-read ID rather than copying the original dates
+ * into its own input. Never interpret missing, cyclic or incompatible
+ * lineage as an unscoped numerical fact. */
+function observationPeriod(observation:Observation,observations:readonly Observation[],
+  seen:ReadonlySet<string>=new Set()):string|null{
+  if(seen.has(observation.id))return null;
+  const visited=new Set(seen);visited.add(observation.id);
+  const periods=new Set<string>();
+  const own=resolvedPeriod(observation.input);
+  if(own)periods.add(own);
+  const result=observation.result;
+  const derived=isRecord(result.value)?result.value:null;
+  const parentId=typeof derived?.sourceReadId==="string"?derived.sourceReadId:
+    typeof result.sourceReadId==="string"?result.sourceReadId:null;
+  const ids=new Set<string>();
+  if(parentId)ids.add(parentId);
+  if(Array.isArray(result.sourceHandles))for(const handle of result.sourceHandles){
+    if(typeof handle!=="string")continue;
+    const dataset=/^dataset:(r\d+):/u.exec(handle);
+    if(dataset)ids.add(dataset[1]);
+  }
+  for(const id of ids){
+    const parent=observations.find(o=>o.id===id);
+    if(!parent)return null;
+    const period=observationPeriod(parent,observations,visited);
+    if(period===null)return null;
+    if(period)periods.add(period);
+  }
+  return periods.size>1?null:([...periods][0]??"");
+}
 /** Resolve one declared variable's value, unit AND source period from its
  * OWN independent source, never from the model's claimed `value` field. A
  * pointer resolves against a real observation's recorded raw field (its
@@ -170,7 +201,8 @@ function resolveVariable(source:string,observations:readonly Observation[],owner
     const raw=observation.displayRaw?.[path];
     if(typeof raw!=="number")return null;
     const kind=observation.displayKind?.[path];
-    const period=resolvedPeriod(observation.input);
+    const period=observationPeriod(observation,observations);
+    if(period===null)return null;
     // Money is stored as integer CENTS and percent as integer BASIS POINTS
     // everywhere in this project (CLAUDE.md rule #1; observationDisplay's
     // own raw[] convention) -- but an owner-quoted money/percent source is
