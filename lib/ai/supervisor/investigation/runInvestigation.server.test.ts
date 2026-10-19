@@ -1434,6 +1434,46 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(result.reply.status).not.toBe("unavailable");
   });
 
+  it("rejects a parallel batch of semantically identical selectors with reversed date keys",async()=>{
+    const periodA={from:"2026-10-01",to:"2026-10-15"};
+    const periodB={to:"2026-10-15",from:"2026-10-01"};
+    const first=query("money.expense_entries",{period:periodA});
+    const second={period:periodB,purpose:first.purpose,version:1,id:"money.expense_entries"};
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:true,reason:"A clarification is safe."});
+      if(steps++===0)return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},output:[
+          {type:"function_call",call_id:"a",name:capabilityToolName("p3.money.expense_entries.v1"),
+            arguments:JSON.stringify(first)},
+          {type:"function_call",call_id:"b",name:capabilityToolName("p3.money.expense_entries.v1"),
+            arguments:JSON.stringify(second)}]}));
+      return response(answer([{kind:"clarification",
+        text:"Which expense breakdown should I review?",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Review my spending from October 1 through October 15."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+  });
+
+  it("rejects serial repeats even when equivalent JSON keys arrive in another order",async()=>{
+    const initial=query("menu.catalog");
+    const reordered={purpose:initial.purpose,version:1,id:"menu.catalog"};
+    const result=await runSupervisorTurn({...base,text:"What is my Iced Latte price?"},
+      transportFor([
+        read("p3.menu.catalog.v1",initial),
+        read("p3.menu.catalog.v1",reordered),
+        answer([{kind:"evidence",text:"The recorded listed price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(result.usage.toolCallCount).toBe(1);
+    expect(JSON.stringify(result.reply.blocks)).toContain("$5.25");
+  });
+
   it("uses the structured monthly-bills read as a snapshot-backed cents calculator operand",async()=>{
     const original=p1.getMockImplementation()!;
     p1.mockImplementation(async(a,b,c)=>{
