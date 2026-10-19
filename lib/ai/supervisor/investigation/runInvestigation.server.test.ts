@@ -1329,6 +1329,41 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
     const changed=analysis("r8","r1","sum","amountCents",[],1400);
     expect(detectConflictingFacts([base1,sum,changed])).toHaveLength(1);
   });
+  it("compares derived grouped totals by group label, regardless of output order",()=>{
+    const source=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"a",amountCents:100},{id:"b",amountCents:200}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const analyzed=(id:string,groups:{group:string;value:number}[]):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups,unit:"USD_cents",sourceReadId:"r1"}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{
+        readId:"r1",purpose:"dataset_analysis",operation:"sum",field:"amountCents",groupBy:"category",filters:[]},
+        result,reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
+    const first=analyzed("r2",[{group:"milk",value:100},{group:"coffee",value:200}]);
+    const sameReordered=analyzed("r3",[{group:"coffee",value:200},{group:"milk",value:100}]);
+    expect(detectConflictingFacts([source,first,sameReordered])).toEqual([]);
+    const changed=analyzed("r4",[{group:"coffee",value:200},{group:"milk",value:150}]);
+    const conflicts=detectConflictingFacts([source,first,changed]);
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0].values.map(v=>v.id).sort()).toEqual(["r2","r4"]);
+  });
+  it("treats reordered AND-filters as equivalent but distinct filters as separate analyses",()=>{
+    const source=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"a",amountCents:100}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const a={field:"category",operator:"eq",value:"supplies"};
+    const b={field:"status",operator:"eq",value:"actual"};
+    const analyzed=(id:string,filters:object[],value:number):Observation=>{
+      const result={id:"platform.dataset.analysis",status:"partial",
+        value:{groups:[{group:null,value}],unit:"USD_cents",sourceReadId:"r1"}};
+      const displayed=observationDisplay(result,"en");
+      return {id,capabilityId:"p3.platform.dataset.analysis.v1",input:{
+        readId:"r1",purpose:"dataset_analysis",operation:"sum",field:"amountCents",groupBy:null,filters},
+        result,reference:null,display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
+    };
+    expect(detectConflictingFacts([source,analyzed("r2",[a,b],100),analyzed("r3",[b,a],200)])).toHaveLength(1);
+    expect(detectConflictingFacts([source,analyzed("r2",[a,b],100),analyzed("r3",[a],200)])).toEqual([]);
+  });
   it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
     const first=recordObservation("r1","p3.labor.employee_wages.v1",
       [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
