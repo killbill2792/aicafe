@@ -357,8 +357,8 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
         return issue.matchedObservation
           ?at+"the number \""+issue.text+"\" exactly matches "+issue.matchedObservation.id+"'s "+
             issue.matchedObservation.path+" field. Cite it with the real display token instead of writing it freehand."
-          :at+"the number \""+issue.text+"\" has no citation, no exact owner quote, and no verified formula. "+
-            "Cite a real observation, quote the owner's exact words, supply a formula with its sources, or remove it.";
+          :at+"the number \""+issue.text+"\" has no citation, exact owner quote, or independently verified formula. "+
+            "For derived arithmetic CALL platform.scenario.expression.v1 with the supplied authorized operand handles, then cite its returned calculation. Otherwise provide a verifiable formula with sources or remove the number.";
       case "formula_failed":
         if(issue.failure.reason==="requires_registered_calculator")return at+
           "the quantity behind \""+issue.text+"\" requires typed quantity units. Call platform.scenario.expression.v1 with authorized operand handles, then cite its result.";
@@ -368,8 +368,8 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
         return at+"the formula behind \""+issue.text+"\" failed verification ("+issue.failure.reason+
           "). Call platform.scenario.expression.v1 with authorized operands, or correct the verifiable inputs and remove the unsupported number.";
       case "business_claim_uncited":
-        return at+"\""+issue.text+"\" is phrased as a specific fact about the owner's own business "+
-          "but has no real citation. A claim about THIS café must cite real data, never a quote or formula.";
+        return at+"\""+issue.text+"\" is phrased as a specific fact about the owner's café "+
+          "without an observation citation. For arithmetic CALL platform.scenario.expression.v1 and cite the returned calculated observation; for factual numbers cite the actual source. Never assert a scenario as observed revenue.";
     }
   };
   return [...new Set(issues.slice(0,3).map(describe))].join(" ");
