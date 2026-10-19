@@ -1094,7 +1094,8 @@
     "useMagicLink": "الدخول برابط عبر البريد",
     "usePassword": "الدخول بكلمة المرور",
     "noAccount": "جديد في AI Café؟",
-    "createAccount": "إنشاء حساب"
+    "createAccount": "إنشاء حساب",
+    "callbackError": "انتهت صلاحية رابط الدخول أو تعذر التحقق منه. اطلب رابطًا جديدًا وحاول مرة أخرى."
   },
   "Operations": {
     "teamTitle": "فريقك بالذكاء الاصطناعي",
