@@ -459,3 +459,15 @@ describe("PR127 registered direct calculation handle scope",()=>{
       .toEqual({ok:true,value:5});
   });
 });
+
+describe("temporal components never authorize a formula source",()=>{
+  it.each([
+    ["2026-10-19","2026"],["2026-10-19","10"],["2026-10-19","19"],
+    ["10/19/2026","19"],["10:30","30"],["2026-10-19T10:30","10"],
+  ])("does not turn date/time %s into numeric operand %s",(owner,source)=>{
+    expect(findOwnerQuotedSpan(owner,source,"en")).toBeNull();
+  });
+  it("still matches a separate number outside the quoted date",()=>{
+    expect(findOwnerQuotedSpan("2026-10-19 and $5.","$5","en")).toBe("$5");
+  });
+});
