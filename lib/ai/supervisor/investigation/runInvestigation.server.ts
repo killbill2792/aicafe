@@ -282,6 +282,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
+        // Complete-but-unsupported is still a delivered response, never an
+        // assertion of facts the reviewer found unsupported.
+        if(accReview&&!isToolCallSignal(accReview)&&!accReview.supported&&accReview.complete)
+          return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
+            blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
+              text:labels.unverifiedWarning},
+              {type:"text",text:labels.unavailable}]},usage:{...usage}};
         if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
           accumulatedRescue=false;
         else if(!accReview.complete && bestAccumulated)
@@ -713,6 +720,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
+      if(review&&!isToolCallSignal(review)&&!review.supported&&review.complete){
+        // An OR-positive verdict must produce a user-visible reply, but the
+        // reviewer has NOT certified these factual claims. Never publish
+        // the rejected draft, even with a disclaimer about invented numbers.
+        return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
+          blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
+            text:labels.unverifiedWarning},
+            {type:"text",text:labels.unavailable}]},usage:{...usage}};
+      }
       if(!review||isToolCallSignal(review)||!review.supported){
         // A valid verdict always carries its own specific reason now (§6):
         // name exactly what the reviewer found, instead of the generic line
