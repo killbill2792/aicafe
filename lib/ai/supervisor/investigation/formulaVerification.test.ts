@@ -13,20 +13,20 @@ const entry=(e:Partial<FormulaEntry>):FormulaEntry=>({claim:"4.83",formula:"a",v
 
 describe("verifyFormulaEntry -- owner-quoted sources",()=>{
   it("verifies a formula whose inputs are exact owner quotes and whose result matches the claim",()=>{
-    const result=verifyFormulaEntry(entry({formula:"unitsSold * pricePerUnit",claim:"4.83",
-      variables:{unitsSold:{value:3,source:"3"},pricePerUnit:{value:1.61,source:"$1.61"}}}),
-      "I sold 3 drinks at $1.61 each.",[],"en");
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$4.83",
+      variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}),
+      "Assume $3 and $1.83.",[],"en");
     expect(result).toEqual({ok:true,value:4.83});
   });
   it("rejects a variable whose quoted source does not actually appear in the owner's message",()=>{
     const result=verifyFormulaEntry(entry({variables:{a:{value:4.83,source:"$9.99"}}}),
-      "I sold 3 drinks at $1.61 each.",[],"en");
+      "Assume $3 and $1.83.",[],"en");
     expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
   });
   it("rejects when the recomputed arithmetic does not match the paragraph's stated claim",()=>{
-    const result=verifyFormulaEntry(entry({formula:"unitsSold * pricePerUnit",claim:"9.00",
-      variables:{unitsSold:{value:3,source:"3"},pricePerUnit:{value:1.61,source:"$1.61"}}}),
-      "I sold 3 drinks at $1.61 each.",[],"en");
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$9.00",
+      variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}),
+      "Assume $3 and $1.83.",[],"en");
     expect(result.ok).toBe(false);
     if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
   });
@@ -35,7 +35,7 @@ describe("verifyFormulaEntry -- owner-quoted sources",()=>{
 describe("verifyFormulaEntry -- observation-pointer sources",()=>{
   it("verifies a formula whose input resolves to a real observation's recorded field, normalized to dollars",()=>{
     const o=observation("r1","priceCents",525);
-    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"5.25",
+    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"$5.25",
       variables:{priceCents:{value:525,source:"r1:value.priceCents"}}}),"",[o],"en");
     expect(result).toEqual({ok:true,value:5.25});
   });
@@ -62,19 +62,20 @@ describe("verifyFormulaEntry -- owner-quote matching is exact-boundary, not subs
     expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
   });
   it("matches a legitimately-quoted number even when the owner's formatting differs ($1.45 owner text, 1.45 declared source)",()=>{
-    const result=verifyFormulaEntry(entry({formula:"a",claim:"1.45",variables:{a:{value:1.45,source:"1.45"}}}),
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"$1.45",variables:{a:{value:1.45,source:"1.45"}}}),
       "The special is $1.45 today.",[],"en");
     expect(result).toEqual({ok:true,value:1.45});
   });
-  it("matches a legitimately-quoted number in the other direction (1.45 owner text, $1.45 declared source)",()=>{
-    const result=verifyFormulaEntry(entry({formula:"a",claim:"1.45",variables:{a:{value:1.45,source:"$1.45"}}}),
+  it("requires the typed calculator when the owner did not establish a monetary unit",()=>{
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"$1.45",variables:{a:{value:1.45,source:"$1.45"}}}),
       "The special is 1.45 today.",[],"en");
-    expect(result).toEqual({ok:true,value:1.45});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it("matches an Arabic-Indic numeral owner quote against an ASCII-digit declared source (Codex finding, non-ASCII numerals)",()=>{
     const result=verifyFormulaEntry(entry({formula:"a",claim:"100",variables:{a:{value:100,source:"100"}}}),
       "بعنا ١٠٠ مشروب.",[],"ar");
-    expect(result).toEqual({ok:true,value:100});
+    expect(findOwnerQuotedSpan("بعنا ١٠٠ مشروب.","100","ar")).toBe("١٠٠");
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it("still never lets a declared source of \"10\" match inside an Arabic-Indic owner-written \"١٠٠\"",()=>{
     const result=verifyFormulaEntry(entry({formula:"a",claim:"10",variables:{a:{value:10,source:"10"}}}),
@@ -85,9 +86,9 @@ describe("verifyFormulaEntry -- owner-quote matching is exact-boundary, not subs
 
 describe("verifyFormulaEntry -- locale-aware decimal separator (Codex finding)",()=>{
   it("reads an es-locale owner's comma as a decimal point, not a thousands grouping character",()=>{
-    const result=verifyFormulaEntry(entry({formula:"unitsSold * pricePerUnit",claim:"4,83",
-      variables:{unitsSold:{value:3,source:"3"},pricePerUnit:{value:1.61,source:"1,61"}}}),
-      "Vendí 3 bebidas a 1,61 cada una.",[],"es");
+    const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$4,83",
+      variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1,83"}}}),
+      "Sumar $3 y $1,83.",[],"es");
     expect(result).toEqual({ok:true,value:4.83});
   });
   it("never lets an es-locale \"1,61\" (one dollar sixty-one) verify as the integer 161",()=>{
@@ -97,7 +98,7 @@ describe("verifyFormulaEntry -- locale-aware decimal separator (Codex finding)",
   });
   it("reads the model's own claim text in the same locale, even for a pointer-sourced (locale-independent) value",()=>{
     const o=observation("r1","priceCents",525);
-    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"5,25",
+    const result=verifyFormulaEntry(entry({formula:"priceCents",claim:"$5,25",
       variables:{priceCents:{value:525,source:"r1:value.priceCents"}}}),"",[o],"es");
     expect(result).toEqual({ok:true,value:5.25});
   });
@@ -112,10 +113,10 @@ describe("verifyFormulaEntry -- signed owner numbers keep their sign (Codex find
   it("matches a declared negative source against the owner's own signed figure",()=>{
     const result=verifyFormulaEntry(entry({formula:"a",claim:"-5",variables:{a:{value:-5,source:"-5"}}}),
       "Rent alone could cost -5 some months.",[],"en");
-    expect(result).toEqual({ok:true,value:-5});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it("matches a declared negative source written with a currency symbol (\"-$5\")",()=>{
-    const result=verifyFormulaEntry(entry({formula:"a",claim:"-5",variables:{a:{value:-5,source:"-$5"}}}),
+    const result=verifyFormulaEntry(entry({formula:"a",claim:"-$5",variables:{a:{value:-5,source:"-$5"}}}),
       "I lost -$5 some months.",[],"en");
     expect(result).toEqual({ok:true,value:-5});
   });
@@ -128,11 +129,11 @@ describe("verifyFormulaEntry -- unit-aware verification (Codex finding #1)",()=>
       "I sold 3 drinks and spent $2 on supplies.",[],"en");
     expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
   });
-  it("still accepts a scalar multiplied by a money amount (a unit price times a quantity)",()=>{
+  it("routes quantity times unit-price arithmetic through the registered typed calculator",()=>{
     const result=verifyFormulaEntry(entry({formula:"units * price",claim:"4.83",
       variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}),
       "I sold 3 drinks at $1.61 each.",[],"en");
-    expect(result).toEqual({ok:true,value:4.83});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it("rejects adding a plain observation-pointer count to a money-pointer amount",()=>{
     const count=observation("r1","quantitySoldLast28Days",10);
@@ -202,11 +203,11 @@ describe("verifyFormulaEntry -- percent applied as a multiplicative rate, not a 
     expect(result.ok).toBe(false);
     if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
   });
-  it("does NOT scale a plain scalar multiplied by a percent (counting rate-units, not a dimension change)",()=>{
+  it("routes quantity times percent arithmetic through the registered typed calculator",()=>{
     const result=verifyFormulaEntry(entry({formula:"count * rate",claim:"30%",
       variables:{count:{value:3,source:"3"},rate:{value:10,source:"10%"}}}),
       "Apply the 10% rate 3 times.",[],"en");
-    expect(result).toEqual({ok:true,value:30});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
 });
 
@@ -214,7 +215,7 @@ describe("findOwnerQuotedSpan -- a hyphenated date/range is never misread as a n
   it("still matches an unsigned day-of-month inside a plain ISO date the owner wrote verbatim",()=>{
     const result=verifyFormulaEntry(entry({formula:"a",claim:"5",variables:{a:{value:5,source:"5"}}}),
       "We opened on 2026-10-05.",[],"en");
-    expect(result).toEqual({ok:true,value:5});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
 });
 
@@ -223,13 +224,13 @@ describe("verifyFormulaEntry -- computed result unit must match an explicitly-de
     const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"$5",
       variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
       "I covered 3 drinks and 2 shifts.",[],"en");
-    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
-  it("still accepts the same scalar result when the claim is left undecorated (no fabrication risk -- the number itself is still independently recomputed)",()=>{
+  it("rejects untyped quantity results even when the claim is undecorated",()=>{
     const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"5",
       variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
       "I covered 3 drinks and 2 shifts.",[],"en");
-    expect(result).toEqual({ok:true,value:5});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it("rejects a scalar result dressed up as a claim whose unit is written as a WORD, not a symbol (Codex finding)",()=>{
     // CLAIM_SPAN (evidence.ts) now folds a trailing currency WORD into the
@@ -239,7 +240,7 @@ describe("verifyFormulaEntry -- computed result unit must match an explicitly-de
     const result=verifyFormulaEntry(entry({formula:"drinks + shifts",claim:"5 dollars",
       variables:{drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),
       "I covered 3 drinks and 2 shifts.",[],"en");
-    expect(result).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+    expect(result).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
 });
 
@@ -272,8 +273,8 @@ describe("verifyFormulaEntry -- rejects combining data from two different real p
 describe("verifyFormulaEntry -- rejects a sub-cent money claim (Codex finding)",()=>{
   it("never lets an exact sub-cent result ($9.67 / 2 = $4.835) verify, even though it matches the claim precisely",()=>{
     const result=verifyFormulaEntry(entry({formula:"total / split",claim:"$4.835",
-      variables:{total:{value:9.67,source:"$9.67"},split:{value:2,source:"2"}}}),
-      "Split the $9.67 bill 2 ways.",[],"en");
+      variables:{total:{value:9.67,source:"$9.67"},split:{value:200,source:"200%"}}}),
+      "Divide $9.67 by 200%.",[],"en");
     expect(result).toEqual({ok:false,failure:{reason:"sub_cent_precision"}});
   });
   it("still accepts a whole-cent money result even when the claim is written with a trailing zero",()=>{
@@ -324,7 +325,7 @@ describe("currency and monetary subunits",()=>{
 describe("PR127 second-review source boundaries",()=>{
   it("never invents an operand's money dimension from model source decoration",()=>{
     expect(verifyFormulaEntry(entry({claim:"$10",formula:"a + a",variables:{a:{value:5,source:"$5"}}}),
-      "I have 5 employees.",[],"en")).toEqual({ok:false,failure:{reason:"incompatible_units"}});
+      "I have 5 employees.",[],"en")).toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
   it.each(["25 dollars","610 dollars","1 dollar"])("rejects a fragment of an Arabic-formatted owner amount: %s",source=>{
     expect(verifyFormulaEntry(entry({claim:"25",formula:"a",variables:{a:{value:25,source}}}),
@@ -332,7 +333,7 @@ describe("PR127 second-review source boundaries",()=>{
   });
   it.each(["ar","en","es"] as const)("reads Arabic grouping/decimal punctuation as a whole amount in %s",locale=>{
     const text=locale==="es"?"1610,25":"1610.25";
-    expect(verifyFormulaEntry(entry({claim:text,formula:"a",variables:{a:{value:1610.25,source:text}}}),
+    expect(verifyFormulaEntry(entry({claim:"$"+text,formula:"a",variables:{a:{value:1610.25,source:text}}}),
       "السعر ١٬٦١٠٫٢٥ دولار.",[],locale)).toEqual({ok:true,value:1610.25});
   });
   it("rejects an unused pointer declaration",()=>{
@@ -355,5 +356,39 @@ describe("self-review: leading decimals and spaced negative signs",()=>{
   it.each(["- $5","$-5","$ - 5"])("does not authorize a positive echo from %s",owner=>{
     expect(findOwnerQuotedSpan(owner,"$5","en")).toBeNull();
     expect(findOwnerQuotedSpan(owner,"-$5","en")).not.toBeNull();
+  });
+});
+
+describe("third review: scheduling scope and leading decimals",()=>{
+  it.each([false,true])("rejects money combined across schedule weeks (nested=%s)",nested=>{
+    const scope=(week:string)=>nested?{request:{week}}:{week};
+    const a=observation("r1","priceCents",1000,"verified",scope("2026-10-19"));
+    const b=observation("r2","priceCents",500,"verified",scope("2026-10-26"));
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a - b",variables:{
+      a:{value:10,source:"r1:value.priceCents"},b:{value:5,source:"r2:value.priceCents"}}}),"",[a,b],"en"))
+      .toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+  it("accepts matching weeks through top-level and nested readers",()=>{
+    const a=observation("r1","priceCents",1000,"verified",{week:"2026-10-19"});
+    const b=observation("r2","priceCents",500,"verified",{request:{week:"2026-10-19"}});
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a - b",variables:{
+      a:{value:10,source:"r1:value.priceCents"},b:{value:5,source:"r2:value.priceCents"}}}),"",[a,b],"en"))
+      .toEqual({ok:true,value:5});
+  });
+  it("rejects owner quotes mixed with week-scoped data",()=>{
+    const a=observation("r1","priceCents",1000,"verified",{request:{week:"2026-10-19"}});
+    expect(verifyFormulaEntry(entry({claim:"$5",formula:"a - b",variables:{
+      a:{value:10,source:"r1:value.priceCents"},b:{value:5,source:"$5"}}}),"Last week $5.",[a],"en"))
+      .toEqual({ok:false,failure:{reason:"incompatible_periods"}});
+  });
+  it("preserves a dot-leading amount in Spanish rather than inflating it",()=>{
+    expect(findOwnerQuotedSpan(".50 dollars","50 dollars","es")).toBeNull();
+    expect(verifyFormulaEntry(entry({claim:"$0,50",formula:"a",variables:{a:{value:0.5,source:".50 dollars"}}}),
+      ".50 dollars",[],"es")).toEqual({ok:true,value:0.5});
+  });
+  it("requires registered quantity arithmetic rather than adding drinks to shifts",()=>{
+    expect(verifyFormulaEntry(entry({claim:"5",formula:"drinks + shifts",variables:{
+      drinks:{value:3,source:"3"},shifts:{value:2,source:"2"}}}),"3 drinks and 2 shifts",[],"en"))
+      .toEqual({ok:false,failure:{reason:"requires_registered_calculator"}});
   });
 });

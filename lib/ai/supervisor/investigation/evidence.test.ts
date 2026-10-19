@@ -186,11 +186,11 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
   });
   it("keeps a freehand number backed by a verified formula entry, tagged as a computed claim",()=>{
     const rendered=renderInvestigationAnswer(answer([
-      {kind:"advice",text:"At 3 drinks and $1.61 each, that comes to $4.83.",citations:[],
-        formulas:[{claim:"$4.83",formula:"units * price",
-          variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}]},
-    ]),[],"en",{ownerText:"If I sell 3 drinks at $1.61 each..."});
-    expect(rendered!.blocks).toEqual([{type:"text",text:"At 3 drinks and $1.61 each, that comes to $4.83."}]);
+      {kind:"advice",text:"With $3 and $1.83, that comes to $4.83.",citations:[],
+        formulas:[{claim:"$4.83",formula:"a + b",
+          variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}]},
+    ]),[],"en",{ownerText:"Assume $3 and $1.83."});
+    expect(rendered!.blocks).toEqual([{type:"text",text:"With $3 and $1.83, that comes to $4.83."}]);
     expect(rendered!.hasComputedClaim).toBe(true);
     expect(rendered!.issues).toEqual([]);
   });
@@ -206,11 +206,11 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
   });
   it("masks a freehand number whose declared formula fails verification, without touching the rest",()=>{
     const rendered=renderInvestigationAnswer(answer([
-      {kind:"advice",text:"At 3 drinks and $1.61 each, that comes to $9.00.",citations:[],
-        formulas:[{claim:"$9.00",formula:"units * price",
-          variables:{units:{value:3,source:"3"},price:{value:1.61,source:"$1.61"}}}]},
+      {kind:"advice",text:"With $3 and $1.83, that comes to $9.00.",citations:[],
+        formulas:[{claim:"$9.00",formula:"a + b",
+          variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}]},
       {kind:"advice",text:"Either way, keep tracking your weekly sales.",citations:[]},
-    ]),[],"en",{ownerText:"If I sell 3 drinks at $1.61 each..."});
+    ]),[],"en",{ownerText:"Assume $3 and $1.83."});
     expect(rendered!.blocks).toContainEqual({type:"text",text:"Either way, keep tracking your weekly sales."});
     expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"formula_failed"}));
@@ -411,7 +411,7 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"النتيجة "+claim+".",citations:[],formulas:[{
       claim,formula:"a + b",variables:{a:{value:3,source:"3"},b:{value:2,source:"2"}}}]}]),[],"ar",{ownerText:"3 drinks and 2 shifts"})!;
     expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"formula_failed",text:claim,
-      failure:{reason:"incompatible_units"}}));
+      failure:{reason:"requires_registered_calculator"}}));
   });
   it.each(["$5","5 dollars","5 دولارات","5٪"])("keeps compatible complete echoes: %s",claim=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider "+claim+".",citations:[]}]),[],"en",{ownerText:claim})!;

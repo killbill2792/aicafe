@@ -19,6 +19,7 @@ export type FormulaVerificationFailure=
   |{reason:"source_unverifiable";variable:string}
   |{reason:"ungrounded_literal"}
   |{reason:"unused_variable";variable:string}
+  |{reason:"requires_registered_calculator"}
   |{reason:"incompatible_units"}
   |{reason:"incompatible_periods"}
   |{reason:"unparseable_claim"}
@@ -60,7 +61,7 @@ function parseNumericSnippet(text:string,locale:Locale):{rat:Rat;decimals:number
   const subunit=/(?:\bcents?\b|\bcentavos?\b|سنتات|سنت)/iu.test(text);
   const stripped=normalizeDigits(text).replace(/٬/gu,"").replace(/٫/gu,locale==="es"?",":".").replace(/[%٪$€£¥\s]/gu,"").replace(/(?:dollars?|d[oó]lares?|usd|cents?|centavos?|دولارات|دولارًا|دولار|سنتات|سنت)/giu,"");
   const cleaned=locale==="es"
-    ?stripped.replace(/\./gu,"").replace(",",".")
+    ?(/^[-]?\./u.test(stripped)?stripped:stripped.replace(/\./gu,"").replace(",","."))
     :stripped.replace(/,/gu,"");
   const match=/^(-?)(\d*)(?:\.(\d+))?$/u.exec(cleaned);
   if(!match||(!match[2]&&!match[3]))return null;
@@ -139,15 +140,16 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   return null;
 }
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
-/** The time-period scope of a pointer-sourced observation's own read input,
- * if it had one -- "" (never clashing with anything) for a periodless
- * capability. Owner quotes have unknown scope and cannot be mixed with dated
- * pointers in this fallback; use the registered typed calculator instead. Mirrors the exact extraction `detectConflictingFacts`
- * (runInvestigation.server.ts) already uses for the same `input.period`
- * shape, so two different period representations of the "same" scope are
- * never treated as different by one check and the same by the other. */
+/** Preserve registered calendar selectors across flat and nested readers.
+ * A week and a financial range are distinct scopes, never silently equal. */
 function resolvedPeriod(input:unknown):string{
-  return isRecord(input)&&isRecord(input.period)?JSON.stringify(input.period):"";
+  if(!isRecord(input))return "";
+  const scopes=[input,...(isRecord(input.request)?[input.request]:[])];
+  const selectors=scopes.flatMap(scope=>[
+    ...(isRecord(scope.period)?["period:"+JSON.stringify(Object.fromEntries(Object.entries(scope.period).sort(([a],[b])=>a.localeCompare(b))))]:[]),
+    ...(typeof scope.week==="string"?["week:"+scope.week]:[]),
+  ]);
+  return [...new Set(selectors)].sort().join("|");
 }
 /** Resolve one declared variable's value, unit AND source period from its
  * OWN independent source, never from the model's claimed `value` field. A
@@ -246,19 +248,14 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
     if(evaluated.reason==="incompatible_units")return {ok:false,failure:{reason:"incompatible_units"}};
     return {ok:false,failure:{reason:"grammar",detail:evaluated.reason}};
   }
-  // Result-unit check (Codex finding): when the claim's own text is
-  // EXPLICITLY decorated as money or percent (a "$"/"%" the model itself
-  // chose to write), the computed formula's dimension must agree -- this is
-  // what catches a scalar result (e.g. a drinks-count plus a shift-count)
-  // dressed up as a money claim like "$5". Deliberately never the reverse: a
-  // claim written as a bare, undecorated number is NOT rejected just because
-  // the formula happens to compute a money/percent dimension -- the NUMBER
-  // itself is always independently recomputed and compared below regardless
-  // of this check, so an undecorated claim carries no fabrication risk here,
-  // and rejecting it would reintroduce the exact "AI dropped a symbol, so we
-  // failed a correct answer" failure mode this whole effort exists to fix.
+  // Bare quantities carry no dimension in this declaration format. Their
+  // arithmetic must use the registered calculator's typed operands. Also
+  // require an explicit result unit so "5 employees" cannot reuse a money
+  // result merely because the visible numeric core is identical.
   const claimUnit=classifyOwnerUnit(entry.claim);
-  if(claimUnit!=="scalar"&&claimUnit!==evaluated.unit)
+  if([...resolved.values()].some(v=>v.unit==="scalar")||evaluated.unit==="scalar"||claimUnit==="scalar")
+    return {ok:false,failure:{reason:"requires_registered_calculator"}};
+  if(claimUnit!==evaluated.unit)
     return {ok:false,failure:{reason:"incompatible_units"}};
   if(claimUnit==="money"&&currencies.size>0&&!currencies.has(moneyCurrency(entry.claim)))
     return {ok:false,failure:{reason:"incompatible_units"}};

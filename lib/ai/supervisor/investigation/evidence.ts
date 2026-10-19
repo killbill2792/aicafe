@@ -323,6 +323,8 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
           :at+"the number \""+issue.text+"\" has no citation, no exact owner quote, and no verified formula. "+
             "Cite a real observation, quote the owner's exact words, supply a formula with its sources, or remove it.";
       case "formula_failed":
+        if(issue.failure.reason==="requires_registered_calculator")return at+
+          "the quantity behind \""+issue.text+"\" requires typed quantity units. Call the registered calculate function with scoped, unit-aware operands and cite its display result.";
         return at+"the formula behind \""+issue.text+"\" failed verification ("+issue.failure.reason+
           "). Recompute it through the calculator or correct the formula/sources, or remove the claim.";
       case "business_claim_uncited":
