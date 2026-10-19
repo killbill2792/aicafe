@@ -27,7 +27,7 @@ export default function PasswordRecoveryForm({ mode }: { mode: "request" | "upda
     try {
       const supabase = createBrowserSupabaseClient();
       const result = mode === "request"
-        ? await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/auth/callback?locale=${locale}&next=/${locale}/reset-password` })
+        ? await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/auth/callback?locale=${locale}&flow=recovery` })
         : await supabase.auth.updateUser({ password });
       if (result.error) throw result.error;
       if (mode === "update") {
