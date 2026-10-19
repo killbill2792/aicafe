@@ -525,6 +525,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         new Set(signatures).size===signatures.length&&
         new Set(sourceSelections).size===sourceSelections.length&&
         signatures.every(sig=>!attempted.has(sig))&&
+        // All-or-nothing registered input validation before starting any
+        // sibling: schema, unknown fields, role, purpose, byte/range limits.
+        requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))&&
         requests.every(v=>
           (v.definition.currencyPolicy==="independent"||
             identity.currency==="USD"&&financialReadsAvailable)&&
