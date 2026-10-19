@@ -268,8 +268,23 @@ export function projectP1Evidence(
       // clauses for different date windows must NEVER reuse a first clause's
       // value just because the domain, entity and field names are identical.
       const p=result.query.period;
-      const handle=key+":"+leaf.key+":"+leaf.field+
+      // The structured and scalar monthly-bills IDs are two projections of
+      // ONE underlying reader. They must never become two arithmetic inputs
+      // just because the P3 compatibility runner can still discover both.
+      const sameMonthlyFact=key==="money.monthly_bills"||
+        key==="money.recurring_monthly_bills_cents";
+      const canonicalKey=sameMonthlyFact?"money.monthly_bills":key;
+      const canonicalField=sameMonthlyFact?"totalCents":leaf.field;
+      const handle=canonicalKey+":"+leaf.key+":"+canonicalField+
         (p?":"+p.from+":"+p.to:"");
+      // Equal source epochs/values deduplicate, but differing values, dates
+      // or quality still conflict and remove the operand fail-closed.
+      const signature=sameMonthlyFact?JSON.stringify({
+        reader:"getMonthlyBills",revision:atomicSnapshot?.revision??null,
+        asOf:provenance.asOf,period:p??null,value:leaf.value,
+        quality:result.quality,missing:snapshotValue?.missingInputs??[],
+        stale:snapshotValue?.staleInputs??[],
+      }):readSignature;
       if(handle.length>120)continue;
       // Same registered handle can legitimately be mentioned by several
       // clauses. Keep one trusted numeric operand but preserve EVERY clause
@@ -278,7 +293,7 @@ export function projectP1Evidence(
         field:leaf.field,matchedClause:item.clause};
       const previous=operands.find(o=>o.handle===handle);
       if(previous){
-        if(readSignatures.get(handle)!==readSignature){
+        if(readSignatures.get(handle)!==signature){
           conflictingHandles.add(handle);
           missing.push("conflicting_source_snapshot:"+key);
           continue;
@@ -290,7 +305,7 @@ export function projectP1Evidence(
       // Keep reviewing repeated handles even after reaching the twelve-leaf
       // exposure limit; otherwise a late conflicting read could go undetected.
       if(operands.length>=Math.min(120,Math.max(0,maxOperands)))continue;
-      readSignatures.set(handle,readSignature);
+      readSignatures.set(handle,signature);
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
       choices.push(choice);
