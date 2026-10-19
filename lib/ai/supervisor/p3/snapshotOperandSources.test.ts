@@ -275,6 +275,35 @@ describe("authoritative P3 source projection",()=>{
       ownerMessage:clause,bindings:p.bindings,operands:mixed});
     expect(output).toMatchObject({status:"unavailable",reason:"mixed_source_revisions"});
   });
+  it("deduplicates compatibility monthly-bills representations into one typed source fact",()=>{
+    const underlying=snapshot({sources:{...sources,
+      recurringCosts:[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        label:"Rent",amount_cents:750000,frequency:"monthly",
+        active_from:"2026-01-01",active_to:null,is_estimate:false}]}});
+    const variants=["money.monthly_bills","money.recurring_monthly_bills_cents"] as const;
+    const originals:ShadowEvidence[]=variants.map((key)=>{
+      const purpose=key==="money.monthly_bills"?"recurring_obligation_review":
+        "recurring_monthly_obligation_metric";
+      return {clause:"What are my monthly recurring bills?",
+        capabilityId:"p3."+key+".v1",status:"partial" as const,reason:null,
+        result:{status:"partial",id:key,version:1,
+          query:{id:key,version:1,purpose,...(key==="money.recurring_monthly_bills_cents"?{granularity:"period"}:{})},
+          unit:key==="money.monthly_bills"?"typed_record":"USD_cents",
+          valueKind:key==="money.monthly_bills"?"record":"money_cents",
+          value:key==="money.monthly_bills"?{totalCents:750000}:750000,
+          quality,completeness:"partial",actuality:"planned",
+          provenance:{canonicalReaderId:readers[key],readerContractVersion:1,
+            selectorContractId:key+".selector",selectorContractVersion:1,
+            purpose,asOf,timezone:"America/Los_Angeles",sourceRevision:null},
+          freshness:{asOf,capturedAt:null,stale:null}}};
+    });
+    const both=projectP1Evidence(originals,cafe,"What are my monthly recurring bills?",null,[],underlying);
+    expect(both.operands).toHaveLength(1);
+    expect(both.operands[0]).toMatchObject({value:750000,unit:"USD_cents",
+      handle:"money.monthly_bills:value:totalCents",sourceRevision:"25"});
+    expect(projectP1Evidence([originals[0]],cafe,originals[0].clause,null,[],underlying)
+      .operands[0].value).toBe(750000);
+  });
   it("does not attach an epoch to an independently fetched unsupported supplier quote",()=>{
     const input={clause:"Compare oat milk",capabilityId:"p3.supplies.quotes.v1",
       status:"partial" as const,reason:null,
