@@ -2,11 +2,15 @@
 
 import { useState, type FormEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { Link, useRouter } from "@/i18n/navigation";
 import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function LoginForm() {
   const t = useTranslations("Login");
   const locale = useLocale();
+  const router = useRouter();
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState<"password" | "magic">("password");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error" | "not_configured">("idle");
 
@@ -19,13 +23,21 @@ export default function LoginForm() {
     setStatus("sending");
     try {
       const supabase = createBrowserSupabaseClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}`,
-        },
-      });
-      setStatus(error ? "error" : "sent");
+      if (mode === "password") {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) { setStatus("error"); return; }
+        router.replace("/");
+        router.refresh();
+      } else {
+        const { error } = await supabase.auth.signInWithOtp({
+          email,
+          options: {
+            shouldCreateUser: false,
+            emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}`,
+          },
+        });
+        setStatus(error ? "error" : "sent");
+      }
     } catch {
       setStatus("error");
     }
@@ -55,13 +67,20 @@ export default function LoginForm() {
         placeholder={t("emailPlaceholder")}
         className="h-14 rounded-2xl border border-line bg-card px-4 text-[17px] text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2"
       />
+      {mode === "password" && <>
+        <label htmlFor="login-password" className="text-[15px] font-semibold text-ink">{t("passwordLabel")}</label>
+        <input id="login-password" type="password" required autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} className="h-14 rounded-2xl border border-line bg-card px-4 text-[17px] text-ink" />
+        <Link href="/forgot-password" className="text-end text-sm font-semibold text-ink underline">{t("forgotPassword")}</Link>
+      </>}
       <button
         type="submit"
         disabled={status === "sending"}
         className="h-[60px] rounded-full bg-ink text-[18px] font-bold text-paper disabled:opacity-60"
       >
-        {status === "sending" ? t("sending") : t("sendLink")}
+        {status === "sending" ? t("sending") : mode === "password" ? t("signIn") : t("sendLink")}
       </button>
+      <button type="button" onClick={() => { setMode(mode === "password" ? "magic" : "password"); setStatus("idle"); }} className="text-sm font-semibold text-ink underline">{mode === "password" ? t("useMagicLink") : t("usePassword")}</button>
+      <p className="text-center text-sm text-ink-muted">{t("noAccount")} <Link href="/signup" className="font-bold text-ink underline">{t("createAccount")}</Link></p>
       {status === "error" && <p className="text-[15px] text-warn">{t("error")}</p>}
       {status === "not_configured" && <p className="text-[15px] text-warn">{t("notConfigured")}</p>}
     </form>
