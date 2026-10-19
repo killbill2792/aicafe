@@ -3,12 +3,14 @@
 import { useState, type FormEvent } from "react";
 import { useLocale, useTranslations } from "next-intl";
 import { Link, useRouter } from "@/i18n/navigation";
+import { useSearchParams } from "next/navigation";
 import { createBrowserSupabaseClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 export default function LoginForm() {
   const t = useTranslations("Login");
   const locale = useLocale();
   const router = useRouter();
+  const callbackError = useSearchParams().get("error") === "auth";
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"password" | "magic">("password");
   const [email, setEmail] = useState("");
@@ -33,7 +35,7 @@ export default function LoginForm() {
           email,
           options: {
             shouldCreateUser: false,
-            emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}`,
+            emailRedirectTo: `${window.location.origin}/auth/callback?locale=${locale}&flow=magic`,
           },
         });
         setStatus(error ? "error" : "sent");
@@ -81,6 +83,7 @@ export default function LoginForm() {
       </button>
       <button type="button" onClick={() => { setMode(mode === "password" ? "magic" : "password"); setStatus("idle"); }} className="text-sm font-semibold text-ink underline">{mode === "password" ? t("useMagicLink") : t("usePassword")}</button>
       <p className="text-center text-sm text-ink-muted">{t("noAccount")} <Link href="/signup" className="font-bold text-ink underline">{t("createAccount")}</Link></p>
+      {callbackError && <p role="alert" className="text-[15px] text-warn">{t("callbackError")}</p>}
       {status === "error" && <p className="text-[15px] text-warn">{t("error")}</p>}
       {status === "not_configured" && <p className="text-[15px] text-warn">{t("notConfigured")}</p>}
     </form>
