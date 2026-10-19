@@ -135,11 +135,24 @@ export function detectConflictingFacts(observations:readonly Observation[]):
       // authorized source, not every other aggregate for the same month.
       // Group only matching source-read ID + complete analysis selector.
       const datasetValue=record(o.result.value)?o.result.value:null;
+      const analysisInput=record(o.input)?o.input:null;
+      // Dataset filters are conjunctive, so their order has no meaning.
+      // Canonicalizing each predicate first preserves genuine same-analysis
+      // conflicts even when a model supplies filters in a different order.
+      const analysisSelector=analysisInput?{...analysisInput,
+        filters:Array.isArray(analysisInput.filters)?analysisInput.filters.map(canonicalSelector)
+          .sort((a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b))):analysisInput.filters}:o.input;
       const analysisIdentity=o.capabilityId===DATASET_ID?JSON.stringify({
         source:datasetValue?.sourceReadId,
-        selector:canonicalSelector(o.input),
+        selector:canonicalSelector(analysisSelector),
       }):"";
-      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod+"|"+analysisIdentity;
+      // A grouped analysis can return rows in a different order on a
+      // subsequent read. The group label, not array position, identifies
+      // the measured entity. Distinct group labels must never conflict.
+      const measuredRecord=recordAt(o.result.value,recordLocator);
+      const groupIdentity=o.capabilityId===DATASET_ID&&record(measuredRecord)&&
+        Object.hasOwn(measuredRecord,"group")?"|group:"+JSON.stringify(measuredRecord.group):"";
+      const key=field+"@"+(scope.startsWith("id:")?scope:recordLocator+"|"+scope)+"|"+inputPeriod+"|"+analysisIdentity+groupIdentity;
       const list=groups.get(key)??[];
       list.push({field,id:o.id,display:o.display[path]??String(raw),raw});
       groups.set(key,list);
