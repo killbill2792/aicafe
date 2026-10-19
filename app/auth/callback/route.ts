@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   const url = new URL(next, origin);
   const fallback = new URL(`/${locale}/login?error=auth`, origin);
   if ((!code && !(tokenHash && tokenType)) || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return NextResponse.redirect(fallback);
+    return NextResponse.redirect(fallback, { headers: { "Cache-Control": "no-store" } });
   }
 
   const response = NextResponse.redirect(tokenHash && tokenType ? new URL(tokenDestination(locale, tokenType), origin) : url);
@@ -36,8 +36,11 @@ export async function GET(request: Request) {
       },
     },
   });
-  const { error } = tokenHash && tokenType
-    ? await supabase.auth.verifyOtp({ type: tokenType, token_hash: tokenHash })
-    : await supabase.auth.exchangeCodeForSession(code!);
-  return error ? NextResponse.redirect(fallback) : response;
-}
+  try {
+    const { error } = tokenHash && tokenType
+      ? await supabase.auth.verifyOtp({ type: tokenType, token_hash: tokenHash })
+      : await supabase.auth.exchangeCodeForSession(code!);
+    return error ? NextResponse.redirect(fallback, { headers: { "Cache-Control": "no-store" } }) : response;
+  } catch {
+    return NextResponse.redirect(fallback, { headers: { "Cache-Control": "no-store" } });
+  }
