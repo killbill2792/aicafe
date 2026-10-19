@@ -52,8 +52,20 @@ function dailySums(value:unknown,fields:readonly {
 }
 /** Domain-owned allowlisted value/units, not model-requested arbitrary object paths. */
 export const extractors:Partial<Record<SupportedId,Extractor>>={
+  // These structured totals already contain the same monetary facts exposed
+  // through older scalar P1 aliases. Extract them once from the validated
+  // observation; never ask the model to run the same reader a second time.
   "money.monthly_bills":v=>isObject(v)&&integer(v.totalCents)?
-    [{key:"value",name:"recorded monthly recurring bills",field:"totalCents",value:v.totalCents,unit:"USD_cents"}]:[],
+    [{key:"aggregate",name:"monthly recurring bills",field:"totalCents",
+      value:v.totalCents,unit:"USD_cents" as const}]:[],
+  "money.recorded_spending":v=>isObject(v)&&integer(v.totalCents)?
+    [{key:"aggregate",name:"recorded spending",field:"totalCents",
+      value:v.totalCents,unit:"USD_cents" as const}]:[],
+  "money.profitability":v=>isObject(v)?
+    (["netSalesCents","totalCostsCents","ownerProfitCents"] as const).flatMap(field=>
+      integer(v[field])?[{key:"aggregate",name:"financial performance",
+        field,value:v[field] as number,unit:"USD_cents" as const}]:[]):[],
+
   "menu.catalog":v=>rows(v).flatMap(row=>
     row.active===true&&row.priceStatus==="recorded"&&integer(row.priceCents)?
       [{key:text(row.id),name:text(row.name),field:"priceCents",
