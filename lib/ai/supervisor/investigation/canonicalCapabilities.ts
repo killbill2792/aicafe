@@ -11,7 +11,8 @@ export const CANONICAL_ALIASES = {
   "p3.money.owner_profit_cents.v1":{parent:"p3.money.profitability.v1",field:"ownerProfitCents"},
   "p3.sales.net_sales_cents.v1":{parent:"p3.money.profitability.v1",field:"netSalesCents"},
   "p3.money.total_costs_cents.v1":{parent:"p3.money.profitability.v1",field:"totalCostsCents"},
-  "p3.money.operating_margin_ratio.v1":{parent:"p3.money.profitability.v1",field:"operatingMargin"},
+  // Preserve the scalar margin reader until a unit-checked operatingMargin
+  // -> ratio_bps adapter has passed canonical source/revision acceptance.
 } as const;
 export function modelVisibleIds(ids:readonly string[]):string[]{
   const all=new Set(ids);
