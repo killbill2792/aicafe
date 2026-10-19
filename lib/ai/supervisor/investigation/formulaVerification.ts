@@ -136,12 +136,23 @@ export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null
   return null;
 }
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
+/** Date/time components are not independent numeric facts. Never use a
+ * year, month, day, minute or second inside a structured owner timestamp as
+ * evidence for a standalone quantity or a rearranged date. This grammar is
+ * shared with claim rendering so it can verify a whole date/time atomically.
+ * A dotted date requires three groups, preserving ordinary decimal values. */
+export const STRUCTURED_DATE_TIME_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{4}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP]\.?[mM]\.?)?)(?![\p{L}\p{N}])`;
+const OWNER_STRUCTURED_SPAN=new RegExp(STRUCTURED_DATE_TIME_SPAN,"giu");
+
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
   options?:{numericSourceOnly?:boolean}):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
+  const structured=[...ownerText.matchAll(OWNER_STRUCTURED_SPAN)].map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
+    // Reject any numeric fragment of a date/time, regardless of locale.
+    if(structured.some(s=>match.index<s.end&&match.index+match[0].length>s.start))continue;
     const text=match[0],start=match.index,end=start+text.length;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
     // A component of an ISO/slash date or clock time is not a standalone
