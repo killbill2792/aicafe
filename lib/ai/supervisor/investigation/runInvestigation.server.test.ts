@@ -1277,6 +1277,20 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
     const ava=recordObservation("r2","p3.labor.employee_wages.v1",{employeeId:"ava",defaultHourlyWageCents:2000});
     expect(detectConflictingFacts([don,ava])).toEqual([]);
   });
+  it("does not conflate two distinct schedule weeks, including nested request selectors",()=>{
+    const monday=recordObservation("r1","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:10000}],{week:"2026-10-19"});
+    const nextWeek=recordObservation("r2","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:20000}],{request:{week:"2026-10-26"}});
+    expect(detectConflictingFacts([monday,nextWeek])).toEqual([]);
+  });
+  it("still detects a genuine conflict for the same schedule week",()=>{
+    const first=recordObservation("r1","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:10000}],{week:"2026-10-19"});
+    const second=recordObservation("r2","p3.olivia.schedule.preview",
+      [{loadedLaborCostCents:20000}],{request:{week:"2026-10-19"}});
+    expect(detectConflictingFacts([first,second])).toHaveLength(1);
+  });
   it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
     const first=recordObservation("r1","p3.labor.employee_wages.v1",
       [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
