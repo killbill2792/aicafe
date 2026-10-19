@@ -1,5 +1,6 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
+import {gzipSync} from "node:zlib";
 import type {ConversationScope} from "./contracts";
 
 /**
@@ -27,15 +28,27 @@ function redact(value:unknown,depth=0):unknown {
 export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):void {
   const state=context.getStore();
   if(!state)return;
-  const entry={sequence:state.nextSequence++,at:new Date().toISOString(),...(redact(payload) as Record<string,unknown>)};
+  let entry:Record<string,unknown>={sequence:state.nextSequence++,at:new Date().toISOString(),
+    ...(redact(payload) as Record<string,unknown>)};
   let encoded:string;
-  try{encoded=JSON.stringify(entry);}catch{state.droppedCount++;return;}
-  if(encoded.length>MAX_EVENT_BYTES||state.events.length>=MAX_EVENTS||
-    state.bytes+Buffer.byteLength(encoded)>MAX_BYTES){
+  try{
+    encoded=JSON.stringify(entry);
+    if(Buffer.byteLength(encoded)>MAX_EVENT_BYTES){
+      // Responses schemas/context often exceed console-sized records. Preserve
+      // the ENTIRE credential-filtered event instead of silently dropping it.
+      entry={sequence:entry.sequence,at:entry.at,point:entry.point,
+        encoding:"gzip-base64",originalBytes:Buffer.byteLength(encoded),
+        data:gzipSync(Buffer.from(encoded,"utf8")).toString("base64")};
+      encoded=JSON.stringify(entry);
+    }
+  }catch{state.droppedCount++;return;}
+  const bytes=Buffer.byteLength(encoded);
+  if(bytes>MAX_EVENT_BYTES||state.events.length>=MAX_EVENTS||
+    state.bytes+bytes>MAX_BYTES){
     state.droppedCount++;
     return;
   }
-  state.bytes+=Buffer.byteLength(encoded);
+  state.bytes+=bytes;
   state.events.push(entry);
 }
 /** Always finalize and persist even when a provider, renderer, or database step throws. */
