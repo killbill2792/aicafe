@@ -142,8 +142,18 @@ export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
   const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)].map(m=>({start:m.index,end:m.index+m[0].length}));
-  for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
+  const numericMatches=[...ownerText.matchAll(OWNER_NUMERIC_SPAN)];
+  for(let i=0;i<numericMatches.length;i++){
+    const match=numericMatches[i];
     const text=match[0],start=match.index,end=start+text.length;
+    // A hyphen after a previous numeric span is a range/subtraction
+    // separator, not proof that the upper endpoint is a negative value.
+    // This includes '$5 - $10' and '$5-$10', while keeping 'loss: -$10'.
+    if(/^[-−﹣－]/u.test(text)&&i>0){
+      const previous=numericMatches[i-1];
+      const gap=ownerText.slice(previous.index+previous[0].length,start);
+      if(/^\s*$/u.test(gap))continue;
+    }
     // Do not treat an individual year, month, day, hour, or minute as
     // an independently authored owner number.
     if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
