@@ -1291,6 +1291,19 @@ describe("detectConflictingFacts -- grouped by entity and period, not field name
       [{loadedLaborCostCents:20000}],{request:{week:"2026-10-19"}});
     expect(detectConflictingFacts([first,second])).toHaveLength(1);
   });
+  it("does not flag distinct source months for derived dataset totals",()=>{
+    const source1=recordObservation("r1","p3.money.expense_entries.v1",
+      [{id:"one",amountCents:1000}],{period:{from:"2026-09-01",to:"2026-09-30"}});
+    const source2=recordObservation("r2","p3.money.expense_entries.v1",
+      [{id:"two",amountCents:2000}],{period:{from:"2026-10-01",to:"2026-10-31"}});
+    const analyzed=(id:string,sourceReadId:string,value:number):Observation=>
+      recordObservation(id,"p3.platform.dataset.analysis.v1",
+        {groups:[{group:null,value}],unit:"USD_cents",sourceReadId},
+        {readId:sourceReadId});
+    const first=analyzed("r3","r1",1000);
+    const second=analyzed("r4","r2",2000);
+    expect(detectConflictingFacts([source1,source2,first,second])).toEqual([]);
+  });
   it("still groups the SAME entity read at different array positions in two reordered/filtered reads as one conflict (Codex finding, array position vs stable id)",()=>{
     const first=recordObservation("r1","p3.labor.employee_wages.v1",
       [{employeeId:"don",defaultHourlyWageCents:1800},{employeeId:"ava",defaultHourlyWageCents:2000}]);
