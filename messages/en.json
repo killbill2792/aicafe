@@ -739,7 +739,10 @@
     "deleteAccount": "Delete account",
     "cafeProfile": "Café profile",
     "processingFees": "Processing fees",
-    "economics": "Profit goal simulator"
+    "economics": "Profit goal simulator",
+    "signOut": "Sign Out",
+    "signingOut": "Signing out…",
+    "signOutError": "Could not sign out. Try again."
   },
   "BreakEven": {
     "title": "Break-even plan",
@@ -1084,7 +1087,14 @@
     "sending": "Sending…",
     "checkEmail": "Check your email — we sent a link to {email}. Tap it to sign in.",
     "error": "That didn't work. Check the email and try again.",
-    "notConfigured": "Sign-in isn't connected yet. Add Supabase keys to .env.local first."
+    "notConfigured": "Sign-in isn't connected yet. Add Supabase keys to .env.local first.",
+    "passwordLabel": "Password",
+    "forgotPassword": "Forgot password?",
+    "signIn": "Sign In",
+    "useMagicLink": "Sign in with an email link instead",
+    "usePassword": "Sign in with password",
+    "noAccount": "New to AI Café?",
+    "createAccount": "Create account"
   },
   "Operations": {
     "teamTitle": "Your AI team",
@@ -1956,5 +1966,44 @@
     "factAmount": "Amount",
     "factPercent": "Percentage",
     "notConfirmed": "I wasn't able to confirm {count} part(s) of this answer in time; everything shown above has already been checked."
+  },
+  "SignUp": {
+    "title": "Create your café account",
+    "subtitle": "Set up a private workspace for your café.",
+    "fullName": "Your full name",
+    "cafeName": "Café name",
+    "email": "Email address",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "passwordHint": "Use at least 8 characters.",
+    "requiredFields": "Please enter your name and café.",
+    "passwordTooShort": "Use at least 8 characters for your password.",
+    "passwordMismatch": "Passwords do not match.",
+    "notConfigured": "Sign up is not available yet.",
+    "creating": "Creating account…",
+    "createAccount": "Create Account",
+    "checkEmail": "Check {email} to confirm your account, then continue to your café.",
+    "goToSignIn": "Go to Sign In",
+    "alreadyHaveAccount": "Already have an account?",
+    "signIn": "Sign In",
+    "backToSignIn": "Back to Sign In",
+    "error": "Something went wrong. Try again."
+  },
+  "PasswordRecovery": {
+    "email": "Email address",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm new password",
+    "requestTitle": "Reset your password",
+    "requestSubtitle": "We'll send a password reset link to your email.",
+    "updateTitle": "Choose a new password",
+    "sendResetLink": "Send reset link",
+    "updatePassword": "Update password",
+    "backToSignIn": "Back to Sign In",
+    "emailSent": "If that email belongs to an account, a password reset link has been sent.",
+    "passwordTooShort": "Password must be at least 8 characters.",
+    "passwordMismatch": "Passwords do not match.",
+    "notConfigured": "Password reset is not available yet.",
+    "error": "Something went wrong. Try again.",
+    "working": "Working…"
   }
 }
