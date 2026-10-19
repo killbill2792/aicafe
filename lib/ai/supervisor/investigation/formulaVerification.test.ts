@@ -489,3 +489,14 @@ describe("ambiguous hyphens are not independently authored losses",()=>{
     expect(findOwnerQuotedSpan(owner,claim,locale)).not.toBeNull();
   });
 });
+
+describe("monetary ranges never authorize a fabricated negative amount",()=>{
+  it.each(["between $5 - $10","between $5-$10","from $5 -$10"])(
+    "treats the second endpoint of %s as positive, not a negative echo",owner=>{
+      expect(findOwnerQuotedSpan(owner,"-$10","en")).toBeNull();
+      expect(findOwnerQuotedSpan(owner,"$10","en")).toBe("$10");
+    });
+  it("retains a genuinely negative independently authored amount",()=>{
+    expect(findOwnerQuotedSpan("Loss: -$10","-$10","en")).toBe("-$10");
+  });
+});
