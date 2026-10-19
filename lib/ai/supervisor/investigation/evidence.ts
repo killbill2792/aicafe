@@ -106,7 +106,7 @@ export type ClaimIssue=
  * which are only for general/hypothetical numbers (§3's one non-negotiable
  * rule). English-pattern heuristic; the independent reviewer
  * (reviewInstructions) is the semantic backstop for other phrasings/locales. */
-const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\byou'?re\b|\bthis caf[ée](?![\p{L}\p{N}])|\b(?:tu|tus|su|sus|nuestro|nuestra|nuestros|nuestras|este|esta)\s+(?:ganancia|margen|ventas?|ingresos?|costos?|costes?|precios?|nómina|nomina|beneficios?|caf[ée]|cafeter[ií]a|negocio)(?![\p{L}\p{N}])|(?:ربحك|أرباحك|مبيعاتك|إيراداتك|تكاليفك|تكلفتك|أسعارك|سعرك|مقه[اى]ك|مقهاك|رواتبك|الربح\s+الخاص\s+بك)/iu;
+const BUSINESS_SPECIFIC=/\byour\b|\byours\b|\bmy\b|\bour\b|\byou'?re\b|\bthis caf[ée](?![\p{L}\p{N}])|\b(?:mi|mis|tu|tus|su|sus|nuestro|nuestra|nuestros|nuestras|este|esta)\s+(?:ganancia|margen|ventas?|ingresos?|costos?|costes?|precios?|nómina|nomina|beneficios?|caf[ée]|cafeter[ií]a|negocio)(?![\p{L}\p{N}])|(?:ربحك|أرباحك|مبيعاتك|إيراداتك|تكاليفك|تكلفتك|أسعارك|سعرك|مقه[اى]ك|مقهاك|رواتبك|الربح\s+الخاص\s+بك)/iu;
 /** When an echo omits the owner's explicit money/percent unit, accept it
  * only as a bare, sentence-terminated value. Allowing arbitrary trailing
  * words would license "5 new employees" from "$5"; enumerating quantity
