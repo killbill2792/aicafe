@@ -1,6 +1,6 @@
 import "server-only";
 import {z} from "zod";
-import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
+import {SupervisorStageError,logSupervisorDebugPayload, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {buildInvestigationRequest} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
@@ -148,12 +148,16 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
         INVESTIGATION_LIMITS.totalOutputTokens-input.usage.outputTokens));
       const jsonSchema=closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(
         z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})));
+      const wireRequest=buildInvestigationRequest({model:input.usage.model,name:input.name,
+        instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
+        tools:input.tools?.map(t=>({name:t.name,description:t.description,
+          parameters:closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(t.parameters))}))});
+      // Private trace keeps the exact provider request body, never the bearer token.
+      logSupervisorDebugPayload({point:"model_request",requestName:input.name,
+        attempt,model:input.usage.model,body:wireRequest});
       const response=await input.transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
-        body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
-          instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
-          tools:input.tools?.map(t=>({name:t.name,description:t.description,
-            parameters:closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(t.parameters))}))})),
+        body:JSON.stringify(wireRequest),
       });
       if(!response.ok){
         const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
@@ -165,10 +169,14 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
           clearTimeout(timeout);
           return requestInvestigationCore({...input,model:fallback});
         }
+        logSupervisorDebugPayload({point:"model_response_error",requestName:input.name,
+          attempt,httpStatus:response.status,providerErrorCode:code||null});
         throw new SupervisorStageError("provider_http","provider_response",
           {httpStatus:response.status,providerErrorCode:code||undefined});
       }
       const raw=await response.json();
+      logSupervisorDebugPayload({point:"model_response",requestName:input.name,attempt,
+        httpStatus:response.status,raw});
       const positive=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)&&v>=0?v:0;
       input.usage.inputTokens+=positive(raw.usage?.input_tokens);
       input.usage.outputTokens+=positive(raw.usage?.output_tokens);
