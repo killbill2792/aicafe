@@ -162,6 +162,7 @@ export function observationPeriod(observation:Observation,observations:readonly 
   const periods=new Set<string>();
   const own=resolvedPeriod(observation.input);
   if(own)periods.add(own);
+  for(const inherited of observation.sourcePeriods??[])if(inherited)periods.add(inherited);
   const result=observation.result;
   const derived=isRecord(result.value)?result.value:null;
   const parentId=typeof derived?.sourceReadId==="string"?derived.sourceReadId:
