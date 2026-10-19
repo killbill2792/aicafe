@@ -1094,7 +1094,8 @@
     "useMagicLink": "Entrar con enlace por correo",
     "usePassword": "Entrar con contraseña",
     "noAccount": "¿Nuevo en AI Café?",
-    "createAccount": "Crear cuenta"
+    "createAccount": "Crear cuenta",
+    "callbackError": "El enlace caducó o no se pudo verificar. Solicita uno nuevo e inténtalo otra vez."
   },
   "Operations": {
     "teamTitle": "Tu equipo de IA",
