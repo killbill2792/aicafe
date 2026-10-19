@@ -194,6 +194,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
   const usage:InvestigationUsage={model:input.model,modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0};
   const labels=investigationLabels(input.locale);
+  // Surface precisely which owner goal remains unanswered, in the owner's
+  // language, rather than silently publishing an incomplete candidate.
+  const incompleteNotice=(reason:string)=>({
+    en:"Part of your request remains unanswered: ",
+    es:"Una parte de tu solicitud sigue sin respuesta: ",
+    ar:"لا يزال جزء من طلبك دون إجابة: ",
+  }[input.locale]+reason).slice(0,1100);
+  const missingGoalWarning=(reason:string):SupervisorReplyBlock=>({
+    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:incompleteNotice(reason),
+  });
   // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
   // production diagnostics logger; only ties this one turn's raw debug
@@ -293,7 +303,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
           accumulatedRescue=false;
         else if(!accReview.complete && bestAccumulated)
-          bestAccumulated={...bestAccumulated,status:"partial"};
+          bestAccumulated={...bestAccumulated,status:"partial",
+            blocks:bestAccumulated.blocks.length<30?
+              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
+              bestAccumulated.blocks};
       }
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
@@ -765,7 +778,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
-      if(!review.complete)reply={...reply!,status:"partial"};
+      if(!review.complete)reply={...reply!,status:"partial",
+        blocks:reply!.blocks.length<30?
+          [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
@@ -788,7 +803,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
     }
-    let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}
+    let args:unknown;try{args=JSON.parse(step.arguments);}catch{
+      if(capabilityId===EXPRESSION_ID)
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"invalid_arguments_json",rawArguments:step.arguments});
+      feedback="Tool arguments must be valid JSON.";continue;
+    }
     const signature=JSON.stringify(canonicalSelector([
       capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
     if(attempted.has(signature)){
