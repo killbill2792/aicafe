@@ -647,7 +647,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
       if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
-      calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!==null).map(o=>
+      calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!=null).map(o=>
         resolvedPeriod({period:{from:o.period!.from,to:o.period!.to}}));
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
