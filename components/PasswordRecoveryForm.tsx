@@ -31,7 +31,8 @@ export default function PasswordRecoveryForm({ mode }: { mode: "request" | "upda
         : await supabase.auth.updateUser({ password });
       if (result.error) throw result.error;
       if (mode === "update") {
-        await supabase.auth.signOut();
+        const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+        if (signOutError) throw signOutError;
         router.replace("/login");
         router.refresh();
       } else {
