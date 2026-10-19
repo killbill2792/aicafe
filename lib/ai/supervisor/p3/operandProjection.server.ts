@@ -178,6 +178,19 @@ export function projectP1Evidence(
   // not silently assigned to every clause from the first matching read.
   const conflictingHandles=new Set<string>();
   const readSignatures=new Map<string,string>();
+  // Compatibility P3 can receive both scalar and structured projections of
+  // getMonthlyBills(). They are one fact, never two independent operands.
+  const structuredBill=evidence.find(e=>e.capabilityId==="p3.money.monthly_bills.v1"&&
+    e.result&&e.status!=="unavailable");
+  const scalarBill=evidence.find(e=>e.capabilityId==="p3.money.recurring_monthly_bills_cents.v1"&&
+    e.result&&e.status!=="unavailable");
+  const duplicatedBill=Boolean(structuredBill&&scalarBill);
+  const a=structuredBill?.result as {value?:{totalCents?:number};provenance?:{asOf?:string;timezone?:string};query?:unknown}|undefined;
+  const b=scalarBill?.result as {value?:number;provenance?:{asOf?:string;timezone?:string};query?:unknown}|undefined;
+  const billConflict=duplicatedBill&&(a?.value?.totalCents!==b?.value||
+    a?.provenance?.asOf!==b?.provenance?.asOf||
+    a?.provenance?.timezone!==b?.provenance?.timezone||
+    JSON.stringify(a?.query)!==JSON.stringify(b?.query));
   const currentGoal=ownerGoal;
   // A revision is trusted ONLY alongside the same owner-scoped SQL snapshot.
   // Never label independently obtained shadow reads with that revision.
@@ -189,6 +202,11 @@ export function projectP1Evidence(
     if(!capability?.startsWith("p3.")||!capability.endsWith(".v1")||
       !item.result||typeof item.result!=="object")continue;
     const key=capability.slice(3,-3) as SupportedId;
+    if(billConflict&&(key==="money.monthly_bills"||key==="money.recurring_monthly_bills_cents")){
+      if(!missing.includes("conflicting_monthly_bills_alias"))missing.push("conflicting_monthly_bills_alias");
+      continue;
+    }
+    if(duplicatedBill&&key==="money.recurring_monthly_bills_cents")continue;
     if(!(key in values))continue;
     const parsed=outputFor(key).safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
