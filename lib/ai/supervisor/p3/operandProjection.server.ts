@@ -1,4 +1,5 @@
 import "server-only";
+import {CANONICAL_ALIASES} from "../investigation/canonicalCapabilities";
 import { outputFor } from "@/lib/metrics/p1Readers.server";
 import { metricUnits,purposePolicies,readers,sourcePolicies,
   values,type SupportedId } from "@/lib/metrics/p1Catalog";
@@ -180,24 +181,56 @@ export function projectP1Evidence(
   const readSignatures=new Map<string,string>();
   // Compatibility P3 can receive both scalar and structured projections of
   // getMonthlyBills(). They are one fact, never two independent operands.
-  const structuredBill=evidence.find(e=>e.capabilityId==="p3.money.monthly_bills.v1"&&
-    e.result&&e.status!=="unavailable");
-  const scalarBill=evidence.find(e=>e.capabilityId==="p3.money.recurring_monthly_bills_cents.v1"&&
-    e.result&&e.status!=="unavailable");
-  const duplicatedBill=Boolean(structuredBill&&scalarBill);
-  const a=structuredBill?.result as {value?:{totalCents?:number};provenance?:{asOf?:string;timezone?:string};query?:unknown}|undefined;
-  const b=scalarBill?.result as {value?:number;provenance?:{asOf?:string;timezone?:string};query?:unknown}|undefined;
-  const billConflict=duplicatedBill&&(a?.value?.totalCents!==b?.value||
-    a?.provenance?.asOf!==b?.provenance?.asOf||
-    a?.provenance?.timezone!==b?.provenance?.timezone||
-    // Scalar and structured aliases have intentionally different query IDs,
-    // purposes and granularity schema; those are not independent selectors.
-    // The monthly-bills reader has no date/product/page argument at all, so
-    // identity, time and reported value determine compatibility here.
-    (structuredBill?.result as {actuality?:string}|undefined)?.actuality!==
-      (scalarBill?.result as {actuality?:string}|undefined)?.actuality||
-    JSON.stringify((structuredBill?.result as {quality?:unknown}|undefined)?.quality)!==
-      JSON.stringify((scalarBill?.result as {quality?:unknown}|undefined)?.quality));
+  // A scalar and structured projection of one registered reader are NOT
+  // independent calculation operands. Canonicalize EVERY reviewed alias,
+  // comparing the true owner-scoped selector (period) rather than the two
+  // intentionally different tool IDs/purpose/format arguments. Never silently
+  // reconcile changed values, coverage or revision across independent reads.
+  const redundantAliases=new Set<ShadowEvidence>();
+  const conflictedAliases=new Set<ShadowEvidence>();
+  const rec=(v:unknown):v is Record<string,unknown>=>isObject(v);
+  const scopeOf=(e:ShadowEvidence)=>{
+    const value=rec(e.result)?e.result:{};
+    const query=rec(value.query)?value.query:{};
+    const provenance=rec(value.provenance)?value.provenance:{};
+    return {period:JSON.stringify(query.period??null),
+      asOf:provenance.asOf,timezone:provenance.timezone,
+      revision:provenance.sourceRevision,
+      reader:provenance.canonicalReaderId,
+      actuality:value.actuality,
+      quality:JSON.stringify(value.quality??null)};
+  };
+  for(const [alias,spec] of Object.entries(CANONICAL_ALIASES)){
+    const scalarReads=evidence.filter(e=>e.capabilityId===alias&&
+      e.result&&e.status!=="unavailable");
+    const structuredReads=evidence.filter(e=>e.capabilityId===spec.parent&&
+      e.result&&e.status!=="unavailable");
+    for(const scalar of scalarReads){
+      const childScope=scopeOf(scalar);
+      const samePeriod=structuredReads.filter(parent=>
+        scopeOf(parent).period===childScope.period);
+      if(!samePeriod.length)continue;
+      const compatible=samePeriod.every(parent=>{
+        const p=rec(parent.result)?parent.result:{};
+        const c=rec(scalar.result)?scalar.result:{};
+        const parentValue=rec(p.value)?p.value:{};
+        const parentScope=scopeOf(parent);
+        return Number.isSafeInteger(parentValue[spec.field])&&
+          parentValue[spec.field]===c.value&&
+          parentScope.reader===childScope.reader&&
+          parentScope.asOf===childScope.asOf&&
+          parentScope.timezone===childScope.timezone&&
+          parentScope.revision===childScope.revision&&
+          parentScope.actuality===childScope.actuality&&
+          parentScope.quality===childScope.quality;
+      });
+      if(compatible)redundantAliases.add(scalar);
+      else{
+        conflictedAliases.add(scalar);
+        for(const parent of samePeriod)conflictedAliases.add(parent);
+      }
+    }
+  }
   const currentGoal=ownerGoal;
   // A revision is trusted ONLY alongside the same owner-scoped SQL snapshot.
   // Never label independently obtained shadow reads with that revision.
@@ -209,11 +242,11 @@ export function projectP1Evidence(
     if(!capability?.startsWith("p3.")||!capability.endsWith(".v1")||
       !item.result||typeof item.result!=="object")continue;
     const key=capability.slice(3,-3) as SupportedId;
-    if(billConflict&&(key==="money.monthly_bills"||key==="money.recurring_monthly_bills_cents")){
-      if(!missing.includes("conflicting_monthly_bills_alias"))missing.push("conflicting_monthly_bills_alias");
+    if(conflictedAliases.has(item)){
+      if(!missing.includes("conflicting_canonical_read_alias"))missing.push("conflicting_canonical_read_alias");
       continue;
     }
-    if(duplicatedBill&&key==="money.recurring_monthly_bills_cents")continue;
+    if(redundantAliases.has(item))continue;
     if(!(key in values))continue;
     const parsed=outputFor(key).safeParse(item.result);
     if(!parsed.success||parsed.data.status==="unavailable")continue;
