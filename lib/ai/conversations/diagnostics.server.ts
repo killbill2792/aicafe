@@ -385,6 +385,7 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
     safe.outcome=payload.outcome;
   // Named reason codes are safe to emit in production; arbitrary reason text is not.
   const calculatorReasons=new Set(["unsupported_currency","invalid_plan","unknown_operand",
+    "invalid_arguments_json",
     "invalid_source_context","simulation_input_rejected","calculator_invalid_result",
     "invalid_calculator_result","calculation_unavailable","source_context_error"]);
   if(typeof payload.reasonCode==="string"&&calculatorReasons.has(payload.reasonCode))
