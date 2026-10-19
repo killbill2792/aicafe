@@ -1,6 +1,7 @@
 import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {gzipSync} from "node:zlib";
+import {createHash} from "node:crypto";
 import type {ConversationScope} from "./contracts";
 
 /**
@@ -14,6 +15,7 @@ type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nex
 const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(^|[_-])(authorization|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)($|[_-])/i;
+const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
 /** No raw bearer, quoted password or provider-key-shaped token can be retained. */
 function redactSecretsInText(value:string):string {
   return value
@@ -24,7 +26,12 @@ function redactSecretsInText(value:string):string {
     .replace(/\bBearer\s+[a-zA-Z0-9._~+/-]{8,}=?\b/giu,"Bearer [credential_removed]")
     .replace(/(\b(?:password|passphrase|api[\s_-]?(?:key|token)|access[\s_-]?token|refresh[\s_-]?token|session[\s_-]?token|authorization|secret)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
       (_match:string,label:string)=>label+"[credential_removed]")
-    .replace(/(https?:\/\/[^/:@\s]+:)[^@\s/]+@/giu,"$1[credential_removed]@");
+    .replace(/(https?:\/\/[^/:@\s]+:)[^@\s/]+@/giu,"$1[credential_removed]@")
+    // A transaction line must not become a diagnostic log, even when an
+    // owner pastes it into a chat request rather than using the bank importer.
+    .replace(/(^|\n)\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+[^\r\n]{1,160}?\s+(?:-?\s*[$€£]\s*[\d,]+\.\d{2}|-?[\d,]+\.\d{2})(?=\s*(?:\n|$))/gmu,
+      "$1[bank_line_removed]")
+    .replace(/\bdata:image\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/giu,"[inline_image_removed]");
 }
 function redact(value:unknown,state:State,depth=0):unknown {
   if(depth>24){state.droppedCount++;return "[depth_limit]";}
@@ -32,7 +39,8 @@ function redact(value:unknown,state:State,depth=0):unknown {
   if(value!==null&&typeof value==="object"){
     const out:Record<string,unknown>={};
     for(const [key,item] of Object.entries(value))
-      out[key]=secretKey.test(key)?"[credential_removed]":redact(item,state,depth+1);
+      out[key]=secretKey.test(key)?"[credential_removed]":
+        restrictedContentKey.test(key)?"[restricted_source_content_removed]":redact(item,state,depth+1);
     return out;
   }
   return typeof value==="string"?redactSecretsInText(value):value;
@@ -45,11 +53,15 @@ export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):voi
   let encoded:string;
   try{
     encoded=JSON.stringify(entry);
-    if(Buffer.byteLength(encoded)>MAX_EVENT_BYTES){
+    if(Buffer.byteLength(encoded)>4096){
+      const originalBytes=Buffer.byteLength(encoded);
+      const digest=createHash("sha256").update(encoded).digest("hex");
+      // Preserve full redacted content, including every R1/R2/... field, in
+      // a compressed event with an integrity checksum for reconstruction.
       // Responses schemas/context often exceed console-sized records. Preserve
       // the ENTIRE credential-filtered event instead of silently dropping it.
       entry={sequence:entry.sequence,at:entry.at,point:entry.point,
-        encoding:"gzip-base64",originalBytes:Buffer.byteLength(encoded),
+        encoding:"gzip-base64",originalBytes,digestSha256:digest,
         data:gzipSync(Buffer.from(encoded,"utf8")).toString("base64")};
       encoded=JSON.stringify(entry);
     }
