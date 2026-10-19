@@ -180,7 +180,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
     const formulaCitedIds=new Set<string>();
     const matched:{id:string;path:string}[]=[];
     const businessSpecific=BUSINESS_SPECIFIC.test(paragraph.text);
-    const text=paragraph.text.replace(CLAIM_SPAN,(full:string,tokenId?:string,tokenPath?:string,matchOffset?:number)=>{
+    const text=paragraph.text.replace(CLAIM_SPAN,(full:string,tokenId:string|undefined,tokenPath:string|undefined,matchOffset:number)=>{
       if(tokenId!==undefined&&tokenPath!==undefined){
         // §2: tell apart a citation to an id never produced this turn
         // (hallucinated) from a real id whose lookup came back with no
