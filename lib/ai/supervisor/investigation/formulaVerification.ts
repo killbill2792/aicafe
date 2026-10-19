@@ -123,7 +123,7 @@ export const NUMERIC_SPAN=String.raw`(?<![\p{L}\p{N}])(?:[-−﹣－]\s*)?(?:[$�
 /** Dates and clock times are indivisible claims. Checking each digit group
  * as a separate owner echo can authorize a date/time the owner never gave.
  * Use the same grammar for both the owner's sources and model output. */
-export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}(?:T\p{Nd}{2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2})?)?|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)(?![\p{L}\p{N}])`;
+export const STRUCTURED_TEMPORAL_SPAN=String.raw`(?<![\p{L}\p{N}])(?:(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{4})(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?(?:Z|[+-]\p{Nd}{2}:\p{Nd}{2})?)?|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}/\p{Nd}{1,2}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*(?:a\.?m\.?|p\.?m\.?))?)(?![\p{L}\p{N}])`;
 const TEMPORAL_SPANS=new RegExp(STRUCTURED_TEMPORAL_SPAN,"giu");
 const COMPLETE_TEMPORAL_SPAN=new RegExp("^(?:"+STRUCTURED_TEMPORAL_SPAN+")$","iu");
 export function isStructuredTemporalSpan(text:string):boolean{
@@ -136,36 +136,18 @@ export function findOwnerTemporalSpan(ownerText:string,claim:string):string|null
   return null;
 }
 const OWNER_NUMERIC_SPAN=new RegExp(NUMERIC_SPAN,"giu");
-/** Dates and times are indivisible claims, never separate numeric echoes. */
-export const STRUCTURED_DATE_TIME=String.raw`(?<![\p{L}\p{N}])(?:(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4})(?:[Tt\s]\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP][mM])?)?|\p{Nd}{4}[-/]\p{Nd}{1,2}(?![-/]\p{Nd})|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP][mM])?)(?![\p{L}\p{N}])`;
-const OWNER_STRUCTURED_DATE_TIME=new RegExp(STRUCTURED_DATE_TIME,"giu");
-export function ownerQuotedStructuredDateTime(ownerText:string,source:string):boolean{
-  return [...ownerText.matchAll(OWNER_STRUCTURED_DATE_TIME)].some(m=>m[0].toLocaleLowerCase()===source.toLocaleLowerCase());
-}
-/** Date/time components are not independent numeric facts. Never use a
- * year, month, day, minute or second inside a structured owner timestamp as
- * evidence for a standalone quantity or a rearranged date. This grammar is
- * shared with claim rendering so it can verify a whole date/time atomically.
- * A dotted date requires three groups, preserving ordinary decimal values. */
-export const STRUCTURED_DATE_TIME_SPAN=String.raw`(?<![\p{L}\p{N}])(?:\p{Nd}{4}[-/]\p{Nd}{1,2}[-/]\p{Nd}{1,2}|\p{Nd}{1,2}[-/]\p{Nd}{1,2}[-/]\p{Nd}{2,4}|\p{Nd}{1,2}\.\p{Nd}{1,2}\.\p{Nd}{4}|\p{Nd}{1,2}:\p{Nd}{2}(?::\p{Nd}{2})?(?:\s*[aApP]\.?[mM]\.?)?)(?![\p{L}\p{N}])`;
-const OWNER_STRUCTURED_SPAN=new RegExp(STRUCTURED_DATE_TIME_SPAN,"giu");
-
 const WORD_CHAR=/[\p{L}\p{N}]/u;
 export function findOwnerQuotedSpan(ownerText:string,source:string,locale:Locale,
   options?:{numericSourceOnly?:boolean}):string|null{
   const sourceParsed=parseNumericSnippet(source.trim(),locale);
   if(!sourceParsed)return null;
-  const structured=[...ownerText.matchAll(OWNER_STRUCTURED_SPAN)].map(m=>({start:m.index,end:m.index+m[0].length}));
-  const structuredRanges=[...ownerText.matchAll(OWNER_STRUCTURED_DATE_TIME)].map(m=>[m.index,m.index+m[0].length] as const);
+  const temporalRanges=[...ownerText.matchAll(TEMPORAL_SPANS)]
+    .map(m=>({start:m.index,end:m.index+m[0].length}));
   for(const match of ownerText.matchAll(OWNER_NUMERIC_SPAN)){
-    // Reject any numeric fragment of a date/time, regardless of locale.
-    if(structured.some(s=>match.index<s.end&&match.index+match[0].length>s.start))continue;
     const text=match[0],start=match.index,end=start+text.length;
-    if(structuredRanges.some(([a,b])=>start<b&&end>a))continue;
+    // Dates, years and clock times only count as complete quoted values.
+    if(temporalRanges.some(span=>start<span.end&&end>span.start))continue;
     const before=ownerText[start-1]??"",after=ownerText[end]??"";
-    // A component of an ISO/slash date or clock time is not a standalone
-    // quantity that can support a different statement or formula operand.
-    if([...ownerText.matchAll(TEMPORAL_SPANS)].some(span=>start<span.index+span[0].length&&end>span.index))continue;
     if((before&&WORD_CHAR.test(before))||(after&&WORD_CHAR.test(after)))continue;
     const candidate=parseNumericSnippet(text,locale);
     const sourceUnit=classifyOwnerUnit(source),candidateUnit=classifyOwnerUnit(text);
