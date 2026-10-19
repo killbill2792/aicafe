@@ -357,6 +357,53 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
   });
 });
 
+describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
+  it("records exact R1 source values, exact model preview, selected formula and delivered response",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let trace:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",ownerQuestion:"What is my recurring cost?"});
+        logSupervisorDebugPayload({point:"tool_result",observationId:"r1",
+          capabilityId:"p3.money.monthly_bills.v1",
+          toolArguments:{id:"money.monthly_bills"},
+          result:{status:"verified",value:{totalCents:746700},unit:"typed_record"}});
+        logSupervisorDebugPayload({point:"model_request",requestName:"supervisor_investigation_step",
+          body:{input:[{role:"user",content:JSON.stringify({
+            observations:[{id:"r1",result:{value:{totalCents:746700}}}],
+            authorizedOperands:[{handle:"money.monthly_bills:value:totalCents",unit:"USD_cents"}]})}]}});
+        logSupervisorDebugPayload({point:"model_response",raw:{
+          usage:{input_tokens:120,output_tokens:40},
+          output:[{type:"function_call",name:"calculate",arguments:JSON.stringify({
+            nodes:[{op:"source",handle:"money.monthly_bills:value:totalCents"}]})}]}});
+        logSupervisorDebugPayload({point:"http_response_sent",httpStatus:201,
+          responseBody:{reply:{status:"verified",blocks:[{type:"text",text:"$7,467.00"}]}}});
+      },async t=>{trace=t;});
+      expect(trace!.droppedCount).toBe(0);
+      expect(trace!.events.map(e=>e.point)).toEqual([
+        "turn_received","tool_result","model_request","model_response","http_response_sent"]);
+      expect((trace!.events[1].result as {value:{totalCents:number}}).value.totalCents).toBe(746700);
+      expect(JSON.stringify(trace!.events[2])).toContain("money.monthly_bills:value:totalCents");
+      expect(JSON.stringify(trace!.events[3])).toContain("input_tokens");
+      expect(JSON.stringify(trace!.events[4])).toContain("$7,467.00");
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("redacts pasted bank-statement lines while retaining non-bank amounts",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let trace:{events:Record<string,unknown>[]}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",
+          ownerQuestion:"Review this: 10/19 ACME -$45.00\nMy rent is $700."});
+      },async t=>{trace=t;});
+      const logged=JSON.stringify(trace);
+      expect(logged).not.toContain("10/19 ACME -$45.00");
+      expect(logged).toContain("[bank_line_removed]");
+      expect(logged).toContain("$700");
+    }finally{vi.unstubAllEnvs();}
+  });
+});
+
 describe("authenticated private trace buffer",()=>{
   it("preserves large model inputs via compressed private events without dropping them",async()=>{
     vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
