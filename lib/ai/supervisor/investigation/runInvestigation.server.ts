@@ -196,11 +196,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const labels=investigationLabels(input.locale);
   // Surface precisely which owner goal remains unanswered, in the owner's
   // language, rather than silently publishing an incomplete candidate.
-  const incompleteNotice=(reason:string)=>({
-    en:"Part of your request remains unanswered: ",
-    es:"Una parte de tu solicitud sigue sin respuesta: ",
-    ar:"لا يزال جزء من طلبك دون إجابة: ",
-  }[input.locale]+reason).slice(0,1100);
+  const incompleteNotice=(reason:string)=>(labels.unansweredGoal+reason).slice(0,1100);
   const missingGoalWarning=(reason:string):SupervisorReplyBlock=>({
     type:"warning",code:"SUPERVISOR_INCOMPLETE",text:incompleteNotice(reason),
   });
@@ -219,7 +215,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // set from a round that failed mechanical rendering -- never from a round
   // that reached the independent review, whose negative verdict is an
   // actual finding, not a formatting slip, and must never be rescued.
-  let lastUnverifiedAnswer:{text:string;citedIds:string[]}|null=null;
+  let lastUnverifiedAnswer:{text:string;citedIds:string[];missingGoalReason?:string}|null=null;
   // §7: the best claim-level-masked candidate seen across the WHOLE loop,
   // never just the final attempt. "Best" = fewest unresolved claim issues,
   // ties broken by most surviving content. Reused only when exhaustion
@@ -284,7 +280,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(accumulatedRescue){
         const accReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-          instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,
+          instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,
             observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
             proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
           apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
@@ -339,6 +335,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:[]),
         {type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
         ...citationCautionWarnings(citedObservations,input.locale),{type:"text",text:lastUnverifiedAnswer.text}];
+      if(lastUnverifiedAnswer.missingGoalReason&&blocks.length<30)
+        blocks.push(missingGoalWarning(lastUnverifiedAnswer.missingGoalReason));
       return {reply:{intent:pure?"profitability" as const:"unknown" as const,status:"insufficient_evidence" as const,
         evidence:[],blocks},usage:{...usage}};
     }
@@ -657,7 +655,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const rescued=renderUnverifiedAnswer(answer,observations,input.locale);
         if(rescued){
           const rescueReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-            instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
+            instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,observations:views,
               proposedAnswer:answer,renderedAnswer:[{type:"text",text:rescued.text}]},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
@@ -666,7 +664,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             complete:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.complete:null,
             reason:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.reason:null});
           if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported)
-            lastUnverifiedAnswer=rescued;
+            lastUnverifiedAnswer={...rescued,
+              missingGoalReason:rescueReview.complete?undefined:rescueReview.reason};
         }
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
         lastRejectedAnswerSignature=answerSignature;
@@ -689,7 +688,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           const targetParagraph=answer.paragraphs[extractable.paragraphIndex];
           const extraction=await requestInvestigation({name:"supervisor_formula_extraction",schema:formulaExtractionSchema,
             instructions:formulaExtractionInstructions,
-            context:{ownerRequest:input.text,ownerStatements,paragraphText:targetParagraph?.text??"",
+            context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,paragraphText:targetParagraph?.text??"",
               targetClaim:extractable.text,observations:views},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
             onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
@@ -726,7 +725,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         continue;
       }
       const review:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-        instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
+        instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,observations:views,
           proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       const reviewReason:string|null=review&&!isToolCallSignal(review)?review.reason:null;
