@@ -14,22 +14,31 @@ type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nex
 const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(^|[_-])(authorization|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)($|[_-])/i;
-function redact(value:unknown,depth=0):unknown {
-  if(depth>14)return "[depth_limit]";
-  if(Array.isArray(value))return value.slice(0,120).map(x=>redact(x,depth+1));
+/** No raw bearer, quoted password or provider-key-shaped token can be retained. */
+function redactSecretsInText(value:string):string {
+  return value
+    .replace(/\b(?:sk-(?:proj-)?[a-zA-Z0-9_-]{8,}|sb_secret_[a-zA-Z0-9_-]{8,}|github_pat_[a-zA-Z0-9_-]{8,}|gh[pousr]_[a-zA-Z0-9_]{8,}|vercel_[a-zA-Z0-9_-]{16,})\b/gu,"[credential_removed]")
+    .replace(/\bBearer\s+[a-zA-Z0-9._~+/-]{8,}=?\b/giu,"Bearer [credential_removed]")
+    .replace(/(\b(?:password|passphrase|api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|session[\s_-]?token|authorization|secret)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      (_match:string,label:string)=>label+"[credential_removed]")
+    .replace(/(https?:\/\/[^/:@\s]+:)[^@\s/]+@/giu,"$1[credential_removed]@");
+}
+function redact(value:unknown,state:State,depth=0):unknown {
+  if(depth>24){state.droppedCount++;return "[depth_limit]";}
+  if(Array.isArray(value))return value.map(x=>redact(x,state,depth+1));
   if(value!==null&&typeof value==="object"){
     const out:Record<string,unknown>={};
-    for(const [key,item] of Object.entries(value).slice(0,180))
-      out[key]=secretKey.test(key)?"[credential_removed]":redact(item,depth+1);
+    for(const [key,item] of Object.entries(value))
+      out[key]=secretKey.test(key)?"[credential_removed]":redact(item,state,depth+1);
     return out;
   }
-  return typeof value==="string"?value.slice(0,18000):value;
+  return typeof value==="string"?redactSecretsInText(value):value;
 }
 export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):void {
   const state=context.getStore();
   if(!state)return;
   let entry:Record<string,unknown>={sequence:state.nextSequence++,at:new Date().toISOString(),
-    ...(redact(payload) as Record<string,unknown>)};
+    ...(redact(payload,state) as Record<string,unknown>)};
   let encoded:string;
   try{
     encoded=JSON.stringify(entry);
