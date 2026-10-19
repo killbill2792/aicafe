@@ -1,6 +1,6 @@
 import "server-only";
 import {modelVisibleIds,describeSourceFields} from "./canonicalCapabilities";
-import {outputFor} from "@/lib/metrics/p1Catalog";
+import {outputFor} from "@/lib/metrics/p1Readers.server";
 import {randomUUID} from "node:crypto";
 import {z} from "zod";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
