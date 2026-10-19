@@ -4,12 +4,13 @@ import { requireUser } from "@/lib/auth/requireUser";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
 import PageShell from "@/components/shared/PageShell";
+import SignOutButton from "@/components/more/SignOutButton";
 
 export const dynamic = "force-dynamic";
 
 export default async function MorePage() {
-  await requireUser();
-  const t = await getTranslations("More");
+  const user = await requireUser();
+  const [t, tProfile] = await Promise.all([getTranslations("More"), getTranslations("CafeProfile")]);
 
   const links = [
     { href: "/more/cafe-profile", Icon: Store, label: t("cafeProfile") },
@@ -36,6 +37,17 @@ export default async function MorePage() {
         <h1 className="font-headline text-3xl font-semibold text-ink">{t("title")}</h1>
         <LanguageSwitch href="/more" />
       </header>
+
+      {user && (
+        <section aria-label={t("signOut")} className="rounded-card-lg border border-line bg-card px-2">
+          {user.email && (
+            <p className="border-b border-[#EFE7DB] px-2.5 py-3 text-sm text-ink-muted">
+              {tProfile("signedInAs", { email: user.email })}
+            </p>
+          )}
+          <SignOutButton labels={{ signOut: t("signOut"), signingOut: t("signingOut"), error: t("signOutError") }} />
+        </section>
+      )}
 
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {links.map(({ href, Icon, label }) => (

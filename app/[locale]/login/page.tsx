@@ -11,7 +11,8 @@ const LANGUAGE_LABELS: Record<string, string> = {
   ar: "العربية",
 };
 
-export default async function LoginPage() {
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams;
   const t = await getTranslations("Login");
 
   return (
@@ -40,7 +41,7 @@ export default async function LoginPage() {
       </div>
 
       <div className="mt-auto rounded-3xl bg-card p-5">
-        <LoginForm />
+        <LoginForm callbackError={error === "auth"} />
       </div>
     </PageShell>
   );
