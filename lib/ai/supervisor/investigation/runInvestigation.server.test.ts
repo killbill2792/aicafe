@@ -1184,7 +1184,7 @@ it("keeps an extraction-verified claim in the §7 best-accumulated candidate ins
     {kind:"advice",text:"Rent alone could run $900 more some months.",citations:[]},
   ]);
   const extractionResponse=response({extracted:{claim:"$4.83",formula:"a + b",
-    variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}});
+    variables:[{name:"a",value:3,source:"$3"},{name:"b",value:1.83,source:"$1.83"}]}});
   const scripted=transportFor([draft,draft]);
   const transport=async(url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));

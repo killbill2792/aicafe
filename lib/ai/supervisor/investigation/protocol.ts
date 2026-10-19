@@ -16,9 +16,16 @@ export const stepSchema=z.strictObject({
 export const formulaEntrySchema=z.strictObject({
   claim:z.string().min(1).max(40),
   formula:z.string().min(1).max(200),
-  variables:z.record(z.string().min(1).max(32),z.strictObject({
-    value:z.number(),source:z.string().min(1).max(300),
-  })),
+  // An ARRAY of named declarations, never a map keyed by variable name
+  // (production bug): a record's dynamic keys have no fixed `properties`,
+  // which OpenAI's structured-output strict JSON Schema mode rejects
+  // outright (every real owner question failed with a provider 400
+  // "invalid_json_schema" the moment this field existed in the schema at
+  // all -- never a model-authoring failure, a request-shape failure).
+  // Capped at the evaluator's own MAX_VARIABLES (formulaExpression.ts).
+  variables:z.array(z.strictObject({
+    name:z.string().min(1).max(32),value:z.number(),source:z.string().min(1).max(300),
+  })).min(1).max(8),
 });
 export type FormulaEntry=z.infer<typeof formulaEntrySchema>;
 export const answerSchema=z.strictObject({
@@ -28,7 +35,14 @@ export const answerSchema=z.strictObject({
     citations:z.array(z.string().regex(/^r\d+$/)).max(5),
     // Present only on a paragraph with one or more freehand numeric claims;
     // one entry per number, so a problem with one never affects the others.
-    formulas:z.array(formulaEntrySchema).max(5).optional(),
+    // `nullish` (not just `optional`): OpenAI's structured-output strict
+    // mode requires every declared property to be sent back by the model,
+    // so the request-building step (model.server.ts) always marks this
+    // field required-but-nullable on the WIRE schema regardless of zod's
+    // own optionality here -- our own parse of the model's actual response
+    // must therefore accept an explicit `null` (a real paragraph with
+    // nothing to verify), not only an omitted key.
+    formulas:z.array(formulaEntrySchema).max(5).nullish(),
   })).min(1).max(8),
 });
 export const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean()});

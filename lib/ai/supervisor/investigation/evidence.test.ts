@@ -188,7 +188,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"With $3 and $1.83, that comes to $4.83.",citations:[],
         formulas:[{claim:"$4.83",formula:"a + b",
-          variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}]},
+          variables:[{name:"a",value:3,source:"$3"},{name:"b",value:1.83,source:"$1.83"}]}]},
     ]),[],"en",{ownerText:"Assume $3 and $1.83."});
     expect(rendered!.blocks).toEqual([{type:"text",text:"With $3 and $1.83, that comes to $4.83."}]);
     expect(rendered!.hasComputedClaim).toBe(true);
@@ -198,7 +198,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"After $20 in supplies against a $15 take, that's a -$5 day.",citations:[],
         formulas:[{claim:"-$5",formula:"revenue - cost",
-          variables:{revenue:{value:15,source:"$15"},cost:{value:20,source:"$20"}}}]},
+          variables:[{name:"revenue",value:15,source:"$15"},{name:"cost",value:20,source:"$20"}]}]},
     ]),[],"en",{ownerText:"I took in $15 but spent $20 on supplies."});
     expect(rendered!.blocks).toEqual([{type:"text",text:"After $20 in supplies against a $15 take, that's a -$5 day."}]);
     expect(rendered!.hasComputedClaim).toBe(true);
@@ -208,7 +208,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"With $3 and $1.83, that comes to $9.00.",citations:[],
         formulas:[{claim:"$9.00",formula:"a + b",
-          variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}]},
+          variables:[{name:"a",value:3,source:"$3"},{name:"b",value:1.83,source:"$1.83"}]}]},
       {kind:"advice",text:"Either way, keep tracking your weekly sales.",citations:[]},
     ]),[],"en",{ownerText:"Assume $3 and $1.83."});
     expect(rendered!.blocks).toContainEqual({type:"text",text:"Either way, keep tracking your weekly sales."});
@@ -378,7 +378,7 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
     source.reference={...ref("external-price"),source:"unverified_external"};
     const other=observation("r2","priceCents",500);
     const a=answer([{kind,text:"The modeled difference is $5.",citations:[],formulas:[{
-      claim:"$5",formula:"a - b",variables:{a:{value:10,source:"r1:value.priceCents"},b:{value:5,source:"r2:value.priceCents"}}}]}]);
+      claim:"$5",formula:"a - b",variables:[{name:"a",value:10,source:"r1:value.priceCents"},{name:"b",value:5,source:"r2:value.priceCents"}]}]}]);
     const rendered=renderInvestigationAnswer(a,[source,other],"en")!;
     expect(rendered.issues).toEqual([]);
     expect(rendered.citedIds).toEqual(["r1","r2"]);
@@ -393,7 +393,7 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
   it("does not retain sources from a discarded formula paragraph",()=>{
     const source=observation("r1","priceCents",1000);
     const a=answer([{kind:"advice",text:"The difference is $6. {{bad}}",citations:[],formulas:[{
-      claim:"$6",formula:"a - b",variables:{a:{value:10,source:"r1:value.priceCents"},b:{value:4,source:"$4"}}}]},
+      claim:"$6",formula:"a - b",variables:[{name:"a",value:10,source:"r1:value.priceCents"},{name:"b",value:4,source:"$4"}]}]},
       {kind:"advice",text:"Check the source.",citations:[]}]);
     const rendered=renderInvestigationAnswer(a,[source],"en",{ownerText:"Assume $4."})!;
     expect(rendered.citedIds).toEqual([]);
@@ -409,7 +409,7 @@ describe("PR127 review provenance and multilingual unit boundaries",()=>{
   });
   it.each(["5 دولارات","5 دولار","5٪","5 ٪"])("checks the complete Arabic claim %s",claim=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"النتيجة "+claim+".",citations:[],formulas:[{
-      claim,formula:"a + b",variables:{a:{value:3,source:"3"},b:{value:2,source:"2"}}}]}]),[],"ar",{ownerText:"3 drinks and 2 shifts"})!;
+      claim,formula:"a + b",variables:[{name:"a",value:3,source:"3"},{name:"b",value:2,source:"2"}]}]}]),[],"ar",{ownerText:"3 drinks and 2 shifts"})!;
     expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"formula_failed",text:claim,
       failure:{reason:"requires_registered_calculator"}}));
   });
@@ -470,7 +470,7 @@ describe("PR127 second-review rendering regressions",()=>{
     const source=observation("r2","priceCents",1000,{quality:{estimatedInputs:["price"]}});
     source.reference={...ref("external-price"),source:"unverified_external"};
     const a=answer([{kind:"advice",text:"The modeled value is $5.",citations:[],formulas:[{
-      claim:"$5",formula:"a",variables:{a:{value:5,source:"r1:value.priceCents"},b:{value:10,source:"r2:value.priceCents"}}}]}]);
+      claim:"$5",formula:"a",variables:[{name:"a",value:5,source:"r1:value.priceCents"},{name:"b",value:10,source:"r2:value.priceCents"}]}]}]);
     const used=observation("r1","priceCents",500);
     const rendered=renderInvestigationAnswer(a,[used,source],"en")!;
     expect(rendered.issues).toContainEqual(expect.objectContaining({kind:"formula_failed",failure:{reason:"unused_variable",variable:"b"}}));
