@@ -44,3 +44,4 @@ export async function GET(request: Request) {
   } catch {
     return NextResponse.redirect(fallback, { headers: { "Cache-Control": "no-store" } });
   }
+}
