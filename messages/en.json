@@ -1094,7 +1094,8 @@
     "useMagicLink": "Sign in with an email link instead",
     "usePassword": "Sign in with password",
     "noAccount": "New to AI Café?",
-    "createAccount": "Create account"
+    "createAccount": "Create account",
+    "callbackError": "That sign-in link has expired or could not be verified. Request a new link and try again."
   },
   "Operations": {
     "teamTitle": "Your AI team",
