@@ -188,6 +188,10 @@ export function projectP1Evidence(
   // reconcile changed values, coverage or revision across independent reads.
   const redundantAliases=new Set<ShadowEvidence>();
   const conflictedAliases=new Set<ShadowEvidence>();
+  // A scalar alias can have been selected for a different owner clause than
+  // its canonical structured parent. Reuse the value without dropping the
+  // clause authorization that the compatibility planner requires.
+  const aliasClauseBindings=new Map<ShadowEvidence,{field:string;clause:string}[]>();
   const rec=(v:unknown):v is Record<string,unknown>=>isObject(v);
   const scopeOf=(e:ShadowEvidence)=>{
     const value=rec(e.result)?e.result:{};
@@ -224,8 +228,14 @@ export function projectP1Evidence(
           parentScope.actuality===childScope.actuality&&
           parentScope.quality===childScope.quality;
       });
-      if(compatible)redundantAliases.add(scalar);
-      else{
+      if(compatible){
+        redundantAliases.add(scalar);
+        for(const parent of samePeriod){
+          const existing=aliasClauseBindings.get(parent)??[];
+          existing.push({field:spec.field,clause:scalar.clause});
+          aliasClauseBindings.set(parent,existing);
+        }
+      }else{
         conflictedAliases.add(scalar);
         for(const parent of samePeriod)conflictedAliases.add(parent);
       }
@@ -351,6 +361,9 @@ export function projectP1Evidence(
       // association so a plan cannot borrow it from an unrelated clause.
       const choice={handle,entityId:leaf.key,entityName:leaf.name,
         field:leaf.field,matchedClause:item.clause};
+      const associatedClauses=new Set([item.clause,
+        ...(aliasClauseBindings.get(item)??[]).filter(b=>b.field===leaf.field)
+          .map(b=>b.clause)]);
       const previous=operands.find(o=>o.handle===handle);
       if(previous){
         if(readSignatures.get(handle)!==signature){
@@ -358,8 +371,9 @@ export function projectP1Evidence(
           missing.push("conflicting_source_snapshot:"+key);
           continue;
         }
-        if(!choices.some(c=>c.handle===handle&&c.matchedClause===item.clause))
-          choices.push(choice);
+        for(const matchedClause of associatedClauses)
+          if(!choices.some(c=>c.handle===handle&&c.matchedClause===matchedClause))
+            choices.push({...choice,matchedClause});
         continue;
       }
       // Keep reviewing repeated handles even after reaching the twelve-leaf
@@ -368,7 +382,9 @@ export function projectP1Evidence(
       readSignatures.set(handle,signature);
       // Keep the server-resolved name, ID, field and originating clause
       // alongside the opaque handle. The model must never infer UUID identities.
-      choices.push(choice);
+      for(const matchedClause of associatedClauses)
+        if(!choices.some(c=>c.handle===handle&&c.matchedClause===matchedClause))
+          choices.push({...choice,matchedClause});
       operands.push({
         handle,capabilityId:capability,canonicalReaderId:readers[key],
         sourceId:key,sourcePurpose:provenance.purpose,
