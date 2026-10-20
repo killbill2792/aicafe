@@ -232,7 +232,11 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
         if(run.length){
           const first=run[0],last=run[run.length-1];
           const total=(last.end-first.start)/60000;
-          if(total>limit && total>=duration+2*grid)
+          // Full-span crew members already compete in the normal seat-tier
+          // search. This fallback is ONLY for genuinely partial handoff staff.
+          const groupFirst=group.units[0],groupLast=group.units[group.units.length-1];
+          if((first.start>groupFirst.start || last.end<groupLast.end) &&
+              total>limit && total>=duration+2*grid)
             partial.push({span:{...group,units:run},first,last,people:[person]});
         }
         run=[];
