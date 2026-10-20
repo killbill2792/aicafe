@@ -1,34 +1,34 @@
-import {describe,it,expect} from "vitest";
-import {simulateDrinkPriceExperiment,reportDrinkPriceExperiment,addBusinessDays} from "./priceExperiment";
-const baseline=Array.from({length:7},(_,i)=>({businessDate:addBusinessDays("2026-10-01",i),
-  units:10,revenueCents:5000,actual:true}));
-describe("price experiment canonical cents",()=>{
-  it("forecasts fixed-volume impact with true ingredient-only contribution",()=>{
-    const result=simulateDrinkPriceExperiment({fromPriceCents:500,deltaCents:10,
-      ingredientCostCents:125,baselineDays:baseline});
-    expect(result.baseline).toEqual({units:70,revenueCents:35000,ingredientContributionCents:26250});
-    expect(result.forecast).toEqual({units:70,revenueCents:35700,ingredientContributionCents:26950});
-    expect(result.estimatedDeltaRevenueCents).toBe(700);
-    const report=reportDrinkPriceExperiment({simulation:result,days:baseline.map(x=>({
-      ...x,revenueCents:5100})),requiredDays:7,windowElapsed:true});
-    expect(report.status).toBe("complete");
-    expect(report.observed).toEqual({units:70,revenueCents:35700,ingredientContributionCents:26950});
-    expect(report.observedVsBaselineContributionCents).toBe(700);
-    expect(report.recommendation).toBe("keep");
+import {describe,expect,it} from "vitest";
+import {evaluatePriceExperiment,simulatePriceExperiment} from "./priceExperiment";
+const base=simulatePriceExperiment({productId:"latte",productName:"Latte",currentPriceCents:500,
+  increaseCents:10,ingredientCostCents:125,units7Days:70})!;
+describe("price experiment: canonical integer-cent scenarios",()=>{
+  it("projects conditional unchanged-volume contribution, not invented profit",()=>{
+    expect(base.beforeContributionCents).toBe(375);
+    expect(base.afterContributionCents).toBe(385);
+    expect(base.estimatedAdditionalRevenue7DaysCents).toBe(700);
+    expect(base.estimateKind).toBe("conditional_unchanged_demand");
   });
-  it("never substitutes zero for absent coverage and never claims an early report complete",()=>{
-    const incomplete=baseline.map((d,i)=>i===2?{...d,actual:false,units:null,revenueCents:null}:d);
-    const sim=simulateDrinkPriceExperiment({fromPriceCents:500,deltaCents:10,
-      ingredientCostCents:125,baselineDays:incomplete});
-    expect(sim.status).toBe("unavailable");
-    const all=simulateDrinkPriceExperiment({fromPriceCents:500,deltaCents:10,
-      ingredientCostCents:125,baselineDays:baseline});
-    const report=reportDrinkPriceExperiment({simulation:all,days:incomplete,
-      requiredDays:7,windowElapsed:true});
-    expect(report.status).toBe("insufficient_evidence");
-    expect(report.recommendation).toBe("unavailable");
-    expect(report.observed).toBeNull();
-    expect(reportDrinkPriceExperiment({simulation:all,days:baseline,
-      requiredDays:7,windowElapsed:false}).recommendation).toBe("unavailable");
+  it("compares seven observed days without treating change as causal profit",()=>{
+    const rows=Array.from({length:7},(_,i)=>({businessDate:`2026-10-${String(i+1).padStart(2,"0")}`,
+      units:10,netSalesCents:5100,coverage:"actual" as const,source:"orders"}));
+    expect(evaluatePriceExperiment(base,rows)).toMatchObject({
+      status:"complete",coveredDays:7,units:70,observedRevenueCents:35700,
+      realizedRevenueDifferenceCents:700,expectedUpliftAtObservedVolumeCents:700,
+      observedIngredientContributionCents:26950,recommendation:"keep"});
+  });
+  it("never zero-fills missing actual source days",()=>{
+    expect(evaluatePriceExperiment(base,[{businessDate:"2026-10-01",units:0,
+      netSalesCents:0,coverage:"unavailable",source:"unknown"}])).toMatchObject({
+      status:"insufficient_evidence",observedRevenueCents:null});
+  });
+  it("distinguishes an observed zero day from missing",()=>{
+    expect(evaluatePriceExperiment(base,[{businessDate:"2026-10-01",units:0,
+      netSalesCents:0,coverage:"actual",source:"rollup"}])).toMatchObject({
+      status:"in_progress",observedRevenueCents:0,units:0});
+  });
+  it("rejects impossible cent/volume inputs",()=>{
+    expect(simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:500,
+      increaseCents:0.1,ingredientCostCents:5,units7Days:10})).toBeNull();
   });
 });
