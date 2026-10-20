@@ -568,7 +568,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
             canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
             neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
-            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))}}});
+            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))}});
         continue;
       }
       for(const signature of signatures)attempted.add(signature);
