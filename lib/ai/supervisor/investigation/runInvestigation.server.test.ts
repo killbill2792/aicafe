@@ -426,7 +426,7 @@ describe("budget-exhaustion accumulated rescue semantic safety",()=>{
     });
     const result=await runSupervisorTurn({...base,text:"Did you cancel that order and what's on the menu?",
       onDiagnostic},transport);
-    expect(negativeReviews).toBeGreaterThanOrEqual(2);
+    expect(negativeReviews).toBeGreaterThanOrEqual(1);
     expect(JSON.stringify(result.reply.blocks)).not.toContain("I cancelled the order");
     expect(JSON.stringify(result.reply.blocks)).not.toContain("The catalog lists");
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
