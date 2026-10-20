@@ -188,7 +188,11 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   // own lifecycle debug points, it is passed in here so the WHOLE turn --
   // route-level points and every investigation round -- shares exactly one id,
   // instead of this loop minting a second, disconnected one.
-  debugRequestId?:string};
+  debugRequestId?:string;
+  /** Registered, typed, INERT proposals only. No approval or effect authority. */
+  inertProposal?:{tools:readonly ToolDef[];
+    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>};
+};
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
@@ -388,6 +392,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const toolNameToCapabilityId=new Map<string,string>(
     manifest.map(m=>[capabilityToolName(m.id),m.id] as const));
   toolNameToCapabilityId.set(CALCULATE_TOOL_NAME,EXPRESSION_ID);
+  for(const tool of input.inertProposal?.tools??[]){
+    if(toolNameToCapabilityId.has(tool.name))throw new Error("Duplicate proposal tool name");
+    toolNameToCapabilityId.set(tool.name,"inert_proposal:"+tool.name);
+  }
   const investigationTools:ToolDef[]=[
     ...manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
       name:capabilityToolName(m.id),
@@ -397,6 +405,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             try{return describeSourceFields(z.toJSONSchema(outputFor(key),{unrepresentable:"any",reused:"inline"}));}
             catch{return "";}})():"")).slice(0,1000),
       parameters:m.inputJsonSchema})),
+    ...(input.inertProposal?.tools??[]),
     {name:CALCULATE_TOOL_NAME,
       description:"Combine already-authorized operand handles (from authorizedOperands) using the "+
         "registered expression engine's typed postfix nodes: source(handle), hypothetical, convert, "+
@@ -482,7 +491,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         capabilities:manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
           id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
         capabilityLimitations:{financialSnapshot:financialReadsAvailable?"available_or_provisional":"unavailable; financial evidence must not be used",inventory:"No verified stock count or inventory feed is connected.",
-          writes:"Business mutations and publication are not executable in this read/simulation conversation."},
+          writes:input.inertProposal?
+            "Only registered inert proposal drafting is permitted. It needs explicit owner trial intent and exact verified menu/cent input; approval, POS price change and effect commitment require separate owner actions.":
+            "Business mutations and publication are not executable in this read/simulation conversation."},
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
@@ -879,7 +890,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       continue;
     }
     const signature=JSON.stringify(canonicalSelector([
-      capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
+      capabilityId===EXPRESSION_ID?"calculate":capabilityId.startsWith("inert_proposal:")?"propose":"read",capabilityId,args]));
     if(attempted.has(signature)){
       // Unlike an unknown tool name or a rejected answer draft, a repeated
       // signature here may be re-citing an ALREADY-SUCCESSFUL prior
@@ -893,6 +904,32 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       continue;
     }
     attempted.add(signature);
+    if(capabilityId.startsWith("inert_proposal:")){
+      // The MODEL only selects a typed registered tool. The authenticated
+      // callback validates owner-authored cents and exact catalog identity,
+      // then persists a draft. No model selection can approve or commit.
+      const latestOwner=await authorizedOwnerP1();
+      if(latestOwner.identity.businessId!==identity.businessId||
+        latestOwner.identity.timezone!==identity.timezone||
+        latestOwner.identity.currency!==identity.currency||
+        latestOwner.identity.asOf!==identity.asOf)
+        return await failure(false,"identity_mismatch");
+      let created:{id:string;text:string}|null=null;
+      try{created=await input.inertProposal?.create(step.name,args)??null;}
+      catch{created=null;}
+      if(!created){
+        feedback="The requested draft was not grounded in exactly one owner-stated cent amount and one real unambiguous menu variant. Inspect the catalog or ask one clarification; never invent a proposal.";
+        continue;
+      }
+      usage.toolCallCount++;
+      input.onUsage?.({...usage});
+      input.onDiagnostic?.({stage:"grounded_answer",agent:"alex",
+        groundedStatus:"estimated",modelCallCount:usage.modelCallCount,
+        toolCallCount:usage.toolCallCount});
+      return {reply:{intent:"menu_pricing",status:"estimated",
+        evidence:[{source:"pricing_engine",identifier:"supervisor-proposal:"+created.id,asOf:identity.asOf}],
+        blocks:[{type:"text",text:created.text}]},usage:{...usage}};
+    }
     logSupervisorDebugPayload({point:"tool_request",requestId:debugRequestId,round,
       callId:step.callId,capabilityId,toolArguments:args,parallel:false});
     input.onDiagnostic?.({stage:"investigation_round",
