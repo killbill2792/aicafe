@@ -94,6 +94,10 @@ class MemoryRepo implements LoopRepository{
    await this.load(s,id);
    this.samplesList=this.samplesList.filter(x=>x.businessDate!==sample.businessDate).concat(sample);
  }
+ async clearSample(s:OwnerLoopScope,id:string,businessDate:string){
+   await this.load(s,id);
+   this.samplesList=this.samplesList.filter(x=>x.businessDate!==businessDate);
+ }
  async samples(s:OwnerLoopScope,id:string){await this.load(s,id);return this.samplesList;}
  async saveReport(s:OwnerLoopScope,p:LoopProposal,report:LoopReport){
    await this.load(s,p.id);this.report=report;
