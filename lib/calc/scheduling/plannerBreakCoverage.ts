@@ -217,13 +217,9 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   // 09:00-13:00 before C takes over at 13:00). Reserve their actual available
   // subsequence, without forcing them across the handoff boundary.
   for(const group of coverageSpans(input,plan)){
-    const maxSeats=Math.max(...group.units.map(u=>
-      input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount));
     const fromGroup=(entry:Candidate)=>group.units.includes(entry.span.units[0]);
     const selected=[...bestRoster].filter(([entry])=>fromGroup(entry))
       .map(([,person])=>person.id);
-    const remaining=Math.max(0,maxSeats-selected.length);
-    if(remaining===0)continue;
     const partial:Candidate[]=[];
     for(const person of plan.employees){
       if(selected.includes(person.id))continue;
@@ -256,14 +252,19 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     partial.sort((a,b)=>(b.last.end-b.first.start)-(a.last.end-a.first.start) ||
       priorityScore(a.people[0],objective)-priorityScore(b.people[0],objective) ||
       a.people[0].id.localeCompare(b.people[0].id));
-    let count=0;
     for(const entry of partial){
-      if(count>=remaining)break;
       const person=entry.people[0];
       if([...bestRoster].some(([other,worker])=>
         worker.id===person.id && entry.first.start<other.last.end &&
         other.first.start<entry.last.end))continue;
-      bestRoster.set(entry,person);count++;
+      // Bound SIMULTANEOUS participants in each requirement, not the total
+      // number of sequential B -> C -> D workers in one abstract seat tier.
+      if(entry.span.units.some(u=>{
+        const need=input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount;
+        return [...bestRoster.keys()].filter(other=>fromGroup(other) &&
+          other.first.start<u.end && other.last.end>u.start).length>=need;
+      }))continue;
+      bestRoster.set(entry,person);
     }
   }
   if(bestRoster.size===0)return results;
