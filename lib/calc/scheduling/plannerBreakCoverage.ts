@@ -294,11 +294,16 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
       const requirement=input.coverage.find(c=>c.id===unit.coverageId)!;
       const floor=requirement.minHeadcountDuringBreak;
       if(floor==null)return false;
-      const existing=new Set(scheduled.filter(b=>
-        b.coverageId===unit.coverageId && b.start<=unit.start && b.end>=unit.end)
-        .map(b=>b.employeeId));
-      existing.add(p.employeeId);
-      if(requirement.minHeadcount-existing.size<floor)return false;
+      // Breaks remove a PERSON from the slot, not permanently one of the
+      // original demand seats. A third qualified relief worker may preserve
+      // even a full (= normal) owner floor while A or B takes a real break.
+      const breaking=new Set(scheduled.filter(b=>
+        b.locationId===unit.locationId && b.start<=unit.start &&
+        b.end>=unit.end).map(b=>b.employeeId));
+      breaking.add(p.employeeId);
+      const eligible=eligibleCandidates(unit,plan,cache)
+        .filter(e=>!breaking.has(e.id));
+      if(eligible.length<floor)return false;
     }
     return true;
   }
