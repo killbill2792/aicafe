@@ -4,6 +4,17 @@ vi.mock("@/lib/metrics/p1Readers.server",async original=>({...await original<obj
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomicP1SourceSnapshot:vi.fn()}));
 vi.mock("@/lib/scheduling/oliviaCapabilities.server",()=>({executeOliviaReadCapability:vi.fn()}));
 vi.mock("@/lib/ai/suppliers/research.server",()=>({researchEnabled:vi.fn(()=>false),researchPublicSources:vi.fn()}));
+vi.mock("@/lib/data/getMenuControlCenter",()=>({
+  getMenuControlCenter:vi.fn(async()=>[
+    {id:"a0000000-0000-4000-8000-000000000001",name:"Iced Latte",baseName:"Iced Latte",
+      active:true,priceCents:525,pricing:{productCostCents:125}},
+  ]),
+}));
+vi.mock("@/lib/ai/supervisor/loop/sales.server",()=>({
+  readPriceExperimentBaselineUnits:vi.fn(async()=>70),
+  readPriceExperimentSalesDays:vi.fn(async()=>[]),
+}));
+
 import {authorizedOwnerP1,executeP1Authorized} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
@@ -17,6 +28,13 @@ import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 import type {InvestigationAnswer} from "./protocol";
 import {EXPRESSION_ID} from "../p3/expression";
 import {observationDisplay,type Observation} from "./evidence";
+import {supervisorLoopRegistry,priceExperimentCapabilityId}
+  from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {proposeLoop,type LoopRepository,type LoopCreate,type LoopProposal,type OwnerLoopScope}
+  from "@/lib/ai/supervisor/loop/engine";
+import {ownerQuotedPriceDelta,ownerNamedUniqueProduct} from "@/lib/ai/supervisor/loop/priceIntent";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+
 
 const cafe="a0000000-0000-4000-8000-000000000999",product="a0000000-0000-4000-8000-000000000001";
 const ingredient="a0000000-0000-4000-8000-000000000100",employee="a0000000-0000-4000-8000-000000000002";
@@ -91,6 +109,60 @@ beforeEach(()=>{
         {id:"c",spentOn:"2026-10-03",categoryCode:"rent",amountCents:900,status:"estimated",source:"manual"}],
     };
     return envelope(input,values[String(input.id)]??null) as Awaited<ReturnType<typeof executeP1Authorized>>;
+  });
+});
+
+describe("real price experiment registration in native conversational discovery",()=>{
+  it.each([
+    ["Let's test a 10-cent increase on the latte","en"],
+    ["Probemos subir el precio del latte 10 centavos","es"],
+    ["لنجرّب زيادة سعر latte ١٠ سنتات","ar"],
+  ] as const)("creates only a real registered inert draft via semantic function selection: %s",async(ownerText,locale)=>{
+    const definition=supervisorLoopRegistry.get(priceExperimentCapabilityId);
+    expect(definition.proposalInputJsonSchema).toEqual(expect.objectContaining({
+      type:"object",properties:expect.objectContaining({
+        productId:expect.anything(),increaseCents:expect.anything(),
+      }),
+    }));
+    const scope:OwnerLoopScope={businessId:cafe,ownerUserId:"a0000000-0000-4000-8000-000000000987",
+      threadId:"a0000000-0000-4000-8000-000000000888",locale};
+    const saved:LoopProposal[]=[];
+    const repo={
+      create:async(_scope:OwnerLoopScope,_key:string,p:LoopCreate)=>{
+        const draft:LoopProposal={...p,id:"a0000000-0000-4000-8000-000000000777",
+          status:"draft",revision:1,monitoringStartDate:null,createdAt:"2026-10-20T00:00:00Z"};
+        saved.push(draft);return draft;
+      },
+    } as unknown as LoopRepository;
+    const seenNames:string[]=[];
+    const native=transportFor([
+      read(priceExperimentCapabilityId,{productId:product,increaseCents:10}),
+    ]);
+    const result=await runSupervisorTurn({...base,locale,text:ownerText,
+      inertProposal:{tools:[{name:capabilityToolName(priceExperimentCapabilityId),
+        description:definition.proposalDescription,
+        parameters:definition.proposalInputJsonSchema}],
+        create:async(name,args)=>{
+          seenNames.push(name);
+          if(name!==capabilityToolName(priceExperimentCapabilityId))return null;
+          const candidate=args as {productId:string;increaseCents:number};
+          const catalog=(await getMenuControlCenter()).filter(x=>x.active);
+          if(!ownerQuotedPriceDelta(ownerText,undefined,candidate.increaseCents)||
+             !ownerNamedUniqueProduct(ownerText,undefined,candidate.productId,catalog))return null;
+          const proposal=await proposeLoop(scope,supervisorLoopRegistry,repo,
+            priceExperimentCapabilityId,candidate,"a0000000-0000-4000-8000-000000000555");
+          return {id:proposal.id,text:"Draft price experiment ready for owner approval. POS unchanged."};
+        }},
+    },native);
+    expect(seenNames).toEqual([capabilityToolName(priceExperimentCapabilityId)]);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({status:"draft",revision:1,capabilityId:priceExperimentCapabilityId,
+      canonicalEffectPayload:{productId:product,oldPriceCents:525,newPriceCents:535,
+        baselineUnits7Days:70},locale});
+    expect(result.reply).toMatchObject({status:"estimated",blocks:[{
+      type:"text",text:"Draft price experiment ready for owner approval. POS unchanged.",
+    }]});
+    expect(result.usage.toolCallCount).toBe(1);
   });
 });
 
