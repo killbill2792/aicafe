@@ -117,7 +117,8 @@ export async function withSupervisorPrivateTrace<T>(
       const expectedModelRequests=current.events.filter(e=>e.point==="model_request").length;
       const totals=aggregateModelCallCosts(rows);
       const missingUsageResponses=Math.max(0,expectedModelRequests-rows.length);
-      const incomplete=current.droppedCount>0||missingUsageResponses>0;
+      const traceDropped=current.droppedCount>0;
+      const costCoverageIncomplete=missingUsageResponses>0||totals.unpricedCalls>0;
       recordSupervisorPrivateTrace({point:"trace_summary",durationMs:Date.now()-startedAt,
         costUnit:"USD_micro",pricingKind:"token_rate_estimate_not_invoice",
         ...totals,
@@ -125,7 +126,8 @@ export async function withSupervisorPrivateTrace<T>(
         unpricedCalls:totals.unpricedCalls+missingUsageResponses,
         expectedModelRequests,observedUsageResponses:rows.length,
         missingUsageResponses,
-        captureComplete:!incomplete,priorDroppedCount:current.droppedCount});
+        captureComplete:!traceDropped,tokenCostComplete:!costCoverageIncomplete,
+        priorDroppedCount:current.droppedCount});
       try{await finish({events:current.events,droppedCount:current.droppedCount});}
       catch{console.info(JSON.stringify({event:"supervisor_private_trace",status:"write_failed"}));}
     }
