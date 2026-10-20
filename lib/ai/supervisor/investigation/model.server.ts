@@ -1,6 +1,6 @@
 import "server-only";
 import {z} from "zod";
-import {modelTokenUsage,estimateModelCallCostMicros} from "@/lib/calc/supervisorTokenCost";
+import {modelTokenUsage,estimateModelCallCostMicros,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
 import {SupervisorStageError,logSupervisorDebugPayload, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {buildInvestigationRequest} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
@@ -198,11 +198,15 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
       const prefix=actualModel===primary?"SUPERVISOR_":
         (fallback&&actualModel===fallback?"SUPERVISOR_FALLBACK_":null);
-      const rates=prefix?{
+      const configured=prefix?{
         input:process.env[prefix+"INPUT_USD_PER_MILLION_TOKENS"],
         cachedInput:process.env[prefix+"CACHED_INPUT_USD_PER_MILLION_TOKENS"],
         output:process.env[prefix+"OUTPUT_USD_PER_MILLION_TOKENS"],
       }:{input:undefined,cachedInput:undefined,output:undefined};
+      const hasConfiguredRate=Object.values(configured).some(v=>v!==undefined);
+      const snapshot=tokens&&!hasConfiguredRate?
+        standardModelTokenRates(actualModel,raw.service_tier??null,tokens.inputTokens):null;
+      const rates=snapshot??configured;
       // Pricing is an estimate from explicit model/tier rates, not the provider invoice.
       const estimatedCostMicros=tokens?estimateModelCallCostMicros(tokens,rates):null;
       logSupervisorDebugPayload({point:"model_usage",requestName:input.name,
@@ -211,7 +215,9 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
         modelCallCount:input.usage.modelCallCount,attempt,status:raw.status,
         serviceTier:raw.service_tier??null,
         usage:tokens??null,rawUsage:raw.usage??null,estimatedCostMicros,
-        rateUsdPerMillion:prefix?rates:null,
+        rateUsdPerMillion:snapshot||hasConfiguredRate?rates:null,
+        pricingSource:snapshot?"openai_standard_short_context_2026_10_19":
+          hasConfiguredRate?"environment_configured":"unpriced",
         pricingStatus:!tokens?"usage_unavailable":
           estimatedCostMicros===null?"missing_or_mismatched_rate":"configured_estimate",
         durationMs:Date.now()-providerCallStartedAt});
