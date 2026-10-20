@@ -44,10 +44,10 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     // A recognized size/quantity is not a second price (e.g. "Latte 12 oz,
     // increase 10 cents"). The allowlist is for explicit NON-price units only;
     // an untyped number fails closed and requires owner clarification.
-    const nonPriceUnits=/(?<![\\p{L}\\p{N}.])[0-9]{1,6}[\\s-]*(?:fl[\\s-]*oz|oz|ounces?|onzas?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|grams?|g|kg|كيلو|مل|أونصة|اونصة|days?|weeks?|months?|días?|semanas?|أيام|اسابيع)(?![\\p{L}\\p{N}])/giu;
+    const nonPriceUnits=/(?<![\p{L}\p{N}.])[0-9]{1,6}[\s-]*(?:fl[\s-]*oz|oz|ounces?|onzas?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|grams?|g|kg|كيلو|مل|أونصة|اونصة|days?|weeks?|months?|días?|semanas?|أيام|اسابيع)(?![\p{L}\p{N}])/giu;
     const permittedSpans=[...centMatches,...dollarMatches,...normalized.matchAll(nonPriceUnits)]
       .map(m=>({from:m.index,to:m.index+m[0].length}));
-    const untypedAmount=[...normalized.matchAll(/(?<![\\p{L}\\p{N}])[0-9]+(?:\\.[0-9]+)?(?![\\p{L}\\p{N}])/gu)]
+    const untypedAmount=[...normalized.matchAll(/(?<![\p{L}\p{N}])[0-9]+(?:\.[0-9]+)?(?![\p{L}\p{N}])/gu)]
       .some(m=>!permittedSpans.some(span=>m.index>=span.from&&
         m.index+m[0].length<=span.to));
     return {values:[...centQuotes,...dollarQuotes],ambiguous:ambiguous||untypedAmount};
