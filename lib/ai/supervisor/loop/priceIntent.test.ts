@@ -74,6 +74,16 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("ارتفعت المبيعات ١٠٪ فلنجرب زيادة ٢٠ سنتات",undefined,20)).toBe(true);
   expect(ownerQuotedPriceDelta("The 12 oz latte grew 10%, raise price 20 cents",undefined,20)).toBe(true);
  });
+ it("only rejects spoken numeric alternatives on either side of the monetary quote",()=>{
+  expect(ownerQuotedPriceDelta("Try 20 cents or maybe thirty",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Prueba 20 centavos o quizás treinta",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ٢٠ سنتات أو ربما ثلاثين",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try ten or maybe 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Sales stayed flat or rose 10%, so raise the latte by 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Sales stayed flat or rose ten percent; raise latte by 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("حاول رفع سعر اللاتيه بمقدار ٢٠ سنتات",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("One or two days ago sales rose; test a 20-cent latte increase",undefined,20)).toBe(true);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);

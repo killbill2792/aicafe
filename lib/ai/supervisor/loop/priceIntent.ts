@@ -50,16 +50,25 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     const untypedAmount=[...normalized.matchAll(/(?<![\p{L}\p{N}])[0-9]+(?:\.[0-9]+)?(?![\p{L}\p{N}])/gu)]
       .some(m=>!permittedSpans.some(span=>m.index>=span.from&&
         m.index+m[0].length<=span.to));
-    // A spelled-out alternative has no digit to find above ("ten or maybe
-    // 20 cents", "diez o quizás 20 centavos", "عشرة أو ربما ٢٠ سنتات").
-    // If the owner expresses a disjunction in the same nearby price clause,
-    // do not promote the model's choice into a single approved numeric quote.
-    // Hard sentence boundaries limit interference from unrelated discussions.
-    const spokenAlternative=[...centMatches,...dollarMatches].some(m=>{
-      const prior=normalized.slice(Math.max(0,m.index-100),m.index)
-        .split(/[.!?؟;\n]/u).at(-1)??"";
-      return /(?:\b(?:or|versus|vs|o|ou)\b|أو|او|أم)/iu.test(prior);
-    });
+    // Words can be price alternatives on EITHER side of the quoted amount.
+    // Unlike the old blanket "or" scan, only a word denoting a NUMBER can
+    // participate. This preserves unrelated choices ("sales stayed flat or
+    // rose 10%") and Arabic words that merely contain the letters "او".
+    // This lexicon does NOT interpret or authorize spoken amounts: it only
+    // prevents the model from selecting one branch of an ambiguous quote.
+    const spokenNumbers=/(?<![\p{L}\p{N}])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|dieciséis|veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|mil|صفر|واحد|واحدة|اثنان|اثنين|إثنين|عشر|عشرة|عشرين|عشرون|ثلاثون|ثلاثين|اربعون|أربعون|خمسون|خمسين|ستون|سبعون|ثمانون|تسعون|مئة|مائة|ألف)(?![\p{L}\p{N}])/giu;
+    const connectors=/(?<![\p{L}\p{N}])(?:or|versus|vs|o|ou|أو|او|أم)(?![\p{L}\p{N}])/iu;
+    // If the intervening text explicitly identifies a different quantity
+    // (e.g. "one or two days"), it is not a price alternative.
+    const typedOtherUnit=/(?<![\p{L}\p{N}])(?:times?|days?|weeks?|months?|years?|cups?|units?|pieces?|percent|percentage|por\s+ciento|oz|ounces?|ml|liters?|litres?|d[ií]as?|semanas?|meses|أيام|اسابيع|بالمئة)(?![\p{L}\p{N}])|[%٪]/iu;
+    const spokenAlternative=[...centMatches,...dollarMatches].some(price=>
+      [...normalized.matchAll(spokenNumbers)].some(word=>{
+        const from=word.index<price.index?word.index+word[0].length:price.index+price[0].length;
+        const to=word.index<price.index?price.index:word.index;
+        const between=normalized.slice(from,to);
+        return between.length<=100&&!/[.!?؟;\n]/u.test(between)&&
+          connectors.test(between)&&!typedOtherUnit.test(between);
+      }));
     return {values:[...centQuotes,...dollarQuotes],
       ambiguous:ambiguous||untypedAmount||spokenAlternative};
   };
