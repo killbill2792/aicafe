@@ -357,19 +357,19 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
   });
 });
 
-describe("cost ledger and single-user pilot access",()=>{
-  it("requires an exact, explicitly configured UUID to activate pilot capture",()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","11111111-1111-4111-8111-111111111111");
+describe("short-lived trace cost ledger and owner-scoped access",()=>{
+  it("has no tester UUID allowlist and requires operational logging to be enabled",()=>{
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(true);
       expect(isSupervisorPrivateTraceTester("22222222-2222-4222-8222-222222222222")).toBe(true);
-      vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","");
-      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(true);
+      expect(isSupervisorPrivateTraceTester("not-a-uuid")).toBe(false);
+      vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
+      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(false);
     }finally{vi.unstubAllEnvs();}
   });
   it("provides a per-turn cached-aware token and cost ledger",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let recorded:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -392,7 +392,7 @@ describe("cost ledger and single-user pilot access",()=>{
     }finally{vi.unstubAllEnvs();}
   });
   it("does not present an unpriced attempted call as a zero-dollar bill",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let recorded:{events:Record<string,unknown>[]}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -409,7 +409,7 @@ describe("cost ledger and single-user pilot access",()=>{
 
 describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
   it("records exact R1 source values, exact model preview, selected formula and delivered response",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let trace:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -439,7 +439,7 @@ describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
     }finally{vi.unstubAllEnvs();}
   });
   it("redacts pasted bank-statement lines while retaining non-bank amounts",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let trace:{events:Record<string,unknown>[]}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -456,7 +456,7 @@ describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
 
 describe("authenticated private trace buffer",()=>{
   it("preserves large model inputs via compressed private events without dropping them",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -473,7 +473,7 @@ describe("authenticated private trace buffer",()=>{
     }finally{vi.unstubAllEnvs();}
   });
   it("redacts secrets pasted into owner text and retains deep arrays without silent loss",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -494,7 +494,7 @@ describe("authenticated private trace buffer",()=>{
     }finally{vi.unstubAllEnvs();}
   });
   it("never retains snake-case JSON credentials or delimited bank rows",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let result:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -520,8 +520,7 @@ describe("authenticated private trace buffer",()=>{
     }finally{vi.unstubAllEnvs();}
   });
   it("keeps exact diagnostic parameters but strips credential properties",async()=>{
-    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
-    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       let collected:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
@@ -551,12 +550,152 @@ describe("test-only raw investigation trace security boundary",()=>{
         result:{value:{employee:"Sophie",wageCents:2500}},
         rawAnswerParagraphs:["private café fact"]},line=>lines.push(line));
       expect(lines).toHaveLength(1);
-      expect(JSON.parse(lines[0])).toMatchObject({event:"supervisor_turn_debug_metadata",
+      expect(JSON.parse(lines[0])).toMatchObject({event:"supervisor_diagnostic_detail",
         point:"tool_result",requestId:"safe123",round:1,callId:"a1",
         capabilityId:"p3.money.monthly_bills.v1"});
-      expect(lines[0]).not.toMatch(/bank-access-token|Sophie|2500|private café fact/);
-      expect(JSON.parse(lines[0])).not.toHaveProperty("result");
-      expect(JSON.parse(lines[0])).not.toHaveProperty("toolArguments");
+      expect(lines.join(" ")).not.toMatch(/bank-access-token|Sophie|2500|private café fact/);
+      for(const line of lines){
+        expect(JSON.parse(line)).not.toHaveProperty("result");
+        expect(JSON.parse(line)).not.toHaveProperty("toolArguments");
+      }
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("writes schema-error paths and batch checks, never arbitrary data",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"calculator_rejected",requestId:"turnabc",
+        reasonCode:"invalid_plan",issues:[{code:"too_small",path:["description"],message:"PRIVATE-USER-TEXT"},
+          {code:"invalid_type",path:["nodes",2,"quotedDenomination"],expected:"string"}],
+        toolArguments:{nodes:[{op:"source",handle:"SECRET_EMPLOYEE_HANDLE"}]},
+        ownerQuestion:"My employee is PRIVATE PERSON"},l=>lines.push(l));
+      logSupervisorDebugPayload({point:"parallel_batch",requestId:"turnabc",
+        outcome:"rejected_preflight",preflight:{allCallsSupported:true,
+          withinOperationBudget:true,registeredInputsValid:true,
+          perCall:[{capabilityId:"p3.money.monthly_bills.v1",
+            currencyAndSnapshotPermitted:false,datesMatch:true,
+            noPendingCalendarCorrection:true,registryPreflight:true,
+            secret:"MUST_NOT_LOG"}]},
+        requested:[{name:"financials",arguments:"PRIVATE_ARGS"}]},l=>lines.push(l));
+      const detail=lines.map(x=>JSON.parse(x)).filter(x=>x.event==="supervisor_diagnostic_detail");
+      expect(detail).toHaveLength(2);
+      expect(detail[0]).toMatchObject({point:"calculator_rejected",reasonCode:"invalid_plan",
+        issueCount:2,schemaIssues:[{path:["description"],code:"too_small"},
+          {path:["nodes",2,"quotedDenomination"],code:"invalid_type"}],
+        nodeCount:1,nodeOps:["source"]});
+      expect(detail[1].preflight.perCall[0].currencyAndSnapshotPermitted).toBe(false);
+      expect(lines.join(" ")).not.toMatch(/PRIVATE|SECRET|MUST_NOT_LOG/);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("retains bounded simulation output schema issue paths, not source content",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"calculator_rejected",requestId:"turnabc",
+        reasonCode:"calculator_invalid_result",
+        issues:[
+          {code:"invalid_value",path:["status"],message:"PRIVATE_SOURCE_TEXT"},
+          {code:"invalid_type",path:["formula",0],message:"PRIVATE_FORMULA"},
+          {code:"too_big",path:["sourceHandles"],maximum:999},
+          {code:"invalid_type",path:["missingInputs",1]},
+          {code:"invalid_type",path:["executedEffects"]},
+          {code:"invalid_type",path:["reason"]},
+          {code:"invalid_type",path:["arbitraryOwnerContent"]}],
+        rawResult:{secret:"PRIVATE_EMPLOYEE",sourceHandles:["EMPLOYEE_HANDLE"]}},
+        l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      const detail=JSON.parse(lines[0]);
+      expect(detail).toMatchObject({event:"supervisor_diagnostic_detail",
+        reasonCode:"calculator_invalid_result",issueCount:7,
+        schemaIssues:[
+          {path:["status"],code:"invalid_value"},
+          {path:["formula",0],code:"invalid_type"},
+          {path:["sourceHandles"],code:"too_big"},
+          {path:["missingInputs",1],code:"invalid_type"},
+          {path:["executedEffects"],code:"invalid_type"},
+          {path:["reason"],code:"invalid_type"},
+          {path:["[field]"],code:"invalid_type"},
+        ]});
+      expect(lines[0]).not.toMatch(/PRIVATE|EMPLOYEE_HANDLE|arbitraryOwnerContent/);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("correlates concurrent-model diagnostic events through the request-local context",async()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",modelCallCount:1,
+          requestName:"supervisor_investigation_step",body:{owner:"private"}},
+          line=>lines.push(line));
+      },async()=>{}, "turn987");
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({
+        event:"supervisor_diagnostic_detail",point:"model_request",
+        requestId:"turn987",modelCallCount:1});
+      expect(lines.join(" ")).not.toContain("private");
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("reports genuine claim-issue categories rather than empty Zod errors",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"claim_issues_retry",requestId:"turnabc",
+        issues:[{kind:"dropped_paragraph",paragraphIndex:0,
+          reason:"hallucinated_citation",text:"PRIVATE CLAIM"},
+          {kind:"formula_failed",paragraphIndex:1,
+            failure:{reason:"incompatible_units",variable:"SECRET"}},
+          {kind:"unmatched_number",paragraphIndex:2,text:"PRIVATE NUMBER",
+            matchedObservation:null}]},l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      const detail=JSON.parse(lines[0]);
+      expect(detail.claimIssues).toEqual([
+        {kind:"dropped_paragraph",paragraphIndex:0,reason:"hallucinated_citation"},
+        {kind:"formula_failed",paragraphIndex:1,failure:"incompatible_units"},
+        {kind:"unmatched_number",paragraphIndex:2},
+      ]);
+      expect(lines[0]).not.toMatch(/PRIVATE|SECRET/);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("preserves calculator op tags from the actual plan schema",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"calculator_rejected",reasonCode:"invalid_plan",
+        toolArguments:{nodes:[{op:"scenario_delta"},{op:"compare"},
+          {op:"loaded_labor"},{op:"multiply"}]},
+        issues:[{code:"too_small",path:["description"]}]},l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]).nodeOps).toEqual([
+        "scenario_delta","compare","loaded_labor","multiply"]);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("emits provider token-cost detail but never raw responses",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"model_usage",requestId:"turnabc",
+        model:"gpt-6-luna",estimatedCostMicros:1460,
+        usage:{inputTokens:10000,cachedInputTokens:6000,uncachedInputTokens:4000,
+          outputTokens:2000,reasoningOutputTokens:1200},
+        rawUsage:{secret:"PRIVATE_RAW_PROVIDER"},providerRequestId:"req_123"},l=>lines.push(l));
+      logSupervisorDebugPayload({point:"trace_summary",requestId:"turnabc",
+        estimatedCostMicros:null,modelCalls:2,inputTokens:11000,outputTokens:2100,
+        missingUsageResponses:1,droppedCount:0,captureComplete:true,
+        tokenCostComplete:false},l=>lines.push(l));
+      const detail=lines.map(x=>JSON.parse(x)).filter(x=>x.event==="supervisor_diagnostic_detail");
+      expect(detail[0]).toMatchObject({point:"model_usage",estimatedCostMicros:1460,
+        usage:{inputTokens:10000,cachedInputTokens:6000,outputTokens:2000,
+          reasoningOutputTokens:1200}});
+      expect(detail[1]).toMatchObject({point:"trace_summary",
+        estimatedCostMicros:null,missingUsageResponses:1,captureComplete:true,
+        tokenCostComplete:false});
+      expect(lines.join(" ")).not.toContain("PRIVATE_RAW_PROVIDER");
     }finally{vi.unstubAllEnvs();}
   });
 });
