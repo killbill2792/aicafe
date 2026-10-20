@@ -605,6 +605,42 @@ describe("test-only raw investigation trace security boundary",()=>{
       expect(lines.join(" ")).not.toContain("private");
     }finally{vi.unstubAllEnvs();}
   });
+  it("reports genuine claim-issue categories rather than empty Zod errors",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"claim_issues_retry",requestId:"turnabc",
+        issues:[{kind:"dropped_paragraph",paragraphIndex:0,
+          reason:"hallucinated_citation",text:"PRIVATE CLAIM"},
+          {kind:"formula_failed",paragraphIndex:1,
+            failure:{reason:"incompatible_units",variable:"SECRET"}},
+          {kind:"unmatched_number",paragraphIndex:2,text:"PRIVATE NUMBER",
+            matchedObservation:null}]},l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      const detail=JSON.parse(lines[0]);
+      expect(detail.claimIssues).toEqual([
+        {kind:"dropped_paragraph",paragraphIndex:0,reason:"hallucinated_citation"},
+        {kind:"formula_failed",paragraphIndex:1,failure:"incompatible_units"},
+        {kind:"unmatched_number",paragraphIndex:2},
+      ]);
+      expect(lines[0]).not.toMatch(/PRIVATE|SECRET/);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("preserves calculator op tags from the actual plan schema",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"calculator_rejected",reasonCode:"invalid_plan",
+        toolArguments:{nodes:[{op:"scenario_delta"},{op:"compare"},
+          {op:"loaded_labor"},{op:"multiply"}]},
+        issues:[{code:"too_small",path:["description"]}]},l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0]).nodeOps).toEqual([
+        "scenario_delta","compare","loaded_labor","multiply"]);
+    }finally{vi.unstubAllEnvs();}
+  });
   it("emits provider token-cost detail but never raw responses",()=>{
     const lines:string[]=[];
     vi.stubEnv("NODE_ENV","production");
