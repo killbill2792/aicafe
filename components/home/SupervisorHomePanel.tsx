@@ -1,5 +1,5 @@
-import type {ExperimentCopy} from "./SupervisorExperiment";
 "use client";
+import type {ExperimentCopy} from "./SupervisorExperiment";
 
 import SupervisorChatComposer, { type SupervisorChatCopy, type SupervisorHomeSnapshot } from "./SupervisorChatComposer";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
