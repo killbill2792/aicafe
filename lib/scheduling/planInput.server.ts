@@ -348,6 +348,8 @@ export async function loadOliviaWeekFromSavedStaff(week: string): Promise<Olivia
         end_local: normalizeSchedulingWallTime(str(c.end_local)),
         overnight: c.overnight === true,
         minHeadcount: Number(c.min_headcount),
+        minHeadcountDuringBreak: c.min_headcount_during_break == null
+          ? null : Number(c.min_headcount_during_break),
         minOverlapMinutes: Number(c.min_overlap_minutes),
         qualificationCode: nullable(c.qualification_code),
         priority: c.priority as "required" | "advisory",
