@@ -1,4 +1,4 @@
-import { eligibleCandidates, isConfirmedAvailable, qualifies } from "./plannerCore";
+import { eligibleCandidates, isConfirmedAvailable, qualifies, workerWageRate } from "./plannerCore";
 import type { DemandUnit, ExpandedPlan } from "./plannerCore";
 import type { PlannerInput, PlannerShift } from "./plannerTypes";
 
@@ -11,6 +11,10 @@ import type { PlannerInput, PlannerShift } from "./plannerTypes";
 export type BreakReservation = {
   employeeId: string; coverageId: string; locationId: string;
   start: number; end: number;
+  /** Planned full work span, across adjacent owner coverage windows. */
+  workStart?: number; workEnd?: number;
+  /** Already recorded in an immutable published shift; never reschedule it. */
+  historical?: boolean;
 };
 
 export const hasBreakCoveragePolicy = (input: PlannerInput) =>
@@ -28,57 +32,119 @@ function reviewedDuration(input: PlannerInput): number | null {
 }
 
 /**
- * Pick bounded, deterministic stagger candidates from fully available workers.
- * A reservation is NOT independently sufficient evidence of a real break:
- * the normal beam search still has to schedule work on both sides, and the
- * independent validator must see an actual PlannerShift.breaks entry.
- * Never reserve for immutable, already-started published assignments.
+ * Work span is the maximal contiguous set of compatible coverage slices.
+ * Matching business windows are allowed to use separate coverage rows (peak
+ * staffing windows commonly do), without resetting employees' work clocks.
+ */
+type Span = { units: DemandUnit[]; locationId: string; qualificationCode: string|null;
+  minHeadcount:number; breakFloor:number };
+const samePolicy=(a:Span,b:Span)=>
+  a.locationId===b.locationId &&
+  a.qualificationCode===b.qualificationCode &&
+  a.minHeadcount===b.minHeadcount && a.breakFloor===b.breakFloor;
+
+function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
+  const slices=plan.units.filter(u=>u.seatIndex===0).flatMap(unit=>{
+    const c=input.coverage.find(c=>c.id===unit.coverageId);
+    return c?.priority==="required" && c.minHeadcountDuringBreak!=null && c.minHeadcount>0
+      ? [{units:[unit],locationId:unit.locationId,
+          qualificationCode:unit.qualificationCode,minHeadcount:c.minHeadcount,
+          breakFloor:c.minHeadcountDuringBreak}] : [];
+  }).sort((a,b)=>a.units[0].start-b.units[0].start ||
+    a.locationId.localeCompare(b.locationId));
+  const spans:Span[]=[];
+  for(const item of slices){
+    const previous=spans[spans.length-1];
+    if(previous && samePolicy(previous,item) &&
+        previous.units[previous.units.length-1].end===item.units[0].start)
+      previous.units.push(...item.units);
+    else spans.push(item);
+  }
+  return spans;
+}
+
+function priorityScore(employee:ExpandedPlan["employees"][number],
+  objective:"cash"|"owner_time"|"balanced"):number {
+  const rate=workerWageRate(employee) ?? 120_000;
+  const owner=employee.isOwner?1:0;
+  return objective==="owner_time"?owner*100_000_000+rate:
+    objective==="cash"?rate+owner*100:rate+owner*10_000;
+}
+
+/** Use recorded, immutable breaks for frozen or in-progress re-planning. */
+export function historicalBreakReservations(input:PlannerInput,
+  plan:ExpandedPlan):BreakReservation[] {
+  const profile=input.ruleProfile;
+  if(!profile?.verified || profile.maxContinuousWorkMinutes==null) return [];
+  const reservations:BreakReservation[]=[];
+  for(const shift of input.startedPublishedShifts??[]){
+    const workStart=Date.parse(shift.startAt),workEnd=Date.parse(shift.endAt);
+    const minutes=(workEnd-workStart)/60000-shift.breaks.reduce((n,b)=>
+      n+(Date.parse(b.endAt)-Date.parse(b.startAt))/60000,0);
+    if(minutes<=profile.maxContinuousWorkMinutes)continue;
+    for(const brk of shift.breaks){
+      const start=Date.parse(brk.startAt),end=Date.parse(brk.endAt);
+      const duration=brk.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
+      if(duration==null || duration<=0 ||
+          (end-start)/60000!==duration || start<=workStart || end>=workEnd)continue;
+      for(const unit of plan.units){
+        if(unit.seatIndex!==0 || unit.locationId!==shift.locationId ||
+            unit.start<start || unit.end>end)continue;
+        const req=input.coverage.find(c=>c.id===unit.coverageId);
+        const worker=plan.employees.find(e=>e.id===shift.employeeId);
+        if(!worker || req?.minHeadcountDuringBreak==null ||
+            !qualifies(worker,unit,plan.locations))continue;
+        if(!reservations.some(b=>b.employeeId===shift.employeeId &&
+            b.coverageId===unit.coverageId && b.start===start))
+          reservations.push({employeeId:shift.employeeId,coverageId:unit.coverageId,
+            locationId:shift.locationId,start,end,workStart,workEnd,historical:true});
+      }
+    }
+  }
+  return reservations;
+}
+
+/**
+ * Reserve staggered breaks on the full contiguous demand span. Choose the
+ * actual candidate workforce for EACH objective and force it into the solver
+ * search on both sides of those breaks; a reserved worker is not an invisible
+ * placeholder that can grant an uncovered seat. Unusable reservations cannot
+ * make a scenario valid: the independent validator checks actual shift breaks.
  */
 export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan,
-  cache: Map<string, Array<{start:number;end:number}>>): BreakReservation[] {
-  const duration = reviewedDuration(input);
-  const limit = input.ruleProfile?.maxContinuousWorkMinutes;
-  if (duration == null || limit == null) return [];
-  const grid = input.slotMinutes ?? 30;
-  const results: BreakReservation[] = [];
-  for (const requirement of input.coverage) {
-    if (requirement.minHeadcountDuringBreak == null ||
-        requirement.priority !== "required" || requirement.minHeadcount <= 0) continue;
-    const dates = new Map<string, DemandUnit[]>();
-    for (const unit of plan.units) {
-      if (unit.coverageId !== requirement.id || unit.seatIndex !== 0) continue;
-      const date = unit.id.slice(requirement.id.length + 1).split(":")[0];
-      const items = dates.get(date) ?? [];
-      items.push(unit); dates.set(date, items);
-    }
-    for (const units of dates.values()) {
-      units.sort((a,b)=>a.start-b.start);
-      const first = units[0], last = units[units.length - 1];
-      if (!first || !last) continue;
-      const span = (last.end - first.start) / 60000;
-      if (span <= limit || span < duration + 2 * grid) continue;
-      const workers = eligibleCandidates(first, plan, cache)
-        .filter(e => units.every(u => qualifies(e,u,plan.locations) &&
-          isConfirmedAvailable({employeeId:e.id,locationId:u.locationId,
-            start:u.start,end:u.end,pinned:false},e,plan.locations,cache)) &&
-          !plan.pinned.some(w=>w.historical && w.employeeId===e.id &&
-            w.start<last.end && w.end>first.start))
-        .sort((a,b)=>a.id.localeCompare(b.id))
-        .slice(0,requirement.minHeadcount);
-      if (!workers.length) continue;
-      const simultaneous = Math.max(1,
-        requirement.minHeadcount - requirement.minHeadcountDuringBreak);
-      const waves = Math.ceil(workers.length / simultaneous);
-      const breakBlock = waves * duration;
-      if (breakBlock + 2*grid > span) continue;
-      const offset = Math.floor(((span-breakBlock)/2)/grid)*grid;
-      for (let index=0;index<workers.length;index++) {
-        const wave=Math.floor(index/simultaneous);
-        const start=first.start+(offset+wave*duration)*60000;
-        results.push({employeeId:workers[index].id,
-          coverageId:requirement.id,locationId:requirement.locationId,
-          start,end:start+duration*60000});
-      }
+  cache: Map<string, Array<{start:number;end:number}>>,
+  objective:"cash"|"owner_time"|"balanced"="cash"): BreakReservation[] {
+  const results=historicalBreakReservations(input,plan);
+  const duration=reviewedDuration(input);
+  const limit=input.ruleProfile?.maxContinuousWorkMinutes;
+  if(duration==null || limit==null)return results;
+  const grid=input.slotMinutes??30;
+  for(const span of coverageSpans(input,plan)){
+    const first=span.units[0],last=span.units[span.units.length-1];
+    const total=(last.end-first.start)/60000;
+    if(total<=limit || total<duration+2*grid)continue;
+    const workers=eligibleCandidates(first,plan,cache)
+      .filter(e=>span.units.every(u=>qualifies(e,u,plan.locations) &&
+        isConfirmedAvailable({employeeId:e.id,locationId:u.locationId,
+          start:u.start,end:u.end,pinned:false},e,plan.locations,cache)) &&
+        !plan.pinned.some(w=>w.historical && w.employeeId===e.id &&
+          w.start<last.end && w.end>first.start))
+      .sort((a,b)=>priorityScore(a,objective)-priorityScore(b,objective) ||
+        a.id.localeCompare(b.id)).slice(0,span.minHeadcount);
+    if(!workers.length)continue;
+    const simultaneous=Math.max(1,span.minHeadcount-span.breakFloor);
+    const waves=Math.ceil(workers.length/simultaneous);
+    const breakBlock=waves*duration;
+    if(breakBlock+2*grid>total)continue;
+    const offset=Math.floor(((total-breakBlock)/2)/grid)*grid;
+    for(let i=0;i<workers.length;i++){
+      const start=first.start+(offset+Math.floor(i/simultaneous)*duration)*60000;
+      const end=start+duration*60000;
+      const coverageIds=new Set(span.units.filter(u=>u.start>=start && u.end<=end)
+        .map(u=>u.coverageId));
+      for(const coverageId of coverageIds)
+        results.push({employeeId:workers[i].id,coverageId,locationId:span.locationId,
+          start,end,workStart:first.start,workEnd:last.end});
     }
   }
   return results;
