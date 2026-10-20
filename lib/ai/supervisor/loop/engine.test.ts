@@ -134,6 +134,18 @@ describe("end-to-end universal Supervisor execution loop",()=>{
     expect(partial?.status).toBe("in_progress");
     expect(partial?.result).toMatchObject({coveredDays:1,units:10,observedRevenueCents:5100});
  });
+ it("finalizes missing actual coverage honestly after the window",async()=>{
+    const repo=new MemoryRepo();
+    const p=await proposeLoop(scope,registry,repo,drinkFixture.id,{drink:"latte-12oz"},"missing-days");
+    const a=await approveLoop(scope,repo,p.id,p.revision);
+    const c=await commitLoop(scope,registry,repo,a.id,a.revision);
+    const confirmed=await confirmManualLoop(scope,repo,c.proposal.id,c.proposal.revision,"2026-10-21");
+    const early=await monitorLoop(scope,registry,repo,confirmed,"2026-10-20",true);
+    expect(early).toMatchObject({status:"in_progress",result:{status:"in_progress"}});
+    const ended=await monitorLoop(scope,registry,repo,confirmed,"2026-10-28");
+    expect(ended).toMatchObject({status:"insufficient_evidence",recommendation:"adjust"});
+    expect(repo.reports.get(p.id)?.status).toBe("insufficient_evidence");
+ });
  it("rejects cross-tenant/owner access and stale revisions",async()=>{
     const repo=new MemoryRepo();
     const p=await proposeLoop(scope,registry,repo,drinkFixture.id,

@@ -163,9 +163,15 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   if(!allowEarlyReport&&businessDate<end)return null;
   const samples=(await repo.samples(scope,p.id))
     .filter(x=>x.businessDate>=p.monitoringStartDate!&&x.businessDate<=end);
-  const report=await def.report(scope,effect,samples);
-  if(businessDate<end&&report.status==="complete")
-    throw new Error("Premature verified report");
+  const generated=await def.report(scope,effect,samples);
+  // "In progress" is a window property, not evidence of a future zero-sales day.
+  // At the end, missing actual-coverage observations become a durable
+  // insufficient-evidence report rather than an endlessly open experiment.
+  const finalStatus=businessDate<end
+    ?"in_progress":generated.status==="complete"?"complete":"insufficient_evidence";
+  const report:LoopReport={...generated,status:finalStatus,
+    recommendation:finalStatus==="complete"?generated.recommendation:"adjust",
+    result:{...generated.result,status:finalStatus}};
   await repo.saveReport(scope,p,report);
   return report;
 }
