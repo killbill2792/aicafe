@@ -768,8 +768,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const effectsAssertion=/\b(?:publish(?:ed|ing)?|sav(?:ed|ing)|sent|send|approv(?:ed|ing)|execut(?:ed|ing)|appl(?:ied|ying)|completed|finished|updat(?:ed|ing)|chang(?:ed|ing)|purchas(?:ed|ing)|order(?:ed|ing)|deployed|scheduled)\b|\b(?:publicad[oa]s?|enviad[oa]s?|guardad[oa]s?|aprobad[oa]s?|ejecutad[oa]s?|completad[oa]s?|actualizad[oa]s?|cambiad[oa]s?|comprad[oa]s?)\b|(?:نشرت|نشرنا|أرسلت|أرسلنا|حفظت|حفظنا|وافقنا|نفذنا|اكتمل|حدّثنا|غيّرنا|اشترينا)/iu;
       answer.paragraphs.forEach((paragraph,index)=>{
         if(paragraph.kind!=="evidence"||effectsAssertion.test(paragraph.text)||
-          rendered.issues.some(issue=>issue.paragraphIndex===index)||
-          !/\{\{r\d+:[a-zA-Z0-9_.]+\}\}/u.test(paragraph.text))return;
+          rendered.issues.some(issue=>issue.paragraphIndex===index))return;
         const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,
           {ownerText:input.text});
         if(!checked||checked.issues.length||!checked.evidence.length)return;

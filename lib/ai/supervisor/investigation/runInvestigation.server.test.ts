@@ -316,6 +316,23 @@ describe("reviewer advisory for an already-masked partial",()=>{
   });
 });
 describe("review verdict publication policy",()=>{
+  it("retains a source-cited narrative paragraph without a display token after reviewer downgrade",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog returned a drink entry.",citations:["r1"]}]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"Other parts of the request need further investigation."});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"What does my menu record show?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks).toContainEqual({type:"text",text:"The catalog returned a drink entry."});
+    expect(result.reply.blocks.some(block=>block.type==="metric"||block.type==="percent")).toBe(false);
+  });
   it("keeps a wholly narrative source-grounded paragraph on negative review, without requiring a metric card",async()=>{
     const steps=transportFor([
       read("p3.menu.catalog.v1",query("menu.catalog")),
