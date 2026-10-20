@@ -84,6 +84,15 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("حاول رفع سعر اللاتيه بمقدار ٢٠ سنتات",undefined,20)).toBe(true);
   expect(ownerQuotedPriceDelta("One or two days ago sales rose; test a 20-cent latte increase",undefined,20)).toBe(true);
  });
+ it("rejects compound Spanish and Arabic basic cardinal price alternatives",()=>{
+  expect(ownerQuotedPriceDelta("Prueba 20 centavos o quizás veinticinco",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Prueba veintidós o quizás 20 centavos",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ٢٠ سنتات أو ربما خمسة",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ثلاثة أو ربما ٢٠ سنتات",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ٢٠ سنتات أو ربما سبعة",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ٢٠ سنتات أو ربما تسعة",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try a single, specific 20-cent increase",undefined,20)).toBe(true);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
