@@ -754,7 +754,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
-      if(review&&!isToolCallSignal(review)&&!review.supported&&review.complete){
+      // Keep server-produced metric/task blocks even if the semantic reviewer
+      // objects to other narration or incomplete goals. Never carry free-form
+      // model prose through an unsupported verdict: a fabricated "done" claim
+      // must not acquire authority merely because it cites an unrelated price.
+      const safeReviewBlocks=reply.blocks.filter(block=>block.type!=="text");
+      const hasSafeReviewFacts=safeReviewBlocks.some(block=>block.type!=="warning");
+      let downgradedByReview=false;
+      if(review&&!isToolCallSignal(review)&&!review.supported&&hasSafeReviewFacts){
+        downgradedByReview=true;
+        reply={...reply,status:"partial",blocks:[
+          ...safeReviewBlocks,
+          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason)]:[]),
+        ]};
+        input.onDiagnostic?.({stage:"grounded_answer",failureCategory:"reviewer_downgraded_to_partial"});
+      }
+      if(review&&!isToolCallSignal(review)&&!review.supported&&!downgradedByReview&&review.complete){
         input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
         // An OR-positive verdict must produce a user-visible reply, but the
         // reviewer has NOT certified these factual claims. Never publish
@@ -764,7 +779,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             text:labels.unverifiedWarning},
             {type:"text",text:labels.unavailable}]},usage:{...usage}};
       }
-      if(!review||isToolCallSignal(review)||!review.supported){
+      if(!review||isToolCallSignal(review)||(!review.supported&&!downgradedByReview)){
         // A valid verdict always carries its own specific reason now (§6):
         // name exactly what the reviewer found, instead of the generic line
         // that used to be the only signal across every retry (production
@@ -800,7 +815,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
-      if(!review.complete)reply={...reply!,status:"partial",
+      if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
           [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
