@@ -1,3 +1,14 @@
+## Olivia owner-configured break coverage (2026-10-19, isolated PR)
+
+**Owner journey:** Schedule a two-person staffed day with a reviewed break profile while allowing one person to cover the floor during a real, staggered, duty-free break; a solo shop keeping a one-person break floor instead receives an explicit unmet-coverage gap. Absent/null owner policy continues to use the original full headcount.
+
+- [x] Inspect main, owner-authorized coverage create/update path, planner, independent validator and existing schedule display components before editing.
+- [x] Add one nullable, bounded break-floor column and restricted existing create-RPC field allowlist; preserve existing RLS, tenant checks, revision/audit trail and no default policy change.
+- [x] Implement opt-in break reservations in pure solver, independently count only real within-shift reviewed breaks in validator, and expose exact owner-visible gap reason. Do not assert legal compliance.
+- [x] Show precise break intervals in existing planning/revision/editor surfaces with en/es/ar strings; no new route or dependency.
+- [ ] Run strict TS, full Vitest suite, ESLint and changed-file GitHub CI, fix issues, and collect exact counts on final HEAD.
+- **Open limitation:** californiaBreakRules.ts/californiaOvertime.ts are NOT present on the inspected latest main; this change uses only the existing owner-reviewed max-continuous-work and break-duration profile. It does not establish all California break obligations, break premiums or seventh-day streaks outside the seven-day planning horizon. Owner-controlled production migration remains a separate approval.
+
 ## Universal Supervisor canonical evidence, native multi-call and grounded tracing — Issue #131 (2026-10-19, PR in review)
 - [x] Audit P1 alias families and preserve all original P1 tool contracts.
 - [x] Add field-aware descriptions and canonical monthly-bills cents extraction from one atomic snapshot.
