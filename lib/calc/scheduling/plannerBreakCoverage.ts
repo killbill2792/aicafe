@@ -123,33 +123,73 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   const limit=input.ruleProfile?.maxContinuousWorkMinutes;
   if(duration==null || limit==null)return results;
   const grid=input.slotMinutes??30;
+  type Candidate = {span:Span;first:DemandUnit;last:DemandUnit;
+    people:ExpandedPlan["employees"];count:number;simultaneous:number};
+  const candidates:Candidate[]=[];
   for(const span of coverageSpans(input,plan)){
     const first=span.units[0],last=span.units[span.units.length-1];
     const total=(last.end-first.start)/60000;
     if(total<=limit || total<duration+2*grid)continue;
-    const workers=eligibleCandidates(first,plan,cache)
+    const people=eligibleCandidates(first,plan,cache)
       .filter(e=>span.units.every(u=>qualifies(e,u,plan.locations) &&
         isConfirmedAvailable({employeeId:e.id,locationId:u.locationId,
           start:u.start,end:u.end,pinned:false},e,plan.locations,cache)) &&
         !plan.pinned.some(w=>w.historical && w.employeeId===e.id &&
           w.start<last.end && w.end>first.start))
       .sort((a,b)=>priorityScore(a,objective)-priorityScore(b,objective) ||
-        a.id.localeCompare(b.id)).slice(0,span.minHeadcount);
-    if(!workers.length)continue;
-    const simultaneous=Math.max(1,span.minHeadcount-span.breakFloor);
-    const waves=Math.ceil(workers.length/simultaneous);
+        a.id.localeCompare(b.id));
+    const count=Math.min(span.minHeadcount,people.length);
+    if(count===0)continue;
+    // Peak windows may change normal headcount AND break floor. A reservation
+    // must obey the tightest permitted headcount drop during the work span.
+    const slack=Math.min(...span.units.map(u=>{
+      const c=input.coverage.find(c=>c.id===u.coverageId)!;
+      return c.minHeadcount-(c.minHeadcountDuringBreak??c.minHeadcount);
+    }));
+    const simultaneous=Math.max(1,slack);
+    if(Math.ceil(count/simultaneous)*duration+2*grid>total)continue;
+    candidates.push({span,first,last,people,count,simultaneous});
+  }
+  // Select the break-taking crew jointly for concurrent locations and roles.
+  // Each candidate is scored for this objective, but no person may be committed
+  // to overlapping spans; bounded backtracking avoids a greedy dead end.
+  candidates.sort((a,b)=>(a.people.length-a.count)-(b.people.length-b.count) ||
+    a.first.start-b.first.start || a.span.locationId.localeCompare(b.span.locationId));
+  const roster=new Map<Candidate,ExpandedPlan["employees"]>();
+  const slots=candidates.flatMap(entry=>Array.from({length:entry.count},()=>entry));
+  let attempts=0;
+  function select(index:number):boolean {
+    if(index===slots.length)return true;
+    if(attempts>=12_000)return false;
+    const entry=slots[index],chosen=roster.get(entry)??[];
+    for(const person of entry.people){
+      if(++attempts>12_000)return false;
+      if(chosen.some(p=>p.id===person.id))continue;
+      if([...roster].some(([other,assigned])=>other!==entry &&
+        entry.first.start<other.last.end && other.first.start<entry.last.end &&
+        assigned.some(p=>p.id===person.id)))continue;
+      chosen.push(person);roster.set(entry,chosen);
+      if(select(index+1))return true;
+      chosen.pop();
+    }
+    return false;
+  }
+  if(!select(0))return results; // No break credit without a staffed roster.
+  for(const entry of candidates){
+    const workers=roster.get(entry)??[];
+    const total=(entry.last.end-entry.first.start)/60000;
+    const waves=Math.ceil(workers.length/entry.simultaneous);
     const breakBlock=waves*duration;
-    if(breakBlock+2*grid>total)continue;
     const offset=Math.floor(((total-breakBlock)/2)/grid)*grid;
+    const coverageIds=new Set(entry.span.units.map(u=>u.coverageId));
     for(let i=0;i<workers.length;i++){
-      const start=first.start+(offset+Math.floor(i/simultaneous)*duration)*60000;
+      const start=entry.first.start+
+        (offset+Math.floor(i/entry.simultaneous)*duration)*60000;
       const end=start+duration*60000;
-      // Bind the chosen break-taking team to all contiguous demand rows,
-      // including rows before and after the break itself.
-      const coverageIds=new Set(span.units.map(u=>u.coverageId));
       for(const coverageId of coverageIds)
-        results.push({employeeId:workers[i].id,coverageId,locationId:span.locationId,
-          start,end,workStart:first.start,workEnd:last.end});
+        results.push({employeeId:workers[i].id,coverageId,
+          locationId:entry.span.locationId,start,end,
+          workStart:entry.first.start,workEnd:entry.last.end});
     }
   }
   return results;
