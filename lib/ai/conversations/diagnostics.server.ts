@@ -1,6 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import {recordSupervisorPrivateTrace} from "./privateTrace.server";
+import {recordSupervisorPrivateTrace,activeSupervisorTraceRequestId} from "./privateTrace.server";
 import { GOAL_DOMAINS, type RequestedGoal, type ScopeReconciliationOutcome } from "./requestScope";
 import { SupervisorReplyValidationError, type ReplyValidationFailureReason } from "./replyValidation";
 
@@ -538,6 +538,7 @@ export type SupervisorDebugPoint="turn_received"|"capability_round"|"tool_reques
 export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   sink:(line:string)=>void=(line)=>console.info(line)):void{
   // Private RLS-backed capture is independent of console diagnostic verbosity.
+  if(!payload.requestId){const id=activeSupervisorTraceRequestId();if(id)payload={...payload,requestId:id};}
   recordSupervisorPrivateTrace(payload);
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return;
   if(process.env.NODE_ENV==="test"){
