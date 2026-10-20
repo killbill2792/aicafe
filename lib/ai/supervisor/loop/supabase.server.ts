@@ -1,7 +1,9 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
-import {investigationLabels} from "@/lib/ai/supervisor/investigation/evidence";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
 
 const uuid=z.uuid();
@@ -109,9 +111,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     if(task.error)failed(task.error,"Operations report inbox unavailable");
     // Idempotency: the same proposal posts at most one Supervisor message.
     // Reuse a stable id from proposal's UUID, not a model-created message.
-    const text=({en:"Alex completed the price experiment review. The Operations inbox has the measured outcome, assumptions, and keep/revert/adjust recommendation.",
-      es:"Alex terminó la revisión del experimento de precios. En Operaciones están los resultados medidos, los supuestos y la recomendación.",
-      ar:"أكمل أليكس مراجعة تجربة السعر. تعرض العمليات النتائج المقاسة والافتراضات والتوصية."} as const)[scope.locale];
+    const text=({en,es,ar}[scope.locale]).SupervisorExperiment.reportThread;
     const ref={source:"cafe_state",identifier:"supervisor-report:"+p.id,asOf:new Date().toISOString().slice(0,10)};
     const inserted=await db.from("ai_messages").insert({
       id:p.id,business_id:scope.businessId,thread_id:scope.threadId,
