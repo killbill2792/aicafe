@@ -1,9 +1,6 @@
 import "server-only";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {z} from "zod";
-import en from "@/messages/en.json";
-import es from "@/messages/es.json";
-import ar from "@/messages/ar.json";
 import type {LoopCreate,LoopRepository,OwnerLoopScope,LoopProposal,LoopSample,LoopReport} from "./engine";
 
 const uuid=z.uuid();
@@ -94,31 +91,39 @@ export class SupabaseLoopRepository implements LoopRepository{
     },{onConflict:"business_id,proposal_id"});
     if(written.error)failed(written.error,"Report save failed");
     if(report.status==="in_progress")return;
-    const product=String(report.result.productName??"");
-    const taskId="supervisor:price_experiment:"+p.id;
+    // The platform is domain-neutral: delivery contracts originate only in
+    // the registered capability's verified report, not in a price-specific
+    // task writer or a generic second inbox.
+    const delivery=report.delivery;
+    if(!delivery)return;
+    const taskId="supervisor:"+p.capabilityId+":"+p.id;
     const task=await db.from("operating_tasks").upsert({
-      business_id:scope.businessId,id:taskId,agent_id:"alex",
-      kind:"price_experiment_report",entity_type:"menu_item",
-      entity_id:(p.canonicalEffectPayload as Record<string,unknown>).productId,
-      status:"needs_owner",confidence:report.status==="complete"?"high":"low",
-      payload:{itemName:product,proposalId:p.id,recommendation:report.recommendation,
-        outcomeStatus:report.status,observedRevenueCents:report.result.observedRevenueCents??null,
-        realizedRevenueDifferenceCents:report.result.realizedRevenueDifferenceCents??null,
-        estimateIsConditional:true},
-      evidence:[{source:report.source,facts:{status:report.status,
-        coveredDays:Number(report.result.coveredDays??0)}}],
+      business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
+      kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
+      status:"needs_owner",confidence:delivery.confidence,
+      payload:delivery.payload,evidence:delivery.evidence,
     },{onConflict:"business_id,id",ignoreDuplicates:true});
     if(task.error)failed(task.error,"Operations report inbox unavailable");
-    // Idempotency: the same proposal posts at most one Supervisor message.
-    // Reuse a stable id from proposal's UUID, not a model-created message.
-    const text=({en,es,ar}[scope.locale]).SupervisorExperiment.reportThread;
-    const ref={source:"cafe_state",identifier:"supervisor-report:"+p.id,asOf:new Date().toISOString().slice(0,10)};
+    // Source evidence may arrive late; refresh measurements without reopening
+    // an owner-handled task or overwriting its lifecycle status.
+    const refreshed=await db.from("operating_tasks").update({
+      confidence:delivery.confidence,payload:delivery.payload,
+      evidence:delivery.evidence,updated_at:new Date().toISOString(),
+    }).eq("business_id",scope.businessId).eq("id",taskId);
+    if(refreshed.error)failed(refreshed.error,"Operations report update failed");
+    if(!delivery.threadText.trim()||delivery.threadText.length>1200)
+      throw new Error("Invalid canonical Supervisor report text");
+    // Unique proposal UUID makes repeated cron runs idempotent; a late
+    // duplicate cannot send repeated unsolicited owner messages.
+    const ref={source:"operating_tasks",identifier:"supervisor-report:"+p.id,
+      asOf:new Date().toISOString().slice(0,10)};
     const inserted=await db.from("ai_messages").insert({
       id:p.id,business_id:scope.businessId,thread_id:scope.threadId,
       owner_user_id:scope.ownerUserId,author_user_id:null,
       role:"supervisor",content_type:"blocks",text_content:null,
-      structured_content:[{type:"text",text}],
-      grounding:{status:"estimated",intent:"menu_pricing",evidence:[ref]},
+      structured_content:[{type:"text",text:delivery.threadText}],
+      grounding:{status:report.status==="insufficient_evidence"?
+        "insufficient_evidence":"estimated",intent:"menu_pricing",evidence:[ref]},
     });
     if(inserted.error&&inserted.error.code!=="23505")
       failed(inserted.error,"Supervisor thread report unavailable");

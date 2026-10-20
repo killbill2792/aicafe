@@ -1,5 +1,8 @@
 import "server-only";
 import {z} from "zod";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {evaluatePriceExperiment,simulatePriceExperiment,
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
@@ -53,9 +56,41 @@ export const priceExperimentCapability=registerLoopCapability({
         coverage:d.coverage==="actual"?"actual":"unavailable",source:s.source};
     });
     const result=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
-    return {status:result.status,result:{...result,baselineUnits7Days:effect.baselineUnits7Days,
+    const copy=({en,es,ar} as const)[_scope.locale].SupervisorExperiment;
+    const money=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)
+      ?new Intl.NumberFormat(_scope.locale,{style:"currency",currency:"USD"}).format(v/100)
+      :copy.notAvailable;
+    const recommendation=result.recommendation==="keep"?copy.keep:
+      result.recommendation==="revert"?copy.revert:copy.adjust;
+    const trial={...result,baselineUnits7Days:effect.baselineUnits7Days,
       oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
-      productName:effect.productName},recommendation:result.recommendation,source:"order_lines"};
+      productName:effect.productName,
+      estimatedAdditionalRevenue7DaysCents:
+        (effect.newPriceCents-effect.oldPriceCents)*effect.baselineUnits7Days};
+    const text=[copy.reportThread,
+      copy.reportTask.replace("{item}",effect.productName)+".",
+      copy.reportOldPrice.replace("{value}",money(effect.oldPriceCents)),
+      copy.reportNewPrice.replace("{value}",money(effect.newPriceCents)),
+      copy.reportEstimated.replace("{value}",money(trial.estimatedAdditionalRevenue7DaysCents)),
+      copy.reportRevenue.replace("{value}",money(trial.observedRevenueCents)),
+      copy.reportDifference.replace("{value}",money(trial.realizedRevenueDifferenceCents)),
+      copy.reportIngredientOnly.replace("{value}",money(trial.observedIngredientContributionCents)),
+      copy.recommendation.replace("{choice}",recommendation),
+      copy.reportUncertain].join(" ");
+    return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",
+      delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
+        entityType:"menu_item",entityId:effect.productId,
+        confidence:result.status==="complete"?"high" as const:"low" as const,
+        payload:{itemName:effect.productName,proposalId:"",recommendation:result.recommendation,
+          outcomeStatus:result.status,observedRevenueCents:trial.observedRevenueCents,
+          realizedRevenueDifferenceCents:trial.realizedRevenueDifferenceCents,
+          observedIngredientContributionCents:trial.observedIngredientContributionCents,
+          estimatedAdditionalRevenue7DaysCents:trial.estimatedAdditionalRevenue7DaysCents,
+          estimateIsConditional:true,coveredDays:result.coveredDays},
+        evidence:[{source:"order_lines",facts:{coveredDays:result.coveredDays,
+          status:result.status,nonCausal:true}}],
+        threadText:text},
+    };
   },
 });
 export const supervisorLoopRegistry=loopRegistry(priceExperimentCapability);

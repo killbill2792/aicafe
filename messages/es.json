@@ -2007,8 +2007,7 @@
     "notConfigured": "La recuperación no está disponible.",
     "error": "Ocurrió un error. Inténtalo de nuevo.",
     "working": "Procesando…"
-  }
-,
+  },
   "SupervisorExperiment": {
     "open": "Probar un cambio de precio",
     "close": "Cerrar experimento",
@@ -2035,7 +2034,7 @@
     "recommendAdjust": "Revisar y ajustar antes de decidir",
     "actualRevenue": "Ingresos reales de siete días",
     "observedDifference": "Diferencia real frente al precio anterior (no causal)",
-"reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites.",
+    "reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites.",
     "reportRevenue": "Ventas netas observadas: {value}",
     "reportDifference": "Diferencia frente al precio previo con el volumen observado: {value}",
     "reportUncertain": "Aún faltan ventas diarias verificadas. No es beneficio neto ni prueba de causalidad.",
@@ -2043,6 +2042,10 @@
     "keep": "Mantener",
     "revert": "Revertir",
     "adjust": "Revisar o ajustar",
-    "notAvailable": "No disponible"
+    "notAvailable": "no disponible",
+    "reportOldPrice": "Precio anterior: {value}.",
+    "reportNewPrice": "Precio de prueba: {value}.",
+    "reportEstimated": "Ingresos adicionales estimados sin cambio en demanda: {value}.",
+    "reportIngredientOnly": "Contribución observada después de ingredientes: {value}."
   }
 }

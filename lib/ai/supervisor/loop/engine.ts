@@ -1,5 +1,6 @@
 import {createHash} from "node:crypto";
 import {z} from "zod";
+import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/tasks";
 
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
@@ -24,7 +25,15 @@ export type LoopCommitResult=
 export type LoopSample={businessDate:string;observation:Record<string,unknown>;source:string};
 export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   result:Record<string,unknown>;recommendation:"keep"|"revert"|"adjust";
-  source:string};
+  source:string;
+  /** Domain-owned delivery into the existing Operations inbox and owner thread.
+   * No platform branch may assume a drink, task kind or specialist identity. */
+  delivery?:{
+    agentId:AgentId;taskKind:OperatingTaskKind;entityType:string;entityId:string;
+    payload:OperatingTask["payload"];confidence:OperatingTask["confidence"];
+    evidence:OperatingTask["evidence"];threadText:string;
+  };
+};
 export type RegisteredLoopCapability={
   id:string;version:1;
   simulate:(scope:OwnerLoopScope,rawInput:unknown)=>Promise<LoopSimulation>;
