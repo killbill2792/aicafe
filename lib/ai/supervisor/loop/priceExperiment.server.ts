@@ -76,7 +76,7 @@ export const priceExperimentCapability=registerLoopCapability({
       copy.reportDifference.replace("{value}",money(trial.realizedRevenueDifferenceCents)),
       copy.reportIngredientOnly.replace("{value}",money(trial.observedIngredientContributionCents)),
       copy.recommendation.replace("{choice}",recommendation),
-      copy.reportUncertain].join(" ");
+      result.status==="complete"?copy.reportCompletedCaveat:copy.reportUncertain].join(" ");
     return {status:result.status,result:trial,recommendation:result.recommendation,source:"order_lines",
       delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
         entityType:"menu_item",entityId:effect.productId,
