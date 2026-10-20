@@ -30,13 +30,27 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     const signed=(raw:string)=>raw.replace(/\s/gu,"").replace(/[−–—]/gu,"-");
     const centsPattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*[0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات|¢)(?![\p{L}\p{N}])/giu;
     const dollarPattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*)\$\s*([0-9]{1,5})(?:\.([0-9]{1,2}))?(?![\p{L}\p{N}.])/giu;
-    const centQuotes=[...normalized.matchAll(centsPattern)]
-      .map(m=>Number(signed(m[1])));
-    const dollarQuotes=[...normalized.matchAll(dollarPattern)].map(m=>{
+    const centMatches=[...normalized.matchAll(centsPattern)];
+    const dollarMatches=[...normalized.matchAll(dollarPattern)];
+    const centQuotes=centMatches.map(m=>Number(signed(m[1])));
+    const dollarQuotes=dollarMatches.map(m=>{
       const whole=Number(m[2]),fraction=Number((m[3]??"").padEnd(2,"0")||"0");
       return (signed(m[1]).startsWith("-")?-1:1)*(whole*100+fraction);
     });
-    return {values:[...centQuotes,...dollarQuotes],ambiguous};
+    // Reject untyped numeric alternatives across the COMPLETE utterance, not
+    // just numbers adjacent to a connector. E.g. "10 or maybe 20 cents",
+    // "10 o quizás 20 centavos", and "١٠ أو ربما ٢٠ سنتات" all contain
+    // an unaccounted-for 10 and cannot authorize a model-picked 20.
+    // A recognized size/quantity is not a second price (e.g. "Latte 12 oz,
+    // increase 10 cents"). The allowlist is for explicit NON-price units only;
+    // an untyped number fails closed and requires owner clarification.
+    const nonPriceUnits=/(?<![\\p{L}\\p{N}.])[0-9]{1,6}[\\s-]*(?:fl[\\s-]*oz|oz|ounces?|onzas?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|grams?|g|kg|كيلو|مل|أونصة|اونصة|days?|weeks?|months?|días?|semanas?|أيام|اسابيع)(?![\\p{L}\\p{N}])/giu;
+    const permittedSpans=[...centMatches,...dollarMatches,...normalized.matchAll(nonPriceUnits)]
+      .map(m=>({from:m.index,to:m.index+m[0].length}));
+    const untypedAmount=[...normalized.matchAll(/(?<![\\p{L}\\p{N}])[0-9]+(?:\\.[0-9]+)?(?![\\p{L}\\p{N}])/gu)]
+      .some(m=>!permittedSpans.some(span=>m.index>=span.from&&
+        m.index+m[0].length<=span.to));
+    return {values:[...centQuotes,...dollarQuotes],ambiguous:ambiguous||untypedAmount};
   };
   const currentAmounts=amounts(current);
   if(currentAmounts.ambiguous)return false;
