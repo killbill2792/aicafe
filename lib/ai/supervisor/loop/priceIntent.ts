@@ -58,6 +58,11 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     // prevents the model from selecting one branch of an ambiguous quote.
     const spokenNumbers=/(?<![\p{L}\p{N}])(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|cero|uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|trece|catorce|quince|dieciseis|dieciséis|dieci[\p{L}]+|veinte|veinti[\p{L}]+|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa|cien|ciento|mil|صفر|واحد|واحدة|اثنان|اثنين|إثنين|ثلاثة|ثلاث|أربعة|اربعة|أربع|اربع|خمسة|خمس|ستة|ست|سبعة|سبع|ثمانية|ثماني|ثمان|تسعة|تسع|عشر|عشرة|عشرين|عشرون|ثلاثون|ثلاثين|اربعون|أربعون|خمسون|خمسين|ستون|سبعون|ثمانون|تسعون|مئة|مائة|ألف)(?![\p{L}\p{N}])/giu;
     const connectors=/^[\s,–—-]*(?:or|versus|vs|o|ou|أو|او|أم)(?![\p{L}\p{N}])/iu;
+    // "Twenty or more drinks" is one lower-bound observation, not a
+    // price choice. The connector does not introduce a SECOND quantity.
+    // These comparative ranges are deliberately not treated as disjunctive
+    // monetary alternatives in English, Spanish or Arabic.
+    const comparativeRange=/^[\s,–—-]*(?:or|o|ou|أو|او|أم)[\s,–—-]*(?:more|less|higher|lower|greater|fewer|mas|más|menos|mayor(?:es)?|menor(?:es)?|أكثر|اكثر|أقل|اقل)(?![\p{L}\p{N}])/iu;
     // If the intervening text explicitly identifies a different quantity
     // (e.g. "one or two days"), it is not a price alternative.
     const typedOtherUnit=/(?<![\p{L}\p{N}])(?:times?|days?|weeks?|months?|years?|cups?|units?|pieces?|percent|percentage|por\s+ciento|oz|ounces?|ml|liters?|litres?|d[ií]as?|semanas?|meses|أيام|اسابيع|بالمئة)(?![\p{L}\p{N}])|[%٪]/iu;
@@ -71,7 +76,8 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
         // Bound the number of filler words as well as raw length.
         return between.length<=100&&(between.match(/\p{L}+/gu)?.length??0)<=8&&
           !/[.!?؟;\n]/u.test(between)&&
-          connectors.test(between)&&!typedOtherUnit.test(between);
+          connectors.test(between)&&!comparativeRange.test(between)&&
+          !typedOtherUnit.test(between);
       }));
     return {values:[...centQuotes,...dollarQuotes],
       ambiguous:ambiguous||untypedAmount||spokenAlternative};

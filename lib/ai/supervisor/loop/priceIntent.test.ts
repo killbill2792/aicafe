@@ -100,6 +100,14 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Try twenty or maybe 20 cents",undefined,20)).toBe(false);
   expect(ownerQuotedPriceDelta("Try 20 cents or maybe thirty",undefined,20)).toBe(false);
  });
+ it("treats comparative count ranges as context, not alternative prices",()=>{
+  expect(ownerQuotedPriceDelta("Vendimos veinticinco o más bebidas, así que sube el mocha 20 centavos",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Sold twenty or more drinks, raise mocha 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Sold thirty or fewer drinks, test a 20-cent increase",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Vendimos veinte o menos cafés, subamos el precio 20 centavos",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try twenty or thirty cents",undefined,30)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 20 cents or maybe thirty",undefined,20)).toBe(false);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
