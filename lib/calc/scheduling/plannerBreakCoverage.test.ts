@@ -83,6 +83,19 @@ describe("owner break coverage floor (pure calculation)",()=>{
       !demandSeatRequired(args,plan,u,simultaneous))).toHaveLength(1);
   });
 
+  it("rejects break credit if another shift assigns the same employee work during it",()=>{
+    const plan=expandPlannerInput(base);
+    const during=plan.units.find(u=>u.seatIndex===1 &&
+      u.start===Date.parse("2026-10-12T09:30:00.000Z"))!;
+    const normal=shift("a",[{startAt:"2026-10-12T09:30:00.000Z",
+      endAt:"2026-10-12T10:00:00.000Z",paid:false}]);
+    expect(recordedSeatRequired(base,plan,[normal],during)).toBe(false);
+    const overlapping:PlannerShift={...shift("a",[]),
+      startAt:"2026-10-12T09:30:00.000Z",
+      endAt:"2026-10-12T10:00:00.000Z",paidMinutes:30};
+    expect(recordedSeatRequired(base,plan,[normal,overlapping],during)).toBe(true);
+  });
+
   it("independent credit requires a real, fully contained reviewed break",()=>{
     const plan=expandPlannerInput(base);
     const during=plan.units.find(u=>u.seatIndex===1 &&
