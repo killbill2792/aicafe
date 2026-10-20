@@ -493,6 +493,32 @@ describe("authenticated private trace buffer",()=>{
       expect((payload!.events[0].parameters as {rows:unknown[]}).rows).toHaveLength(180);
     }finally{vi.unstubAllEnvs();}
   });
+  it("never retains snake-case JSON credentials or delimited bank rows",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let result:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",
+          ownerQuestion:[
+            '{"api_key":"JSON_API_KEY_SECRET","access_token":"ACCESS_TOKEN_SECRET"}',
+            '{"refresh_token":"REFRESH_TOKEN_SECRET","session_token":"SESSION_TOKEN_SECRET"}',
+            '10/19/2026,ACME,-45.00',
+            '2026-10-19,"Coffee supplier",-123.45',
+            'Actual confirmed rent is $900',
+          ].join("\n")});
+        logSupervisorDebugPayload({point:"model_response",raw:{
+          output:[{content:'{"api_key":"FROM_RESPONSE_SECRET"}'}]}});
+      },async trace=>{result=trace;});
+      const serialized=JSON.stringify(result);
+      for(const secret of ["JSON_API_KEY_SECRET","ACCESS_TOKEN_SECRET",
+        "REFRESH_TOKEN_SECRET","SESSION_TOKEN_SECRET","FROM_RESPONSE_SECRET",
+        "10/19/2026,ACME,-45.00","2026-10-19,\\"Coffee supplier\\",-123.45"])
+        expect(serialized).not.toContain(secret);
+      expect(serialized).toContain("[bank_line_removed]");
+      expect(serialized).toContain("Actual confirmed rent is $900");
+      expect(result!.droppedCount).toBe(0);
+    }finally{vi.unstubAllEnvs();}
+  });
   it("keeps exact diagnostic parameters but strips credential properties",async()=>{
     vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
     vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
