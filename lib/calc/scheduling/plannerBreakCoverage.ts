@@ -308,7 +308,7 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     function sequences(previousEnd:number,left:number,selected:Placement[]):void {
       if(choices.length>=96)return;
       if(left===0){
-        if(entry.last.end-previousEnd<=limit*60000 &&
+        if(entry.last.end-previousEnd<=limit!*60000 &&
             entry.last.end-previousEnd>=gridMs)
           choices.push(selected.slice());
         return;
@@ -317,7 +317,7 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
       for(let start=previousEnd+gridMs;
           start+durationMs+additional*(durationMs+gridMs)+gridMs<=entry.last.end;
           start+=gridMs){
-        if(start-previousEnd>limit*60000)break;
+        if(start-previousEnd>limit!*60000)break;
         const end=start+durationMs;
         if(!entry.span.units.some(u=>u.start>=start && u.end<=end))continue;
         selected.push({entry,employeeId,start,end,coverageIds});
