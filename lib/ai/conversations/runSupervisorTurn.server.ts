@@ -1,5 +1,5 @@
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
-import {runInvestigationTurn} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
+import {runInvestigationTurn,type InvestigationInput} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import type {InvestigationMemory} from "./investigationMemory";
 import "server-only";
 import { z } from "zod";
@@ -850,7 +850,7 @@ export async function runSupervisorTurn(
     // diagnostics.server.ts. The API route's own per-turn correlation id,
     // threaded through so the investigation loop's round-by-round debug
     // trace shares it rather than minting a second, disconnected id.
-    debugRequestId?:string},
+    debugRequestId?:string;inertProposal?:InvestigationInput["inertProposal"]},
   transport:Transport=fetch,
 ):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
   const apiKey=process.env.OPENAI_API_KEY;

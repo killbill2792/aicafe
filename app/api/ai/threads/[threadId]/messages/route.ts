@@ -15,7 +15,10 @@ import { conversationError, conversationJson, parseInput, readBoundedJson, requi
 import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 import {withSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
-import {proposeFromOwnerConversation} from "@/lib/ai/supervisor/loop/engine";
+import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {ownerQuotedPriceDelta,ownerNamedUniqueProduct} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
@@ -102,28 +105,45 @@ export async function POST(request: Request, context: RouteContext) {
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
         typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
-      // A follow-up can explicitly request a draft through registered domain
-      // recognition. This produces only an inert proposal; approve/commit remain
-      // separate authenticated owner actions in the workflow API.
-      const proposed=await proposeFromOwnerConversation({
-        businessId:scope.businessId,ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale
-      },supervisorLoopRegistry,new SupabaseLoopRepository(),
-      input.text,olderOwnerTexts,input.clientMessageId).catch(()=>null);
-      const copy=({en,es,ar} as const)[input.locale].SupervisorExperiment;
-      const proposalText=proposed?copy.proposedFromChat
-        .replace("{item}",String((proposed.canonicalEffectPayload as Record<string,unknown>).productName??""))
-        .replace("{price}",new Intl.NumberFormat(input.locale,{
-          style:"currency",currency:"USD"
-        }).format(Number((proposed.canonicalEffectPayload as Record<string,unknown>).newPriceCents)/100)):null;
-      const completed = proposed&&proposalText
-        ?{reply:{intent:"menu_pricing" as const,status:"estimated" as const,
-          evidence:[{source:"pricing_engine" as const,identifier:"supervisor-proposal:"+proposed.id,
-            asOf:identity.asOf}],
-          blocks:[{type:"text" as const,text:proposalText}]}}
-        :await runSupervisorTurn({
+      // The normal semantic investigation can discover the registered inert
+      // proposal tool in ANY owner language. Model output never authorizes
+      // approval/commit/POS writes, never supplies trusted money or tenant IDs.
+      const proposalTools=supervisorLoopRegistry.list().map(capabilityId=>{
+        const definition=supervisorLoopRegistry.get(capabilityId);
+        return {name:capabilityToolName(capabilityId),
+          description:definition.proposalDescription,
+          parameters:definition.proposalInputJsonSchema};
+      });
+      const completed=await runSupervisorTurn({
         text: input.text, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
+        inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
+          const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
+          if(!capabilityId||identity.currency!=="USD")return null;
+          const definition=supervisorLoopRegistry.get(capabilityId);
+          if(!rawArgs||typeof rawArgs!=="object"||Array.isArray(rawArgs))return null;
+          const raw=rawArgs as Record<string,unknown>;
+          if(typeof raw.productId!=="string"||typeof raw.increaseCents!=="number"||
+            !Number.isSafeInteger(raw.increaseCents))return null;
+          const prior=olderOwnerTexts[0];
+          if(!ownerQuotedPriceDelta(input.text,prior,raw.increaseCents))return null;
+          const menu=(await getMenuControlCenter()).filter(x=>x.active);
+          if(!ownerNamedUniqueProduct(input.text,prior,raw.productId,menu))return null;
+          const proposed=await proposeLoop({businessId:scope.businessId,
+            ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale},
+            supervisorLoopRegistry,new SupabaseLoopRepository(),capabilityId,
+            rawArgs,input.clientMessageId);
+          const copy=({en,es,ar} as const)[input.locale].SupervisorExperiment;
+          const effect=definition.parseEffect(proposed.canonicalEffectPayload);
+          const cents=effect.newPriceCents;
+          const nameValue=effect.productName;
+          if(typeof cents!=="number"||!Number.isSafeInteger(cents)||
+            typeof nameValue!=="string")return null;
+          const text=copy.proposedFromChat.replace("{item}",nameValue).replace("{price}",
+            new Intl.NumberFormat(input.locale,{style:"currency",currency:"USD"}).format(cents/100));
+          return {id:proposed.id,text};
+        }},
         investigationMemory: latestInvestigationMemory(messages,scope.businessId,message.id),
         debugRequestId,
         readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),

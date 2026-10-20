@@ -17,7 +17,7 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
   if(!Number.isSafeInteger(candidate)||candidate<1||candidate>100000)return false;
   const amounts=(text:string)=>{
     const normalized=decimalDigits(text.normalize("NFKC"));
-    const pattern=/(?<![\p{L}\p{N}])([0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
+    const pattern=/(?<![\p{L}\p{N}.])([0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
     return [...normalized.matchAll(pattern)].map(m=>Number(m[1]));
   };
   const currentAmounts=amounts(current);
