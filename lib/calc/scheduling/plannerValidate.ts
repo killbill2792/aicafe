@@ -2,6 +2,7 @@ import { expandPlannerInput, isConfirmedAvailable, qualifies, baselineGapReason,
   type DemandUnit, type WorkUnit } from "./plannerCore";
 import { localParts, parseUtcInstant, utcIso } from "./plannerClock";
 import { costForWork, hardValid } from "./plannerRules";
+import { recordedBreakCount, recordedSeatRequired } from "./plannerBreakCoverage";
 import type { PlannerCost, PlannerGap, PlannerInput, PlannerShift } from "./plannerTypes";
 
 export type PlannerValidation = {
@@ -164,7 +165,8 @@ export function validateOliviaAssignments(input:PlannerInput,
       coveredBy(work,unit,e.id)).map(e=>e.id).sort());
   // Advisory coverage is a soft preference, not a hard publish gate.
   const indices=plan.units.map((_,i)=>i)
-    .filter(i=>plan.units[i].priority==="required").sort((a,b)=>
+    .filter(i=>plan.units[i].priority==="required" &&
+      recordedSeatRequired(input,plan,proposal,plan.units[i])).sort((a,b)=>
     candidates[a].length-candidates[b].length ||
     plan.units[a].start-plan.units[b].start ||
     plan.units[a].id.localeCompare(plan.units[b].id));
@@ -190,14 +192,21 @@ export function validateOliviaAssignments(input:PlannerInput,
   const satisfied=match(0);
   if(!satisfied){
     const shortfall=indices.filter(i=>candidates[i].length===0);
-    for(const index of shortfall)gaps.push(markGap(plan.units[index],
-      baselineGapReason(plan.units[index],plan,cache)));
+    for(const index of shortfall){
+      const unit=plan.units[index];
+      gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit)>0
+        ?"break_coverage_unsatisfiable":baselineGapReason(unit,plan,cache)));
+    }
     if(shortfall.length===0){
       if(!exhausted && deepestUnmatched>=0 && deepestUnmatched<indices.length)
-        gaps.push(markGap(plan.units[indices[deepestUnmatched]],
-          "capacity_or_overlap"));
+        {
+          const unit=plan.units[indices[deepestUnmatched]];
+          gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit)>0
+            ?"break_coverage_unsatisfiable":"capacity_or_overlap"));
+        }
       violations.push(exhausted?"coverage_matching_budget_exhausted":
-        "simultaneous_qualified_coverage_unsatisfied");
+        gaps.some(g=>g.reason==="break_coverage_unsatisfiable")
+        ?"break_coverage_unsatisfiable":"simultaneous_qualified_coverage_unsatisfied");
     }
   }
   // A staffing handoff requires a verified overlap of the old and new
