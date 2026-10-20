@@ -2038,6 +2038,7 @@
     "reportRevenue": "Observed net sales: {value}",
     "reportDifference": "Difference from unchanged-price baseline at observed volume: {value}",
     "reportUncertain": "Not enough verified daily sales yet. This is not realized profit or proof of price causality.",
+    "reportCompletedCaveat": "All seven business days have verified sales coverage. The comparison uses observed volume and cannot establish causation or net profit.",
     "recommendation": "Recommendation: {choice}",
     "keep": "Keep",
     "revert": "Revert",
