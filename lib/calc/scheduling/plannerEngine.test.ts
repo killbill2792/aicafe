@@ -467,6 +467,74 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("gives both sequential long handoff workers their own reviewed breaks",()=>{
+    const args=input([
+      employee("b",{recurring:[recurring(1,"09:00","13:00")]}),
+      employee("c",{recurring:[recurring(1,"13:00","17:00")]}),
+    ],[coverage("sequential",{start_local:"09:00",end_local:"17:00",
+      minHeadcount:1,minHeadcountDuringBreak:0})],{
+      slotMinutes:60,ruleProfile:{
+        verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+      },
+    });
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toHaveLength(2);
+    expect(result.best?.shifts.every(s=>s.breaks.length===1)).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("globally matches one shared relief employee during nonconcurrent role breaks",()=>{
+    const only=(code:string)=>[{code,validFrom:"2026-01-01",confirmed:true}];
+    const args=input([
+      employee("cashier",{qualifications:only("cashier")}),
+      employee("barista",{qualifications:only("barista")}),
+      employee("relief",{qualifications:[...only("cashier"),...only("barista")]}),
+    ],[
+      coverage("cash",{start_local:"09:00",end_local:"13:00",
+        qualificationCode:"cashier",minHeadcount:1,minHeadcountDuringBreak:1}),
+      coverage("bar",{start_local:"09:00",end_local:"13:00",
+        qualificationCode:"barista",minHeadcount:1,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    const shifts=result.best!.shifts;
+    expect(shifts.filter(s=>s.breaks.length===1)).toHaveLength(2);
+    expect(shifts.some(s=>s.employeeId==="relief")).toBe(true);
+    expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("retains two distinct qualified work paths when cashier and barista demand converges",()=>{
+    const dual=[{code:"cashier",validFrom:"2026-01-01",confirmed:true},
+      {code:"barista",validFrom:"2026-01-01",confirmed:true}];
+    const args=input([
+      employee("a",{qualifications:dual}),
+      employee("b",{qualifications:dual}),
+    ],[
+      coverage("cash",{start_local:"09:00",end_local:"11:00",
+        qualificationCode:"cashier",minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("bar",{start_local:"09:00",end_local:"11:00",
+        qualificationCode:"barista",minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("general",{start_local:"11:00",end_local:"13:00",
+        qualificationCode:null,minHeadcount:2,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toHaveLength(2);
+    expect(result.best?.shifts.every(s=>s.breaks.length===1)).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
