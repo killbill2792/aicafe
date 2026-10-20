@@ -226,7 +226,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
   for(const [index,unit] of plan.units.entries()){
     // Waive seats only in actively planned duty-free break windows; validator
     // independently checks that these reservations became real shift breaks.
-    if(!demandSeatRequired(input,unit,reserved)){
+    if(!demandSeatRequired(input,plan,unit,reserved)){
       frontier=frontier.map(state=>({...state,selected:[...state.selected,null]}));
       continue;
     }
@@ -248,7 +248,7 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
       const seatsRemaining=plan.units.filter(u=>u.coverageId===unit.coverageId &&
         u.start===unit.start && u.end===unit.end &&
         (u.seatIndex??0)>=(unit.seatIndex??0) &&
-        demandSeatRequired(input,u,reserved)).length;
+        demandSeatRequired(input,plan,u,reserved)).length;
       const allowed=remaining.length>=seatsRemaining
         ? options.filter(id=>remaining.includes(id)):options;
       const ranked=allowed.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
