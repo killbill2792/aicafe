@@ -358,9 +358,13 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
     const allowedIssueCodes=new Set(["invalid_type","invalid_union","invalid_value",
       "invalid_format","too_small","too_big","not_multiple_of","unrecognized_keys",
       "invalid_key","invalid_element","custom"]);
+    // Input plan fields and canonical simulationOutputSchema result fields only.
+    // Do not export any free-form path segment from provider/tool payloads.
     const allowedIssueFields=new Set(["capabilityId","version","purpose","description",
       "nodes","op","handle","label","quotedNumber","value","unit","occurrence",
-      "quantityScale","quotedDenomination","to"]);
+      "quantityScale","quotedDenomination","to","status","mode","proposal",
+      "executedEffects","currency","formula","assumptions","sourceHandles",
+      "missingInputs","reason"]);
     if(Array.isArray(payload.issues)){
       detail.issueCount=payload.issues.length;
       detail.schemaIssues=payload.issues.slice(0,12).map(issue=>{
