@@ -403,6 +403,38 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 });
 
+describe("budget-exhaustion accumulated rescue semantic safety",()=>{
+  it("withholds a partially masked draft when its own rescue reviewer rejects a source-cited action",async()=>{
+    const draft=answer([
+      {kind:"evidence",text:"The catalog lists {{r1:value.0.name}}. I cancelled the order.",citations:["r1"]},
+      {kind:"advice",text:"An unrelated unsupported amount is $99999.",citations:[]},
+    ]);
+    const scripted=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),draft,draft,
+    ]);
+    const onDiagnostic=vi.fn();
+    let negativeReviews=0;
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const name=JSON.parse(String(init.body)).text.format.name;
+      if(name==="supervisor_formula_extraction")return response({extracted:null});
+      if(name==="supervisor_investigation_review"){
+        negativeReviews++;
+        return response({supported:false,complete:false,
+          reason:"No verified order cancellation occurred.",supportedParagraphIndices:[]});
+      }
+      return scripted(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"Did you cancel that order and what's on the menu?",
+      onDiagnostic},transport);
+    expect(negativeReviews).toBeGreaterThanOrEqual(2);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("I cancelled the order");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("The catalog lists");
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"investigation_exhausted",rescuedUnverified:false,
+    }));
+  });
+});
+
 describe("reviewer advisory for an already-masked partial",()=>{
   it("does not veto a surviving grounded claim when a separate claim is unresolvable",async()=>{
     let count=0;
