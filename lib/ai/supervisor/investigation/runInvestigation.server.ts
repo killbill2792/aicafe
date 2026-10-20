@@ -760,8 +760,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // Do not preserve unrelated free-form advice or unsupported action
       // assertions merely because another paragraph cites a real source.
       const groundedNarrative=new Set<string>();
+      // A real citation is not evidence that the Supervisor performed an
+      // operation. Never promote completion/change assertions under a
+      // negative semantic verdict, even if another token in that sentence
+      // resolves to authentic café data (EN/ES/AR fail closed).
+      const effectsAssertion=/\b(?:publish(?:ed|ing)?|sav(?:ed|ing)|sent|send|approv(?:ed|ing)|execut(?:ed|ing)|appl(?:ied|ying)|completed|finished|updat(?:ed|ing)|chang(?:ed|ing)|purchas(?:ed|ing)|order(?:ed|ing)|deployed|scheduled)\b|\b(?:publicad[oa]s?|enviad[oa]s?|guardad[oa]s?|aprobad[oa]s?|ejecutad[oa]s?|completad[oa]s?|actualizad[oa]s?|cambiad[oa]s?|comprad[oa]s?)\b|(?:نشرت|نشرنا|أرسلت|أرسلنا|حفظت|حفظنا|وافقنا|نفذنا|اكتمل|حدّثنا|غيّرنا|اشترينا)/iu;
       answer.paragraphs.forEach((paragraph,index)=>{
-        if(paragraph.kind!=="evidence"||
+        if(paragraph.kind!=="evidence"||effectsAssertion.test(paragraph.text)||
           rendered.issues.some(issue=>issue.paragraphIndex===index)||
           !/\{\{r\d+:[a-zA-Z0-9_.]+\}\}/u.test(paragraph.text))return;
         const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,

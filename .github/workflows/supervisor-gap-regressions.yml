@@ -18,4 +18,4 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Run reviewer prose and provider telemetry regressions without unrelated typecheck gates
-        run: npx vitest run lib/ai/supervisor/investigation/runInvestigation.server.test.ts -t 'wholly narrative|raw network failure with the provider_error'
+        run: npx vitest run lib/ai/supervisor/investigation/runInvestigation.server.test.ts
