@@ -761,13 +761,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // assertions merely because another paragraph cites a real source.
       const safeParagraphBlocks=new Set<string>();
       const safeParagraphSources=new Set<string>();
-      // A real citation is not evidence that the Supervisor performed an
-      // operation. Never promote completion/change assertions under a
-      // negative semantic verdict, even if another token in that sentence
-      // resolves to authentic café data (EN/ES/AR fail closed).
-      const effectsAssertion=/\b(?:publish(?:ed|ing)?|sav(?:ed|ing)|sent|send|approv(?:ed|ing)|execut(?:ed|ing)|appl(?:ied|ying)|completed|finished|updat(?:ed|ing)|chang(?:ed|ing)|purchas(?:ed|ing)|order(?:ed|ing)|deployed|scheduled)\b|\b(?:publicad[oa]s?|enviad[oa]s?|guardad[oa]s?|aprobad[oa]s?|ejecutad[oa]s?|completad[oa]s?|actualizad[oa]s?|cambiad[oa]s?|comprad[oa]s?)\b|(?:نشرت|نشرنا|أرسلت|أرسلنا|حفظت|حفظنا|وافقنا|نفذنا|اكتمل|حدّثنا|غيّرنا|اشترينا)/iu;
+      // The independent reviewer must positively identify each semantically
+      // valid paragraph. A model-authored sentence citing a real field is
+      // never sufficient to prove an unrelated effect or completed action.
+      const reviewerSafeParagraphs=new Set<number>(
+        review&&!isToolCallSignal(review)?review.supportedParagraphIndices??[]:[]);
       answer.paragraphs.forEach((paragraph,index)=>{
-        if(paragraph.kind!=="evidence"||effectsAssertion.test(paragraph.text)||
+        if(!reviewerSafeParagraphs.has(index)||paragraph.kind!=="evidence"||
           rendered.issues.some(issue=>issue.paragraphIndex===index))return;
         const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,
           {ownerText:input.text});

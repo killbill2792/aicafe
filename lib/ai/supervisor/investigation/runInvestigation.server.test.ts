@@ -298,7 +298,7 @@ describe("reviewer advisory for an already-masked partial",()=>{
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));
       if(body.text.format.name==="supervisor_investigation_review")
-        return response({supported:false,complete:true,reason:"Some requested evidence is unavailable."});
+        return response({supported:false,complete:true,reason:"Some requested evidence is unavailable.",supportedParagraphIndices:[0]});
       const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
       if(context.observations.length===0)
         return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
@@ -325,7 +325,7 @@ describe("review verdict publication policy",()=>{
       const body=JSON.parse(String(init.body));
       if(body.text.format.name==="supervisor_investigation_review")
         return response({supported:false,complete:false,
-          reason:"Other parts of the request need further investigation."});
+          reason:"Other parts of the request need further investigation.",supportedParagraphIndices:[0]});
       return steps(url,init);
     });
     const result=await runSupervisorTurn({...base,text:"What does my menu record show?"},transport);
@@ -345,7 +345,7 @@ describe("review verdict publication policy",()=>{
       const body=JSON.parse(String(init.body));
       if(body.text.format.name==="supervisor_investigation_review")
         return response({supported:false,complete:false,
-          reason:"The schedule-completion statement has no action evidence."});
+          reason:"The schedule-completion statement has no action evidence.",supportedParagraphIndices:[0]});
       return steps(url,init);
     });
     const result=await runSupervisorTurn({...base,text:"Which drink is listed and did you publish shifts?"},transport);
@@ -367,7 +367,7 @@ describe("review verdict publication policy",()=>{
       const body=JSON.parse(String(init.body));
       if(body.text.format.name==="supervisor_investigation_review")
         return response({supported:false,complete:false,
-          reason:"The schedule-completion statement has no action evidence."});
+          reason:"The schedule-completion statement has no action evidence.",supportedParagraphIndices:[0]});
       return steps(url,init);
     });
     const result=await runSupervisorTurn({...base,
@@ -375,6 +375,23 @@ describe("review verdict publication policy",()=>{
     expect(result.reply.status).toBe("partial");
     expect(result.reply.blocks.some(b=>b.type==="metric"&&b.valueCents===525)).toBe(true);
     expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
+  });
+  it.each(["I removed the shift", "I cancelled the order"])(
+    "never launders a source-cited completed action on a negative review: %s",async(claim)=>{
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,reason:"The purported change was not executed.",
+          supportedParagraphIndices:[]});
+      const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+      if(context.observations.length===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+      return response(answer([{kind:"evidence",
+        text:"The catalog lists {{r1:value.0.name}}. "+claim+".",citations:["r1"]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"Did you change anything?"},transport);
+    expect(result.reply.status).toBe("unavailable");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain(claim);
   });
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
