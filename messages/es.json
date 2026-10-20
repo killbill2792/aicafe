@@ -2029,6 +2029,12 @@
     "reportTask": "Resultados del experimento para {item}",
     "reportDetail": "Consulta las ventas reales, la estimación condicional y la recomendación.",
     "reportAction": "Revisar experimento",
-    "reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites."
+    "recommendationLabel": "Recomendación",
+    "recommendKeep": "Mantener este precio",
+    "recommendRevert": "Volver al precio anterior",
+    "recommendAdjust": "Revisar y ajustar antes de decidir",
+    "actualRevenue": "Ingresos reales de siete días",
+    "observedDifference": "Diferencia real frente al precio anterior (no causal)",
+"reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites."
   }
 }
