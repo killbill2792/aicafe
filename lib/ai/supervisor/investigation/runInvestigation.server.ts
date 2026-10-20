@@ -759,7 +759,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // not vanish just because it has no numeric value suitable for a box.
       // Do not preserve unrelated free-form advice or unsupported action
       // assertions merely because another paragraph cites a real source.
-      const groundedNarrative=new Set<string>();
+      const safeParagraphBlocks=new Set<string>();
+      const safeParagraphSources=new Set<string>();
       // A real citation is not evidence that the Supervisor performed an
       // operation. Never promote completion/change assertions under a
       // negative semantic verdict, even if another token in that sentence
@@ -772,11 +773,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,
           {ownerText:input.text});
         if(!checked||checked.issues.length||!checked.evidence.length)return;
+        // A boxed metric inside an unsupported "I published..." paragraph
+        // is not a license to keep that paragraph OR its box. Both must
+        // originate in a paragraph that independently passed these checks.
         for(const block of checked.blocks)
-          if(block.type==="text")groundedNarrative.add(block.text);
+          safeParagraphBlocks.add(JSON.stringify(block));
+        for(const source of checked.evidence)
+          safeParagraphSources.add(source.identifier);
       });
-      const safeReviewBlocks=reply.blocks.filter(block=>block.type!=="text"||
-        groundedNarrative.has(block.text));
+      const safeReviewBlocks=reply.blocks.filter(block=>{
+        if(block.type==="warning")return true;
+        if(block.type==="task_card"||block.type==="task_status")
+          return safeParagraphSources.has(block.source.identifier);
+        return safeParagraphBlocks.has(JSON.stringify(block));
+      });
       const hasSafeReviewFacts=safeReviewBlocks.some(block=>block.type!=="warning");
       let downgradedByReview=false;
       if(review&&!isToolCallSignal(review)&&!review.supported&&hasSafeReviewFacts){
