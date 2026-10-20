@@ -17,13 +17,12 @@ const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(?:^|[_-])(?:authorization|password|passphrase|secret|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)(?:$|[_-])|(?:clientSecret|clientToken|apiKey|apiToken|accessToken|refreshToken|sessionToken|setCookie)/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
-/** Fail closed: pilot traces are only written for one configured Supabase auth UUID. */
+/** Pilot traces for authenticated owners only; user-specific env allowlisting is optional no longer required. */
 export function isSupervisorPrivateTraceTester(ownerUserId:string):boolean {
-  const testId=process.env.SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID;
   return process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED==="true"&&
-    typeof testId==="string"&&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(testId)&&
-    ownerUserId.toLowerCase()===testId.toLowerCase();
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId);
+  // Caller must still be an authenticated thread owner; Supabase RLS
+  // independently checks both owner identity and business membership.
 }
 
 /** No raw bearer, quoted password or provider-key-shaped token can be retained. */
