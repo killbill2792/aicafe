@@ -361,6 +361,29 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(validateOliviaAssignments(args,result.best!.shifts).completeCoverage).toBe(true);
   });
 
+  it("plans reviewed breaks across a contiguous opt-in then opt-out coverage boundary",()=>{
+    const args=input([employee("a"),employee("b")],[
+      coverage("can-break",{start_local:"09:00",end_local:"13:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+      coverage("full-roster",{start_local:"13:00",end_local:"15:00",
+        minHeadcount:2,minHeadcountDuringBreak:null}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:300,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    const shifts=result.best!.shifts;
+    expect(shifts).toHaveLength(2);
+    expect(shifts.every(s=>s.breaks.length===1)).toBe(true);
+    // Normal coverage is NEVER reduced inside the explicitly opted-out row.
+    expect(shifts.every(s=>s.breaks[0].endAt<="2026-10-12T20:00:00.000Z"))
+      .toBe(true);
+    expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
