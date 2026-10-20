@@ -54,7 +54,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     return decode(data as Row);
   }
   async transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"manual_pending"|"manual_confirmed"|"committed",
+    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",
     startDate?:string):Promise<LoopProposal>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.rpc("supervisor_transition_proposal",{
@@ -70,7 +70,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     const {error}=await db.from("supervisor_monitor_samples").upsert({
       business_id:scope.businessId,proposal_id:id,business_date:sample.businessDate,
       observation:sample.observation,evidence_source:sample.source,
-    },{onConflict:"business_id,proposal_id,business_date",ignoreDuplicates:true});
+    },{onConflict:"business_id,proposal_id,business_date"});
     if(error)failed(error,"Monitor sample write failed");
   }
   async samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>{
