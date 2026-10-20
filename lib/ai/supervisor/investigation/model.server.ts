@@ -1,5 +1,6 @@
 import "server-only";
 import {z} from "zod";
+import {modelTokenUsage,estimateModelCallCostMicros} from "@/lib/calc/supervisorTokenCost";
 import {SupervisorStageError,logSupervisorDebugPayload, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {buildInvestigationRequest} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
@@ -190,6 +191,30 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       input.usage.inputTokens+=positive(raw.usage?.input_tokens);
       input.usage.outputTokens+=positive(raw.usage?.output_tokens);
       input.onUsage?.({...input.usage});
+      const tokens=modelTokenUsage(raw.usage);
+      const providerModel=typeof raw.model==="string"?raw.model:null;
+      const actualModel=providerModel??input.usage.model;
+      const primary=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+      const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
+      const prefix=actualModel===primary?"SUPERVISOR_":
+        (fallback&&actualModel===fallback?"SUPERVISOR_FALLBACK_":null);
+      const rates=prefix?{
+        input:process.env[prefix+"INPUT_USD_PER_MILLION_TOKENS"],
+        cachedInput:process.env[prefix+"CACHED_INPUT_USD_PER_MILLION_TOKENS"],
+        output:process.env[prefix+"OUTPUT_USD_PER_MILLION_TOKENS"],
+      }:{input:undefined,cachedInput:undefined,output:undefined};
+      // Pricing is an estimate from explicit model/tier rates, not the provider invoice.
+      const estimatedCostMicros=tokens?estimateModelCallCostMicros(tokens,rates):null;
+      logSupervisorDebugPayload({point:"model_usage",requestName:input.name,
+        model:actualModel,requestedModel:input.usage.model,
+        providerRequestId:response.headers.get("x-request-id"),responseId:raw.id,
+        modelCallCount:input.usage.modelCallCount,attempt,status:raw.status,
+        serviceTier:raw.service_tier??null,
+        usage:tokens??null,rawUsage:raw.usage??null,estimatedCostMicros,
+        rateUsdPerMillion:prefix?rates:null,
+        pricingStatus:!tokens?"usage_unavailable":
+          estimatedCostMicros===null?"missing_or_mismatched_rate":"configured_estimate",
+        durationMs:Date.now()-providerCallStartedAt});
       // "incomplete" (e.g. hit the output-token limit) is a one-time model
       // hiccup worth retrying. Any other non-"completed" status (failed,
       // cancelled, ...) is a terminal provider-side failure, not a retryable
