@@ -18,6 +18,17 @@ describe("price experiment: canonical integer-cent scenarios",()=>{
       realizedRevenueDifferenceCents:700,expectedUpliftAtObservedVolumeCents:700,
       observedIngredientContributionCents:26950,recommendation:"keep"});
   });
+  it("detects a collapsed sales volume against the pinned pre-trial baseline",()=>{
+    const days=Array.from({length:7},(_,i)=>({
+      businessDate:`2026-10-${String(i+1).padStart(2,"0")}`,
+      units:i===0?1:0,netSalesCents:i===0?510:0,
+      coverage:"actual" as const,source:"actual_day"}));
+    expect(evaluatePriceExperiment(base,days)).toMatchObject({
+      status:"complete",coveredDays:7,units:1,observedRevenueCents:510,
+      baselineRevenue7DaysCents:35000,revenueChangeVsBaselineCents:-34490,
+      baselineIngredientContribution7DaysCents:26250,
+      ingredientContributionChangeVsBaselineCents:-25865,recommendation:"revert"});
+  });
   it("never zero-fills missing actual source days",()=>{
     expect(evaluatePriceExperiment(base,[{businessDate:"2026-10-01",units:0,
       netSalesCents:0,coverage:"unavailable",source:"unknown"}])).toMatchObject({
