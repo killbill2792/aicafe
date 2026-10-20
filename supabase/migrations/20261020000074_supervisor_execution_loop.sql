@@ -127,6 +127,7 @@ begin
     if approved.id is null then raise exception 'approval_missing_or_changed'; end if;
     update public.supervisor_proposals set status=p_action,revision=revision+1,
       committed_at=case when p_action='committed' then now() else null end,
+      monitoring_start_date=case when p_action='committed' then coalesce(p_monitoring_start_date,current_date+1) else null end,
       updated_at=now() where id=p.id;
   elsif p_action='manual_confirmed' and p.status='manual_pending'
     and p_monitoring_start_date is not null
