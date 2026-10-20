@@ -204,7 +204,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     expect(rendered!.hasComputedClaim).toBe(true);
     expect(rendered!.issues).toEqual([]);
   });
-  it("masks a freehand number whose declared formula fails verification, without touching the rest",()=>{
+  it("replaces a model-typed freehand number with the canonical server result",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"With $3 and $1.83, that comes to $9.00.",citations:[],
         formulas:[{claim:"$9.00",formula:"a + b",
@@ -212,8 +212,8 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
       {kind:"advice",text:"Either way, keep tracking your weekly sales.",citations:[]},
     ]),[],"en",{ownerText:"Assume $3 and $1.83."});
     expect(rendered!.blocks).toContainEqual({type:"text",text:"Either way, keep tracking your weekly sales."});
-    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
-    expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"formula_failed"}));
+    expect(rendered!.blocks).toContainEqual({type:"text",text:"With $3 and $1.83, that comes to $4.83."});
+    expect(rendered!.issues).toEqual([]);
   });
   it("finds a cheap direct match against an already-produced observation before masking",()=>{
     const o=observation("r1","priceCents",525);

@@ -36,12 +36,11 @@ describe("verifyFormulaEntry -- owner-quoted sources",()=>{
       "Assume $3 and $1.83.",[],"en");
     expect(result).toEqual({ok:false,failure:{reason:"source_unverifiable",variable:"a"}});
   });
-  it("rejects when the recomputed arithmetic does not match the paragraph's stated claim",()=>{
+  it("does not compare a model-typed claim to the canonical computed result",()=>{
     const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$9.00",
       variables:{a:{value:3,source:"$3"},b:{value:1.83,source:"$1.83"}}}),
       "Assume $3 and $1.83.",[],"en");
-    expect(result.ok).toBe(false);
-    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+    expect(result).toEqual({ok:true,value:4.83});
   });
 });
 
@@ -166,13 +165,12 @@ describe("verifyFormulaEntry -- money/percent pointer values normalized to human
       "Supplies add another $2 on top.",[price],"en");
     expect(result).toEqual({ok:true,value:5});
   });
-  it("never lets the SAME naively-scale-confused total (raw cents + dollars, added without conversion) verify just because the model's claim agrees with it",()=>{
+  it("returns the correctly scaled total regardless of model-typed digits",()=>{
     const price=observation("r1","priceCents",300);
     const result=verifyFormulaEntry(entry({formula:"price + extra",claim:"$302",
       variables:{price:{value:300,source:"r1:value.priceCents"},extra:{value:2,source:"$2"}}}),
       "Supplies add another $2 on top.",[price],"en");
-    expect(result.ok).toBe(false);
-    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+    expect(result).toEqual({ok:true,value:5});
   });
   it("normalizes a basis-points rate pointer to percent-points before combining with an owner-quoted percent",()=>{
     const rate=observation("r1","rateBasisPoints",1000);
@@ -209,12 +207,11 @@ describe("verifyFormulaEntry -- percent applied as a multiplicative rate, not a 
       "The $20 price is 80% of the original.",[],"en");
     expect(result).toEqual({ok:true,value:25});
   });
-  it("never lets the OLD unscaled total ($200 instead of $2) verify",()=>{
+  it("returns the actual canonical percent-scaled result regardless of model-typed digits",()=>{
     const result=verifyFormulaEntry(entry({formula:"price * rate",claim:"$200",
       variables:{price:{value:20,source:"$20"},rate:{value:10,source:"10%"}}}),
       "The $20 price carries a 10% discount.",[],"en");
-    expect(result.ok).toBe(false);
-    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+    expect(result).toEqual({ok:true,value:2});
   });
   it("routes quantity times percent arithmetic through the registered typed calculator",()=>{
     const result=verifyFormulaEntry(entry({formula:"count * rate",claim:"30%",
@@ -312,19 +309,17 @@ describe("verifyFormulaEntry -- rejects a sub-cent money claim (Codex finding)",
 });
 
 describe("verifyFormulaEntry -- money/percent tolerance is a fixed half-unit, never scaled by the claim's own decimal count (self-review finding)",()=>{
-  it("rejects a round-number money claim that is actually 40 cents off",()=>{
+  it("ignores the model-typed rounded money figure",()=>{
     const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$500",
       variables:{a:{value:3,source:"$3"},b:{value:496.60,source:"$496.60"}}}),
       "Assume $3 and $496.60.",[],"en");
-    expect(result.ok).toBe(false);
-    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+    expect(result).toEqual({ok:true,value:499.6});
   });
-  it("rejects a round-number percent claim that is actually 0.4 points off",()=>{
+  it("ignores the model-typed rounded percent figure",()=>{
     const result=verifyFormulaEntry(entry({formula:"a + b",claim:"50%",
       variables:{a:{value:30,source:"30%"},b:{value:19.6,source:"19.6%"}}}),
       "Assume 30% and 19.6%.",[],"en");
-    expect(result.ok).toBe(false);
-    if(!result.ok)expect(result.failure.reason).toBe("result_mismatch");
+    expect(result).toEqual({ok:true,value:49.6});
   });
   it("still accepts a round-number claim within half a cent of the true result",()=>{
     const result=verifyFormulaEntry(entry({formula:"a + b",claim:"$500",

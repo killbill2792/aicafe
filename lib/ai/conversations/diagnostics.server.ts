@@ -292,7 +292,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
 function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,unknown>|null{
   const point=payload.point;
   const allowed=new Set(["model_request","model_response","model_response_error",
-    "model_usage","calculator_rejected","calculator_input","calculator_result",
+    "model_usage","model_fallback","calculator_rejected","calculator_input","calculator_result",
     "parallel_batch","tool_request","tool_result","tool_rejected",
     "capability_round","review_verdict","rescue_review_verdict",
     "accumulated_rescue_review_verdict","claim_issues_retry",
@@ -584,7 +584,7 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   const allowId=(v:unknown)=>typeof v==="string"&&/^[a-zA-Z0-9_.:-]{1,80}$/u.test(v);
   const points:ReadonlySet<string>=new Set([
     "turn_received","capability_round","tool_request","tool_result","parallel_batch",
-    "model_request","model_response","model_response_error","calculator_rejected","calculator_result","round_context",
+    "model_request","model_response","model_response_error","model_fallback","calculator_rejected","calculator_result","round_context",
     "retry_feedback","claim_issues_retry","direct_answer_attempt","review_verdict",
     "rescue_review_verdict","accumulated_rescue_review_verdict","investigation_exhausted",
     "reply_validation_failed","persistence_result","http_response_sent"]);
