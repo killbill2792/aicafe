@@ -588,6 +588,39 @@ describe("test-only raw investigation trace security boundary",()=>{
       expect(lines.join(" ")).not.toMatch(/PRIVATE|SECRET|MUST_NOT_LOG/);
     }finally{vi.unstubAllEnvs();}
   });
+  it("retains bounded simulation output schema issue paths, not source content",()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      logSupervisorDebugPayload({point:"calculator_rejected",requestId:"turnabc",
+        reasonCode:"calculator_invalid_result",
+        issues:[
+          {code:"invalid_value",path:["status"],message:"PRIVATE_SOURCE_TEXT"},
+          {code:"invalid_type",path:["formula",0],message:"PRIVATE_FORMULA"},
+          {code:"too_big",path:["sourceHandles"],maximum:999},
+          {code:"invalid_type",path:["missingInputs",1]},
+          {code:"invalid_type",path:["executedEffects"]},
+          {code:"invalid_type",path:["reason"]},
+          {code:"invalid_type",path:["arbitraryOwnerContent"]}],
+        rawResult:{secret:"PRIVATE_EMPLOYEE",sourceHandles:["EMPLOYEE_HANDLE"]}},
+        l=>lines.push(l));
+      expect(lines).toHaveLength(1);
+      const detail=JSON.parse(lines[0]);
+      expect(detail).toMatchObject({event:"supervisor_diagnostic_detail",
+        reasonCode:"calculator_invalid_result",issueCount:7,
+        schemaIssues:[
+          {path:["status"],code:"invalid_value"},
+          {path:["formula",0],code:"invalid_type"},
+          {path:["sourceHandles"],code:"too_big"},
+          {path:["missingInputs",1],code:"invalid_type"},
+          {path:["executedEffects"],code:"invalid_type"},
+          {path:["reason"],code:"invalid_type"},
+          {path:["[field]"],code:"invalid_type"},
+        ]});
+      expect(lines[0]).not.toMatch(/PRIVATE|EMPLOYEE_HANDLE|arbitraryOwnerContent/);
+    }finally{vi.unstubAllEnvs();}
+  });
   it("correlates concurrent-model diagnostic events through the request-local context",async()=>{
     const lines:string[]=[];
     vi.stubEnv("NODE_ENV","production");
