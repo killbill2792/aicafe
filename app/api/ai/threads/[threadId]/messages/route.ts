@@ -15,6 +15,12 @@ import { conversationError, conversationJson, parseInput, readBoundedJson, requi
 import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 import {withSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
+import {proposeFromOwnerConversation} from "@/lib/ai/supervisor/loop/engine";
+import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -93,7 +99,28 @@ export async function POST(request: Request, context: RouteContext) {
     const progressAttempt = Date.now();
     let reply;
     try {
-      const completed = await runSupervisorTurn({
+      const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
+        typeof m.text==="string").sort((a,b)=>b.createdAt.localeCompare(a.createdAt))
+        .map(m=>m.text!).slice(0,5);
+      // A follow-up can explicitly request a draft through registered domain
+      // recognition. This produces only an inert proposal; approve/commit remain
+      // separate authenticated owner actions in the workflow API.
+      const proposed=await proposeFromOwnerConversation({
+        businessId:scope.businessId,ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale
+      },supervisorLoopRegistry,new SupabaseLoopRepository(),
+      input.text,olderOwnerTexts,input.clientMessageId).catch(()=>null);
+      const copy=({en,es,ar} as const)[input.locale].SupervisorExperiment;
+      const proposalText=proposed?copy.proposedFromChat
+        .replace("{item}",String((proposed.canonicalEffectPayload as Record<string,unknown>).productName??""))
+        .replace("{price}",new Intl.NumberFormat(input.locale,{
+          style:"currency",currency:"USD"
+        }).format(Number((proposed.canonicalEffectPayload as Record<string,unknown>).newPriceCents)/100)):null;
+      const completed = proposed&&proposalText
+        ?{reply:{intent:"menu_pricing" as const,status:"estimated" as const,
+          evidence:[{source:"pricing_engine" as const,identifier:"supervisor-proposal:"+proposed.id,
+            asOf:identity.asOf}],
+          blocks:[{type:"text" as const,text:proposalText}]}}
+        :await runSupervisorTurn({
         text: input.text, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,

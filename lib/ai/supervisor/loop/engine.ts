@@ -41,6 +41,10 @@ export type RegisteredLoopCapability={
   commit:(scope:OwnerLoopScope,rawEffect:unknown)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,rawEffect:unknown,businessDate:string)=>Promise<LoopSample|null>;
   report:(scope:OwnerLoopScope,rawEffect:unknown,samples:readonly LoopSample[])=>Promise<LoopReport>;
+  /** Pure owner-intent interpretation and canonical source resolution,
+   * never an approval or executable permission from model-authored text. */
+  recognizeProposal?:(scope:OwnerLoopScope,currentText:string,
+    priorOwnerTexts:readonly string[])=>Promise<unknown|null>;
 };
 /** Each domain installs typed input/effect schemas; only the commit hook gets
  * effectful authority. The platform never switches on domain capability IDs. */
@@ -50,6 +54,8 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   commit:(scope:OwnerLoopScope,effect:E)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,effect:E,date:string)=>Promise<LoopSample|null>;
   report:(scope:OwnerLoopScope,effect:E,samples:readonly LoopSample[])=>Promise<LoopReport>;
+  recognizeProposal?:(scope:OwnerLoopScope,currentText:string,
+    priorOwnerTexts:readonly string[])=>Promise<I|null>;
 }):RegisteredLoopCapability{
   if(!/^[a-z][a-z0-9._-]{3,119}$/u.test(definition.id))throw new Error("Invalid capability ID");
   const parse=(raw:unknown):E=>definition.effectSchema.parse(raw);
@@ -64,6 +70,7 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
       return s;
     },
     parseEffect:(raw:unknown)=>parse(raw),
+    ...(definition.recognizeProposal?{recognizeProposal:definition.recognizeProposal}:{}),
     commit:(scope:OwnerLoopScope,raw:unknown)=>definition.commit(scope,parse(raw)),
     monitor:(scope:OwnerLoopScope,raw:unknown,date:string)=>definition.monitor(scope,parse(raw),date),
     report:(scope:OwnerLoopScope,raw:unknown,samples:readonly LoopSample[])=>
@@ -120,6 +127,22 @@ export async function proposeLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
     threadId:scope.threadId,capabilityId:def.id,capabilityVersion:def.version,
     canonicalEffectPayload:validated,effectHash:effectHash(validated),
     baseline:simulation.baseline,monitorSpec:simulation.monitorSpec,locale:scope.locale});
+}
+/** Owner text can request an INERT proposal, not approval or commit. A
+ * capability owns its domain interpretation, and the shared planner rejects
+ * ambiguous matches instead of guessing which effect the owner intended. */
+export async function proposeFromOwnerConversation(scope:OwnerLoopScope,
+  registry:ReturnType<typeof loopRegistry>,repo:LoopRepository,
+  currentText:string,priorOwnerTexts:readonly string[],requestKey:string):
+  Promise<LoopProposal|null>{
+  const candidates:Array<{capabilityId:string;input:unknown}>=[];
+  for(const id of registry.list()){
+    const match=await registry.get(id).recognizeProposal?.(scope,currentText,priorOwnerTexts);
+    if(match!==undefined&&match!==null)candidates.push({capabilityId:id,input:match});
+  }
+  if(candidates.length!==1)return null;
+  return proposeLoop(scope,registry,repo,candidates[0].capabilityId,
+    candidates[0].input,requestKey);
 }
 export async function approveLoop(scope:OwnerLoopScope,repo:LoopRepository,id:string,revision:number){
   const p=await repo.load(scope,id);assertProposalScope(scope,p);

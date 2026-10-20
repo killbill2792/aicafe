@@ -11,8 +11,8 @@ type Proposal={id:string;revision:number;status:string;monitoring_start_date:str
   canonical_effect_payload:{productName:string;oldPriceCents:number;newPriceCents:number}};
 type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:number};
   baseline:{estimatedAdditionalRevenue7DaysCents:number}};
-export default function SupervisorExperiment({threadId,locale,copy,initialProposalId}:{
-  threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;initialProposalId?:string}){
+export default function SupervisorExperiment({threadId,locale,copy,initialProposalId,refreshVersion}:{
+  threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;initialProposalId?:string;refreshVersion?:number}){
  const [open,setOpen]=useState(Boolean(initialProposalId)),[busy,setBusy]=useState(false);
  const [items,setItems]=useState<Item[]>([]),[itemId,setItemId]=useState("");
  const [cents,setCents]=useState("10"),[proposals,setProposals]=useState<Proposal[]>([]);
@@ -27,7 +27,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
     if(alive){setItems(v.catalog);setItemId(v.catalog[0]?.id??"");setProposals(v.proposals);}
    }).catch(()=>{if(alive)setError(true);});
   return ()=>{alive=false;};
- },[listEndpoint]);
+ },[listEndpoint,refreshVersion]);
  const invoke=async(payload:Record<string,unknown>)=>{
   setBusy(true);setError(false);
   try{

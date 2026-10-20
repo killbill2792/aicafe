@@ -2047,6 +2047,7 @@
     "reportOldPrice": "Precio anterior: {value}.",
     "reportNewPrice": "Precio de prueba: {value}.",
     "reportEstimated": "Ingresos adicionales estimados sin cambio en demanda: {value}.",
-    "reportIngredientOnly": "Contribución observada después de ingredientes: {value}."
+    "reportIngredientOnly": "Contribución observada después de ingredientes: {value}.",
+    "proposedFromChat": "Preparé un experimento en borrador para {item} a {price}. No se ha cambiado el precio en el TPV. Revísalo y apruébalo expresamente en los controles."
   }
 }

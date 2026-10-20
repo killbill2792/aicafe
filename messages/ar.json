@@ -2047,6 +2047,7 @@
     "reportOldPrice": "السعر الأصلي: {value}.",
     "reportNewPrice": "السعر التجريبي: {value}.",
     "reportEstimated": "الإيراد الإضافي المتوقع إذا لم يتغير الطلب: {value}.",
-    "reportIngredientOnly": "المساهمة المرصودة بعد تكلفة المكونات: {value}."
+    "reportIngredientOnly": "المساهمة المرصودة بعد تكلفة المكونات: {value}.",
+    "proposedFromChat": "أعددت مسودة تجربة لسعر {item} بقيمة {price}. لم يتغير أي سعر في نظام المبيعات. راجع الاقتراح ووافق عليه صراحةً من عناصر التحكم."
   }
 }

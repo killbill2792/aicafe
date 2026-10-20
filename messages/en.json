@@ -2047,6 +2047,7 @@
     "reportOldPrice": "Original price: {value}.",
     "reportNewPrice": "Trial price: {value}.",
     "reportEstimated": "Estimated additional revenue with unchanged demand: {value}.",
-    "reportIngredientOnly": "Observed ingredient-only contribution: {value}."
+    "reportIngredientOnly": "Observed ingredient-only contribution: {value}.",
+    "proposedFromChat": "I prepared a draft experiment for {item} at {price}. Nothing has changed in the POS. Please review and explicitly approve it in the experiment controls."
   }
 }
