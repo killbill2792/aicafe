@@ -881,10 +881,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!=null).map(o=>
         resolvedPeriod({period:{from:o.period!.from,to:o.period!.to}}));
-      result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
+      const selectedBindings=bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId));
+      const simulationContext={businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
-        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))},()=>{
+        bindings:selectedBindings};
+      logSupervisorDebugPayload({point:"calculator_input",requestId:debugRequestId,round,
+        capabilityId:EXPRESSION_ID,modelPlan:args,validatedPlan:plan.data,
+        simulationContext,selectedOperandHandles:[...handles]});
+      let calculatorDispatched=false;
+      result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,simulationContext,()=>{
+        calculatorDispatched=true;
         usage.toolCallCount++;
         input.onUsage?.({...usage});
       });
@@ -900,8 +907,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       result=checked.data;
       logSupervisorDebugPayload({point:"calculator_result",requestId:debugRequestId,round,
-        toolArguments:args,result,reasonCode:checked.data.status==="unavailable"?
-          "calculation_unavailable":undefined,executed:true});
+        toolArguments:args,validatedPlan:plan.data,selectedOperands:selected,
+        rawResult:result,result:checked.data,
+        reasonCode:checked.data.status==="unavailable"?
+          (calculatorDispatched?"calculation_unavailable":"simulation_input_rejected"):undefined,
+        executed:calculatorDispatched,
+        durationMs:Date.now()-operationStartedAt});
       calculation=true;
     }else{
       readDomain=manifest.find(m=>m.id===capabilityId)?.owner;
