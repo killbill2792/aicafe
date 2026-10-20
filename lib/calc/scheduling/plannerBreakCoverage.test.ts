@@ -35,12 +35,12 @@ describe("owner break coverage floor (pure calculation)",()=>{
     const reserved=[{employeeId:"a",coverageId:"counter",locationId:"cafe",
       start:seats[0].start,end:seats[0].end}];
     expect(activeBreakReservations(seats[0],reserved)).toHaveLength(1);
-    expect(demandSeatRequired(base,seats.find(u=>u.seatIndex===0)!,reserved)).toBe(true);
-    expect(demandSeatRequired(base,seats.find(u=>u.seatIndex===1)!,reserved)).toBe(false);
+    expect(demandSeatRequired(base,plan,seats.find(u=>u.seatIndex===0)!,reserved)).toBe(true);
+    expect(demandSeatRequired(base,plan,seats.find(u=>u.seatIndex===1)!,reserved)).toBe(false);
     expect(demandSeatRequired({...base,coverage:base.coverage.map(c=>({
-      ...c,minHeadcountDuringBreak:2}))},seats[1],reserved)).toBe(true);
+      ...c,minHeadcountDuringBreak:2}))},plan,seats[1],reserved)).toBe(true);
     expect(demandSeatRequired({...base,coverage:base.coverage.map(c=>({
-      ...c,minHeadcountDuringBreak:null}))},seats[1],reserved)).toBe(true);
+      ...c,minHeadcountDuringBreak:null}))},plan,seats[1],reserved)).toBe(true);
   });
 
   it("credits an actual half-hour break when gross span is 330 but net work is 300",()=>{
