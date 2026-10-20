@@ -1,0 +1,21 @@
+name: Supervisor Reviewer & Provider Regressions
+on:
+  pull_request:
+    paths:
+      - 'lib/ai/supervisor/investigation/**'
+      - 'lib/ai/conversations/diagnostics.server.ts'
+      - '.github/workflows/supervisor-gap-regressions.yml'
+permissions:
+  contents: read
+jobs:
+  focused-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Run reviewer prose and provider telemetry regressions without unrelated typecheck gates
+        run: npx vitest run lib/ai/supervisor/investigation/runInvestigation.server.test.ts -t 'wholly narrative|raw network failure with the provider_error'
