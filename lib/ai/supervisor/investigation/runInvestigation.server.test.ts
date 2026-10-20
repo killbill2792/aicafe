@@ -262,6 +262,16 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies a raw network failure with the provider_error failure category",async()=>{
+    const transport=vi.fn(async()=>{throw new TypeError("ECONNRESET");});
+    const onDiagnostic=vi.fn();
+    await expect(runSupervisorTurn({...base,text:"Help me review the morning rush.",onDiagnostic},transport))
+      .rejects.toMatchObject({category:"provider_http"});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"provider_response",category:"provider_http",failureCategory:"provider_error",
+    }));
+  });
+
   it("still propagates a terminal provider failure status instead of persisting a false unavailable answer",async()=>{
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"failed",
       usage:{input_tokens:5,output_tokens:5},output:[]})));
@@ -306,6 +316,28 @@ describe("reviewer advisory for an already-masked partial",()=>{
   });
 });
 describe("review verdict publication policy",()=>{
+  it("keeps a wholly narrative source-grounded paragraph on negative review, without requiring a metric card",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([
+        {kind:"evidence",text:"The catalog lists {{r1:value.0.name}}.",citations:["r1"]},
+        {kind:"advice",text:"I have already published the schedule.",citations:[]},
+      ]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"The schedule-completion statement has no action evidence."});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"Which drink is listed and did you publish shifts?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("The catalog lists Iced Latte"))).toBe(true);
+    expect(result.reply.blocks.some(b=>b.type==="metric"||b.type==="percent"||b.type==="task_card")).toBe(false);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
+    expect(JSON.stringify(result.reply.blocks)).toContain("schedule-completion");
+  });
   it("keeps only server-grounded partial facts if a reviewer objects to another goal",async()=>{
     const steps=transportFor([
       read("p3.menu.catalog.v1",query("menu.catalog")),
