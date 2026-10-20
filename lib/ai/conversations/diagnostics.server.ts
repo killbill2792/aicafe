@@ -574,9 +574,8 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
     safe.reasonCode=payload.reasonCode;
   for(const key of ["successful","supported","complete","dispatched","parallel"])
     if(typeof payload[key]==="boolean")safe[key]=payload[key];
-  sink(JSON.stringify(safe));
   const detail=supervisorVercelDetail(payload);
-  if(detail)sink(JSON.stringify(detail));
+  if(detail){sink(JSON.stringify(detail));}else{sink(JSON.stringify(safe));}
 }
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
   // A genuinely new failure category (never the catch-all "unexpected"):
