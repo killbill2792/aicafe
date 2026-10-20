@@ -52,15 +52,21 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
           breakFloor:c.minHeadcountDuringBreak}] : [];
   }).sort((a,b)=>a.units[0].start-b.units[0].start ||
     a.locationId.localeCompare(b.locationId));
-  const spans:Span[]=[];
+  // Partition before linking adjacent pieces: two locations or roles can
+  // have interleaved slices and must not interrupt one another's work span.
+  const groups=new Map<string,Span[]>();
   for(const item of slices){
+    const key=JSON.stringify([item.locationId,item.qualificationCode,
+      item.minHeadcount,item.breakFloor]);
+    const spans=groups.get(key)??[];
     const previous=spans[spans.length-1];
     if(previous && samePolicy(previous,item) &&
         previous.units[previous.units.length-1].end===item.units[0].start)
       previous.units.push(...item.units);
     else spans.push(item);
+    groups.set(key,spans);
   }
-  return spans;
+  return [...groups.values()].flat();
 }
 
 function priorityScore(employee:ExpandedPlan["employees"][number],
