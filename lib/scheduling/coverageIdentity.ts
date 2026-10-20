@@ -7,6 +7,7 @@ const coverageIdentityFields = [
   "location_id", "day_of_week", "local_date", "effective_from",
   "effective_to", "start_local", "end_local", "overnight",
   "min_headcount", "qualification_code", "min_overlap_minutes", "priority",
+  "min_headcount_during_break",
 ] as const;
 
 export function findEquivalentCoverage<T extends Record<string, unknown>>(
