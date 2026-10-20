@@ -1772,7 +1772,11 @@
     "revisionSuperseded": "Sustituido",
     "revisionUnknown": "Estado desconocido",
     "invalidWallTime": "Elija una fecha y hora local válida y sin ambigüedad. Los cambios de horario de verano pueden hacer que algunas horas no existan o se repitan.",
-    "historyUnavailable": "No se pudieron cargar las versiones del calendario. Actualice y vuelva a intentarlo."
+    "historyUnavailable": "No se pudieron cargar las versiones del calendario. Actualice y vuelva a intentarlo.",
+    "breakWindow": "Descanso",
+    "breakPaid": "remunerado",
+    "breakUnpaid": "no remunerado",
+    "gapBreakFloor": "No se puede cumplir la cobertura mínima durante un descanso libre de trabajo"
   },
   "SupervisorP3Reads": {
     "headings": {
