@@ -64,3 +64,22 @@ export function aggregateModelCallCosts(rows:readonly ModelCallCostRecord[]){
   }
   return {...counts,byModel};
 }
+
+/** Pricing snapshot from https://developers.openai.com/api/docs/pricing
+ * (standard, short-context, 2026-10-19). Unknown tiers/models require
+ * explicitly configured rates; this is NOT authoritative billing.
+ * Long-context billing, priority/fast, data residency and other discounts
+ * must never silently reuse standard short-context rates.
+ */
+export function standardModelTokenRates(model:string,serviceTier:unknown,
+  inputTokens:number):ModelTokenRates|null {
+  if(serviceTier!==null&&serviceTier!==undefined&&
+    !["default","auto","standard"].includes(String(serviceTier)))return null;
+  if(inputTokens>272_000)return null;
+  const rates:Record<string,{input:string;cachedInput:string;output:string}>={
+    "gpt-6-luna":{input:"0.10",cachedInput:"0.01",output:"0.50"},
+    "gpt-6-sol":{input:"2.00",cachedInput:"0.20",output:"10.00"},
+    "gpt-6-astra":{input:"10.00",cachedInput:"1.00",output:"50.00"},
+  };
+  return rates[model]??null;
+}
