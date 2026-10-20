@@ -1626,7 +1626,11 @@
     "fullDay": "Full day (both time fields empty)",
     "hardUnavailableConflict": "The confirmed no-work restriction takes priority over these windows.",
     "alreadyAssigned": "This qualification is already assigned for the same location and dates.",
-    "deletedDraftRecreate": "A record in your draft was deleted by another owner. If you deliberately reapply, it will be created as a new record."
+    "deletedDraftRecreate": "A record in your draft was deleted by another owner. If you deliberately reapply, it will be created as a new record.",
+    "breakFloorLabel": "Minimum staffing during a break",
+    "breakFloorDefault": "Same as normal",
+    "breakFloorHelp": "Optional business policy. Leave blank to keep the normal minimum. This is not a legal break requirement.",
+    "breakFloorTooHigh": "Break staffing must be a whole number from zero to the normal minimum."
   },
   "OliviaPlanning": {
     "title": "Olivia weekly scheduling",
