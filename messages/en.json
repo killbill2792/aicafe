@@ -1772,7 +1772,11 @@
     "revisionSuperseded": "Superseded",
     "revisionUnknown": "Unknown status",
     "invalidWallTime": "Choose an unambiguous valid local date and time. Daylight-saving transitions may make some times unavailable or repeated.",
-    "historyUnavailable": "Unable to load schedule versions. Refresh and try again."
+    "historyUnavailable": "Unable to load schedule versions. Refresh and try again.",
+    "breakWindow": "Break",
+    "breakPaid": "paid",
+    "breakUnpaid": "unpaid",
+    "gapBreakFloor": "Required coverage during a duty-free break cannot be met"
   },
   "SupervisorP3Reads": {
     "headings": {
