@@ -282,6 +282,29 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 });
 
+describe("reviewer advisory for an already-masked partial",()=>{
+  it("does not veto a surviving grounded claim when a separate claim is unresolvable",async()=>{
+    let count=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:true,reason:"Some requested evidence is unavailable."});
+      const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+      if(context.observations.length===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+      count++;
+      return response(answer([
+        {kind:"evidence",text:"The menu lists {{r1:value.0.priceCents}}.",citations:["r1"]},
+        {kind:"advice",text:"An unsupported figure is $99999.",citations:[]},
+      ]));
+    });
+    const out=await runSupervisorTurn({...base,text:"What is the price and another unknown fact?"},transport);
+    expect(JSON.stringify(out.reply.blocks)).toContain("The menu lists");
+    expect(JSON.stringify(out.reply.blocks)).not.toContain("$99999");
+    expect(out.reply.status).toBe("partial");
+    expect(count).toBeGreaterThan(0);
+  });
+});
 describe("review verdict publication policy",()=>{
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{

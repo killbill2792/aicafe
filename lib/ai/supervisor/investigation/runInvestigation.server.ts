@@ -289,23 +289,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        // Complete-but-unsupported is still a delivered response, never an
-        // assertion of facts the reviewer found unsupported.
-        if(accReview&&!isToolCallSignal(accReview)&&!accReview.supported&&accReview.complete)
-          return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
-            blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
-              text:labels.unverifiedWarning},
-              {type:"text",text:labels.unavailable}]},usage:{...usage}};
-        if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
-          accumulatedRescue=false;
-        else if(!accReview.complete && bestAccumulated)
-          bestAccumulated={...bestAccumulated,status:"partial",
-            blocks:bestAccumulated.blocks.length<30?
-              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
-              bestAccumulated.blocks};
+        // Every surviving claim is already mechanically grounded or masked.
+        // A semantic reviewer is advisory for this *partial* rescue. A negative
+        // verdict cannot erase valid unrelated observations; surface the
+        // reviewer's concern, and leave unsupported/masked claims unavailable.
+        if(bestAccumulated){
+          const reason=accReview&&!isToolCallSignal(accReview)?accReview.reason:labels.unavailable;
+          if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete){
+            bestAccumulated={...bestAccumulated,status:"partial",
+              blocks:bestAccumulated.blocks.length<30?
+                [...bestAccumulated.blocks,missingGoalWarning(reason)]:bestAccumulated.blocks};
+            input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
+              failureCategory:"reviewer_downgraded_to_partial"});
+          }
+        }
       }
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
+      failureCategory:budget?"budget_exhausted":undefined,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue||accumulatedRescue});
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"investigation_exhausted",requestId:debugRequestId,ownerQuestion:input.text,
@@ -754,6 +755,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
       if(review&&!isToolCallSignal(review)&&!review.supported&&review.complete){
+        input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
         // An OR-positive verdict must produce a user-visible reply, but the
         // reviewer has NOT certified these factual claims. Never publish
         // the rejected draft, even with a disclaimer about invented numbers.
@@ -769,6 +771,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // incident: two otherwise-clean, well-cited drafts were rejected
         // with no way to tell why, and exhausted repeating the same
         // unspecific feedback until the call budget ran out).
+        input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
         feedback=reviewReason?
           "The independent review found this specific issue: \""+reviewReason+
             "\". Correct exactly that, or ask the specific unresolved question.":

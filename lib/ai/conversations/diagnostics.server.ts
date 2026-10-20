@@ -74,6 +74,8 @@ export type SupervisorDiagnostic = {
    * message -- so a log of this failure says whether the owner actually saw
    * something or truly got nothing, without having to guess from the stored
    * reply itself. */
+  failureCategory?:"budget_exhausted"|"model_typed_arithmetic_rejected"|
+    "reviewer_downgraded_to_partial"|"reviewer_hard_fail"|"provider_error";
   rescuedUnverified?:boolean;
   /** Set on stage "reply_validation": exactly which validateGroundedReply
    * check rejected the final reply before it could be persisted/shown. This
@@ -95,6 +97,8 @@ const stages:readonly SupervisorStage[]=[
 const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
 const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
   "snapshot_mismatch","observations_too_large","no_progress"]);
+const failureCategories=new Set(["budget_exhausted","model_typed_arithmetic_rejected",
+  "reviewer_downgraded_to_partial","reviewer_hard_fail","provider_error"]);
 const answerRejectedReasons=new Set(["render_failed","review_failed","review_unavailable"]);
 const replyValidationReasons=new Set<ReplyValidationFailureReason>(
   ["missing_evidence","insufficient_evidence_with_metrics","missing_grounding_reference"]);
@@ -266,6 +270,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
           {exhaustionReason:d.exhaustionReason}:{}),
         ...(d.answerRejectedReason&&answerRejectedReasons.has(d.answerRejectedReason)?
           {answerRejectedReason:d.answerRejectedReason}:{}),
+        ...(d.failureCategory&&failureCategories.has(d.failureCategory)?{failureCategory:d.failureCategory}:{}),
         ...(typeof d.rescuedUnverified==="boolean"?{rescuedUnverified:d.rescuedUnverified}:{}),
         ...(d.replyValidationReason&&replyValidationReasons.has(d.replyValidationReason)?
           {replyValidationReason:d.replyValidationReason}:{}),
@@ -342,6 +347,8 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
     if(typeof payload[key]==="string"&&options.has(payload[key] as string))
       detail[key]=payload[key];
   }
+  if(typeof payload.failureCategory==="string"&&failureCategories.has(payload.failureCategory))
+    detail.failureCategory=payload.failureCategory;
   const raw=payload.raw;
   if(point==="model_response"&&raw&&typeof raw==="object"&&!Array.isArray(raw)){
     const response=raw as Record<string,unknown>;

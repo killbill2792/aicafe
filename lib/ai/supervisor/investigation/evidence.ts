@@ -368,9 +368,6 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
       case "formula_failed":
         if(issue.failure.reason==="requires_registered_calculator")return at+
           "the quantity behind \""+issue.text+"\" requires typed quantity units. Call platform.scenario.expression.v1 with authorized operand handles, then cite its result.";
-        if(issue.failure.reason==="result_mismatch")return at+
-          "the claim \""+issue.text+"\" disagrees with independent arithmetic (computed "+
-          issue.failure.computed+"). Call platform.scenario.expression.v1 with the authorized source handles and your intended operation. Use ONLY the returned result; otherwise remove the unsupported claim.";
         return at+"the formula behind \""+issue.text+"\" failed verification ("+issue.failure.reason+
           "). Call platform.scenario.expression.v1 with authorized operands, or correct the verifiable inputs and remove the unsupported number.";
       case "business_claim_uncited":
