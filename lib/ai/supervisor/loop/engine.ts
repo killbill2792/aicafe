@@ -167,13 +167,16 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   repo:LoopRepository,p:LoopProposal,businessDate:string,allowEarlyReport=false):Promise<LoopReport|null>{
   assertProposalScope(scope,p);
   if(!["manual_confirmed","committed"].includes(p.status)||!p.monitoringStartDate)return null;
+  // The proposal captured the owner locale when created. Subsequent cron/API
+  // calls must not overwrite it with a default English request scope.
+  const reportScope:OwnerLoopScope={...scope,locale:p.locale};
   const def=registry.get(p.capabilityId);
   if(p.capabilityVersion!==def.version)throw new Error("Monitor contract changed");
   const effect=def.parseEffect(p.canonicalEffectPayload);
   if(effectHash(effect)!==p.effectHash)throw new Error("Monitor effect hash changed");
   const end=utcDateOffset(p.monitoringStartDate,p.monitorSpec.durationDays-1);
   if(businessDate>=p.monitoringStartDate&&businessDate<=end){
-    const sample=await def.monitor(scope,effect,businessDate);
+    const sample=await def.monitor(reportScope,effect,businessDate);
     if(sample){
       if(sample.businessDate!==businessDate)throw new Error("Monitor date scope mismatch");
       await repo.addSample(scope,p.id,sample);
@@ -182,7 +185,7 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   if(!allowEarlyReport&&businessDate<end)return null;
   const samples=(await repo.samples(scope,p.id))
     .filter(x=>x.businessDate>=p.monitoringStartDate!&&x.businessDate<=end);
-  const generated=await def.report(scope,effect,samples);
+  const generated=await def.report(reportScope,effect,samples);
   // "In progress" is a window property, not evidence of a future zero-sales day.
   // At the end, missing actual-coverage observations become a durable
   // insufficient-evidence report rather than an endlessly open experiment.
@@ -191,6 +194,6 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
   const report:LoopReport={...generated,status:finalStatus,
     recommendation:finalStatus==="complete"?generated.recommendation:"adjust",
     result:{...generated.result,status:finalStatus}};
-  await repo.saveReport(scope,p,report);
+  await repo.saveReport(reportScope,p,report);
   return report;
 }
