@@ -4,6 +4,8 @@ import { baselineGapReason, eligibleCandidates, expandPlannerInput,
   type WorkUnit, type DemandUnit, type ExpandedPlan } from "./plannerCore";
 import { costForWork, hardValid, shiftsForWork } from "./plannerRules";
 import { validateOliviaAssignments } from "./plannerValidate";
+import { activeBreakReservations, demandSeatRequired, hasBreakCoveragePolicy,
+  proposeBreakReservations, type BreakReservation } from "./plannerBreakCoverage";
 import type {
   PlannerInput, PlannerResult, PlannerScenario, PlannerComparison, PlannerGap,
 } from "./plannerTypes";
@@ -122,7 +124,8 @@ function chunkReason(unit:DemandUnit,plan:ExpandedPlan,input:PlannerInput,
  */
 function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
   starting:readonly WorkUnit[],
-  cache:Map<string,Array<{start:number;end:number}>>):WorkUnit[] {
+  cache:Map<string,Array<{start:number;end:number}>>,
+  reserved:readonly BreakReservation[]=[]):WorkUnit[] {
   const work=starting.slice();
   const grid=(input.slotMinutes??30)*60_000;
   const frozenUntil=input.replanAsOf==null?null:Date.parse(input.replanAsOf);
@@ -165,6 +168,9 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
           const piece:WorkUnit={employeeId:id,locationId:after.locationId,
             start:time,end:time+grid,pinned:false};
           if(covers(id,{...after,start:time,end:time+grid}))continue;
+           if(reserved.some(b=>b.employeeId===id && b.start<time+grid && b.end>time)){
+             acceptable=false;break;
+           }
           if(!qualifies(employee,{...after,start:time,end:time+grid},plan.locations) ||
             !isConfirmedAvailable(piece,employee,plan.locations,cache)){
             acceptable=false;break;
@@ -200,12 +206,21 @@ function gapsFor(state:State):PlannerGap[] {
 }
 function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
   cache:Map<string,Array<{start:number;end:number}>>,
-  candidates:Map<string,string[]>,maxNodes:number,beamWidth:number) {
+  candidates:Map<string,string[]>,maxNodes:number,beamWidth:number,
+   reserved:readonly BreakReservation[]=[]) {
   let frontier:State[]=[{work:plan.pinned.slice(),selected:[],missing:[],score:0}];
   let nodes=0,exhausted=false;
   for(const [index,unit] of plan.units.entries()){
+    // Waive seats only in actively planned duty-free break windows; validator
+    // independently checks that these reservations became real shift breaks.
+    if(!demandSeatRequired(input,unit,reserved)){
+      frontier=frontier.map(state=>({...state,selected:[...state.selected,null]}));
+      continue;
+    }
     const next:State[]=[];
-    const options=candidates.get(unit.id)??[];
+    const activeBreaks=activeBreakReservations(unit,reserved);
+    const options=(candidates.get(unit.id)??[]).filter(id=>
+      !reserved.some(b=>b.employeeId===id && b.start<unit.end && b.end>unit.start));
     for(const state of frontier){
       const ranked=options.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
         .sort((a,b)=>a.score-b.score || a.id.localeCompare(b.id));
@@ -228,7 +243,8 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
       // Advisory gaps remain separately visible without upgrading coverage.
       const reason=baselineGapReason(unit,plan,cache);
       next.push({work:state.work,selected:[...state.selected,null],
-        missing:[...state.missing,{unit,reason:
+        missing:[...state.missing,{unit,reason:activeBreaks.length>0
+          ?"break_coverage_unsatisfiable" :
           reason==="capacity_or_overlap"?chunkReason(unit,plan,input,options,state.work):reason}],
         score:state.score+(unit.priority==="required"?1_000_000:1_000)});
       if(exhausted)break;
@@ -251,12 +267,12 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     }
   }
   const best=frontier[0]!;
-  const repairedWork=repairHandoffs(input,plan,best.work,cache);
+  const repairedWork=repairHandoffs(input,plan,best.work,cache,reserved);
   // A gap recorded early may become constrained by assignments made later.
   // Explain each unmet slot relative to the FINAL candidate work roster,
   // not just the partial state when the omission was first considered.
   const resolvedMissing=best.missing.map(m=>{
-    if(m.reason==="solver_budget")return m;
+    if(m.reason==="solver_budget" || m.reason==="break_coverage_unsatisfiable")return m;
     const staticReason=baselineGapReason(m.unit,plan,cache);
     return {unit:m.unit,reason:staticReason==="capacity_or_overlap"
       ?chunkReason(m.unit,plan,input,candidates.get(m.unit.id)??[],repairedWork)
@@ -316,9 +332,11 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       : eligibleCandidates(unit,plan,cache).map(e=>e.id);
     candidates.set(unit.id,options.sort());
   }
+  const reserved=hasBreakCoveragePolicy(input)
+    ?proposeBreakReservations(input,plan,cache):[];
   const objectives:Objective[]=["cash","owner_time","balanced"];
   const outputs=objectives.map(objective=>runObjective(
-    input,plan,objective,cache,candidates,maxNodes,beamWidth));
+    input,plan,objective,cache,candidates,maxNodes,beamWidth,reserved));
   const scenarios:PlannerScenario[]=[];
   const signatures=new Set<string>();
   for(const output of outputs){
@@ -361,6 +379,12 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       loadedPayrollDifferenceCents:diff(a.cost.loadedPayrollCents,b.cost.loadedPayrollCents)});
   }
   const warnings=plan.warnings.slice();
+  if(hasBreakCoveragePolicy(input) &&
+     (!input.ruleProfile?.verified ||
+      input.ruleProfile.maxContinuousWorkMinutes==null))
+    warnings.push("break_coverage_requires_reviewed_break_rules");
+  if(scenarios.some(s=>s.gaps.some(g=>g.reason==="break_coverage_unsatisfiable")))
+    warnings.push("break_coverage_unsatisfiable");
   if(!hasReviewedLegalInputs(input,plan))
     warnings.push("Jurisdiction, worker classification or rule-source evidence is incomplete; legal compliance is not verified");
   if(status==="unproven" && !outputs.some(o=>o.exhausted))
