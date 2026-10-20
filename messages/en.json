@@ -2029,6 +2029,12 @@
     "reportTask": "Price experiment results for {item}",
     "reportDetail": "Check observed sales, conditional estimate and keep/revert/adjust recommendation.",
     "reportAction": "Review experiment",
-    "reportThread": "Alex has completed the price experiment report. See the Operations inbox for the results and limitations."
+    "recommendationLabel": "Recommendation",
+    "recommendKeep": "Keep this price",
+    "recommendRevert": "Revert to the earlier price",
+    "recommendAdjust": "Review and adjust before deciding",
+    "actualRevenue": "Actual 7-day revenue",
+    "observedDifference": "Actual difference from prior-price baseline (not causal)",
+"reportThread": "Alex has completed the price experiment report. See the Operations inbox for the results and limitations."
   }
 }
