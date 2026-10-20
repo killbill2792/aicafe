@@ -2,7 +2,7 @@ import { expandPlannerInput, isConfirmedAvailable, qualifies, baselineGapReason,
   type DemandUnit, type WorkUnit } from "./plannerCore";
 import { localParts, parseUtcInstant, utcIso } from "./plannerClock";
 import { costForWork, hardValid } from "./plannerRules";
-import { recordedBreakCount, recordedSeatRequired } from "./plannerBreakCoverage";
+import { recordedBreakCount, recordedSeatRequired, reviewedRecordedBreakWorkers } from "./plannerBreakCoverage";
 import type { PlannerCost, PlannerGap, PlannerInput, PlannerShift } from "./plannerTypes";
 
 export type PlannerValidation = {
@@ -160,6 +160,11 @@ export function validateOliviaAssignments(input:PlannerInput,
   // One matching result per time slot keeps all simultaneous roles on the
   // SAME distinct-person break-credit allocation and bounds repeated reads.
   const breakCredits=new Map<string,Map<string,number>>();
+  const breakFloorGap=(unit:DemandUnit)=>
+    recordedBreakCount(input,plan,proposal,unit,breakCredits)>0 ||
+    (input.coverage.some(c=>c.id===unit.coverageId &&
+      c.minHeadcountDuringBreak!=null) &&
+      reviewedRecordedBreakWorkers(input,plan,proposal,unit).length>0);
   const candidates=plan.units.map(unit=>
     plan.employees.filter(e=>
       (cutoff!=null && unit.start<cutoff
@@ -197,14 +202,14 @@ export function validateOliviaAssignments(input:PlannerInput,
     const shortfall=indices.filter(i=>candidates[i].length===0);
     for(const index of shortfall){
       const unit=plan.units[index];
-      gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit,breakCredits)>0
+      gaps.push(markGap(unit,breakFloorGap(unit)
         ?"break_coverage_unsatisfiable":baselineGapReason(unit,plan,cache)));
     }
     if(shortfall.length===0){
       if(!exhausted && deepestUnmatched>=0 && deepestUnmatched<indices.length)
         {
           const unit=plan.units[indices[deepestUnmatched]];
-          gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit,breakCredits)>0
+          gaps.push(markGap(unit,breakFloorGap(unit)
             ?"break_coverage_unsatisfiable":"capacity_or_overlap"));
         }
       violations.push(exhausted?"coverage_matching_budget_exhausted":
