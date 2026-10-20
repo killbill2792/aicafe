@@ -293,6 +293,11 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
           <p>{localShiftTime(shift.startAt, locations[shift.locationId] ?? "UTC", locale)} — {localShiftTime(shift.endAt, locations[shift.locationId] ?? "UTC", locale)}</p>
           <p>{t("location")}: {locationNames[shift.locationId] ?? shift.locationId}</p>
           <p>{t("paidMinutes")}: {shift.paidMinutes}</p>
+          {shift.breaks.map((brk,j)=><p key={j}>
+            {t("breakWindow")} ({t(brk.paid?"breakPaid":"breakUnpaid")}): {" "}
+            {localShiftTime(brk.startAt,locations[shift.locationId]??"UTC",locale)}
+            {" — "}{localShiftTime(brk.endAt,locations[shift.locationId]??"UTC",locale)}
+          </p>)}
         </div>)}
         <h3 className="font-bold">{t("gaps")}</h3>
         {scenario.gaps.length === 0 && <p>{t("noGaps")}</p>}
@@ -304,6 +309,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
             weekly_hour_limit:"gapWeekly",date_specific_cap:"gapDateCap",
             pinned_conflict:"gapPinned",solver_budget:"gapSolver",
             handoff_overlap_missing:"gapHandoff",
+            break_coverage_unsatisfiable:"gapBreakFloor",
           } as Record<string,string>)[gap.reason]??"gapUnknown")} ({gap.missingHeadcount})
         </p>)}
         {!scenario.completeCoverage && <p className="text-sm text-warn">{t("partialDraftUnavailable")}</p>}
@@ -350,6 +356,11 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
           <p>{localShiftTime(shift.startAt,locations[shift.locationId]??"UTC",locale)}
           {" — "}{localShiftTime(shift.endAt,locations[shift.locationId]??"UTC",locale)}</p>
           <p>{locationNames[shift.locationId]??shift.locationId}</p>
+           {shift.breaks.map((brk,j)=><p key={j}>
+             {t("breakWindow")} ({t(brk.paid?"breakPaid":"breakUnpaid")}): {" "}
+             {localShiftTime(brk.startAt,locations[shift.locationId]??"UTC",locale)}
+             {" — "}{localShiftTime(brk.endAt,locations[shift.locationId]??"UTC",locale)}
+           </p>)}
         </div>)}
         <p className="text-ink-muted">{t("historicalPlanOnly")}</p>
       </section>}
