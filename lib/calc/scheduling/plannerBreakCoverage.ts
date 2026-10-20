@@ -40,8 +40,7 @@ type Span = { units: DemandUnit[]; locationId: string; qualificationCode: string
   minHeadcount:number; breakFloor:number };
 const samePolicy=(a:Span,b:Span)=>
   a.locationId===b.locationId &&
-  a.qualificationCode===b.qualificationCode &&
-  a.minHeadcount===b.minHeadcount && a.breakFloor===b.breakFloor;
+  a.qualificationCode===b.qualificationCode;
 
 function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   const slices=plan.units.filter(u=>u.seatIndex===0).flatMap(unit=>{
@@ -56,14 +55,14 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   // have interleaved slices and must not interrupt one another's work span.
   const groups=new Map<string,Span[]>();
   for(const item of slices){
-    const key=JSON.stringify([item.locationId,item.qualificationCode,
-      item.minHeadcount,item.breakFloor]);
+    const key=JSON.stringify([item.locationId,item.qualificationCode]);
     const spans=groups.get(key)??[];
     const previous=spans[spans.length-1];
     if(previous && samePolicy(previous,item) &&
-        previous.units[previous.units.length-1].end===item.units[0].start)
+        previous.units[previous.units.length-1].end===item.units[0].start){
       previous.units.push(...item.units);
-    else spans.push(item);
+      previous.minHeadcount=Math.min(previous.minHeadcount,item.minHeadcount);
+    } else spans.push(item);
     groups.set(key,spans);
   }
   return [...groups.values()].flat();
@@ -85,9 +84,8 @@ export function historicalBreakReservations(input:PlannerInput,
   const reservations:BreakReservation[]=[];
   for(const shift of input.startedPublishedShifts??[]){
     const workStart=Date.parse(shift.startAt),workEnd=Date.parse(shift.endAt);
-    const minutes=(workEnd-workStart)/60000-shift.breaks.reduce((n,b)=>
-      n+(Date.parse(b.endAt)-Date.parse(b.startAt))/60000,0);
-    if(minutes<=profile.maxContinuousWorkMinutes)continue;
+    // Gross on-site time, not worked time net of this valid recorded break.
+    if((workEnd-workStart)/60000<=profile.maxContinuousWorkMinutes)continue;
     for(const brk of shift.breaks){
       const start=Date.parse(brk.startAt),end=Date.parse(brk.endAt);
       const duration=brk.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
@@ -178,7 +176,7 @@ export function demandSeatRequired(input:PlannerInput,unit:DemandUnit,
 /**
  * Independently identify duty-free, within-shift break windows for headcount
  * relaxation. An arbitrary gap or a short/unreviewed break earns NO credit.
- * The rest of the shift must exceed the profile's continuous-work threshold.
+ * The gross shift span must exceed the reviewed continuous-work threshold.
  */
 export function recordedBreakCount(input:PlannerInput,plan:ExpandedPlan,
   shifts:readonly PlannerShift[],unit:DemandUnit):number {
@@ -193,10 +191,8 @@ export function recordedBreakCount(input:PlannerInput,plan:ExpandedPlan,
     const person=plan.employees.find(e=>e.id===shift.employeeId);
     if (!person || !qualifies(person,unit,plan.locations)) continue;
     const shiftStart=Date.parse(shift.startAt),shiftEnd=Date.parse(shift.endAt);
-    const workMinutes=(shiftEnd-shiftStart)/60000-
-      shift.breaks.reduce((sum,b)=>sum+
-        (Date.parse(b.endAt)-Date.parse(b.startAt))/60000,0);
-    if (workMinutes<=profile.maxContinuousWorkMinutes) continue;
+    // A valid break may reduce net work exactly to the threshold.
+    if ((shiftEnd-shiftStart)/60000<=profile.maxContinuousWorkMinutes) continue;
     for(const b of shift.breaks){
       const start=Date.parse(b.startAt),end=Date.parse(b.endAt);
       const expected=b.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
