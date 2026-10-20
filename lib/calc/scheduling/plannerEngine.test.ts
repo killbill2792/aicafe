@@ -324,6 +324,43 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("reserves breaks for workers required only during a longer peak tier",()=>{
+    const args=input([employee("a"),employee("b"),employee("c")],[
+      coverage("pre-peak",{start_local:"09:00",end_local:"10:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+      coverage("peak",{start_local:"10:00",end_local:"13:00",
+        minHeadcount:3,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts.filter(s=>s.breaks.length===1)).toHaveLength(3);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("moves breaks outside a zero-slack coverage window rather than skipping them",()=>{
+    const args=input([employee("a"),employee("b")],[
+      coverage("morning-floor",{start_local:"09:00",end_local:"12:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+      coverage("lunch-floor",{start_local:"12:00",end_local:"13:00",
+        minHeadcount:2,minHeadcountDuringBreak:2}),
+      coverage("afternoon-floor",{start_local:"13:00",end_local:"15:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:300,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    const breaks=result.best!.shifts.flatMap(s=>s.breaks);
+    expect(breaks).toHaveLength(2);
+    expect(breaks.every(b=>b.endAt<="2026-10-12T19:00:00.000Z" ||
+      b.startAt>="2026-10-12T20:00:00.000Z")).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts).completeCoverage).toBe(true);
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
