@@ -269,55 +269,118 @@ export function activeBreakReservations(unit: DemandUnit,
     b.start<=unit.start && b.end>=unit.end);
 }
 
-/** True only for demand seats legitimately waived while a break is reserved. */
-export function demandSeatRequired(input:PlannerInput,unit:DemandUnit,
-  breaks:readonly BreakReservation[]):boolean {
+/**
+ * Allocate each break-taker to at most ONE simultaneous requirement.
+ * This is the same distinct-person rule that work-seat matching enforces.
+ * A single edited or published break must never erase two different roles'
+ * required seats. A bounded augmenting-path matching preserves qualified
+ * specialist capacity rather than greedily giving the first row every break.
+ */
+type BreakCreditCache = Map<string,Map<string,number>>;
+function allocatedBreakCredits(input:PlannerInput,plan:ExpandedPlan,
+  slot:DemandUnit,eligible:(row:DemandUnit)=>string[],
+  cache?:BreakCreditCache):Map<string,number> {
+  const key=`${slot.start}:${slot.end}`;
+  const cached=cache?.get(key);
+  if(cached)return cached;
+  const rows=new Map<string,DemandUnit>();
+  for(const row of plan.units) {
+    if(row.seatIndex!==0 || row.priority!=="required" ||
+        row.start>slot.start || row.end<slot.end)continue;
+    const requirement=input.coverage.find(c=>c.id===row.coverageId);
+    if(requirement?.minHeadcountDuringBreak==null ||
+        requirement.minHeadcount<=requirement.minHeadcountDuringBreak)continue;
+    rows.set(row.coverageId,row);
+  }
+  type Claim={coverageId:string; people:string[]};
+  const claims:Claim[]=[];
+  for(const row of [...rows.values()].sort((a,b)=>a.id.localeCompare(b.id))) {
+    const requirement=input.coverage.find(c=>c.id===row.coverageId)!;
+    const people=[...new Set(eligible(row))].sort();
+    const capacity=Math.min(people.length,
+      requirement.minHeadcount-requirement.minHeadcountDuringBreak!);
+    for(let i=0;i<capacity;i++)claims.push({coverageId:row.coverageId,people});
+  }
+  // Constrained roles with fewer eligible break takers get first attempt.
+  claims.sort((a,b)=>a.people.length-b.people.length ||
+    a.coverageId.localeCompare(b.coverageId));
+  const claimedBy=new Map<string,number>();
+  function assign(index:number,seen:Set<string>):boolean {
+    for(const employeeId of claims[index].people) {
+      if(seen.has(employeeId))continue;
+      seen.add(employeeId);
+      const prior=claimedBy.get(employeeId);
+      if(prior==null || assign(prior,seen)){
+        claimedBy.set(employeeId,index);
+        return true;
+      }
+    }
+    return false;
+  }
+  for(let i=0;i<claims.length;i++)assign(i,new Set());
+  const counts=new Map<string,number>();
+  for(const index of claimedBy.values()){
+    const id=claims[index].coverageId;
+    counts.set(id,(counts.get(id)??0)+1);
+  }
+  cache?.set(key,counts);
+  return counts;
+}
+
+/** True only for seats waived by distinct, actively reserved workers. */
+export function demandSeatRequired(input:PlannerInput,plan:ExpandedPlan,
+  unit:DemandUnit,breaks:readonly BreakReservation[],
+  cache?:BreakCreditCache):boolean {
   const requirement=input.coverage.find(c=>c.id===unit.coverageId);
-  if (!requirement || requirement.minHeadcountDuringBreak==null) return true;
-  const breakCount=new Set(activeBreakReservations(unit,breaks)
-    .map(b=>b.employeeId)).size;
-  const floor=Math.max(requirement.minHeadcountDuringBreak,
-    requirement.minHeadcount-breakCount);
-  return (unit.seatIndex ?? 0) < floor;
+  if(!requirement || requirement.minHeadcountDuringBreak==null)return true;
+  const credits=allocatedBreakCredits(input,plan,unit,
+    row=>breaks.filter(b=>b.coverageId===row.coverageId &&
+      b.locationId===row.locationId && b.start<=unit.start &&
+      b.end>=unit.end).map(b=>b.employeeId),cache);
+  return (unit.seatIndex??0)<requirement.minHeadcount-
+    (credits.get(unit.coverageId)??0);
 }
 
 /**
- * Independently identify duty-free, within-shift break windows for headcount
- * relaxation. An arbitrary gap or a short/unreviewed break earns NO credit.
- * The gross shift span must exceed the reviewed continuous-work threshold.
+ * Independently credit actual, within-shift, qualified, reviewed breaks.
+ * The gross shift span, rather than worked time net of the break, determines
+ * whether the configured continuous-work threshold would be exceeded.
  */
 export function recordedBreakCount(input:PlannerInput,plan:ExpandedPlan,
-  shifts:readonly PlannerShift[],unit:DemandUnit):number {
+  shifts:readonly PlannerShift[],unit:DemandUnit,
+  cache?:BreakCreditCache):number {
   const requirement=input.coverage.find(c=>c.id===unit.coverageId);
   const profile=input.ruleProfile;
-  if (requirement?.minHeadcountDuringBreak==null ||
+  if(requirement?.minHeadcountDuringBreak==null ||
       !profile?.verified || profile.maxContinuousWorkMinutes==null ||
-      profile.maxContinuousWorkMinutes<=0) return 0;
-  const employees=new Set<string>();
-  for (const shift of shifts) {
-    if (shift.locationId!==unit.locationId) continue;
-    const person=plan.employees.find(e=>e.id===shift.employeeId);
-    if (!person || !qualifies(person,unit,plan.locations)) continue;
-    const shiftStart=Date.parse(shift.startAt),shiftEnd=Date.parse(shift.endAt);
-    // A valid break may reduce net work exactly to the threshold.
-    if ((shiftEnd-shiftStart)/60000<=profile.maxContinuousWorkMinutes) continue;
-    for(const b of shift.breaks){
-      const start=Date.parse(b.startAt),end=Date.parse(b.endAt);
-      const expected=b.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
-      if (expected==null || expected<=0 || (end-start)/60000!==expected ||
-          !(shiftStart<start && end<shiftEnd) ||
-          start>unit.start || end<unit.end) continue;
-      employees.add(shift.employeeId);
+      profile.maxContinuousWorkMinutes<=0)return 0;
+  return allocatedBreakCredits(input,plan,unit,row=>{
+    const people:string[]=[];
+    for(const shift of shifts){
+      if(shift.locationId!==row.locationId)continue;
+      const person=plan.employees.find(e=>e.id===shift.employeeId);
+      if(!person || !qualifies(person,row,plan.locations))continue;
+      const shiftStart=Date.parse(shift.startAt),shiftEnd=Date.parse(shift.endAt);
+      if((shiftEnd-shiftStart)/60000<=profile.maxContinuousWorkMinutes!)continue;
+      for(const b of shift.breaks){
+        const start=Date.parse(b.startAt),end=Date.parse(b.endAt);
+        const expected=b.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
+        if(expected==null || expected<=0 || (end-start)/60000!==expected ||
+            !(shiftStart<start && end<shiftEnd) ||
+            start>unit.start || end<unit.end)continue;
+        people.push(shift.employeeId);
+        break;
+      }
     }
-  }
-  return employees.size;
+    return people;
+  },cache).get(unit.coverageId)??0;
 }
 
 export function recordedSeatRequired(input:PlannerInput,plan:ExpandedPlan,
-  shifts:readonly PlannerShift[],unit:DemandUnit):boolean {
+  shifts:readonly PlannerShift[],unit:DemandUnit,
+  cache?:BreakCreditCache):boolean {
   const requirement=input.coverage.find(c=>c.id===unit.coverageId);
-  if (!requirement || requirement.minHeadcountDuringBreak==null) return true;
-  const floor=Math.max(requirement.minHeadcountDuringBreak,
-    requirement.minHeadcount-recordedBreakCount(input,plan,shifts,unit));
-  return (unit.seatIndex ?? 0) < floor;
+  if(!requirement || requirement.minHeadcountDuringBreak==null)return true;
+  return (unit.seatIndex??0)<requirement.minHeadcount-
+    recordedBreakCount(input,plan,shifts,unit,cache);
 }
