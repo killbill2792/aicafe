@@ -4,6 +4,7 @@ import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.serv
 import {conversationError,conversationJson,parseInput,readBoundedJson,requireSameOrigin}
   from "@/lib/ai/conversations/http.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {supervisorLoopRegistry,priceExperimentCapabilityId}
   from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -37,7 +38,9 @@ export async function GET(_request:Request,{params}:Params){
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
     .eq("thread_id",threadId).order("created_at",{ascending:false}).limit(30);
   if(error)throw error;
-  return conversationJson({proposals:data??[]});
+  const catalog=(await getMenuControlCenter()).filter(item=>item.active)
+    .map(({id,name,priceCents})=>({id,name,priceCents}));
+  return conversationJson({proposals:data??[],catalog});
  }catch(error){return conversationError(error);}
 }
 export async function POST(request:Request,{params}:Params){
