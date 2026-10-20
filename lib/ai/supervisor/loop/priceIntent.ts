@@ -36,5 +36,12 @@ export function ownerNamedUniqueProduct(current:string,previous:string|undefined
   const exact=catalog.filter(x=>seen(x.name));
   if(exact.length)return exact.length===1&&exact[0].id===selectedId;
   const based=catalog.filter(x=>seen(x.baseName));
-  return based.length===1&&based[0].id===selectedId;
+  if(based.length)return based.length===1&&based[0].id===selectedId;
+  // Owners often say "latte" where a sole catalog item is "Iced Latte".
+  // Permit a unique meaningful product-name token, NEVER an ambiguous size
+  // or the model's unsupported guess when multiple drinks share that token.
+  const ownerWords=new Set(text.split(" "));
+  const partial=catalog.filter(item=>normalizedDrinkName(item.name).split(" ")
+    .some(word=>word.length>=4&&ownerWords.has(word)));
+  return partial.length===1&&partial[0].id===selectedId;
 }

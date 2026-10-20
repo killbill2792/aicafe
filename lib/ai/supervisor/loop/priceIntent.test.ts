@@ -24,6 +24,10 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerNamedUniqueProduct("Try a 10-cent increase for Latte 12 oz",undefined,"latte-small",catalog)).toBe(true);
   expect(ownerNamedUniqueProduct("Try a 10-cent increase for Mocha",undefined,"mocha",catalog)).toBe(true);
   expect(ownerNamedUniqueProduct("Try a 10-cent increase for Mocha",undefined,"latte-small",catalog)).toBe(false);
+  expect(ownerNamedUniqueProduct("Test a 10-cent increase on latte",undefined,"latte-small",[
+    {id:"latte-small",name:"Iced Latte",baseName:"Iced Latte"},
+    {id:"mocha",name:"Mocha",baseName:"Mocha"},
+  ])).toBe(true);
   expect(normalizedDrinkName("Latte · 12 OZ")).toBe("latte 12 oz");
  });
 });
