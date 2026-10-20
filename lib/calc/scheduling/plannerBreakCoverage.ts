@@ -37,7 +37,7 @@ function reviewedDuration(input: PlannerInput): number | null {
  * staffing windows commonly do), without resetting employees' work clocks.
  */
 type Span = { units: DemandUnit[]; locationId: string; qualificationCode: string|null;
-  minHeadcount:number; breakFloor:number };
+  minHeadcount:number; breakFloor:number; tierCap?:number };
 const samePolicy=(a:Span,b:Span)=>
   a.locationId===b.locationId;
 
@@ -68,10 +68,24 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
       existing.units[existing.units.length-1].qualificationCode===
       item.units[0].qualificationCode) ||
       (touching.length===1?touching[0]:undefined);
-    if(previous){
+    // When separate single-seat qualified cohorts converge into one
+    // general multi-seat row, preserve EACH possible worker's work clock.
+    // The shared row contributes only ONE tier per existing path; otherwise
+    // appending a 2-seat general demand to both paths double-counts demand.
+    const converged=touching.length>1 &&
+      item.minHeadcount>=touching.length &&
+      touching.every(existing=>existing.tierCap===1 ||
+        existing.minHeadcount===1);
+    if(converged){
+      for(const existing of touching){
+        existing.units.push(...item.units);
+        existing.minHeadcount=Math.min(existing.minHeadcount,item.minHeadcount);
+        existing.tierCap=1;
+      }
+    }else if(previous){
       previous.units.push(...item.units);
       previous.minHeadcount=Math.min(previous.minHeadcount,item.minHeadcount);
-    } else spans.push(item);
+    }else spans.push(item);
     groups.set(key,spans);
   }
   // Preserve byte-identical opt-out behavior: do not plan break reservations
@@ -87,8 +101,8 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
 function workerTierSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   const tiers:Span[]=[];
   for(const group of coverageSpans(input,plan)){
-    const max=Math.max(...group.units.map(u=>
-      input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount));
+    const max=Math.min(group.tierCap??Infinity,Math.max(...group.units.map(u=>
+      input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount)));
     for(let seat=0;seat<max;seat++){
       let segment:DemandUnit[]=[];
       const finish=()=>{
