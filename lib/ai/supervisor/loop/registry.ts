@@ -65,18 +65,24 @@ export function createLoopRegistry(registrations:readonly Registration[]){
       if(!registered)throw new Error("unknown_capability");
       const parsed=registered.inputSchema.parse(input);
       let result:unknown;
+      // The registration was validated for exactly one handler above.
+      // Parsing completes before the erased callback receives its typed input.
+      const invoke=(fn:((input:never,facade?:never)=>Promise<unknown>)|undefined,store?:unknown)=>{
+        if(!fn)throw new Error("missing_mode_handler");
+        return fn(parsed as never,store as never);
+      };
       switch(registered.mode){
         case "read":case "simulate":case "evaluate":
-          result=await registered.read(parsed);break;
+          result=await invoke(registered.read);break;
         case "propose":
           if(!facade||!("draft" in facade))throw new Error("proposal_authorization_required");
-          result=await registered.propose(parsed,facade);break;
+          result=await invoke(registered.propose,facade);break;
         case "approve":
           if(!facade||!("approve" in facade))throw new Error("approval_authorization_required");
-          result=await registered.approve(parsed,facade);break;
+          result=await invoke(registered.approve,facade);break;
         case "commit":
           if(!facade||!("commit" in facade))throw new Error("commit_authorization_required");
-          result=await registered.commit(parsed,facade);break;
+          result=await invoke(registered.commit,facade);break;
       }
       return registered.outputSchema.parse(result);
     },
