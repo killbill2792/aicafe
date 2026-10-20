@@ -1,6 +1,6 @@
 -- Private pilot diagnostic traces. Apply through the reviewed migration process.
 -- Rich source/model/owner payloads live here, NEVER in broadly accessible Vercel logs.
--- Only the authenticated owner of the exact source message may write/read.
+-- Authenticated owners can read their scoped records. Only trusted service_role may write.
 CREATE TABLE IF NOT EXISTS public.supervisor_turn_traces (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   business_id uuid NOT NULL,
@@ -18,7 +18,8 @@ CREATE INDEX IF NOT EXISTS supervisor_turn_traces_owner_idx
   ON public.supervisor_turn_traces (business_id, owner_user_id, thread_id, created_at DESC);
 ALTER TABLE public.supervisor_turn_traces ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON public.supervisor_turn_traces FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT ON public.supervisor_turn_traces TO authenticated;
+GRANT SELECT ON public.supervisor_turn_traces TO authenticated;
+GRANT INSERT, DELETE ON public.supervisor_turn_traces TO service_role;
 CREATE POLICY "owner reads own private supervisor traces"
 ON public.supervisor_turn_traces FOR SELECT TO authenticated
 USING (
@@ -37,40 +38,10 @@ USING (
       AND mb.user_id=auth.uid() AND mb.role='owner'
   )
 );
-CREATE POLICY "owner writes own private supervisor traces"
-ON public.supervisor_turn_traces FOR INSERT TO authenticated
-WITH CHECK (
-  owner_user_id=auth.uid() AND expires_at<=now()+interval '14 days'
-  AND EXISTS (
-    SELECT 1 FROM public.ai_messages m
-    WHERE m.id=supervisor_turn_traces.owner_message_id
-      AND m.thread_id=supervisor_turn_traces.thread_id
-      AND m.business_id=supervisor_turn_traces.business_id
-      AND m.owner_user_id=supervisor_turn_traces.owner_user_id
-      AND m.role='owner'
-  )
-  AND EXISTS (
-    SELECT 1 FROM public.memberships mb
-    WHERE mb.business_id=supervisor_turn_traces.business_id
-      AND mb.user_id=auth.uid() AND mb.role='owner'
-  )
-);
-
-
 -- Housekeeping: immediate owner-scoped purge during new owner turns plus
 -- recurring server-side deletion when pg_cron is available. Provision pg_cron
 -- before activating private capture; without it, 14-day deletion is not ensured.
-GRANT DELETE ON public.supervisor_turn_traces TO authenticated;
-CREATE POLICY "owner deletes own expired supervisor traces"
-ON public.supervisor_turn_traces FOR DELETE TO authenticated
-USING (
-  owner_user_id=auth.uid() AND expires_at<=now()
-  AND EXISTS (
-    SELECT 1 FROM public.memberships mb
-    WHERE mb.business_id=supervisor_turn_traces.business_id
-      AND mb.user_id=auth.uid() AND mb.role='owner'
-  )
-);
+-- Authenticated clients cannot insert or delete forensic records.
 CREATE OR REPLACE FUNCTION public.purge_expired_supervisor_turn_traces()
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
 BEGIN
