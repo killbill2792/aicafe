@@ -19,14 +19,15 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
  const [simulation,setSimulation]=useState<Simulation|null>(null);
  const [report,setReport]=useState<{status:string}|null>(null),[error,setError]=useState(false);
  const endpoint="/api/ai/threads/"+encodeURIComponent(threadId)+"/experiments";
+ const listEndpoint=initialProposalId?endpoint+"?proposal="+encodeURIComponent(initialProposalId):endpoint;
  useEffect(()=>{
   let alive=true;
-  void fetch(endpoint,{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json();})
+  void fetch(listEndpoint,{cache:"no-store"}).then(r=>{if(!r.ok)throw new Error();return r.json();})
    .then((v:{catalog:Item[];proposals:Proposal[]})=>{
     if(alive){setItems(v.catalog);setItemId(v.catalog[0]?.id??"");setProposals(v.proposals);}
    }).catch(()=>{if(alive)setError(true);});
   return ()=>{alive=false;};
- },[endpoint]);
+ },[listEndpoint]);
  const invoke=async(payload:Record<string,unknown>)=>{
   setBusy(true);setError(false);
   try{

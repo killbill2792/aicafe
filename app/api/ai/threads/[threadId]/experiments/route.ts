@@ -28,7 +28,7 @@ async function context(threadId:string,locale:"en"|"es"|"ar"="en"){
  await service.getThread(uuid.parse(threadId));
  return {service,scope:{...scope,threadId,locale} as OwnerLoopScope};
 }
-export async function GET(_request:Request,{params}:Params){
+export async function GET(request:Request,{params}:Params){
  try{
   const {threadId}=await params;
   const {scope}=await context(threadId);
@@ -38,9 +38,21 @@ export async function GET(_request:Request,{params}:Params){
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
     .eq("thread_id",threadId).order("created_at",{ascending:false}).limit(30);
   if(error)throw error;
+  const selected=new URL(request.url).searchParams.get("proposal");
+  const proposals=[...(data??[])];
+  // A deep link from an old Operations task still opens that *exact*
+  // experiment even when it is older than the recent-proposals page.
+  if(selected&&uuid.safeParse(selected).success&&!proposals.some(p=>p.id===selected)){
+    const requested=await db.from("supervisor_proposals")
+      .select("id,capability_id,revision,status,canonical_effect_payload,baseline,monitoring_start_date,created_at")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+      .eq("thread_id",threadId).eq("id",selected).maybeSingle();
+    if(requested.error)throw requested.error;
+    if(requested.data)proposals.unshift(requested.data);
+  }
   const catalog=(await getMenuControlCenter()).filter(item=>item.active)
     .map(({id,name,priceCents})=>({id,name,priceCents}));
-  return conversationJson({proposals:data??[],catalog});
+  return conversationJson({proposals,catalog});
  }catch(error){return conversationError(error);}
 }
 export async function POST(request:Request,{params}:Params){
