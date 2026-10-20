@@ -51,10 +51,9 @@ export async function readPriceExperimentSalesDays(
    const businessDate=utcDateOffset(firstDate,i);
    const total=!invalid&&rollups.get(businessDate)==="actual"?
      aggregatePriceExperimentSalesRows(rowsByDay.get(businessDate)??[]):null;
-   return {businessDate,units:total?.units??0,netSalesCents:total?.netSalesCents??0,
-     coverage:total?"actual":"unavailable",
-     source:"daily_rollups+order_lines"};
- });
+   return total?{businessDate,units:total.units,netSalesCents:total.netSalesCents,
+     coverage:"actual" as const,source:"daily_rollups+order_lines"}:null;
+ }).filter((day):day is PriceExperimentDay=>day!==null);
 }
 /** Seven completed calendar days in the café's timezone; never include a
  * partially synchronized current business day in the baseline forecast.
