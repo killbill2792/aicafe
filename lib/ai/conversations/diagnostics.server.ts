@@ -301,7 +301,7 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
     "http_response_error","trace_summary","round_context","retry_feedback"]);
   if(typeof point!=="string"||!allowed.has(point))return null;
   const detail:Record<string,unknown>={event:"supervisor_diagnostic_detail",point};
-  for(const key of ["requestId","capabilityId","observationId"]){
+  for(const key of ["requestId","capabilityId","observationId","callId"]){
     const id=safeProviderIdentifier(payload[key]);
     if(id)detail[key]=id;
   }
@@ -358,9 +358,9 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
     const allowedIssueCodes=new Set(["invalid_type","invalid_union","invalid_value",
       "invalid_format","too_small","too_big","not_multiple_of","unrecognized_keys",
       "invalid_key","invalid_element","custom"]);
-    const allowedIssueFields=new Set(["purpose","nodes","op","unit","handle","amount",
-      "value","left","right","target","currency","result","source","period",
-      "from","to","mode","assumptions","input","index","type"]);
+    const allowedIssueFields=new Set(["capabilityId","version","purpose","description",
+      "nodes","op","handle","label","quotedNumber","value","unit","occurrence",
+      "quantityScale","quotedDenomination","to"]);
     if(Array.isArray(payload.issues)){
       detail.issueCount=payload.issues.length;
       detail.schemaIssues=payload.issues.slice(0,12).map(issue=>{
