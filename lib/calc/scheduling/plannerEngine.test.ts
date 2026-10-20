@@ -274,6 +274,33 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("preserves a frozen published 60-minute break after the reviewed meal changes to 30 minutes",()=>{
+    const oldMeal={startAt:"2026-10-12T17:00:00.000Z",
+      endAt:"2026-10-12T18:00:00.000Z",paid:false};
+    const frozen={employeeId:"a",locationId:"a",
+      startAt:"2026-10-12T16:00:00.000Z",
+      endAt:"2026-10-12T20:00:00.000Z",paidMinutes:180,
+      breaks:[oldMeal],pinned:false};
+    const colleague={employeeId:"b",locationId:"a",
+      startAt:"2026-10-12T16:00:00.000Z",
+      endAt:"2026-10-12T20:00:00.000Z",paidMinutes:240,
+      breaks:[],pinned:false};
+    const args=input([employee("a"),employee("b")],[
+      coverage("frozen-after-rule-change",{end_local:"13:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:30,
+    },startedPublishedShifts:[frozen,colleague],
+    replanAsOf:"2026-10-12T16:30:00.000Z"});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toEqual([frozen,colleague]);
+    expect(result.best?.completeCoverage).toBe(true);
+    expect(validateOliviaAssignments(args,[frozen,colleague])).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("does not interpret taking or returning from a real break as a new shift handoff",()=>{
     const args=input([employee("a"),employee("b")],[
       coverage("handoff-break",{end_local:"13:00",minHeadcount:2,
@@ -573,6 +600,37 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(shifts).toHaveLength(2);
     expect(shifts.every(s=>s.breaks.length===2)).toBe(true);
     expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("finds later floor-approved break windows even when they occur after 24 forbidden sequences",()=>{
+    const worker=employee("a",{recurring:[recurring(1,"09:00","19:00")]});
+    const args=input([worker],[
+      coverage("before",{start_local:"09:00",end_local:"12:00",
+        minHeadcount:1,minHeadcountDuringBreak:1}),
+      coverage("first-break-only",{start_local:"12:00",end_local:"13:00",
+        minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("middle",{start_local:"13:00",end_local:"17:00",
+        minHeadcount:1,minHeadcountDuringBreak:1}),
+      coverage("second-break-only",{start_local:"17:00",end_local:"18:00",
+        minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("last",{start_local:"18:00",end_local:"19:00",
+        minHeadcount:1,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:30,maxNodes:2500,beamWidth:4,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    const breaks=result.best!.shifts.flatMap(s=>s.breaks);
+    expect(breaks).toEqual([
+      {startAt:"2026-10-12T19:00:00.000Z",
+        endAt:"2026-10-12T20:00:00.000Z",paid:false},
+      {startAt:"2026-10-13T00:00:00.000Z",
+        endAt:"2026-10-13T01:00:00.000Z",paid:false},
+    ]);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
       valid:true,completeCoverage:true,gaps:[],
     });
   });
