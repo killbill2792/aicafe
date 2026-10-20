@@ -354,7 +354,7 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
     if(typeof response.status==="string"&&safeTags.status.has(response.status))
       detail.providerStatus=response.status;
   }
-  if(point==="calculator_rejected"||point==="claim_issues_retry"){
+  if(point==="calculator_rejected"){
     const allowedIssueCodes=new Set(["invalid_type","invalid_union","invalid_value",
       "invalid_format","too_small","too_big","not_multiple_of","unrecognized_keys",
       "invalid_key","invalid_element","custom"]);
@@ -378,8 +378,8 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
       const nodes=(args as Record<string,unknown>).nodes;
       if(Array.isArray(nodes)){
         detail.nodeCount=nodes.length;
-        const allowedOps=new Set(["source","hypothetical","add","subtract","multiply",
-          "divide","convert","sum","ratio","round","literal"]);
+        const allowedOps=new Set(["source","hypothetical","convert","add","subtract",
+          "multiply","divide","ratio","scenario_delta","compare","loaded_labor"]);
         detail.nodeOps=nodes.slice(0,24).map(node=>{
           const op=node&&typeof node==="object"&&!Array.isArray(node)?
             (node as Record<string,unknown>).op:null;
@@ -387,6 +387,37 @@ function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,un
         });
       }
     }
+  }
+  if(point==="claim_issues_retry"&&Array.isArray(payload.issues)){
+    const kinds=new Set(["dropped_paragraph","unmatched_number",
+      "formula_failed","business_claim_uncited"]);
+    const reasons=new Set(["hallucinated_citation","empty_citation_pull",
+      "invalid_token","uncited_evidence","citations_on_non_evidence",
+      "unrecognized_numeral"]);
+    const failures=new Set(["grammar","source_not_found","source_unverifiable",
+      "ungrounded_literal","unused_variable","requires_registered_calculator",
+      "incompatible_units","incompatible_periods","unparseable_claim",
+      "sub_cent_precision","result_mismatch"]);
+    detail.issueCount=payload.issues.length;
+    detail.claimIssues=payload.issues.slice(0,12).map(issue=>{
+      const x=issue&&typeof issue==="object"&&!Array.isArray(issue)?
+        issue as Record<string,unknown>:{};
+      const result:Record<string,unknown>={
+        kind:typeof x.kind==="string"&&kinds.has(x.kind)?x.kind:"unknown",
+      };
+      const index=safeCount(x.paragraphIndex);
+      if(index!==undefined)result.paragraphIndex=index;
+      if(x.kind==="dropped_paragraph"&&typeof x.reason==="string"&&
+        reasons.has(x.reason))result.reason=x.reason;
+      if(x.kind==="formula_failed"&&x.failure&&typeof x.failure==="object"&&
+        !Array.isArray(x.failure)){
+        const failure=(x.failure as Record<string,unknown>).reason;
+        if(typeof failure==="string"&&failures.has(failure))result.failure=failure;
+      }
+      if(x.kind==="unmatched_number"&&x.matchedObservation!==null)
+        result.hasMatchedObservation=x.matchedObservation!==undefined;
+      return result;
+    });
   }
   if(point==="parallel_batch"){
     const preflight=payload.preflight;
