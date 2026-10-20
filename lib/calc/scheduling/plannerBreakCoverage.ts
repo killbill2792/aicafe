@@ -299,20 +299,44 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   const placements=[...bestRoster.keys()].map(entry=>{
     const employeeId=bestRoster.get(entry)!.id;
     const coverageIds=[...new Set(entry.span.units.map(u=>u.coverageId))];
-    const choices:Placement[]=[];
-    for(let start=entry.first.start+gridMs;
-        start+durationMs+gridMs<=entry.last.end;start+=gridMs){
-      const end=start+durationMs;
-      if((start-entry.first.start)/60000>limit ||
-          (entry.last.end-end)/60000>limit)continue;
-      if(!entry.span.units.some(u=>u.start>=start && u.end<=end))continue;
-      choices.push({entry,employeeId,start,end,coverageIds});
+    const total=(entry.last.end-entry.first.start)/60000;
+    const count=Math.max(1,Math.ceil((total-limit)/(limit+duration)));
+    const choices:Placement[][]=[];
+    // Each unbroken work segment must fit the verified continuous-work cap.
+    // One break is insufficient when gross work exceeds two such segments;
+    // generate a bounded, deterministic sequence of real within-shift breaks.
+    function sequences(previousEnd:number,left:number,selected:Placement[]):void {
+      if(choices.length>=96)return;
+      if(left===0){
+        if(entry.last.end-previousEnd<=limit*60000 &&
+            entry.last.end-previousEnd>=gridMs)
+          choices.push(selected.slice());
+        return;
+      }
+      const additional=left-1;
+      for(let start=previousEnd+gridMs;
+          start+durationMs+additional*(durationMs+gridMs)+gridMs<=entry.last.end;
+          start+=gridMs){
+        if(start-previousEnd>limit*60000)break;
+        const end=start+durationMs;
+        if(!entry.span.units.some(u=>u.start>=start && u.end<=end))continue;
+        selected.push({entry,employeeId,start,end,coverageIds});
+        sequences(end,left-1,selected);
+        selected.pop();
+        if(choices.length>=96)return;
+      }
     }
-    // Try near-middle breaks first, but search alternative legal windows when
-    // a zero-slack window makes the centered position impossible.
-    const center=(entry.first.start+entry.last.end)/2;
-    choices.sort((a,b)=>Math.abs((a.start+a.end)/2-center)-
-      Math.abs((b.start+b.end)/2-center) || a.start-b.start);
+    // A finite planner search budget is preferable to exponential break grids.
+    if(count<=12)sequences(entry.first.start,count,[]);
+    const desired=(total-count*duration)/(count+1)*60000;
+    choices.sort((a,b)=>{
+      const score=(sequence:Placement[])=>sequence.reduce((sum,p,i)=>{
+        const expected=entry.first.start+(i+1)*desired+i*durationMs;
+        return sum+Math.abs(p.start-expected);
+      },0);
+      return score(a)-score(b) ||
+        a.map(p=>p.start).join(",").localeCompare(b.map(p=>p.start).join(","));
+    });
     return {entry,choices};
   }).filter(x=>x.choices.length>0);
   placements.sort((a,b)=>a.choices.length-b.choices.length);
@@ -378,12 +402,15 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     if(index===placements.length)return true;
     if(positionAttempts>=12_000)return false;
     const item=placements[index];
-    for(const p of item.choices){
+    for(const sequence of item.choices){
       if(++positionAttempts>12_000)return false;
-      if(!fits(p))continue;
-      const rows=insert(p);scheduled.push(...rows);
-      if(place(index+1))return true;
-      scheduled.splice(scheduled.length-rows.length,rows.length);
+      let inserted=0,valid=true;
+      for(const p of sequence){
+        if(!fits(p)){valid=false;break;}
+        const rows=insert(p);scheduled.push(...rows);inserted+=rows.length;
+      }
+      if(valid && place(index+1))return true;
+      scheduled.splice(scheduled.length-inserted,inserted);
     }
     return false;
   }
@@ -393,7 +420,7 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   // instead of silently skipping the worker's reviewed break.
   for(const item of placements){
     const chosen=item.choices[0];
-    if(chosen)results.push(...insert(chosen));
+    if(chosen)for(const p of chosen)results.push(...insert(p));
   }
   return results;
 }
