@@ -1,5 +1,6 @@
 import {gunzipSync} from "node:zlib";
 import {createHash} from "node:crypto";
+import {isSupervisorPrivateTraceTester} from "@/lib/ai/conversations/privateTrace.server";
 import {authenticatedConversationContext} from "@/lib/ai/conversations/auth.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
 import {conversationError,conversationJson,parseInput} from "@/lib/ai/conversations/http.server";
@@ -38,6 +39,8 @@ export async function GET(request:Request,context:RouteContext){
     const {threadId}=await context.params;
     const id=parseInput(threadIdInput,threadId);
     const {service,scope}=await authenticatedConversationContext();
+    if(!isSupervisorPrivateTraceTester(scope.ownerUserId))
+      return conversationJson({error:"not_found"},404);
     await service.getThread(id);
     const client=await createServerSupabaseClient();
     const url=new URL(request.url);
