@@ -1,3 +1,4 @@
+import type {ExperimentCopy} from "./SupervisorExperiment";
 "use client";
 
 import SupervisorChatComposer, { type SupervisorChatCopy, type SupervisorHomeSnapshot } from "./SupervisorChatComposer";
@@ -11,11 +12,12 @@ type SupervisorCopy = {
 
 /** One conversation surface, not a dashboard card around another chat card. */
 export default function SupervisorHomePanel({
-  copy, chatCopy, chatEnabled, chatUnavailableReason, locale, snapshot, languageSwitch,
+  copy, chatCopy, chatEnabled, chatUnavailableReason, locale, snapshot, languageSwitch, experimentCopy,
 }: {
   copy: SupervisorCopy;
   chatCopy: Omit<SupervisorChatCopy, keyof SupervisorCopy>;
   snapshot: SupervisorHomeSnapshot;
+  experimentCopy: ExperimentCopy;
   languageSwitch?: React.ReactNode;
   chatEnabled: boolean;
   chatUnavailableReason: SupervisorChatUnavailableReason | null;
@@ -23,6 +25,6 @@ export default function SupervisorHomePanel({
 }) {
   return <SupervisorChatComposer
     enabled={chatEnabled} unavailableReason={chatUnavailableReason}
-    snapshot={snapshot} locale={locale} languageSwitch={languageSwitch} copy={{ ...copy, ...chatCopy }}
+    snapshot={snapshot} locale={locale} languageSwitch={languageSwitch} experimentCopy={experimentCopy} copy={{ ...copy, ...chatCopy }}
   />;
 }
