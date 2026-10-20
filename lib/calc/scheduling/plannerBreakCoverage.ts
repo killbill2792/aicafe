@@ -305,9 +305,16 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
         b.locationId===unit.locationId && b.start<=unit.start &&
         b.end>=unit.end).map(b=>b.employeeId));
       breaking.add(p.employeeId);
-      const eligible=eligibleCandidates(unit,plan,cache)
-        .filter(e=>!breaking.has(e.id));
-      if(eligible.length<floor)return false;
+      const eligible=eligibleCandidates(unit,plan,cache);
+      const normalSlack=requirement.minHeadcount-floor;
+      // Prefer explicit owner-permitted staggering when a lower break floor
+      // exists. Use extra relief only when the floor otherwise allows ZERO
+      // absences (floor === normal headcount); concurrent breaks with spare
+      // workers can otherwise force unnecessary continuous-work violations.
+      const permitted=normalSlack>0?normalSlack:
+        Math.max(0,eligible.length-requirement.minHeadcount);
+      if(breaking.size>permitted ||
+          eligible.filter(e=>!breaking.has(e.id)).length<floor)return false;
     }
     return true;
   }
