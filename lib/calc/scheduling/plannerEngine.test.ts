@@ -535,6 +535,48 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("carries both workers across a general-to-qualified split without resetting their break clocks",()=>{
+    const dual=[{code:"cashier",validFrom:"2026-01-01",confirmed:true},
+      {code:"barista",validFrom:"2026-01-01",confirmed:true}];
+    const args=input([employee("a",{qualifications:dual}),
+      employee("b",{qualifications:dual})],[
+      coverage("general-opening",{start_local:"09:00",end_local:"11:00",
+        qualificationCode:null,minHeadcount:2,minHeadcountDuringBreak:1}),
+      coverage("cashier-later",{start_local:"11:00",end_local:"13:00",
+        qualificationCode:"cashier",minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("barista-later",{start_local:"11:00",end_local:"13:00",
+        qualificationCode:"barista",minHeadcount:1,minHeadcountDuringBreak:0}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toHaveLength(2);
+    expect(result.best?.shifts.every(s=>s.breaks.length===1)).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("staggered long shifts receive two genuine breaks each instead of resetting only once",()=>{
+    const long=employee("a",{recurring:[recurring(1,"09:00","19:00")]});
+    const other=employee("b",{recurring:[recurring(1,"09:00","19:00")]});
+    const args=input([long,other],[
+      coverage("ten-hours",{start_local:"09:00",end_local:"19:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    const shifts=result.best!.shifts;
+    expect(shifts).toHaveLength(2);
+    expect(shifts.every(s=>s.breaks.length===2)).toBe(true);
+    expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
