@@ -641,7 +641,7 @@ export default function SupervisorChatComposer({
         {progressStatusText(copy, progressStatus) ?? copy.sending}
       </div>}
     </div>
-    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>} 
+    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
