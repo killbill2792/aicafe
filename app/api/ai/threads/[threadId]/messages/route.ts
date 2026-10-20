@@ -100,7 +100,7 @@ export async function POST(request: Request, context: RouteContext) {
     let reply;
     try {
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
-        typeof m.text==="string").sort((a,b)=>b.createdAt.localeCompare(a.createdAt))
+        typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
       // A follow-up can explicitly request a draft through registered domain
       // recognition. This produces only an inert proposal; approve/commit remain

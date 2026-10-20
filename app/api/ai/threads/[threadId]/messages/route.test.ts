@@ -4,7 +4,7 @@ const mocks=vi.hoisted(()=>{
   const message={id:"owner-msg",role:"owner",contentType:"text",
     threadId:"a1989b23-e2b8-412e-a08f-46fb2726eedc",text:"Are there any staff problems now?",
     clientMessageId:"5106fd7b-1d80-486c-a026-dc1f39911f4c"};
-  return {message,run:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
+  return {message,run:vi.fn(),propose:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
     getThread:vi.fn(async()=>({title:"Conversation"})),
     addOwner:vi.fn(async()=>message),listMessages:vi.fn()};
 });
@@ -23,6 +23,10 @@ vi.mock("@/lib/ai/cafeTools.server",()=>({
   readSupervisorCafeIdentity:async()=>({asOf:"2026-10-10",timezone:"America/Los_Angeles",cafeName:"Sample"}),
 }));
 vi.mock("@/lib/ai/conversations/runSupervisorTurn.server",()=>({runSupervisorTurn:mocks.run}));
+vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{}}));
+vi.mock("@/lib/ai/supervisor/loop/engine",()=>({
+  proposeFromOwnerConversation:mocks.propose,
+}));
 vi.mock("@/lib/ai/conversations/usage.server",()=>({
   labelSupervisorThread:async()=>{},recordSupervisorUsage:async()=>{},
 }));
@@ -43,6 +47,7 @@ const ctx={params:Promise.resolve({threadId:mocks.message.threadId})};
 beforeEach(()=>{
   vi.clearAllMocks();
   mocks.getExisting.mockResolvedValue(null);
+  mocks.propose.mockResolvedValue(null);
   mocks.listMessages.mockResolvedValue({items:[
     {id:"m1",role:"owner",text:"What are my best sellers?",blocks:null},
     {id:"m2",role:"supervisor",text:null,blocks:[
@@ -70,6 +75,20 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
       expect.objectContaining({role:"supervisor",text:expect.stringContaining("Mocha units sold: 20")}),
     ]));
     expect(mocks.persist).toHaveBeenCalledTimes(1);
+  });
+  it("persists an explicit, inert owner follow-up proposal without asking a model to approve or commit",async()=>{
+    mocks.propose.mockResolvedValueOnce({id:"b1d0a764-3b31-4833-b800-3c8df90f45ac",
+      canonicalEffectPayload:{productName:"Latte",newPriceCents:510}});
+    const response=await POST(request("Let's try it"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({
+      businessId:"cafe-1",ownerUserId:"owner-1",locale:"en"
+    }),{},expect.anything(), "Let's try it",expect.any(Array),
+      mocks.message.clientMessageId);
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.persist).toHaveBeenCalledWith(expect.anything(),expect.anything(),
+      expect.objectContaining({intent:"menu_pricing",status:"estimated",
+        blocks:[expect.objectContaining({text:expect.stringContaining("Nothing has changed")})]}));
   });
   it("replays the existing reply without another provider call or write",async()=>{
     mocks.getExisting.mockResolvedValue({id:"existing-reply"});
