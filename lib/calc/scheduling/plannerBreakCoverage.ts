@@ -140,8 +140,9 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     for(let i=0;i<workers.length;i++){
       const start=first.start+(offset+Math.floor(i/simultaneous)*duration)*60000;
       const end=start+duration*60000;
-      const coverageIds=new Set(span.units.filter(u=>u.start>=start && u.end<=end)
-        .map(u=>u.coverageId));
+      // Bind the chosen break-taking team to all contiguous demand rows,
+      // including rows before and after the break itself.
+      const coverageIds=new Set(span.units.map(u=>u.coverageId));
       for(const coverageId of coverageIds)
         results.push({employeeId:workers[i].id,coverageId,locationId:span.locationId,
           start,end,workStart:first.start,workEnd:last.end});
