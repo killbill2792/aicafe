@@ -282,6 +282,38 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 });
 
+describe("review verdict publication policy",()=>{
+  it("publishes a supported but incomplete answer as a partial reply",async()=>{
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:false,
+          reason:"Other parts of the owner request remain unanswered."});
+      return response(answer([{kind:"advice",
+        text:"Compare the verified inputs before making changes.",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"Help review my business decisions."},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(JSON.stringify(result.reply.blocks)).toContain("Compare the verified inputs");
+    expect(JSON.stringify(result.reply.blocks)).toContain("Other parts of the owner request remain unanswered.");
+    expect(result.reply.status).not.toBe("unavailable");
+  });
+  it("returns an honest reply for complete-only verdict without publishing unsupported claims",async()=>{
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:true,
+          reason:"The model asserted a completed action without any tool evidence."});
+      return response(answer([{kind:"advice",text:"I have published everyone's shifts.",
+        citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"Have you published the staff schedule?"},transport);
+    expect(result.reply.status).toBe("insufficient_evidence");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("I have published");
+    expect(result.reply.blocks.some(b=>b.type==="warning")).toBe(true);
+  });
+});
+
 describe("direct-answer investigation rounds report why they were rejected",()=>{
   it("logs answerRejectedReason render_failed when the proposed answer cites an unknown observation",async()=>{
     const transport=transportFor([

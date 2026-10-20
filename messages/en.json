@@ -1951,6 +1951,7 @@
     "field_laborCostEstimated": "Labor costs include estimates"
   },
   "SupervisorInvestigation": {
+    "unansweredGoal": "Part of your request remains unanswered: ",
     "yes": "yes",
     "no": "no",
     "advice": "General guidance and suggested next steps; not a verified finding about your café.",

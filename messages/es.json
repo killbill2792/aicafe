@@ -1951,6 +1951,7 @@
     "field_laborCostEstimated": "Los costos laborales incluyen estimaciones"
   },
   "SupervisorInvestigation": {
+    "unansweredGoal": "Una parte de tu solicitud sigue sin respuesta: ",
     "yes": "sí",
     "no": "no",
     "advice": "Orientación general y próximos pasos sugeridos; no son hallazgos verificados sobre tu cafetería.",

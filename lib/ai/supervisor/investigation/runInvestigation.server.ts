@@ -194,6 +194,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
   const usage:InvestigationUsage={model:input.model,modelCallCount:0,toolCallCount:0,inputTokens:0,outputTokens:0};
   const labels=investigationLabels(input.locale);
+  // Surface precisely which owner goal remains unanswered, in the owner's
+  // language, rather than silently publishing an incomplete candidate.
+  const incompleteNotice=(reason:string)=>(labels.unansweredGoal+reason).slice(0,1100);
+  const missingGoalWarning=(reason:string):SupervisorReplyBlock=>({
+    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:incompleteNotice(reason),
+  });
   // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
   // production diagnostics logger; only ties this one turn's raw debug
@@ -209,7 +215,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // set from a round that failed mechanical rendering -- never from a round
   // that reached the independent review, whose negative verdict is an
   // actual finding, not a formatting slip, and must never be rescued.
-  let lastUnverifiedAnswer:{text:string;citedIds:string[]}|null=null;
+  let lastUnverifiedAnswer:{text:string;citedIds:string[];missingGoalReason?:string}|null=null;
   // §7: the best claim-level-masked candidate seen across the WHOLE loop,
   // never just the final attempt. "Best" = fewest unresolved claim issues,
   // ties broken by most surviving content. Reused only when exhaustion
@@ -237,7 +243,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
         citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
-  const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"])=>{
+  const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"]):
+    Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>=>{
     let rescue=budget&&!!lastUnverifiedAnswer;
     if(rescue&&lastUnverifiedAnswer){
       // A rescued answer can still describe real café data through its
@@ -273,7 +280,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(accumulatedRescue){
         const accReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-          instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,
+          instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,
             observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
             proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
           apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
@@ -282,7 +289,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete)accumulatedRescue=false;
+        // Complete-but-unsupported is still a delivered response, never an
+        // assertion of facts the reviewer found unsupported.
+        if(accReview&&!isToolCallSignal(accReview)&&!accReview.supported&&accReview.complete)
+          return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
+            blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
+              text:labels.unverifiedWarning},
+              {type:"text",text:labels.unavailable}]},usage:{...usage}};
+        if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
+          accumulatedRescue=false;
+        else if(!accReview.complete && bestAccumulated)
+          bestAccumulated={...bestAccumulated,status:"partial",
+            blocks:bestAccumulated.blocks.length<30?
+              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
+              bestAccumulated.blocks};
       }
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
@@ -315,6 +335,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         ...(pure?[{type:"warning" as const,code:"P3_CONDITIONAL",text:labels.conditional}]:[]),
         {type:"warning",code:"SUPERVISOR_UNVERIFIED",text:labels.unverifiedWarning},
         ...citationCautionWarnings(citedObservations,input.locale),{type:"text",text:lastUnverifiedAnswer.text}];
+      if(lastUnverifiedAnswer.missingGoalReason&&blocks.length<30)
+        blocks.push(missingGoalWarning(lastUnverifiedAnswer.missingGoalReason));
       return {reply:{intent:pure?"profitability" as const:"unknown" as const,status:"insufficient_evidence" as const,
         evidence:[],blocks},usage:{...usage}};
     }
@@ -406,6 +428,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const views=observations.map(o=>({id:o.id,capabilityId:o.capabilityId,input:o.input,
       result:preview(o.result),displayTokens:Object.fromEntries(Object.entries(o.display).slice(0,100)),
       datasetFields:o.datasetFields,collections:recordCollections(o.result.value),previewOnly:true}));
+    logSupervisorDebugPayload({point:"round_context",requestId:debugRequestId,round,
+      observations:views,authorizedOperands:operands,bindings,availableCapabilities:manifest.map(m=>m.id),
+      previousFeedback:feedback,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     if(Buffer.byteLength(JSON.stringify(views))>INVESTIGATION_LIMITS.observationsBytes)
       return await failure(true,"observations_too_large");
     // Reserve one model attempt for an answer and one for its independent
@@ -537,7 +562,23 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!canDispatch){
         feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
         logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
-          outcome:"rejected_preflight",requested:step.calls.map(c=>c.name)});
+          outcome:"rejected_preflight",requested:step.calls.map(c=>({name:c.name,arguments:c.arguments,callId:c.callId})),
+          preflight:{allCallsSupported:requests.length===step.calls.length,
+            withinOperationBudget:usage.toolCallCount+requests.length<=INVESTIGATION_LIMITS.operations,
+            canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
+            canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
+            neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
+            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args)),
+            perCall:requests.map(v=>({
+              callId:v.call.callId,capabilityId:v.capabilityId,
+              currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
+                (identity.currency==="USD"&&financialReadsAvailable),
+              datesMatch:investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,
+                ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
+              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,input.text,
+                identity.asOf,memory,ownerStatements),
+              registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
+            }))}});
         continue;
       }
       for(const signature of signatures)attempted.add(signature);
@@ -548,15 +589,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // for stable r1/r2 citation IDs even if a later reader finishes first.
       const completed=await Promise.all(requests.map(async selectedRead=>{
         let dispatched=false;
+        const operationStartedAt=Date.now();
         const result=await registry.invoke(scope,selectedRead.capabilityId,selectedRead.args,()=>{
           dispatched=true;
           usage.toolCallCount++;
           input.onUsage?.({...usage});
         });
-        return {...selectedRead,result,dispatched};
+        return {...selectedRead,result,dispatched,durationMs:Date.now()-operationStartedAt};
       }));
       for(const item of completed){
-        const {capabilityId,args,result,dispatched,definition,call}=item;
+        const {capabilityId,args,result,dispatched,durationMs,definition,call}=item;
         if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
         if(dispatched){
           const cal=investigationCalendarScope(args,definition.owner);
@@ -586,7 +628,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         observations.push(observation);
         logSupervisorDebugPayload({point:"tool_result",requestId:debugRequestId,round,
           callId:call.callId,capabilityId,toolArguments:args,result,observationId:id,
-          dispatched,parallel:true});
+          dispatched,parallel:true,durationMs});
         input.onDiagnostic?.({stage:"investigation_round",agent:friendlyAgent(definition.owner),
           capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       }
@@ -616,6 +658,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           value:o.result.value,status:o.result.status,displayRaw:o.displayRaw}))});
       let rendered=renderInvestigationAnswer(answer,observations,input.locale,{ownerText});
       let reply=investigationReply(answer,observations,input.locale,{ownerText});
+      logSupervisorDebugPayload({point:"answer_rendered",requestId:debugRequestId,round,
+        rawAnswer:answer,renderedAnswer:rendered,replyCandidate:reply,
+        availableObservationIds:observations.map(o=>o.id)});
       if(!rendered||!reply){
         // Nothing in this draft survived even claim-level masking (section 3)
         // -- e.g. every paragraph was dropped for a structural citation
@@ -630,7 +675,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const rescued=renderUnverifiedAnswer(answer,observations,input.locale);
         if(rescued){
           const rescueReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-            instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
+            instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,observations:views,
               proposedAnswer:answer,renderedAnswer:[{type:"text",text:rescued.text}]},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
           // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
@@ -638,8 +683,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             supported:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.supported:null,
             complete:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.complete:null,
             reason:rescueReview&&!isToolCallSignal(rescueReview)?rescueReview.reason:null});
-          if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported&&rescueReview.complete)
-            lastUnverifiedAnswer=rescued;
+          if(rescueReview&&!isToolCallSignal(rescueReview)&&rescueReview.supported)
+            lastUnverifiedAnswer={...rescued,
+              missingGoalReason:rescueReview.complete?undefined:rescueReview.reason};
         }
         feedback="Use exact supplied display tokens for numbers/dates/URLs and valid evidence citations. Advice is not a café observation.";
         lastRejectedAnswerSignature=answerSignature;
@@ -662,7 +708,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           const targetParagraph=answer.paragraphs[extractable.paragraphIndex];
           const extraction=await requestInvestigation({name:"supervisor_formula_extraction",schema:formulaExtractionSchema,
             instructions:formulaExtractionInstructions,
-            context:{ownerRequest:input.text,ownerStatements,paragraphText:targetParagraph?.text??"",
+            context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,paragraphText:targetParagraph?.text??"",
               targetClaim:extractable.text,observations:views},
             apiKey:input.apiKey,model:input.model,transport,usage,deadline,reserveModelCalls:2,
             onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
@@ -699,7 +745,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         continue;
       }
       const review:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
-        instructions:reviewInstructions,context:{ownerRequest:input.text,ownerStatements,observations:views,
+        instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,observations:views,
           proposedAnswer:answer,renderedAnswer:rendered.blocks},apiKey:input.apiKey,model:input.model,
         transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
       const reviewReason:string|null=review&&!isToolCallSignal(review)?review.reason:null;
@@ -707,7 +753,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
-      if(!review||isToolCallSignal(review)||!review.supported||!review.complete){
+      if(review&&!isToolCallSignal(review)&&!review.supported&&review.complete){
+        // An OR-positive verdict must produce a user-visible reply, but the
+        // reviewer has NOT certified these factual claims. Never publish
+        // the rejected draft, even with a disclaimer about invented numbers.
+        return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
+          blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
+            text:labels.unverifiedWarning},
+            {type:"text",text:labels.unavailable}]},usage:{...usage}};
+      }
+      if(!review||isToolCallSignal(review)||!review.supported){
         // A valid verdict always carries its own specific reason now (§6):
         // name exactly what the reviewer found, instead of the generic line
         // that used to be the only signal across every retry (production
@@ -735,13 +790,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(latestOwner.identity.businessId!==identity.businessId||latestOwner.identity.timezone!==identity.timezone||
         latestOwner.identity.currency!==identity.currency||latestOwner.identity.asOf!==identity.asOf)
         return await failure(false,"identity_mismatch");
-      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply.evidence.some(r=>r.identifier===o.reference?.identifier)))
+      if(!financialReadsAvailable&&observations.some(o=>o.requiresSnapshot&&reply!.evidence.some(r=>r.identifier===o.reference?.identifier)))
         return await failure(false,"snapshot_mismatch");
       if(atomic.status==="available"&&observations.some(o=>o.reference&&o.requiresSnapshot)){
         const latest=await readAuthorizedAtomicP1SourceSnapshot();
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
+      if(!review.complete)reply={...reply!,status:"partial",
+        blocks:reply!.blocks.length<30?
+          [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
@@ -762,9 +820,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const unknownToolSignature=step.name+":"+observations.length;
       if(unknownToolSignature===lastUnknownToolName)return await failure(true,"no_progress");
       lastUnknownToolName=unknownToolSignature;
-      feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
+      feedback="Unknown tool selection. Choose one of the registered capabilities.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"unknown_tool",toolName:step.name,feedback});continue;
     }
-    let args:unknown;try{args=JSON.parse(step.arguments);}catch{feedback="Tool arguments must be valid JSON.";continue;}
+    let args:unknown;try{args=JSON.parse(step.arguments);}catch{
+      if(capabilityId===EXPRESSION_ID)
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"invalid_arguments_json",rawArguments:step.arguments});
+      feedback="Tool arguments must be valid JSON.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"invalid_arguments_json",toolName:step.name,rawArguments:step.arguments,feedback});
+      continue;
+    }
     const signature=JSON.stringify(canonicalSelector([
       capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
     if(attempted.has(signature)){
@@ -774,7 +842,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // one -- so this stays a feedback-and-retry, never the adaptive
       // budget's immediate stop (section 1), which is reserved for a round
       // that repeats a prior failed attempt with no new information.
-      feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;
+      feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
+      continue;
     }
     attempted.add(signature);
     logSupervisorDebugPayload({point:"tool_request",requestId:debugRequestId,round,
@@ -783,35 +854,74 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       agent:friendlyAgent(capabilityId===EXPRESSION_ID?"platform":manifest.find(m=>m.id===capabilityId)?.owner),
       capabilityId,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
     let result:unknown;
+    const operationStartedAt=Date.now();
     let calculation=false;
+    let calculatorDispatched=false;
     let calculationPeriods:string[]=[];
     let readDomain:string|undefined;
     let readDispatched=false;
     if(capabilityId===EXPRESSION_ID){
       if(identity.currency!=="USD"){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"unsupported_currency",toolArguments:args,authorizedOperands:operands});
         feedback="The registered expression calculator supports USD only. Explain the currency limitation without relabeling local amounts or inventing conversions.";continue;
       }
       const plan=planSchema.safeParse(args);
-      if(!plan.success){feedback="Select the registered expression contract and its typed nodes.";continue;}
+      if(!plan.success){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"invalid_plan",toolArguments:args,issues:plan.error.issues});
+        feedback="Select the registered expression contract and its typed nodes.";continue;
+      }
       const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
       const selected=operands.filter(o=>handles.has(o.handle));
-      if(selected.length!==handles.size||selected.length>12){feedback="One or more operand handles were not authorized, or the expression is too large.";continue;}
+      if(selected.length!==handles.size||selected.length>12){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"unknown_operand",toolArguments:args,requestedHandles:[...handles],
+          authorizedHandles:operands.map(o=>o.handle)});
+        feedback="One or more operand handles were not authorized, or the expression is too large.";continue;
+      }
       calculationPeriods=selected.filter(o=>!o.handle.startsWith("dataset:")&&o.period!=null).map(o=>
         resolvedPeriod({period:{from:o.period!.from,to:o.period!.to}}));
-      result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{businessId:identity.businessId,
+      const selectedBindings=bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId));
+      const simulationContext={businessId:identity.businessId,
         locationId:null,ownerMessage:ownerStatements.join("\n").slice(-4000),currency:identity.currency,
         operands:plan.data.purpose==="no_external_sources"?[]:selected,
-        bindings:bindings.filter(b=>selected.some(o=>o.capabilityId===b.capabilityId))},()=>{
+        bindings:selectedBindings};
+      logSupervisorDebugPayload({point:"calculator_input",requestId:debugRequestId,round,
+        capabilityId:EXPRESSION_ID,modelPlan:args,validatedPlan:plan.data,
+        simulationContext,selectedOperandHandles:[...handles]});
+      result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,simulationContext,()=>{
+        calculatorDispatched=true;
         usage.toolCallCount++;
         input.onUsage?.({...usage});
       });
       const checked=simulationOutputSchema.safeParse(result);
-      if(!checked.success){feedback="The calculator could not validate its result.";continue;}
+      if(!checked.success){
+        logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
+          reasonCode:"calculator_invalid_result",toolArguments:args,rawResult:result,
+          issues:checked.error.issues});
+        feedback="The calculator could not validate its result.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"calculator_invalid_result",capabilityId,toolArguments:args,feedback});
+        continue;
+      }
       result=checked.data;
+      logSupervisorDebugPayload({point:"calculator_result",requestId:debugRequestId,round,
+        toolArguments:args,validatedPlan:plan.data,selectedOperands:selected,
+        rawResult:result,result:checked.data,
+        reasonCode:checked.data.status==="unavailable"?
+          (calculatorDispatched?"calculation_unavailable":"simulation_input_rejected"):undefined,
+        executed:calculatorDispatched,
+        durationMs:Date.now()-operationStartedAt});
       calculation=true;
     }else{
       readDomain=manifest.find(m=>m.id===capabilityId)?.owner;
-      if(!readDomain){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
+      if(!readDomain){
+        feedback="Unknown or non-read capability. No effects are permitted.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"not_a_read_capability",capabilityId,toolArguments:args,feedback});
+        continue;
+      }
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
       let calendarText=input.text;
@@ -838,11 +948,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(!investigationReadDatesMatch(args,calendarText,identity.asOf,memory,ownerStatements,readDomain,
         id=>manifest.find(m=>m.id===id)?.owner)){
-        feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
+        feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"calendar_scope_mismatch",capabilityId,toolArguments:args,calendarText,feedback});
+        continue;
       }
       const currencyPolicy=manifest.find(m=>m.id===capabilityId)!.currencyPolicy;
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
-        feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
+        feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"financial_scope_unavailable",capabilityId,toolArguments:args,
+          currency:identity.currency,financialReadsAvailable,feedback});
+        continue;
       }
       result=await registry.invoke(scope,capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
@@ -852,7 +969,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         input.onUsage?.({...usage});
       });
     }
-    if(!record(result)){feedback="The tool result was invalid.";continue;}
+    if(!record(result)){
+      feedback="The tool result was invalid.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"invalid_result_envelope",capabilityId,toolArguments:args,result,feedback});
+      continue;
+    }
     // Preserve a typed date/week selector whenever the real domain reader was
     // dispatched, even if it returned an unavailable/unauthorized domain status.
     // A result reason must never be mistaken for a registry preflight verdict.
@@ -906,7 +1028,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"capability_round",requestId:debugRequestId,round,
       capabilityId,callId:step.callId,toolArguments:args,rawResult:result,
-      observationId:id,status:String(result.status),successful});
+      observationId:id,status:String(result.status),successful,
+      durationMs:Date.now()-operationStartedAt,dispatched:calculatorDispatched||readDispatched});
   }
   return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import {z} from "zod";
-import {SupervisorStageError, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
+import {modelTokenUsage,estimateModelCallCostMicros,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
+import {SupervisorStageError,logSupervisorDebugPayload, type SupervisorDiagnostic} from "@/lib/ai/conversations/diagnostics.server";
 import {buildInvestigationRequest} from "@/lib/ai/conversations/investigationRequest.mjs";
 import {SUPERVISOR_ENDPOINT} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import {INVESTIGATION_LIMITS} from "./protocol";
@@ -126,6 +127,7 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
   if(input.usage.modelCallCount>=maxCalls||Date.now()>=input.deadline||
     input.usage.outputTokens>=INVESTIGATION_LIMITS.totalOutputTokens)return null;
   input.usage.modelCallCount++;
+  const providerCallStartedAt=Date.now();
   input.onUsage?.({...input.usage});
   const controller=new AbortController();
   // Distinguish our shorter, explicit tool-selection reserve from the ordinary
@@ -148,12 +150,19 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
         INVESTIGATION_LIMITS.totalOutputTokens-input.usage.outputTokens));
       const jsonSchema=closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(
         z.toJSONSchema(input.schema,{unrepresentable:"any",reused:"inline"})));
+      const wireRequest=buildInvestigationRequest({model:input.usage.model,name:input.name,
+        instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
+        tools:input.tools?.map(t=>({name:t.name,description:t.description,
+          parameters:closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(t.parameters))}))});
+      // Private trace keeps the exact provider request body, never the bearer token.
+      logSupervisorDebugPayload({point:"model_request",requestName:input.name,
+        attempt,model:input.usage.model,body:wireRequest,
+        modelCallCount:input.usage.modelCallCount,maxOutputTokens,
+        providerTimeoutMs:Math.max(1,Math.min(INVESTIGATION_LIMITS.providerTimeoutMs,
+          remainingDeadlineMs))});
       const response=await input.transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
         headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
-        body:JSON.stringify(buildInvestigationRequest({model:input.usage.model,name:input.name,
-          instructions:input.instructions,context:input.context,maxOutputTokens,schema:jsonSchema,
-          tools:input.tools?.map(t=>({name:t.name,description:t.description,
-            parameters:closeRequiredForStrictMode(stripUnsupportedJsonSchemaKeywords(t.parameters))}))})),
+        body:JSON.stringify(wireRequest),
       });
       if(!response.ok){
         const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
@@ -165,14 +174,53 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
           clearTimeout(timeout);
           return requestInvestigationCore({...input,model:fallback});
         }
+        logSupervisorDebugPayload({point:"model_response_error",requestName:input.name,
+          attempt,httpStatus:response.status,providerErrorCode:code||null,
+          durationMs:Date.now()-providerCallStartedAt,
+          modelCallCount:input.usage.modelCallCount,
+          providerRequestId:response.headers.get("x-request-id")});
         throw new SupervisorStageError("provider_http","provider_response",
           {httpStatus:response.status,providerErrorCode:code||undefined});
       }
       const raw=await response.json();
+      logSupervisorDebugPayload({point:"model_response",requestName:input.name,attempt,
+        httpStatus:response.status,raw,durationMs:Date.now()-providerCallStartedAt,
+        modelCallCount:input.usage.modelCallCount,
+        providerRequestId:response.headers.get("x-request-id")});
       const positive=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)&&v>=0?v:0;
       input.usage.inputTokens+=positive(raw.usage?.input_tokens);
       input.usage.outputTokens+=positive(raw.usage?.output_tokens);
       input.onUsage?.({...input.usage});
+      const tokens=modelTokenUsage(raw.usage);
+      const providerModel=typeof raw.model==="string"?raw.model:null;
+      const actualModel=providerModel??input.usage.model;
+      const primary=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+      const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
+      const prefix=actualModel===primary?"SUPERVISOR_":
+        (fallback&&actualModel===fallback?"SUPERVISOR_FALLBACK_":null);
+      const configured=prefix?{
+        input:process.env[prefix+"INPUT_USD_PER_MILLION_TOKENS"],
+        cachedInput:process.env[prefix+"CACHED_INPUT_USD_PER_MILLION_TOKENS"],
+        output:process.env[prefix+"OUTPUT_USD_PER_MILLION_TOKENS"],
+      }:{input:undefined,cachedInput:undefined,output:undefined};
+      const hasConfiguredRate=Object.values(configured).some(v=>v!==undefined);
+      const snapshot=tokens&&!hasConfiguredRate?
+        standardModelTokenRates(actualModel,raw.service_tier??null,tokens.inputTokens):null;
+      const rates=snapshot??configured;
+      // Pricing is an estimate from explicit model/tier rates, not the provider invoice.
+      const estimatedCostMicros=tokens?estimateModelCallCostMicros(tokens,rates):null;
+      logSupervisorDebugPayload({point:"model_usage",requestName:input.name,
+        model:actualModel,requestedModel:input.usage.model,
+        providerRequestId:response.headers.get("x-request-id"),responseId:raw.id,
+        modelCallCount:input.usage.modelCallCount,attempt,status:raw.status,
+        serviceTier:raw.service_tier??null,
+        usage:tokens??null,rawUsage:raw.usage??null,estimatedCostMicros,
+        rateUsdPerMillion:snapshot||hasConfiguredRate?rates:null,
+        pricingSource:snapshot?"openai_standard_short_context_2026_10_19":
+          hasConfiguredRate?"environment_configured":"unpriced",
+        pricingStatus:!tokens?"usage_unavailable":
+          estimatedCostMicros===null?"missing_or_mismatched_rate":"configured_estimate",
+        durationMs:Date.now()-providerCallStartedAt});
       // "incomplete" (e.g. hit the output-token limit) is a one-time model
       // hiccup worth retrying. Any other non-"completed" status (failed,
       // cancelled, ...) is a terminal provider-side failure, not a retryable
@@ -315,6 +363,11 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
     // This is the only visibility production has into why an investigation
     // step failed; without it, a failure here is otherwise completely silent
     // between "cafe_identity_loaded" and "reply_persistence" in the logs.
+    logSupervisorDebugPayload({point:"model_attempt_failed",requestName:input.name,attempt,
+      category:classified.category,durationMs:Date.now()-providerCallStartedAt,
+      httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
+      providerErrorCode:classified.providerErrorCode,
+      modelCallCount:input.usage.modelCallCount});
     input.onDiagnostic?.({stage:"provider_response",category:classified.category,
       httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
       providerErrorCode:classified.providerErrorCode,requestName:input.name,

@@ -2,6 +2,8 @@ import {afterEach,describe,expect,it,vi} from "vitest";
 vi.mock("server-only",()=>({}));
 import {createSupervisorDiagnosticLogger,classifySupervisorError,SupervisorStageError,readSafeProviderError,logSupervisorDebugPayload} from "./diagnostics.server";
 import {SupervisorReplyValidationError} from "./replyValidation";
+import {withSupervisorPrivateTrace,isSupervisorPrivateTraceTester} from "./privateTrace.server";
+import {gunzipSync} from "node:zlib";
 describe("Sanitized Supervisor production diagnostics",()=>{
   it("includes a stable request correlation ID with safe stage/counters only",()=>{
     const written:string[]=[];
@@ -352,6 +354,162 @@ describe("TEMPORARY test-only debug capture (logSupervisorDebugPayload)",()=>{
     const logged=JSON.parse(lines[0]);
     expect(logged).toMatchObject({point:"http_response_sent",httpStatus:201,
       replyStatus:"insufficient_evidence"});
+  });
+});
+
+describe("cost ledger and single-user pilot access",()=>{
+  it("requires an exact, explicitly configured UUID to activate pilot capture",()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","11111111-1111-4111-8111-111111111111");
+    try{
+      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(true);
+      expect(isSupervisorPrivateTraceTester("22222222-2222-4222-8222-222222222222")).toBe(false);
+      vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","");
+      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(false);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("provides a per-turn cached-aware token and cost ledger",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let recorded:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",requestName:"supervisor_investigation_step",
+          modelCallCount:1,body:{name:"test"}});
+        logSupervisorDebugPayload({point:"model_usage",model:"gpt-6-luna",
+          requestName:"supervisor_investigation_step",
+          usage:{inputTokens:10000,cachedInputTokens:6000,uncachedInputTokens:4000,
+            outputTokens:2000,reasoningOutputTokens:1200},estimatedCostMicros:1460});
+      },async result=>{recorded=result;});
+      const totals=recorded!.events.at(-1)!;
+      expect(totals.point).toBe("trace_summary");
+      expect(totals.expectedModelRequests).toBe(1);
+      expect(totals.inputTokens).toBe(10000);
+      expect(totals.cachedInputTokens).toBe(6000);
+      expect(totals.reasoningOutputTokens).toBe(1200);
+      expect(totals.estimatedCostMicros).toBe(1460);
+      expect(totals.captureComplete).toBe(true);
+      expect(recorded!.droppedCount).toBe(0);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("does not present an unpriced attempted call as a zero-dollar bill",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let recorded:{events:Record<string,unknown>[]}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",requestName:"step",body:{model:"unknown"}});
+      },async result=>{recorded=result;});
+      const totals=recorded!.events.at(-1)!;
+      expect(totals.estimatedCostMicros).toBeNull();
+      expect(totals.missingUsageResponses).toBe(1);
+      expect(totals.captureComplete).toBe(true);
+      expect(totals.tokenCostComplete).toBe(false);
+    }finally{vi.unstubAllEnvs();}
+  });
+});
+
+describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
+  it("records exact R1 source values, exact model preview, selected formula and delivered response",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let trace:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",ownerQuestion:"What is my recurring cost?"});
+        logSupervisorDebugPayload({point:"tool_result",observationId:"r1",
+          capabilityId:"p3.money.monthly_bills.v1",
+          toolArguments:{id:"money.monthly_bills"},
+          result:{status:"verified",value:{totalCents:746700},unit:"typed_record"}});
+        logSupervisorDebugPayload({point:"model_request",requestName:"supervisor_investigation_step",
+          body:{input:[{role:"user",content:JSON.stringify({
+            observations:[{id:"r1",result:{value:{totalCents:746700}}}],
+            authorizedOperands:[{handle:"money.monthly_bills:value:totalCents",unit:"USD_cents"}]})}]}});
+        logSupervisorDebugPayload({point:"model_response",raw:{
+          usage:{input_tokens:120,output_tokens:40},
+          output:[{type:"function_call",name:"calculate",arguments:JSON.stringify({
+            nodes:[{op:"source",handle:"money.monthly_bills:value:totalCents"}]})}]}});
+        logSupervisorDebugPayload({point:"http_response_sent",httpStatus:201,
+          responseBody:{reply:{status:"verified",blocks:[{type:"text",text:"$7,467.00"}]}}});
+      },async t=>{trace=t;});
+      expect(trace!.droppedCount).toBe(0);
+      expect(trace!.events.map(e=>e.point)).toEqual([
+        "turn_received","tool_result","model_request","model_response","http_response_sent","trace_summary"]);
+      expect((trace!.events[1].result as {value:{totalCents:number}}).value.totalCents).toBe(746700);
+      expect(JSON.stringify(trace!.events[2])).toContain("money.monthly_bills:value:totalCents");
+      expect(JSON.stringify(trace!.events[3])).toContain("input_tokens");
+      expect(JSON.stringify(trace!.events[4])).toContain("$7,467.00");
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("redacts pasted bank-statement lines while retaining non-bank amounts",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let trace:{events:Record<string,unknown>[]}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",
+          ownerQuestion:"Review this: 10/19 ACME -$45.00\nMy rent is $700."});
+      },async t=>{trace=t;});
+      const logged=JSON.stringify(trace);
+      expect(logged).not.toContain("10/19 ACME -$45.00");
+      expect(logged).toContain("[bank_line_removed]");
+      expect(logged).toContain("$700");
+    }finally{vi.unstubAllEnvs();}
+  });
+});
+
+describe("authenticated private trace buffer",()=>{
+  it("preserves large model inputs via compressed private events without dropping them",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",requestName:"supervisor_investigation_step",
+          body:{input:"a".repeat(90000),apiKey:"do-not-store"}});
+      },async trace=>{payload=trace;});
+      expect(payload!.droppedCount).toBe(0);
+      expect(payload!.events).toHaveLength(2);
+      const item=payload!.events[0];
+      expect(item.encoding).toBe("gzip-base64");
+      const raw=JSON.parse(gunzipSync(Buffer.from(item.data as string,"base64")).toString("utf8"));
+      expect(raw.body.input).toHaveLength(90000);
+      expect(raw.body.apiKey).toBe("[credential_removed]");
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("redacts secrets pasted into owner text and retains deep arrays without silent loss",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    try{
+      let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"turn_received",
+          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567\nAuthorization: Basic dXNlcjpwYXNz\nCookie: session=my-cookie-session\nmy API token is MYAPITOKENVALUE\\n{\"password\":\"JSON_PASSWORD_SENSITIVE\",\"clientSecret\":\"JSON_CLIENT_SECRET\"}",
+          parameters:{rows:Array.from({length:180},(_,i)=>({item:i}))}});
+      },async trace=>{payload=trace;});
+      const serialized=JSON.stringify(payload);
+      expect(serialized).not.toContain("VERYSECRET0123456789");
+      expect(serialized).not.toContain("sk-proj-abcdefghi1234567");
+      expect(serialized).not.toContain("dXNlcjpwYXNz");
+      expect(serialized).not.toContain("my-cookie-session");
+      expect(serialized).not.toContain("MYAPITOKENVALUE");
+      expect(serialized).not.toContain("JSON_PASSWORD_SENSITIVE");
+      expect(serialized).not.toContain("JSON_CLIENT_SECRET");
+      expect(payload!.droppedCount).toBe(0);
+      expect((payload!.events[0].parameters as {rows:unknown[]}).rows).toHaveLength(180);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("keeps exact diagnostic parameters but strips credential properties",async()=>{
+    vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_ENABLED","true");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","false");
+    try{
+      let collected:{events:Record<string,unknown>[];droppedCount:number}|null=null;
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"calculator_rejected",reasonCode:"unknown_operand",
+          toolArguments:{nodes:[{op:"source",handle:"unknown"}]},
+          ownerQuestion:"What are my wages?",authorization:"Bearer sensitive"});
+      },async trace=>{collected=trace;});
+      expect(collected).not.toBeNull();
+      const content=JSON.stringify(collected);
+      expect(content).toContain("unknown_operand");
+      expect(content).toContain("What are my wages?");
+      expect(content).not.toContain("Bearer sensitive");
+      expect(collected!.events).toHaveLength(2);
+    }finally{vi.unstubAllEnvs();}
   });
 });
 
