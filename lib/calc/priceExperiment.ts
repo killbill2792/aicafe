@@ -66,7 +66,9 @@ export function evaluatePriceExperiment(baseline:PriceExperimentBaseline,days:re
   if(!valid||!covered.length)return {status:"insufficient_evidence",coveredDays:0,
     units:null,observedRevenueCents:null,baselineAtObservedVolumeCents:null,
     realizedRevenueDifferenceCents:null,observedIngredientContributionCents:null,
-    expectedUpliftAtObservedVolumeCents:null,recommendation:"adjust",
+    expectedUpliftAtObservedVolumeCents:null,baselineRevenue7DaysCents:null,
+    baselineIngredientContribution7DaysCents:null,revenueChangeVsBaselineCents:null,
+    ingredientContributionChangeVsBaselineCents:null,recommendation:"adjust",
     caveat:"no_causal_demand_attribution"};
   const qty=covered.reduce((n,d)=>n+d.units,0);
   const revenue=covered.reduce((n,d)=>n+d.netSalesCents,0);
@@ -90,6 +92,7 @@ export function evaluatePriceExperiment(baseline:PriceExperimentBaseline,days:re
   const actualRevenueChange=previousRevenue===null?null:revenue-previousRevenue;
   const actualContributionChange=previousContribution===null?null:actualContribution-previousContribution;
   if(previousRevenue===null||previousContribution===null||
+    actualRevenueChange===null||actualContributionChange===null||
     !Number.isSafeInteger(actualRevenueChange)||!Number.isSafeInteger(actualContributionChange))
     return {status:"insufficient_evidence",coveredDays:covered.length,units:null,
       observedRevenueCents:null,baselineAtObservedVolumeCents:null,
