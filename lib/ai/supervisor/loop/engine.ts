@@ -90,6 +90,7 @@ export interface LoopRepository{
     action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",
     startDate?:string):Promise<LoopProposal>;
   addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>;
+  clearSample(scope:OwnerLoopScope,id:string,businessDate:string):Promise<void>;
   samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>;
   saveReport(scope:OwnerLoopScope,proposal:LoopProposal,report:LoopReport):Promise<void>;
 }
@@ -180,6 +181,10 @@ export async function monitorLoop(scope:OwnerLoopScope,registry:ReturnType<typeo
     if(sample){
       if(sample.businessDate!==businessDate)throw new Error("Monitor date scope mismatch");
       await repo.addSample(scope,p.id,sample);
+    }else{
+      // A corrected POS sync can revoke an earlier day's "actual" coverage.
+      // Never preserve a stale sample and call a now-incomplete period complete.
+      await repo.clearSample(scope,p.id,businessDate);
     }
   }
   if(!allowEarlyReport&&businessDate<end)return null;
