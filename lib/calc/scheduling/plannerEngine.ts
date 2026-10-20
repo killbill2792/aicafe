@@ -150,6 +150,15 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
       const current=plan.employees.filter(e=>qualifies(e,after,plan.locations) &&
         covers(e.id,after)).map(e=>e.id).sort();
       if(prev.length===current.length && prev.every(id=>current.includes(id)))continue;
+      // Entering/leaving an actual reserved break is not an employee handoff.
+      // Other cohort changes still require the configured overlap.
+      if(requirement.minHeadcountDuringBreak!=null){
+        const changed=[...new Set([...prev,...current])].filter(id=>
+          prev.includes(id)!==current.includes(id));
+        if(changed.length>0 && changed.every(id=>reserved.some(b=>
+          b.employeeId===id && b.coverageId===requirement.id &&
+          (b.start===after.start || b.end===after.start))))continue;
+      }
       const requiredStart=after.start-overlap*60_000;
       const sustained=(id:string)=> {
         for(let time=requiredStart;time<after.start;time+=grid){
@@ -157,8 +166,12 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
         }
         return true;
       };
+      const breaks=activeBreakReservations(after,reserved);
+      const target=requirement.minHeadcountDuringBreak==null?requirement.minHeadcount:
+        Math.max(requirement.minHeadcountDuringBreak,
+          requirement.minHeadcount-new Set(breaks.map(b=>b.employeeId)).size);
       let continuous=current.filter(sustained).length;
-      if(continuous>=requirement.minHeadcount)continue;
+      if(continuous>=target)continue;
       for(const id of current){
         if(sustained(id))continue;
         const extra:WorkUnit[]=[];
@@ -181,7 +194,7 @@ function repairHandoffs(input:PlannerInput,plan:ExpandedPlan,
           !hardValid([...work,...extra],plan,input))continue;
         work.push(...extra);extraUnits+=extra.length;
         continuous++;
-        if(continuous>=requirement.minHeadcount)break;
+        if(continuous>=target)break;
       }
     }
   }
@@ -222,7 +235,23 @@ function runObjective(input:PlannerInput,plan:ExpandedPlan,objective:Objective,
     const options=(candidates.get(unit.id)??[]).filter(id=>
       !reserved.some(b=>b.employeeId===id && b.start<unit.end && b.end>unit.start));
     for(const state of frontier){
-      const ranked=options.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
+      // A planned break cannot waive coverage unless its worker is actually
+      // scheduled on both sides; bind the workforce to each demand slice.
+      const participants=[...new Set(reserved.filter(b=>!b.historical &&
+        b.coverageId===unit.coverageId && b.workStart!=null && b.workEnd!=null &&
+        b.workStart<=unit.start && unit.end<=b.workEnd &&
+        !(b.start<unit.end && b.end>unit.start)).map(b=>b.employeeId))];
+      const already=participants.filter(id=>state.selected.some((selected,prior)=>
+        selected===id && plan.units[prior].coverageId===unit.coverageId &&
+        plan.units[prior].start===unit.start && plan.units[prior].end===unit.end));
+      const remaining=participants.filter(id=>!already.includes(id));
+      const seatsRemaining=plan.units.filter(u=>u.coverageId===unit.coverageId &&
+        u.start===unit.start && u.end===unit.end &&
+        (u.seatIndex??0)>=(unit.seatIndex??0) &&
+        demandSeatRequired(input,u,reserved)).length;
+      const allowed=remaining.length>=seatsRemaining
+        ? options.filter(id=>remaining.includes(id)):options;
+      const ranked=allowed.map(id=>({id,score:choiceScore(id,unit,plan,objective,state.work)}))
         .sort((a,b)=>a.score-b.score || a.id.localeCompare(b.id));
       for(const {id,score} of ranked){
         if(nodes>=maxNodes){exhausted=true;break;}
@@ -332,11 +361,12 @@ export function optimizeOliviaWeek(input:PlannerInput):PlannerResult {
       : eligibleCandidates(unit,plan,cache).map(e=>e.id);
     candidates.set(unit.id,options.sort());
   }
-  const reserved=hasBreakCoveragePolicy(input)
-    ?proposeBreakReservations(input,plan,cache):[];
   const objectives:Objective[]=["cash","owner_time","balanced"];
-  const outputs=objectives.map(objective=>runObjective(
-    input,plan,objective,cache,candidates,maxNodes,beamWidth,reserved));
+  const outputs=objectives.map(objective=>{
+    const reserved=hasBreakCoveragePolicy(input)
+      ?proposeBreakReservations(input,plan,cache,objective):[];
+    return runObjective(input,plan,objective,cache,candidates,maxNodes,beamWidth,reserved);
+  });
   const scenarios:PlannerScenario[]=[];
   const signatures=new Set<string>();
   for(const output of outputs){
