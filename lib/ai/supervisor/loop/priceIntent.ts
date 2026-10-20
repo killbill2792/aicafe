@@ -17,8 +17,8 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
   if(!Number.isSafeInteger(candidate)||candidate<1||candidate>100000)return false;
   const amounts=(text:string)=>{
     const normalized=decimalDigits(text.normalize("NFKC"));
-    const pattern=/(?<![\p{L}\p{N}.])([0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
-    return [...normalized.matchAll(pattern)].map(m=>Number(m[1]));
+    const pattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*[0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
+    return [...normalized.matchAll(pattern)].map(m=>Number(m[1].replace(/\s/gu,"").replace(/[−–—]/gu,"-")));
   };
   const currentAmounts=amounts(current);
   const selected=currentAmounts.length?currentAmounts:amounts(previous??"");
@@ -28,20 +28,24 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
  * variants is ambiguous even if the model guessed a valid UUID. */
 export function ownerNamedUniqueProduct(current:string,previous:string|undefined,
   selectedId:string,catalog:readonly {id:string;name:string;baseName:string}[]):boolean{
-  const text=normalizedDrinkName([current,previous??""].join(" "));
-  const seen=(name:string)=>{
-    const term=normalizedDrinkName(name);
-    return term.length>=2&&(" "+text+" ").includes(" "+term+" ");
+  // An explicit product in THIS turn overrides unrelated products discussed
+  // earlier. Only a product-free follow-up can inherit prior context.
+  const resolve=(ownerText:string):boolean|null=>{
+    const text=normalizedDrinkName(ownerText);
+    const seen=(name:string)=>{
+      const term=normalizedDrinkName(name);
+      return term.length>=2&&(" "+text+" ").includes(" "+term+" ");
+    };
+    const exact=catalog.filter(x=>seen(x.name));
+    if(exact.length)return exact.length===1&&exact[0].id===selectedId;
+    const based=catalog.filter(x=>seen(x.baseName));
+    if(based.length)return based.length===1&&based[0].id===selectedId;
+    // One distinctive token may identify a uniquely named item (e.g.,
+    // "latte" for "Iced Latte"), but never guess among menu size variants.
+    const ownerWords=new Set(text.split(" "));
+    const partial=catalog.filter(item=>normalizedDrinkName(item.name).split(" ")
+      .some(word=>word.length>=4&&ownerWords.has(word)));
+    return partial.length?partial.length===1&&partial[0].id===selectedId:null;
   };
-  const exact=catalog.filter(x=>seen(x.name));
-  if(exact.length)return exact.length===1&&exact[0].id===selectedId;
-  const based=catalog.filter(x=>seen(x.baseName));
-  if(based.length)return based.length===1&&based[0].id===selectedId;
-  // Owners often say "latte" where a sole catalog item is "Iced Latte".
-  // Permit a unique meaningful product-name token, NEVER an ambiguous size
-  // or the model's unsupported guess when multiple drinks share that token.
-  const ownerWords=new Set(text.split(" "));
-  const partial=catalog.filter(item=>normalizedDrinkName(item.name).split(" ")
-    .some(word=>word.length>=4&&ownerWords.has(word)));
-  return partial.length===1&&partial[0].id===selectedId;
+  return resolve(current)??resolve(previous??"")??false;
 }

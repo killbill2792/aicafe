@@ -19,6 +19,24 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Try adding 0 cents",undefined,0)).toBe(false);
   expect(ownerQuotedPriceDelta("Try adding 2.5 cents",undefined,5)).toBe(false);
  });
+ it("refuses negative cent quotes masquerading as a requested increase",()=>{
+  expect(ownerQuotedPriceDelta("Let's test -10 cents on latte",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Let's test −10 cents on latte",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Vamos a probar -10 centavos",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب −١٠ سنتات",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Let's test +10 cents on latte",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Let's test a 10-cent increase on latte",undefined,10)).toBe(true);
+ });
+ it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
+  expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
+    "How is the Mocha selling?","latte-small",catalog)).toBe(true);
+  expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
+    "How is the Mocha selling?","mocha",catalog)).toBe(false);
+  expect(ownerNamedUniqueProduct("Let's try it",
+    "Try Latte 12 oz by 10 cents","latte-small",catalog)).toBe(true);
+  expect(ownerNamedUniqueProduct("Let's test Latte by 10 cents",
+    "What about Mocha?","latte-small",catalog)).toBe(false);
+ });
  it("requires a unique named catalog variant, never model-selected ambiguity",()=>{
   expect(ownerNamedUniqueProduct("Try a 10-cent increase for Latte",undefined,"latte-small",catalog)).toBe(false);
   expect(ownerNamedUniqueProduct("Try a 10-cent increase for Latte 12 oz",undefined,"latte-small",catalog)).toBe(true);
