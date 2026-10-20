@@ -187,5 +187,5 @@ export async function POST(request: Request, context: RouteContext) {
     const summary=trace.events.findLast(e=>e.point==="trace_summary");
     logSupervisorDebugPayload({point:"trace_summary",
       ...(summary??{}),requestId:debugRequestId,droppedCount:trace.droppedCount});
-  });
+  },debugRequestId);
 }
