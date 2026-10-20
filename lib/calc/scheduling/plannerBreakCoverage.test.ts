@@ -59,6 +59,30 @@ describe("owner break coverage floor (pure calculation)",()=>{
     expect(recordedSeatRequired(args,plan,[published],seat)).toBe(false);
   });
 
+  it("never waives two concurrent required roles with one actual or reserved break",()=>{
+    const args:PlannerInput={...base,
+      coverage:[...base.coverage,{...base.coverage[0],id:"second-role",
+        minHeadcount:1,minHeadcountDuringBreak:0}]};
+    const plan=expandPlannerInput(args);
+    const at=Date.parse("2026-10-12T09:30:00.000Z");
+    const main=plan.units.find(u=>u.coverageId==="counter" &&
+      u.seatIndex===1 && u.start===at)!;
+    const other=plan.units.find(u=>u.coverageId==="second-role" &&
+      u.seatIndex===0 && u.start===at)!;
+    const recorded=[shift("a",[{startAt:"2026-10-12T09:30:00.000Z",
+      endAt:"2026-10-12T10:00:00.000Z",paid:false}])];
+    const credited=[main,other].filter(u=>!recordedSeatRequired(args,plan,recorded,u));
+    expect(credited).toHaveLength(1);
+    const simultaneous=[
+      {employeeId:"a",coverageId:"counter",locationId:"cafe",
+        start:at,end:at+30*60000},
+      {employeeId:"a",coverageId:"second-role",locationId:"cafe",
+        start:at,end:at+30*60000},
+    ];
+    expect([main,other].filter(u=>
+      !demandSeatRequired(args,plan,u,simultaneous))).toHaveLength(1);
+  });
+
   it("independent credit requires a real, fully contained reviewed break",()=>{
     const plan=expandPlannerInput(base);
     const during=plan.units.find(u=>u.seatIndex===1 &&
