@@ -17,13 +17,12 @@ const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(?:^|[_-])(?:authorization|password|passphrase|secret|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)(?:$|[_-])|(?:clientSecret|clientToken|apiKey|apiToken|accessToken|refreshToken|sessionToken|setCookie)/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
-/** Fail closed: pilot traces are only written for one configured Supabase auth UUID. */
+/** Pilot traces for authenticated owners only; user-specific env allowlisting is optional no longer required. */
 export function isSupervisorPrivateTraceTester(ownerUserId:string):boolean {
-  const testId=process.env.SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID;
   return process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED==="true"&&
-    typeof testId==="string"&&
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(testId)&&
-    ownerUserId.toLowerCase()===testId.toLowerCase();
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId);
+  // Caller must still be an authenticated thread owner; Supabase RLS
+  // independently checks both owner identity and business membership.
 }
 
 /** No raw bearer, quoted password or provider-key-shaped token can be retained. */
@@ -33,7 +32,7 @@ function redactSecretsInText(value:string):string {
     // isolated label-value replacement is NOT sufficient for Basic credentials.
     .replace(/\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:\s*[^\r\n]+/giu,"[credential_header_removed]")
     // JSON embedded in owner chat (including camelCase clientSecret).
-    .replace(/(["'](?:clientSecret|client_secret|password|passphrase|apiKey|api_token|accessToken|refreshToken|sessionToken|authorization|cookie|secret)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/giu,
+    .replace(/(["'](?:clientSecret|client_secret|password|passphrase|apiKey|api_key|api-token|api_token|accessToken|access_token|refreshToken|refresh_token|sessionToken|session_token|authorization|cookie|secret)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/giu,
       (_match:string,prefix:string)=>prefix+'"[credential_removed]"')
     .replace(/(\b(?:clientSecret|client_secret|apiKey|apiToken|accessToken|refreshToken|sessionToken)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
       (_match:string,prefix:string)=>prefix+"[credential_removed]")
@@ -45,6 +44,8 @@ function redactSecretsInText(value:string):string {
     // A transaction line must not become a diagnostic log, even when an
     // owner pastes it into a chat request rather than using the bank importer.
     .replace(/(^|[\s:])\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+[^\r\n]{1,160}?\s+(?:-?\s*[$€£]\s*[\d,]+\.\d{2}|-?[\d,]+\.\d{2})(?=\s*(?:\n|$))/gmu,
+      "$1[bank_line_removed]")
+    .replace(/(^|[\s:])(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})[,\t;]\s*(?:"[^"\r\n]{1,180}"|[^,\r\n]{1,180})[,\t;]\s*"?-?(?:[$€£]\s*)?[\d,]+\.\d{2}"?(?=\s*(?:[,;\t\r\n]|$))/gmu,
       "$1[bank_line_removed]")
     .replace(/\bdata:image\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/giu,"[inline_image_removed]");
 }

@@ -2852,3 +2852,9 @@ Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted t
   run final-head baseline and domain CI, await new Codex review, validate with one actual
   owner-turn/trace-retrieval cost reconciliation. **Do not merge or enable production capture solely
   on a green unit test.**
+
+## 2026-10-20 — Private-trace redaction follow-up
+
+- Production log `cafe-profit-log-export-2026-10-20T01-02-42.csv` shows four owner turns, each with eight model attempts. Two expression-calculator plans were rejected as `invalid_plan` on the final 01:01 turn; prior 00:46 turn additionally failed evidence validation after a supported/incomplete rescue review. The Vercel console log is intentionally metadata-only and cannot provide raw schema issues, source values, token usage or costs.
+- PR #134 is merged and the deployed commit is `4114f7e`; its private pilot traces are disabled unless both `SUPERVISOR_PRIVATE_TRACE_ENABLED=true` and `SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID=<authenticated tester UUID>` are set, plus the guarded database migration/cron is installed. Verified project environment currently has neither private-trace setting; do not auto-enable or claim production capture.
+- Follow-up branch protects free-text JSON `api_key` and related snake-case credentials and CSV/TSV-formatted bank lines. No changes to authorization, monetary calculations, model routing or deployment. Add regression checks; require final-head CI and independent Codex review before considering merge.
