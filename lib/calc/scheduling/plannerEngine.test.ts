@@ -564,7 +564,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     const args=input([long,other],[
       coverage("ten-hours",{start_local:"09:00",end_local:"19:00",
         minHeadcount:2,minHeadcountDuringBreak:1}),
-    ],{slotMinutes:60,ruleProfile:{
+    ],{slotMinutes:60,maxNodes:3000,beamWidth:3,ruleProfile:{
       verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:60,
     }});
     const result=optimizeOliviaWeek(args);
