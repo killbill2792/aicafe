@@ -2035,6 +2035,14 @@
     "recommendAdjust": "Review and adjust before deciding",
     "actualRevenue": "Actual 7-day revenue",
     "observedDifference": "Actual difference from prior-price baseline (not causal)",
-"reportThread": "Alex has completed the price experiment report. See the Operations inbox for the results and limitations."
+"reportThread": "Alex has completed the price experiment report. See the Operations inbox for the results and limitations.",
+    "reportRevenue": "Observed net sales: {value}",
+    "reportDifference": "Difference from unchanged-price baseline at observed volume: {value}",
+    "reportUncertain": "Not enough verified daily sales yet. This is not realized profit or proof of price causality.",
+    "recommendation": "Recommendation: {choice}",
+    "keep": "Keep",
+    "revert": "Revert",
+    "adjust": "Review or adjust",
+    "notAvailable": "Unavailable"
   }
 }
