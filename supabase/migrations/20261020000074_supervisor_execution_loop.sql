@@ -15,7 +15,7 @@ create table public.supervisor_proposals (
   monitor_spec jsonb not null check (jsonb_typeof(monitor_spec)='object'),
   locale text not null check (locale in ('en','es','ar')),
   status text not null default 'draft' check
-    (status in ('draft','approved','committed','manual_pending','manual_confirmed','rejected','expired')),
+    (status in ('draft','approved','executing','committed','manual_pending','manual_confirmed','rejected','expired')),
   revision int not null default 1 check (revision>0),
   created_at timestamptz not null default now(),
   approved_at timestamptz,
@@ -120,10 +120,19 @@ begin
   elsif p_action='reject' and p.status in ('draft','approved') then
     update public.supervisor_proposals set status='rejected',revision=revision+1,
       updated_at=now() where id=p.id;
-  elsif p_action in ('manual_pending','committed') and p.status='approved' then
+  elsif p_action='claim_commit' and p.status='approved' then
+    -- This is the single atomic consumption point. Row lock serializes
+    -- competing commit requests before either is allowed a domain executor.
     select * into approved from public.supervisor_approvals
       where business_id=p_business_id and proposal_id=p.id and owner_user_id=p_owner_user_id
       and effect_hash=p.effect_hash and approved_revision=p.revision-1;
+    if approved.id is null then raise exception 'approval_missing_or_changed'; end if;
+    update public.supervisor_proposals set status='executing',
+      revision=revision+1,updated_at=now() where id=p.id;
+  elsif p_action in ('manual_pending','committed') and p.status='executing' then
+    select * into approved from public.supervisor_approvals
+      where business_id=p_business_id and proposal_id=p.id and owner_user_id=p_owner_user_id
+      and effect_hash=p.effect_hash and approved_revision=p.revision-2;
     if approved.id is null then raise exception 'approval_missing_or_changed'; end if;
     update public.supervisor_proposals set status=p_action,revision=revision+1,
       committed_at=case when p_action='committed' then now() else null end,
