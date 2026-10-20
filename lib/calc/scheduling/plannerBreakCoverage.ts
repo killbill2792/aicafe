@@ -68,6 +68,17 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
       existing.units[existing.units.length-1].qualificationCode===
       item.units[0].qualificationCode) ||
       (touching.length===1?touching[0]:undefined);
+    // A general multi-seat cohort can split into multiple specialized single
+    // seat paths. Keep a still-open copy of the predecessor for the next
+    // simultaneous role instead of consuming its whole work history with
+    // the first role encountered in stable sort order.
+    if(previous && touching.length===1 && previous.tierCap==null &&
+        previous.units[previous.units.length-1].qualificationCode!==
+        item.units[0].qualificationCode &&
+        previous.minHeadcount>item.minHeadcount && item.minHeadcount===1){
+      spans.push({...previous,units:previous.units.slice(),tierCap:1});
+      previous.tierCap=1;
+    }
     // When separate single-seat qualified cohorts converge into one
     // general multi-seat row, preserve EACH possible worker's work clock.
     // The shared row contributes only ONE tier per existing path; otherwise
