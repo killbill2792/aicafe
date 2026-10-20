@@ -127,7 +127,10 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   // Only this mode has access to the domain commit hook.
   const result=await def.commit(scope,effect);
   const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
-  const updated=await repo.transition(scope,id,revision,transition);
+  // For a future connected integration, an independently verified commit
+  // starts the same monitoring lifecycle as a manually confirmed effect.
+  const start=transition==="committed"?utcDateOffset(new Date().toISOString().slice(0,10),1):undefined;
+  const updated=await repo.transition(scope,id,revision,transition,start);
   return {proposal:updated,result};
 }
 export async function confirmManualLoop(scope:OwnerLoopScope,repo:LoopRepository,
