@@ -512,7 +512,7 @@ describe("authenticated private trace buffer",()=>{
       const serialized=JSON.stringify(result);
       for(const secret of ["JSON_API_KEY_SECRET","ACCESS_TOKEN_SECRET",
         "REFRESH_TOKEN_SECRET","SESSION_TOKEN_SECRET","FROM_RESPONSE_SECRET",
-        "10/19/2026,ACME,-45.00","2026-10-19,\\"Coffee supplier\\",-123.45"])
+        "10/19/2026,ACME,-45.00","Coffee supplier"])
         expect(serialized).not.toContain(secret);
       expect(serialized).toContain("[bank_line_removed]");
       expect(serialized).toContain("Actual confirmed rent is $900");
