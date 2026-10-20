@@ -13,7 +13,7 @@ import { addOwnerMessageInput, pageInput, threadIdInput } from "@/lib/ai/convers
 import { conversationError, conversationJson, parseInput, readBoundedJson, requireSameOrigin } from "@/lib/ai/conversations/http.server";
 import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
-import {withSupervisorPrivateTrace,persistSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
+import {withSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +35,6 @@ export async function GET(request: Request, context: RouteContext) {
 /** Bounded Responses tool loop. Only server-authorized read-only evidence enters model context. */
 export async function POST(request: Request, context: RouteContext) {
   const debugRequestId=randomUUID().slice(0,12);
-  let traceOwner:{scope:{businessId:string;ownerUserId:string};threadId:string;ownerMessageId:string}|null=null;
   return withSupervisorPrivateTrace(async()=>{
   const diagnostics=createSupervisorDiagnosticLogger(console.info,debugRequestId);
   const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
@@ -53,7 +52,6 @@ export async function POST(request: Request, context: RouteContext) {
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
-    traceOwner={scope,threadId:id,ownerMessageId:message.id};
     logSupervisorDebugPayload({point:"owner_message_persisted",requestId:debugRequestId,
       threadId:id,ownerMessageId:message.id,clientMessageId:input.clientMessageId,
       message,ownerRequest:input,ownerScope:{businessId:scope.businessId,ownerUserId:scope.ownerUserId}});
@@ -182,6 +180,12 @@ export async function POST(request: Request, context: RouteContext) {
     return response;
   }
   },async(trace)=>{
-    if(traceOwner)await persistSupervisorPrivateTrace({...traceOwner,requestId:debugRequestId,trace});
+    // The Vercel Free console is the short-lived diagnostic export surface.
+    // Never persist a full source/model/owner payload to the database or logs.
+    // Structured, allowlisted operational details and cost estimates are
+    // already emitted during the turn by logSupervisorDebugPayload().
+    const summary=trace.events.findLast(e=>e.point==="trace_summary");
+    logSupervisorDebugPayload({point:"trace_summary",
+      ...(summary??{}),requestId:debugRequestId,droppedCount:trace.droppedCount});
   });
 }
