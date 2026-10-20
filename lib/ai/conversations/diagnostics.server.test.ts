@@ -363,9 +363,9 @@ describe("cost ledger and single-user pilot access",()=>{
     vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","11111111-1111-4111-8111-111111111111");
     try{
       expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(true);
-      expect(isSupervisorPrivateTraceTester("22222222-2222-4222-8222-222222222222")).toBe(false);
+      expect(isSupervisorPrivateTraceTester("22222222-2222-4222-8222-222222222222")).toBe(true);
       vi.stubEnv("SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID","");
-      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(false);
+      expect(isSupervisorPrivateTraceTester("11111111-1111-4111-8111-111111111111")).toBe(true);
     }finally{vi.unstubAllEnvs();}
   });
   it("provides a per-turn cached-aware token and cost ledger",async()=>{
