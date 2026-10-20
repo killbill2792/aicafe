@@ -401,7 +401,8 @@ describe("cost ledger and single-user pilot access",()=>{
       const totals=recorded!.events.at(-1)!;
       expect(totals.estimatedCostMicros).toBeNull();
       expect(totals.missingUsageResponses).toBe(1);
-      expect(totals.captureComplete).toBe(false);
+      expect(totals.captureComplete).toBe(true);
+      expect(totals.tokenCostComplete).toBe(false);
     }finally{vi.unstubAllEnvs();}
   });
 });
