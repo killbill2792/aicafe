@@ -562,7 +562,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!canDispatch){
         feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
         logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
-          outcome:"rejected_preflight",requested:step.calls.map(c=>c.name)});
+          outcome:"rejected_preflight",requested:step.calls.map(c=>({name:c.name,arguments:c.arguments,callId:c.callId})),
+          preflight:{allCallsSupported:requests.length===step.calls.length,
+            withinOperationBudget:usage.toolCallCount+requests.length<=INVESTIGATION_LIMITS.operations,
+            canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
+            canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
+            neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
+            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))}}});
         continue;
       }
       for(const signature of signatures)attempted.add(signature);
@@ -804,13 +810,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const unknownToolSignature=step.name+":"+observations.length;
       if(unknownToolSignature===lastUnknownToolName)return await failure(true,"no_progress");
       lastUnknownToolName=unknownToolSignature;
-      feedback="Unknown tool selection. Choose one of the registered capabilities.";continue;
+      feedback="Unknown tool selection. Choose one of the registered capabilities.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"unknown_tool",toolName:step.name,feedback});continue;
     }
     let args:unknown;try{args=JSON.parse(step.arguments);}catch{
       if(capabilityId===EXPRESSION_ID)
         logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
           reasonCode:"invalid_arguments_json",rawArguments:step.arguments});
-      feedback="Tool arguments must be valid JSON.";continue;
+      feedback="Tool arguments must be valid JSON.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"invalid_arguments_json",toolName:step.name,rawArguments:step.arguments,feedback});
+      continue;
     }
     const signature=JSON.stringify(canonicalSelector([
       capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
@@ -821,7 +832,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // one -- so this stays a feedback-and-retry, never the adaptive
       // budget's immediate stop (section 1), which is reserved for a round
       // that repeats a prior failed attempt with no new information.
-      feedback="That exact operation has already been attempted. Use its result or a different investigation step.";continue;
+      feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
+      continue;
     }
     attempted.add(signature);
     logSupervisorDebugPayload({point:"tool_request",requestId:debugRequestId,round,
@@ -869,7 +883,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         logSupervisorDebugPayload({point:"calculator_rejected",requestId:debugRequestId,round,
           reasonCode:"calculator_invalid_result",toolArguments:args,rawResult:result,
           issues:checked.error.issues});
-        feedback="The calculator could not validate its result.";continue;
+        feedback="The calculator could not validate its result.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"calculator_invalid_result",capabilityId,toolArguments:args,feedback});
+        continue;
       }
       result=checked.data;
       logSupervisorDebugPayload({point:"calculator_result",requestId:debugRequestId,round,
@@ -878,7 +895,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       calculation=true;
     }else{
       readDomain=manifest.find(m=>m.id===capabilityId)?.owner;
-      if(!readDomain){feedback="Unknown or non-read capability. No effects are permitted.";continue;}
+      if(!readDomain){
+        feedback="Unknown or non-read capability. No effects are permitted.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"not_a_read_capability",capabilityId,toolArguments:args,feedback});
+        continue;
+      }
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
       let calendarText=input.text;
@@ -905,11 +927,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(!investigationReadDatesMatch(args,calendarText,identity.asOf,memory,ownerStatements,readDomain,
         id=>manifest.find(m=>m.id===id)?.owner)){
-        feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";continue;
+        feedback="That period differs from the owner's explicit or remembered calendar window. Keep the prior validated period unless the owner changes it.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"calendar_scope_mismatch",capabilityId,toolArguments:args,calendarText,feedback});
+        continue;
       }
       const currencyPolicy=manifest.find(m=>m.id===capabilityId)!.currencyPolicy;
       if(currencyPolicy!=="independent"&&(identity.currency!=="USD"||!financialReadsAvailable)){
-        feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";continue;
+        feedback="This capability's financial contract is unavailable for the current currency or source snapshot. Use a currency-independent capability, general guidance or an owner-only hypothetical; do not invent conversions or observations.";
+        logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+          reasonCode:"financial_scope_unavailable",capabilityId,toolArguments:args,
+          currency:identity.currency,financialReadsAvailable,feedback});
+        continue;
       }
       result=await registry.invoke(scope,capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
@@ -919,7 +948,12 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         input.onUsage?.({...usage});
       });
     }
-    if(!record(result)){feedback="The tool result was invalid.";continue;}
+    if(!record(result)){
+      feedback="The tool result was invalid.";
+      logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
+        reasonCode:"invalid_result_envelope",capabilityId,toolArguments:args,result,feedback});
+      continue;
+    }
     // Preserve a typed date/week selector whenever the real domain reader was
     // dispatched, even if it returned an unavailable/unauthorized domain status.
     // A result reason must never be mistaken for a registry preflight verdict.
