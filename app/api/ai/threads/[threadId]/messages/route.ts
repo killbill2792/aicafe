@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import { randomUUID } from "node:crypto";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
@@ -37,7 +38,7 @@ export async function POST(request: Request, context: RouteContext) {
   const debugRequestId=randomUUID().slice(0,12);
   return withSupervisorPrivateTrace(async()=>{
   const diagnostics=createSupervisorDiagnosticLogger(console.info,debugRequestId);
-  const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+  const model=configuredSupervisorModel();
   let stage:SupervisorStage="conversation_auth";
   diagnostics.emit({stage,model});
   try {

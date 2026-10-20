@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import {z} from "zod";
 import {modelTokenUsage,estimateModelCallCostMicros,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
@@ -194,7 +195,7 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       const tokens=modelTokenUsage(raw.usage);
       const providerModel=typeof raw.model==="string"?raw.model:null;
       const actualModel=providerModel??input.usage.model;
-      const primary=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+      const primary=configuredSupervisorModel();
       const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
       const prefix=actualModel===primary?"SUPERVISOR_":
         (fallback&&actualModel===fallback?"SUPERVISOR_FALLBACK_":null);

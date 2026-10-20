@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { z } from "zod";
 import { SUPERVISOR_ENDPOINT, supervisorModelProfile } from "@/lib/ai/conversations/supervisorRequest.mjs";
@@ -338,7 +339,7 @@ export async function runP2ShadowWithScope(params:{
  */
 export async function runAuthorizedP2Shadow(goal:string):Promise<ShadowOutcome> {
   const model=process.env.SUPERVISOR_P2_SHADOW_MODEL ||
-    process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+    configuredSupervisorModel();
   const usage={model,modelCalls:0,inputTokens:0,outputTokens:0};
   if(process.env.SUPERVISOR_P2_SHADOW_ENABLED!=="true" || !process.env.OPENAI_API_KEY)
     return missing("disabled",usage);
