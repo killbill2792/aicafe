@@ -93,6 +93,13 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("لنجرب ٢٠ سنتات أو ربما تسعة",undefined,20)).toBe(false);
   expect(ownerQuotedPriceDelta("Try a single, specific 20-cent increase",undefined,20)).toBe(true);
  });
+ it("does not conflate cardinals describing sales with alternate price offers",()=>{
+  expect(ownerQuotedPriceDelta("Vendimos veinticinco bebidas o más, así que sube el latte 20 centavos",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Vendimos veinte cafés o más, sube el latte 20 centavos",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Sold twenty drinks or more, raise latte 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try twenty or maybe 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 20 cents or maybe thirty",undefined,20)).toBe(false);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
