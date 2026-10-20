@@ -43,6 +43,22 @@ describe("owner break coverage floor (pure calculation)",()=>{
       ...c,minHeadcountDuringBreak:null}))},seats[1],reserved)).toBe(true);
   });
 
+  it("credits an actual half-hour break when gross span is 330 but net work is 300",()=>{
+    const args:PlannerInput={...base,
+      ruleProfile:{verified:true,maxContinuousWorkMinutes:300,
+        unpaidMealMinutes:30},
+      coverage:[{...base.coverage[0],end_local:"14:30"}]};
+    const plan=expandPlannerInput(args);
+    const seat=plan.units.find(u=>u.seatIndex===1 &&
+      u.start===Date.parse("2026-10-12T11:00:00.000Z"))!;
+    const meal={startAt:"2026-10-12T11:00:00.000Z",
+      endAt:"2026-10-12T11:30:00.000Z",paid:false};
+    const published:PlannerShift={employeeId:"a",locationId:"cafe",
+      startAt:"2026-10-12T09:00:00.000Z",endAt:"2026-10-12T14:30:00.000Z",
+      paidMinutes:300,breaks:[meal],pinned:false};
+    expect(recordedSeatRequired(args,plan,[published],seat)).toBe(false);
+  });
+
   it("independent credit requires a real, fully contained reviewed break",()=>{
     const plan=expandPlannerInput(base);
     const during=plan.units.find(u=>u.seatIndex===1 &&
