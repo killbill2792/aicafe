@@ -68,6 +68,34 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   return [...groups.values()].flat();
 }
 
+/** A headcount increase adds new worker tiers without resetting existing
+ * workers' continuous on-site spans. Model a potential break for each tier
+ * that itself runs beyond the reviewed limit, including peak-only workers.
+ */
+function workerTierSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
+  const tiers:Span[]=[];
+  for(const group of coverageSpans(input,plan)){
+    const max=Math.max(...group.units.map(u=>
+      input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount));
+    for(let seat=0;seat<max;seat++){
+      let segment:DemandUnit[]=[];
+      const finish=()=>{
+        if(segment.length)tiers.push({...group,units:segment,
+          minHeadcount:1});
+        segment=[];
+      };
+      for(const unit of group.units){
+        const c=input.coverage.find(c=>c.id===unit.coverageId)!;
+        if(c.minHeadcount<=seat){finish();continue;}
+        if(segment.length && segment[segment.length-1].end!==unit.start)finish();
+        segment.push(unit);
+      }
+      finish();
+    }
+  }
+  return tiers;
+}
+
 function priorityScore(employee:ExpandedPlan["employees"][number],
   objective:"cash"|"owner_time"|"balanced"):number {
   const rate=workerWageRate(employee) ?? 120_000;
@@ -123,10 +151,11 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   const limit=input.ruleProfile?.maxContinuousWorkMinutes;
   if(duration==null || limit==null)return results;
   const grid=input.slotMinutes??30;
+  const gridMs=grid*60000,durationMs=duration*60000;
   type Candidate = {span:Span;first:DemandUnit;last:DemandUnit;
-    people:ExpandedPlan["employees"];count:number;simultaneous:number};
+    people:ExpandedPlan["employees"]};
   const candidates:Candidate[]=[];
-  for(const span of coverageSpans(input,plan)){
+  for(const span of workerTierSpans(input,plan)){
     const first=span.units[0],last=span.units[span.units.length-1];
     const total=(last.end-first.start)/60000;
     if(total<=limit || total<duration+2*grid)continue;
@@ -138,59 +167,93 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
           w.start<last.end && w.end>first.start))
       .sort((a,b)=>priorityScore(a,objective)-priorityScore(b,objective) ||
         a.id.localeCompare(b.id));
-    const count=Math.min(span.minHeadcount,people.length);
-    if(count===0)continue;
-    // Peak windows may change normal headcount AND break floor. A reservation
-    // must obey the tightest permitted headcount drop during the work span.
-    const slack=Math.min(...span.units.map(u=>{
-      const c=input.coverage.find(c=>c.id===u.coverageId)!;
-      return c.minHeadcount-(c.minHeadcountDuringBreak??c.minHeadcount);
-    }));
-    const simultaneous=Math.max(1,slack);
-    if(Math.ceil(count/simultaneous)*duration+2*grid>total)continue;
-    candidates.push({span,first,last,people,count,simultaneous});
+    if(people.length)candidates.push({span,first,last,people});
   }
-  // Select the break-taking crew jointly for concurrent locations and roles.
-  // Each candidate is scored for this objective, but no person may be committed
-  // to overlapping spans; bounded backtracking avoids a greedy dead end.
-  candidates.sort((a,b)=>(a.people.length-a.count)-(b.people.length-b.count) ||
+  // Jointly bind one distinct worker to each continuous seat tier.
+  // Workers cannot occupy concurrent tiers in different locations or roles.
+  candidates.sort((a,b)=>a.people.length-b.people.length ||
     a.first.start-b.first.start || a.span.locationId.localeCompare(b.span.locationId));
-  const roster=new Map<Candidate,ExpandedPlan["employees"]>();
-  const slots=candidates.flatMap(entry=>Array.from({length:entry.count},()=>entry));
+  const roster=new Map<Candidate,ExpandedPlan["employees"][number]>();
   let attempts=0;
   function select(index:number):boolean {
-    if(index===slots.length)return true;
+    if(index===candidates.length)return true;
     if(attempts>=12_000)return false;
-    const entry=slots[index],chosen=roster.get(entry)??[];
+    const entry=candidates[index];
     for(const person of entry.people){
       if(++attempts>12_000)return false;
-      if(chosen.some(p=>p.id===person.id))continue;
-      if([...roster].some(([other,assigned])=>other!==entry &&
-        entry.first.start<other.last.end && other.first.start<entry.last.end &&
-        assigned.some(p=>p.id===person.id)))continue;
-      chosen.push(person);roster.set(entry,chosen);
+      if([...roster].some(([other,worker])=>worker.id===person.id &&
+        entry.first.start<other.last.end && other.first.start<entry.last.end))
+        continue;
+      roster.set(entry,person);
       if(select(index+1))return true;
-      chosen.pop();
+      roster.delete(entry);
     }
     return false;
   }
-  if(!select(0))return results; // No break credit without a staffed roster.
-  for(const entry of candidates){
-    const workers=roster.get(entry)??[];
-    const total=(entry.last.end-entry.first.start)/60000;
-    const waves=Math.ceil(workers.length/entry.simultaneous);
-    const breakBlock=waves*duration;
-    const offset=Math.floor(((total-breakBlock)/2)/grid)*grid;
-    const coverageIds=new Set(entry.span.units.map(u=>u.coverageId));
-    for(let i=0;i<workers.length;i++){
-      const start=entry.first.start+
-        (offset+Math.floor(i/entry.simultaneous)*duration)*60000;
-      const end=start+duration*60000;
-      for(const coverageId of coverageIds)
-        results.push({employeeId:workers[i].id,coverageId,
-          locationId:entry.span.locationId,start,end,
-          workStart:entry.first.start,workEnd:entry.last.end});
+  if(!select(0))return results;
+
+  type Placement={entry:Candidate;employeeId:string;start:number;end:number;
+    coverageIds:string[]};
+  const placements=candidates.map(entry=>{
+    const employeeId=roster.get(entry)!.id;
+    const coverageIds=[...new Set(entry.span.units.map(u=>u.coverageId))];
+    const choices:Placement[]=[];
+    for(let start=entry.first.start+gridMs;
+        start+durationMs+gridMs<=entry.last.end;start+=gridMs){
+      const end=start+durationMs;
+      if((start-entry.first.start)/60000>limit ||
+          (entry.last.end-end)/60000>limit)continue;
+      if(!entry.span.units.some(u=>u.start>=start && u.end<=end))continue;
+      choices.push({entry,employeeId,start,end,coverageIds});
     }
+    // Try near-middle breaks first, but search alternative legal windows when
+    // a zero-slack window makes the centered position impossible.
+    const center=(entry.first.start+entry.last.end)/2;
+    choices.sort((a,b)=>Math.abs((a.start+a.end)/2-center)-
+      Math.abs((b.start+b.end)/2-center) || a.start-b.start);
+    return {entry,choices};
+  }).filter(x=>x.choices.length>0);
+  placements.sort((a,b)=>a.choices.length-b.choices.length);
+  const scheduled=results.slice();
+  let positionAttempts=0;
+  function fits(p:Placement):boolean {
+    for(const unit of p.entry.span.units){
+      if(unit.start<p.start || unit.end>p.end)continue;
+      const requirement=input.coverage.find(c=>c.id===unit.coverageId)!;
+      const floor=requirement.minHeadcountDuringBreak;
+      if(floor==null)return false;
+      const existing=new Set(scheduled.filter(b=>
+        b.coverageId===unit.coverageId && b.start<=unit.start && b.end>=unit.end)
+        .map(b=>b.employeeId));
+      existing.add(p.employeeId);
+      if(requirement.minHeadcount-existing.size<floor)return false;
+    }
+    return true;
+  }
+  const insert=(p:Placement)=>p.coverageIds.map(coverageId=>({
+    employeeId:p.employeeId,coverageId,locationId:p.entry.span.locationId,
+    start:p.start,end:p.end,workStart:p.entry.first.start,workEnd:p.entry.last.end,
+  }));
+  function place(index:number):boolean {
+    if(index===placements.length)return true;
+    if(positionAttempts>=12_000)return false;
+    const item=placements[index];
+    for(const p of item.choices){
+      if(++positionAttempts>12_000)return false;
+      if(!fits(p))continue;
+      const rows=insert(p);scheduled.push(...rows);
+      if(place(index+1))return true;
+      scheduled.splice(scheduled.length-rows.length,rows.length);
+    }
+    return false;
+  }
+  if(place(0))return scheduled;
+  // No feasible floor-preserving placement was found. Still put a real
+  // candidate break on the roster to expose the exact unsatisfiable floor
+  // instead of silently skipping the worker's reviewed break.
+  for(const item of placements){
+    const chosen=item.choices[0];
+    if(chosen)results.push(...insert(chosen));
   }
   return results;
 }
