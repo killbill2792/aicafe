@@ -216,6 +216,78 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(validation.gaps.some(g=>g.reason==="break_coverage_unsatisfiable")).toBe(true);
   });
 
+  it("binds chosen break takers when a third, cheaper eligible worker exists",()=>{
+    const people=[
+      employee("a",{wage:{wage_period:"hour",wage_amount_cents:4500,default_hourly_wage_cents:null}}),
+      employee("b",{wage:{wage_period:"hour",wage_amount_cents:3000,default_hourly_wage_cents:null}}),
+      employee("c",{wage:{wage_period:"hour",wage_amount_cents:900,default_hourly_wage_cents:null}}),
+    ];
+    const args=input(people,[coverage("three-worker-choice",{end_local:"13:00",
+      minHeadcount:2,minHeadcountDuringBreak:1})],{
+      slotMinutes:60,ruleProfile:{verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60},
+    });
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    expect(result.best?.shifts.some(s=>s.employeeId==="c" && s.breaks.length===1)).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("recognizes a continuous shift across adjacent break-policy coverage windows",()=>{
+    const rules={verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60};
+    const args=input([employee("a"),employee("b")],[
+      coverage("opening",{start_local:"09:00",end_local:"11:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+      coverage("midday",{start_local:"11:00",end_local:"13:00",
+        minHeadcount:2,minHeadcountDuringBreak:1}),
+    ],{slotMinutes:60,ruleProfile:rules});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts.filter(s=>s.breaks.length===1)).toHaveLength(2);
+    expect(validateOliviaAssignments(args,result.best!.shifts).completeCoverage).toBe(true);
+  });
+
+  it("honors exact frozen published breaks without inventing retroactive coverage or handoffs",()=>{
+    const originalBreak={startAt:"2026-10-12T17:00:00.000Z",
+      endAt:"2026-10-12T18:00:00.000Z",paid:false};
+    const first={employeeId:"a",locationId:"a",startAt:"2026-10-12T16:00:00.000Z",
+      endAt:"2026-10-12T20:00:00.000Z",paidMinutes:180,
+      breaks:[originalBreak],pinned:false};
+    const second={employeeId:"b",locationId:"a",startAt:"2026-10-12T16:00:00.000Z",
+      endAt:"2026-10-12T20:00:00.000Z",paidMinutes:240,
+      breaks:[],pinned:false};
+    const args=input([employee("a"),employee("b")],[
+      coverage("published-break",{end_local:"13:00",minHeadcount:2,
+        minHeadcountDuringBreak:1,minOverlapMinutes:60}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60,
+    },startedPublishedShifts:[first,second],
+    replanAsOf:"2026-10-12T16:30:00.000Z"});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toEqual([first,second]);
+    expect(result.best?.gaps).toEqual([]);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("does not interpret taking or returning from a real break as a new shift handoff",()=>{
+    const args=input([employee("a"),employee("b")],[
+      coverage("handoff-break",{end_local:"13:00",minHeadcount:2,
+        minHeadcountDuringBreak:1,minOverlapMinutes:60}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60,
+    }});
+    const plan=optimizeOliviaWeek(args);
+    expect(plan.status).toBe("feasible");
+    const checked=validateOliviaAssignments(args,plan.best!.shifts);
+    expect(checked.gaps.some(g=>g.reason==="handoff_overlap_missing")).toBe(false);
+    expect(checked.completeCoverage).toBe(true);
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
