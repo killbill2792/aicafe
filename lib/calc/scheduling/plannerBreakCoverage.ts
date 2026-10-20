@@ -45,10 +45,12 @@ const samePolicy=(a:Span,b:Span)=>
 function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   const slices=plan.units.filter(u=>u.seatIndex===0).flatMap(unit=>{
     const c=input.coverage.find(c=>c.id===unit.coverageId);
-    return c?.priority==="required" && c.minHeadcountDuringBreak!=null && c.minHeadcount>0
+    // An opted-out row still contributes to continuous work and must be
+    // staffed in full. It cannot, however, authorize any break waiver.
+    return c?.priority==="required" && c.minHeadcount>0
       ? [{units:[unit],locationId:unit.locationId,
           qualificationCode:unit.qualificationCode,minHeadcount:c.minHeadcount,
-          breakFloor:c.minHeadcountDuringBreak}] : [];
+          breakFloor:c.minHeadcountDuringBreak ?? c.minHeadcount}] : [];
   }).sort((a,b)=>a.units[0].start-b.units[0].start ||
     a.locationId.localeCompare(b.locationId));
   // Partition before linking adjacent pieces: two locations or roles can
@@ -65,7 +67,10 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
     } else spans.push(item);
     groups.set(key,spans);
   }
-  return [...groups.values()].flat();
+  // Preserve byte-identical opt-out behavior: do not plan break reservations
+  // for an entirely unset-policy chain.
+  return [...groups.values()].flat().filter(span=>span.units.some(u=>
+    input.coverage.find(c=>c.id===u.coverageId)?.minHeadcountDuringBreak!=null));
 }
 
 /** A headcount increase adds new worker tiers without resetting existing
