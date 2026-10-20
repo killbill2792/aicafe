@@ -157,6 +157,9 @@ export function validateOliviaAssignments(input:PlannerInput,
   // requirements. A single worker cannot be credited twice to different
   // headcount slots (even across overlapping roles or locations).
   const historicalWork=work.filter(w=>w.historical);
+  // One matching result per time slot keeps all simultaneous roles on the
+  // SAME distinct-person break-credit allocation and bounds repeated reads.
+  const breakCredits=new Map<string,Map<string,number>>();
   const candidates=plan.units.map(unit=>
     plan.employees.filter(e=>
       (cutoff!=null && unit.start<cutoff
@@ -166,7 +169,7 @@ export function validateOliviaAssignments(input:PlannerInput,
   // Advisory coverage is a soft preference, not a hard publish gate.
   const indices=plan.units.map((_,i)=>i)
     .filter(i=>plan.units[i].priority==="required" &&
-      recordedSeatRequired(input,plan,proposal,plan.units[i])).sort((a,b)=>
+      recordedSeatRequired(input,plan,proposal,plan.units[i],breakCredits)).sort((a,b)=>
     candidates[a].length-candidates[b].length ||
     plan.units[a].start-plan.units[b].start ||
     plan.units[a].id.localeCompare(plan.units[b].id));
@@ -194,14 +197,14 @@ export function validateOliviaAssignments(input:PlannerInput,
     const shortfall=indices.filter(i=>candidates[i].length===0);
     for(const index of shortfall){
       const unit=plan.units[index];
-      gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit)>0
+      gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit,breakCredits)>0
         ?"break_coverage_unsatisfiable":baselineGapReason(unit,plan,cache)));
     }
     if(shortfall.length===0){
       if(!exhausted && deepestUnmatched>=0 && deepestUnmatched<indices.length)
         {
           const unit=plan.units[indices[deepestUnmatched]];
-          gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit)>0
+          gaps.push(markGap(unit,recordedBreakCount(input,plan,proposal,unit,breakCredits)>0
             ?"break_coverage_unsatisfiable":"capacity_or_overlap"));
         }
       violations.push(exhausted?"coverage_matching_budget_exhausted":
@@ -248,7 +251,7 @@ export function validateOliviaAssignments(input:PlannerInput,
       const overlapStart=current.start-requirement.minOverlapMinutes!*60_000;
       const qualifiedDuringOverlap=candidates[ordered[i]].filter(id=>
         coveredBy(work,{...current,start:overlapStart,end:current.start},id));
-      const breakCount=recordedBreakCount(input,plan,proposal,current);
+      const breakCount=recordedBreakCount(input,plan,proposal,current,breakCredits);
       const target=requirement.minHeadcountDuringBreak==null?requirement.minHeadcount:
         Math.max(requirement.minHeadcountDuringBreak,requirement.minHeadcount-breakCount);
       if(qualifiedDuringOverlap.length>=target)continue;
