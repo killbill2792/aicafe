@@ -2048,6 +2048,16 @@
     "reportNewPrice": "Trial price: {value}.",
     "reportEstimated": "Estimated additional revenue with unchanged demand: {value}.",
     "reportIngredientOnly": "Observed ingredient-only contribution: {value}.",
-    "proposedFromChat": "I prepared a draft experiment for {item} at {price}. Nothing has changed in the POS. Please review and explicitly approve it in the experiment controls."
+    "proposedFromChat": "I prepared a draft experiment for {item} at {price}. Nothing has changed in the POS. Please review and explicitly approve it in the experiment controls.",
+    "selectProposal": "Select an experiment",
+    "statusDraft": "Needs approval",
+    "statusApproved": "Approved",
+    "statusManual": "Update POS manually",
+    "statusMonitoring": "Monitoring",
+    "statusExecuting": "Executing",
+    "statusRejected": "Closed",
+    "statusInProgress": "Monitoring in progress",
+    "statusComplete": "Seven-day report complete",
+    "statusInsufficient": "More verified daily sales data is needed"
   }
 }

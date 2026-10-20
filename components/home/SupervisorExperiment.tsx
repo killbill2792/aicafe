@@ -5,6 +5,9 @@ export type ExperimentCopy={
   open:string;close:string;product:string;increase:string;preview:string;propose:string;
   approve:string;apply:string;done:string;report:string;waiting:string;loading:string;
   error:string;condition:string;confirmNote:string;reportNote:string;
+  selectProposal:string;statusDraft:string;statusApproved:string;statusManual:string;
+  statusMonitoring:string;statusExecuting:string;statusRejected:string;
+  statusInProgress:string;statusComplete:string;statusInsufficient:string;
 };
 type Item={id:string;name:string;priceCents:number};
 type Proposal={id:string;revision:number;status:string;monitoring_start_date:string|null;
@@ -14,6 +17,7 @@ type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:n
 export default function SupervisorExperiment({threadId,locale,copy,initialProposalId,refreshVersion}:{
   threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;initialProposalId?:string;refreshVersion?:number}){
  const [open,setOpen]=useState(Boolean(initialProposalId)),[busy,setBusy]=useState(false);
+ const [selectedProposalId,setSelectedProposalId]=useState(initialProposalId??"");
  const [items,setItems]=useState<Item[]>([]),[itemId,setItemId]=useState("");
  const [cents,setCents]=useState("10"),[proposals,setProposals]=useState<Proposal[]>([]);
  const [simulation,setSimulation]=useState<Simulation|null>(null);
@@ -41,9 +45,15 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    if(!latest.ok)throw new Error();
    const state=await latest.json() as {proposals:Proposal[]};
    setProposals(state.proposals);
+   if(payload.action==="propose"&&state.proposals?.[0]?.id)setSelectedProposalId(state.proposals[0].id);
   }catch{setError(true);}finally{setBusy(false);}
  };
- const p=proposals.find(value=>value.id===initialProposalId)??proposals[0],delta=Number(cents);
+ const p=proposals.find(value=>value.id===(selectedProposalId||initialProposalId))??proposals[0],delta=Number(cents);
+ const status=(value:string)=>value==="draft"?copy.statusDraft:
+   value==="approved"?copy.statusApproved:value==="manual_pending"?copy.statusManual:
+   value==="executing"?copy.statusExecuting:
+   value==="committed"||value==="manual_confirmed"?copy.statusMonitoring:
+   value==="rejected"||value==="expired"?copy.statusRejected:copy.statusMonitoring;
  const valid=Number.isSafeInteger(delta)&&delta>0&&delta<=100000;
  const actionClass="min-h-12 rounded-full border border-ink px-4 text-[17px] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
  return <section className="border-t border-[#E9DAC8] bg-white px-3 py-2">
@@ -68,6 +78,14 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
       onClick={()=>void invoke({action:"propose",productId:itemId,increaseCents:delta,
         requestKey:crypto.randomUUID(),locale})}>{copy.propose}</button>
    </div>}
+   {proposals.length>0&&<label className="block">{copy.selectProposal}
+     <select value={p?.id??""} disabled={busy}
+       onChange={e=>{setSelectedProposalId(e.target.value);setReport(null);}}
+       className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]">
+       {proposals.map(x=><option key={x.id} value={x.id}>
+         {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents)} · {status(x.status)}
+       </option>)}
+     </select></label>}
    {p&&<div className="space-y-2 border-t pt-3">
     <p className="font-semibold">{p.canonical_effect_payload.productName}:
       {" "}{formatCents(p.canonical_effect_payload.oldPriceCents)} → {formatCents(p.canonical_effect_payload.newPriceCents)}</p>
@@ -86,7 +104,8 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
         onClick={()=>void invoke({action:"report",proposalId:p.id})}>{copy.report}</button>
     </>}
    </div>}
-   {report&&<p>{copy.reportNote} {report.status}</p>}
+   {report&&<p>{copy.reportNote} {report.status==="complete"?copy.statusComplete:
+     report.status==="in_progress"?copy.statusInProgress:copy.statusInsufficient}</p>}
    {busy&&<p role="status">{copy.loading}</p>}
    {error&&<p role="alert" className="text-red-700">{copy.error}</p>}
   </div>}

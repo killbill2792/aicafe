@@ -47,6 +47,12 @@ function isPeriod(value: string | undefined): value is Period {
 }
 
 function operatingTaskHref(task: OperatingTask): string {
+  if(task.kind==="price_experiment_report"){
+    const thread=task.payload.threadId,proposal=task.payload.proposalId;
+    if(typeof thread==="string"&&typeof proposal==="string")
+      return "/?thread="+encodeURIComponent(thread)+"&experiment="+encodeURIComponent(proposal);
+    return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
+  }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
     const query = new URLSearchParams();
@@ -117,7 +123,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     const itemName = String(task.payload.itemName ?? "").replace(" · ", " ");
     let title: string;
 
-    if (task.status === "handled" && task.kind === "price_review") {
+    if(task.kind==="price_experiment_report"){
+      title=tExperiment("reportTask",{item:itemName});
+    }else if (task.status === "handled" && task.kind === "price_review") {
       // Handled covers both "keep current" and a separately verified price application.
       // Never describe a verified price change as a decision to keep the old price.
       title = tOperations(
@@ -180,7 +188,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <SupervisorHomePanel
           initialThreadId={initialThread}
           initialProposalId={initialExperiment}
-          experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote")}}
+          experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote"),selectProposal:tExperiment("selectProposal"),statusDraft:tExperiment("statusDraft"),statusApproved:tExperiment("statusApproved"),statusManual:tExperiment("statusManual"),statusMonitoring:tExperiment("statusMonitoring"),statusExecuting:tExperiment("statusExecuting"),statusRejected:tExperiment("statusRejected"),statusInProgress:tExperiment("statusInProgress"),statusComplete:tExperiment("statusComplete"),statusInsufficient:tExperiment("statusInsufficient")}}
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
           chatEnabled={chatReadiness.enabled}

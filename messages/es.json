@@ -2048,6 +2048,16 @@
     "reportNewPrice": "Precio de prueba: {value}.",
     "reportEstimated": "Ingresos adicionales estimados sin cambio en demanda: {value}.",
     "reportIngredientOnly": "Contribución observada después de ingredientes: {value}.",
-    "proposedFromChat": "Preparé un experimento en borrador para {item} a {price}. No se ha cambiado el precio en el TPV. Revísalo y apruébalo expresamente en los controles."
+    "proposedFromChat": "Preparé un experimento en borrador para {item} a {price}. No se ha cambiado el precio en el TPV. Revísalo y apruébalo expresamente en los controles.",
+    "selectProposal": "Selecciona un experimento",
+    "statusDraft": "Pendiente de aprobación",
+    "statusApproved": "Aprobado",
+    "statusManual": "Actualiza el TPV manualmente",
+    "statusMonitoring": "En seguimiento",
+    "statusExecuting": "En ejecución",
+    "statusRejected": "Cerrado",
+    "statusInProgress": "Seguimiento en curso",
+    "statusComplete": "Informe de siete días completo",
+    "statusInsufficient": "Faltan datos diarios de ventas verificados"
   }
 }

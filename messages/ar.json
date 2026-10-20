@@ -2048,6 +2048,16 @@
     "reportNewPrice": "السعر التجريبي: {value}.",
     "reportEstimated": "الإيراد الإضافي المتوقع إذا لم يتغير الطلب: {value}.",
     "reportIngredientOnly": "المساهمة المرصودة بعد تكلفة المكونات: {value}.",
-    "proposedFromChat": "أعددت مسودة تجربة لسعر {item} بقيمة {price}. لم يتغير أي سعر في نظام المبيعات. راجع الاقتراح ووافق عليه صراحةً من عناصر التحكم."
+    "proposedFromChat": "أعددت مسودة تجربة لسعر {item} بقيمة {price}. لم يتغير أي سعر في نظام المبيعات. راجع الاقتراح ووافق عليه صراحةً من عناصر التحكم.",
+    "selectProposal": "اختر تجربة",
+    "statusDraft": "بانتظار الموافقة",
+    "statusApproved": "تمت الموافقة",
+    "statusManual": "حدّث السعر يدويًا",
+    "statusMonitoring": "قيد المراقبة",
+    "statusExecuting": "قيد التنفيذ",
+    "statusRejected": "مغلق",
+    "statusInProgress": "المراقبة مستمرة",
+    "statusComplete": "اكتمل تقرير الأيام السبعة",
+    "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية"
   }
 }
