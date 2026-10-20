@@ -94,6 +94,45 @@ beforeEach(()=>{
   });
 });
 
+describe("registered natural-language proposal tools",()=>{
+ it.each(["Let's test a 10-cent increase on the latte",
+   "Probemos aumentar el latte 10 centavos",
+   "لنجرب زيادة سعر latte ١٠ سنتات",
+   "Let's try it"])
+ ("lets the bounded model discover an inert draft without a fixed phrase router: %s",async(text)=>{
+   const create=vi.fn(async(_name:string,_args:unknown)=>({id:"proposal-demo",
+     text:"Alex drafted a proposal for review. Nothing has changed in the POS."}));
+   const transport=transportFor([
+     read("alex.drink_price_experiment.v1",{productId:product,increaseCents:10}),
+   ],(context,step)=>{
+     if(step===0)expect(context.ownerRequest).toBe(text);
+   });
+   const result=await runSupervisorTurn({...base,text,
+     inertProposal:{tools:[{
+       name:capabilityToolName("alex.drink_price_experiment.v1"),
+       description:"Draft a price experiment only on explicit owner intent",
+       parameters:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}},
+         required:["productId","increaseCents"],additionalProperties:false},
+     }],create}},transport);
+   expect(result.reply.status).toBe("estimated");
+   expect(result.reply.blocks).toContainEqual({type:"text",
+     text:"Alex drafted a proposal for review. Nothing has changed in the POS."});
+   expect(create).toHaveBeenCalledWith("alex_drink_price_experiment_v1",
+     {productId:product,increaseCents:10});
+   expect(result.usage.toolCallCount).toBe(1);
+ });
+ it("refuses to claim an action when the authenticated draft callback denies ambiguous input",async()=>{
+   const create=vi.fn(async()=>null);
+   const result=await runSupervisorTurn({...base,text:"What if we change the latte price?",
+      inertProposal:{tools:[{name:"alex_drink_price_experiment_v1",
+       description:"Inert draft proposal",parameters:{type:"object",properties:{},additionalProperties:false}}],create}},
+     transportFor([read("alex.drink_price_experiment.v1",{productId:product,increaseCents:10}),
+       answer([{kind:"clarification",text:"Which exact price increase do you want to test?",citations:[]}])]));
+   expect(create).toHaveBeenCalled();
+   expect(result.reply.blocks).not.toContainEqual(expect.objectContaining({text:expect.stringContaining("drafted")}));
+ });
+});
+
 describe("default Supervisor iterative cross-domain intelligence",()=>{
   it.each([[17,35,7409],[19,40,8251],[23,20,10943]])("discovers records and computes unseen price/labor composition (%i items, %i minutes)",async(items,minutes,expected)=>{
     const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Conditional incremental contribution, excluding unobserved overhead and demand",

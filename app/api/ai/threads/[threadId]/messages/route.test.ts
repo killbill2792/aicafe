@@ -23,9 +23,13 @@ vi.mock("@/lib/ai/cafeTools.server",()=>({
   readSupervisorCafeIdentity:async()=>({asOf:"2026-10-10",timezone:"America/Los_Angeles",cafeName:"Sample"}),
 }));
 vi.mock("@/lib/ai/conversations/runSupervisorTurn.server",()=>({runSupervisorTurn:mocks.run}));
-vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{}}));
+vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{
+  list:()=>["alex.drink_price_experiment.v1"],
+  get:()=>({proposalDescription:"Prepare inert owner trial draft",
+    proposalInputJsonSchema:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}}}}),
+}}));
 vi.mock("@/lib/ai/supervisor/loop/engine",()=>({
-  proposeFromOwnerConversation:mocks.propose,
+  proposeLoop:mocks.propose,
 }));
 vi.mock("@/lib/ai/conversations/usage.server",()=>({
   labelSupervisorThread:async()=>{},recordSupervisorUsage:async()=>{},
@@ -76,19 +80,16 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
     ]));
     expect(mocks.persist).toHaveBeenCalledTimes(1);
   });
-  it("persists an explicit, inert owner follow-up proposal without asking a model to approve or commit",async()=>{
-    mocks.propose.mockResolvedValueOnce({id:"b1d0a764-3b31-4833-b800-3c8df90f45ac",
-      canonicalEffectPayload:{productName:"Latte",newPriceCents:510}});
-    const response=await POST(request("Let's try it"),ctx);
+  it("offers a registered inert proposal to the existing semantic model path without regex pre-routing",async()=>{
+    const response=await POST(request("Let's test a 10-cent increase on the latte"),ctx);
     expect(response.status).toBe(201);
-    expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({
-      businessId:"cafe-1",ownerUserId:"owner-1",locale:"en"
-    }),{},expect.anything(), "Let's try it",expect.any(Array),
-      mocks.message.clientMessageId);
-    expect(mocks.run).not.toHaveBeenCalled();
-    expect(mocks.persist).toHaveBeenCalledWith(expect.anything(),expect.anything(),
-      expect.objectContaining({intent:"menu_pricing",status:"estimated",
-        blocks:[expect.objectContaining({text:expect.stringContaining("Nothing has changed")})]}));
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    const input=mocks.run.mock.calls[0][0];
+    expect(input.inertProposal.tools).toContainEqual(expect.objectContaining({
+      name:"alex_drink_price_experiment_v1",
+      description:expect.stringContaining("inert"),
+    }));
+    expect(mocks.propose).not.toHaveBeenCalled();
   });
   it("replays the existing reply without another provider call or write",async()=>{
     mocks.getExisting.mockResolvedValue({id:"existing-reply"});
