@@ -55,10 +55,16 @@ export const foundationRecordSchemas = {
     location_id: id, day_of_week: weekday.nullable().optional(), local_date: date.nullable().optional(),
     effective_from: date.nullable().optional(), effective_to: date.nullable().optional(),
     ...timeWindow, min_headcount: z.number().int().min(0).max(50),
+    min_headcount_during_break: z.number().int().min(0).max(50).nullable().optional(),
     qualification_code: qualificationCode.nullable().optional(),
     min_overlap_minutes: minutesDay.default(0),
     priority: z.enum(["required", "advisory"]).default("required"), ...attribution,
-  }).strict(),
+  }).strict().superRefine((row, ctx) => {
+    if (row.min_headcount_during_break != null &&
+        row.min_headcount_during_break > row.min_headcount)
+      ctx.addIssue({code:"custom",path:["min_headcount_during_break"],
+        message:"Break coverage cannot exceed normal headcount."});
+  }),
   compensation: z.object({
     employee_id: id,
     cash_cost_state: z.enum(["unknown", "known_paid", "salary_conversion_pending", "known_eligible_zero"]),
