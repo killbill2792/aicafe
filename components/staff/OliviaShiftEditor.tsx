@@ -113,7 +113,12 @@ export default function OliviaShiftEditor({shifts,onChange,employees,locations,
           className="size-5"/>
         {t("unpaidBreak")}
       </label>
-      {shift.breaks.length>1 && <p className="text-sm">{t("existingBreaks")}</p>}
+      {shift.breaks.map((brk,j)=><p key={j} className="text-sm">
+         {t("breakWindow")} ({t(brk.paid?"breakPaid":"breakUnpaid")}): {" "}
+         {local(brk.startAt,locations[shift.locationId]??"UTC",locale)}
+         {" — "}{local(brk.endAt,locations[shift.locationId]??"UTC",locale)}
+       </p>)}
+       {shift.breaks.length>1 && <p className="text-sm">{t("existingBreaks")}</p>}
       <p className="text-sm text-ink-muted">{t("paidMinutes")}: {shift.paidMinutes}</p>
     </div>)}
     {clockError && <p role="alert" className="text-sm text-warn">{clockError}</p>}
