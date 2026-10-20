@@ -292,8 +292,13 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   }).filter(x=>x.choices.length>0);
   placements.sort((a,b)=>a.choices.length-b.choices.length);
   const scheduled=results.slice();
+  const insert=(p:Placement)=>p.coverageIds.map(coverageId=>({
+    employeeId:p.employeeId,coverageId,locationId:p.entry.span.locationId,
+    start:p.start,end:p.end,workStart:p.entry.first.start,workEnd:p.entry.last.end,
+  }));
   let positionAttempts=0;
   function fits(p:Placement):boolean {
+    const preview=[...scheduled,...insert(p)];
     for(const unit of p.entry.span.units){
       if(unit.start<p.start || unit.end>p.end)continue;
       const requirement=input.coverage.find(c=>c.id===unit.coverageId)!;
@@ -302,11 +307,11 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
       // Breaks remove a PERSON from the slot, not permanently one of the
       // original demand seats. A third qualified relief worker may preserve
       // even a full (= normal) owner floor while A or B takes a real break.
-      const breaking=new Set(scheduled.filter(b=>
-        b.locationId===unit.locationId && b.start<=unit.start &&
-        b.end>=unit.end).map(b=>b.employeeId));
-      breaking.add(p.employeeId);
       const eligible=eligibleCandidates(unit,plan,cache);
+      const ids=new Set(eligible.map(e=>e.id));
+      const breaking=new Set(preview.filter(b=>
+        b.locationId===unit.locationId && b.start<=unit.start &&
+        b.end>=unit.end && ids.has(b.employeeId)).map(b=>b.employeeId));
       const normalSlack=requirement.minHeadcount-floor;
       // Prefer explicit owner-permitted staggering when a lower break floor
       // exists. Use extra relief only when the floor otherwise allows ZERO
@@ -316,13 +321,34 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
         Math.max(0,eligible.length-requirement.minHeadcount);
       if(breaking.size>permitted ||
           eligible.filter(e=>!breaking.has(e.id)).length<floor)return false;
+
+      // Relief must be matched ONCE across every concurrent location/role
+      // requirement. One dual-qualified replacement cannot satisfy both a
+      // cashier and a barista while both take their breaks simultaneously.
+      const globalBreaking=new Set(preview.filter(b=>
+        b.start<=unit.start && b.end>=unit.end).map(b=>b.employeeId));
+      const needed=plan.units.filter(other=>
+        other.priority==="required" && other.start<=unit.start &&
+        other.end>=unit.end &&
+        demandSeatRequired(input,plan,other,preview));
+      const options=needed.map(other=>eligibleCandidates(other,plan,cache)
+        .map(e=>e.id).filter(id=>!globalBreaking.has(id)));
+      const assigned=new Map<string,number>();
+      function match(index:number,seen:Set<string>):boolean {
+        for(const id of options[index]){
+          if(seen.has(id))continue;
+          seen.add(id);
+          const prior=assigned.get(id);
+          if(prior==null || match(prior,seen)){
+            assigned.set(id,index);return true;
+          }
+        }
+        return false;
+      }
+      if(needed.some((_,i)=>!match(i,new Set())))return false;
     }
     return true;
   }
-  const insert=(p:Placement)=>p.coverageIds.map(coverageId=>({
-    employeeId:p.employeeId,coverageId,locationId:p.entry.span.locationId,
-    start:p.start,end:p.end,workStart:p.entry.first.start,workEnd:p.entry.last.end,
-  }));
   function place(index:number):boolean {
     if(index===placements.length)return true;
     if(positionAttempts>=12_000)return false;
