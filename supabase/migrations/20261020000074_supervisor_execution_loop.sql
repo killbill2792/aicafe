@@ -104,6 +104,7 @@ create function public.supervisor_transition_proposal(
 language plpgsql security definer set search_path=public as $$
 declare p public.supervisor_proposals; approved public.supervisor_approvals;
 begin
+  if auth.role()<>'service_role' then raise exception 'service_role_only'; end if;
   select * into p from public.supervisor_proposals
    where business_id=p_business_id and owner_user_id=p_owner_user_id and id=p_proposal_id for update;
   if p.id is null or p.revision<>p_revision then raise exception 'proposal_revision_conflict'; end if;
@@ -141,3 +142,32 @@ revoke all on function public.supervisor_transition_proposal(uuid,uuid,uuid,int,
   from public,anon,authenticated;
 grant execute on function public.supervisor_transition_proposal(uuid,uuid,uuid,int,text,date)
   to service_role;
+
+-- Prevent a privileged lifecycle transition from silently replacing the approved effect.
+create function public.supervisor_proposal_immutability()
+returns trigger language plpgsql set search_path=public as $$
+begin
+  if old.business_id is distinct from new.business_id
+   or old.owner_user_id is distinct from new.owner_user_id
+   or old.thread_id is distinct from new.thread_id
+   or old.location_id is distinct from new.location_id
+   or old.request_key is distinct from new.request_key
+   or old.capability_id is distinct from new.capability_id
+   or old.capability_version is distinct from new.capability_version
+   or old.canonical_effect_payload is distinct from new.canonical_effect_payload
+   or old.effect_hash is distinct from new.effect_hash
+   or old.baseline is distinct from new.baseline
+   or old.monitor_spec is distinct from new.monitor_spec
+   or old.locale is distinct from new.locale
+   or old.created_at is distinct from new.created_at
+  then raise exception 'immutable_supervisor_effect'; end if;
+  if new.revision <> old.revision + 1
+   then raise exception 'supervisor_revision_required'; end if;
+  return new;
+end $$;
+create trigger supervisor_proposal_immutable before update on public.supervisor_proposals
+  for each row execute function public.supervisor_proposal_immutability();
+-- Product/location scope is tenant-local. Never attach a location of another business.
+create unique index if not exists locations_business_id_id_idx on public.locations(business_id,id);
+alter table public.supervisor_proposals add constraint supervisor_proposal_tenant_location
+  foreign key (business_id,location_id) references public.locations(business_id,id);
