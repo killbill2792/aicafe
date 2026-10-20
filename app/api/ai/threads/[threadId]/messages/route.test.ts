@@ -34,7 +34,7 @@ vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async
 
 vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{
   list:()=>["alex.drink_price_experiment.v1"],
-  get:()=>({proposalDescription:"Prepare inert owner trial draft",
+  get:()=>({proposalDescription:"Prepare inert owner trial draft",parseEffect:(raw:unknown)=>raw,
     proposalInputJsonSchema:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}}}}),
 }}));
 vi.mock("@/lib/ai/supervisor/loop/engine",()=>({
@@ -146,7 +146,7 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
         mocks.message.clientMessageId);
       expect(mocks.persist).toHaveBeenCalledWith(expect.anything(),expect.anything(),
         expect.objectContaining({status:"estimated",blocks:[
-          expect.objectContaining({text:expect.stringContaining("Nothing has changed")})]}));
+          expect.objectContaining({text:expect.stringContaining(locale==="en"?"Nothing has changed":\n            locale==="es"?"No se ha cambiado":"لم يتغير")})]}));
     },
   );
   it("refuses a model-selected proposal when two owner amounts are ambiguous",async()=>{
