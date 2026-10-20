@@ -7,6 +7,18 @@ ALTER TABLE public.scheduling_coverage_requirements
 COMMENT ON COLUMN public.scheduling_coverage_requirements.min_headcount_during_break
  IS 'Optional owner-specified coverage floor while a real duty-free break is taken; NULL uses min_headcount.';
 
+-- The break floor is part of demand identity: two otherwise identical
+-- requirements with DIFFERENT break floors are distinct owner policies.
+-- Legacy rows all have NULL, preserving their existing uniqueness semantics.
+-- This changes one index only; no extra table columns or weakened RLS.
+DROP INDEX public.scheduling_coverage_identity_unique;
+CREATE UNIQUE INDEX scheduling_coverage_identity_unique
+ ON public.scheduling_coverage_requirements
+ (business_id, location_id, day_of_week, local_date, effective_from,
+  effective_to, start_local, end_local, overnight, min_headcount,
+  qualification_code, min_overlap_minutes, priority,
+  min_headcount_during_break) NULLS NOT DISTINCT;
+
 -- Preserve the existing authorization, idempotency, receipts, RLS and audit
 -- behavior; only extend the permitted typed coverage input allowlist.
 CREATE OR REPLACE FUNCTION public.scheduling_create_foundation(
