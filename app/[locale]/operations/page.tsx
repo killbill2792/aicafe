@@ -119,15 +119,6 @@ function TaskList({ tasks, empty, names, t, tExperiment, category, selectedTaskI
       className={`scroll-mt-24 rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface} ${selected?"ring-4 ring-ink shadow-lg":""}`}>
       <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="task"/><p className={`font-bold ${visual.accent}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
       <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>{price && <p className="mt-1 text-sm text-ink-muted">{t("priceNumbers", { current: formatCents(Number(task.payload.currentPriceCents)), suggested: formatCents(Number(task.payload.suggestedPriceCents)) })}</p>}
-      {experiment&&<div className="mt-3 space-y-1 text-[17px] text-ink">
-        <p>{tExperiment("recommendationLabel")}: {task.payload.recommendation==="keep"?
-          tExperiment("recommendKeep"):task.payload.recommendation==="revert"?
-          tExperiment("recommendRevert"):tExperiment("recommendAdjust")}</p>
-        {typeof task.payload.observedRevenueCents==="number"&&
-          <p>{tExperiment("actualRevenue")}: {formatCents(task.payload.observedRevenueCents)}</p>}
-        {typeof task.payload.realizedRevenueDifferenceCents==="number"&&
-          <p>{tExperiment("observedDifference")}: {formatCents(task.payload.realizedRevenueDifferenceCents)}</p>}
-      </div>}
       {task.kind==="price_experiment_report"&&<div className="mt-3 space-y-2 text-[17px]">
         <p>{tExperiment("reportRevenue",{value:typeof task.payload.observedRevenueCents==="number"?
           formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
