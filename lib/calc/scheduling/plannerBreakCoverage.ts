@@ -296,6 +296,13 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
 
   type Placement={entry:Candidate;employeeId:string;start:number;end:number;
     coverageIds:string[]};
+  // Permit the per-slot floor and global relief matcher to screen each
+  // candidate BEFORE counting it toward the 24-sequence search budget.
+  const scheduled=results.slice();
+  const insert=(p:Placement)=>p.coverageIds.map(coverageId=>({
+    employeeId:p.employeeId,coverageId,locationId:p.entry.span.locationId,
+    start:p.start,end:p.end,workStart:p.entry.first.start,workEnd:p.entry.last.end,
+  }));
   const placements=[...bestRoster.keys()].map(entry=>{
     const employeeId=bestRoster.get(entry)!.id;
     const coverageIds=[...new Set(entry.span.units.map(u=>u.coverageId))];
@@ -320,7 +327,12 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
         if(start-previousEnd>limit!*60000)break;
         const end=start+durationMs;
         if(!entry.span.units.some(u=>u.start>=start && u.end<=end))continue;
-        selected.push({entry,employeeId,start,end,coverageIds});
+        const proposed={entry,employeeId,start,end,coverageIds};
+        // Chronologically early legal timestamps can still be forbidden by a
+        // zero-slack owner's policy. Do not let them exhaust the bounded
+        // sequence set before a later allowed slot is reached.
+        if(!fits(proposed))continue;
+        selected.push(proposed);
         sequences(end,left-1,selected);
         selected.pop();
         if(choices.length>=24)return;
@@ -340,11 +352,6 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     return {entry,choices};
   }).filter(x=>x.choices.length>0);
   placements.sort((a,b)=>a.choices.length-b.choices.length);
-  const scheduled=results.slice();
-  const insert=(p:Placement)=>p.coverageIds.map(coverageId=>({
-    employeeId:p.employeeId,coverageId,locationId:p.entry.span.locationId,
-    start:p.start,end:p.end,workStart:p.entry.first.start,workEnd:p.entry.last.end,
-  }));
   let positionAttempts=0;
   function fits(p:Placement):boolean {
     const preview=[...scheduled,...insert(p)];
