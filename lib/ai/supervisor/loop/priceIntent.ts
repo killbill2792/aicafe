@@ -44,13 +44,24 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     // A recognized size/quantity is not a second price (e.g. "Latte 12 oz,
     // increase 10 cents"). The allowlist is for explicit NON-price units only;
     // an untyped number fails closed and requires owner clarification.
-    const nonPriceUnits=/(?<![\p{L}\p{N}.])[0-9]{1,6}[\s-]*(?:fl[\s-]*oz|oz|ounces?|onzas?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|grams?|g|kg|كيلو|مل|أونصة|اونصة|days?|weeks?|months?|días?|semanas?|أيام|اسابيع)(?![\p{L}\p{N}])/giu;
+    const nonPriceUnits=/(?<![\p{L}\p{N}.])[0-9]{1,6}(?:[.,][0-9]{1,3})?[\s-]*(?:%|٪|percent(?:age)?|por[\s-]*ciento|بالمئة|في[\s-]*المئة|fl[\s-]*oz|oz|ounces?|onzas?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|grams?|g|kg|كيلو|مل|أونصة|اونصة|days?|weeks?|months?|días?|semanas?|أيام|اسابيع)(?![\p{L}\p{N}])/giu;
     const permittedSpans=[...centMatches,...dollarMatches,...normalized.matchAll(nonPriceUnits)]
       .map(m=>({from:m.index,to:m.index+m[0].length}));
     const untypedAmount=[...normalized.matchAll(/(?<![\p{L}\p{N}])[0-9]+(?:\.[0-9]+)?(?![\p{L}\p{N}])/gu)]
       .some(m=>!permittedSpans.some(span=>m.index>=span.from&&
         m.index+m[0].length<=span.to));
-    return {values:[...centQuotes,...dollarQuotes],ambiguous:ambiguous||untypedAmount};
+    // A spelled-out alternative has no digit to find above ("ten or maybe
+    // 20 cents", "diez o quizás 20 centavos", "عشرة أو ربما ٢٠ سنتات").
+    // If the owner expresses a disjunction in the same nearby price clause,
+    // do not promote the model's choice into a single approved numeric quote.
+    // Hard sentence boundaries limit interference from unrelated discussions.
+    const spokenAlternative=[...centMatches,...dollarMatches].some(m=>{
+      const prior=normalized.slice(Math.max(0,m.index-100),m.index)
+        .split(/[.!?؟;\n]/u).at(-1)??"";
+      return /(?:\b(?:or|versus|vs|o|ou)\b|أو|او|أم)/iu.test(prior);
+    });
+    return {values:[...centQuotes,...dollarQuotes],
+      ambiguous:ambiguous||untypedAmount||spokenAlternative};
   };
   const currentAmounts=amounts(current);
   if(currentAmounts.ambiguous)return false;

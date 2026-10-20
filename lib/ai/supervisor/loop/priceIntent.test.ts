@@ -63,6 +63,17 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Try 10 cents on a 16oz latte",undefined,10)).toBe(true);
   expect(ownerQuotedPriceDelta("Try a $0.10 increase on Latte 12 oz",undefined,10)).toBe(true);
  });
+ it("treats spelled-out alternatives as ambiguous but typed percentage as context",()=>{
+  expect(ownerQuotedPriceDelta("Try ten or maybe 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Prueba diez o quizás 20 centavos",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب عشرة أو ربما ٢٠ سنتات",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try thirty or perhaps $0.20",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Sales rose 10%, so raise the latte by 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Sales rose 10.5%, so raise the latte 20 cents",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("Ventas subieron un 10 %, subamos el latte 20 centavos",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("ارتفعت المبيعات ١٠٪ فلنجرب زيادة ٢٠ سنتات",undefined,20)).toBe(true);
+  expect(ownerQuotedPriceDelta("The 12 oz latte grew 10%, raise price 20 cents",undefined,20)).toBe(true);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
