@@ -383,6 +383,19 @@ export function reviewedRecordedBreakWorkers(input:PlannerInput,plan:ExpandedPla
       if(expected==null || expected<=0 || (end-start)/60000!==expected ||
           !(shiftStart<start && end<shiftEnd) ||
           start>unit.start || end<unit.end)continue;
+      // An edited draft cannot claim a duty-free break while scheduling
+      // this very employee to work in another concurrent shift. Verify
+      // every proposal shift for actual duty during the credited slot.
+      const worksElsewhere=shifts.some(other=>{
+        if(other===shift || other.employeeId!==shift.employeeId)return false;
+        const start=Math.max(unit.start,Date.parse(other.startAt));
+        const end=Math.min(unit.end,Date.parse(other.endAt));
+        if(start>=end)return false;
+        return !other.breaks.some(another=>
+          Date.parse(another.startAt)<=start &&
+          Date.parse(another.endAt)>=end);
+      });
+      if(worksElsewhere)continue;
       people.push(shift.employeeId);
       break;
     }
