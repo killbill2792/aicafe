@@ -57,16 +57,18 @@ class MemoryRepo implements LoopRepository{
     return r;
   }
   async transition(s:OwnerLoopScope,id:string,revision:number,action:
-    "approve"|"reject"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
+    "approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
     const old=await this.load(s,id);
     if(old.revision!==revision)throw Error("CAS conflict");
     const allowed=action==="approve"?old.status==="draft":
       action==="reject"?["draft","approved"].includes(old.status):
-      action==="manual_pending"||action==="committed"?old.status==="approved":
+      action==="claim_commit"?old.status==="approved":
+      action==="manual_pending"||action==="committed"?old.status==="executing":
       action==="manual_confirmed"?old.status==="manual_pending"&&!!startDate:false;
     if(!allowed)throw Error("Invalid transition");
     const updated:LoopProposal={...old,revision:revision+1,
-      status:action==="approve"?"approved":action==="reject"?"rejected":action,
+      status:action==="approve"?"approved":action==="reject"?"rejected":
+        action==="claim_commit"?"executing":action,
       monitoringStartDate:startDate??old.monitoringStartDate};
     this.proposals.set(id,updated);return updated;
   }
@@ -74,6 +76,7 @@ class MemoryRepo implements LoopRepository{
     const map=this.rows.get(id)??new Map<string,LoopSample>();
     map.set(sample.businessDate,sample);this.rows.set(id,map);
   }
+  async clearSample(_s:OwnerLoopScope,id:string,date:string){this.rows.get(id)?.delete(date);}
   async samples(_s:OwnerLoopScope,id:string){return [...(this.rows.get(id)?.values()??[])];}
   async saveReport(_s:OwnerLoopScope,p:LoopProposal,report:LoopReport){this.reports.set(p.id,report);}
 }
