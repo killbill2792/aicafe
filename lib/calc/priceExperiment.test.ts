@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {evaluatePriceExperiment,simulatePriceExperiment} from "./priceExperiment";
+import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift} from "./priceExperiment";
 const base=simulatePriceExperiment({productId:"latte",productName:"Latte",currentPriceCents:500,
   increaseCents:10,ingredientCostCents:125,units7Days:70})!;
 describe("price experiment: canonical integer-cent scenarios",()=>{
@@ -7,6 +7,7 @@ describe("price experiment: canonical integer-cent scenarios",()=>{
     expect(base.beforeContributionCents).toBe(375);
     expect(base.afterContributionCents).toBe(385);
     expect(base.estimatedAdditionalRevenue7DaysCents).toBe(700);
+    expect(priceExperimentEstimatedUplift(base)).toBe(700);
     expect(base.estimateKind).toBe("conditional_unchanged_demand");
   });
   it("compares seven observed days without treating change as causal profit",()=>{

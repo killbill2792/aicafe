@@ -93,3 +93,11 @@ export function aggregatePriceExperimentSalesRows(rows:readonly {
   if(units>BigInt(Number.MAX_SAFE_INTEGER)||netSalesCents>BigInt(Number.MAX_SAFE_INTEGER))return null;
   return {units:Number(units),netSalesCents:Number(netSalesCents)};
 }
+
+/** Captured effect's immutable assumptions projected through canonical integer
+ * arithmetic. Display layers must NEVER multiply money/units themselves. */
+export function priceExperimentEstimatedUplift(baseline:PriceExperimentBaseline):number|null{
+  if(!cents(baseline.newPriceCents)||!cents(baseline.oldPriceCents)||
+    baseline.newPriceCents<baseline.oldPriceCents)return null;
+  return safeProduct(baseline.newPriceCents-baseline.oldPriceCents,baseline.baselineUnits7Days);
+}

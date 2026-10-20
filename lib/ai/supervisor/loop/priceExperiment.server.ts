@@ -4,7 +4,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
-import {evaluatePriceExperiment,simulatePriceExperiment,
+import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift,
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
 import {registerLoopCapability,loopRegistry} from "./engine";
@@ -62,11 +62,11 @@ export const priceExperimentCapability=registerLoopCapability({
       :copy.notAvailable;
     const recommendation=result.recommendation==="keep"?copy.keep:
       result.recommendation==="revert"?copy.revert:copy.adjust;
+    const estimatedUplift=priceExperimentEstimatedUplift(effect);
     const trial={...result,baselineUnits7Days:effect.baselineUnits7Days,
       oldPriceCents:effect.oldPriceCents,newPriceCents:effect.newPriceCents,
       productName:effect.productName,
-      estimatedAdditionalRevenue7DaysCents:
-        (effect.newPriceCents-effect.oldPriceCents)*effect.baselineUnits7Days};
+      estimatedAdditionalRevenue7DaysCents:estimatedUplift};
     const text=[copy.reportThread,
       copy.reportTask.replace("{item}",effect.productName)+".",
       copy.reportOldPrice.replace("{value}",money(effect.oldPriceCents)),
@@ -81,7 +81,7 @@ export const priceExperimentCapability=registerLoopCapability({
       delivery:{agentId:"alex" as const,taskKind:"price_experiment_report" as const,
         entityType:"menu_item",entityId:effect.productId,
         confidence:result.status==="complete"?"high" as const:"low" as const,
-        payload:{itemName:effect.productName,proposalId:"",recommendation:result.recommendation,
+        payload:{itemName:effect.productName,recommendation:result.recommendation,
           outcomeStatus:result.status,observedRevenueCents:trial.observedRevenueCents,
           realizedRevenueDifferenceCents:trial.realizedRevenueDifferenceCents,
           observedIngredientContributionCents:trial.observedIngredientContributionCents,

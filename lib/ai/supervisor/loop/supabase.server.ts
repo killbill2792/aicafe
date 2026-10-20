@@ -101,13 +101,13 @@ export class SupabaseLoopRepository implements LoopRepository{
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
       status:"needs_owner",confidence:delivery.confidence,
-      payload:delivery.payload,evidence:delivery.evidence,
+      payload:{...delivery.payload,proposalId:p.id},evidence:delivery.evidence,
     },{onConflict:"business_id,id",ignoreDuplicates:true});
     if(task.error)failed(task.error,"Operations report inbox unavailable");
     // Source evidence may arrive late; refresh measurements without reopening
     // an owner-handled task or overwriting its lifecycle status.
     const refreshed=await db.from("operating_tasks").update({
-      confidence:delivery.confidence,payload:delivery.payload,
+      confidence:delivery.confidence,payload:{...delivery.payload,proposalId:p.id},
       evidence:delivery.evidence,updated_at:new Date().toISOString(),
     }).eq("business_id",scope.businessId).eq("id",taskId);
     if(refreshed.error)failed(refreshed.error,"Operations report update failed");
