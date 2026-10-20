@@ -74,12 +74,20 @@ class MemoryRepo implements LoopRepository{
    return this.proposal;
  }
  async transition(s:OwnerLoopScope,id:string,revision:number,
-   action:"approve"|"reject"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
+   action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
    const p=await this.load(s,id);
    if(p.revision!==revision)throw new Error("conflict");
-   const status=action==="approve"?"approved":action==="reject"?"rejected":action;
+   const allowed=action==="approve"?p.status==="draft":
+     action==="claim_commit"?p.status==="approved":
+     action==="manual_pending"||action==="committed"?p.status==="executing":
+     action==="manual_confirmed"?p.status==="manual_pending":
+     action==="reject"?["draft","approved"].includes(p.status):false;
+   if(!allowed)throw new Error("conflict");
+   const status=action==="approve"?"approved":action==="reject"?"rejected":
+     action==="claim_commit"?"executing":action;
    this.proposal={...p,status,revision:revision+1,
-     monitoringStartDate:action==="manual_confirmed"?startDate??null:p.monitoringStartDate};
+     monitoringStartDate:action==="manual_confirmed"||action==="committed"?
+       startDate??null:p.monitoringStartDate};
    return this.proposal;
  }
  async addSample(s:OwnerLoopScope,id:string,sample:LoopSample){
@@ -127,6 +135,41 @@ describe("owner-approved full loop with real cents-only calculator",()=>{
    const a=await approveLoop(scope,store,p.id,p.revision);
    expect((await commitLoop(scope,registry,store,p.id,a.revision)).result.status)
      .toBe("requires_manual_action");
+ });
+ it("serializes two concurrent effect invocations at the approval-claim gate",async()=>{
+   let commits=0;
+   const effect=registerLoopCapability({
+     id:"test.one_time_effect.v1",version:1,
+     inputSchema:z.strictObject({value:z.number().int()}),
+     effectSchema:z.strictObject({value:z.number().int()}),
+     simulate:async(_scope,input)=>({effect:input,baseline:{},
+       monitorSpec:{durationDays:1,metricScope:"effect"}}),
+     commit:async()=>{commits++;await Promise.resolve();return {status:"verified",evidenceSource:"test"};},
+     monitor:async(_scope,_effect,businessDate)=>({businessDate,source:"test",observation:{ok:true}}),
+     report:async()=>({status:"complete",result:{ok:true},recommendation:"keep",source:"test"}),
+   });
+   const registry=loopRegistry(effect),store=new MemoryRepo();
+   const draft=await proposeLoop(scope,registry,store,effect.id,{value:1},
+     "9482eaf5-a2f1-4d67-852b-aab8a8d9b310");
+   const approved=await approveLoop(scope,store,draft.id,draft.revision);
+   const results=await Promise.allSettled([
+     commitLoop(scope,registry,store,draft.id,approved.revision),
+     commitLoop(scope,registry,store,draft.id,approved.revision),
+   ]);
+   expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+   expect(results.filter(r=>r.status==="rejected")).toHaveLength(1);
+   expect(commits).toBe(1);
+ });
+ it("never posts a terminal report before monitoring ends",async()=>{
+   const registry=loopRegistry(latte),store=new MemoryRepo();
+   const p=await proposeLoop(scope,registry,store,latte.id,{increaseCents:10},
+     "bd7ef968-0c42-4b6b-b386-0f4a113c5627");
+   const a=await approveLoop(scope,store,p.id,p.revision);
+   const commit=await commitLoop(scope,registry,store,p.id,a.revision);
+   const ready=await confirmManualLoop(scope,store,p.id,commit.proposal.revision,"2026-10-01");
+   const result=await monitorLoop(scope,registry,store,ready,"2026-09-30",true);
+   expect(result?.status).toBe("in_progress");
+   expect(store.report?.status).toBe("in_progress");
  });
  it("rejects cross-tenant approval even when proposal id and revision are known",async()=>{
    const store=new MemoryRepo(),registry=loopRegistry(latte);
