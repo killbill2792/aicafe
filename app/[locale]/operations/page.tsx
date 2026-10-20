@@ -128,6 +128,15 @@ function TaskList({ tasks, empty, names, t, tExperiment, category, selectedTaskI
         {typeof task.payload.realizedRevenueDifferenceCents==="number"&&
           <p>{tExperiment("observedDifference")}: {formatCents(task.payload.realizedRevenueDifferenceCents)}</p>}
       </div>}
+      {task.kind==="price_experiment_report"&&<div className="mt-3 space-y-2 text-[17px]">
+        <p>{tExperiment("reportRevenue",{value:typeof task.payload.observedRevenueCents==="number"?
+          formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
+        <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
+          formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
+        <p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
+          task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>
+        <p className="text-ink-muted">{tExperiment("reportUncertain")}</p>
+      </div>}
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
       {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
     </article>;
