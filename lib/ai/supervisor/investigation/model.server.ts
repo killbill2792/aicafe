@@ -177,7 +177,7 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
         // The shared eight-attempt cap and fallback!==current guard prevent loops.
         const modelError=["model_not_found","model_not_allowed","model_access_denied",
           "model_not_available","model_not_accessible","invalid_model"].includes(code)||
-          ([400,403,404].includes(response.status)&&/\\bmodel\\b/iu.test(message));
+          ([400,403,404].includes(response.status)&&/\bmodel\b/iu.test(message));
         if(modelError&&fallback&&fallback!==input.usage.model&&
           input.usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls){
           input.onDiagnostic?.({stage:"provider_fallback",fromModel:input.usage.model,
