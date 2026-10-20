@@ -74,7 +74,7 @@ export type SupervisorDiagnostic = {
    * message -- so a log of this failure says whether the owner actually saw
    * something or truly got nothing, without having to guess from the stored
    * reply itself. */
-  failureCategory?:"budget_exhausted"|"model_typed_arithmetic_rejected"|
+  failureCategory?:"budget_exhausted"|
     "reviewer_downgraded_to_partial"|"reviewer_hard_fail"|"provider_error";
   rescuedUnverified?:boolean;
   /** Set on stage "reply_validation": exactly which validateGroundedReply
@@ -97,7 +97,7 @@ const stages:readonly SupervisorStage[]=[
 const agents=new Set(["alex","olivia","leo","maya","supervisor"]);
 const exhaustionReasons=new Set(["model_calls","operations","time","identity_mismatch",
   "snapshot_mismatch","observations_too_large","no_progress"]);
-const failureCategories=new Set(["budget_exhausted","model_typed_arithmetic_rejected",
+const failureCategories=new Set(["budget_exhausted",
   "reviewer_downgraded_to_partial","reviewer_hard_fail","provider_error"]);
 const answerRejectedReasons=new Set(["render_failed","review_failed","review_unavailable"]);
 const replyValidationReasons=new Set<ReplyValidationFailureReason>(

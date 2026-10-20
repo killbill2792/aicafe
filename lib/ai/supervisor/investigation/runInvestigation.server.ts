@@ -754,11 +754,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
-      // Keep server-produced metric/task blocks even if the semantic reviewer
-      // objects to other narration or incomplete goals. Never carry free-form
-      // model prose through an unsupported verdict: a fabricated "done" claim
-      // must not acquire authority merely because it cites an unrelated price.
-      const safeReviewBlocks=reply.blocks.filter(block=>block.type!=="text");
+      // Keep server-produced facts AND source-grounded narrative that passed
+      // the claim-by-claim renderer. A valid text-only source description must
+      // not vanish just because it has no numeric value suitable for a box.
+      // Do not preserve unrelated free-form advice or unsupported action
+      // assertions merely because another paragraph cites a real source.
+      const groundedNarrative=new Set<string>();
+      answer.paragraphs.forEach((paragraph,index)=>{
+        if(paragraph.kind!=="evidence"||
+          rendered.issues.some(issue=>issue.paragraphIndex===index)||
+          !/\{\{r\d+:[a-zA-Z0-9_.]+\}\}/u.test(paragraph.text))return;
+        const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,
+          {ownerText:input.text});
+        if(!checked||checked.issues.length||!checked.evidence.length)return;
+        for(const block of checked.blocks)
+          if(block.type==="text")groundedNarrative.add(block.text);
+      });
+      const safeReviewBlocks=reply.blocks.filter(block=>block.type!=="text"||
+        groundedNarrative.has(block.text));
       const hasSafeReviewFacts=safeReviewBlocks.some(block=>block.type!=="warning");
       let downgradedByReview=false;
       if(review&&!isToolCallSignal(review)&&!review.supported&&hasSafeReviewFacts){

@@ -383,6 +383,8 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       providerErrorCode:classified.providerErrorCode,
       modelCallCount:input.usage.modelCallCount});
     input.onDiagnostic?.({stage:"provider_response",category:classified.category,
+      ...(classified.category==="provider_http"||classified.category==="provider_timeout"?
+        {failureCategory:"provider_error" as const}:{}),
       httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
       providerErrorCode:classified.providerErrorCode,requestName:input.name,
       invalidPayloadReason:classified.invalidPayloadReason,

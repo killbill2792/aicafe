@@ -2874,3 +2874,6 @@ Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted t
 - Owner must manually change the POS price (POS API stays read-only). A separate explicit Mark Done records owner assertion, never pretends automatic POS verification. Monitoring starts on the following café-local business day.
 - Design decision: one service-owned append-only approval ledger and compare-and-swap revision RPC protect proposal effects; authenticated access is read-only through tenant/owner RLS. Existing operating_tasks and ai_messages are reused, with no second inbox.
 - Release: draft PR only, no merge and no deploy or live migration. CI and independent review must be green at final HEAD before marking complete; do not claim completed checks from earlier commits.
+
+- [x] 2026-10-20 reviewer-veto follow-up: preserve per-paragraph render-validated, source-cited narrative text on a negative semantic review, downgrade to labeled partial rather than discarding it; exclude unresolved claims and unsupported action prose. Added a red-before-green text-only regression.
+- [x] 2026-10-20 telemetry follow-up: emit `provider_error` for real provider HTTP/network/timeout failures and remove unreachable `model_typed_arithmetic_rejected` from diagnostic categories. Added a red-before-green transport regression.
