@@ -39,8 +39,7 @@ function reviewedDuration(input: PlannerInput): number | null {
 type Span = { units: DemandUnit[]; locationId: string; qualificationCode: string|null;
   minHeadcount:number; breakFloor:number };
 const samePolicy=(a:Span,b:Span)=>
-  a.locationId===b.locationId &&
-  a.qualificationCode===b.qualificationCode;
+  a.locationId===b.locationId;
 
 function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
   const slices=plan.units.filter(u=>u.seatIndex===0).flatMap(unit=>{
@@ -52,16 +51,24 @@ function coverageSpans(input:PlannerInput,plan:ExpandedPlan):Span[] {
           qualificationCode:unit.qualificationCode,minHeadcount:c.minHeadcount,
           breakFloor:c.minHeadcountDuringBreak ?? c.minHeadcount}] : [];
   }).sort((a,b)=>a.units[0].start-b.units[0].start ||
-    a.locationId.localeCompare(b.locationId));
+    a.locationId.localeCompare(b.locationId) ||
+    String(a.qualificationCode).localeCompare(String(b.qualificationCode)));
   // Partition before linking adjacent pieces: two locations or roles can
   // have interleaved slices and must not interrupt one another's work span.
   const groups=new Map<string,Span[]>();
   for(const item of slices){
-    const key=JSON.stringify([item.locationId,item.qualificationCode]);
+    const key=JSON.stringify([item.locationId]);
     const spans=groups.get(key)??[];
-    const previous=spans[spans.length-1];
-    if(previous && samePolicy(previous,item) &&
-        previous.units[previous.units.length-1].end===item.units[0].start){
+    const touching=spans.filter(existing=>samePolicy(existing,item) &&
+      existing.units[existing.units.length-1].end===item.units[0].start);
+    // Continue an existing role first. Change duties across an adjacent row
+    // only when there is ONE unambiguous continuous cohort, never blend
+    // simultaneous qualification requirements into the same seat tier.
+    const previous=touching.find(existing=>
+      existing.units[existing.units.length-1].qualificationCode===
+      item.units[0].qualificationCode) ||
+      (touching.length===1?touching[0]:undefined);
+    if(previous){
       previous.units.push(...item.units);
       previous.minHeadcount=Math.min(previous.minHeadcount,item.minHeadcount);
     } else spans.push(item);
