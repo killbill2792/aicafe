@@ -11,9 +11,9 @@ type Proposal={id:string;revision:number;status:string;monitoring_start_date:str
   canonical_effect_payload:{productName:string;oldPriceCents:number;newPriceCents:number}};
 type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:number};
   baseline:{estimatedAdditionalRevenue7DaysCents:number}};
-export default function SupervisorExperiment({threadId,locale,copy}:{
-  threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy}){
- const [open,setOpen]=useState(false),[busy,setBusy]=useState(false);
+export default function SupervisorExperiment({threadId,locale,copy,initialProposalId}:{
+  threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;initialProposalId?:string}){
+ const [open,setOpen]=useState(Boolean(initialProposalId)),[busy,setBusy]=useState(false);
  const [items,setItems]=useState<Item[]>([]),[itemId,setItemId]=useState("");
  const [cents,setCents]=useState("10"),[proposals,setProposals]=useState<Proposal[]>([]);
  const [simulation,setSimulation]=useState<Simulation|null>(null);
@@ -42,7 +42,7 @@ export default function SupervisorExperiment({threadId,locale,copy}:{
    setProposals(state.proposals);
   }catch{setError(true);}finally{setBusy(false);}
  };
- const p=proposals[0],delta=Number(cents);
+ const p=proposals.find(value=>value.id===initialProposalId)??proposals[0],delta=Number(cents);
  const valid=Number.isSafeInteger(delta)&&delta>0&&delta<=100000;
  const actionClass="min-h-12 rounded-full border border-ink px-4 text-[17px] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
  return <section className="border-t border-[#E9DAC8] bg-white px-3 py-2">

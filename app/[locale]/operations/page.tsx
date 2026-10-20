@@ -87,7 +87,12 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 }
 
 function taskHref(task: OperatingTask): string {
-  if (task.kind === "price_experiment_report") return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
+  if(task.kind==="price_experiment_report"){
+    const threadId=task.payload.threadId,proposalId=task.payload.proposalId;
+    if(typeof threadId==="string"&&typeof proposalId==="string")
+      return "/?thread="+encodeURIComponent(threadId)+"&experiment="+encodeURIComponent(proposalId);
+    return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
+  }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
     const query = new URLSearchParams();

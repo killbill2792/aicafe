@@ -108,7 +108,7 @@ export class SupabaseLoopRepository implements LoopRepository{
       business_id:scope.businessId,id:taskId,agent_id:delivery.agentId,
       kind:delivery.taskKind,entity_type:delivery.entityType,entity_id:delivery.entityId,
       status:"needs_owner",confidence:delivery.confidence,
-      payload:{...delivery.payload,proposalId:p.id},evidence:delivery.evidence,
+      payload:{...delivery.payload,proposalId:p.id,threadId:p.threadId},evidence:delivery.evidence,
     },{onConflict:"business_id,id",ignoreDuplicates:true});
     if(task.error)failed(task.error,"Operations report inbox unavailable");
     // Source evidence may arrive late; refresh measurements without reopening

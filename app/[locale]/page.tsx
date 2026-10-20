@@ -71,12 +71,12 @@ function newestTaskTime(task: OperatingTask): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ period?: string; thread?: string; experiment?: string }> }) {
   const signedInUser = await requireOwnBusiness();
   const requestedLocale = await getLocale();
   const locale = requestedLocale === "es" || requestedLocale === "ar" ? requestedLocale : "en";
   const chatReadiness = await getSupervisorChatReadiness(Boolean(signedInUser));
-  const { period: periodParam } = await searchParams;
+  const { period: periodParam,thread:initialThread,experiment:initialExperiment } = await searchParams;
   const period: Period = isPeriod(periodParam) ? periodParam : "today";
 
   const [snapshot, menu] = await Promise.all([getSnapshot(), getMenuControlCenter()]);
@@ -178,6 +178,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <div className="flex flex-col gap-4">
         <SupervisorHomePanel
+          initialThreadId={initialThread}
+          initialProposalId={initialExperiment}
           experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote")}}
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
