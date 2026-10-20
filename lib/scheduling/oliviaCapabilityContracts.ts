@@ -178,7 +178,7 @@ const scenarioBase=z.object({
     reason:z.enum(["no_active_staff","qualification_missing","no_confirmed_availability",
       "capacity_or_overlap","break_or_rest_constraint","daily_hour_limit",
       "weekly_hour_limit","date_specific_cap","pinned_conflict","solver_budget",
-      "handoff_overlap_missing"]),
+      "handoff_overlap_missing","break_coverage_unsatisfiable"]),
   }).strict().refine(g=>Date.parse(g.endAt)>Date.parse(g.startAt),
     "Coverage gap end must follow start")).max(OLIVIA_MAX_GAPS_PER_SCENARIO),
   completeCoverage:z.boolean(),hardConstraintsSatisfied:z.boolean(),
