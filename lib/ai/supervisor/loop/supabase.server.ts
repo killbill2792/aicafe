@@ -73,6 +73,13 @@ export class SupabaseLoopRepository implements LoopRepository{
     },{onConflict:"business_id,proposal_id,business_date"});
     if(error)failed(error,"Monitor sample write failed");
   }
+  async clearSample(scope:OwnerLoopScope,id:string,businessDate:string):Promise<void>{
+    const db=createAdminSupabaseClient();
+    const {error}=await db.from("supervisor_monitor_samples").delete()
+      .eq("business_id",scope.businessId).eq("proposal_id",id)
+      .eq("business_date",businessDate);
+    if(error)failed(error,"Monitor source withdrawal failed");
+  }
   async samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.from("supervisor_monitor_samples")
