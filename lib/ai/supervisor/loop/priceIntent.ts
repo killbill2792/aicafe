@@ -14,6 +14,9 @@ export function priceExperimentFollowupIntent(current:string,previous:string):
     /\b(?:raise|increase)\s+(?:the\s+)?([a-z][a-z0-9\s-]{0,90}?)\s+price\s+by\s+(\d{1,6})\s+cents?\b/giu,
     /\b(?:raise|increase)\s+(?:the\s+)?price\s+of\s+([a-z][a-z0-9\s-]{0,90}?)\s+by\s+(\d{1,6})\s+cents?\b/giu,
   ];
+  // Multiple quantities (even when a second phrase omits "price") mean
+  // multiple possible experiments; never silently select the first.
+  if([...previous.matchAll(/\b\d{1,6}\s*cents?\b/giu)].length!==1)return null;
   const matches=patterns.flatMap(rx=>[...previous.matchAll(rx)]);
   if(matches.length!==1)return null;
   const product=matches[0][1]?.trim();
