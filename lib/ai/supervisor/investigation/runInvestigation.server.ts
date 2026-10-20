@@ -856,6 +856,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     let result:unknown;
     const operationStartedAt=Date.now();
     let calculation=false;
+    let calculatorDispatched=false;
     let calculationPeriods:string[]=[];
     let readDomain:string|undefined;
     let readDispatched=false;
@@ -889,7 +890,6 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"calculator_input",requestId:debugRequestId,round,
         capabilityId:EXPRESSION_ID,modelPlan:args,validatedPlan:plan.data,
         simulationContext,selectedOperandHandles:[...handles]});
-      let calculatorDispatched=false;
       result=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,simulationContext,()=>{
         calculatorDispatched=true;
         usage.toolCallCount++;
@@ -1029,7 +1029,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     logSupervisorDebugPayload({point:"capability_round",requestId:debugRequestId,round,
       capabilityId,callId:step.callId,toolArguments:args,rawResult:result,
       observationId:id,status:String(result.status),successful,
-      durationMs:Date.now()-operationStartedAt,dispatched:calculation||readDispatched});
+      durationMs:Date.now()-operationStartedAt,dispatched:calculatorDispatched||readDispatched});
   }
   return await failure(true,usage.modelCallCount>=INVESTIGATION_LIMITS.modelCalls-1?"model_calls":"time");
 }
