@@ -2008,4 +2008,27 @@
     "error": "Something went wrong. Try again.",
     "working": "Working…"
   }
+,
+  "SupervisorExperiment": {
+    "open": "Try a drink price experiment",
+    "close": "Close price experiment",
+    "product": "Drink",
+    "increase": "Increase (cents)",
+    "preview": "Calculate impact",
+    "propose": "Propose this experiment",
+    "approve": "Approve proposal",
+    "apply": "Begin manual handoff",
+    "done": "I've updated the POS price",
+    "report": "View measurements",
+    "waiting": "Monitoring from",
+    "loading": "Working…",
+    "error": "Could not complete this action",
+    "condition": "Estimated added revenue with unchanged demand:",
+    "confirmNote": "Change the drink price directly in your POS, then confirm.",
+    "reportNote": "Report status:",
+    "reportTask": "Price experiment results for {item}",
+    "reportDetail": "Check observed sales, conditional estimate and keep/revert/adjust recommendation.",
+    "reportAction": "Review experiment",
+    "reportThread": "Alex has completed the price experiment report. See the Operations inbox for the results and limitations."
+  }
 }

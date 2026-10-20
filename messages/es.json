@@ -2008,4 +2008,27 @@
     "error": "Ocurrió un error. Inténtalo de nuevo.",
     "working": "Procesando…"
   }
+,
+  "SupervisorExperiment": {
+    "open": "Probar un cambio de precio",
+    "close": "Cerrar experimento",
+    "product": "Bebida",
+    "increase": "Aumento (centavos)",
+    "preview": "Calcular impacto",
+    "propose": "Proponer experimento",
+    "approve": "Aprobar propuesta",
+    "apply": "Empezar el cambio manual",
+    "done": "Ya actualicé el precio en el TPV",
+    "report": "Ver mediciones",
+    "waiting": "Seguimiento desde",
+    "loading": "Procesando…",
+    "error": "No se pudo completar la operación",
+    "condition": "Ingreso adicional estimado si la demanda no cambia:",
+    "confirmNote": "Cambia el precio directamente en tu TPV y luego confirma.",
+    "reportNote": "Estado del informe:",
+    "reportTask": "Resultados del experimento para {item}",
+    "reportDetail": "Consulta las ventas reales, la estimación condicional y la recomendación.",
+    "reportAction": "Revisar experimento",
+    "reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites."
+  }
 }
