@@ -18,6 +18,7 @@ import {withSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.se
 import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {ownerQuotedPriceDelta,ownerNamedUniqueProduct} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -120,7 +121,9 @@ export async function POST(request: Request, context: RouteContext) {
         tools, history,
         inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
-          if(!capabilityId||identity.currency!=="USD")return null;
+          const authorized=await authorizedOwnerP1();
+          if(!capabilityId||authorized.identity.businessId!==scope.businessId||
+            authorized.identity.currency!=="USD")return null;
           const definition=supervisorLoopRegistry.get(capabilityId);
           if(!rawArgs||typeof rawArgs!=="object"||Array.isArray(rawArgs))return null;
           const raw=rawArgs as Record<string,unknown>;
