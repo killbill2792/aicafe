@@ -226,7 +226,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // leaves nothing cleaner to show (failure() below).
   let bestAccumulated:{issueCount:number;score:number;blocks:SupervisorReplyBlock[];
     evidence:EvidenceReference[];citedIds:string[];status:GroundedSupervisorReply["status"];
-    intent:GroundedSupervisorReply["intent"]}|null=null;
+    intent:GroundedSupervisorReply["intent"];answer:InvestigationAnswer}|null=null;
   // Shared by every place that records a §7 candidate: both the pre-extraction
   // candidate recorded on every issue-bearing round, and a same-round,
   // post-extraction candidate that strictly improves on it. Comparing on
@@ -239,12 +239,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // issues overwrite a cleaner earlier one merely because both happened to
   // render the same number of blocks (now correctly rejected, since a higher
   // issueCount never replaces a lower one regardless of block count).
-  const updateBestAccumulated=(candidate:GroundedSupervisorReply,issueCount:number)=>{
+  const updateBestAccumulated=(candidate:GroundedSupervisorReply,issueCount:number,
+    answer:InvestigationAnswer)=>{
     const score=candidate.blocks.length;
     if(!bestAccumulated||issueCount<bestAccumulated.issueCount||
       (issueCount===bestAccumulated.issueCount&&score>=bestAccumulated.score))
       bestAccumulated={issueCount,score,blocks:candidate.blocks,
-        evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
+        evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,answer,
         citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
   const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"]):
@@ -286,29 +287,50 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const accReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
           instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,
             observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
-            proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
+            proposedAnswer:bestAccumulated.answer,renderedAnswer:bestAccumulated.blocks},
           apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
         // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
         logSupervisorDebugPayload({point:"accumulated_rescue_review_verdict",requestId:debugRequestId,
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        // A masked numeric claim does NOT make the surrounding narrative
-        // semantically true. This fallback has no paragraph-to-block provenance
-        // to safely retain only reviewer-supported sentences. When the review
-        // rejects it (or is unavailable), withhold the entire accumulated
-        // candidate rather than publishing a purported completed action.
-        if(!accReview||isToolCallSignal(accReview)||!accReview.supported){
+        if(!accReview||isToolCallSignal(accReview)){
+          // An unavailable reviewer is not evidence of semantic support.
           accumulatedRescue=false;
-          if(accReview&&!isToolCallSignal(accReview))
+        }else if(!accReview.supported){
+          // Only independently supported original paragraphs survive. The
+          // renderer rechecks every paragraph and its actual citations;
+          // a source-backed value in one cannot certify another's actions.
+          const safeBlocks:SupervisorReplyBlock[]=[];
+          const safeEvidence:EvidenceReference[]=[];
+          const safeCitedIds=new Set<string>();
+          const selected=new Set(accReview.supportedParagraphIndices??[]);
+          bestAccumulated.answer.paragraphs.forEach((paragraph,index)=>{
+            if(!selected.has(index)||paragraph.kind!=="evidence")return;
+            const checked=renderInvestigationAnswer({paragraphs:[paragraph]},
+              observations,input.locale,{ownerText:input.text});
+            if(!checked||checked.issues.length||checked.evidence.length===0)return;
+            safeBlocks.push(...checked.blocks);
+            for(const ref of checked.evidence)
+              if(!safeEvidence.some(prev=>prev.identifier===ref.identifier))safeEvidence.push(ref);
+            for(const id of checked.citedIds)safeCitedIds.add(id);
+          });
+          if(!safeBlocks.length){
+            accumulatedRescue=false;
             input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
-        }else if(!accReview.complete&&bestAccumulated){
+          }else{
+            bestAccumulated={...bestAccumulated,status:"partial",
+              blocks:[...bestAccumulated.blocks.filter(block=>block.type==="warning"),
+                ...safeBlocks,missingGoalWarning(accReview.reason)],
+              evidence:safeEvidence,citedIds:[...safeCitedIds]};
+            input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
+              failureCategory:"reviewer_downgraded_to_partial"});
+          }
+        }else if(!accReview.complete){
           bestAccumulated={...bestAccumulated,status:"partial",
             blocks:bestAccumulated.blocks.length<30?
               [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
               bestAccumulated.blocks};
-          input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
-            failureCategory:"reviewer_downgraded_to_partial"});
         }
       }
     }
@@ -712,7 +734,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // Section 7: remember the best-surviving candidate across the WHOLE
         // loop, not just the final attempt, in case nothing cleaner ever
         // arrives before the budget runs out.
-        updateBestAccumulated(reply,rendered.issues.length);
+        updateBestAccumulated(reply,rendered.issues.length,answer);
         // Section 5: one bounded, narrow extraction attempt for the FIRST
         // plain unmatched number that has no cheap direct match (one already
         // matching a real observation gets told to cite it instead, per
@@ -740,7 +762,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               // best-so-far too, or exhaustion later in this same turn could
               // still fall back to the STALE, more-masked pre-extraction
               // version even though a verified, better one now exists.
-              updateBestAccumulated(reply,reRendered.issues.length);
+              updateBestAccumulated(reply,reRendered.issues.length,answer);
             }
           }
         }
