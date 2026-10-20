@@ -9,7 +9,7 @@ export function notificationEnabled():boolean {
 /** Exact persisted task kind only. Never forward free-text employee or supplier data. */
 export function safeTaskKind(task:Pick<OperatingTask,"kind"|"status">):string|null{
  if(task.status!=="needs_owner")return null;
- const labels:{[K in OperatingTask["kind"]]:string}={
+ const labels:Partial<{[K in OperatingTask["kind"]]:string}>={
   price_review:"menu price review",staff_coverage:"staff coverage",
   supply_check:"supply check",money_update:"money review",data_quality:"missing information",
  };
