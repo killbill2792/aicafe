@@ -35,8 +35,15 @@ export function loopRead<I,O>(entry:ReadOnlyCapability<I,O>):ReadOnlyCapability<
 export function loopPropose<I,O>(entry:ProposeCapability<I,O>):ProposeCapability<I,O>{return entry;}
 export function loopApprove<I,O>(entry:ApprovalCapability<I,O>):ApprovalCapability<I,O>{return entry;}
 export function loopCommit<I,O>(entry:CommitCapability<I,O>):CommitCapability<I,O>{return entry;}
-export type Registration=ReadOnlyCapability<unknown,unknown>|ProposeCapability<unknown,unknown>|
-  ApprovalCapability<unknown,unknown>|CommitCapability<unknown,unknown>;
+/** Erased runtime view. Domain input/output types remain validated by typed factories. */
+export type Registration={
+ id:string;version:1;owner:string;description:string;mode:LoopMode;
+ inputSchema:z.ZodType;outputSchema:z.ZodType;
+ read?:(input:never)=>Promise<unknown>;
+ propose?:(input:never,store:ProposalWriter)=>Promise<unknown>;
+ approve?:(input:never,store:ApprovalWriter)=>Promise<unknown>;
+ commit?:(input:never,store:CommitWriter)=>Promise<unknown>;
+};
 export function createLoopRegistry(registrations:readonly Registration[]){
   const table=new Map<string,Registration>();
   for(const entry of registrations){
