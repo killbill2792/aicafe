@@ -67,9 +67,10 @@ export function createLoopRegistry(registrations:readonly Registration[]){
       let result:unknown;
       // The registration was validated for exactly one handler above.
       // Parsing completes before the erased callback receives its typed input.
-      const invoke=(fn:((input:never,facade?:never)=>Promise<unknown>)|undefined,store?:unknown)=>{
-        if(!fn)throw new Error("missing_mode_handler");
-        return fn(parsed as never,store as never);
+      const invoke=(fn:unknown,store?:unknown):Promise<unknown>=>{
+        if(typeof fn!=="function")throw new Error("missing_mode_handler");
+        // The constructor checked exactly one mode-compatible handler.
+        return (fn as (input:unknown,store?:unknown)=>Promise<unknown>)(parsed,store);
       };
       switch(registered.mode){
         case "read":case "simulate":case "evaluate":
