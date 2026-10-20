@@ -176,7 +176,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         <input className={field} type="number" min="0" max="50" value={breakFloor}
           placeholder={t("breakFloorDefault")}
           onChange={e=>setBreakFloor(e.target.value)}/>
-        <span className="text-ink-muted text-sm">{t("breakFloorHelp")}</span>
+        <span className="text-ink-muted text-[17px]">{t("breakFloorHelp")}</span>
       </label>
       <label className="flex flex-col gap-1 text-[17px]">{t("qualification")}
         <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
