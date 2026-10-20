@@ -186,28 +186,37 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
   candidates.sort((a,b)=>a.people.length-b.people.length ||
     a.first.start-b.first.start || a.span.locationId.localeCompare(b.span.locationId));
   const roster=new Map<Candidate,ExpandedPlan["employees"][number]>();
+  let bestRoster=new Map<Candidate,ExpandedPlan["employees"][number]>();
   let attempts=0;
-  function select(index:number):boolean {
-    if(index===candidates.length)return true;
-    if(attempts>=12_000)return false;
+  function select(index:number):void {
+    if(attempts>=12_000 ||
+        roster.size+candidates.length-index<=bestRoster.size)return;
+    if(index===candidates.length){
+      bestRoster=new Map(roster);
+      return;
+    }
     const entry=candidates[index];
     for(const person of entry.people){
-      if(++attempts>12_000)return false;
+      if(++attempts>12_000)return;
       if([...roster].some(([other,worker])=>worker.id===person.id &&
         entry.first.start<other.last.end && other.first.start<entry.last.end))
         continue;
       roster.set(entry,person);
-      if(select(index+1))return true;
+      select(index+1);
       roster.delete(entry);
     }
-    return false;
+    // This abstract long seat tier may be staffed by shorter B -> C shifts
+    // and requires no individual worker break. Skip only THAT reservation,
+    // rather than rejecting all full-span A reservations in the location.
+    select(index+1);
   }
-  if(!select(0))return results;
+  select(0);
+  if(bestRoster.size===0)return results;
 
   type Placement={entry:Candidate;employeeId:string;start:number;end:number;
     coverageIds:string[]};
-  const placements=candidates.map(entry=>{
-    const employeeId=roster.get(entry)!.id;
+  const placements=[...bestRoster.keys()].map(entry=>{
+    const employeeId=bestRoster.get(entry)!.id;
     const coverageIds=[...new Set(entry.span.units.map(u=>u.coverageId))];
     const choices:Placement[]=[];
     for(let start=entry.first.start+gridMs;
