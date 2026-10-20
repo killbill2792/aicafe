@@ -549,12 +549,10 @@ describe("test-only raw investigation trace security boundary",()=>{
         toolArguments:{secret:"bank-access-token",employee:"Sophie"},
         result:{value:{employee:"Sophie",wageCents:2500}},
         rawAnswerParagraphs:["private café fact"]},line=>lines.push(line));
-      expect(lines).toHaveLength(2);
-      expect(JSON.parse(lines[0])).toMatchObject({event:"supervisor_turn_debug_metadata",
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({event:"supervisor_diagnostic_detail",
         point:"tool_result",requestId:"safe123",round:1,callId:"a1",
         capabilityId:"p3.money.monthly_bills.v1"});
-      expect(JSON.parse(lines[1])).toMatchObject({event:"supervisor_diagnostic_detail",
-        point:"tool_result",requestId:"safe123"});
       expect(lines.join(" ")).not.toMatch(/bank-access-token|Sophie|2500|private café fact/);
       for(const line of lines){
         expect(JSON.parse(line)).not.toHaveProperty("result");
@@ -568,8 +566,8 @@ describe("test-only raw investigation trace security boundary",()=>{
     vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
     try{
       logSupervisorDebugPayload({point:"calculator_rejected",requestId:"turnabc",
-        reasonCode:"invalid_plan",issues:[{code:"invalid_type",
-          path:["nodes",2,"handle"],message:"PRIVATE-USER-TEXT",expected:"string"}],
+        reasonCode:"invalid_plan",issues:[{code:"too_small",path:["description"],message:"PRIVATE-USER-TEXT"},
+          {code:"invalid_type",path:["nodes",2,"quotedDenomination"],expected:"string"}],
         toolArguments:{nodes:[{op:"source",handle:"SECRET_EMPLOYEE_HANDLE"}]},
         ownerQuestion:"My employee is PRIVATE PERSON"},l=>lines.push(l));
       logSupervisorDebugPayload({point:"parallel_batch",requestId:"turnabc",
@@ -583,10 +581,28 @@ describe("test-only raw investigation trace security boundary",()=>{
       const detail=lines.map(x=>JSON.parse(x)).filter(x=>x.event==="supervisor_diagnostic_detail");
       expect(detail).toHaveLength(2);
       expect(detail[0]).toMatchObject({point:"calculator_rejected",reasonCode:"invalid_plan",
-        issueCount:1,schemaIssues:[{path:["nodes",2,"handle"],code:"invalid_type"}],
+        issueCount:2,schemaIssues:[{path:["description"],code:"too_small"},
+          {path:["nodes",2,"quotedDenomination"],code:"invalid_type"}],
         nodeCount:1,nodeOps:["source"]});
       expect(detail[1].preflight.perCall[0].currencyAndSnapshotPermitted).toBe(false);
       expect(lines.join(" ")).not.toMatch(/PRIVATE|SECRET|MUST_NOT_LOG/);
+    }finally{vi.unstubAllEnvs();}
+  });
+  it("correlates concurrent-model diagnostic events through the request-local context",async()=>{
+    const lines:string[]=[];
+    vi.stubEnv("NODE_ENV","production");
+    vi.stubEnv("SUPERVISOR_DEBUG_RAW_LOGGING","true");
+    try{
+      await withSupervisorPrivateTrace(async()=>{
+        logSupervisorDebugPayload({point:"model_request",modelCallCount:1,
+          requestName:"supervisor_investigation_step",body:{owner:"private"}},
+          line=>lines.push(line));
+      },async()=>{}, "turn987");
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({
+        event:"supervisor_diagnostic_detail",point:"model_request",
+        requestId:"turn987",modelCallCount:1});
+      expect(lines.join(" ")).not.toContain("private");
     }finally{vi.unstubAllEnvs();}
   });
   it("emits provider token-cost detail but never raw responses",()=>{
