@@ -4,7 +4,7 @@ import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/task
 
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
-export type ProposalStatus="draft"|"approved"|"committed"|"manual_pending"|
+export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|
   "manual_confirmed"|"rejected"|"expired";
 export type LoopProposal={
   id:string;businessId:string;ownerUserId:string;threadId:string;
@@ -87,7 +87,7 @@ export interface LoopRepository{
   create(scope:OwnerLoopScope,requestKey:string,proposal:LoopCreate):Promise<LoopProposal>;
   load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>;
   transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"manual_pending"|"manual_confirmed"|"committed",
+    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",
     startDate?:string):Promise<LoopProposal>;
   addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>;
   samples(scope:OwnerLoopScope,id:string):Promise<LoopSample[]>;
@@ -133,13 +133,20 @@ export async function commitLoop(scope:OwnerLoopScope,registry:ReturnType<typeof
   if(p.capabilityVersion!==def.version)throw new Error("Effect contract version changed");
   const effect=def.parseEffect(p.canonicalEffectPayload);
   if(p.effectHash!==effectHash(effect))throw new Error("Immutable effect changed");
+  // Claim the exact approval under the repository's atomic revision lock
+  // BEFORE invoking a domain effect. A competing call never reaches commit.
+  // A failed effect deliberately remains "executing" for reconciliation:
+  // automatic retries must never invoke a potentially irreversible action twice.
+  const claimed=await repo.transition(scope,id,revision,"claim_commit");
+  if(claimed.status!=="executing"||claimed.revision!==revision+1||
+    claimed.effectHash!==p.effectHash)throw new Error("Approval claim invalid");
   // Only this mode has access to the domain commit hook.
   const result=await def.commit(scope,effect);
   const transition=result.status==="requires_manual_action"?"manual_pending":"committed";
-  // For a future connected integration, an independently verified commit
-  // starts the same monitoring lifecycle as a manually confirmed effect.
+  // For a future connected integration, a verified commit starts a monitor
+  // window. The manual POS workflow uses the café-local confirmed date.
   const start=transition==="committed"?utcDateOffset(new Date().toISOString().slice(0,10),1):undefined;
-  const updated=await repo.transition(scope,id,revision,transition,start);
+  const updated=await repo.transition(scope,id,claimed.revision,transition,start);
   return {proposal:updated,result};
 }
 export async function confirmManualLoop(scope:OwnerLoopScope,repo:LoopRepository,
