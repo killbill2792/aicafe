@@ -1,27 +1,40 @@
-/** Recognize only an explicit owner follow-up to exactly one earlier
- * owner-authored price scenario. This is intent routing, not model-generated
- * math, consent, or authority to perform a business write. */
+/** Validation of owner-stated prices and product names, not an intent router.
+ * A model may choose a registered inert-proposal tool semantically, but cannot
+ * manufacture a price or select an ambiguous catalog variant. */
 export function normalizedDrinkName(value:string):string{
   return value.toLocaleLowerCase("en").normalize("NFKC")
     .replace(/[^\p{L}\p{N}]+/gu," ").trim();
 }
-export function priceExperimentFollowupIntent(current:string,previous:string):
-  {product:string;increaseCents:number}|null{
-  const go=current.trim();
-  if(!/^(?:let['’]?s try it|let['’]?s test it|go ahead and try it|try that price|prob[eé]moslo|vamos a probarlo|لنجربه|لنجرّبه)[.!؟\s]*$/iu.test(
-      go.replace(/\s+/gu," ").replace(/\s+$/u,"")))return null;
-  const patterns=[
-    /\b(?:raise|increase)\s+(?:the\s+)?([a-z0-9][a-z0-9\s-]{0,90}?)\s+price\s+by\s+(\d{1,6})\s+cents?\b/giu,
-    /\b(?:raise|increase)\s+(?:the\s+)?price\s+of\s+([a-z0-9][a-z0-9\s-]{0,90}?)\s+by\s+(\d{1,6})\s+cents?\b/giu,
-  ];
-  // Multiple quantities (even when a second phrase omits "price") mean
-  // multiple possible experiments; never silently select the first.
-  if([...previous.matchAll(/\b\d{1,6}\s*cents?\b/giu)].length!==1)return null;
-  const matches=patterns.flatMap(rx=>[...previous.matchAll(rx)]);
-  if(matches.length!==1)return null;
-  const product=matches[0][1]?.trim();
-  const increaseCents=Number(matches[0][2]);
-  if(!product||!Number.isSafeInteger(increaseCents)||increaseCents<1||
-    increaseCents>100000)return null;
-  return {product,increaseCents};
+function decimalDigits(value:string):string{
+  return value.replace(/[٠-٩]/gu,x=>String(x.charCodeAt(0)-0x660))
+    .replace(/[۰-۹]/gu,x=>String(x.charCodeAt(0)-0x6f0));
+}
+/** Verify the proposed integer-cent delta is a single exactly owner-authored
+ * amount in the current turn, or in the most recent owner turn for an explicit
+ * follow-up. Do not use model-generated amounts as independent evidence. */
+export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
+  candidate:number):boolean{
+  if(!Number.isSafeInteger(candidate)||candidate<1||candidate>100000)return false;
+  const amounts=(text:string)=>{
+    const normalized=decimalDigits(text.normalize("NFKC"));
+    const pattern=/(?<![\p{L}\p{N}])([0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
+    return [...normalized.matchAll(pattern)].map(m=>Number(m[1]));
+  };
+  const currentAmounts=amounts(current);
+  const selected=currentAmounts.length?currentAmounts:amounts(previous??"");
+  return selected.length===1&&selected[0]===candidate;
+}
+/** Product must be named in owner text. An unsized name that maps to two menu
+ * variants is ambiguous even if the model guessed a valid UUID. */
+export function ownerNamedUniqueProduct(current:string,previous:string|undefined,
+  selectedId:string,catalog:readonly {id:string;name:string;baseName:string}[]):boolean{
+  const text=normalizedDrinkName([current,previous??""].join(" "));
+  const seen=(name:string)=>{
+    const term=normalizedDrinkName(name);
+    return term.length>=2&&(" "+text+" ").includes(" "+term+" ");
+  };
+  const exact=catalog.filter(x=>seen(x.name));
+  if(exact.length)return exact.length===1&&exact[0].id===selectedId;
+  const based=catalog.filter(x=>seen(x.baseName));
+  return based.length===1&&based[0].id===selectedId;
 }

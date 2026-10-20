@@ -35,7 +35,7 @@ export type LoopReport={status:"in_progress"|"complete"|"insufficient_evidence";
   };
 };
 export type RegisteredLoopCapability={
-  id:string;version:1;
+  id:string;version:1;proposalInputJsonSchema:unknown;proposalDescription:string;
   simulate:(scope:OwnerLoopScope,rawInput:unknown)=>Promise<LoopSimulation>;
   parseEffect:(rawEffect:unknown)=>Record<string,unknown>;
   commit:(scope:OwnerLoopScope,rawEffect:unknown)=>Promise<LoopCommitResult>;
@@ -50,6 +50,7 @@ export type RegisteredLoopCapability={
  * effectful authority. The platform never switches on domain capability IDs. */
 export function registerLoopCapability<I,E extends Record<string,unknown>>(definition:{
   id:string;version:1;inputSchema:z.ZodType<I>;effectSchema:z.ZodType<E>;
+  proposalDescription?:string;
   simulate:(scope:OwnerLoopScope,input:I)=>Promise<LoopSimulation>;
   commit:(scope:OwnerLoopScope,effect:E)=>Promise<LoopCommitResult>;
   monitor:(scope:OwnerLoopScope,effect:E,date:string)=>Promise<LoopSample|null>;
@@ -61,6 +62,8 @@ export function registerLoopCapability<I,E extends Record<string,unknown>>(defin
   const parse=(raw:unknown):E=>definition.effectSchema.parse(raw);
   return Object.freeze({
     id:definition.id,version:definition.version,
+    proposalInputJsonSchema:z.toJSONSchema(definition.inputSchema,{unrepresentable:"any",reused:"inline"}),
+    proposalDescription:definition.proposalDescription??"Draft a registered effect for explicit owner review; do not approve or execute.",
     simulate:async(scope:OwnerLoopScope,raw:unknown)=>{
       const s=await definition.simulate(scope,definition.inputSchema.parse(raw));
       parse(s.effect);

@@ -8,7 +8,6 @@ import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimated
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
 import {registerLoopCapability,loopRegistry} from "./engine";
-import {priceExperimentFollowupIntent,normalizedDrinkName} from "./priceIntent";
 
 const cents=z.number().int().safe().nonnegative();
 const baseline=z.strictObject({
@@ -21,6 +20,7 @@ export const priceExperimentCapabilityId="alex.drink_price_experiment.v1";
 export const priceExperimentCapability=registerLoopCapability({
   id:priceExperimentCapabilityId,version:1,
   inputSchema:z.strictObject({productId:z.uuid(),increaseCents:cents.positive().max(100000)}),
+  proposalDescription:"Only when the owner clearly REQUESTS to try/test a specific real drink price increase, or unambiguously confirms the single price trial in their prior message, prepare an inert owner-review proposal. For mere hypothetical questions use read/simulate tools instead. Never approve, commit, change POS prices, or claim an action happened. Read the menu catalog to find an actual product UUID. Match the owner-authored cent increase exactly; ask clarification for ambiguous sizes or amounts. Understand English, Spanish and Arabic.",
   effectSchema:baseline,
   simulate:async(scope,input)=>{
     // Existing canonical UI read model has recipe-cost quality + covered item sales.
@@ -38,18 +38,6 @@ export const priceExperimentCapability=registerLoopCapability({
       estimatedAdditionalRevenue7DaysCents,estimatedAdditionalContribution7DaysCents,
       source:"daily_rollups+order_lines",status:"estimated",assumption:"unchanged_unit_demand"},
       monitorSpec:{durationDays:7,metricScope:item.id}};
-  },
-  recognizeProposal:async(_scope,current,prior)=>{
-    const input=priceExperimentFollowupIntent(current,prior[0]??"");
-    if(!input)return null;
-    const sought=normalizedDrinkName(input.product);
-    // A parent menu drink with multiple real size-specific entries is
-    // ambiguous; never choose a size or corresponding price on the owner's behalf.
-    const matching=(await getMenuControlCenter()).filter(item=>item.active&&
-      (normalizedDrinkName(item.name)===sought||
-       normalizedDrinkName(item.baseName)===sought));
-    if(matching.length!==1)return null;
-    return {productId:matching[0].id,increaseCents:input.increaseCents};
   },
   // POS menu APIs are READ-ONLY: no simulated side effect and no fake success.
   commit:async(_scope,effect)=>({status:"requires_manual_action",
