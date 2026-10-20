@@ -77,7 +77,7 @@ class MemoryRepo implements LoopRepository{
    action:"approve"|"reject"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
    const p=await this.load(s,id);
    if(p.revision!==revision)throw new Error("conflict");
-   const status=action==="approve"?"approved":action;
+   const status=action==="approve"?"approved":action==="reject"?"rejected":action;
    this.proposal={...p,status,revision:revision+1,
      monitoringStartDate:action==="manual_confirmed"?startDate??null:p.monitoringStartDate};
    return this.proposal;
