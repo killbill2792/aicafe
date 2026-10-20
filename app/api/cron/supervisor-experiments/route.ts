@@ -60,16 +60,19 @@ export async function GET(request:Request){
       const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,yesterday);
       if(result)reported++;
    }
-   // CAS prevents concurrent cron invocations from moving the same row twice.
-   // Updating the check timestamp without changing immutable effects ensures
-   // more recent proposals get a fair turn on subsequent scheduled runs.
-   const rotated=await db.from("supervisor_proposals").update({
-     monitor_checked_at:new Date().toISOString(),revision:p.revision+1,
-     updated_at:new Date().toISOString(),
-   }).eq("id",p.id).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
-     .eq("revision",p.revision);
-   if(rotated.error)throw rotated.error;
   }catch{failed++;}
+  finally{
+   // Rotate even if membership was removed or a source continually fails.
+   // Failed/orphaned rows cannot monopolize the oldest-first bounded queue.
+   // The revision guard preserves the database's compare-and-swap transition.
+   const rotated=await db.from("supervisor_proposals").update({
+     monitor_checked_at:new Date().toISOString(),revision:row.revision+1,
+     updated_at:new Date().toISOString(),
+   }).eq("id",row.id).eq("business_id",row.business_id)
+     .eq("owner_user_id",row.owner_user_id).eq("revision",row.revision)
+     .in("status",["manual_confirmed","committed"]);
+   if(rotated.error)failed++;
+  }
  }
  return respond(200,{checked:(data??[]).length,sampled,reported,failed});
 }

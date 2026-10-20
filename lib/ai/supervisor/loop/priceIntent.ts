@@ -11,8 +11,8 @@ export function priceExperimentFollowupIntent(current:string,previous:string):
   if(!/^(?:let['’]?s try it|let['’]?s test it|go ahead and try it|try that price|prob[eé]moslo|vamos a probarlo|لنجربه|لنجرّبه)[.!؟\s]*$/iu.test(
       go.replace(/\s+/gu," ").replace(/\s+$/u,"")))return null;
   const patterns=[
-    /\b(?:raise|increase)\s+(?:the\s+)?([a-z][a-z0-9\s-]{0,90}?)\s+price\s+by\s+(\d{1,6})\s+cents?\b/giu,
-    /\b(?:raise|increase)\s+(?:the\s+)?price\s+of\s+([a-z][a-z0-9\s-]{0,90}?)\s+by\s+(\d{1,6})\s+cents?\b/giu,
+    /\b(?:raise|increase)\s+(?:the\s+)?([a-z0-9][a-z0-9\s-]{0,90}?)\s+price\s+by\s+(\d{1,6})\s+cents?\b/giu,
+    /\b(?:raise|increase)\s+(?:the\s+)?price\s+of\s+([a-z0-9][a-z0-9\s-]{0,90}?)\s+by\s+(\d{1,6})\s+cents?\b/giu,
   ];
   // Multiple quantities (even when a second phrase omits "price") mean
   // multiple possible experiments; never silently select the first.

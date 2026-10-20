@@ -75,7 +75,12 @@ class MemoryRepo implements LoopRepository{
  }
  async transition(s:OwnerLoopScope,id:string,revision:number,
    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
-   const p=await this.load(s,id);
+   // Mirror the production SELECT ... FOR UPDATE RPC atomically. An
+   // await before reading/replacing in this in-memory fixture would allow two
+   // callers to pass the same revision in the same microtask turn.
+   const p=this.proposal;
+   if(!p||p.id!==id||p.businessId!==s.businessId||
+     p.ownerUserId!==s.ownerUserId||p.threadId!==s.threadId)throw new Error("scope");
    if(p.revision!==revision)throw new Error("conflict");
    const allowed=action==="approve"?p.status==="draft":
      action==="claim_commit"?p.status==="approved":
