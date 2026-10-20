@@ -3,13 +3,11 @@ import {AsyncLocalStorage} from "node:async_hooks";
 import {gzipSync} from "node:zlib";
 import {createHash} from "node:crypto";
 import {aggregateModelCallCosts,type ModelCallCostRecord} from "@/lib/calc/supervisorTokenCost";
-import type {ConversationScope} from "./contracts";
 
 /**
- * Owner-scoped full-fidelity pilot investigation trace. The production console
- * remains metadata-only; readable owner content must NEVER enter Vercel logs.
- * Capture is opt-in and stored behind the existing authenticated Supabase RLS.
- * No authorization headers, API keys, passwords, session cookies, or tokens.
+ * Ephemeral per-request trace. Never persist a raw trace or emit its payload
+ * to Vercel; only operational, allowlisted statistics are sent to console.
+ * The console has its own short retention (on Vercel Free), not our database TTL.
  */
 export type PrivateTurnTrace={events:Record<string,unknown>[];droppedCount:number};
 type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nextSequence:number};
@@ -17,9 +15,9 @@ const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(?:^|[_-])(?:authorization|password|passphrase|secret|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)(?:$|[_-])|(?:clientSecret|clientToken|apiKey|apiToken|accessToken|refreshToken|sessionToken|setCookie)/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
-/** Pilot traces for authenticated owners only; user-specific env allowlisting is optional no longer required. */
+/** Legacy owner-scoped trace-read gate; no new private trace rows are written. */
 export function isSupervisorPrivateTraceTester(ownerUserId:string):boolean {
-  return process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED==="true"&&
+  return process.env.SUPERVISOR_DEBUG_RAW_LOGGING==="true"&&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(ownerUserId);
   // Caller must still be an authenticated thread owner; Supabase RLS
   // independently checks both owner identity and business membership.
@@ -95,7 +93,7 @@ export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):voi
 export async function withSupervisorPrivateTrace<T>(
   run:()=>Promise<T>,finish:(trace:PrivateTurnTrace)=>Promise<void>,
 ):Promise<T>{
-  if(process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED!=="true")return run();
+  if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return run();
   const startedAt=Date.now();
   return context.run({events:[],bytes:0,droppedCount:0,nextSequence:0},async()=>{
     try{return await run();}
@@ -133,33 +131,4 @@ export async function withSupervisorPrivateTrace<T>(
       catch{console.info(JSON.stringify({event:"supervisor_private_trace",status:"write_failed"}));}
     }
   });
-}
-export async function persistSupervisorPrivateTrace(input:{
-  scope:ConversationScope;threadId:string;ownerMessageId:string;requestId:string;
-  trace:PrivateTurnTrace;
-}):Promise<void>{
-  if(!isSupervisorPrivateTraceTester(input.scope.ownerUserId))return;
-  // Service-role writes are restricted to this authenticated and explicitly
-  // allowlisted server path; RLS forbids browser/client trace insertion.
-  const {createAdminSupabaseClient}=await import("@/lib/supabase/admin");
-  const client=createAdminSupabaseClient();
-  // Never persist private owner/model data without a confirmed, active
-  // server-side TTL purge. Merely creating a timestamp is not retention.
-  const {data:retentionReady,error:retentionError}=await client.rpc(
-    "supervisor_private_trace_retention_ready");
-  if(retentionError||retentionReady!==true){
-    console.info(JSON.stringify({event:"supervisor_private_trace",
-      status:"retention_not_active",requestId:input.requestId}));
-    return;
-  }
-  const {error}=await client.from("supervisor_turn_traces").insert({
-    business_id:input.scope.businessId,
-    owner_user_id:input.scope.ownerUserId,
-    thread_id:input.threadId,
-    owner_message_id:input.ownerMessageId,
-    request_id:input.requestId,
-    events:input.trace.events,
-    dropped_count:input.trace.droppedCount,
-  });
-  if(error)console.info(JSON.stringify({event:"supervisor_private_trace",status:"write_failed"}));
 }
