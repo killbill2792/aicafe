@@ -141,6 +141,28 @@ describe("scheduling foundation input boundary", () => {
     })).toThrow();
   });
 
+  it("accepts a nullable break floor and rejects policies above normal headcount",()=>{
+    const record={
+      location_id:"00000000-0000-4000-8000-000000000002",
+      day_of_week:3,effective_from:"2026-10-14",
+      start_local:"07:00",end_local:"11:00",overnight:false,
+      min_headcount:2,priority:"required",
+      source:"owner_direct",confirmation:"owner_confirmed",
+    };
+    expect(parseFoundationRecord("coverage",{
+      ...record,min_headcount_during_break:1,
+    }).min_headcount_during_break).toBe(1);
+    expect(parseFoundationRecord("coverage",{
+      ...record,min_headcount_during_break:null,
+    }).min_headcount_during_break).toBeNull();
+    expect(() => parseFoundationRecord("coverage",{
+      ...record,min_headcount_during_break:3,
+    })).toThrow();
+    expect(() => parseFoundationRecord("coverage",{
+      ...record,min_headcount_during_break:-1,
+    })).toThrow();
+  });
+
   it("rejects arbitrary qualification codes and missing coverage location", () => {
     expect(() => parseFoundationRecord("qualification_type", {
       code: "owner' DROP TABLE employees;", display_name: "Opener",
