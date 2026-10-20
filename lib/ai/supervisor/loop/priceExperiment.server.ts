@@ -49,14 +49,19 @@ export const priceExperimentCapability=registerLoopCapability({
     if(!day)return null;
     return {businessDate,observation:{...day},source:day.source};
   },
-  report:async(_scope,effect,samples)=>{
+  report:async(_scope,effect,samples,windowComplete)=>{
     const observed:PriceExperimentDay[]=samples.map(s=>{
       const d=s.observation;
       return {businessDate:s.businessDate,units:Number(d.units),
         netSalesCents:Number(d.netSalesCents),
         coverage:d.coverage==="actual"?"actual":"unavailable",source:s.source};
     });
-    const result=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
+    const measured=evaluatePriceExperiment(effect as PriceExperimentBaseline,observed,7);
+    // A terminal, partially covered window is insufficient evidence, not
+    // an ongoing trial. Use the SAME finalized status in every domain-owned
+    // delivery surface (Operations payload, source facts, and thread report).
+    const result=windowComplete&&measured.status==="in_progress"
+      ?{...measured,status:"insufficient_evidence" as const}:measured;
     const copy=({en,es,ar} as const)[_scope.locale].SupervisorExperiment;
     const money=(v:unknown)=>typeof v==="number"&&Number.isSafeInteger(v)
       ?new Intl.NumberFormat(_scope.locale,{style:"currency",currency:"USD"}).format(v/100)

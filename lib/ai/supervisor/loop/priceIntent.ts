@@ -17,12 +17,22 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
   if(!Number.isSafeInteger(candidate)||candidate<1||candidate>100000)return false;
   const amounts=(text:string)=>{
     const normalized=decimalDigits(text.normalize("NFKC"));
-    const pattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*[0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات)(?![\p{L}\p{N}])/giu;
-    return [...normalized.matchAll(pattern)].map(m=>Number(m[1].replace(/\s/gu,"").replace(/[−–—]/gu,"-")));
+    // Parse the owner source as exact integer cents. Never round a floating
+    // model amount or ignore a minus sign before a dollar/cent quote.
+    const signed=(raw:string)=>raw.replace(/\s/gu,"").replace(/[−–—]/gu,"-");
+    const centsPattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*[0-9]{1,6})[\s-]*(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات|¢)(?![\p{L}\p{N}])/giu;
+    const dollarPattern=/(?<![\p{L}\p{N}.])([+\-−–—]?\s*)\$\s*([0-9]{1,5})(?:\.([0-9]{1,2}))?(?![\p{L}\p{N}.])/giu;
+    const centQuotes=[...normalized.matchAll(centsPattern)]
+      .map(m=>Number(signed(m[1])));
+    const dollarQuotes=[...normalized.matchAll(dollarPattern)].map(m=>{
+      const whole=Number(m[2]),fraction=Number((m[3]??"").padEnd(2,"0")||"0");
+      return (signed(m[1]).startsWith("-")?-1:1)*(whole*100+fraction);
+    });
+    return [...centQuotes,...dollarQuotes];
   };
   const currentAmounts=amounts(current);
   const selected=currentAmounts.length?currentAmounts:amounts(previous??"");
-  return selected.length===1&&selected[0]===candidate;
+  return selected.length>0&&selected.every(value=>value===candidate);
 }
 /** Product must be named in owner text. An unsized name that maps to two menu
  * variants is ambiguous even if the model guessed a valid UUID. */

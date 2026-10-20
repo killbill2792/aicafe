@@ -27,6 +27,17 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Let's test +10 cents on latte",undefined,10)).toBe(true);
   expect(ownerQuotedPriceDelta("Let's test a 10-cent increase on latte",undefined,10)).toBe(true);
  });
+ it("accepts exact USD decimals and cent symbols without rounding or losing sign",()=>{
+  expect(ownerQuotedPriceDelta("Test the latte with a $0.10 increase",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try a 10¢ increase",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try a +10 ¢ increase",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try a $1 increase",undefined,100)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try -$0.10",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try −10¢",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try $0.105",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try $0.10 or $0.20",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try a $0.20 increase",undefined,10)).toBe(false);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
