@@ -196,11 +196,11 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
   });
   it("keeps a genuinely negative freehand result backed by a verified formula entry (Codex finding, signed claim spans)",()=>{
     const rendered=renderInvestigationAnswer(answer([
-      {kind:"advice",text:"After $20 in supplies against a $15 take, that's a -$5.00 day.",citations:[],
+      {kind:"advice",text:"After $20 in supplies against a $15 take, that's a -$5 day.",citations:[],
         formulas:[{claim:"-$5",formula:"revenue - cost",
           variables:[{name:"revenue",value:15,source:"$15"},{name:"cost",value:20,source:"$20"}]}]},
     ]),[],"en",{ownerText:"I took in $15 but spent $20 on supplies."});
-    expect(rendered!.blocks).toEqual([{type:"text",text:"After $20 in supplies against a $15 take, that's a -$5 day."}]);
+    expect(rendered!.blocks).toEqual([{type:"text",text:"After $20 in supplies against a $15 take, that's a -$5.00 day."}]);
     expect(rendered!.hasComputedClaim).toBe(true);
     expect(rendered!.issues).toEqual([]);
   });
