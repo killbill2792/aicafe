@@ -2038,6 +2038,7 @@
     "reportRevenue": "Ventas netas observadas: {value}",
     "reportDifference": "Diferencia frente al precio previo con el volumen observado: {value}",
     "reportUncertain": "Aún faltan ventas diarias verificadas. No es beneficio neto ni prueba de causalidad.",
+    "reportCompletedCaveat": "Los siete días tienen ventas verificadas. La comparación usa el volumen observado y no demuestra causalidad ni beneficio neto.",
     "recommendation": "Recomendación: {choice}",
     "keep": "Mantener",
     "revert": "Revertir",
