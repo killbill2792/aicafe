@@ -5,7 +5,7 @@ import type {AgentId,OperatingTaskKind,OperatingTask} from "@/lib/operating/task
 export type LoopLocale="en"|"es"|"ar";
 export type OwnerLoopScope={businessId:string;ownerUserId:string;threadId:string;locale:LoopLocale};
 export type ProposalStatus="draft"|"approved"|"executing"|"committed"|"manual_pending"|
-  "manual_confirmed"|"rejected"|"expired";
+  "manual_confirmed"|"monitored"|"rejected"|"expired";
 export type LoopProposal={
   id:string;businessId:string;ownerUserId:string;threadId:string;
   capabilityId:string;capabilityVersion:number;canonicalEffectPayload:unknown;
@@ -94,7 +94,7 @@ export interface LoopRepository{
   create(scope:OwnerLoopScope,requestKey:string,proposal:LoopCreate):Promise<LoopProposal>;
   load(scope:OwnerLoopScope,id:string):Promise<LoopProposal>;
   transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",
+    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed"|"finish_monitor",
     startDate?:string):Promise<LoopProposal>;
   addSample(scope:OwnerLoopScope,id:string,sample:LoopSample):Promise<void>;
   clearSample(scope:OwnerLoopScope,id:string,businessDate:string):Promise<void>;

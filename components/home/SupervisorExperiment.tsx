@@ -98,7 +98,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
       <button className={actionClass} disabled={busy}
         onClick={()=>void invoke({action:"manual_done",proposalId:p.id,revision:p.revision})}>{copy.done}</button>
     </>}
-    {(p.status==="manual_confirmed"||p.status==="committed")&&<>
+    {(p.status==="manual_confirmed"||p.status==="committed"||p.status==="monitored")&&<>
       <p>{copy.waiting} {p.monitoring_start_date}</p>
       <button className={actionClass} disabled={busy}
         onClick={()=>void invoke({action:"report",proposalId:p.id})}>{copy.report}</button>

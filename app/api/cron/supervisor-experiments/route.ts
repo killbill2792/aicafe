@@ -16,7 +16,10 @@ export async function GET(request:Request){
  const db=createAdminSupabaseClient(),repo=new SupabaseLoopRepository();
  const {data,error}=await db.from("supervisor_proposals").select("*")
    .in("status",["manual_confirmed","committed"]).not("monitoring_start_date","is",null)
-   .order("created_at",{ascending:true}).limit(100);
+   // Oldest never permanently crowds out newer tenants: every checked
+   // proposal rotates to the back of this stable bounded queue.
+   .order("monitor_checked_at",{ascending:true,nullsFirst:true})
+   .order("id",{ascending:true}).limit(100);
  if(error)return respond(503,{error:"monitor_proposals_unavailable"});
  let sampled=0,reported=0,failed=0;
  for(const row of data??[]){
@@ -40,6 +43,10 @@ export async function GET(request:Request){
      threadId:p.threadId,locale:p.locale};
    const start=p.monitoringStartDate!;
    const end=utcDateOffset(start,p.monitorSpec.durationDays-1);
+   if(today>utcDateOffset(end,14)){
+     await repo.transition(scope,p.id,p.revision,"finish_monitor");
+     continue;
+   }
    // Revisit missed dates, not only yesterday; actual coverage is checked on
    // each day and samples are uniquely idempotent by proposal/business date.
    for(let day=start;day<=yesterday&&day<=end;day=utcDateOffset(day,1)){
@@ -53,6 +60,15 @@ export async function GET(request:Request){
       const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,yesterday);
       if(result)reported++;
    }
+   // CAS prevents concurrent cron invocations from moving the same row twice.
+   // Updating the check timestamp without changing immutable effects ensures
+   // more recent proposals get a fair turn on subsequent scheduled runs.
+   const rotated=await db.from("supervisor_proposals").update({
+     monitor_checked_at:new Date().toISOString(),revision:p.revision+1,
+     updated_at:new Date().toISOString(),
+   }).eq("id",p.id).eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+     .eq("revision",p.revision);
+   if(rotated.error)throw rotated.error;
   }catch{failed++;}
  }
  return respond(200,{checked:(data??[]).length,sampled,reported,failed});

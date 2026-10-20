@@ -87,6 +87,14 @@ export async function POST(request:Request,{params}:Params){
    }
    case "report":{
      const p=await repo.load(scope,input.proposalId);
+     if(p.status==="monitored"){
+       const db=createAdminSupabaseClient();
+       const {data,error}=await db.from("supervisor_reports")
+         .select("status,report").eq("business_id",scope.businessId)
+         .eq("proposal_id",p.id).maybeSingle();
+       if(error)throw error;
+       return conversationJson({report:data??null});
+     }
      const db=createAdminSupabaseClient();
      const {data,error}=await db.from("businesses").select("timezone")
        .eq("id",scope.businessId).single();

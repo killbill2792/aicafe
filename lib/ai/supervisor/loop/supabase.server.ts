@@ -55,7 +55,7 @@ export class SupabaseLoopRepository implements LoopRepository{
     return decode(data as Row);
   }
   async transition(scope:OwnerLoopScope,id:string,revision:number,
-    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",
+    action:"approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed"|"finish_monitor",
     startDate?:string):Promise<LoopProposal>{
     const db=createAdminSupabaseClient();
     const {data,error}=await db.rpc("supervisor_transition_proposal",{

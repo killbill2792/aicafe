@@ -15,7 +15,7 @@ create table public.supervisor_proposals (
   monitor_spec jsonb not null check (jsonb_typeof(monitor_spec)='object'),
   locale text not null check (locale in ('en','es','ar')),
   status text not null default 'draft' check
-    (status in ('draft','approved','executing','committed','manual_pending','manual_confirmed','rejected','expired')),
+    (status in ('draft','approved','executing','committed','manual_pending','manual_confirmed','monitored','rejected','expired')),
   revision int not null default 1 check (revision>0),
   created_at timestamptz not null default now(),
   approved_at timestamptz,
@@ -23,13 +23,14 @@ create table public.supervisor_proposals (
   committed_at timestamptz,
   manual_confirmed_at timestamptz,
   monitoring_start_date date,
+  monitor_checked_at timestamptz,
   updated_at timestamptz not null default now(),
   foreign key (business_id,thread_id,owner_user_id)
     references public.ai_threads(business_id,id,owner_user_id) on delete cascade,
   unique (business_id,owner_user_id,request_key),
   unique (business_id,id)
 );
-create index supervisor_proposals_monitor on public.supervisor_proposals (status,monitoring_start_date)
+create index supervisor_proposals_monitor on public.supervisor_proposals (status,monitor_checked_at nulls first,monitoring_start_date)
   where status in ('manual_confirmed','committed');
 create table public.supervisor_approvals (
   id uuid primary key default gen_random_uuid(),
@@ -138,6 +139,14 @@ begin
       committed_at=case when p_action='committed' then now() else null end,
       monitoring_start_date=case when p_action='committed' then coalesce(p_monitoring_start_date,current_date+1) else null end,
       updated_at=now() where id=p.id;
+  elsif p_action='finish_monitor' and p.status in ('manual_confirmed','committed')
+    and p.monitoring_start_date is not null
+    and current_date > p.monitoring_start_date + ((p.monitor_spec->>'durationDays')::int + 13)
+    and exists (select 1 from public.supervisor_reports r
+      where r.business_id=p.business_id and r.proposal_id=p.id
+        and r.status in ('complete','insufficient_evidence')) then
+    update public.supervisor_proposals set status='monitored',
+      revision=revision+1,updated_at=now() where id=p.id;
   elsif p_action='manual_confirmed' and p.status='manual_pending'
     and p_monitoring_start_date is not null
     and p_monitoring_start_date between current_date and current_date+3 then

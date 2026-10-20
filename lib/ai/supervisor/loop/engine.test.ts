@@ -57,18 +57,19 @@ class MemoryRepo implements LoopRepository{
     return r;
   }
   async transition(s:OwnerLoopScope,id:string,revision:number,action:
-    "approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed",startDate?:string){
+    "approve"|"reject"|"claim_commit"|"manual_pending"|"manual_confirmed"|"committed"|"finish_monitor",startDate?:string){
     const old=await this.load(s,id);
     if(old.revision!==revision)throw Error("CAS conflict");
     const allowed=action==="approve"?old.status==="draft":
       action==="reject"?["draft","approved"].includes(old.status):
       action==="claim_commit"?old.status==="approved":
       action==="manual_pending"||action==="committed"?old.status==="executing":
-      action==="manual_confirmed"?old.status==="manual_pending"&&!!startDate:false;
+      action==="manual_confirmed"?old.status==="manual_pending"&&!!startDate:
+      action==="finish_monitor"?["committed","manual_confirmed"].includes(old.status):false;
     if(!allowed)throw Error("Invalid transition");
     const updated:LoopProposal={...old,revision:revision+1,
       status:action==="approve"?"approved":action==="reject"?"rejected":
-        action==="claim_commit"?"executing":action,
+        action==="claim_commit"?"executing":action==="finish_monitor"?"monitored":action,
       monitoringStartDate:startDate??old.monitoringStartDate};
     this.proposals.set(id,updated);return updated;
   }
