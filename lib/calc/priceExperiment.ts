@@ -80,3 +80,16 @@ export function evaluatePriceExperiment(baseline:PriceExperimentBaseline,days:re
       difference>=added?"keep":difference<0?"revert":"adjust",
     caveat:"no_causal_demand_attribution"};
 }
+
+/** Canonical sum of observed, verified line-item money; no arithmetic in server
+ * adapters, no float cents and no inferred missing days. */
+export function aggregatePriceExperimentSalesRows(rows:readonly {
+  quantity:number;netSalesCents:number}[]):{units:number;netSalesCents:number}|null{
+  let units=BigInt(0),netSalesCents=BigInt(0);
+  for(const r of rows){
+    if(!cents(r.quantity)||!cents(r.netSalesCents))return null;
+    units+=BigInt(r.quantity);netSalesCents+=BigInt(r.netSalesCents);
+  }
+  if(units>BigInt(Number.MAX_SAFE_INTEGER)||netSalesCents>BigInt(Number.MAX_SAFE_INTEGER))return null;
+  return {units:Number(units),netSalesCents:Number(netSalesCents)};
+}
