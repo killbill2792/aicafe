@@ -427,6 +427,46 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("reserves separate breaks for full-day A and four-hour B before the B-to-C handoff",()=>{
+    const args=input([
+      employee("a",{recurring:[recurring(1,"09:00","15:00")]}),
+      employee("b",{recurring:[recurring(1,"09:00","13:00")]}),
+      employee("c",{recurring:[recurring(1,"13:00","15:00")]}),
+    ],[coverage("partial-break-taker",{start_local:"09:00",end_local:"15:00",
+      minHeadcount:2,minHeadcountDuringBreak:1})],{
+      slotMinutes:60,ruleProfile:{
+        verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+      },
+    });
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    expect(result.best?.shifts.find(s=>s.employeeId==="a")?.breaks).toHaveLength(1);
+    expect(result.best?.shifts.find(s=>s.employeeId==="b")?.breaks).toHaveLength(1);
+    expect(result.best?.shifts.some(s=>s.employeeId==="c")).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("uses relief coverage to preserve a full two-person break floor",()=>{
+    const args=input([employee("a"),employee("b"),employee("relief")],[
+      coverage("relief-policy",{start_local:"09:00",end_local:"13:00",
+        minHeadcount:2,minHeadcountDuringBreak:2}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    const shifts=result.best!.shifts;
+    expect(shifts.flatMap(s=>s.breaks)).toHaveLength(2);
+    expect(shifts.some(s=>s.employeeId==="relief")).toBe(true);
+    expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
