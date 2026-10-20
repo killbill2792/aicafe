@@ -24,6 +24,7 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
   const [fromEdited,setFromEdited]=useState(false);
   const [start,setStart]=useState("08:00"),[end,setEnd]=useState("16:00");
   const [overnight,setOvernight]=useState(false),[count,setCount]=useState("1");
+  const [breakFloor,setBreakFloor]=useState("");
   const [code,setCode]=useState(""),[overlap,setOverlap]=useState("0");
   const [priority,setPriority]=useState<"required"|"advisory">("required");
   const [confirmation,setConfirmation]=useState<"unconfirmed"|"owner_confirmed">("unconfirmed");
@@ -37,11 +38,13 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     setSavedRecord(r ? {id:r.id,revision:r.revision} : null);
     // Saved effective dates are never pristine proposed defaults.
     setFromEdited(Boolean(r));
-    if (!r) return;
+    if (!r) {setBreakFloor("");return;}
     setLocationId(String(r.location_id));setDay(String(r.day_of_week??1));
     setSpecificDate(String(r.local_date??""));setFrom(String(r.effective_from??today));
     setTo(String(r.effective_to??""));setStart(String(r.start_local));setEnd(String(r.end_local));
-    setOvernight(r.overnight===true);setCount(String(r.min_headcount));setOverlap(String(r.min_overlap_minutes??0));
+    setOvernight(r.overnight===true);setCount(String(r.min_headcount));
+    setBreakFloor(r.min_headcount_during_break == null ? "" : String(r.min_headcount_during_break));
+    setOverlap(String(r.min_overlap_minutes??0));
     setCode(String(r.qualification_code??""));setPriority(r.priority==="advisory"?"advisory":"required");
     setSource(r.source==="worker_reported_by_owner"?"worker_reported_by_owner":"owner_direct");
     setConfirmation(r.confirmation==="owner_confirmed"?"owner_confirmed":"unconfirmed");setSaved(false);setError("");
@@ -54,12 +57,16 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
     return {location_id:locationId,day_of_week:specificDate?null:Number(day),
       local_date:specificDate||null,effective_from:specificDate?null:from,
       effective_to:specificDate?null:(to||null),start_local:start,end_local:end,overnight,
-      min_headcount:Number(count),qualification_code:code||null,
+      min_headcount:Number(count),min_headcount_during_break:breakFloor===""?null:Number(breakFloor),
+      qualification_code:code||null,
       min_overlap_minutes:Number(overlap),priority,source,confirmation};
   }
   function save(){
     if(conflicted){setError(t("conflict"));return;}
     if(!locationId){setError(t("chooseLocation"));return;}
+    if(breakFloor!=="" && (!Number.isInteger(Number(breakFloor)) ||
+      Number(breakFloor)<0 || Number(breakFloor)>50 ||
+      Number(breakFloor)>Number(count))){setError(t("breakFloorTooHigh"));return;}
     const old=savedRecord?.id===selected ? savedRecord : null;
     const payload=coveragePayload();
     run(async()=>{
@@ -111,6 +118,8 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
         {" · "}{r.local_date?String(r.local_date):names[Number(r.day_of_week)]}
         {" · "}{String(r.start_local)}–{String(r.end_local)}
         {" · "}{String(r.min_headcount)} {t("people")}
+        {r.min_headcount_during_break!=null &&
+          <>{" · "}{t("breakFloorLabel")}: {String(r.min_headcount_during_break)}</>}
         {" · "}{r.confirmation==="owner_confirmed"?t("ownerConfirmed"):t("unconfirmed")}</p>
       <div className="flex shrink-0 gap-1">
         <button className={secondary} type="button" onClick={()=>select(r.id)}>{t("edit")}</button>
@@ -162,6 +171,12 @@ export default function StaffCoverageEditor({ rows, locations, qualifications, t
       </label>
       <label className="flex flex-col gap-1 text-[17px]">{t("minimumHeadcount")}
         <input className={field} type="number" min="0" max="50" value={count} onChange={e=>setCount(e.target.value)}/>
+      </label>
+      <label className="flex flex-col gap-1 text-[17px]">{t("breakFloorLabel")}
+        <input className={field} type="number" min="0" max="50" value={breakFloor}
+          placeholder={t("breakFloorDefault")}
+          onChange={e=>setBreakFloor(e.target.value)}/>
+        <span className="text-ink-muted text-sm">{t("breakFloorHelp")}</span>
       </label>
       <label className="flex flex-col gap-1 text-[17px]">{t("qualification")}
         <select className={field} value={code} onChange={e=>setCode(e.target.value)}>
