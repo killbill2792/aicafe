@@ -6,7 +6,7 @@ import type { PlannerEmployee, PlannerInput, PlannerLocation, PlannerGapReason, 
 export type DemandUnit = {
   id: string; coverageId: string; locationId: string;
   start: number; end: number; qualificationCode: string | null;
-  priority: "required" | "advisory";
+  priority: "required" | "advisory"; seatIndex?: number;
 };
 /** Stable across republishing; wage snapshots are tied to the exact shift,
  * not merely the employee, since separate shifts may have different rates.
@@ -88,6 +88,10 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
     assert(location, "unknown_coverage_location");
     assert(coverage.id.length>0 && Number.isSafeInteger(coverage.minHeadcount) &&
       coverage.minHeadcount>=0 && coverage.minHeadcount<=30, "headcount");
+    assert(coverage.minHeadcountDuringBreak==null ||
+      (Number.isSafeInteger(coverage.minHeadcountDuringBreak) &&
+       coverage.minHeadcountDuringBreak>=0 &&
+       coverage.minHeadcountDuringBreak<=coverage.minHeadcount), "break_headcount");
     const duration=coverage.minOverlapMinutes??0;
     assert(Number.isSafeInteger(duration) && duration>=0 && duration<=1440,
       "minimum_overlap");
@@ -126,7 +130,7 @@ export function expandPlannerInput(input: PlannerInput): ExpandedPlan {
         for(let seat=0;seat<coverage.minHeadcount;seat++)
           units.push({id:`${coverage.id}@${date}:${time}:${seat}`,
             coverageId:coverage.id,locationId:coverage.locationId,
-            start:time,end,
+            start:time,end,seatIndex:seat,
             qualificationCode:coverage.qualificationCode??null,priority:coverage.priority});
         time=end;
       }
