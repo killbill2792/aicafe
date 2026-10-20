@@ -43,10 +43,9 @@ export async function GET(request:Request){
      threadId:p.threadId,locale:p.locale};
    const start=p.monitoringStartDate!;
    const end=utcDateOffset(start,p.monitorSpec.durationDays-1);
-   if(today>utcDateOffset(end,14)){
-     await repo.transition(scope,p.id,p.revision,"finish_monitor");
-     continue;
-   }
+   // Even after a prolonged cron outage, refresh every day and persist the
+   // terminal report BEFORE archiving. Missing coverage must yield an honest
+   // insufficient-evidence report, not strand the proposal in this queue.
    // Revisit missed dates, not only yesterday; actual coverage is checked on
    // each day and samples are uniquely idempotent by proposal/business date.
    for(let day=start;day<=yesterday&&day<=end;day=utcDateOffset(day,1)){
@@ -59,6 +58,11 @@ export async function GET(request:Request){
    if(yesterday>end&&start<=yesterday){
       const result=await monitorLoop(scope,supervisorLoopRegistry,repo,p,yesterday);
       if(result)reported++;
+   }
+   if(today>utcDateOffset(end,14)){
+     // monitorLoop saved the latest corrected terminal outcome above; the
+     // transition RPC checks a terminal report exists before sealing it.
+     await repo.transition(scope,p.id,p.revision,"finish_monitor");
    }
   }catch{failed++;}
   finally{

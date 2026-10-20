@@ -293,19 +293,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        // Every surviving claim is already mechanically grounded or masked.
-        // A semantic reviewer is advisory for this *partial* rescue. A negative
-        // verdict cannot erase valid unrelated observations; surface the
-        // reviewer's concern, and leave unsupported/masked claims unavailable.
-        if(bestAccumulated){
-          const reason=accReview&&!isToolCallSignal(accReview)?accReview.reason:labels.unavailable;
-          if(!accReview||isToolCallSignal(accReview)||!accReview.supported||!accReview.complete){
-            bestAccumulated={...bestAccumulated,status:"partial",
-              blocks:bestAccumulated.blocks.length<30?
-                [...bestAccumulated.blocks,missingGoalWarning(reason)]:bestAccumulated.blocks};
-            input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
-              failureCategory:"reviewer_downgraded_to_partial"});
-          }
+        // A masked numeric claim does NOT make the surrounding narrative
+        // semantically true. This fallback has no paragraph-to-block provenance
+        // to safely retain only reviewer-supported sentences. When the review
+        // rejects it (or is unavailable), withhold the entire accumulated
+        // candidate rather than publishing a purported completed action.
+        if(!accReview||isToolCallSignal(accReview)||!accReview.supported){
+          accumulatedRescue=false;
+          if(accReview&&!isToolCallSignal(accReview))
+            input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
+        }else if(!accReview.complete&&bestAccumulated){
+          bestAccumulated={...bestAccumulated,status:"partial",
+            blocks:bestAccumulated.blocks.length<30?
+              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
+              bestAccumulated.blocks};
+          input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
+            failureCategory:"reviewer_downgraded_to_partial"});
         }
       }
     }
