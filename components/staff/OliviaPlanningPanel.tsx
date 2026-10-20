@@ -277,7 +277,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
         </select>
       </label>
       {scenario && <div className="flex flex-col gap-3">
-        <div className="rounded-xl border border-line p-3 text-sm">
+        <div className="rounded-xl border border-line p-3 text-[17px]">
           <p>{t("coverage")}: {scenario.completeCoverage ? t("complete") : t("incomplete")}</p>
           <p>{t("ownerMinutes")}: {t("unknown")}</p>
           <p>{t("ownerUnavailable")}</p>
@@ -288,7 +288,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
         <h3 className="font-bold">{t("assignments")}</h3>
         {scenario.shifts.length === 0 && <p>{t("noAssignments")}</p>}
         {scenario.shifts.map((shift, i) => <div key={i}
-          className="rounded-xl border border-line px-3 py-2 text-sm">
+          className="rounded-xl border border-line px-3 py-2 text-[17px]">
           <p className="font-semibold">{employees[shift.employeeId] ?? shift.employeeId}</p>
           <p>{localShiftTime(shift.startAt, locations[shift.locationId] ?? "UTC", locale)} — {localShiftTime(shift.endAt, locations[shift.locationId] ?? "UTC", locale)}</p>
           <p>{t("location")}: {locationNames[shift.locationId] ?? shift.locationId}</p>
@@ -343,7 +343,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
             onClick={()=>startEditing(item.id)}>{t("editRevision")}</button>}
       </div>)}
       {inspected && <section aria-label={t("viewRevision")}
-        className="rounded-xl border border-line p-3 text-sm">
+        className="rounded-xl border border-line p-3 text-[17px]">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <strong>{t("reviewVersion",{revision:inspected.revision})} · {revisionLabel(inspected.status)}</strong>
           <button type="button" className="min-h-12 underline"
