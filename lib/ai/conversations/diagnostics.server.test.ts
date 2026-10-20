@@ -561,6 +561,7 @@ describe("test-only raw investigation trace security boundary",()=>{
         expect(JSON.parse(line)).not.toHaveProperty("toolArguments");
       }
     }finally{vi.unstubAllEnvs();}
+  });
   it("writes schema-error paths and batch checks, never arbitrary data",()=>{
     const lines:string[]=[];
     vi.stubEnv("NODE_ENV","production");
@@ -611,6 +612,5 @@ describe("test-only raw investigation trace security boundary",()=>{
         tokenCostComplete:false});
       expect(lines.join(" ")).not.toContain("PRIVATE_RAW_PROVIDER");
     }finally{vi.unstubAllEnvs();}
-  });
   });
 });
