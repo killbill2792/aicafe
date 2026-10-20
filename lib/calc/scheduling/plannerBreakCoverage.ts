@@ -306,7 +306,7 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     // One break is insufficient when gross work exceeds two such segments;
     // generate a bounded, deterministic sequence of real within-shift breaks.
     function sequences(previousEnd:number,left:number,selected:Placement[]):void {
-      if(choices.length>=96)return;
+      if(choices.length>=24)return;
       if(left===0){
         if(entry.last.end-previousEnd<=limit!*60000 &&
             entry.last.end-previousEnd>=gridMs)
@@ -323,7 +323,7 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
         selected.push({entry,employeeId,start,end,coverageIds});
         sequences(end,left-1,selected);
         selected.pop();
-        if(choices.length>=96)return;
+        if(choices.length>=24)return;
       }
     }
     // A finite planner search budget is preferable to exponential break grids.
