@@ -14,7 +14,8 @@ export type PlannerLocation = { id: string; timezone: string };
 export type PlannerCoverage = PlannerWindow & {
   id: string; locationId: string; dayOfWeek?: number | null;
   localDate?: string | null; effectiveFrom?: string | null; effectiveTo?: string | null;
-  minHeadcount: number; qualificationCode?: string | null;
+  minHeadcount: number; minHeadcountDuringBreak?: number | null;
+  qualificationCode?: string | null;
   minOverlapMinutes?: number; priority: "required" | "advisory";
 };
 export type PlannerQualification = {
@@ -109,7 +110,8 @@ export type PlannerGapReason =
   | "no_active_staff" | "qualification_missing" | "no_confirmed_availability"
   | "capacity_or_overlap" | "break_or_rest_constraint"
   | "daily_hour_limit" | "weekly_hour_limit" | "date_specific_cap"
-  | "pinned_conflict" | "solver_budget" | "handoff_overlap_missing";
+  | "pinned_conflict" | "solver_budget" | "handoff_overlap_missing"
+  | "break_coverage_unsatisfiable";
 export type PlannerGap = {
   coverageId: string; locationId: string;
   startAt: string; endAt: string;
