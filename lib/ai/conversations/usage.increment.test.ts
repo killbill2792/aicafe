@@ -25,6 +25,8 @@ describe("Retry usage accounting (atomic SQL contract + mocked RPC)",()=>{
   it("adds failed attempt and successful retry, never replaces earlier usage",async()=>{
     const oldIn=process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS;
     const oldOut=process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS;
+    const oldModel=process.env.SUPERVISOR_OPENAI_MODEL;
+    process.env.SUPERVISOR_OPENAI_MODEL="gpt-6-luna";
     process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS="1";
     process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS="2";
     const params={scope:{businessId:"b",ownerUserId:"o"},threadId:"t",ownerMessageId:"same-key"};
@@ -42,6 +44,8 @@ describe("Retry usage accounting (atomic SQL contract + mocked RPC)",()=>{
       else process.env.SUPERVISOR_INPUT_USD_PER_MILLION_TOKENS=oldIn;
       if(oldOut===undefined)delete process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS;
       else process.env.SUPERVISOR_OUTPUT_USD_PER_MILLION_TOKENS=oldOut;
+      if(oldModel===undefined)delete process.env.SUPERVISOR_OPENAI_MODEL;
+      else process.env.SUPERVISOR_OPENAI_MODEL=oldModel;
     }
   });
   it("does not apply Luna token rates to fallback or unknown model usage",async()=>{
