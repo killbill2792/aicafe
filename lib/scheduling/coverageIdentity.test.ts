@@ -23,7 +23,8 @@ describe("Coverage create conflict reapplication", () => {
       { location_id: "location-2" }, { day_of_week: 4 },
       { local_date: "2026-11-04", day_of_week: null, effective_from: null },
       { start_local: "09:00" }, { end_local: "13:00" },
-      { min_headcount: 2 }, { qualification_code: "barista" },
+      { min_headcount: 2 }, { min_headcount_during_break: 0 },
+      { qualification_code: "barista" },
       { effective_to: "2026-12-01" }, { min_overlap_minutes: 30 },
       { priority: "advisory" },
     ]) {
