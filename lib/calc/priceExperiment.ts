@@ -17,6 +17,12 @@ const safeProduct=(a:number,b:number):number|null=>{
   const n=BigInt(a)*BigInt(b);
   return n<=BigInt(Number.MAX_SAFE_INTEGER)?Number(n):null;
 };
+/** Signed contribution is allowed to be negative; money remains exact cents. */
+const signedProduct=(a:number,b:number):number|null=>{
+  if(!Number.isSafeInteger(a)||!cents(b))return null;
+  const n=BigInt(a)*BigInt(b);
+  return n<=BigInt(Number.MAX_SAFE_INTEGER)&&n>=-BigInt(Number.MAX_SAFE_INTEGER)?Number(n):null;
+};
 export function simulatePriceExperiment(input:{
   productId:string;productName:string;currentPriceCents:number;increaseCents:number;
   ingredientCostCents:number|null;units7Days:number|null;
@@ -46,6 +52,10 @@ export function evaluatePriceExperiment(baseline:PriceExperimentBaseline,days:re
     baselineAtObservedVolumeCents:number|null;realizedRevenueDifferenceCents:number|null;
     observedIngredientContributionCents:number|null;
     expectedUpliftAtObservedVolumeCents:number|null;
+    baselineRevenue7DaysCents:number|null;
+    baselineIngredientContribution7DaysCents:number|null;
+    revenueChangeVsBaselineCents:number|null;
+    ingredientContributionChangeVsBaselineCents:number|null;
     recommendation:"keep"|"revert"|"adjust";
     caveat:"no_causal_demand_attribution";
   }{
@@ -68,16 +78,43 @@ export function evaluatePriceExperiment(baseline:PriceExperimentBaseline,days:re
     return {status:"insufficient_evidence",coveredDays:0,units:null,
       observedRevenueCents:null,baselineAtObservedVolumeCents:null,
       realizedRevenueDifferenceCents:null,observedIngredientContributionCents:null,
-      expectedUpliftAtObservedVolumeCents:null,recommendation:"adjust",
+      expectedUpliftAtObservedVolumeCents:null,baselineRevenue7DaysCents:null,
+     baselineIngredientContribution7DaysCents:null,revenueChangeVsBaselineCents:null,
+     ingredientContributionChangeVsBaselineCents:null,recommendation:"adjust",
       caveat:"no_causal_demand_attribution"};
   const difference=revenue-oldTotal;
+  const previousRevenue=safeProduct(baseline.oldPriceCents,baseline.baselineUnits7Days);
+  const previousContribution=signedProduct(
+    baseline.oldPriceCents-baseline.ingredientCostCents,baseline.baselineUnits7Days);
+  const actualContribution=revenue-cost;
+  const actualRevenueChange=previousRevenue===null?null:revenue-previousRevenue;
+  const actualContributionChange=previousContribution===null?null:actualContribution-previousContribution;
+  if(previousRevenue===null||previousContribution===null||
+    !Number.isSafeInteger(actualRevenueChange)||!Number.isSafeInteger(actualContributionChange))
+    return {status:"insufficient_evidence",coveredDays:covered.length,units:null,
+      observedRevenueCents:null,baselineAtObservedVolumeCents:null,
+      realizedRevenueDifferenceCents:null,observedIngredientContributionCents:null,
+      expectedUpliftAtObservedVolumeCents:null,baselineRevenue7DaysCents:null,
+      baselineIngredientContribution7DaysCents:null,revenueChangeVsBaselineCents:null,
+      ingredientContributionChangeVsBaselineCents:null,recommendation:"adjust",
+      caveat:"no_causal_demand_attribution"};
+  // This is an observed before/after comparison, not a causal elasticity claim.
+  // The pinned previous *7-day volume* must be honored: comparing only the
+  // same observed volume makes a price uplift look successful despite collapse.
+  const recommendation=covered.length!==expectedDays||qty===0||
+    baseline.baselineUnits7Days===0?"adjust":
+    actualContributionChange<0?"revert":
+    actualContributionChange>=added?"keep":"adjust";
   return {status:covered.length===expectedDays?"complete":"in_progress",
     coveredDays:covered.length,units:qty,observedRevenueCents:revenue,
     baselineAtObservedVolumeCents:oldTotal,realizedRevenueDifferenceCents:difference,
-    observedIngredientContributionCents:revenue-cost,
+    observedIngredientContributionCents:actualContribution,
     expectedUpliftAtObservedVolumeCents:added,
-    recommendation:covered.length!==expectedDays||qty===0?"adjust":
-      difference>=added?"keep":difference<0?"revert":"adjust",
+    baselineRevenue7DaysCents:previousRevenue,
+    baselineIngredientContribution7DaysCents:previousContribution,
+    revenueChangeVsBaselineCents:actualRevenueChange,
+    ingredientContributionChangeVsBaselineCents:actualContributionChange,
+    recommendation,
     caveat:"no_causal_demand_attribution"};
 }
 
