@@ -180,6 +180,53 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(result.best!.gaps.some(g=>g.reason==="date_specific_cap")).toBe(true);
   });
 
+  it("staggered reviewed breaks keep a two-person shop above its one-person break floor",()=>{
+    const rules={verified:true,maxContinuousWorkMinutes:240,
+      unpaidMealMinutes:30};
+    const args=input([employee("worker-a"),employee("worker-b")],
+      [coverage("break-floor",{end_local:"17:00",minHeadcount:2,
+        minHeadcountDuringBreak:1})],{slotMinutes:30,ruleProfile:rules});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.completeCoverage).toBe(true);
+    expect(result.best?.gaps).toEqual([]);
+    const shifts=result.best!.shifts;
+    expect(shifts).toHaveLength(2);
+    expect(shifts.every(s=>s.breaks.length===1)).toBe(true);
+    const intervals=shifts.map(s=>s.breaks[0]).sort((a,b)=>a.startAt.localeCompare(b.startAt));
+    expect(intervals[0].endAt).toBe(intervals[1].startAt);
+    expect(intervals.every(b=>(Date.parse(b.endAt)-Date.parse(b.startAt))/60000===30)).toBe(true);
+    expect(validateOliviaAssignments(args,shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("reports unsatisfiable break coverage for one worker rather than silently dropping a break",()=>{
+    const args=input([employee("solo")],
+      [coverage("solo-break",{end_local:"17:00",minHeadcount:1,
+        minHeadcountDuringBreak:1})],{slotMinutes:30,
+        ruleProfile:{verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:30}});
+    const result=optimizeOliviaWeek(args);
+    expect(result.best?.completeCoverage).toBe(false);
+    expect(result.best?.gaps.some(g=>g.reason==="break_coverage_unsatisfiable")).toBe(true);
+    expect(result.warnings).toContain("break_coverage_unsatisfiable");
+    expect(result.best?.shifts.some(s=>s.breaks.length>0)).toBe(true);
+    const validation=validateOliviaAssignments(args,result.best!.shifts);
+    expect(validation.completeCoverage).toBe(false);
+    expect(validation.gaps.some(g=>g.reason==="break_coverage_unsatisfiable")).toBe(true);
+  });
+
+  it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
+    const args=input([employee("original")],
+      [coverage("unchanged",{end_local:"17:00"})],{slotMinutes:30,
+      ruleProfile:{verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:30}});
+    const old=optimizeOliviaWeek(args);
+    const noOverride=optimizeOliviaWeek({...args,coverage:args.coverage.map(c=>({
+      ...c,minHeadcountDuringBreak:null,
+    }))});
+    expect(JSON.stringify(noOverride)).toBe(JSON.stringify(old));
+  });
+
   it("places a real unpaid break only with alternate coverage and configured verified rules",()=>{
     const rules={verified:true,maxContinuousWorkMinutes:120,
       unpaidMealMinutes:60,minRestBetweenShiftsMinutes:600,
