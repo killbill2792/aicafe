@@ -20,10 +20,10 @@ export function ownerQuotedPriceDelta(current:string,previous:string|undefined,
     // Shared-unit alternatives ("10 or 20 cents", "10–20¢", and localized
     // equivalents) are ambiguous even though only the FINAL number carries
     // an explicit unit. Fail closed rather than silently selecting it.
-    const unit=String.raw\`(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات|¢)\`;
-    const join=String.raw\`(?:,?\\s*(?:or|and|to|versus|vs\\.?|o|u|y|أو|او|و)\\s*|[/,–—-]\\s*)\`;
-    const sharedUnit=new RegExp(String.raw\`(?<![\\p{L}\\p{N}.])[0-9]{1,6}\\s*\${join}[0-9]{1,6}\\s*\${unit}(?![\\p{L}\\p{N}])\`,"iu");
-    const trailingAlternative=new RegExp(String.raw\`(?<![\\p{L}\\p{N}.])[0-9]{1,6}\\s*\${unit}\\s*\${join}[0-9]{1,6}(?![\\p{L}\\p{N}.])\`,"iu");
+    const unit=String.raw`(?:cents?|centavos?|céntimos?|سنت(?:ات)?|هللة|هللات|¢)`;
+    const join=String.raw`(?:,?\s*(?:or|and|to|versus|vs\.?|o|u|y|أو|او|و)\s*|[/,–—-]\s*)`;
+    const sharedUnit=new RegExp(String.raw`(?<![\p{L}\p{N}.])[0-9]{1,6}\s*${join}[0-9]{1,6}\s*${unit}(?![\p{L}\p{N}])`,"iu");
+    const trailingAlternative=new RegExp(String.raw`(?<![\p{L}\p{N}.])[0-9]{1,6}\s*${unit}\s*${join}[0-9]{1,6}(?![\p{L}\p{N}.])`,"iu");
     const ambiguous=sharedUnit.test(normalized)||trailingAlternative.test(normalized);
     // Parse the owner source as exact integer cents. Never round a floating
     // model amount or ignore a minus sign before a dollar/cent quote.
