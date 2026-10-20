@@ -181,11 +181,11 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
   });
 
   it("staggered reviewed breaks keep a two-person shop above its one-person break floor",()=>{
-    const rules={verified:true,maxContinuousWorkMinutes:240,
-      unpaidMealMinutes:30};
+    const rules={verified:true,maxContinuousWorkMinutes:120,
+      unpaidMealMinutes:60};
     const args=input([employee("worker-a"),employee("worker-b")],
-      [coverage("break-floor",{end_local:"17:00",minHeadcount:2,
-        minHeadcountDuringBreak:1})],{slotMinutes:30,ruleProfile:rules});
+      [coverage("break-floor",{end_local:"13:00",minHeadcount:2,
+        minHeadcountDuringBreak:1})],{slotMinutes:60,ruleProfile:rules});
     const result=optimizeOliviaWeek(args);
     expect(result.status).toBe("feasible");
     expect(result.best?.completeCoverage).toBe(true);
@@ -195,7 +195,7 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     expect(shifts.every(s=>s.breaks.length===1)).toBe(true);
     const intervals=shifts.map(s=>s.breaks[0]).sort((a,b)=>a.startAt.localeCompare(b.startAt));
     expect(intervals[0].endAt).toBe(intervals[1].startAt);
-    expect(intervals.every(b=>(Date.parse(b.endAt)-Date.parse(b.startAt))/60000===30)).toBe(true);
+    expect(intervals.every(b=>(Date.parse(b.endAt)-Date.parse(b.startAt))/60000===60)).toBe(true);
     expect(validateOliviaAssignments(args,shifts)).toMatchObject({
       valid:true,completeCoverage:true,gaps:[],
     });
@@ -203,9 +203,9 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
 
   it("reports unsatisfiable break coverage for one worker rather than silently dropping a break",()=>{
     const args=input([employee("solo")],
-      [coverage("solo-break",{end_local:"17:00",minHeadcount:1,
-        minHeadcountDuringBreak:1})],{slotMinutes:30,
-        ruleProfile:{verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:30}});
+      [coverage("solo-break",{end_local:"13:00",minHeadcount:1,
+        minHeadcountDuringBreak:1})],{slotMinutes:60,
+        ruleProfile:{verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60}});
     const result=optimizeOliviaWeek(args);
     expect(result.best?.completeCoverage).toBe(false);
     expect(result.best?.gaps.some(g=>g.reason==="break_coverage_unsatisfiable")).toBe(true);
@@ -218,8 +218,8 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
 
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
-      [coverage("unchanged",{end_local:"17:00"})],{slotMinutes:30,
-      ruleProfile:{verified:true,maxContinuousWorkMinutes:240,unpaidMealMinutes:30}});
+      [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
+      ruleProfile:{verified:true,maxContinuousWorkMinutes:120,unpaidMealMinutes:60}});
     const old=optimizeOliviaWeek(args);
     const noOverride=optimizeOliviaWeek({...args,coverage:args.coverage.map(c=>({
       ...c,minHeadcountDuringBreak:null,
