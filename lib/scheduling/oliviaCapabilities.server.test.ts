@@ -274,6 +274,32 @@ describe("Olivia PR4A domain adapter: strict, owner-scoped, read-only",()=>{
           missingHeadcount:1}],cost:{cashWagesCents:null,costState:"unavailable"}}]}});
     expect(m.calls).toEqual([]);
   });
+  it("keeps an unsatisfiable break floor visible in Supervisor previews and both saved scenario contracts",async()=>{
+    const breakGap={...scenario.gaps[0],reason:"break_coverage_unsatisfiable"};
+    const failed={...scenario,gaps:[breakGap]};
+    const breakPlan={...plan,scenarios:[failed],best:failed};
+    // This same canonical schema is shared by the planner preview, persisted
+    // revisions, and the overflow-safe read path. The diagnostic must survive
+    // every one of them without weakening arbitrary-reason rejection.
+    const {oliviaPlanSchema,oliviaOverflowPlanSchema}=
+      await import("./oliviaCapabilityContracts");
+    expect(oliviaPlanSchema.safeParse(breakPlan).success).toBe(true);
+    expect(oliviaOverflowPlanSchema.safeParse(breakPlan).success).toBe(true);
+    expect(oliviaPlanSchema.safeParse({
+      ...breakPlan,scenarios:[{...failed,gaps:[{...breakGap,
+        reason:"invented_break_law_claim"}]}],
+    }).success).toBe(false);
+    m.preview.mockResolvedValueOnce({...previewLocations,ok:true,plan:breakPlan,
+      notices:[],blockers:[],employees:{[employeeId]:"Asha"},
+      locationNames:{[locationId]:"Main"},previewRevision:0,
+      sourceDigest:digest,frozenShiftKeys:[]});
+    expect(await executeOliviaReadCapability(preview())).toMatchObject({
+      ok:true,disposition:"proposal_only",
+      plan:{best:{gaps:[{reason:"break_coverage_unsatisfiable",
+        missingHeadcount:1}]},scenarios:[{gaps:[{
+        reason:"break_coverage_unsatisfiable"}]}]},
+    });
+  });
   it("preserves all PR3 wage/availability notices for valid 51-worker previews",async()=>{
     const notices=Array.from({length:51},(_,i)=>[
       {code:"wage_unknown",employeeName:`Worker ${i}`},
