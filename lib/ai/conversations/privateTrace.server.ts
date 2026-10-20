@@ -10,8 +10,12 @@ import {aggregateModelCallCosts,type ModelCallCostRecord} from "@/lib/calc/super
  * The console has its own short retention (on Vercel Free), not our database TTL.
  */
 export type PrivateTurnTrace={events:Record<string,unknown>[];droppedCount:number};
-type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nextSequence:number};
+type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nextSequence:number;requestId?:string};
 const context=new AsyncLocalStorage<State>();
+/** Correlate model calls that have no explicit requestId with the route turn. */
+export function activeSupervisorTraceRequestId():string|undefined{
+  return context.getStore()?.requestId;
+}
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(?:^|[_-])(?:authorization|password|passphrase|secret|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)(?:$|[_-])|(?:clientSecret|clientToken|apiKey|apiToken|accessToken|refreshToken|sessionToken|setCookie)/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
@@ -91,11 +95,11 @@ export function recordSupervisorPrivateTrace(payload:Record<string,unknown>):voi
 }
 /** Always finalize and persist even when a provider, renderer, or database step throws. */
 export async function withSupervisorPrivateTrace<T>(
-  run:()=>Promise<T>,finish:(trace:PrivateTurnTrace)=>Promise<void>,
+  run:()=>Promise<T>,finish:(trace:PrivateTurnTrace)=>Promise<void>,requestId?:string,
 ):Promise<T>{
   if(process.env.SUPERVISOR_DEBUG_RAW_LOGGING!=="true")return run();
   const startedAt=Date.now();
-  return context.run({events:[],bytes:0,droppedCount:0,nextSequence:0},async()=>{
+  return context.run({events:[],bytes:0,droppedCount:0,nextSequence:0,requestId},async()=>{
     try{return await run();}
     finally{
       const current=context.getStore()!;
