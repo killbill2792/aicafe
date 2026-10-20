@@ -2827,3 +2827,28 @@ Third Codex review on cfd2b34 found interchangeable scalar quantities, omitted t
   unsupported numerical unit types, schedule durations, and wage periods need reviewed conversion contracts.
   Treat this as outstanding scope, not a passing acceptance criterion.
 - Release requires final-head CI and independent review, migration/RLS test, and live owner trial.
+
+
+### 2026-10-19 PR #134 — private forensic pilot follow-up (final validation pending)
+
+- Capture is **opt-in** and bound to exactly one test account via `SUPERVISOR_PRIVATE_TRACE_ENABLED=true` and
+  `SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID=<auth.users UUID>`. A missing/invalid UUID disables persistence.
+  Authenticated browser clients have SELECT-only RLS access to their own rows; direct INSERT is revoked.
+  Only the trusted server-role path may insert, after authentication and UUID allowlist checks.
+- Retention safety: server-side insert checks that the pg_cron hourly purge job is active.
+  If the migration has not been applied, pg_cron is disabled, or the job is inactive, no trace is persisted.
+- Full owner-request, model-wire-request/response, source R1/R2/R3 results, server-visible canonical
+  operands, calculator planning/rejection/results, reviewer reasons, answer drafts and terminal HTTP
+  response are retained as an ordered, credential-scrubbed private event stream. Compressed events
+  are SHA-256 checked and reconstituted only for an authenticated exact-request query.
+- Token-cost ledger: per-call provider input/output/cached/reasoning token counts, timings, model,
+  request ID, configured or versioned standard pricing snapshot, estimated integer micro-USD,
+  and a turn-level summary. Unknown usage/pricing returns NULL, not zero. Cached tokens are counted
+  once. This is an estimated API token charge, not a provider invoice or Vercel compute charge.
+- Diagnostic boundaries: `dropped_count` reports size/event limitations; protected credential,
+  statement line and image content is not copied to this table. No browser display receipt is captured.
+  The trace must not claim universal zero-loss or model-internal hidden reasoning.
+- Before release: apply migration, provision active pg_cron purge, set only test-owner UUID,
+  run final-head baseline and domain CI, await new Codex review, validate with one actual
+  owner-turn/trace-retrieval cost reconciliation. **Do not merge or enable production capture solely
+  on a green unit test.**
