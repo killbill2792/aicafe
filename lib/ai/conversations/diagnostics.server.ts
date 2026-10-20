@@ -284,6 +284,187 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
     },
   };
 }
+/** Bounded operational detail for short-lived Vercel logs.
+ * Deliberately DO NOT emit owner/model prose, raw tool args/results, or source
+ * values: a model-provided string is never trusted to be credential-free.
+ * This is not a replacement for an authorized raw-evidence inspection.
+ */
+function supervisorVercelDetail(payload:Record<string,unknown>):Record<string,unknown>|null{
+  const point=payload.point;
+  const allowed=new Set(["model_request","model_response","model_response_error",
+    "model_usage","calculator_rejected","calculator_input","calculator_result",
+    "parallel_batch","tool_request","tool_result","tool_rejected",
+    "capability_round","review_verdict","rescue_review_verdict",
+    "accumulated_rescue_review_verdict","claim_issues_retry",
+    "direct_answer_attempt","answer_rendered","investigation_exhausted",
+    "persistence_result","reply_validation_failed","http_response_sent",
+    "http_response_error","trace_summary","round_context","retry_feedback"]);
+  if(typeof point!=="string"||!allowed.has(point))return null;
+  const detail:Record<string,unknown>={event:"supervisor_diagnostic_detail",point};
+  for(const key of ["requestId","capabilityId","observationId"]){
+    const id=safeProviderIdentifier(payload[key]);
+    if(id)detail[key]=id;
+  }
+  for(const key of ["round","attempt","modelCallCount","toolCallCount",
+    "durationMs","maxOutputTokens","providerTimeoutMs","httpStatus"]){
+    const value=safeCount(payload[key]);
+    if(value!==undefined)detail[key]=value;
+  }
+  for(const key of ["model","requestedModel"]){
+    if(typeof payload[key]==="string")detail[key]=safeModel(payload[key] as string);
+  }
+  for(const key of ["supported","complete","dispatched","parallel",
+    "successful","executed","ok","fallback","replayed","captureComplete","tokenCostComplete"]){
+    if(typeof payload[key]==="boolean")detail[key]=payload[key];
+  }
+  const safeTags:Record<string,ReadonlySet<string>>={
+    reasonCode:new Set(["unsupported_currency","invalid_plan","unknown_operand",
+      "invalid_arguments_json","invalid_source_context","simulation_input_rejected",
+      "calculator_invalid_result","invalid_calculator_result","calculation_unavailable",
+      "source_context_error","calendar_scope_mismatch","financial_scope_unavailable",
+      "duplicate_attempt","unknown_tool","not_a_read_capability","invalid_result_envelope"]),
+    outcome:new Set(["concurrent","rejected_preflight"]),
+    status:new Set(["verified","partial","estimated","conditional","unavailable","failed",
+      "completed","incomplete","cancelled","in_progress"]),
+    replyStatus:new Set(["verified","partial","estimated","conditional","unavailable",
+      "insufficient_evidence"]),
+    pricingSource:new Set(["openai_standard_short_context_2026_10_19",
+      "environment_configured","unpriced"]),
+    pricingStatus:new Set(["usage_unavailable","missing_or_mismatched_rate",
+      "configured_estimate"]),
+    requestName:new Set(["supervisor_investigation_step","supervisor_investigation_review",
+      "supervisor_formula_extraction","supervisor_public_query_review",
+      "supervisor_calendar_context_review"]),
+    exhaustionReason:new Set(["model_calls","operations","time","no_progress",
+      "identity_mismatch","snapshot_mismatch","observations_too_large"]),
+  };
+  for(const [key,options] of Object.entries(safeTags)){
+    if(typeof payload[key]==="string"&&options.has(payload[key] as string))
+      detail[key]=payload[key];
+  }
+  const raw=payload.raw;
+  if(point==="model_response"&&raw&&typeof raw==="object"&&!Array.isArray(raw)){
+    const response=raw as Record<string,unknown>;
+    if(Array.isArray(response.output))
+      detail.responseTypes=response.output.slice(0,20).map(item=>{
+        const kind=item&&typeof item==="object"&&!Array.isArray(item)?
+          (item as Record<string,unknown>).type:null;
+        return typeof kind==="string"&&outputItemTypeEnum.has(kind)?kind:"other";
+      });
+    if(typeof response.status==="string"&&safeTags.status.has(response.status))
+      detail.providerStatus=response.status;
+  }
+  if(point==="calculator_rejected"||point==="claim_issues_retry"){
+    const allowedIssueCodes=new Set(["invalid_type","invalid_union","invalid_value",
+      "invalid_format","too_small","too_big","not_multiple_of","unrecognized_keys",
+      "invalid_key","invalid_element","custom"]);
+    const allowedIssueFields=new Set(["purpose","nodes","op","unit","handle","amount",
+      "value","left","right","target","currency","result","source","period",
+      "from","to","mode","assumptions","input","index","type"]);
+    if(Array.isArray(payload.issues)){
+      detail.issueCount=payload.issues.length;
+      detail.schemaIssues=payload.issues.slice(0,12).map(issue=>{
+        const entry=issue&&typeof issue==="object"&&!Array.isArray(issue)?
+          issue as Record<string,unknown>:{};
+        const path=Array.isArray(entry.path)?entry.path.slice(0,8).map(seg=>
+          typeof seg==="number"&&Number.isSafeInteger(seg)&&seg>=0?seg:
+            typeof seg==="string"&&allowedIssueFields.has(seg)?seg:"[field]"):[];
+        return {path,code:typeof entry.code==="string"&&allowedIssueCodes.has(entry.code)?
+          entry.code:"other"};
+      });
+    }
+    const args=payload.toolArguments;
+    if(args&&typeof args==="object"&&!Array.isArray(args)){
+      const nodes=(args as Record<string,unknown>).nodes;
+      if(Array.isArray(nodes)){
+        detail.nodeCount=nodes.length;
+        const allowedOps=new Set(["source","hypothetical","add","subtract","multiply",
+          "divide","convert","sum","ratio","round","literal"]);
+        detail.nodeOps=nodes.slice(0,24).map(node=>{
+          const op=node&&typeof node==="object"&&!Array.isArray(node)?
+            (node as Record<string,unknown>).op:null;
+          return typeof op==="string"&&allowedOps.has(op)?op:"unknown";
+        });
+      }
+    }
+  }
+  if(point==="parallel_batch"){
+    const preflight=payload.preflight;
+    if(preflight&&typeof preflight==="object"&&!Array.isArray(preflight)){
+      const p=preflight as Record<string,unknown>;
+      const checks:Record<string,unknown>={};
+      for(const field of ["allCallsSupported","withinOperationBudget",
+        "canonicalSelectorsUnique","canonicalSourcesUnique","neverAttemptedBefore",
+        "registeredInputsValid"]){
+        if(typeof p[field]==="boolean")checks[field]=p[field];
+      }
+      if(Array.isArray(p.perCall))
+        checks.perCall=p.perCall.slice(0,8).map(call=>{
+          const x=call&&typeof call==="object"&&!Array.isArray(call)?
+            call as Record<string,unknown>:{};
+          const entry:Record<string,unknown>={};
+          for(const key of ["currencyAndSnapshotPermitted","datesMatch",
+            "noPendingCalendarCorrection","registryPreflight"]){
+            if(typeof x[key]==="boolean")entry[key]=x[key];
+          }
+          if(safeProviderIdentifier(x.capabilityId))
+            entry.capabilityId=safeProviderIdentifier(x.capabilityId);
+          return entry;
+        });
+      detail.preflight=checks;
+    }
+  }
+  if(point==="tool_result"||point==="capability_round"||point==="calculator_result"){
+    const result=payload.result??payload.rawResult;
+    if(result&&typeof result==="object"&&!Array.isArray(result)){
+      const r=result as Record<string,unknown>;
+      if(typeof r.status==="string"&&safeTags.status.has(r.status))
+        detail.resultStatus=r.status;
+      if(Array.isArray(r.value))detail.resultRowCount=r.value.length;
+      if(typeof r.value==="number")detail.resultValueType="number";
+      else if(r.value&&typeof r.value==="object")detail.resultValueType="structured";
+    }
+  }
+  if(point==="direct_answer_attempt"){
+    const paragraphs=payload.rawAnswerParagraphs;
+    if(Array.isArray(paragraphs)){
+      detail.paragraphCount=paragraphs.length;
+      detail.paragraphKinds=paragraphs.slice(0,20).map(p=>{
+        const kind=p&&typeof p==="object"&&!Array.isArray(p)?
+          (p as Record<string,unknown>).kind:null;
+        return ["evidence","advice","clarification"].includes(String(kind))?kind:"unknown";
+      });
+    }
+  }
+  if(point==="review_verdict"||point==="rescue_review_verdict"||
+    point==="accumulated_rescue_review_verdict"){
+    if(typeof payload.reason==="string")detail.reasonLength=payload.reason.length;
+  }
+  if(point==="model_usage"||point==="trace_summary"){
+    for(const key of ["modelCalls","inputTokens","cachedInputTokens","outputTokens",
+      "reasoningOutputTokens","unpricedCalls","expectedModelRequests",
+      "observedUsageResponses","missingUsageResponses","priorDroppedCount","droppedCount"]){
+      const value=safeCount(payload[key]);
+      if(value!==undefined)detail[key]=value;
+    }
+    if(payload.estimatedCostMicros===null)detail.estimatedCostMicros=null;
+    else{
+      const value=safeCount(payload.estimatedCostMicros);
+      if(value!==undefined)detail.estimatedCostMicros=value;
+    }
+    const u=payload.usage;
+    if(u&&typeof u==="object"&&!Array.isArray(u)){
+      const counts:Record<string,number>={};
+      for(const key of ["inputTokens","cachedInputTokens","uncachedInputTokens",
+        "outputTokens","reasoningOutputTokens"]){
+        const value=safeCount((u as Record<string,unknown>)[key]);
+        if(value!==undefined)counts[key]=value;
+      }
+      detail.usage=counts;
+    }
+  }
+  return detail;
+}
 /** ============================================================
  * TEMPORARY. DELETE THIS FUNCTION AND EVERY CALL SITE ONCE A REAL OWNER
  * USES THIS APP.
@@ -393,6 +574,8 @@ export function logSupervisorDebugPayload(payload:Record<string,unknown>,
   for(const key of ["successful","supported","complete","dispatched","parallel"])
     if(typeof payload[key]==="boolean")safe[key]=payload[key];
   sink(JSON.stringify(safe));
+  const detail=supervisorVercelDetail(payload);
+  if(detail)sink(JSON.stringify(detail));
 }
 export function classifySupervisorError(error:unknown,stage:SupervisorStage):SupervisorDiagnostic {
   // A genuinely new failure category (never the catch-all "unexpected"):
