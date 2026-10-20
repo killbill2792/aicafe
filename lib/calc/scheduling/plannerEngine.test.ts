@@ -384,6 +384,49 @@ describe("Olivia PR2 deterministic cafe scheduling",()=>{
     });
   });
 
+  it("reserves the needed full-span break even when the second seat is a B-to-C handoff",()=>{
+    const args=input([
+      employee("a"),
+      employee("b",{recurring:[recurring(1,"09:00","12:00")]}),
+      employee("c",{recurring:[recurring(1,"12:00","13:00")]}),
+    ],[coverage("handoff-tier",{start_local:"09:00",end_local:"13:00",
+      minHeadcount:2,minHeadcountDuringBreak:1})],{
+      slotMinutes:60,ruleProfile:{
+        verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+      },
+    });
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts.find(s=>s.employeeId==="a")?.breaks).toHaveLength(1);
+    expect(result.best?.shifts.some(s=>s.employeeId==="b")).toBe(true);
+    expect(result.best?.shifts.some(s=>s.employeeId==="c")).toBe(true);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
+  it("keeps continuous work across an adjacent cashier-to-barista qualification change",()=>{
+    const dual=employee("dual",{qualifications:[
+      {code:"cashier",validFrom:"2026-01-01",confirmed:true},
+      {code:"barista",validFrom:"2026-01-01",confirmed:true},
+    ]});
+    const args=input([dual],[
+      coverage("cashier",{start_local:"09:00",end_local:"11:00",
+        qualificationCode:"cashier",minHeadcount:1,minHeadcountDuringBreak:0}),
+      coverage("barista",{start_local:"11:00",end_local:"13:00",
+        qualificationCode:"barista",minHeadcount:1,minHeadcountDuringBreak:0}),
+    ],{slotMinutes:60,ruleProfile:{
+      verified:true,maxContinuousWorkMinutes:180,unpaidMealMinutes:60,
+    }});
+    const result=optimizeOliviaWeek(args);
+    expect(result.status).toBe("feasible");
+    expect(result.best?.shifts).toHaveLength(1);
+    expect(result.best?.shifts[0].breaks).toHaveLength(1);
+    expect(validateOliviaAssignments(args,result.best!.shifts)).toMatchObject({
+      valid:true,completeCoverage:true,gaps:[],
+    });
+  });
+
   it("keeps the pre-feature planner result byte-identical when break headcount is absent or null",()=>{
     const args=input([employee("original")],
       [coverage("unchanged",{end_local:"13:00"})],{slotMinutes:60,
