@@ -146,7 +146,8 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
         mocks.message.clientMessageId);
       expect(mocks.persist).toHaveBeenCalledWith(expect.anything(),expect.anything(),
         expect.objectContaining({status:"estimated",blocks:[
-          expect.objectContaining({text:expect.stringContaining(locale==="en"?"Nothing has changed":\n            locale==="es"?"No se ha cambiado":"لم يتغير")})]}));
+          expect.objectContaining({text:expect.stringContaining(locale==="en"?"Nothing has changed":
+            locale==="es"?"No se ha cambiado":"لم يتغير")})]}));
     },
   );
   it("refuses a model-selected proposal when two owner amounts are ambiguous",async()=>{
