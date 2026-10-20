@@ -48,6 +48,21 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Let's try it","Try 10 or 20 cents",20)).toBe(false);
   expect(ownerQuotedPriceDelta("Latte 12 oz, increase 10 cents",undefined,10)).toBe(true);
  });
+ it("rejects nonadjacent price alternatives regardless of filler language",()=>{
+  expect(ownerQuotedPriceDelta("Try 10 or maybe 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10 or maybe 20 cents",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Prueba 10 o quizás 20 centavos",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ١٠ أو ربما ٢٠ سنتات",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10 or, if that's too much, 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Let's try 10 versus perhaps 20¢",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10 or maybe $0.20",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Let's try it","Prueba 10 o quizás 20 centavos",20)).toBe(false);
+  // An explicitly size-typed drink is NOT a second proposed price amount.
+  expect(ownerQuotedPriceDelta("Latte 12 oz, increase 10 cents",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Latte 12oz increase 10 cents",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try 10 cents on a 16oz latte",undefined,10)).toBe(true);
+  expect(ownerQuotedPriceDelta("Try a $0.10 increase on Latte 12 oz",undefined,10)).toBe(true);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
