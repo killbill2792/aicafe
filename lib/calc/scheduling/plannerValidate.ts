@@ -233,11 +233,26 @@ export function validateOliviaAssignments(input:PlannerInput,
       const after=new Set(candidates[ordered[i]]);
       if(before.size===after.size && [...before].every(id=>after.has(id)))
         continue; // same qualified team; no worker handoff
+      if(requirement.minHeadcountDuringBreak!=null){
+        const changed=[...new Set([...before,...after])].filter(id=>
+          before.has(id)!==after.has(id));
+        // A worker entering/exiting a duty-free break inside the same
+        // recorded shift is NOT a replacement hire/shift handoff.
+        const breakBoundary=(id:string)=>proposal.some(s=>
+          s.employeeId===id && s.locationId===requirement.locationId &&
+          Date.parse(s.startAt)<current.start && Date.parse(s.endAt)>current.start &&
+          s.breaks.some(b=>Date.parse(b.startAt)===current.start ||
+            Date.parse(b.endAt)===current.start));
+        if(changed.length>0 && changed.every(breakBoundary))continue;
+      }
       const overlapStart=current.start-requirement.minOverlapMinutes!*60_000;
       const qualifiedDuringOverlap=candidates[ordered[i]].filter(id=>
         coveredBy(work,{...current,start:overlapStart,end:current.start},id));
-      if(qualifiedDuringOverlap.length>=requirement.minHeadcount)continue;
-      const missing=requirement.minHeadcount-qualifiedDuringOverlap.length;
+      const breakCount=recordedBreakCount(input,plan,proposal,current);
+      const target=requirement.minHeadcountDuringBreak==null?requirement.minHeadcount:
+        Math.max(requirement.minHeadcountDuringBreak,requirement.minHeadcount-breakCount);
+      if(qualifiedDuringOverlap.length>=target)continue;
+      const missing=target-qualifiedDuringOverlap.length;
       gaps.push({coverageId:requirement.id,locationId:requirement.locationId,
         startAt:utcIso(overlapStart),endAt:utcIso(current.start),
         qualificationCode:requirement.qualificationCode??null,
