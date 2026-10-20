@@ -2035,6 +2035,14 @@
     "recommendAdjust": "Revisar y ajustar antes de decidir",
     "actualRevenue": "Ingresos reales de siete días",
     "observedDifference": "Diferencia real frente al precio anterior (no causal)",
-"reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites."
+"reportThread": "Alex completó el informe del experimento de precios. Consulta Operaciones para ver los resultados y los límites.",
+    "reportRevenue": "Ventas netas observadas: {value}",
+    "reportDifference": "Diferencia frente al precio previo con el volumen observado: {value}",
+    "reportUncertain": "Aún faltan ventas diarias verificadas. No es beneficio neto ni prueba de causalidad.",
+    "recommendation": "Recomendación: {choice}",
+    "keep": "Mantener",
+    "revert": "Revertir",
+    "adjust": "Revisar o ajustar",
+    "notAvailable": "No disponible"
   }
 }
