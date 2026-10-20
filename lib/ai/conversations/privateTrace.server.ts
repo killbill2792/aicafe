@@ -15,7 +15,7 @@ export type PrivateTurnTrace={events:Record<string,unknown>[];droppedCount:numbe
 type State={events:Record<string,unknown>[];bytes:number;droppedCount:number;nextSequence:number};
 const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
-const secretKey=/(^|[_-])(authorization|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)($|[_-])/i;
+const secretKey=/(?:^|[_-])(?:authorization|password|passphrase|secret|api[_-]?(?:key|token)|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)(?:$|[_-])|(?:clientSecret|clientToken|apiKey|apiToken|accessToken|refreshToken|sessionToken|setCookie)/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
 /** Fail closed: pilot traces are only written for one configured Supabase auth UUID. */
 export function isSupervisorPrivateTraceTester(ownerUserId:string):boolean {
