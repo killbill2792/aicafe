@@ -2,6 +2,7 @@ import "server-only";
 import {AsyncLocalStorage} from "node:async_hooks";
 import {gzipSync} from "node:zlib";
 import {createHash} from "node:crypto";
+import {aggregateModelCallCosts,type ModelCallCostRecord} from "@/lib/calc/supervisorTokenCost";
 import type {ConversationScope} from "./contracts";
 
 /**
@@ -94,10 +95,33 @@ export async function withSupervisorPrivateTrace<T>(
   run:()=>Promise<T>,finish:(trace:PrivateTurnTrace)=>Promise<void>,
 ):Promise<T>{
   if(process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED!=="true")return run();
+  const startedAt=Date.now();
   return context.run({events:[],bytes:0,droppedCount:0,nextSequence:0},async()=>{
     try{return await run();}
     finally{
       const current=context.getStore()!;
+      const usageEntries=current.events.filter(e=>e.point==="model_usage");
+      const rows:ModelCallCostRecord[]=usageEntries.flatMap(e=>{
+        if(typeof e.model!=="string"||!e.usage||typeof e.usage!=="object")return [];
+        const usage=e.usage as Record<string,unknown>;
+        const inputs=["inputTokens","cachedInputTokens","outputTokens","reasoningOutputTokens"] as const;
+        if(inputs.some(k=>typeof usage[k]!=="number"||!Number.isSafeInteger(usage[k])||
+          (usage[k] as number)<0))return [];
+        return [{model:e.model as string,requestName:String(e.requestName??"unknown"),
+          inputTokens:usage.inputTokens as number,cachedInputTokens:usage.cachedInputTokens as number,
+          outputTokens:usage.outputTokens as number,
+          reasoningOutputTokens:usage.reasoningOutputTokens as number,
+          estimatedCostMicros:typeof e.estimatedCostMicros==="number"?
+            e.estimatedCostMicros:null}];
+      });
+      const expectedModelRequests=current.events.filter(e=>e.point==="model_request").length;
+      const totals=aggregateModelCallCosts(rows);
+      const incomplete=current.droppedCount>0||expectedModelRequests!==rows.length;
+      recordSupervisorPrivateTrace({point:"trace_summary",durationMs:Date.now()-startedAt,
+        costUnit:"USD_micro",pricingKind:"configured_estimate_not_invoice",
+        ...totals,expectedModelRequests,observedUsageResponses:rows.length,
+        missingUsageResponses:Math.max(0,expectedModelRequests-rows.length),
+        captureComplete:!incomplete,priorDroppedCount:current.droppedCount});
       try{await finish({events:current.events,droppedCount:current.droppedCount});}
       catch{console.info(JSON.stringify({event:"supervisor_private_trace",status:"write_failed"}));}
     }
