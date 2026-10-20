@@ -86,12 +86,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const todayVm = period === "today" ? vm : buildHomeViewModel(snapshot, "today");
   const profitVm = buildProfitAndCostsViewModel(snapshot, period);
   const glance = buildTodayGlanceViewModel(snapshot);
-  const [t, tCommon, tOperations, tCategories, tChat] = await Promise.all([
+  const [t, tCommon, tOperations, tCategories, tChat, tExperiment] = await Promise.all([
     getTranslations("Home"),
     getTranslations("Common"),
     getTranslations("Operations"),
     getTranslations("Categories"),
     getTranslations("SupervisorChat"),
+    getTranslations("SupervisorExperiment"),
   ]);
   const posStatus = await getPosConnectionStatus();
   const derivedTeam = buildOperationsTeamViewModel(snapshot, menu);
@@ -177,6 +178,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <div className="flex flex-col gap-4">
         <SupervisorHomePanel
+          experimentCopy={{open:tExperiment("open"),close:tExperiment("close"),product:tExperiment("product"),increase:tExperiment("increase"),preview:tExperiment("preview"),propose:tExperiment("propose"),approve:tExperiment("approve"),apply:tExperiment("apply"),done:tExperiment("done"),report:tExperiment("report"),waiting:tExperiment("waiting"),loading:tExperiment("loading"),error:tExperiment("error"),condition:tExperiment("condition"),confirmNote:tExperiment("confirmNote"),reportNote:tExperiment("reportNote")}}
           locale={locale}
           languageSwitch={<LanguageSwitch href="/" compact />}
           chatEnabled={chatReadiness.enabled}
