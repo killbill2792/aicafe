@@ -38,6 +38,16 @@ describe("registered semantic proposal source validation",()=>{
   expect(ownerQuotedPriceDelta("Try $0.10 or $0.20",undefined,10)).toBe(false);
   expect(ownerQuotedPriceDelta("Try a $0.20 increase",undefined,10)).toBe(false);
  });
+ it("rejects alternatives that share a single cents unit instead of trusting the final value",()=>{
+  expect(ownerQuotedPriceDelta("Try 10 or 20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10–20¢",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10/20 cents",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Try 10 cents or 20",undefined,10)).toBe(false);
+  expect(ownerQuotedPriceDelta("Prueba 10 o 20 centavos",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("لنجرب ١٠ أو ٢٠ سنتات",undefined,20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Let's try it","Try 10 or 20 cents",20)).toBe(false);
+  expect(ownerQuotedPriceDelta("Latte 12 oz, increase 10 cents",undefined,10)).toBe(true);
+ });
  it("prefers this turn's explicit menu product over unrelated previous turns",()=>{
   expect(ownerNamedUniqueProduct("Let's test Latte 12 oz by 10 cents",
     "How is the Mocha selling?","latte-small",catalog)).toBe(true);
