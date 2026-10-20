@@ -53,7 +53,7 @@ export async function readPriceExperimentSalesDays(
      aggregatePriceExperimentSalesRows(rowsByDay.get(businessDate)??[]):null;
    return total?{businessDate,units:total.units,netSalesCents:total.netSalesCents,
      coverage:"actual" as const,source:"daily_rollups+order_lines"}:null;
- }).filter((day):day is PriceExperimentDay=>day!==null);
+ }).filter((day):day is NonNullable<typeof day>=>day!==null);
 }
 /** Seven completed calendar days in the café's timezone; never include a
  * partially synchronized current business day in the baseline forecast.
