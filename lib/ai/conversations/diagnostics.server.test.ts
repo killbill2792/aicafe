@@ -381,7 +381,7 @@ describe("owner-to-R1-to-model-to-delivery trace reconstruction",()=>{
       },async t=>{trace=t;});
       expect(trace!.droppedCount).toBe(0);
       expect(trace!.events.map(e=>e.point)).toEqual([
-        "turn_received","tool_result","model_request","model_response","http_response_sent"]);
+        "turn_received","tool_result","model_request","model_response","http_response_sent","trace_summary"]);
       expect((trace!.events[1].result as {value:{totalCents:number}}).value.totalCents).toBe(746700);
       expect(JSON.stringify(trace!.events[2])).toContain("money.monthly_bills:value:totalCents");
       expect(JSON.stringify(trace!.events[3])).toContain("input_tokens");
@@ -414,7 +414,7 @@ describe("authenticated private trace buffer",()=>{
           body:{input:"a".repeat(90000),apiKey:"do-not-store"}});
       },async trace=>{payload=trace;});
       expect(payload!.droppedCount).toBe(0);
-      expect(payload!.events).toHaveLength(1);
+      expect(payload!.events).toHaveLength(2);
       const item=payload!.events[0];
       expect(item.encoding).toBe("gzip-base64");
       const raw=JSON.parse(gunzipSync(Buffer.from(item.data as string,"base64")).toString("utf8"));
@@ -428,7 +428,7 @@ describe("authenticated private trace buffer",()=>{
       let payload:{events:Record<string,unknown>[];droppedCount:number}|null=null;
       await withSupervisorPrivateTrace(async()=>{
         logSupervisorDebugPayload({point:"turn_received",
-          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567\nAuthorization: Basic dXNlcjpwYXNz\nCookie: session=my-cookie-session\nmy API token is MYAPITOKENVALUE",
+          ownerQuestion:"my access token is VERYSECRET0123456789 and key sk-proj-abcdefghi1234567\nAuthorization: Basic dXNlcjpwYXNz\nCookie: session=my-cookie-session\nmy API token is MYAPITOKENVALUE\\n{\"password\":\"JSON_PASSWORD_SENSITIVE\",\"clientSecret\":\"JSON_CLIENT_SECRET\"}",
           parameters:{rows:Array.from({length:180},(_,i)=>({item:i}))}});
       },async trace=>{payload=trace;});
       const serialized=JSON.stringify(payload);
@@ -437,6 +437,8 @@ describe("authenticated private trace buffer",()=>{
       expect(serialized).not.toContain("dXNlcjpwYXNz");
       expect(serialized).not.toContain("my-cookie-session");
       expect(serialized).not.toContain("MYAPITOKENVALUE");
+      expect(serialized).not.toContain("JSON_PASSWORD_SENSITIVE");
+      expect(serialized).not.toContain("JSON_CLIENT_SECRET");
       expect(payload!.droppedCount).toBe(0);
       expect((payload!.events[0].parameters as {rows:unknown[]}).rows).toHaveLength(180);
     }finally{vi.unstubAllEnvs();}
@@ -456,7 +458,7 @@ describe("authenticated private trace buffer",()=>{
       expect(content).toContain("unknown_operand");
       expect(content).toContain("What are my wages?");
       expect(content).not.toContain("Bearer sensitive");
-      expect(collected!.events).toHaveLength(1);
+      expect(collected!.events).toHaveLength(2);
     }finally{vi.unstubAllEnvs();}
   });
 });
