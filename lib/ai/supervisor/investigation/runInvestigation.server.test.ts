@@ -306,6 +306,27 @@ describe("reviewer advisory for an already-masked partial",()=>{
   });
 });
 describe("review verdict publication policy",()=>{
+  it("keeps only server-grounded partial facts if a reviewer objects to another goal",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([
+        {kind:"evidence",text:"The catalog price is {{r1:value.0.priceCents}}.",citations:["r1"]},
+        {kind:"advice",text:"I have already published the schedule.",citations:[]},
+      ]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"The schedule-completion statement has no action evidence."});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"What is the latte price, and did you publish the shifts?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks.some(b=>b.type==="metric"&&b.valueCents===525)).toBe(true);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
+  });
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));
