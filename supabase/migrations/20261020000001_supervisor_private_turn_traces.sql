@@ -71,7 +71,7 @@ $$;
 REVOKE ALL ON FUNCTION public.supervisor_private_trace_retention_ready()
   FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.supervisor_private_trace_retention_ready()
-  TO authenticated;
+  TO service_role;
 
 DO $$
 BEGIN
