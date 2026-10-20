@@ -141,21 +141,30 @@ function priorityScore(employee:ExpandedPlan["employees"][number],
     objective==="cash"?rate+owner*100:rate+owner*10_000;
 }
 
+/** Exact pre-approved shifts are immutable; do not requalify their actual
+ * break windows against today's duration or continuous-work rule profile.
+ * Keep the same explicit field contract as plannerValidate.freezeKey.
+ */
+function isTrustedFrozenShift(input:PlannerInput,shift:PlannerShift):boolean {
+  const key=(s:PlannerShift)=>JSON.stringify({
+    employeeId:s.employeeId,locationId:s.locationId,startAt:s.startAt,
+    endAt:s.endAt,paidMinutes:s.paidMinutes,breaks:s.breaks,pinned:s.pinned,
+  });
+  const target=key(shift);
+  return (input.startedPublishedShifts??[]).some(frozen=>key(frozen)===target);
+}
+
 /** Use recorded, immutable breaks for frozen or in-progress re-planning. */
 export function historicalBreakReservations(input:PlannerInput,
   plan:ExpandedPlan):BreakReservation[] {
-  const profile=input.ruleProfile;
-  if(!profile?.verified || profile.maxContinuousWorkMinutes==null) return [];
   const reservations:BreakReservation[]=[];
   for(const shift of input.startedPublishedShifts??[]){
     const workStart=Date.parse(shift.startAt),workEnd=Date.parse(shift.endAt);
-    // Gross on-site time, not worked time net of this valid recorded break.
-    if((workEnd-workStart)/60000<=profile.maxContinuousWorkMinutes)continue;
+    // expandPlannerInput validates the trusted, frozen paid minutes and
+    // contained break record. A later owner rule change cannot rewrite it.
     for(const brk of shift.breaks){
       const start=Date.parse(brk.startAt),end=Date.parse(brk.endAt);
-      const duration=brk.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
-      if(duration==null || duration<=0 ||
-          (end-start)/60000!==duration || start<=workStart || end>=workEnd)continue;
+      if(!(start<end && workStart<start && end<workEnd))continue;
       for(const unit of plan.units){
         if(unit.seatIndex!==0 || unit.locationId!==shift.locationId ||
             unit.start<start || unit.end>end)continue;
@@ -521,21 +530,25 @@ export function demandSeatRequired(input:PlannerInput,plan:ExpandedPlan,
 export function reviewedRecordedBreakWorkers(input:PlannerInput,plan:ExpandedPlan,
   shifts:readonly PlannerShift[],unit:DemandUnit):string[] {
   const profile=input.ruleProfile;
-  if(!profile?.verified || profile.maxContinuousWorkMinutes==null ||
-      profile.maxContinuousWorkMinutes<=0)return [];
   const people:string[]=[];
   for(const shift of shifts){
     if(shift.locationId!==unit.locationId)continue;
     const person=plan.employees.find(e=>e.id===shift.employeeId);
     if(!person || !qualifies(person,unit,plan.locations))continue;
     const shiftStart=Date.parse(shift.startAt),shiftEnd=Date.parse(shift.endAt);
-    if((shiftEnd-shiftStart)/60000<=profile.maxContinuousWorkMinutes)continue;
+    const historical=isTrustedFrozenShift(input,shift);
+    // Non-frozen drafts still require currently reviewed, validated breaks.
+    if(!historical && (!profile?.verified ||
+        profile.maxContinuousWorkMinutes==null ||
+        profile.maxContinuousWorkMinutes<=0 ||
+        (shiftEnd-shiftStart)/60000<=profile.maxContinuousWorkMinutes))continue;
     for(const b of shift.breaks){
       const start=Date.parse(b.startAt),end=Date.parse(b.endAt);
-      const expected=b.paid?profile.paidRestMinutes:profile.unpaidMealMinutes;
-      if(expected==null || expected<=0 || (end-start)/60000!==expected ||
-          !(shiftStart<start && end<shiftEnd) ||
-          start>unit.start || end<unit.end)continue;
+      const expected=b.paid?profile?.paidRestMinutes:profile?.unpaidMealMinutes;
+      if(!(shiftStart<start && end<shiftEnd) ||
+          start>unit.start || end<unit.end ||
+          (!historical && (expected==null || expected<=0 ||
+            (end-start)/60000!==expected)))continue;
       // An edited draft cannot claim a duty-free break while scheduling
       // this very employee to work in another concurrent shift. Verify
       // every proposal shift for actual duty during the credited slot.
