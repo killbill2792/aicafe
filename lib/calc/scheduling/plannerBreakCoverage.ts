@@ -211,6 +211,57 @@ export function proposeBreakReservations(input: PlannerInput, plan: ExpandedPlan
     select(index+1);
   }
   select(0);
+
+  // A single seat tier can be handed off between employees. Some of those
+  // workers nevertheless exceed their OWN continuous-work limit (e.g. B works
+  // 09:00-13:00 before C takes over at 13:00). Reserve their actual available
+  // subsequence, without forcing them across the handoff boundary.
+  for(const group of coverageSpans(input,plan)){
+    const maxSeats=Math.max(...group.units.map(u=>
+      input.coverage.find(c=>c.id===u.coverageId)!.minHeadcount));
+    const fromGroup=(entry:Candidate)=>group.units.includes(entry.span.units[0]);
+    const selected=[...bestRoster].filter(([entry])=>fromGroup(entry))
+      .map(([,person])=>person.id);
+    const remaining=Math.max(0,maxSeats-selected.length);
+    if(remaining===0)continue;
+    const partial:Candidate[]=[];
+    for(const person of plan.employees){
+      if(selected.includes(person.id))continue;
+      let run:DemandUnit[]=[];
+      const finish=()=>{
+        if(run.length){
+          const first=run[0],last=run[run.length-1];
+          const total=(last.end-first.start)/60000;
+          if(total>limit && total>=duration+2*grid)
+            partial.push({span:{...group,units:run},first,last,people:[person]});
+        }
+        run=[];
+      };
+      for(const unit of group.units){
+        const available=qualifies(person,unit,plan.locations) &&
+          isConfirmedAvailable({employeeId:person.id,locationId:unit.locationId,
+            start:unit.start,end:unit.end,pinned:false},person,plan.locations,cache) &&
+          !plan.pinned.some(w=>w.historical && w.employeeId===person.id &&
+            w.start<unit.end && w.end>unit.start);
+        if(!available){finish();continue;}
+        if(run.length && run[run.length-1].end!==unit.start)finish();
+        run.push(unit);
+      }
+      finish();
+    }
+    partial.sort((a,b)=>(b.last.end-b.first.start)-(a.last.end-a.first.start) ||
+      priorityScore(a.people[0],objective)-priorityScore(b.people[0],objective) ||
+      a.people[0].id.localeCompare(b.people[0].id));
+    let count=0;
+    for(const entry of partial){
+      if(count>=remaining)break;
+      const person=entry.people[0];
+      if([...bestRoster].some(([other,worker])=>
+        worker.id===person.id && entry.first.start<other.last.end &&
+        other.first.start<entry.last.end))continue;
+      bestRoster.set(entry,person);count++;
+    }
+  }
   if(bestRoster.size===0)return results;
 
   type Placement={entry:Candidate;employeeId:string;start:number;end:number;
