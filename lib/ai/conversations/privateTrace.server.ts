@@ -16,12 +16,26 @@ const context=new AsyncLocalStorage<State>();
 const MAX_EVENTS=220,MAX_BYTES=480_000,MAX_EVENT_BYTES=32_000;
 const secretKey=/(^|[_-])(authorization|password|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|cookie|service[_-]?role|credential|session[_-]?token)($|[_-])/i;
 const restrictedContentKey=/(?:bank.*(?:line|statement|transaction)|(?:receipt|invoice).*(?:image|scan|photo)|raw[_-]?image)/i;
+/** Fail closed: pilot traces are only written for one configured Supabase auth UUID. */
+export function isSupervisorPrivateTraceTester(ownerUserId:string):boolean {
+  const testId=process.env.SUPERVISOR_PRIVATE_TRACE_TEST_USER_ID;
+  return process.env.SUPERVISOR_PRIVATE_TRACE_ENABLED==="true"&&
+    typeof testId==="string"&&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(testId)&&
+    ownerUserId.toLowerCase()===testId.toLowerCase();
+}
+
 /** No raw bearer, quoted password or provider-key-shaped token can be retained. */
 function redactSecretsInText(value:string):string {
   return value
     // Header bodies (Basic, Bearer, cookies) can contain multiple tokens. An
     // isolated label-value replacement is NOT sufficient for Basic credentials.
     .replace(/\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:\s*[^\r\n]+/giu,"[credential_header_removed]")
+    // JSON embedded in owner chat (including camelCase clientSecret).
+    .replace(/(["'](?:clientSecret|client_secret|password|passphrase|apiKey|api_token|accessToken|refreshToken|sessionToken|authorization|cookie|secret)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/giu,
+      (_match:string,prefix:string)=>prefix+'"[credential_removed]"')
+    .replace(/(\b(?:clientSecret|client_secret|apiKey|apiToken|accessToken|refreshToken|sessionToken)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      (_match:string,prefix:string)=>prefix+"[credential_removed]")
     .replace(/\b(?:sk-(?:proj-)?[a-zA-Z0-9_-]{8,}|sb_secret_[a-zA-Z0-9_-]{8,}|github_pat_[a-zA-Z0-9_-]{8,}|gh[pousr]_[a-zA-Z0-9_]{8,}|vercel_[a-zA-Z0-9_-]{16,})\b/gu,"[credential_removed]")
     .replace(/\bBearer\s+[a-zA-Z0-9._~+/-]{8,}=?\b/giu,"Bearer [credential_removed]")
     .replace(/(\b(?:password|passphrase|api[\s_-]?(?:key|token)|access[\s_-]?token|refresh[\s_-]?token|session[\s_-]?token|authorization|secret)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
@@ -93,8 +107,11 @@ export async function persistSupervisorPrivateTrace(input:{
   scope:ConversationScope;threadId:string;ownerMessageId:string;requestId:string;
   trace:PrivateTurnTrace;
 }):Promise<void>{
-  const {createServerSupabaseClient}=await import("@/lib/supabase/server");
-  const client=await createServerSupabaseClient();
+  if(!isSupervisorPrivateTraceTester(input.scope.ownerUserId))return;
+  // Service-role writes are restricted to this authenticated and explicitly
+  // allowlisted server path; RLS forbids browser/client trace insertion.
+  const {createAdminSupabaseClient}=await import("@/lib/supabase/admin");
+  const client=createAdminSupabaseClient();
   // Never persist private owner/model data without a confirmed, active
   // server-side TTL purge. Merely creating a timestamp is not retention.
   const {data:retentionReady,error:retentionError}=await client.rpc(
