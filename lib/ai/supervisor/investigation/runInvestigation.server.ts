@@ -568,7 +568,17 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
             canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
             neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
-            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))}});
+            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args)),
+            perCall:requests.map(v=>({
+              callId:v.call.callId,capabilityId:v.capabilityId,
+              currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
+                (identity.currency==="USD"&&financialReadsAvailable),
+              datesMatch:investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,
+                ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
+              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,input.text,
+                identity.asOf,memory,ownerStatements),
+              registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
+            }))}});
         continue;
       }
       for(const signature of signatures)attempted.add(signature);
