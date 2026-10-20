@@ -33,7 +33,7 @@ function redactSecretsInText(value:string):string {
     // isolated label-value replacement is NOT sufficient for Basic credentials.
     .replace(/\b(?:authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:\s*[^\r\n]+/giu,"[credential_header_removed]")
     // JSON embedded in owner chat (including camelCase clientSecret).
-    .replace(/(["'](?:clientSecret|client_secret|password|passphrase|apiKey|api_token|accessToken|refreshToken|sessionToken|authorization|cookie|secret)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/giu,
+    .replace(/(["'](?:clientSecret|client_secret|password|passphrase|apiKey|api_key|api-token|api_token|accessToken|access_token|refreshToken|refresh_token|sessionToken|session_token|authorization|cookie|secret)["']\s*:\s*)("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|[^\s,}]+)/giu,
       (_match:string,prefix:string)=>prefix+'"[credential_removed]"')
     .replace(/(\b(?:clientSecret|client_secret|apiKey|apiToken|accessToken|refreshToken|sessionToken)\s*(?:=|:|\bis\b)\s*)("[^"]*"|'[^']*'|[^\s,;]+)/giu,
       (_match:string,prefix:string)=>prefix+"[credential_removed]")
@@ -45,6 +45,8 @@ function redactSecretsInText(value:string):string {
     // A transaction line must not become a diagnostic log, even when an
     // owner pastes it into a chat request rather than using the bank importer.
     .replace(/(^|[\s:])\s*(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})\s+[^\r\n]{1,160}?\s+(?:-?\s*[$€£]\s*[\d,]+\.\d{2}|-?[\d,]+\.\d{2})(?=\s*(?:\n|$))/gmu,
+      "$1[bank_line_removed]")
+    .replace(/(^|[\s:])(?:\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2})[,\t;]\s*(?:"[^"\r\n]{1,180}"|[^,\r\n]{1,180})[,\t;]\s*"?-?(?:[$€£]\s*)?[\d,]+\.\d{2}"?(?=\s*(?:[,;\t\r\n]|$))/gmu,
       "$1[bank_line_removed]")
     .replace(/\bdata:image\/[a-z0-9+.-]+;base64,[a-z0-9+/=]+/giu,"[inline_image_removed]");
 }
