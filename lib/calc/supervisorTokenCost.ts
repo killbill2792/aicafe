@@ -13,8 +13,8 @@ function decimalMicros(rate:string|undefined):bigint|null {
   if(!rate||!rate.trim())return null;
   const match=/^(\d{1,4})(?:\.(\d{1,6}))?$/.exec(rate.trim());
   if(!match)return null;
-  const micros=BigInt(match[1])*1_000_000n+BigInt((match[2]??"").padEnd(6,"0"));
-  return micros<=1_000_000_000n?micros:null;
+  const micros=BigInt(match[1])*BigInt(1_000_000)+BigInt((match[2]??"").padEnd(6,"0"));
+  return micros<=BigInt(1_000_000_000)?micros:null;
 }
 export function modelTokenUsage(raw:unknown):ModelTokenUsage|null {
   if(!raw||typeof raw!=="object")return null;
@@ -32,11 +32,11 @@ export function modelTokenUsage(raw:unknown):ModelTokenUsage|null {
 }
 export function estimateModelCallCostMicros(usage:ModelTokenUsage,rates:ModelTokenRates):number|null {
   const input=decimalMicros(rates.input),output=decimalMicros(rates.output);
-  const cached=usage.cachedInputTokens?decimalMicros(rates.cachedInput):0n;
+  const cached=usage.cachedInputTokens?decimalMicros(rates.cachedInput):BigInt(0);
   if(input===null||output===null||cached===null)return null;
   const numerator=BigInt(usage.uncachedInputTokens)*input+
     BigInt(usage.cachedInputTokens)*cached+BigInt(usage.outputTokens)*output;
-  const rounded=(numerator+500_000n)/1_000_000n;
+  const rounded=(numerator+BigInt(500_000))/BigInt(1_000_000);
   return rounded<=BigInt(Number.MAX_SAFE_INTEGER)?Number(rounded):null;
 }
 export type ModelCallCostRecord={model:string;requestName:string;inputTokens:number;
