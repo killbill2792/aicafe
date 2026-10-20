@@ -16,6 +16,7 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 import { beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 import FactSummary from "./FactSummary";
+import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
 
 export type SupervisorChatCopy = {
@@ -174,10 +175,11 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
 }
 
 export default function SupervisorChatComposer({
-  enabled, locale, copy, snapshot, languageSwitch, onActivityChange,
+  enabled, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy,
 }: {
   enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
+  experimentCopy: ExperimentCopy;
   languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
 }) {
@@ -638,6 +640,7 @@ export default function SupervisorChatComposer({
         {progressStatusText(copy, progressStatus) ?? copy.sending}
       </div>}
     </div>
+    {enabled&&threadId&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy}/>} 
     <div className="mt-auto shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
