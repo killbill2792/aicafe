@@ -435,12 +435,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     calendarScopes.push(scope);
     scopeOrigins.push({domain:scope.domain,kind:scope.kind,requestKey,capabilityId});
   };
+  // Upgrade legacy scope-only memories when their already-issued question
+  // is replayed. Do NOT adopt that legacy scope into a newly authored request
+  // (including identical text), where it would override the new owner's date.
+  const legacyOrigins=input.replayedOwnerRequest&&memory&&!memory.requestKey?
+    (memory.calendarScopes??[]).filter(cal=>!(memory.calendarScopeOrigins??[]).some(origin=>
+      origin.domain===cal.domain&&origin.kind===cal.kind)).map(cal=>({
+      domain:cal.domain,kind:cal.kind,requestKey,capabilityId:"legacy.saved_scope.v1",
+    })): [];
   const currentMemory=():InvestigationMemory=>({
     version:1,businessId:identity.businessId,ownerStatements,requestKey,
     reads:rememberInvestigationReads(memory?.reads??[],remembered),
     calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
     calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]).filter(origin=>
-      !scopeOrigins.some(next=>next.domain===origin.domain&&next.kind===origin.kind)),...scopeOrigins].slice(-5),
+      !scopeOrigins.some(next=>next.domain===origin.domain&&next.kind===origin.kind)),
+      ...legacyOrigins.filter(origin=>!scopeOrigins.some(next=>
+        next.domain===origin.domain&&next.kind===origin.kind)),...scopeOrigins].slice(-5),
   });
   // Every domain returns the same typed owner-answerable gap. The shared
   // loop renders/stores it without knowing any specialist's write contract.
@@ -516,8 +526,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const scopes=(memory?.calendarScopes??[]).filter(s=>s.domain===domain&&s.kind===kind);
     const origins=(memory?.calendarScopeOrigins??[]).filter(o=>o.domain===domain&&o.kind===kind);
     if(origins.length)return origins.some(o=>o.requestKey===requestKey);
-    // Existing v1 cards without origin metadata need their validated scope
-    // restored during replay; a new identical request gets no such exemption.
+    // Legacy v1 scope-only state is trusted only before an instance key has
+    // been minted. On its first replay it is upgraded into scoped provenance.
+    if(memory?.requestKey)return false;
     if(scopes.length)return true;
     return (memory?.reads??[]).some(read=>{
       if(readOwner(read.capabilityId)!==domain)return false;
