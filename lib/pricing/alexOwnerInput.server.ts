@@ -71,8 +71,11 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
  * Query text is a typed read selector, never a keyword guess about the owner. */
 export async function alexProductCatalogResolution(scope:TrustedReadScope,
   selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|null>{
-  if(!selector||!("exactName" in selector)||scope.role!=="owner"||
-    scope.identity.businessId!==scope.businessId)return null;
+  // Only the live investigation owns a durable pending-question response.
+  // Legacy P2/shadow reads have no owner-answer submission lifecycle and
+  // must retain their existing typed unavailable/quality reason behavior.
+  if(!scope.ownerClause?.trim()||!selector||!("exactName" in selector)||
+    scope.role!=="owner"||scope.identity.businessId!==scope.businessId)return null;
   const first=await readAuthorizedAtomicP1SourceSnapshot();
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
