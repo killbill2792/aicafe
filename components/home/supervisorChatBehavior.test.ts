@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
-import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { answeredOwnerQuestion, activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
@@ -60,6 +60,34 @@ describe("Supervisor chat turn and scroll behavior", () => {
     expect(activeOwnerQuestionMessageId([owner,oldQuestion,{...owner,id:"typed"},confirmation,
       {...owner,id:"confirmed"},answer])).toBeNull();
     expect(activeOwnerQuestionMessageId([owner,oldQuestion,answer])).toBeNull();
+  });
+  it("resolves supplied values but keeps a later same-ID confirmation actionable",()=>{
+    const id="11111111-1111-4111-8111-111111111111";
+    const question={...answer,id:"prompt",blocks:[{type:"owner_question",questionId:id}]};
+    const supplied={...owner,id:"supplied",ownerInputResponse:{
+      questionId:id,action:"supply" as const,value:"10 cents"}};
+    const copy={en:"Confirm",es:"Confirmar",ar:"تأكيد"};
+    const confirmation={...answer,id:"confirm-prompt",blocks:[{type:"owner_question",questionId:id}],
+      grounding:{ownerInput:{version:1,questionId:id,stage:"confirm",businessId:id,
+        originalText:"Set ingredient cost",readCapabilityId:"menu.price.v1",readInputJson:"{}",
+        request:{fieldId:"ingredient.cost",writeCapabilityId:"menu.price.v1",
+          writeContext:{},question:copy,input:{kind:"free_text",hint:copy}},
+        answer:"10 cents",summary:copy}}};
+    expect(answeredOwnerQuestion([question,supplied,confirmation],question,id)?.id).toBe("supplied");
+    expect(answeredOwnerQuestion([question,supplied,confirmation],confirmation,id)).toBeNull();
+    const confirmed={...owner,id:"confirmed",ownerInputResponse:{
+      questionId:id,action:"confirm" as const}};
+    expect(answeredOwnerQuestion([question,supplied,confirmation,confirmed],confirmation,id)?.id)
+      .toBe("confirmed");
+  });
+  it("does not close a reissued prompt using an older same-ID answer",()=>{
+    const id="11111111-1111-4111-8111-111111111111";
+    const question={...answer,id:"initial",blocks:[{type:"owner_question",questionId:id}]};
+    const reissued={...question,id:"reissued"};
+    const supplied={...owner,id:"supply",ownerInputResponse:{
+      questionId:id,action:"supply" as const,value:"16 ounces"}};
+    expect(answeredOwnerQuestion([question,reissued,supplied],question,id)).toBeNull();
+    expect(answeredOwnerQuestion([question,reissued,supplied],reissued,id)?.id).toBe("supply");
   });
   it("uses original retry key and bounds post-answer whitespace", () => {
     expect(sendKey("original-key", "different-key", () => "random")).toBe("original-key");
