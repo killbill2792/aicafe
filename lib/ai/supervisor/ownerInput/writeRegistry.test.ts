@@ -66,7 +66,7 @@ describe("registered generic owner-answerable input dispatch",()=>{
     // IEEE-754 Math.round(323/640*1e6) can incorrectly give 504687.
     expect(expectedOwnerPriceMicros("3.23 / 640")).toBe(504688);
     expect(expectedOwnerPriceMicros("4.50 / 946")).toBe(475687);
-    expect(expectedOwnerPriceMicros("0.01 / 0.000001")).toBe(10000000000);
+    expect(expectedOwnerPriceMicros("0.01 / 0.000001")).toBe(1000000000000);
     expect(expectedOwnerPriceMicros("3.23 / 640.000000")).toBe(504688);
     expect(parseOwnerPackageCost("3.23 / 640")).toEqual({
       packageCostCents:323,packageQuantity:640});
