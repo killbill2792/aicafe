@@ -115,6 +115,7 @@ export async function POST(request: Request, context: RouteContext) {
     let trustedResolutionProductId:string|null=null;
     let trustedResolutionFingerprint:string|null=null;
     let ownerClarification:string|undefined;
+    let ownerClarificationReadCapabilityId:string|undefined;
     let ownerAuthoredClarification:string|undefined;
     let directReply:GroundedSupervisorReply|null=null;
     if(ownerResponse){
@@ -207,6 +208,10 @@ export async function POST(request: Request, context: RouteContext) {
             if(state.request.input.kind==="free_text")
               ownerAuthoredClarification=value.trim();
           }
+          // A validated free-text correction inherits the trusted source
+          // capability that issued this question, not a model-supplied domain.
+          if(ownerClarification)
+            ownerClarificationReadCapabilityId=state.readCapabilityId;
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
           directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
@@ -255,7 +260,7 @@ export async function POST(request: Request, context: RouteContext) {
       const completed=directReply?null:await runSupervisorTurn({
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
-        tools, history,ownerClarification,
+        tools, history,ownerClarification,ownerClarificationReadCapabilityId,
         trustedCatalogProductId:trustedResolutionProductId??undefined,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
