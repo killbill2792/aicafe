@@ -1,4 +1,7 @@
 import {z} from "zod";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 /** The model supplies an untrusted candidate, not proof of owner intent. */
 export const priceProposalToolSchema=z.strictObject({
@@ -62,9 +65,11 @@ export function ambiguousPriceProposalOptions(raw:unknown,catalog:readonly {
   if(matches.length<2||matches.length>30)return [];
   return matches.map(item=>{
     const displayName=item.name;
-    const label=(locale:"en"|"es"|"ar")=>displayName+
-      (typeof item.priceCents==="number"?" — "+
-        new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(item.priceCents/100):"");
+    const copy={en:en.SupervisorOwnerHelp,es:es.SupervisorOwnerHelp,ar:ar.SupervisorOwnerHelp};
+    const label=(locale:"en"|"es"|"ar")=>displayName+" — "+
+      (typeof item.priceCents==="number"?
+        new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(item.priceCents/100):
+        copy[locale].priceUnknown);
     return {id:item.id,label:{en:label("en"),es:label("es"),ar:label("ar")}};
   });
 }
