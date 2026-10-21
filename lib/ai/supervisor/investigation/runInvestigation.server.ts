@@ -395,9 +395,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const parsedMemory=investigationMemorySchema.safeParse(input.investigationMemory);
   const memory=parsedMemory.success&&parsedMemory.data.businessId===identity.businessId?parsedMemory.data:undefined;
   // Only authenticated same-thread owner statements can ground referents or hypotheticals.
-  const ownerStatements=investigationOwnerStatements(memory,input.history,input.text);
-  if(input.ownerClarification&&input.ownerClarification.length<=600)
-    ownerStatements.push(input.ownerClarification);
+  const earlierOwnerStatements=investigationOwnerStatements(memory,input.history,input.text);
+  // Preserve the current full request and the newly authenticated clarification
+  // within the memory contract's six-statement bound.
+  const ownerStatements=input.ownerClarification&&input.ownerClarification.length<=600?
+    [...earlierOwnerStatements,input.ownerClarification].slice(-6):earlierOwnerStatements;
   const atomic=await readAuthorizedAtomicP1SourceSnapshot();
   const financialReadsAvailable=atomic.status==="available"||atomic.reason==="rpc_not_installed";
   if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
