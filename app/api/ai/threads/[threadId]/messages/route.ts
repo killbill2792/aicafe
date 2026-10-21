@@ -140,9 +140,9 @@ export async function POST(request: Request, context: RouteContext) {
             const fresh=await readAuthorizedAtomicP1SourceSnapshot();
             if(fresh.status!=="available"||fresh.snapshot.businessId!==scope.businessId||
               fresh.snapshot.truncated.menu||
-              fresh.snapshot.revision!==state.request.writeContext.catalogRevision||
               (state.request.input.kind==="options"&&
-                !fresh.snapshot.sources.menu.some(m=>m.is_active&&m.id===value))){
+                (!state.request.input.options.some(o=>o.id===value)||
+                 !fresh.snapshot.sources.menu.some(m=>m.is_active&&m.id===value)))){
               // Ignore stale pin; rediscover current options from the original
               // question instead of reusing stale IDs or silently committing.
               resumedOriginalText=state.originalText;
