@@ -9,6 +9,18 @@ vi.mock("@/lib/metrics/p1Readers.server", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   authorizedOwnerP1: vi.fn(),
 }));
+// Diagnostic-only: verify which canonical source contract the compatibility
+// runner receives, without relaxing any test expectations.
+vi.mock("@/lib/ai/supervisor/p2/shadow.server",async original=>{
+  const real=await original<typeof import("@/lib/ai/supervisor/p2/shadow.server")>();
+  return {...real,runP2ShadowWithScope:async (args:Parameters<typeof real.runP2ShadowWithScope>[0])=>{
+    const out=await real.runP2ShadowWithScope(args);
+    if(args.goal.includes("Latte"))console.warn("LEGACY_P3_SOURCE_DIAGNOSTIC",JSON.stringify({
+      evidence:out.evidence,attemptedReads:out.attemptedReads,usage:out.usage,
+    }));
+    return out;
+  }};
+});
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server", () => ({
   readAuthorizedAtomicP1SourceSnapshot: vi.fn(),
 }));
