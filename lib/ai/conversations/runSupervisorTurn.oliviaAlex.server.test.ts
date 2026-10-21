@@ -244,8 +244,8 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
       throw new Error("unexpected transport call for schema " + String(schema));
     });
     const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
-    expect(requests).toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
-    expect(reply.status).toBe("partial");
+    expect(requests, "P3 provider schema sequence").toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
+    expect(reply.status, "P3 diagnostic: "+JSON.stringify({requests,reply})).toBe("partial");
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("$0.50"))).toBe(true);
     // The generic "I don't have enough to answer this" fallback must NOT appear --
@@ -300,8 +300,8 @@ describe("Real Supervisor conversation entrypoint invokes Olivia and Alex (accep
       throw new Error("unexpected transport call for schema " + String(schema));
     });
     const { reply } = await runSupervisorTurn({ ...base, text: question }, transport);
-    expect(requests).toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
-    expect(reply.status).toBe("partial");
+    expect(requests, "P3 provider schema sequence").toEqual(["p2_goal_audit", "p2_capability_selection", "p3_expression_plans"]);
+    expect(reply.status, "P3 diagnostic: "+JSON.stringify({requests,reply})).toBe("partial");
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("Pricing what-if"))).toBe(true);
     expect(reply.blocks.some(b => b.type === "text" && b.text.includes("$0.10"))).toBe(true);
     // The generic "I don't have enough to answer this" fallback must NOT appear --
