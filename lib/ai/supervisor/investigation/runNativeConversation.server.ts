@@ -1,5 +1,5 @@
 import "server-only";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import {z} from "zod";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
@@ -9,19 +9,32 @@ import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.
 import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.server";
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildDatasetRegistration,datasetFor,type StoredDataset} from "./datasets.server";
-import {buildRecordsRegistration} from "./records.server";
+import {buildRecordsRegistration,recordCollections} from "./records.server";
+import {buildResearchRegistration} from "./research.server";
+import {datasetOperands} from "./calculations.server";
+import {projectP1Evidence} from "@/lib/ai/supervisor/p3/operandProjection.server";
+import {EXPRESSION_ID,planSchema} from "@/lib/ai/supervisor/p3/expression";
+import {simulationOutputSchema} from "@/lib/ai/supervisor/p3/simulateRegistration.server";
+import {formatScenarioValue} from "@/lib/ai/supervisor/p3/formatScenario";
+import {investigationReadDatesMatch,investigationCalendarScope,rememberInvestigationReads,rememberCalendarScopes,authenticatedReadCalendarText} from "./readDates";
+import {INVESTIGATION_LIMITS} from "./protocol";
+import {presentInvestigatedTasks} from "./taskPresentation";
 import {modelVisibleIds} from "./canonicalCapabilities";
-import {observationDisplay,observationReference,type Observation} from "./evidence";
+import {observationDisplay,observationReference,citationCautionWarnings,type Observation} from "./evidence";
+import type {ShadowEvidence} from "@/lib/ai/supervisor/p2/shadow.server";
 import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {catalogIdentityFingerprint} from "@/lib/pricing/alexOwnerInput.server";
 import {ownerResolutionRequest} from "@/lib/ai/supervisor/ownerInput/resolution";
-import {investigationOwnerStatements,investigationMemorySchema} from "@/lib/ai/conversations/investigationMemory";
+import {investigationOwnerStatements,investigationMemorySchema,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import {calculateSimple,parseQuotedOperand,quoteAppearsInOwnerText,type SimpleOperand,type SimpleOperation} from "@/lib/calc/supervisorSimpleMath";
 import {SUPERVISOR_ENDPOINT,supervisorModelProfile} from "@/lib/ai/conversations/supervisorRequest.mjs";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
 import type {InvestigationInput} from "./runInvestigation.server";
 import type {InvestigationTransport,InvestigationUsage} from "./model.server";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 type Data=Record<string,unknown>;
 const isRecord=(x:unknown):x is Data=>typeof x==="object"&&x!==null&&!Array.isArray(x);
@@ -43,11 +56,17 @@ const tools=[
       leftFactId:{type:["string","null"]},leftOwnerQuote:{type:["string","null"]},
       rightFactId:{type:["string","null"]},rightOwnerQuote:{type:["string","null"]}},
       required:["operation","leftFactId","leftOwnerQuote","rightFactId","rightOwnerQuote"]}},
+  {type:"function",name:"simulate_cafe",description:"Run an existing registered unit-checked scenario simulation using server-authorized operand handles; cannot perform writes.",
+    parameters:{type:"object",additionalProperties:false,properties:{id:{type:"string"},input:{type:"object"}},required:["id","input"]}},
   {type:"function",name:"prepare_action",description:"Create only a registered inert owner-approval proposal; never approve, commit, publish, send or change POS prices.",
     parameters:{type:"object",additionalProperties:false,properties:{name:{type:"string"},input:{type:"object"}},required:["name","input"]}},
 ] as const;
-type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;source:EvidenceReference|null};
-const LIMITS={rounds:12,operations:12,elapsedMs:90000,previewRows:8,maxFacts:500};
+type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;
+ source:EvidenceReference|null;sources?:EvidenceReference[];observationIds?:string[];
+ conditional?:boolean;estimated?:boolean;period?:string;};
+const LIMITS={rounds:INVESTIGATION_LIMITS.modelCalls,
+ operations:INVESTIGATION_LIMITS.operations,elapsedMs:INVESTIGATION_LIMITS.elapsedMs,
+ previewRows:8,maxFacts:500};
 const noDigits=(s:string)=>!/[\p{Nd}$€£¥%٪]|https?:\/\//iu.test(s);
 const localeCopy={
  en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source",conditional:"Conditional calculation using numbers supplied by the owner; not verified café records."},
