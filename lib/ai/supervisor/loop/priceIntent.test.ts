@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {validatePriceProposalCandidate} from "./priceIntent";
+import {validatePriceProposalCandidate,ambiguousPriceProposalOptions} from "./priceIntent";
 const id="a0000000-0000-4000-8000-000000000001";
 const menu=[{id,name:"Latte 12 oz",baseName:"Latte",active:true},{id:"another",name:"Latte 16 oz",baseName:"Latte",active:true}];
 const base={productId:id,productReference:"Latte 12 oz",ownerProductQuote:"Latte 12 oz",variantStatus:"unique",amountMode:"increase",increaseCents:10,targetPriceCents:null,ownerAmountQuote:"10 cents",amountStatus:"unique"};
@@ -19,6 +19,20 @@ describe("structured price candidate",()=>{
    expect(validatePriceProposalCandidate({...candidate,ownerAmountQuote:"12 cents"},
      menu,["Try raising Latte by 12 cents"],id))
      .toEqual({productId:id,increaseCents:12});
+ });
+ it("offers product variants only for unresolved identity with a specified amount",()=>{
+   const catalog=menu.map(item=>({...item,priceCents:500}));
+   const args={...base,ownerProductQuote:"Latte",productReference:"Latte",
+     variantStatus:"ambiguous" as const};
+   expect(ambiguousPriceProposalOptions(args,catalog,["Try raising Latte by 10 cents"]))
+     .toHaveLength(2);
+   expect(ambiguousPriceProposalOptions(args,catalog,["Try raising Latte by 10 cents"],id))
+     .toEqual([]);
+   expect(ambiguousPriceProposalOptions({...args,variantStatus:"unique",
+     amountStatus:"unknown",increaseCents:null},
+     catalog,["Try raising Latte"],id)).toEqual([]);
+   expect(ambiguousPriceProposalOptions({...args,amountStatus:"unknown",
+     increaseCents:null},catalog,["Try raising Latte"])).toEqual([]);
  });
  it("accepts only the owner-selected active variant for an otherwise ambiguous price proposal",()=>{
    const ambiguous={...base,productReference:"Latte",ownerProductQuote:"Latte"};
