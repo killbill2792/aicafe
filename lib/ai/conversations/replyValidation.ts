@@ -80,8 +80,7 @@ export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedS
     // without losing the verified work. Every factual block retains its exact
     // validated evidence reference; source-free text stays card-only.
     if(otherBlocks.length&&(!validated.evidence.length||
-      otherBlocks.some(block=>block.type==="owner_question"||
-        (block.type==="metric"||block.type==="count"||block.type==="percent"||
+      otherBlocks.some(block=>(block.type==="metric"||block.type==="count"||block.type==="percent"||
           block.type==="task_status"||block.type==="task_card")&&
         !validated.evidence.some(e=>e.source===block.source.source&&
           e.identifier===block.source.identifier&&e.asOf===block.source.asOf))))
