@@ -36,7 +36,8 @@ export function ownerResolutionRequest(input:{
 /** The owner-resolved context is authoritative only as an OWNER STATEMENT,
  * not as proof of a selected entity. Domain readers still revalidate scope,
  * exact IDs, freshness and matches after the original question is resumed. */
-export function resumeOwnerResolution(original:string,raw:unknown,answer:string):string|null{
+export function resumeOwnerResolution(original:string,raw:unknown,answer:string):
+  {originalText:string;ownerStatement:string}|null{
   const prepared=prepareOwnerResolution(raw,answer);
   if(!prepared)return null;
   const request=ownerInputRequestSchema.parse(raw);
@@ -48,5 +49,8 @@ export function resumeOwnerResolution(original:string,raw:unknown,answer:string)
   const note="Owner clarification: "+prepared.label+
     (isCatalogChoice?" (selected catalog productId="+prepared.answer+")":"")+
     (context?" ("+context+")":"");
-  return (original.slice(0,3600)+"\n"+note).slice(0,4000);
+  // Never sacrifice later owner goals to fit a clarification into the
+  // original request. The authenticated API passes this note separately into
+  // the investigation's owner-statement context.
+  return {originalText:original,ownerStatement:note.slice(0,600)};
 }
