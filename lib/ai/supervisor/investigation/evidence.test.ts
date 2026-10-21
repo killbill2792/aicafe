@@ -146,7 +146,7 @@ describe("renderUnverifiedAnswer (last-resort text for a mechanically-rejected b
     ]),[observation("r1","priceCents",525)],"en");
     // A malformed token is still stripped (any double-brace span, not only
     // the valid grammar), so the owner never sees literal "{{...}}" syntax.
-    expect(rescued).toEqual({text:"The price is [unchecked value].",citedIds:["r1"]});
+    expect(rescued).toEqual({text:"The price is an unverified amount.",citedIds:["r1"]});
   });
   it("rejects the whole rescue if an unbalanced brace remains after stripping",()=>{
     const o=observation("r1","priceCents",525);
@@ -166,7 +166,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     ]),[o],"en");
     expect(rendered).not.toBeNull();
     expect(rendered!.blocks).toContainEqual({type:"text",text:"The recorded price is $5.25."});
-    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("an unverified amount"))).toBe(true);
     expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("$2"))).toBe(false);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"$2"}));
   });
@@ -174,7 +174,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"That change is worth about 5 dollars.",citations:[]},
     ]),[],"en");
-    expect(rendered!.blocks).toEqual([{type:"text",text:"That change is worth about [unchecked value]."}]);
+    expect(rendered!.blocks).toEqual([{type:"text",text:"That change is worth about an unverified amount."}]);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"5 dollars"}));
   });
   it("keeps a freehand number that is an exact echo of the owner's own words",()=>{
@@ -227,7 +227,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"You could set aside 10 for supplies.",citations:[]},
     ]),[],"en",{ownerText:"We sold 100 drinks yesterday."});
-    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("[unchecked value]"))).toBe(true);
+    expect(rendered!.blocks.some(b=>b.type==="text"&&b.text.includes("an unverified amount"))).toBe(true);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"10"}));
   });
   it("masks an unverified Arabic numeral while preserving the surrounding paragraph",()=>{
@@ -235,7 +235,7 @@ describe("renderInvestigationAnswer -- claim-level masking (§3)",()=>{
       {kind:"advice",text:"بعنا ١٠٠ مشروب اليوم.",citations:[]},
       {kind:"advice",text:"This second paragraph has no numbers at all.",citations:[]},
     ]),[],"ar");
-    expect(rendered!.blocks).toEqual([{type:"text",text:"بعنا [قيمة غير مؤكدة] مشروب اليوم."},
+    expect(rendered!.blocks).toEqual([{type:"text",text:"بعنا كمية غير مؤكدة مشروب اليوم."},
       {type:"text",text:"This second paragraph has no numbers at all."}]);
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"unmatched_number",text:"١٠٠"}));
   });
@@ -286,7 +286,7 @@ describe("renderInvestigationAnswer -- business-specific claims (§3 non-negotia
     const rendered=renderInvestigationAnswer(answer([
       {kind:"advice",text:"Your margin is 45% right now.",citations:[]},
     ]),[],"en",{ownerText:"Is my margin 45% right now?"});
-    expect(rendered!.blocks[0]).toMatchObject({type:"text",text:"Your margin is [unchecked value] right now."});
+    expect(rendered!.blocks[0]).toMatchObject({type:"text",text:"Your margin is an unverified amount right now."});
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited",text:"45%"}));
   });
   it("masks a specific uncited business claim even when the model mislabels the paragraph as a clarification",()=>{
@@ -294,7 +294,7 @@ describe("renderInvestigationAnswer -- business-specific claims (§3 non-negotia
       {kind:"clarification",text:"Your margin looks like it's around 45%, is that right?",citations:[]},
     ]),[],"en",{ownerText:"Is my margin 45%?"});
     expect(rendered!.blocks[0]).toMatchObject({type:"text",
-      text:"Your margin looks like it's around [unchecked value], is that right?"});
+      text:"Your margin looks like it's around an unverified amount, is that right?"});
     expect(rendered!.issues).toContainEqual(expect.objectContaining({kind:"business_claim_uncited"}));
   });
   it("never requires a citation for general, non-owner-specific language",()=>{
@@ -483,7 +483,7 @@ describe("PR127 second-review rendering regressions",()=>{
   it("checks an Arabic decimal/grouped value as one claim rather than numeric fragments",()=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"السعر ١٬٦١٠٫٢٥ دولار.",citations:[]}]),[],"ar")!;
     expect(rendered.issues).toEqual([expect.objectContaining({kind:"unmatched_number",text:"١٬٦١٠٫٢٥ دولار"})]);
-    expect(rendered.blocks).toEqual([{type:"text",text:"السعر [قيمة غير مؤكدة]."}]);
+    expect(rendered.blocks).toEqual([{type:"text",text:"السعر كمية غير مؤكدة."}]);
   });
   it("never echoes the fractional tail of a grouped Arabic owner amount as a whole money value",()=>{
     const rendered=renderInvestigationAnswer(answer([{kind:"advice",text:"Consider 25 dollars.",citations:[]}]),[],"ar",{ownerText:"١٬٦١٠٫٢٥ دولار"})!;
