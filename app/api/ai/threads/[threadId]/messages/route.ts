@@ -111,6 +111,7 @@ export async function POST(request: Request, context: RouteContext) {
     // The prior assistant's validated server-grounded question is the only
     // resumable state. A client-supplied question ID or target never grants a write.
     let resumedOriginalText=input.text;
+    let trustedResolutionProductId:string|null=null;
     let directReply:GroundedSupervisorReply|null=null;
     if(ownerResponse){
       const prior=messages.filter(m=>m.role==="supervisor"&&
@@ -145,7 +146,11 @@ export async function POST(request: Request, context: RouteContext) {
               // Ignore stale pin; rediscover current options from the original
               // question instead of reusing stale IDs or silently committing.
               resumedOriginalText=state.originalText;
-            }else resumedOriginalText=resumed;
+            }else{
+              resumedOriginalText=resumed;
+              if(state.request.input.kind==="options")
+                trustedResolutionProductId=value;
+            }
           }else resumedOriginalText=resumed;
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
@@ -208,7 +213,7 @@ export async function POST(request: Request, context: RouteContext) {
           if(capabilityId!==priceExperimentCapabilityId)return null;
           const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            catalog,[input.text,...olderOwnerTexts]);
+            catalog,[resumedOriginalText,...olderOwnerTexts],trustedResolutionProductId);
           if(!checked){
             // The pricing domain alone inspects trusted catalog cardinality.
             // The investigation dispatcher turns the resulting options into
