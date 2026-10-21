@@ -13,6 +13,7 @@ import { selectedInboxTaskId } from "@/lib/viewmodels/selectedInboxTask";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
+import ExperimentReportActions from "@/components/operations/ExperimentReportActions";
 import TeamRulesManager from "@/components/operations/TeamRulesManager";
 import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
@@ -134,6 +135,7 @@ function TaskList({ tasks, empty, names, t, tExperiment, category, selectedTaskI
       </div>}
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
       {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
+      {experiment && task.status === "needs_owner" && <ExperimentReportActions taskId={task.id} acknowledgeLabel={tExperiment("reportAcknowledge")} errorLabel={tExperiment("reportAcknowledgeError")} />}
     </article>;
   })}</section>;
 }
