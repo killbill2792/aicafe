@@ -366,6 +366,26 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:old});
   });
+  it("authenticates reviewed expense date corrections before the first source read",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries from 2026-10-01 to 2026-10-07";
+    const first=await runSupervisorTurn({...base,text:original},
+      transportFor([answer([{kind:"clarification",
+        text:"Which expense category should I inspect?",citations:[]}])],undefined,true,"expenses"));
+    expect(first.reply.ownerInput?.readCapabilityId).not.toBe("platform.owner_input.resolve.v1");
+    expect(first.reply.ownerInput?.readCapabilityId).toBeTruthy();
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies; use 2026-10-08 to 2026-10-14 instead",
+      ownerClarificationReadCapabilityId:first.reply.ownerInput?.readCapabilityId,
+      investigationMemory:first.reply.investigationMemory},transportFor([
+      read(id,query("money.expense_entries",{period:corrected})),
+      answer([{kind:"evidence",text:"Expense entries were retrieved for the corrected dates.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
   it("binds an answered reviewed expense-period card to its unique registered source",async()=>{
     const capabilityId="p3.money.expense_entries.v1";
     const old={from:"2026-10-01",to:"2026-10-07"};
