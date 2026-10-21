@@ -49,12 +49,23 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
   const second=await readAuthorizedAtomicP1SourceSnapshot();
   if(second.status!=="available"||second.snapshot.businessId!==snapshot.businessId||
     second.snapshot.revision!==snapshot.revision)return null;
+  // Preserve the selected variant across the ingredient-price confirmation.
+  // This is only a catalog identity proof, never a cached price or cost.
+  const db=await createServerSupabaseClient();
+  const {data:matchingMenu,error:menuError}=await db.from("menu_items")
+    .select("id,name,base_name,size_label,price_cents,is_active")
+    .eq("business_id",scope.businessId).eq("id",item.id).limit(2);
+  if(menuError||!matchingMenu||matchingMenu.length!==1||
+    matchingMenu[0].is_active!==true||matchingMenu[0].name!==item.name||
+    matchingMenu[0].price_cents!==item.price_cents)return null;
+  const productFingerprint=catalogIdentityFingerprint(matchingMenu[0]);
   const name=ingredient[0].name.slice(0,80);
   const productName=item.name.slice(0,80);
   const unit=ingredient[0].base_unit;
   return {fieldId:"ingredient.package_cost_and_quantity",
     writeCapabilityId:"menu.ingredient_price.manual.v1",
     writeContext:{ingredientId:ingredient[0].id,productId:item.id,baseUnit:unit,
+      ["catalogIdentity:"+item.id]:productFingerprint,
       sourceRevision:snapshot.revision,businessDay:scope.identity.asOf},
     question:{
       en:`What did you pay for ${name} in ${productName}, and how much did you buy?`,
