@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { investigationMemorySchema, type InvestigationMemory } from "./investigationMemory";
-import {ownerQuestionSchema,pendingOwnerInputSchema,ownerInputResponseSchema,type PendingOwnerInput,type OwnerQuestion} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {ownerQuestionSchema,pendingOwnerInputSchema,ownerInputResponseSchema,type PendingOwnerInput,type OwnerQuestion,type OwnerInputResponse} from "@/lib/ai/supervisor/ownerInput/contracts";
 
 /** The owner supplies content and retry keys, NEVER role, identity, tool names or evidence. */
 export const createThreadInput = z.strictObject({
@@ -44,6 +44,7 @@ export type ConversationMessage = {
   grounding: Record<string, unknown> | null;
   createdAt: string;
   clientMessageId: string | null;
+  ownerInputResponse?:OwnerInputResponse;
 };
 
 export type ConversationPage<T> = { items: T[]; nextOffset: number | null };
