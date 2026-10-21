@@ -90,6 +90,20 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  if(identity.asOf!==input.asOf||identity.timezone!==input.timezone)throw new Error("Supervisor source identity changed");
  const snapshot=await readAuthorizedAtomicP1SourceSnapshot();
  const financialReadsAvailable=snapshot.status==="available"||snapshot.reason==="rpc_not_installed";
+ const sourceStillCurrent=async()=>{
+   const latest=await authorizedOwnerP1();
+   if(latest.identity.businessId!==identity.businessId||
+     latest.identity.asOf!==identity.asOf||latest.identity.timezone!==identity.timezone||
+     latest.identity.currency!==identity.currency)return false;
+   if(snapshot.status==="available"){
+     const current=await readAuthorizedAtomicP1SourceSnapshot();
+     if(current.status!=="available"||current.snapshot.businessId!==identity.businessId||
+       current.snapshot.revision!==snapshot.snapshot.revision)return false;
+   }
+   return true;
+ };
+ const staleReply=():GroundedSupervisorReply=>({intent:"unknown",status:"unavailable",
+   evidence:[],blocks:[{type:"text",text:copy.gap}]});
  const old=investigationMemorySchema.safeParse(input.investigationMemory);
  const memory=old.success&&old.data.businessId===identity.businessId?old.data:undefined;
  const statements=investigationOwnerStatements(memory,input.history,input.text);
@@ -186,7 +200,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    response=await transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
     headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
     body:JSON.stringify({model:input.model,...supervisorModelProfile(input.model),store:false,
-     max_output_tokens:2400,instructions,input:messages,tools,parallel_tool_calls:false,
+     max_output_tokens:2400,instructions,input:messages,
+     tools:tools.map(tool=>({...tool,strict:false})),parallel_tool_calls:false,
      text:{format:{type:"json_schema",name:"supervisor_conversation",strict:true,schema:responseSchema}}})});
   }finally{clearTimeout(timer);}
   if(!response.ok){failures++;if(failures>1)break;continue;}
@@ -205,6 +220,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    const parsed=choice.safeParse((()=>{try{return JSON.parse(text);}catch{return null;}})());
    if(!parsed.success)break;
    const result=parsed.data;
+   // Snapshot and owner scope must remain authoritative at publication time.
+   if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
    if(result.mode==="clarify"){
     // Clarification prose cannot smuggle record facts or unverified numbers.
     const question=result.text.trim().slice(0,220);
@@ -271,7 +288,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
        const domainInput=z.object({question:z.object({en:z.string(),es:z.string(),ar:z.string()}),
          input:z.any()}).safeParse(prepared);
        if(domainInput.success){
-         const pending=buildOwnerQuestionReply({businessId:identity.businessId,originalText:input.text,
+         if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
+       const pending=buildOwnerQuestionReply({businessId:identity.businessId,originalText:input.text,
            readCapabilityId:id,readInput:args.input,
            request:prepared as Parameters<typeof buildOwnerQuestionReply>[0]["request"]});
          return {reply:{...pending,investigationMemory:memoryState()},usage};
