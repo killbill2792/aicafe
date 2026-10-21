@@ -35,9 +35,15 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
    // rechecked its catalog epoch, and this fresh catalog must still show it
    // as an active size of the quoted product. A model cannot choose another.
    const chosen=catalog.filter(item=>item.active&&item.id===trustedProductId);
-   if(chosen.length!==1||x.productId!==trustedProductId||
-     words(x.ownerProductQuote).sort().join("|")!==words(chosen[0].baseName).sort().join("|"))
-     return null;
+   if(chosen.length!==1||x.productId!==trustedProductId)return null;
+    const labels=[chosen[0].baseName,chosen[0].name,
+      chosen[0].sizeLabel?chosen[0].baseName+" "+chosen[0].sizeLabel:chosen[0].name];
+    const canonical=(s:string)=>words(s).sort().join("|");
+    // Both the model's item name and its quoted owner text must identify the
+    // authenticated active item, whether named by family or by full variant.
+    if(!labels.some(label=>canonical(label)===canonical(x.ownerProductQuote!))||
+      !labels.some(label=>canonical(label)===canonical(x.productReference!)))
+      return null;
    return {productId:trustedProductId,increaseCents:x.increaseCents};
  }
  if(words(x.ownerProductQuote).sort().join("|")!==words(x.productReference).sort().join("|"))return null;
