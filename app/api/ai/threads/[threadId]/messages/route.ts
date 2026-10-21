@@ -134,6 +134,11 @@ export async function POST(request: Request, context: RouteContext) {
         if(applied.ok){
           // The next investigation MUST re-read; no cached figure is replayed.
           resumedOriginalText=state.originalText;
+        }else if(applied.reason==="confirmation_in_progress"){
+          // An earlier request is still completing the approved write. Do not
+          // attach a misleading final reply to this persisted owner message.
+          // Retrying this client key reconciles the one-shot claim safely.
+          throw new ConversationApiError(409,"confirmation_in_progress");
         }else{
           directReply=unresolvedOwnerSave(input.locale);
         }
