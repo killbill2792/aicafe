@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from "vitest";
 import {renderToStaticMarkup} from "react-dom/server";
 import {createElement} from "react";
-import SupervisorOwnerQuestionCard from "./SupervisorOwnerQuestionCard";
+import SupervisorOwnerQuestionCard,{dismissOwnerQuestion} from "./SupervisorOwnerQuestionCard";
 import type {OwnerQuestion} from "@/lib/ai/supervisor/ownerInput/contracts";
 const uuid="11111111-1111-4111-8111-111111111111";
 const copy={dismiss:"Not now",confirm:"Continue",other:"Answer another way",answer:"Your answer"};
@@ -50,6 +50,20 @@ describe("adaptive owner question card",()=>{
     expect(retryable).toContain("Which latte?");
     expect(retryable).toContain('aria-label="Not now"');
     expect(retryable).not.toContain('disabled=""');
+  });
+  it("closes presentation-only clarifications locally but awaits the server for durable prompts",()=>{
+    const hide=vi.fn(),submit=vi.fn();
+    dismissOwnerQuestion(true,hide,submit);
+    expect(hide).toHaveBeenCalledTimes(1);
+    expect(submit).not.toHaveBeenCalled();
+    hide.mockClear();
+    dismissOwnerQuestion(false,hide,submit);
+    expect(hide).not.toHaveBeenCalled();
+    expect(submit).toHaveBeenCalledTimes(1);
+    const nonDurable=renderToStaticMarkup(createElement(SupervisorOwnerQuestionCard,
+      {card:options(2),locale:"en" as const,copy,locallyDismissible:true,
+        onAnswer:vi.fn(),onDismiss:submit}));
+    expect(nonDurable).toContain('aria-label="Not now"');
   });
   it("provides an accessible localized dismiss control and Arabic RTL",()=>{
     const html=render(options(2),"ar");
