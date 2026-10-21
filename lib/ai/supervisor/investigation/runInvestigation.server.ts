@@ -432,9 +432,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       status:"requires_owner_input",
       ownerInput:ownerResolutionRequest({question,
         input:{kind:"free_text",hint:{
-          en:"Give the missing detail in your own words.",
-          es:"Indica el dato que falta con tus propias palabras.",
-          ar:"وضّح التفاصيل الناقصة بكلماتك.",
+          en:en.SupervisorOwnerHelp.detailHint,
+          es:es.SupervisorOwnerHelp.detailHint,
+          ar:ar.SupervisorOwnerHelp.detailHint,
         }}}),
     });
   const askWhenStuck=async(question:Record<"en"|"es"|"ar",string>,
@@ -668,9 +668,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         });
         if(duplicateBatch&&duplicateBatch===lastDuplicateBatch)
           return await askWhenStuck({
-            en:"Which detail should I clarify before continuing?",
-            es:"¿Qué detalle debo aclarar antes de continuar?",
-            ar:"ما التفاصيل التي يجب توضيحها قبل المتابعة؟",
+            en:en.SupervisorOwnerHelp.stuckDetail,
+            es:es.SupervisorOwnerHelp.stuckDetail,
+            ar:ar.SupervisorOwnerHelp.stuckDetail,
           });
         lastDuplicateBatch=duplicateBatch;
         feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
@@ -766,9 +766,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // not a repeat, even though the draft text itself is byte-identical.
       const answerSignature=JSON.stringify({answer,observationCount:observations.length});
       if(answerSignature===lastRejectedAnswerSignature)
-        return await askWhenStuck({en:"What additional detail should I use to answer your question?",
-          es:"¿Qué detalle adicional debo usar para responder a tu pregunta?",
-          ar:"ما التفاصيل الإضافية التي يجب أن أستخدمها للإجابة عن سؤالك؟"});
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.additionalDetail,
+          es:es.SupervisorOwnerHelp.additionalDetail,
+          ar:ar.SupervisorOwnerHelp.additionalDetail});
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,
         ownerQuestion:input.text,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
@@ -1014,9 +1014,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // this exact unknown name was tried before.
       const unknownToolSignature=step.name+":"+observations.length;
       if(unknownToolSignature===lastUnknownToolName)
-        return await askWhenStuck({en:"What detail can you clarify so I can continue?",
-          es:"¿Qué detalle puedes aclarar para que pueda continuar?",
-          ar:"ما التفاصيل التي يمكنك توضيحها لكي أتمكن من المتابعة؟"});
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.unknownTool,
+          es:es.SupervisorOwnerHelp.unknownTool,
+          ar:ar.SupervisorOwnerHelp.unknownTool});
       lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
@@ -1041,9 +1041,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       lastDuplicateCapability=capabilityId;
       lastDuplicateObservationCount=observations.length;
       if(duplicateAgain)
-        return await askWhenStuck({en:"What should I clarify before continuing your request?",
-          es:"¿Qué debo aclarar antes de continuar con tu solicitud?",
-          ar:"ما الذي يجب توضيحه قبل متابعة طلبك؟"},capabilityId,args);
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.repeatedTool,
+          es:es.SupervisorOwnerHelp.repeatedTool,
+          ar:ar.SupervisorOwnerHelp.repeatedTool},capabilityId,args);
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
         reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
