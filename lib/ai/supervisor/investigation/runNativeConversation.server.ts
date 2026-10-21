@@ -174,17 +174,29 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]),
      ...scopes.map(x=>({domain:x.domain,kind:x.kind,requestKey,
        capabilityId:remembered.find(r=>r.capabilityId.startsWith("p3."+x.domain))?.capabilityId??"platform.read.v1"}))].slice(-5)});
- const reply=(text:string,ids:string[],status:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
-   const selected=pickIds(ids,facts);const structured=factBlocks(selected);
-   const conditional=selected.filter(f=>!f.source&&f.raw!==null);
-   const blocks:SupervisorReplyBlock[]=structured.blocks;
-   const intro=text.trim().slice(0,1000);
-   if(intro)blocks.unshift({type:"text",text:intro});
-   if(conditional.length){
-     if(!structured.evidence.length)blocks.unshift({type:"warning",code:"P3_CONDITIONAL",text:copy.conditional});
-     for(const fact of conditional)blocks.push({type:"text",text:(fact.label+": "+fact.value).slice(0,1200)});
-   }
-   if(!blocks.length)blocks.push({type:"text",text:copy.gap});
+ const reply=(_modelText:string,ids:string[],status:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
+   const selected=pickIds(ids,facts),structured=factBlocks(selected);
+   const conditional=selected.filter(f=>f.conditional||!f.source&&f.raw!==null);
+   const cited=observations.filter(o=>selected.some(f=>f.observationIds?.includes(o.id)));
+   const cards=cited.flatMap(o=>o.reference?
+      presentInvestigatedTasks(o.sourceContract,o.result.value,o.reference,input.locale):[])
+     .filter((b,i,all)=>b.type!=="task_card"||
+       all.findIndex(c=>c.type==="task_card"&&c.taskId===b.taskId)===i).slice(0,3);
+   for(const card of cards)if(card.type==="task_card"&&!structured.evidence.some(r=>r.identifier===card.source.identifier))
+     structured.evidence.push(card.source);
+   const warnings:SupervisorReplyBlock[]=[
+     ...(conditional.length?[{type:"warning" as const,code:"P3_CONDITIONAL",text:copy.conditional}]:[]),
+     ...citationCautionWarnings(cited,input.locale),
+   ];
+   // Model narrative is deliberately not a business assertion channel.
+   // Every owner-visible business claim below comes from a validated reader,
+   // typed calculator or registered task card. No second model reviewer needed.
+   const explanation=structured.evidence.length?
+     {en,es,ar}[input.locale].SupervisorInvestigation.partial:copy.gap;
+   const blocks:SupervisorReplyBlock[]=[...warnings,{type:"text",text:explanation},
+     ...structured.blocks,...cards];
+   for(const fact of conditional.filter(f=>!f.source))
+     blocks.push({type:"text",text:(fact.label+": "+fact.value).slice(0,1200)});
    if(!structured.evidence.length&&conditional.length)return {intent:"profitability",status:"partial",
      evidence:[],blocks:blocks.slice(0,30),investigationMemory:memoryState()};
    return {intent:"unknown",status:structured.evidence.length?status:"unavailable",
@@ -193,30 +205,42 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const addFacts=(observation:Observation)=>{
    const output=observation.result;
    if(!["verified","partial","estimated","conditional"].includes(String(output.status)))return;
-   const result=output.value;
-   const recordRows=Array.isArray(result)?result:isRecord(result)?[result]:[];
-   const flat=recordRows.filter(isRecord);
+   const value=output.value;
+   const rows=Array.isArray(value)?value:isRecord(value)&&Array.isArray(value.items)?value.items:isRecord(value)?[value]:[];
+   const flat=rows.filter(isRecord);
    for(const row of flat){
      const id=typeof row.id==="string"?row.id:null;
      const label=String(row.name??row.productName??row.displayName??row.employeeName??row.base_name??"").slice(0,140);
      if(id&&label)optionRows.set(id,{id,label});
    }
+   const resultId=typeof output.id==="string"?output.id:
+     observation.capabilityId.replace(/^p3\./u,"").replace(/\.v1$/u,"");
+   const quality=isRecord(output.quality)?output.quality:null;
+   const allowedQuality=quality&&Array.isArray(quality.missingInputs)&&
+     Array.isArray(quality.estimatedInputs)&&Array.isArray(quality.staleInputs)?
+     quality as {missingInputs:string[];estimatedInputs:string[];staleInputs:string[]}:null;
+   const approved=allowedQuality?datasetFor(resultId,value,allowedQuality):null;
+   const authoritativeUnits=new Map(approved?.fields.map(field=>[field.key,field.unit])??[]);
    const displayed=observationDisplay(output,input.locale);
-   for(const [path,value] of Object.entries(displayed.display)){
+   for(const [path,formatted] of Object.entries(displayed.display)){
      if(facts.size>=LIMITS.maxFacts)break;
-     const raw=displayed.raw[path],kind=displayed.kind[path];
-     const segments=path.split(".");
-     const rowIndex=segments[0]==="value"&&/^\d+$/u.test(segments[1]??"")?Number(segments[1]):-1;
-     const row=rowIndex>=0?flat[rowIndex]:flat[0];
+     const raw=displayed.raw[path],segments=path.split(".");
+     const rowIndex=segments.findIndex((v,i)=>i>0&&/^\d+$/u.test(v));
+     const row=rowIndex>=0?flat[Number(segments[rowIndex])]:flat[0];
      const item=String(row?.name??row?.productName??row?.employeeName??row?.base_name??"").slice(0,110);
-     const field=segments.at(-1)??path;
-     const label=(item?item+" · ":"")+field;
-     const numeric:SimpleOperand|null=typeof raw==="number"&&Number.isSafeInteger(raw)?
-       kind==="money"?{value:raw,unit:"USD_cents"}:
-       (field.toLowerCase().includes("count")||field.toLowerCase().includes("units")||
-         field.toLowerCase().includes("quantity"))&&raw>=0?{value:raw,unit:"count"}:null:null;
+     const field=segments.at(-1)??path,unit=authoritativeUnits.get(field);
+     // Only a declared USD amount is a valid operand. Wage rates,
+     // dimensional quantities, percentages and unknown numeric fields are
+     // for display but cannot be silently treated as ordinary cents/counts.
+     const numeric:SimpleOperand|null=typeof raw==="number"&&Number.isSafeInteger(raw)&&
+       unit==="USD_cents"&&identity.currency==="USD"?{value:raw,unit:"USD_cents"}:null;
      const factId="f"+(facts.size+1);
-     facts.set(factId,{id:factId,label,value,raw:numeric,source:observation.reference});
+     facts.set(factId,{id:factId,label:(item?item+" · ":"")+fieldLabel(field,input.locale),
+       value:formatted,raw:numeric,source:observation.reference,
+       observationIds:[observation.id],period:JSON.stringify(
+         isRecord(observation.input)?observation.input.period??observation.input.week??null:null),
+       estimated:output.status!=="verified"||
+         Boolean(allowedQuality?.estimatedInputs.length||allowedQuality?.missingInputs.length)});
    }
  };
  const instructions=[
