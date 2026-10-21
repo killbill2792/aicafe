@@ -162,10 +162,17 @@ begin
     coalesce(p_response->>'questionId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   then return jsonb_build_object('ok',false,'reason','invalid_response');
   end if;
-  if p_response->>'action'='supply' and
-      (jsonb_typeof(p_response->'value')<>'string' or
-       char_length(p_response->>'value')>200) or
-     p_response->>'action'<>'supply' and p_response ? 'value'
+  -- Direct authenticated RPC callers must obey the same STRICT contract
+  -- as Zod; unknown keys would otherwise persist unreadable thread history.
+  if not (p_response ? 'questionId' and p_response ? 'action') or
+     exists(select 1 from jsonb_object_keys(p_response) as k(key_name)
+       where k.key_name not in ('questionId','action','value')) or
+     (p_response->>'action'='supply' and (
+       (select count(*) from jsonb_object_keys(p_response))<>3 or
+       jsonb_typeof(p_response->'value') is distinct from 'string' or
+       char_length(p_response->>'value')>200)) or
+     (p_response->>'action'<>'supply' and
+       (select count(*) from jsonb_object_keys(p_response))<>2)
   then return jsonb_build_object('ok',false,'reason','invalid_response');
   end if;
   -- Serializes same-thread writes without table locks or cross-café blocking.
@@ -200,6 +207,15 @@ begin
     (p_response->>'action'='confirm' and
       v_last.grounding->'ownerInput'->>'stage' is distinct from 'confirm')
   then return jsonb_build_object('ok',false,'reason','owner_input_not_pending');end if;
+  -- A prior answer may have the exact same timestamp as its prompt;
+  -- never let UUID tie ordering make that old question writable again.
+  if exists (
+    select 1 from public.ai_messages answered
+    where answered.thread_id=p_thread_id and
+      answered.owner_input_prompt_message_id=v_last.id
+  ) then
+    return jsonb_build_object('ok',false,'reason','owner_input_not_pending');
+  end if;
   -- The unique prompt index is a second safeguard if another ingestion
   -- path somehow races this transaction.
   insert into public.ai_messages(business_id,thread_id,owner_user_id,
