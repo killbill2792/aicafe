@@ -6,6 +6,10 @@ on:
       - "supabase/migrations/20261017000070_p1_authoritative_revisions.sql"
       - "supabase/migrations/20261017000071_p1_owner_total_cost_source.sql"
       - "scripts/test-p1-source-epochs.mjs"
+      - "scripts/test-supervisor-owner-input-cas.mjs"
+      - "supabase/migrations/20261021000075_supervisor_owner_input_claims.sql"
+      - "lib/ai/supervisor/ownerInput/**"
+      - "lib/actions/menuItems.ts"
       - "scripts/test-supervisor-investigation-usage.mjs"
       - "supabase/migrations/20261017000072_supervisor_investigation_usage.sql"
       - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
@@ -48,6 +52,10 @@ jobs:
         env:
           P1_DISPOSABLE_DB: "1"
         run: node scripts/test-p1-source-epochs.mjs
+      - name: Owner-confirmed ingredient-price PostgreSQL CAS and replay concurrency
+        env:
+          P1_DISPOSABLE_DB: "1"
+        run: node scripts/test-supervisor-owner-input-cas.mjs
       - name: Investigation usage budgets and service-only tenant accounting
         env:
           P1_DISPOSABLE_DB: "1"
@@ -62,7 +70,7 @@ jobs:
           npm test
       - name: Lint and whitespace
         run: |
-          npx eslint scripts/test-p1-source-epochs.mjs scripts/test-supervisor-investigation-usage.mjs
+          npx eslint scripts/test-p1-source-epochs.mjs scripts/test-supervisor-owner-input-cas.mjs scripts/test-supervisor-investigation-usage.mjs
           git diff --check origin/main...HEAD
       - name: Stop disposable Supabase
         if: always()
