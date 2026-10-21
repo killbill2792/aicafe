@@ -67,7 +67,10 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
     const amount=parseOwnerPackageCost(answer);
     if(!amount||!z.string().uuid().safeParse(request.writeContext.ingredientId).success||
       !z.string().uuid().safeParse(request.writeContext.productId).success||
-      !["g","ml","each"].includes(request.writeContext.baseUnit))return null;
+      !["g","ml","each"].includes(request.writeContext.baseUnit)||
+      !z.string().date().safeParse(request.writeContext.businessDay).success||
+      !z.string().regex(/^[1-9][0-9]{0,18}$/).safeParse(request.writeContext.sourceRevision).success)
+      return null;
     const label=`${(amount.packageCostCents/100).toFixed(2)} USD / ${amount.packageQuantity} ${request.writeContext.baseUnit}`;
     return {summary:{
       en:`Please confirm: save ${label} as an owner-reported ingredient price? (No receipt verified.)`,
@@ -84,7 +87,7 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
     if(source.status!=="available"||source.snapshot.businessId!==scope.businessId)return false;
     const matches=source.snapshot.sources.ingredientPrices.filter(p=>
       p.ingredient_id===request.writeContext.ingredientId&&
-      p.effective_from===identity.asOf&&p.source==="manual");
+      p.effective_from===request.writeContext.businessDay&&p.source==="manual");
     return matches.length===1&&matches[0].cost_per_base_unit_micros===
       Math.round(amount.packageCostCents/amount.packageQuantity*1000000);
   },
@@ -94,6 +97,8 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
     const {identity}=await authorizedOwnerP1();
     if(identity.businessId!==scope.businessId||identity.currency!=="USD")
       return {ok:false,reason:"owner_scope_changed"};
+    if(identity.asOf!==request.writeContext.businessDay)
+      return {ok:false,reason:"source_changed"};
     const before=await readAuthorizedAtomicP1SourceSnapshot();
     if(before.status!=="available"||before.snapshot.businessId!==scope.businessId||
       before.snapshot.revision!==request.writeContext.sourceRevision)
@@ -105,16 +110,19 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
       !before.snapshot.sources.menu.some(m=>m.id===itemId&&m.is_active)||
       !before.snapshot.sources.recipes.some(r=>r.menu_item_id===itemId&&r.ingredient_id===ingredientId)||
       before.snapshot.sources.ingredientPrices.some(p=>p.ingredient_id===ingredientId&&
-        p.effective_from<=identity.asOf))
+        p.effective_from<=request.writeContext.businessDay))
       return {ok:false,reason:"source_changed"};
     // Reuse the existing owner-authorized, unit-validated Menu action.
-    const saved=await addManualIngredientPrice({ingredientId,...amount});
+    const saved=await addManualIngredientPrice({ingredientId,...amount},{
+      menuItemId:itemId,expectedRevision:request.writeContext.sourceRevision,
+      businessDay:request.writeContext.businessDay,
+    });
     if(!saved.ok)return {ok:false,reason:"write_failed"};
     const after=await readAuthorizedAtomicP1SourceSnapshot();
     const micro=Math.round(amount.packageCostCents/amount.packageQuantity*1000000);
     if(after.status!=="available"||after.snapshot.businessId!==scope.businessId||
       !after.snapshot.sources.ingredientPrices.some(p=>p.ingredient_id===ingredientId&&
-        p.effective_from===identity.asOf&&p.cost_per_base_unit_micros===micro&&p.source==="manual"))
+        p.effective_from===request.writeContext.businessDay&&p.cost_per_base_unit_micros===micro&&p.source==="manual"))
       return {ok:false,reason:"verification_unavailable"};
     return {ok:true};
   },
