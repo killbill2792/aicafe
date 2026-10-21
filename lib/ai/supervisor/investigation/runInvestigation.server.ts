@@ -199,7 +199,8 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   /** Registered, typed, INERT proposals only. No approval or effect authority. */
   inertProposal?:{tools:readonly ToolDef[];
     create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>;
-    knownClarificationOptions?:()=>readonly KnownClarificationOption[]};
+    knownClarificationOptions?:()=>readonly KnownClarificationOption[];
+    knownClarificationContext?:()=>Record<string,string>};
 };
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
@@ -978,7 +979,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             ar:clarification.text.slice(0,240)};
           const request=ownerResolutionRequest({question:title,
             input:validOptions?{kind:"options",options:[...known]}:
-              {kind:"free_text",hint:hints}});
+              {kind:"free_text",hint:hints},
+            context:validOptions?input.inertProposal?.knownClarificationContext?.():undefined});
           const awaiting=await ownerInputReply("platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
           if(awaiting){
