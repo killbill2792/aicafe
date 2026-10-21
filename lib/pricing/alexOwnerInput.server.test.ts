@@ -27,7 +27,7 @@ const id12="a0000000-0000-4000-8000-000000000012";
 const id16="a0000000-0000-4000-8000-000000000016";
 const scope={role:"owner",businessId,
   identity:{businessId,currency:"USD",timezone:"America/Los_Angeles",asOf:"2026-10-21"},
-  ownerClause:"Show me my Latte variants"} as unknown as TrustedReadScope;
+  ownerClause:"Show me my Latte variants",durableOwnerInput:true} as unknown as TrustedReadScope;
 let rows:Array<{id:string;name:string;base_name:string;size_label:string;
   is_active:boolean;price_cents:number}>;
 let sourceRows:Array<{id:string;name:string;is_active:boolean;price_cents:number}>; 
@@ -49,6 +49,11 @@ beforeEach(()=>{
 });
 
 describe("authenticated menu option identity",()=>{
+  it("does not issue interactive catalog cards in read-only P2 shadow contexts",async()=>{
+    expect(await alexProductCatalogResolution({...scope,durableOwnerInput:false},{exactName:"Latte"}))
+      .toBeNull();
+    expect(mocks.project).not.toHaveBeenCalled();
+  });
   async function issuedChoice(){
     const request=await alexProductCatalogResolution(scope,{exactName:"Latte"});
     expect(request).toMatchObject({mode:"resolve",input:{kind:"options"}});
