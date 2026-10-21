@@ -43,6 +43,9 @@ export function resumeOwnerResolution(original:string,raw:unknown,answer:string)
   const context=Object.entries(request.writeContext)
     .filter(([key])=>key==="productId"||key==="catalogRevision"||key==="domain")
     .map(([key,value])=>key+"="+value).join(", ");
-  const note="Owner clarification: "+prepared.label+(context?" ("+context+")":"");
+  const isCatalogChoice=request.input.kind==="options"&&request.writeContext.domain==="menu";
+  const note="Owner clarification: "+prepared.label+
+    (isCatalogChoice?" (selected catalog productId="+prepared.answer+")":"")+
+    (context?" ("+context+")":"");
   return (original.slice(0,3600)+"\n"+note).slice(0,4000);
 }
