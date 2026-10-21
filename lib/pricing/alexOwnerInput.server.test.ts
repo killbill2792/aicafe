@@ -61,6 +61,11 @@ describe("authenticated menu option identity",()=>{
     expect(request.input.kind).toBe("options");
     return request;
   }
+  it("returns a verified zero-match selector outcome without treating Q&A as a create request",async()=>{
+    const outcome=await alexProductCatalogResolution(scope,{exactName:"Espresso"});
+    expect(outcome).toMatchObject({kind:"zero_match",exactName:"Espresso",sourceRevision:"100"});
+    expect(outcome).not.toHaveProperty("writeCapabilityId");
+  });
   it("finds both size variants under a family selector and binds the issued identity",async()=>{
     const request=await issuedChoice();
     const fingerprint=request.writeContext["catalogIdentity:"+id12];
