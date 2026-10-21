@@ -1298,6 +1298,8 @@
     "targetNotFeasible": "لا يمكن تحقيق هذا الهدف بهيكل التكاليف الحالي عبر التسعير وحده."
   },
   "SupervisorOwnerHelp": {
+    "incompleteByDomain": "تعذر تأكيد الجزء المتعلق بـ{domain} من طلبك.",
+    "domains": {"menu":"قائمة المنتجات","pricing":"التسعير","scheduling":"الجدولة","staff":"الموظفين","sales":"المبيعات","expenses":"المصروفات","other":"التفاصيل المتبقية"},
     "priceUnknown": "السعر غير معروف",
     "catalogMissingQuestion": "لم أجد هذا المنتج في القائمة النشطة. هل هو منتج جديد؟ يُرجى وصفه.",
     "catalogMissingHint": "أخبرني هل هو جديد وما المكونات والكميات إن كنت تعرفها.",
