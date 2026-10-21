@@ -127,11 +127,12 @@ function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
 }
-function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }: {
+function SupervisorMessage({ message, messages, copy, locale, onOwnerResponse, disabled }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
-  disabled:boolean;
+  messages: ConversationMessage[]; disabled:boolean;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
+  if (message.role === "owner" && message.ownerInputResponse) return null;
   if (message.role === "owner") return <article className="ms-auto max-w-[88%] rounded-[22px] rounded-ee-md bg-[#EADFCC] px-4 py-3 text-[17px] text-ink shadow-sm">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
@@ -149,6 +150,8 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
           locale={locale} disabled={disabled}
+          resolved={messages.some(next=>next.role==="owner"&&next.ownerInputResponse?.questionId===candidate.data.questionId)}
+          resolvedAnswer={messages.find(next=>next.role==="owner"&&next.ownerInputResponse?.questionId===candidate.data.questionId)?.text??""}
           allowOther={!isOwnerConfirmation(message)}
           locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
           copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
@@ -648,7 +651,7 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||
+        <SupervisorMessage message={message} messages={displayedMessages} copy={copy} locale={locale} disabled={sending||!enabled||
           (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
             if(sending||!enabled||origin.id!==activeQuestionMessageId)return;
