@@ -70,6 +70,7 @@ export async function POST(request:Request,{params}:Params){
    case "simulate":{
      const authorized=await authorizedOwnerP1();
      if(authorized.identity.businessId!==scope.businessId)throw new Error("Unauthorized café");
+     if(authorized.identity.currency!=="USD")return conversationJson({error:"unsupported_currency"},422);
      const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
      if(matches.length!==1)return conversationJson({error:"product_unavailable"},422);
      const item=matches[0];
