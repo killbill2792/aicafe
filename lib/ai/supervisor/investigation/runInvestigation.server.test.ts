@@ -83,13 +83,15 @@ function envelope(input:Record<string,unknown>,value:unknown){
 }
 const toolCallResponse=(name:string,args:unknown,callId:string)=>new Response(JSON.stringify({status:"completed",
   usage:{input_tokens:10,output_tokens:10},output:[{type:"function_call",call_id:callId,name,arguments:JSON.stringify(args)}]}));
-function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true){
+function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true,
+  reviewedClarificationGoal?: "expenses"|"scheduling"|"staff"|"sales"|"menu"|"pricing"|"other"){
   let next=0,callSeq=0;
   return vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
     if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
     if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
-    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true,reason:"ok"});
+    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true,reason:"ok",
+      clarificationGoalDomain:reviewedClarificationGoal??null});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
     const entry=steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]);
@@ -373,7 +375,7 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
       read(capabilityId,query("money.expense_entries",{period:old})),
       answer([{kind:"evidence",text:"The recorded expense entries were retrieved.",citations:["r1"]},
         {kind:"clarification",text:"Which expense period should I compare next?",citations:[]}]),
-    ]));
+    ],undefined,true,"expenses"));
     expect(first.reply.status).toBe("requires_owner_input");
     expect(first.reply.ownerInput?.readCapabilityId).toBe(capabilityId);
     p1.mockClear();
