@@ -59,3 +59,51 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
       ar:`مثال: 4.50 / 946 (دولار / ${unit}). أدخل سعر العبوة والكمية بوحدة ${unit}.`,
     }}};
 }
+
+
+/** Canonical catalog cardinality is the sole multi-match signal.
+ * Query text is a typed read selector, never a keyword guess about the owner. */
+export async function alexProductCatalogResolution(scope:TrustedReadScope,
+  selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|null>{
+  if(!selector||!("exactName" in selector)||scope.role!=="owner"||
+    scope.identity.businessId!==scope.businessId)return null;
+  const first=await readAuthorizedAtomicP1SourceSnapshot();
+  if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
+    first.snapshot.truncated.menu)return null;
+  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\\s+/gu," ").toLocaleLowerCase("en");
+  const matches=first.snapshot.sources.menu.filter(m=>m.is_active&&
+    normalized(m.name)===normalized(selector.exactName));
+  if(matches.length===1||matches.length>30)return null;
+  const latest=await readAuthorizedAtomicP1SourceSnapshot();
+  if(latest.status!=="available"||latest.snapshot.businessId!==first.snapshot.businessId||
+    latest.snapshot.revision!==first.snapshot.revision)return null;
+  if(matches.length===0){
+    // Absence alone does NOT establish permission to create an item:
+    // request owner clarification; do not invent menu rows or ingredients.
+    return {mode:"resolve",fieldId:"owner.clarification",
+      writeCapabilityId:"platform.owner_input.resolve.v1",
+      writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
+      question:{
+        en:"I couldn't find that active menu item. Is it a new product? Please describe it.",
+        es:"No encontré ese producto activo. ¿Es nuevo? Descríbelo, por favor.",
+        ar:"لم أجد هذا المنتج في القائمة النشطة. هل هو منتج جديد؟ يُرجى وصفه.",
+      },input:{kind:"free_text",hint:{
+        en:"Tell me whether this is new, with its ingredients and quantities if known.",
+        es:"Indica si es nuevo y sus ingredientes y cantidades, si los conoces.",
+        ar:"أخبرني هل هو جديد وما المكونات والكميات إن كنت تعرفها.",
+      }}};
+  }
+  const options=matches.map(m=>({id:m.id,label:{
+    en:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
+    es:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
+    ar:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
+  }}));
+  return {mode:"resolve",fieldId:"owner.clarification",
+    writeCapabilityId:"platform.owner_input.resolve.v1",
+    writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
+    question:{
+      en:"Which matching menu item did you mean?",
+      es:"¿A cuál de los productos coincidentes te refieres?",
+      ar:"أي عنصر من عناصر القائمة المتطابقة تقصد؟",
+    },input:{kind:"options",options}};
+}
