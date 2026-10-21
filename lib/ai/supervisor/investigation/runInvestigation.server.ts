@@ -1,7 +1,7 @@
 import "server-only";
 import {modelVisibleIds,describeSourceFields} from "./canonicalCapabilities";
 import {outputFor} from "@/lib/metrics/p1Readers.server";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import {z} from "zod";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
@@ -423,12 +423,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // The same bounded, selector-only memory accompanies every durable
   // question, including one asked before a final answer is synthesized.
   // No financial observations or model-derived balances are persisted.
+  const requestKey=createHash("sha256").update(input.text).digest("hex");
   const remembered:InvestigationMemory["reads"]=[];
   const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
+  const scopeOrigins:NonNullable<InvestigationMemory["calendarScopeOrigins"]>=[];
+  const rememberScope=(scope:NonNullable<InvestigationMemory["calendarScopes"]>[number],capabilityId:string)=>{
+    calendarScopes.push(scope);
+    scopeOrigins.push({domain:scope.domain,kind:scope.kind,requestKey,capabilityId});
+  };
   const currentMemory=():InvestigationMemory=>({
     version:1,businessId:identity.businessId,ownerStatements,
     reads:rememberInvestigationReads(memory?.reads??[],remembered),
     calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
+    calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]).filter(origin=>
+      !scopeOrigins.some(next=>next.domain===origin.domain&&next.kind===origin.kind)),...scopeOrigins].slice(-5),
   });
   // Every domain returns the same typed owner-answerable gap. The shared
   // loop renders/stores it without knowing any specialist's write contract.
@@ -501,8 +509,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const readOwner=(id:string)=>manifest.find(m=>m.id===id)?.owner;
   const storedCalendarSelector=(domain:string,kind:"period"|"week")=>{
     if((memory?.calendarScopes??[]).some(scope=>scope.domain===domain&&scope.kind===kind))
-      return true;
-    return (memory?.reads??[]).some(read=>{
+      return (memory?.calendarScopeOrigins??[]).some(origin=>
+        origin.domain===domain&&origin.kind===kind&&origin.requestKey===requestKey);
+    if(input.replayedOwnerRequest)return (memory?.reads??[]).some(read=>{
       if(readOwner(read.capabilityId)!==domain)return false;
       try{return investigationCalendarScope(JSON.parse(read.inputJson),domain)?.kind===kind;}
       catch{return false;}
@@ -530,7 +539,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         })[0]??"period";
       const corrected=authenticatedOwnerCalendarScope(
         input.ownerClarification,domain,identity.asOf,preferred);
-      if(corrected)calendarScopes.push(corrected);
+      if(corrected)rememberScope(corrected,input.ownerClarificationReadCapabilityId);
     }
   }
   const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
@@ -789,7 +798,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
         if(dispatched){
           const cal=investigationCalendarScope(args,definition.owner);
-          if(cal)calendarScopes.push(cal);
+          if(cal)rememberScope(cal,capabilityId);
         }
         const id="r"+(observations.length+1);
         const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
@@ -1070,19 +1079,29 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             const domain=readOwner(o.capabilityId);
             return domain&&investigationCalendarScope(o.input,domain);
           });
-          const temporalDomains=[...new Set(temporalReads.map(o=>readOwner(o.capabilityId)!))];
-          const requestedGoalDomain=review.missingGoalDomain;
+          const temporalHistory=(memory?.reads??[]).filter(r=>{
+            const domain=readOwner(r.capabilityId);
+            if(!domain)return false;
+            try{return !!investigationCalendarScope(JSON.parse(r.inputJson),domain);}
+            catch{return false;}
+          });
+          const temporalDomains=[...new Set([...temporalReads.map(o=>readOwner(o.capabilityId)!),
+            ...temporalHistory.map(r=>readOwner(r.capabilityId)!)])];
+          const requestedGoalDomain=review.clarificationGoalDomain;
           const expectedDomains=requestedGoalDomain==="expenses"?["money"]:
             requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
             requestedGoalDomain==="sales"?["sales","money"]:
             requestedGoalDomain==="pricing"||requestedGoalDomain==="menu"?["alex","pricing","menu"]:null;
           const singleDomain=temporalDomains.length===1?temporalDomains[0]:null;
-          const origin=singleDomain&&(!expectedDomains||expectedDomains.includes(singleDomain))?
-            [...temporalReads].reverse().find(o=>readOwner(o.capabilityId)===singleDomain)?.capabilityId:null;
+          const origin=singleDomain&&expectedDomains?.includes(singleDomain)?
+            ([...temporalReads].reverse().find(o=>readOwner(o.capabilityId)===singleDomain)?.capabilityId??
+              [...temporalHistory].reverse().find(r=>readOwner(r.capabilityId)===singleDomain)?.capabilityId):null;
           const awaiting=await ownerInputReply(origin??"platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
           if(awaiting){
-            if(reply.evidence.length>0&&awaiting.reply.ownerInput){
+            if(awaiting.reply.ownerInput&&reply.blocks.some(block=>block.type==="text"&&block.text!==questionText.text)&&
+              (reply.evidence.length>0||reply.blocks.some(block=>block.type==="warning"&&
+                (block.code==="P3_CONDITIONAL"||block.code==="SUPERVISOR_ADVICE")))){
               // Do not drop separately review-approved facts when another
               // requested goal needs the owner's input. The evidence remains
               // on the durable reply next to a single pending question.
