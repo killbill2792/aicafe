@@ -10,6 +10,16 @@ describe("structured price candidate",()=>{
  it("rejects target-price confusion",()=>expect(check({amountMode:"target",increaseCents:null,targetPriceCents:700},"Increase Latte 12 oz to 10 cents")).toBeNull());
  it("rejects wrong-size UUID",()=>expect(check({productId:"another"},"Try Latte 12 oz by 10 cents")).toBeNull());
  it("rejects underspecified variants",()=>expect(check({productReference:"Latte",ownerProductQuote:"Latte"},"Increase Latte by 10 cents")).toBeNull());
+ it("never authorizes a price amount solely from a generated variant option label",()=>{
+   const candidate={...base,productReference:"Latte",ownerProductQuote:"Latte",
+     ownerAmountQuote:"12",increaseCents:12};
+   // The owner did not request an increase amount; the selected product's
+   // generated "12 oz — $5.00" caption is not an owner-authored amount.
+   expect(validatePriceProposalCandidate(candidate,menu,["Try raising Latte"],id)).toBeNull();
+   expect(validatePriceProposalCandidate({...candidate,ownerAmountQuote:"12 cents"},
+     menu,["Try raising Latte by 12 cents"],id))
+     .toEqual({productId:id,increaseCents:12});
+ });
  it("accepts only the owner-selected active variant for an otherwise ambiguous price proposal",()=>{
    const ambiguous={...base,productReference:"Latte",ownerProductQuote:"Latte"};
    expect(validatePriceProposalCandidate(ambiguous,menu,["Raise Latte by 10 cents"],id))
