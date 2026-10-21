@@ -26,11 +26,12 @@ vi.mock("@/lib/actions/menuItems",()=>({
   }),
 }));
 vi.mock("./alexCapabilities.server",async()=>{
-  const {reviewFromAtomicSnapshot}=await import("./alexPricing");
+  const {reviewFromAtomicSnapshot,simulateFromAtomicSnapshot}=await import("./alexPricing");
   return {buildAlexPricingRegistrations:()=>[{
     read:async(_scope:unknown,input:unknown)=>reviewFromAtomicSnapshot(
       state.snapshot as never,input as never,"2026-10-20"),
-  },{simulate:vi.fn()}]};
+  },{simulate:async(_scope:unknown,input:unknown)=>simulateFromAtomicSnapshot(
+    state.snapshot as never,input as never,"2026-10-20")}]};
 });
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 import {createP2Registry} from "@/lib/ai/supervisor/p2/registry";
@@ -89,6 +90,23 @@ describe("real Alex reader -> confirmed owner input -> original reader again",()
     expect(Number((refreshed as {value:Array<{reviewIngredientCostCents:number}>}).value[0]
       .reviewIngredientCostCents)).toBeGreaterThan(0);
   });
+  it("offers the same missing-owner-input contract in Alex what-if and recalculates after a confirmed write",async()=>{
+    const [review,whatIf]=buildAlexP3Registrations();
+    const registry=createP2Registry([review,whatIf]);
+    const input={purpose:"pricing_simulate",product:{productId:drink},changes:[],targetCostRatioBps:3000};
+    const missing=await registry.invoke(scope,whatIf.id,input);
+    expect(missing).toMatchObject({status:"requires_owner_input",ownerInput:{
+      writeCapabilityId:"menu.ingredient_price.manual.v1"}});
+    const typed=missing as {ownerInput:Parameters<typeof buildOwnerQuestionReply>[0]["request"]};
+    expect(await ownerInputWrites.apply({businessId:cafe,ownerUserId:"owner"},typed.ownerInput,"4.50 / 946"))
+      .toEqual({ok:true});
+    const after=await registry.invoke(scope,whatIf.id,input);
+    expect(after).toMatchObject({status:"partial",value:[{
+      name:"Oat Latte",targetPriceCents:expect.any(Number),
+    }]});
+    expect(state.writes).toBe(1);
+  });
+
   it("never guesses when two matching active variants exist",async()=>{
     const snap=state.snapshot as {sources:{menu:Array<Record<string,unknown>>}};
     snap.sources.menu.push({id:"44444444-4444-4444-8444-444444444444",
