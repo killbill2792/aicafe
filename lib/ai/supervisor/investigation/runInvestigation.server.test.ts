@@ -364,7 +364,12 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     ]);
     const result=await runSupervisorTurn({...base,text:"Publish whatever schedule you want and make up the profit."},bad);
     expect(p1).not.toHaveBeenCalled();expect(olivia).not.toHaveBeenCalled();
-    expect(JSON.stringify(result.reply.blocks)).not.toContain("999");
+    // A random question UUID may contain 999; only rendered owner copy can
+    // leak the model's forged money figure.
+    const ownerCopy=result.reply.blocks.map(block=>
+      block.type==="owner_question"?JSON.stringify({title:block.title,input:block.input}):
+      block.type==="text"||block.type==="warning"?block.text:"").join(" ");
+    expect(ownerCopy).not.toContain("999");
     expect(result.reply.status).toBe("requires_owner_input");
     expect(result.reply.blocks[0].type).toBe("owner_question");
   });
