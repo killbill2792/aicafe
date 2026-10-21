@@ -5,6 +5,9 @@ import {conversationError,conversationJson,parseInput,readBoundedJson,requireSam
   from "@/lib/ai/conversations/http.server";
 import {createAdminSupabaseClient} from "@/lib/supabase/admin";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {previewPriceExperiment} from "@/lib/calc/priceExperiment";
+import {readPriceExperimentBaselineUnits} from "@/lib/ai/supervisor/loop/sales.server";
 import {supervisorLoopRegistry,priceExperimentCapabilityId}
   from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -64,9 +67,21 @@ export async function POST(request:Request,{params}:Params){
   const scope={...base,locale:input.action==="propose"?input.locale:base.locale};
   const repo=new SupabaseLoopRepository();
   switch(input.action){
-   case "simulate":return conversationJson({simulation:await simulateLoop(scope,
-       supervisorLoopRegistry,priceExperimentCapabilityId,
-       {productId:input.productId,increaseCents:input.increaseCents})});
+   case "simulate":{
+     const authorized=await authorizedOwnerP1();
+     if(authorized.identity.businessId!==scope.businessId)throw new Error("Unauthorized café");
+     const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
+     if(matches.length!==1)return conversationJson({error:"product_unavailable"},422);
+     const item=matches[0];
+     let units:number|null=null;
+     try{units=await readPriceExperimentBaselineUnits(scope.businessId,item.id);}
+     catch{/* Missing POS coverage is not a missing menu price. */}
+     const simulation=previewPriceExperiment({productId:item.id,productName:item.name,
+       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
+       ingredientCostCents:item.pricing?.productCostCents??null,units7Days:units});
+     if(!simulation)return conversationJson({error:"invalid_price_increase"},422);
+     return conversationJson({simulation});
+   }
    case "propose":return conversationJson({proposal:await proposeLoop(scope,
        supervisorLoopRegistry,repo,priceExperimentCapabilityId,
        {productId:input.productId,increaseCents:input.increaseCents},input.requestKey)});
