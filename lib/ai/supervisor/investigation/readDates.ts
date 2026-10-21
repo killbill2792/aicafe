@@ -2,7 +2,7 @@ import {z} from "zod";
 import {resolveCafeDateRange,type DateSelection} from "@/lib/ai/conversations/dateRange";
 import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
 import type {InvestigationMemory,InvestigationCalendarScope} from "@/lib/ai/conversations/investigationMemory";
-import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek} from "@/lib/scheduling/whatIfOwnerDates";
+import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek,ownerScheduleExplicitDateWindows} from "@/lib/scheduling/whatIfOwnerDates";
 
 type ReadSelector=InvestigationMemory["reads"][number];
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -93,7 +93,7 @@ export function authenticatedOwnerCalendarScope(text:string,domain:string,
   asOf:string,kind:"period"|"week"):InvestigationCalendarScope|null{
   // Explicit date windows take precedence over relative week language.
   // Their endpoints must not be bypassed by a convenient "next week" token.
-  const explicit=parseOwnerDateWindows(text,asOf);
+  const explicit=kind==="week"?ownerScheduleExplicitDateWindows(text,asOf):parseOwnerDateWindows(text,asOf);
   const ranges=explicit.length?explicit:windows(text,asOf);
   if(ranges.length!==1)return null;
   if(kind==="period")return {domain,kind,from:ranges[0].from,to:ranges[0].to};
@@ -111,7 +111,9 @@ export function authenticatedOwnerCalendarScope(text:string,domain:string,
     return date.toISOString().slice(0,10);
   };
   const start=containingWeek(ranges[0].from),end=containingWeek(ranges[0].to);
-  return start===end&&(!week||week===start)?{domain,kind,week:start}:null;
+  // As in the canonical scheduling guard, explicit dates outrank casual
+  // relative language. Cross-week explicit ranges remain unpersistable.
+  return start===end?{domain,kind,week:start}:null;
 }
 
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
