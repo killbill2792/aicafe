@@ -218,6 +218,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     },
   }, {
     id: ALEX_P3_WHATIF_ID, version: 1 as const, owner: "alex",
+    ownerInputWriteIds:["menu.ingredient_price.manual.v1"],
     resultKind: "owner_parameterized_simulation" as const,
     mode: "read" as const, availability: "shadow" as const,
     purpose: "Read-only target-margin/cost-ratio or selling-price-delta what-if for ONE named " +
