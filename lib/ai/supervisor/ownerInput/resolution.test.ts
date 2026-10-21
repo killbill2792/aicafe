@@ -13,6 +13,16 @@ describe("one typed, non-writing owner resolution contract",()=>{
     for(const invalid of ["",options[0].label.en,"00000000-0000-4000-8000-000000000003"])
       expect(prepareOwnerResolution(request,invalid)).toBeNull();
   });
+  it("accepts a free-text correction from an options card without assigning its product ID",()=>{
+    const corrected=prepareOwnerResolution(request,"I meant the oat latte");
+    expect(corrected).toMatchObject({answer:"I meant the oat latte"});
+    const resumed=resumeOwnerResolution("What is the Latte margin?",request,"I meant the oat latte");
+    expect(resumed?.originalText).toBe("What is the Latte margin?");
+    expect(resumed?.ownerStatement).toContain("I meant the oat latte");
+    expect(resumed?.ownerStatement).not.toContain("selected catalog productId=");
+    expect(prepareOwnerResolution(request,"a0000000-0000-4000-8000-000000000099")).toBeNull();
+    expect(prepareOwnerResolution(request,options[0].label.ar)).toBeNull();
+  });
   it("retains the authenticated selection as context, not as a fabricated business fact",()=>{
     const resumed=resumeOwnerResolution("How much does the latte cost?",request,options[0].id);
     expect(resumed?.ownerStatement).toContain("selected catalog productId="+options[0].id);
