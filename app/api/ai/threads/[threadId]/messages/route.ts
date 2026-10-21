@@ -224,6 +224,17 @@ export async function POST(request: Request, context: RouteContext) {
         if(applied.ok){
           // The next investigation MUST re-read; no cached figure is replayed.
           resumedOriginalText=state.originalText;
+          // An ingredient-price card can follow a validated variant selection.
+          // Retain only the server-issued product identity, after fresh
+          // tenant-scoped identity revalidation; never replay cached costs.
+          if(state.request.writeCapabilityId==="menu.ingredient_price.manual.v1"){
+            const productId=state.request.writeContext.productId;
+            const fingerprint=state.request.writeContext["catalogIdentity:"+productId];
+            if(productId&&fingerprint&&await alexCatalogChoiceStillValid(scope.businessId,productId,fingerprint)){
+              trustedResolutionProductId=productId;
+              trustedResolutionFingerprint=fingerprint;
+            }
+          }
         }else if(applied.reason==="confirmation_in_progress"){
           // An earlier request is still completing the approved write. Do not
           // attach a misleading final reply to this persisted owner message.
