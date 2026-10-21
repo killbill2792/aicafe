@@ -83,11 +83,16 @@ function preview(value:unknown):unknown{
 function pickIds<T extends {id:string}>(ids:readonly string[],map:Map<string,T>):T[]{
  return [...new Set(ids)].slice(0,12).flatMap(id=>map.has(id)?[map.get(id)!]:[]);
 }
+function fieldLabel(field:string,locale:"en"|"es"|"ar"):string{
+ const catalog={en,es,ar}[locale].SupervisorRegisteredRead as Record<string,string>;
+ return catalog["field_"+field]??catalog.field_label;
+}
 function factBlocks(selected:Fact[]):{blocks:SupervisorReplyBlock[];evidence:EvidenceReference[]}{
  const evidence:EvidenceReference[]=[],blocks:SupervisorReplyBlock[]=[];
  for(const fact of selected){
+  const sources=fact.sources??(fact.source?[fact.source]:[]);
+  for(const source of sources)if(!evidence.some(r=>r.identifier===source.identifier))evidence.push(source);
   if(!fact.source)continue;
-  if(!evidence.some(r=>r.identifier===fact.source!.identifier))evidence.push(fact.source);
   if(fact.raw?.unit==="USD_cents")
     blocks.push({type:"metric",label:fact.label,valueCents:fact.raw.value,source:fact.source});
   else if(fact.raw?.unit==="count"&&fact.raw.value>=0)
@@ -96,6 +101,7 @@ function factBlocks(selected:Fact[]):{blocks:SupervisorReplyBlock[];evidence:Evi
  }
  return {blocks,evidence};
 }
+
 /** OpenAI owns investigation/clarification; the server owns facts, values and effects.
  * No independent model reviewer and no model-authored numeric citation grammar.
  * Stored model output never authorizes an action or money value.
@@ -131,12 +137,26 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    shadowEnabled:true,financialReadsAvailable,durableOwnerInput:true,
    ownerClause:input.text,ownerContext:statements.slice(-6).join("\n")};
  const datasets=new Map<string,StoredDataset>(),observations:Observation[]=[];
+ const shadowEvidence:ShadowEvidence[]=[];
+ const remembered:InvestigationMemory["reads"]=[];
+ const scopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
+ const requestKey=input.replayedOwnerRequest&&memory?.requestKey?memory.requestKey:
+   createHash("sha256").update(randomUUID()).digest("hex");
  const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
    buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
-   buildDatasetRegistration(datasets,identity.businessId),buildRecordsRegistration(()=>observations,identity.businessId)]);
+   buildDatasetRegistration(datasets,identity.businessId),buildRecordsRegistration(()=>observations,identity.businessId),
+   buildResearchRegistration(()=>"",async(clause,query,publicLocationContext)=>{
+     // No second AI reviewer: conservative outbound privacy gate, in addition
+     // to the registered clause/word allowlists. Do not transmit mixed
+     // private staff, financial or personally identifying owner clauses.
+     if(!input.text.includes(clause)||publicLocationContext!=="")return false;
+     if(/\b(?:employee|payroll|salary|wages|bank|profit|rent|ssn|email|phone|customer|account|revenue|sales)\b/iu.test(clause))return false;
+     return clause.length>=3&&query.trim().length>0;
+   }))]);
  const manifest=registry.discover(scope).filter(d=>!isRedundantModelRead(d.id));
  const visibleIds=new Set(modelVisibleIds(manifest.map(x=>x.id)));
  const descriptions=manifest.filter(d=>visibleIds.has(d.id));
+ const simulations=registry.discoverSimulations?.(scope)??[];
  const discovered=new Set<string>();
  const facts=new Map<string,Fact>(),optionRows=new Map<string,{id:string;label:string}>();
  const messages:unknown[]=[{role:"user",content:JSON.stringify({
@@ -147,8 +167,13 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    possibleActions:input.inertProposal?.tools.map(t=>({name:t.name,description:t.description,parameters:t.parameters}))??[],
  })}];
  const factView=()=>[...facts.values()].slice(-LIMITS.maxFacts).map(f=>({id:f.id,label:f.label,value:f.value}));
- const memoryState=()=>({version:1 as const,businessId:identity.businessId,ownerStatements:statements.slice(-6),
-   reads:[] as {capabilityId:string;inputJson:string}[]});
+ const memoryState=():InvestigationMemory=>({version:1,businessId:identity.businessId,
+   ownerStatements:statements.slice(-6),requestKey,
+   reads:rememberInvestigationReads(memory?.reads??[],remembered),
+   calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],scopes),
+   calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]),
+     ...scopes.map(x=>({domain:x.domain,kind:x.kind,requestKey,
+       capabilityId:remembered.find(r=>r.capabilityId.startsWith("p3."+x.domain))?.capabilityId??"platform.read.v1"}))].slice(-5)});
  const reply=(text:string,ids:string[],status:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
    const selected=pickIds(ids,facts);const structured=factBlocks(selected);
    const conditional=selected.filter(f=>!f.source&&f.raw!==null);
