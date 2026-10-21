@@ -16,7 +16,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate,authenticatedReadCalendarText} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate,authenticatedReadCalendarText,authenticatedOwnerCalendarScope} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
@@ -498,12 +498,41 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     })]);
   const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
   const visibleIds=new Set(modelVisibleIds(manifest.map(m=>m.id)));
-  const calendarTextForRead=(domain:string)=>authenticatedReadCalendarText(
-    // The original goals still go to the model intact, but they are NOT a
-    // newly authored date instruction when a durable answer resumes them.
-    input.replayedOwnerRequest?"":input.text,
-    input.ownerClarification,input.ownerClarificationReadCapabilityId,
-    domain,identity.asOf,id=>manifest.find(m=>m.id===id)?.owner);
+  const readOwner=(id:string)=>manifest.find(m=>m.id===id)?.owner;
+  const storedCalendarSelector=(domain:string,kind:"period"|"week")=>{
+    if((memory?.calendarScopes??[]).some(scope=>scope.domain===domain&&scope.kind===kind))
+      return true;
+    return (memory?.reads??[]).some(read=>{
+      if(readOwner(read.capabilityId)!==domain)return false;
+      try{return investigationCalendarScope(JSON.parse(read.inputJson),domain)?.kind===kind;}
+      catch{return false;}
+    });
+  };
+  const calendarTextForRead=(domain:string,args:unknown)=>{
+    const kind=investigationCalendarScope(args,domain)?.kind;
+    // The original owner goals are the fallback until an authoritative
+    // selector for THIS domain and shape has actually superseded them.
+    // A replay alone is not a fresh date override of an updated scope.
+    const original=input.replayedOwnerRequest&&kind&&storedCalendarSelector(domain,kind)?
+      "":input.text;
+    return authenticatedReadCalendarText(original,input.ownerClarification,
+      input.ownerClarificationReadCapabilityId,domain,identity.asOf,readOwner);
+  };
+  if(input.ownerClarification&&input.ownerClarificationReadCapabilityId&&
+    hasInvestigationOwnerCalendarDate(input.ownerClarification,identity.asOf)){
+    const domain=readOwner(input.ownerClarificationReadCapabilityId);
+    if(domain){
+      const preferred=(memory?.calendarScopes??[]).find(scope=>scope.domain===domain)?.kind??
+        (memory?.reads??[]).flatMap(read=>{
+          if(readOwner(read.capabilityId)!==domain)return [];
+          try{const scope=investigationCalendarScope(JSON.parse(read.inputJson),domain);
+            return scope?[scope.kind]:[];}catch{return [];}
+        })[0]??"period";
+      const corrected=authenticatedOwnerCalendarScope(
+        input.ownerClarification,domain,identity.asOf,preferred);
+      if(corrected)calendarScopes.push(corrected);
+    }
+  }
   const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
   // Native function-calling tools: one per discovered read capability, plus
   // the registered expression calculator. toolNameToCapabilityId maps a
@@ -693,9 +722,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         requests.every(v=>
           (v.definition.currencyPolicy==="independent"||
             identity.currency==="USD"&&financialReadsAvailable)&&
-          investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,ownerStatements,
+          investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,ownerStatements,
             v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
-          !pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,ownerStatements));
+          !pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,ownerStatements));
       if(!canDispatch){
         // An identical rejected selection without new observations cannot make progress,
         // even when only one sibling was previously attempted.
@@ -728,9 +757,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               callId:v.call.callId,capabilityId:v.capabilityId,
               currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
                 (identity.currency==="USD"&&financialReadsAvailable),
-              datesMatch:investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,
+              datesMatch:investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,
                 ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
-              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner),
+              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner,v.args),
                 identity.asOf,memory,ownerStatements),
               registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
             }))}});
@@ -1211,7 +1240,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
-      let calendarText=calendarTextForRead(readDomain);
+      let calendarText=calendarTextForRead(readDomain,args);
       const pending=pendingOwnerCalendarCorrection(args,calendarText,identity.asOf,memory,ownerStatements);
       if(pending){
         const key=readDomain+":"+investigationCalendarScope(args,readDomain)?.kind+":"+pending;
