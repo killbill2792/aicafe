@@ -428,8 +428,14 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
          const calendar=investigationCalendarScope(args.input,d.owner);
          if(calendar)scopes.push(calendar);
        }
+       const projection=projectP1Evidence(shadowEvidence,identity.businessId,input.text,
+         null,statements.slice(-6),snapshot.status==="available"?snapshot.snapshot:undefined);
+       const combinedOperands=[...projection.operands,...datasetOperands(observations,scope).operands];
        result={observationId:observation.id,status:value.status,values:preview(value.value),
          quality:preview(value.quality),reason:value.reason??null,facts:factView().slice(-25),
+         authorizedOperands:combinedOperands.slice(0,12).map(o=>({
+           handle:o.handle,unit:o.unit,period:o.period,sourceId:o.sourceId,
+           missingInputs:o.missingInputs})),
          datasetFields:dataset?.fields??null,collections:recordCollections(value.value),
          totalRows:Array.isArray(value.value)?value.value.length:null,
          hint:"For more array rows call search_observation with this observation ID."};
