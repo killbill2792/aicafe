@@ -152,7 +152,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      if(!input.text.includes(clause)||publicLocationContext!=="")return false;
      if(/\b(?:employee|payroll|salary|wages|bank|profit|rent|ssn|email|phone|customer|account|revenue|sales)\b/iu.test(clause))return false;
      return clause.length>=3&&query.trim().length>0;
-   }))]);
+   })]);
  const manifest=registry.discover(scope).filter(d=>!isRedundantModelRead(d.id));
  const visibleIds=new Set(modelVisibleIds(manifest.map(x=>x.id)));
  const descriptions=manifest.filter(d=>visibleIds.has(d.id));
