@@ -68,6 +68,14 @@ export function buildReplyValidationFallbackReply(locale: "en" | "es" | "ar"): G
 /** Reject metrics with no exact source citation before the privileged insert. */
 export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedSupervisorReply {
   const validated = groundedReplySchema.parse(reply);
+  // A server-validated question is a pending request, never a verified business fact.
+  if(validated.status==="requires_owner_input"){
+    if(!validated.ownerInput||validated.evidence.length!==0||validated.blocks.length!==1||
+      validated.blocks[0].type!=="owner_question"||
+      validated.blocks[0].questionId!==validated.ownerInput.questionId)
+      throw new SupervisorReplyValidationError("missing_evidence","Invalid owner-input state",validated);
+    return validated;
+  }
   // The P3 arithmetic evaluator can produce a deterministic owner-only what-if
   // using no café reads. Its result is necessarily conditional and consists
   // entirely of server-built text/warnings; it must never fabricate café
