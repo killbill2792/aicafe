@@ -71,7 +71,7 @@ describe("native owner conversation without separate review",()=>{
    expect.objectContaining({type:"metric",valueCents:700})]));
   expect(result.usage.modelCallCount).toBe(3);
   expect(t.bodies).toHaveLength(3);
-  expect(t.bodies[0].tools).toHaveLength(5);
+  expect(t.bodies[0].tools).toHaveLength(6);
  });
  it("asks a specific durable clarification with verified latte variant choices",async()=>{
   const t=transport(discover,read,
