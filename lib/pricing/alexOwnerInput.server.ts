@@ -73,7 +73,7 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   const first=await readAuthorizedAtomicP1SourceSnapshot();
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
-  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\\s+/gu," ").toLocaleLowerCase("en");
+  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\s+/gu," ").toLocaleLowerCase("en");
   const matches=first.snapshot.sources.menu.filter(m=>m.is_active&&
     normalized(m.name)===normalized(selector.exactName));
   if(matches.length===1||matches.length>30)return null;
