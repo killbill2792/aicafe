@@ -8,7 +8,7 @@ import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationM
 import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
 import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
-import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion} from "@/lib/ai/supervisor/ownerInput/response";
+import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion,unresolvedOwnerSave} from "@/lib/ai/supervisor/ownerInput/response";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
 import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
@@ -126,9 +126,7 @@ export async function POST(request: Request, context: RouteContext) {
           // The next investigation MUST re-read; no cached figure is replayed.
           resumedOriginalText=state.originalText;
         }else{
-          directReply=buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
-            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
-            request:state.request,questionId:state.questionId});
+          directReply=unresolvedOwnerSave(input.locale);
         }
       }else throw new ConversationApiError(409,"owner_input_stage_mismatch");
     }
