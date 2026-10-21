@@ -66,9 +66,15 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
  * mechanism. An ungrounded model claim alone is never enough to offer IDs. */
 export function ambiguousPriceProposalOptions(raw:unknown,catalog:readonly {
   id:string;name:string;baseName:string;sizeLabel?:string|null;active:boolean;priceCents?:number|null;
-}[],ownerTexts:readonly string[]){
+}[],ownerTexts:readonly string[],trustedProductId?:string|null){
+  // Variant options are appropriate only for unresolved PRODUCT identity.
+  // An already authenticated ID (or a missing/ambiguous amount) must lead to
+  // its own clarification rather than asking the owner to choose sizes again.
+  if(trustedProductId)return [];
   const parsed=priceProposalToolSchema.safeParse(raw);
   if(!parsed.success||!parsed.data.ownerProductQuote||
+    parsed.data.amountStatus!=="unique"||parsed.data.amountMode!=="increase"||
+    parsed.data.increaseCents===null||
     !quoted(parsed.data.ownerProductQuote,ownerTexts))return [];
   const normalize=(s:string)=>s.normalize("NFKC").trim().toLocaleLowerCase("en");
   const reference=normalize(parsed.data.ownerProductQuote);
