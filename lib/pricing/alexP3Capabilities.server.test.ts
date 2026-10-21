@@ -12,6 +12,7 @@ vi.mock("./alexCapabilities.server", () => ({
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { createP2Registry } from "@/lib/ai/supervisor/p2/registry";
 import { buildAlexP3Registrations, ALEX_P3_REVIEW_ID, ALEX_P3_WHATIF_ID } from "./alexP3Capabilities.server";
+import {alexProductCatalogResolution} from "./alexOwnerInput.server";
 import { presentRegisteredReads } from "@/lib/ai/supervisor/p3/readEvidencePresentation";
 
 const scope = {
@@ -29,6 +30,21 @@ const quality = { missingInputs: [], estimatedInputs: [], staleInputs: [] };
 beforeEach(() => { mockRead.mockReset(); mockSimulate.mockReset(); });
 
 describe("Alex P3 pricing-review registration", () => {
+  it("keeps an authoritative zero-match result as verified source evidence",async()=>{
+    vi.mocked(alexProductCatalogResolution).mockResolvedValueOnce({
+      kind:"zero_match",exactName:"Espresso",sourceRevision:"catalog-10",
+    });
+    const [registration]=buildAlexP3Registrations();
+    const registry=createP2Registry([registration]);
+    const result=await registry.invoke({...scope,durableOwnerInput:true,
+      ownerClause:"Is Espresso on my active menu?"},ALEX_P3_REVIEW_ID,
+      {purpose:"pricing_review",product:{exactName:"Espresso"}});
+    expect(result).toMatchObject({status:"verified",id:"alex.pricing.catalog_zero_match",
+      value:{requestedName:"Espresso",matchingActiveCount:0},
+      provenance:{sourceRevision:"catalog-10",purpose:"pricing_review"}});
+    expect(mockRead).not.toHaveBeenCalled();
+  });
+
   it("registers cleanly into the P2/P3 capability registry and is discoverable", () => {
     const [registration] = buildAlexP3Registrations();
     const registry = createP2Registry([registration]);
