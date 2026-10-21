@@ -180,7 +180,7 @@ export async function POST(request: Request, context: RouteContext) {
               resumedOriginalText=resumed.originalText;
               ownerClarification=resumed.ownerStatement??undefined;
               trustedResolutionProductId=value;
-              trustedResolutionFingerprint=issued;
+              trustedResolutionFingerprint=typeof issued==="string"?issued:null;
             }else resumedOriginalText=state.originalText;
           }else if(state.request.writeContext.domain==="menu_proposal"&&
             state.request.input.kind==="free_text"&&
@@ -199,7 +199,7 @@ export async function POST(request: Request, context: RouteContext) {
               ownerClarification=resumed.ownerStatement??undefined;
               ownerAuthoredClarification=value.trim();
               trustedResolutionProductId=selected;
-              trustedResolutionFingerprint=fingerprint;
+              trustedResolutionFingerprint=typeof fingerprint==="string"?fingerprint:null;
             }else resumedOriginalText=state.originalText;
           }else{
             resumedOriginalText=resumed.originalText;
