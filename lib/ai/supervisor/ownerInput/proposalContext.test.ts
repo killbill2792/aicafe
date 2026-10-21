@@ -1,6 +1,7 @@
 import {describe,it,expect} from "vitest";
 import type {ConversationMessage} from "@/lib/ai/conversations/contracts";
 import {ownerAuthoredProposalTexts} from "./proposalContext";
+import {compactConversationContext} from "@/lib/ai/conversations/context";
 
 const businessId="11111111-1111-4111-8111-111111111111";
 const amountId="22222222-2222-4222-8222-222222222222";
@@ -31,15 +32,21 @@ describe("proposal owner-authored amount provenance",()=>{
         questionId:amountId,action:"supply",value:"10 cents"}}),
       msg("ask-variant","supervisor",4,{grounding:{ownerInput:question(variantId,{kind:"options",options:[
         option,{id:"55555555-5555-4555-8555-555555555555",label:loc}]})}}),
-      msg("other-variant","owner",5,{text:option.label.en,ownerInputResponse:{
+      msg("rejected-display-label","owner",5,{text:option.label.en,ownerInputResponse:{
+        questionId:variantId,action:"supply",value:option.label.en}}),
+      msg("other-variant","owner",6,{text:option.label.en,ownerInputResponse:{
         questionId:variantId,action:"supply",value:productId}}),
-      msg("current","owner",6,{text:option.label.en,ownerInputResponse:{
+      msg("current","owner",7,{text:option.label.en,ownerInputResponse:{
         questionId:variantId,action:"supply",value:productId}}),
     ];
     const authored=ownerAuthoredProposalTexts(messages,"current",businessId);
     expect(authored).toEqual(["10 cents","Raise Latte"]);
     expect(authored.join(" ")).not.toContain("$5.00");
     expect(authored.join(" ")).not.toContain(productId);
+    const history=compactConversationContext(messages,"current");
+    expect(history.filter(m=>m.role==="owner").map(m=>m.text))
+      .toEqual(["Raise Latte","10 cents"]);
+    expect(history.map(m=>m.text).join(" ")).not.toContain("$5.00");
   });
   it("accepts a different owner-authored answer but rejects unissued and cross-tenant claims",()=>{
     const messages=[
