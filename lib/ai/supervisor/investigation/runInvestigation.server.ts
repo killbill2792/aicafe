@@ -10,6 +10,7 @@ import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInves
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
+import {adaptReviewedClarifications,type KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
 import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
@@ -193,7 +194,8 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   debugRequestId?:string;
   /** Registered, typed, INERT proposals only. No approval or effect authority. */
   inertProposal?:{tools:readonly ToolDef[];
-    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>};
+    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>;
+    knownClarificationOptions?:()=>readonly KnownClarificationOption[]};
 };
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
@@ -909,6 +911,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
           [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
+      // The older known-record ambiguity flow stays unchanged; only its reviewed
+      // owner-facing question becomes an interactive card after independent review.
+      if(review.supported&&!downgradedByReview)
+        reply=adaptReviewedClarifications(reply,answer,input.locale,
+          input.inertProposal?.knownClarificationOptions?.()??[]);
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
