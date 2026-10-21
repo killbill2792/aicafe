@@ -2028,6 +2028,8 @@
     "reportTask": "Resultados del experimento para {item}",
     "reportDetail": "Consulta las ventas reales, la estimación condicional y la recomendación.",
     "reportAction": "Revisar experimento",
+    "reportAcknowledge": "Marcar informe como revisado",
+    "reportAcknowledgeError": "No se pudo marcar el informe como revisado. Inténtalo de nuevo.",
     "recommendationLabel": "Recomendación",
     "recommendKeep": "Mantener este precio",
     "recommendRevert": "Volver al precio anterior",
