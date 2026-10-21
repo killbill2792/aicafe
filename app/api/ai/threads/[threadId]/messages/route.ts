@@ -5,6 +5,10 @@ import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.serve
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
+import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
+import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion} from "@/lib/ai/supervisor/ownerInput/response";
+import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
 import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
