@@ -1,6 +1,19 @@
 import {describe,it,expect,vi,beforeEach} from "vitest";
 vi.mock("server-only",()=>({}));
 const state=vi.hoisted(()=>({snapshot:null as unknown as Record<string,unknown>,writes:0}));
+vi.mock("@/lib/supabase/server",()=>({
+  createServerSupabaseClient:vi.fn(async()=>({
+    from:()=>({
+      select(){return this;},
+      eq(){return this;},
+      limit:async()=>({
+        data:(state.snapshot as {sources:{menu:Array<{id:string;name:string;price_cents:number;is_active:boolean}>}})
+          .sources.menu.slice(0,1).map(m=>({...m,base_name:m.name,size_label:null})),
+        error:null,
+      }),
+    }),
+  })),
+}));
 vi.mock("@/lib/metrics/p1Readers.server",()=>({
   authorizedOwnerP1:vi.fn(async()=>({identity:{
     businessId:"11111111-1111-4111-8111-111111111111",
