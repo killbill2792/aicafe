@@ -1962,7 +1962,7 @@
     "unavailable": "No pude completar esa investigación de forma fiable. Inténtalo de nuevo; no se modificaron los registros del negocio.",
     "budget": "Alcancé el límite de esta investigación. Podemos continuar con lo pendiente en otro mensaje; no se hicieron cambios en el negocio.",
     "unverifiedWarning": "No pude confirmar esto con los registros de tu cafetería a tiempo. Trata los números y fechas de abajo como no verificados.",
-    "unverifiedValue": "[valor no verificado]",
+    "unverifiedValue": "todavía sin confirmar",
     "externalUnverified": "Fuente pública sin verificar",
     "financialUnavailable": "Los importes financieros no están disponibles en esta vista; los detalles de horarios siguen disponibles.",
     "factAmount": "Monto",
