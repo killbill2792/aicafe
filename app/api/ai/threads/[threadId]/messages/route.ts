@@ -92,6 +92,41 @@ export async function POST(request: Request, context: RouteContext) {
     diagnostics.emit({stage,model});
     const messages = (await service.listMessages(id, 0)).items;
     const history = compactConversationContext(messages, message.id);
+    // The prior assistant's validated server-grounded question is the only
+    // resumable state. A client-supplied question ID or target never grants a write.
+    let resumedOriginalText=input.text;
+    let directReply:GroundedSupervisorReply|null=null;
+    if(input.ownerInputResponse){
+      const prior=messages.filter(m=>m.role==="supervisor"&&
+        m.createdAt<=message.createdAt&&m.id!==message.id)
+        .sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+      const pending=pendingOwnerInputSchema.safeParse(prior?.grounding?.ownerInput);
+      const response=input.ownerInputResponse;
+      if(!pending.success||pending.data.businessId!==scope.businessId||
+        pending.data.questionId!==response.questionId)
+        throw new ConversationApiError(409,"owner_input_not_pending");
+      const state=pending.data;
+      if(response.action==="dismiss"){
+        directReply=declinedOwnerQuestion(input.locale);
+      }else if(response.action==="supply"&&state.stage==="answer"){
+        const value=response.value??"";
+        const prepared=ownerInputWrites.prepare(state.request,value);
+        directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
+          buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
+            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
+            request:state.request,questionId:state.questionId});
+      }else if(response.action==="confirm"&&state.stage==="confirm"&&state.answer){
+        const applied=await ownerInputWrites.apply(scope,state.request,state.answer);
+        if(applied.ok){
+          // The next investigation MUST re-read; no cached figure is replayed.
+          resumedOriginalText=state.originalText;
+        }else{
+          directReply=buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
+            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
+            request:state.request,questionId:state.questionId});
+        }
+      }else throw new ConversationApiError(409,"owner_input_stage_mismatch");
+    }
     let aggregatedUsage: SupervisorUsage | null = null;
     let progressStep = 0;
     // Fresh per POST invocation, not per browser retry click: a retried
@@ -115,8 +150,8 @@ export async function POST(request: Request, context: RouteContext) {
           description:definition.proposalDescription,
           parameters:capabilityId===priceExperimentCapabilityId?priceProposalToolJsonSchema:definition.proposalInputJsonSchema};
       });
-      const completed=await runSupervisorTurn({
-        text: input.text, locale: input.locale, asOf: identity.asOf,
+      const completed=directReply?null:await runSupervisorTurn({
+        text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
         inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
@@ -162,7 +197,8 @@ export async function POST(request: Request, context: RouteContext) {
           });
         },
       });
-      reply = completed.reply;
+      reply = completed?.reply??directReply;
+      if(!reply)throw new Error("Missing owner-input reply");
     } finally {
       // Also record the usage already incurred if a later provider round failed.
       // A failed owner turn remains unanswered and can be retried idempotently.
