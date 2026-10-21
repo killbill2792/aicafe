@@ -7,11 +7,14 @@ vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({
 }));
 vi.mock("@/lib/supabase/server",()=>({
   createServerSupabaseClient:vi.fn(async()=>({
-    from:()=>({
-      select(){return this;},
-      eq(){return this;},
-      limit:mocks.project,
-    }),
+    from:()=>{
+      let selectedId:string|null=null;
+      return {
+        select(){return this;},
+        eq(field:string,value:string){if(field==="id")selectedId=value;return this;},
+        limit:()=>mocks.project(selectedId),
+      };
+    },
   })),
 }));
 
@@ -37,7 +40,8 @@ beforeEach(()=>{
     {id:id16,name:"Latte 16 oz",base_name:"Latte",size_label:"16 oz",is_active:true,price_cents:700},
   ];
   sourceRows=rows.map(r=>({id:r.id,name:r.name,is_active:r.is_active,price_cents:r.price_cents}));
-  mocks.project.mockImplementation(async()=>({data:rows,error:null}));
+  mocks.project.mockImplementation(async(selectedId:string|null)=>({data:selectedId?
+    rows.filter(row=>row.id===selectedId):rows,error:null}));
   mocks.atomic.mockImplementation(async()=>({status:"available",snapshot:{
     businessId,revision,timezone:"America/Los_Angeles",currency:"USD",
     truncated:{menu:false},sources:{menu:sourceRows},
