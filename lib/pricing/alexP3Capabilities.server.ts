@@ -168,10 +168,12 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     async read(scope: TrustedReadScope,rawInput: unknown) {
       const input=rawInput as z.infer<typeof inputSchema>;
       const selection=await alexProductCatalogResolution(scope,input.product);
-      if(selection)return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
+      if(selection&&!("productId" in selection))
+        return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
       const raw = await alexReview.read(scope, {
         purpose: "pricing_review", selection:input.product?
-          {kind:"specific" as const,items:[input.product]}:
+          {kind:"specific" as const,items:[selection&&"productId" in selection?
+              selection:input.product]}:
           { kind: "all_active" as const, offset: 0, limit: MAX_ROWS },
       });
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
@@ -243,8 +245,11 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       // The domain resolves typed ingredient names inside its source snapshot.
       const input = rawInput as AlexNamedSimulateInput;
       const selection=await alexProductCatalogResolution(scope,input.product);
-      if(selection)return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
-      const raw = await alexSimulate.simulate?.(scope, input, undefined);
+      if(selection&&!("productId" in selection))
+        return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
+      const resolvedInput=selection&&"productId" in selection?
+        {...input,product:selection}:input;
+      const raw = await alexSimulate.simulate?.(scope, resolvedInput, undefined);
       const ownerGap=async()=>{
         const gap=await alexMissingIngredientCost(scope,input.product);
         return gap?{status:"requires_owner_input" as const,value:null,ownerInput:gap}:null;
