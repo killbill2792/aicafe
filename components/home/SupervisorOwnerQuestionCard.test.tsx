@@ -65,6 +65,16 @@ describe("adaptive owner question card",()=>{
         onAnswer:vi.fn(),onDismiss:submit}));
     expect(nonDurable).toContain('aria-label="Not now"');
   });
+  it("collapses an answered structured question into a noninteractive receipt",()=>{
+    const html=renderToStaticMarkup(createElement(SupervisorOwnerQuestionCard,{
+      card:options(2),locale:"en" as const,copy,resolved:true,
+      resolvedAnswer:"Latte 16 oz",onAnswer:vi.fn(),onDismiss:vi.fn(),
+    }));
+    expect(html).toContain("Which latte?");
+    expect(html).toContain("Latte 16 oz");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("Latte 0");
+  });
   it("provides an accessible localized dismiss control and Arabic RTL",()=>{
     const html=render(options(2),"ar");
     expect(html).toContain('dir="rtl"');
