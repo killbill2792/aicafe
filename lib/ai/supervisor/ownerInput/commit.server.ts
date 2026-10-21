@@ -42,8 +42,20 @@ export async function commitConfirmedOwnerInput(scope:OwnerInputWriteScope,
     // authoritative data. Never call the domain writer again under this ID.
     if(previous.data.state!=="applied"&&previous.data.state!=="started")
       return {ok:false,reason:"prior_attempt_uncertain"};
-    if(!(await ownerInputWrites.verify(scope,pending.request,pending.answer!)))
-      return {ok:false,reason:"prior_attempt_unverified"};
+    // A second request may arrive while the first request is still saving.
+    // Never persist a final "unverified" answer for a write still in flight.
+    // Recheck briefly; beyond that, return a retriable HTTP conflict without
+    // a Supervisor reply. The same owner message/key can be recovered later.
+    let verified=false;
+    const attempts=previous.data.state==="started"?4:1;
+    for(let attempt=0;attempt<attempts;attempt++){
+      verified=await ownerInputWrites.verify(scope,pending.request,pending.answer!);
+      if(verified)break;
+      if(attempt+1<attempts)
+        await new Promise<void>(resolve=>setTimeout(resolve,200));
+    }
+    if(!verified)return {ok:false,reason:previous.data.state==="started"?
+      "confirmation_in_progress":"prior_attempt_unverified"};
     if(previous.data.state==="started"){
       const marked=await admin.from("supervisor_owner_input_claims")
         .update({state:"applied",updated_at:new Date().toISOString()})
