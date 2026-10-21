@@ -184,10 +184,10 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
           quality:{missingInputs:[],estimatedInputs:[],staleInputs:[]}};
       if(selection&&!("productId" in selection))
         return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
+      const resolvedProduct=selection&&"productId" in selection?selection:input.product;
       const raw = await alexReview.read(scope, {
         purpose: "pricing_review", selection:input.product?
-          {kind:"specific" as const,items:[selection&&"productId" in selection?
-              selection:input.product]}:
+          {kind:"specific" as const,items:[resolvedProduct!]}:
           { kind: "all_active" as const, offset: 0, limit: MAX_ROWS },
       });
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
@@ -195,7 +195,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         !("value" in raw) || !raw.value || typeof raw.value !== "object" ||
         !("provenance" in raw) || !("quality" in raw))
         {
-          const gap=await alexMissingIngredientCost(scope,input.product);
+          const gap=await alexMissingIngredientCost(scope,resolvedProduct);
           if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
           return { status: "unavailable" as const, value: null,
             reason: raw && typeof raw === "object" && "reason" in raw && typeof raw.reason === "string"
@@ -220,11 +220,11 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       }));
       if((input.product||rows.length===1)&&
         rows.some(row=>row.reviewIngredientCostCents===null)){
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedProduct);
         if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
       }
       if(!rows.length){
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedProduct);
         if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
         return { status: "unavailable" as const, value: null, reason: "no_ready_items" };
       }
@@ -267,7 +267,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         {...input,product:selection}:input;
       const raw = await alexSimulate.simulate?.(scope, resolvedInput, undefined);
       const ownerGap=async()=>{
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedInput.product);
         return gap?{status:"requires_owner_input" as const,value:null,ownerInput:gap}:null;
       };
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
