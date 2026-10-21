@@ -1,3 +1,4 @@
+import {validatedOwnerAnswerText} from "@/lib/ai/supervisor/ownerInput/proposalContext";
 import type { ConversationMessage, SupervisorReplyBlock } from "./contracts";
 
 export type ConversationalTurn = { role: "owner" | "supervisor"; text: string };
@@ -5,7 +6,10 @@ export type ConversationalTurn = { role: "owner" | "supervisor"; text: string };
 export function compactConversationContext(messages: ConversationMessage[], currentId: string): ConversationalTurn[] {
   return messages.filter((message) => message.id !== currentId)
     .slice(-12).map((message) => {
-      if (message.role === "owner") return { role: "owner" as const, text: (message.text ?? "").slice(0, 650) };
+      if (message.role === "owner") return { role: "owner" as const, text:
+        (message.ownerInputResponse?
+          validatedOwnerAnswerText(messages,message)??"":
+          message.text??"").slice(0,650) };
       const parts = (message.blocks ?? []).slice(0, 10).flatMap((raw): string[] => {
         if (!raw || typeof raw !== "object") return [];
         const block = raw as SupervisorReplyBlock;
