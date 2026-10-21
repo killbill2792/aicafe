@@ -729,7 +729,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         signatures.every(sig=>!attempted.has(sig))&&
         // All-or-nothing registered input validation before starting any
         // sibling: schema, unknown fields, role, purpose, byte/range limits.
-        requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))&&
+        requests.every(v=>registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args))&&
         requests.every(v=>
           (v.definition.currencyPolicy==="independent"||
             identity.currency==="USD"&&financialReadsAvailable)&&
@@ -763,7 +763,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
             canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
             neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
-            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args)),
+            registeredInputsValid:requests.every(v=>registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args)),
             perCall:requests.map(v=>({
               callId:v.call.callId,capabilityId:v.capabilityId,
               currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
@@ -772,7 +772,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
                 ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
               noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner,v.args),
                 identity.asOf,memory,ownerStatements),
-              registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
+              registryPreflight:registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args),
             }))}});
         continue;
       }
@@ -786,7 +786,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const completed=await Promise.all(requests.map(async selectedRead=>{
         let dispatched=false;
         const operationStartedAt=Date.now();
-        const result=await registry.invoke(scope,selectedRead.capabilityId,selectedRead.args,()=>{
+        const result=await registry.invoke({...scope,ownerClause:calendarTextForRead(selectedRead.definition.owner,selectedRead.args)},selectedRead.capabilityId,selectedRead.args,()=>{
           dispatched=true;
           usage.toolCallCount++;
           input.onUsage?.({...usage});
@@ -1094,7 +1094,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
             requestedGoalDomain==="sales"?["sales","money"]:
             requestedGoalDomain==="pricing"||requestedGoalDomain==="menu"?["alex","pricing","menu"]:null;
-          const singleDomain=temporalDomains.length===1?temporalDomains[0]:null;
+          const relevantDomains=expectedDomains?temporalDomains.filter(d=>expectedDomains.includes(d)):[];
+          const singleDomain=relevantDomains.length===1?relevantDomains[0]:null;
           const origin=singleDomain&&expectedDomains?.includes(singleDomain)?
             ([...temporalReads].reverse().find(o=>readOwner(o.capabilityId)===singleDomain)?.capabilityId??
               [...temporalHistory].reverse().find(r=>readOwner(r.capabilityId)===singleDomain)?.capabilityId):null;
@@ -1321,7 +1322,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           currency:identity.currency,financialReadsAvailable,feedback});
         continue;
       }
-      result=await registry.invoke(scope,capabilityId,args,()=>{
+      result=await registry.invoke({...scope,ownerClause:calendarText},capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
         // Domain failures still consume a real operation; malformed inputs do not.
         readDispatched=true;
