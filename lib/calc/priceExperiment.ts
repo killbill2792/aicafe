@@ -12,6 +12,8 @@ export type PriceExperimentDay={
   coverage:"actual"|"unavailable"; source:string;
 };
 const cents=(n:number)=>Number.isSafeInteger(n)&&n>=0;
+/** No trial increase may exceed 50% of the current price. */
+export const MAX_TRIAL_INCREASE_BPS=5000;
 const safeProduct=(a:number,b:number):number|null=>{
   if(!cents(a)||!cents(b))return null;
   const n=BigInt(a)*BigInt(b);
@@ -30,7 +32,9 @@ export function simulatePriceExperiment(input:{
   estimatedAdditionalRevenue7DaysCents:number;estimatedAdditionalContribution7DaysCents:number}|null{
   const {currentPriceCents, increaseCents, ingredientCostCents,units7Days}=input;
   if(!input.productId||!input.productName||!cents(currentPriceCents)||
-    !cents(increaseCents)||increaseCents===0||ingredientCostCents===null||
+    !cents(increaseCents)||increaseCents===0||currentPriceCents===0||
+    BigInt(increaseCents)*10000n>BigInt(currentPriceCents)*BigInt(MAX_TRIAL_INCREASE_BPS)||
+    ingredientCostCents===null||
     !cents(ingredientCostCents)||units7Days===null||!cents(units7Days))return null;
   const newPriceCents=currentPriceCents+increaseCents;
   if(!Number.isSafeInteger(newPriceCents))return null;
