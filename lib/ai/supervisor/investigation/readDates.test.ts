@@ -137,3 +137,13 @@ it("prefers explicit sub-week dates over conflicting relative wording",()=>{
   expect(authenticatedOwnerCalendarScope("Next week, use October 20 to October 21 instead","olivia",asOf,"week"))
     .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
 });
+
+it.each(["Use Tuesday instead","Usa martes","استخدم الثلاثاء"])(
+  "persists a canonical next-weekday answer before another scheduling card: %s",text=>{
+    expect(authenticatedOwnerCalendarScope(text,"olivia",asOf,"week"))
+      .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
+  });
+it("does not persist undated weekdays that resolve across different scheduling weeks",()=>{
+  expect(authenticatedOwnerCalendarScope("Use Saturday and Monday","olivia","2026-10-22","week"))
+    .toBeNull();
+});
