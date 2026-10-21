@@ -479,6 +479,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     })]);
   const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
   const visibleIds=new Set(modelVisibleIds(manifest.map(m=>m.id)));
+  const calendarTextForRead=(domain:string)=>authenticatedReadCalendarText(
+    input.text,input.ownerClarification,input.ownerClarificationReadCapabilityId,
+    domain,identity.asOf,id=>manifest.find(m=>m.id===id)?.owner);
   const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
   // Native function-calling tools: one per discovered read capability, plus
   // the registered expression calculator. toolNameToCapabilityId maps a
@@ -669,9 +672,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         requests.every(v=>
           (v.definition.currencyPolicy==="independent"||
             identity.currency==="USD"&&financialReadsAvailable)&&
-          investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,ownerStatements,
+          investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,ownerStatements,
             v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
-          !pendingOwnerCalendarCorrection(v.args,input.text,identity.asOf,memory,ownerStatements));
+          !pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,ownerStatements));
       if(!canDispatch){
         // An identical rejected selection without new observations cannot make progress,
         // even when only one sibling was previously attempted.
@@ -704,9 +707,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               callId:v.call.callId,capabilityId:v.capabilityId,
               currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
                 (identity.currency==="USD"&&financialReadsAvailable),
-              datesMatch:investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,
+              datesMatch:investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner),identity.asOf,memory,
                 ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
-              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,input.text,
+              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner),
                 identity.asOf,memory,ownerStatements),
               registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
             }))}});
@@ -1180,8 +1183,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
-      let calendarText=input.text;
-      const pending=pendingOwnerCalendarCorrection(args,input.text,identity.asOf,memory,ownerStatements);
+      let calendarText=calendarTextForRead(readDomain);
+      const pending=pendingOwnerCalendarCorrection(args,calendarText,identity.asOf,memory,ownerStatements);
       if(pending){
         const key=readDomain+":"+investigationCalendarScope(args,readDomain)?.kind+":"+pending;
         let verdict=calendarReviews.get(key);
