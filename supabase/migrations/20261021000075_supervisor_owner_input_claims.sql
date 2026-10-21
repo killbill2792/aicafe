@@ -33,6 +33,7 @@ declare
   v_revision bigint;
   v_timezone text;
   v_micro bigint;
+  v_micro_numeric numeric;
 begin
   if auth.uid() is null or p_expected_revision !~ '^[1-9][0-9]{0,18}$'
      or p_package_cost_cents <= 0 or p_package_cost_cents > 100000000
@@ -73,10 +74,11 @@ begin
   end if;
   -- Exactly the same canonical cents-to-microcents conversion used by the
   -- Menu action; SQL NUMERIC avoids float money and rounds once on storage.
-  v_micro:=round((p_package_cost_cents::numeric/p_package_quantity)*1000000)::bigint;
-  if v_micro<=0 or v_micro>9223372036854775807 then
+  v_micro_numeric:=round((p_package_cost_cents::numeric/p_package_quantity)*1000000);
+  if v_micro_numeric<=0 or v_micro_numeric>9223372036854775807 then
     return jsonb_build_object('ok',false,'reason','invalid_request');
   end if;
+  v_micro:=v_micro_numeric::bigint;
   insert into public.ingredient_prices
     (ingredient_id,effective_from,cost_per_base_unit_micros,source)
     values (p_ingredient_id,p_expected_day,v_micro,'manual');
