@@ -366,6 +366,34 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:old});
   });
+  it("treats a new identical owner request as a new calendar instance",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries from 2026-10-01 to 2026-10-07";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const changed={from:"2026-10-08",to:"2026-10-14"};
+    const oldKey="a".repeat(64);
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      requestKey:oldKey,
+      calendarScopes:[{domain:"money",kind:"period" as const,...changed}],
+      calendarScopeOrigins:[{domain:"money",kind:"period" as const,
+        requestKey:oldKey,capabilityId:id}],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:changed}))}]};
+    const newCard=await runSupervisorTurn({...base,text:original,investigationMemory:previous},
+      transportFor([answer([{kind:"clarification",text:"Which expense category?",citations:[]}])],
+        undefined,true,"expenses"));
+    expect(newCard.reply.investigationMemory?.requestKey).not.toBe(oldKey);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:newCard.reply.investigationMemory,
+      ownerClarificationReadCapabilityId:newCard.reply.ownerInput?.readCapabilityId},
+      transportFor([
+        read(id,query("money.expense_entries",{period:changed})),
+        read(id,query("money.expense_entries",{period:old})),
+        answer([{kind:"evidence",text:"Original date entries retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
   it("persists an Olivia week correction before any scheduling read",async()=>{
     const original="Preview the schedule for 2026-10-19.";
     const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
