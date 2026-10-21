@@ -851,7 +851,7 @@ export async function runSupervisorTurn(
     // threaded through so the investigation loop's round-by-round debug
     // trace shares it rather than minting a second, disconnected id.
     debugRequestId?:string;inertProposal?:InvestigationInput["inertProposal"];
-    ownerClarification?:string},
+    ownerClarification?:string;trustedCatalogProductId?:string},
   transport:Transport=fetch,
 ):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
   const apiKey=process.env.OPENAI_API_KEY;
