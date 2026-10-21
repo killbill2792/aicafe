@@ -188,6 +188,8 @@ function calendar(asOf:string){
 }
 export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:string;
   history:ConversationalTurn[];investigationMemory?:InvestigationMemory;
+  /** Server-validated answer to a durable owner question, separate from full original text. */
+  ownerClarification?:string;
   apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void;
   // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload. When the
