@@ -6,10 +6,12 @@ const mocks=vi.hoisted(()=>{
     clientMessageId:"5106fd7b-1d80-486c-a026-dc1f39911f4c",createdAt:"2026-10-21T03:00:00Z"};
   return {message,run:vi.fn(),propose:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
     activeBusinessId:"cafe-1",commitOwnerInput:vi.fn(),prepareOwnerInput:vi.fn(),
+    submitOwnerInput:vi.fn(),
     getThread:vi.fn(async()=>({title:"Conversation"})),
     addOwner:vi.fn(async()=>message),listMessages:vi.fn()};
 });
 vi.mock("@/lib/ai/conversations/enabled.server",()=>({isSupervisorChatConfigured:()=>true}));
+vi.mock("@/lib/ai/conversations/ownerInputSubmit.server",()=>({submitOwnerInputMessage:mocks.submitOwnerInput}));
 vi.mock("@/lib/ai/supervisor/ownerInput/writeRegistry.server",()=>({
   ownerInputWrites:{prepare:mocks.prepareOwnerInput},
 }));
@@ -68,6 +70,7 @@ beforeEach(()=>{
   vi.clearAllMocks();
   mocks.activeBusinessId="cafe-1";
   mocks.commitOwnerInput.mockResolvedValue({ok:true,replayed:false});
+  mocks.submitOwnerInput.mockResolvedValue({ok:true});
   mocks.prepareOwnerInput.mockReturnValue({summary:{en:"Save 4.50 USD?",es:"¿Guardar?",ar:"حفظ؟"}});
   mocks.getExisting.mockResolvedValue(null);
   mocks.propose.mockResolvedValue(null);
@@ -149,11 +152,38 @@ describe("POST owner-input persistence and continuation",()=>{
         createdAt:"2026-10-21T04:00:00Z",grounding:{status:"verified"},
         blocks:[{type:"text",text:"Newer answer"}],text:null},
     ]});
+    mocks.submitOwnerInput.mockResolvedValueOnce({ok:false,reason:"owner_input_not_pending"});
     const response=await POST(interactiveRequest("supply","3.23 / 640"),ctx);
     expect(response.status).toBe(409);
     expect(mocks.addOwner).not.toHaveBeenCalled();
     expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
     expect(mocks.persist).not.toHaveBeenCalled();
+  });
+  it("recovers a successful lost HTTP reply with the same structured client message key",async()=>{
+    mocks.getExisting.mockResolvedValueOnce({id:"existing-reply",role:"supervisor",
+      grounding:{ownerMessageId:mocks.message.id,status:"verified"},blocks:[{type:"text",text:"Saved"}]});
+    const response=await POST(interactiveRequest("confirm"),ctx);
+    expect(response.status).toBe(200);
+    expect(mocks.submitOwnerInput).toHaveBeenCalledTimes(1);
+    expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
+  it("restores the original confirmation action from durable owner message metadata when retry omits it",async()=>{
+    const confirmed={...pendingOwnerQuestion,stage:"confirm" as const,
+      answer:"4.50 / 946",summary:{en:"Save?",es:"¿Guardar?",ar:"حفظ؟"}};
+    mocks.addOwner.mockResolvedValueOnce({...mocks.message,
+      text:"Continue",
+      ownerInputResponse:{questionId:pendingOwnerQuestion.questionId,action:"confirm"}});
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"confirm-card",role:"supervisor",contentType:"blocks",
+        createdAt:"2026-10-20T02:00:00Z",grounding:{ownerInput:confirmed},
+        blocks:[],text:null},mocks.message,
+    ]});
+    const response=await POST(request("Continue"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.submitOwnerInput).not.toHaveBeenCalled();
+    expect(mocks.commitOwnerInput).toHaveBeenCalledTimes(1);
+    expect(mocks.run.mock.calls[0][0].text).toBe(confirmed.originalText);
   });
   it("dismisses without writing and allows later re-asking",async()=>{
     expect((await POST(interactiveRequest("dismiss"),ctx)).status).toBe(201);
