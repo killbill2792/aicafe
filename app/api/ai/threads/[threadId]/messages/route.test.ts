@@ -32,7 +32,7 @@ vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async
   active:true,priceCents:560},
 ])}));
 
-vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({supervisorLoopRegistry:{
+vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({priceExperimentCapabilityId:"alex.drink_price_experiment.v1",supervisorLoopRegistry:{
   list:()=>["alex.drink_price_experiment.v1"],
   get:()=>({proposalDescription:"Prepare inert owner trial draft",parseEffect:(raw:unknown)=>raw,
     proposalInputJsonSchema:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}}}}),
@@ -122,7 +122,10 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
         }));
         const drafted=await input.inertProposal.create(tool.name,{
           productId:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",
-          increaseCents:10,
+          productReference:"latte",ownerProductQuote:"latte",variantStatus:"unique",
+          amountMode:"increase",increaseCents:10,targetPriceCents:null,
+          ownerAmountQuote:locale==="en"?"10-cent increase":locale==="es"?"10 centavos":"١٠ سنتات",
+          amountStatus:"unique",
         });
         expect(drafted?.id).toBe("a1520966-6bca-4774-9f58-31376314845f");
         return {reply:{intent:"menu_pricing",status:"estimated",
