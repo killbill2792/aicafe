@@ -13,6 +13,8 @@ import {buildRecordsRegistration} from "./records.server";
 import {modelVisibleIds} from "./canonicalCapabilities";
 import {observationDisplay,observationReference,type Observation} from "./evidence";
 import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {catalogIdentityFingerprint} from "@/lib/pricing/alexOwnerInput.server";
 import {ownerResolutionRequest} from "@/lib/ai/supervisor/ownerInput/resolution";
 import {investigationOwnerStatements,investigationMemorySchema} from "@/lib/ai/conversations/investigationMemory";
 import {calculateSimple,parseQuotedOperand,quoteAppearsInOwnerText,type SimpleOperand,type SimpleOperation} from "@/lib/calc/supervisorSimpleMath";
@@ -203,9 +205,23 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     if(!question||!noDigits(question))break;
     const resolved=pickIds(result.optionIds,optionRows);
     const loc={en:question,es:question,ar:question};
+    // A selected menu variant must survive the owner reply as an authenticated
+    // catalog identity; a generic option label is never a product ID or a money quote.
+    const catalog=resolved.length>=2?await getMenuControlCenter():[];
+    const matched=resolved.length>=2?resolved.map(o=>catalog.find(row=>row.id===o.id&&row.active)):[];
+    const menuOptions=matched.length>=2&&matched.every(Boolean);
+    const context=menuOptions?{
+      domain:"menu_proposal",
+      ...Object.fromEntries(matched.map(row=>[
+        "catalogIdentity:"+row!.id,
+        catalogIdentityFingerprint({id:row!.id,name:row!.name,
+          base_name:row!.baseName,size_label:row!.sizeLabel}),
+      ])),
+    }:undefined;
     const request=ownerResolutionRequest({question:loc,input:resolved.length>=2?
       {kind:"options",options:resolved.map(o=>({id:o.id,label:{en:o.label,es:o.label,ar:o.label}}))}:
-      {kind:"free_text",hint:{en:localeCopy.en.hint,es:localeCopy.es.hint,ar:localeCopy.ar.hint}}});
+      {kind:"free_text",hint:{en:localeCopy.en.hint,es:localeCopy.es.hint,ar:localeCopy.ar.hint}},
+      context});
     const checked=await authorizedOwnerP1();
     if(checked.identity.businessId!==identity.businessId)throw new Error("Owner scope changed");
     const pending=buildOwnerQuestionReply({businessId:identity.businessId,originalText:input.text,
