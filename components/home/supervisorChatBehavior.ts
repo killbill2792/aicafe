@@ -35,3 +35,12 @@ export function transcriptScrollTarget({
   if (openAtTop) return 0;
   return followLatest ? scrollHeight : null;
 }
+
+/** Only a question on the latest message is interactive. Older cards remain
+ * readable history, never another write/clarification action. */
+export function activeOwnerQuestionMessageId(messages:readonly ConversationMessage[]):string|null{
+  const last=messages.at(-1);
+  if(last?.role!=="supervisor")return null;
+  return last.blocks?.some(block=>typeof block==="object"&&block!==null&&
+    "type" in block&&block.type==="owner_question")?last.id:null;
+}
