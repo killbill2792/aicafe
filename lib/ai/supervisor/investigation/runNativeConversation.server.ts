@@ -223,6 +223,9 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    const authoritativeUnits=new Map(approved?.fields.map(field=>[field.key,field.unit])??[]);
    const displayed=observationDisplay(output,input.locale);
    for(const [path,formatted] of Object.entries(displayed.display)){
+     // Model-chosen query selectors and provenance metadata are not business
+     // facts. Only fields returned inside the validated value are publishable.
+     if(path!=="value"&&!path.startsWith("value."))continue;
      if(facts.size>=LIMITS.maxFacts)break;
      const raw=displayed.raw[path],segments=path.split(".");
      const rowIndex=segments.findIndex((v,i)=>i>0&&/^\d+$/u.test(v));
