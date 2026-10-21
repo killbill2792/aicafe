@@ -343,6 +343,77 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:old});
   });
+  it("keeps original calendar dates when a first reviewed card appears before any read",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const other={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expense entries 2026-10-01 to 2026-10-07 and staffing plans.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}]),
+    ]));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.investigationMemory?.calendarScopes??[]).toEqual([]);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:first.reply.investigationMemory},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:other})),
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        answer([{kind:"evidence",text:"The original period's expenses were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
+  it("binds an answered reviewed expense-period card to its unique registered source",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare recorded expenses and staffing options.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([{kind:"evidence",text:"The recorded expense entries were retrieved.",citations:["r1"]},
+        {kind:"clarification",text:"Which expense period should I compare next?",citations:[]}]),
+    ]));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.ownerInput?.readCapabilityId).toBe(capabilityId);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-08 to 2026-10-14 instead.",
+      ownerClarificationReadCapabilityId:first.reply.ownerInput?.readCapabilityId,
+      investigationMemory:first.reply.investigationMemory},transportFor([
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The replacement period entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("persists a corrected period through a second question even without dispatching a reader",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expenses 2026-10-01 to 2026-10-07 and staffing options.";
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      calendarScopes:[{domain:"money",kind:"period" as const,...old}],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}]};
+    const middle=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-08 to 2026-10-14 instead.",
+      ownerClarificationReadCapabilityId:capabilityId,investigationMemory:previous},
+      transportFor([answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}])]));
+    expect(p1).not.toHaveBeenCalled();
+    expect(middle.reply.status).toBe("requires_owner_input");
+    expect(middle.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...corrected});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:middle.reply.investigationMemory},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
   it("uses the same pending owner-input dispatcher for reviewed free-text clarification",async()=>{
     const result=await runSupervisorTurn({...base,text:"Can you tell which one?"},transportFor([
       answer([{kind:"clarification",text:"Which option do you mean?",citations:[]}])
