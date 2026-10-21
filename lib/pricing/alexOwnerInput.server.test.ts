@@ -30,7 +30,7 @@ const scope={role:"owner",businessId,
   ownerClause:"Show me my Latte variants",durableOwnerInput:true} as unknown as TrustedReadScope;
 let rows:Array<{id:string;name:string;base_name:string;size_label:string;
   is_active:boolean;price_cents:number}>;
-let sourceRows:Array<{id:string;name:string;is_active:boolean;price_cents:number}>; 
+let sourceRows:Array<{id:string;name:string;is_active:boolean;price_cents:number}>;
 let revision:string;
 
 beforeEach(()=>{
