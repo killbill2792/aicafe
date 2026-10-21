@@ -353,8 +353,15 @@ export async function getMenuGroupOptions(): Promise<string[]> {
 }
 
 const IngredientPriceSchema = z.object({ ingredientId: z.string().uuid(), packageCostCents: z.number().int().positive(), packageQuantity: z.number().positive() });
-/** Manual fallback still writes the canonical price-history table, never recipe-local cost data. */
-export async function addManualIngredientPrice(input: z.infer<typeof IngredientPriceSchema>): Promise<ActionResult> {
+const ConfirmedChatPriceSourceSchema = z.strictObject({
+  menuItemId:z.uuid(),expectedRevision:z.string().regex(/^[1-9][0-9]{0,18}$/),
+  businessDay:z.string().date(),
+});
+/** Manual fallback still writes the canonical price-history table, never recipe-local cost data.
+ * The optional reviewed chat precondition uses a DB-atomic source revision CAS;
+ * ordinary Menu entries retain their existing validated write behavior. */
+export async function addManualIngredientPrice(input: z.infer<typeof IngredientPriceSchema>,
+  confirmedChatSource?:z.infer<typeof ConfirmedChatPriceSourceSchema>): Promise<ActionResult> {
   const parsed = IngredientPriceSchema.safeParse(input);
   if (!parsed.success) return { ok: false, error: "Enter the package cost and quantity." };
   const businessId = await currentBusinessId();
@@ -362,6 +369,26 @@ export async function addManualIngredientPrice(input: z.infer<typeof IngredientP
   const supabase = await createServerSupabaseClient();
   const { data: ingredient } = await supabase.from("ingredients").select("id").eq("id", parsed.data.ingredientId).eq("business_id", businessId).single();
   if (!ingredient) return { ok: false, error: "Ingredient not found." };
+  if(confirmedChatSource!==undefined){
+    const expected=ConfirmedChatPriceSourceSchema.safeParse(confirmedChatSource);
+    if(!expected.success)return {ok:false,error:"Invalid source confirmation."};
+    const {data,error}=await supabase.rpc("menu_add_manual_ingredient_price_if_revision",{
+      p_business_id:businessId,p_menu_item_id:expected.data.menuItemId,
+      p_ingredient_id:parsed.data.ingredientId,
+      p_expected_revision:expected.data.expectedRevision,
+      p_expected_day:expected.data.businessDay,
+      p_package_cost_cents:parsed.data.packageCostCents,
+      p_package_quantity:parsed.data.packageQuantity,
+    });
+    if(error){
+      logQueryError("addManualIngredientPrice:revisionCheck",error);
+      return {ok:false,error:MENU_SAVE_FAILURE_MESSAGE};
+    }
+    if(!data||typeof data!=="object"||!Object.hasOwn(data,"ok")||
+      (data as {ok:unknown}).ok!==true)return {ok:false,error:"source_changed"};
+    revalidatePath("/menu");revalidatePath("/menu/manage");
+    return {ok:true};
+  }
   const { error } = await supabase.from("ingredient_prices").insert({ ingredient_id: ingredient.id, effective_from: await currentBusinessTodayDateStr(businessId, supabase), cost_per_base_unit_micros: Math.round(parsed.data.packageCostCents / parsed.data.packageQuantity * 1_000_000), source: "manual" });
   if (error) {
     logQueryError("addManualIngredientPrice", error);
