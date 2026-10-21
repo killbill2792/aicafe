@@ -1,5 +1,6 @@
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import {runInvestigationTurn,type InvestigationInput} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
+import {runNativeConversationTurn} from "@/lib/ai/supervisor/investigation/runNativeConversation.server";
 import type {InvestigationMemory} from "./investigationMemory";
 import "server-only";
 import { z } from "zod";
@@ -857,5 +858,5 @@ export async function runSupervisorTurn(
 ):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
   const apiKey=process.env.OPENAI_API_KEY;
   if(!apiKey)throw new SupervisorStageError("provider_invalid_payload","provider_request");
-  return runInvestigationTurn({...input,apiKey,model:configuredSupervisorModel()},transport);
+  return runNativeConversationTurn({...input,apiKey,model:configuredSupervisorModel()},transport);
 }
