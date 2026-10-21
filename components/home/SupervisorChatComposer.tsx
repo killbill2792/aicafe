@@ -673,7 +673,7 @@ export default function SupervisorChatComposer({
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
-          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined, message.ownerInputResponse)}
             className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
         </div>}
       </div>)}
