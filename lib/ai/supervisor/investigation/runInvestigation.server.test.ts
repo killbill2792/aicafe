@@ -1791,6 +1791,38 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(result.reply.status).not.toBe("unavailable");
   });
 
+  it("stops repeatedly rejected parallel calls even when JSON selector keys and sibling order change",async()=>{
+    const good=query("menu.catalog");
+    const bad={...query("labor.employee_wages"),unknownProperty:"forbidden"};
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      const first=steps++===0;
+      const entries=first?[
+        {name:capabilityToolName("p3.menu.catalog.v1"),args:good},
+        {name:capabilityToolName("p3.labor.employee_wages.v1"),args:bad},
+      ]:[
+        {name:capabilityToolName("p3.labor.employee_wages.v1"),args:{
+          unknownProperty:"forbidden",purpose:bad.purpose,id:bad.id,version:bad.version,
+        }},
+        {name:capabilityToolName("p3.menu.catalog.v1"),args:{
+          purpose:good.purpose,id:good.id,version:good.version,
+        }},
+      ];
+      return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},
+        output:entries.map((entry,i)=>({type:"function_call",call_id:"call_"+steps+"_"+i,
+          name:entry.name,arguments:JSON.stringify(entry.args)}))}));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare menu prices and employee wages."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(steps).toBe(2);
+  });
+
   it("preflights every sibling and dispatches none when one schema is invalid",async()=>{
     let steps=0;
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
