@@ -1,3 +1,4 @@
+import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 
 export type OptimisticOwner = { id: string; text: string; clientMessageId: string };
@@ -43,4 +44,25 @@ export function activeOwnerQuestionMessageId(messages:readonly ConversationMessa
   if(last?.role!=="supervisor")return null;
   return last.blocks?.some(block=>typeof block==="object"&&block!==null&&
     "type" in block&&block.type==="owner_question")?last.id:null;
+}
+
+/** Match only an answer AFTER the individual card, before a reissued card.
+ * The confirm stage deliberately reuses the questionId of its supply stage.
+ */
+export function answeredOwnerQuestion(messages:readonly ConversationMessage[],
+  questionMessage:ConversationMessage,questionId:string):ConversationMessage|null{
+ const start=messages.findIndex(m=>m.id===questionMessage.id);
+ if(start<0)return null;
+ const state=pendingOwnerInputSchema.safeParse(questionMessage.grounding?.ownerInput);
+ const stage=state.success?state.data.stage:"answer";
+ for(const next of messages.slice(start+1)){
+   if(next.role==="supervisor"&&next.blocks?.some(b=>
+     typeof b==="object"&&b!==null&&"type" in b&&b.type==="owner_question"&&
+     "questionId" in b&&b.questionId===questionId))break;
+   if(next.role!=="owner"||next.ownerInputResponse?.questionId!==questionId)continue;
+   const action=next.ownerInputResponse.action;
+   if((stage==="answer"&&(action==="supply"||action==="dismiss"))||
+      (stage==="confirm"&&(action==="confirm"||action==="dismiss")))return next;
+ }
+ return null;
 }
