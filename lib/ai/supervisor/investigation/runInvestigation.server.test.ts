@@ -389,6 +389,22 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
   });
+  it("does not bind a staffing clarification to unrelated expense evidence",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const period={from:"2026-10-01",to:"2026-10-07"};
+    const first=await runSupervisorTurn({...base,
+      text:"Compare expenses with next week's staffing options."},transportFor([
+      read(capabilityId,query("money.expense_entries",{period})),
+      answer([
+        {kind:"evidence",text:"The expense entries were retrieved.",citations:["r1"]},
+        {kind:"clarification",text:"Which staffing week should I plan?",citations:[]},
+      ]),
+    ],undefined,true,"staff"));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.ownerInput?.readCapabilityId).toBe("platform.owner_input.resolve.v1");
+    expect(first.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...period});
+  });
   it("persists a corrected period through a second question even without dispatching a reader",async()=>{
     const capabilityId="p3.money.expense_entries.v1";
     const old={from:"2026-10-01",to:"2026-10-07"};
