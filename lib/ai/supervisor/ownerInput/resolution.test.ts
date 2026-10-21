@@ -19,13 +19,14 @@ describe("one typed, non-writing owner resolution contract",()=>{
     const resumed=resumeOwnerResolution("What is the Latte margin?",request,"I meant the oat latte");
     expect(resumed?.originalText).toBe("What is the Latte margin?");
     expect(resumed?.ownerStatement).toContain("I meant the oat latte");
-    expect(resumed?.ownerStatement).not.toContain("selected catalog productId=");
+    expect(resumed?.selectedProductId).toBeNull();
     expect(prepareOwnerResolution(request,"a0000000-0000-4000-8000-000000000099")).toBeNull();
     expect(prepareOwnerResolution(request,options[0].label.ar)).toBeNull();
   });
   it("retains the authenticated selection as context, not as a fabricated business fact",()=>{
     const resumed=resumeOwnerResolution("How much does the latte cost?",request,options[0].id);
-    expect(resumed?.ownerStatement).toContain("selected catalog productId="+options[0].id);
+    expect(resumed?.ownerStatement).toBeNull();
+    expect(resumed?.selectedProductId).toBe(options[0].id);
     expect(resumed?.originalText).toBe("How much does the latte cost?");
   });
   it("never loses a later goal in a near-limit original owner request",()=>{
@@ -33,8 +34,9 @@ describe("one typed, non-writing owner resolution contract",()=>{
     const resumed=resumeOwnerResolution(original,request,options[0].id);
     expect(resumed?.originalText).toBe(original);
     expect(resumed?.originalText).toContain("Final goal: protect staff coverage.");
-    expect(resumed?.ownerStatement).toContain("Latte 12 oz");
-    expect(resumed?.ownerStatement.length).toBeLessThanOrEqual(600);
+    expect(resumed?.ownerStatement).toBeNull();
+    expect(resumed?.selectedProductId).toBe(options[0].id);
+    expect(resumed?.originalText.length).toBe(original.length);
   });
   it("never accepts resolution without the dedicated resolution mode and capability",()=>{
     expect(prepareOwnerResolution({...request,mode:"write"},options[0].id)).toBeNull();
