@@ -204,9 +204,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const labels=investigationLabels(input.locale);
   // Surface precisely which owner goal remains unanswered, in the owner's
   // language, rather than silently publishing an incomplete candidate.
-  const incompleteNotice=(reason:string)=>(labels.unansweredGoal+reason).slice(0,1100);
-  const missingGoalWarning=(reason:string):SupervisorReplyBlock=>({
-    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:incompleteNotice(reason),
+  // Reviewer prose is untrusted diagnostic detail, not localized owner copy.
+  // Emit only the bounded reason's PRESENCE to the sanitized diagnostic stream.
+  const missingGoalWarning=(_reason:string):SupervisorReplyBlock=>({
+    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:labels.notConfirmed.replace("{count}","1"),
   });
   // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
@@ -478,6 +479,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // last rejected, and the exact direct-answer draft last rejected.
   let lastUnknownToolName:string|null=null;
   let lastRejectedAnswerSignature:string|null=null;
+  let lastDuplicateCapability:string|null=null;
+  let lastDuplicateObservationCount=-1;
   for(let round=0;usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls-1&&Date.now()<deadline;round++){
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     // Logs whatever specific retry feedback (§5b/§6) the PREVIOUS round's
@@ -952,17 +955,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const signature=JSON.stringify(canonicalSelector([
       capabilityId===EXPRESSION_ID?"calculate":capabilityId.startsWith("inert_proposal:")?"propose":"read",capabilityId,args]));
     if(attempted.has(signature)){
-      // Unlike an unknown tool name or a rejected answer draft, a repeated
-      // signature here may be re-citing an ALREADY-SUCCESSFUL prior
-      // operation (harmless, just wasteful) rather than repeating a FAILED
-      // one -- so this stays a feedback-and-retry, never the adaptive
-      // budget's immediate stop (section 1), which is reserved for a round
-      // that repeats a prior failed attempt with no new information.
+      // Two consecutive redundant selections on one registered capability
+      // with no intervening observation prove a no-progress loop.
+      const duplicateAgain=lastDuplicateCapability===capabilityId&&
+        lastDuplicateObservationCount===observations.length;
+      lastDuplicateCapability=capabilityId;
+      lastDuplicateObservationCount=observations.length;
+      if(duplicateAgain)return await failure(true,"no_progress");
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
         reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
       continue;
     }
+    lastDuplicateCapability=null;
     attempted.add(signature);
     if(capabilityId.startsWith("inert_proposal:")){
       // The MODEL only selects a typed registered tool. The authenticated
