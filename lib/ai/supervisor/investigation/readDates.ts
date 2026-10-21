@@ -48,6 +48,28 @@ function windows(text:string,asOf:string){
 /** Whether a same-thread owner statement could supply a corrected calendar
  * window. Reuse the exact validated relative/explicit date grammar that the
  * actual read selector guard uses; never classify owner business intent. */
+/** Derive the accepted selector shape from a registered reader's input JSON
+ * schema. Never guess period/week from specialist names or owner prose. */
+export function registeredCalendarKind(schema:unknown):"period"|"week"|null{
+  const found=new Set<"period"|"week">();
+  const visit=(node:unknown,depth:number)=>{
+    if(depth>14||!record(node))return;
+    const properties=record(node.properties)?node.properties:null;
+    if(properties){
+      if(record(properties.period))found.add("period");
+      if(record(properties.week))found.add("week");
+      for(const child of Object.values(properties))visit(child,depth+1);
+    }
+    for(const key of ["$defs","definitions"]){
+      if(record(node[key]))for(const child of Object.values(node[key]))visit(child,depth+1);
+    }
+    for(const key of ["anyOf","oneOf","allOf"]){
+      if(Array.isArray(node[key]))for(const child of node[key])visit(child,depth+1);
+    }
+  };
+  visit(schema,0);
+  return found.size===1?[...found][0]:null;
+}
 export function hasInvestigationOwnerCalendarDate(text:string,asOf:string):boolean{
   return windows(text,asOf).length>0||hasOwnerScheduleDates(text,asOf);
 }
@@ -69,11 +91,14 @@ export function authenticatedReadCalendarText(current:string,
  * the LLM are persisted. */
 export function authenticatedOwnerCalendarScope(text:string,domain:string,
   asOf:string,kind:"period"|"week"):InvestigationCalendarScope|null{
-  const ranges=windows(text,asOf);
+  // Explicit date windows take precedence over relative week language.
+  // Their endpoints must not be bypassed by a convenient "next week" token.
+  const explicit=parseOwnerDateWindows(text,asOf);
+  const ranges=explicit.length?explicit:windows(text,asOf);
   if(ranges.length!==1)return null;
   if(kind==="period")return {domain,kind,from:ranges[0].from,to:ranges[0].to};
   const week=ownerScheduleWeek(text,asOf);
-  if(week)return {domain,kind,week};
+  if(!explicit.length&&week)return {domain,kind,week};
   const days=Date.parse(ranges[0].to+"T12:00:00Z")-
     Date.parse(ranges[0].from+"T12:00:00Z");
   const monday=new Date(ranges[0].from+"T12:00:00Z").getUTCDay()===1;
@@ -86,7 +111,7 @@ export function authenticatedOwnerCalendarScope(text:string,domain:string,
     return date.toISOString().slice(0,10);
   };
   const start=containingWeek(ranges[0].from),end=containingWeek(ranges[0].to);
-  return start===end?{domain,kind,week:start}:null;
+  return start===end&&(!week||week===start)?{domain,kind,week:start}:null;
 }
 
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
