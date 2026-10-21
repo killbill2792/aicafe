@@ -33,7 +33,7 @@ export function simulatePriceExperiment(input:{
   const {currentPriceCents, increaseCents, ingredientCostCents,units7Days}=input;
   if(!input.productId||!input.productName||!cents(currentPriceCents)||
     !cents(increaseCents)||increaseCents===0||currentPriceCents===0||
-    BigInt(increaseCents)*10000n>BigInt(currentPriceCents)*BigInt(MAX_TRIAL_INCREASE_BPS)||
+    BigInt(increaseCents)*BigInt(10000)>BigInt(currentPriceCents)*BigInt(MAX_TRIAL_INCREASE_BPS)||
     ingredientCostCents===null||
     !cents(ingredientCostCents)||units7Days===null||!cents(units7Days))return null;
   const newPriceCents=currentPriceCents+increaseCents;
