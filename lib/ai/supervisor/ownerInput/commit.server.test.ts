@@ -35,6 +35,7 @@ vi.mock("@/lib/supabase/admin",()=>({
   })}),
 }));
 import {commitConfirmedOwnerInput} from "./commit.server";
+import {ownerInputWrites} from "./writeRegistry.server";
 import type {PendingOwnerInput} from "./contracts";
 const businessId="11111111-1111-4111-8111-111111111111";
 const questionId="22222222-2222-4222-8222-222222222222";
@@ -57,6 +58,28 @@ describe("durable owner confirmation claim",()=>{
     const second=await commitConfirmedOwnerInput(scope,pending);
     expect(second).toEqual({ok:true,replayed:true});
     expect(state.applied).toBe(1);
+  });
+  it("does not finalize a concurrent replay while its first write is in flight",async()=>{
+    state.verified=false;
+    let started!:()=>void;
+    let release!:()=>void;
+    const entered=new Promise<void>(resolve=>{started=resolve;});
+    const waiting=new Promise<{ok:true}>(resolve=>{
+      release=()=>resolve({ok:true});
+    });
+    vi.mocked(ownerInputWrites.apply).mockImplementationOnce(async()=>{
+      started();
+      return waiting;
+    });
+    const first=commitConfirmedOwnerInput(scope,pending);
+    await entered; // Claim inserted, but domain write has not happened yet.
+    const overlapping=await commitConfirmedOwnerInput(scope,pending);
+    expect(overlapping).toEqual({ok:false,reason:"confirmation_in_progress"});
+    expect(state.rows.get(questionId)?.state).toBe("started");
+    release();
+    expect(await first).toEqual({ok:true,replayed:false});
+    state.verified=true;
+    expect(await commitConfirmedOwnerInput(scope,pending)).toEqual({ok:true,replayed:true});
   });
   it("never retries an uncertain first write when authoritative recheck fails",async()=>{
     await commitConfirmedOwnerInput(scope,pending);
