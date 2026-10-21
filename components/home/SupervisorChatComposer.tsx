@@ -661,8 +661,12 @@ export default function SupervisorChatComposer({
                 "dismiss":pending.data.stage==="confirm"&&isOption&&value==="confirm"?
                 "confirm":"supply";
               if(pending.data.stage==="confirm"&&action==="supply")return;
+              // The visible owner message uses the localized label, not the
+              // canonical record UUID; the typed answer retains the exact ID.
+              const displayValue=isOption&&question.data.input.kind==="options"?
+                question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value;
               void sendText(action==="dismiss"?copy.ownerInputDismiss:
-                action==="confirm"?copy.ownerInputConfirm:value,undefined,{
+                action==="confirm"?copy.ownerInputConfirm:displayValue,undefined,{
                 questionId:question.data.questionId,action,
                 ...(action==="supply"?{value}:{})});
               return;
