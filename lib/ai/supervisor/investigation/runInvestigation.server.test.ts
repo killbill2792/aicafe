@@ -405,6 +405,22 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(first.reply.investigationMemory?.calendarScopes).toContainEqual({
       domain:"money",kind:"period",...period});
   });
+  it("binds an expense clarification with mixed money and Olivia temporal history",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const expense={from:"2026-10-01",to:"2026-10-07"};
+    const memory={version:1 as const,businessId:cafe,
+      ownerStatements:["Compare expenses and staffing options."],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:expense}))},
+        {capabilityId:"p3.olivia.records.v1",inputJson:JSON.stringify({
+          purpose:"scheduling_investigation",request:{capability:"olivia.schedule.preview",version:1,week:"2026-10-19"}})}],
+      calendarScopes:[{domain:"money",kind:"period" as const,...expense},
+        {domain:"olivia",kind:"week" as const,week:"2026-10-19"}]};
+    const result=await runSupervisorTurn({...base,text:"Compare expenses and staffing options.",
+      investigationMemory:memory},transportFor([
+        answer([{kind:"clarification",text:"Which expense period should I compare next?",citations:[]}]),
+      ],undefined,true,"expenses"));
+    expect(result.reply.ownerInput?.readCapabilityId).toBe(capabilityId);
+  });
   it("persists a corrected period through a second question even without dispatching a reader",async()=>{
     const capabilityId="p3.money.expense_entries.v1";
     const old={from:"2026-10-01",to:"2026-10-07"};
