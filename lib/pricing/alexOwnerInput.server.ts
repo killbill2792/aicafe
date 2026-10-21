@@ -1,6 +1,7 @@
 import "server-only";
 import type {TrustedReadScope} from "@/lib/ai/supervisor/p2/registry";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
+import {createServerSupabaseClient} from "@/lib/supabase/server";
 import type {OwnerInputRequest} from "@/lib/ai/supervisor/ownerInput/contracts";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -70,7 +71,7 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
 /** Canonical catalog cardinality is the sole multi-match signal.
  * Query text is a typed read selector, never a keyword guess about the owner. */
 export async function alexProductCatalogResolution(scope:TrustedReadScope,
-  selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|null>{
+  selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|{productId:string}|null>{
   // Only the live investigation owns a durable pending-question response.
   // Legacy P2/shadow reads have no owner-answer submission lifecycle and
   // must retain their existing typed unavailable/quality reason behavior.
@@ -79,30 +80,33 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   const first=await readAuthorizedAtomicP1SourceSnapshot();
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
-  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\s+/gu," ").toLocaleLowerCase("en");
-  const matches=first.snapshot.sources.menu.filter(m=>m.is_active&&
-    normalized(m.name)===normalized(selector.exactName));
-  if(matches.length===1||matches.length>30)return null;
+  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\\s+/gu," ").toLocaleLowerCase("en");
+  // This authed, business-scoped projection supplies the canonical family
+  // columns absent from P1's legacy monetary snapshot. Prove it is the SAME
+  // complete menu state, not an unbounded independent roster.
+  const db=await createServerSupabaseClient();
+  const {data:projection,error}=await db.from("menu_items")
+    .select("id,name,base_name,size_label,price_cents,is_active")
+    .eq("business_id",scope.businessId).limit(501);
+  if(error||!projection||projection.length!==first.snapshot.sources.menu.length)return null;
+  const sourceById=new Map(first.snapshot.sources.menu.map(row=>[row.id,row]));
+  if(!projection.every(item=>{
+    const source=sourceById.get(item.id);
+    return source&&source.name===item.name&&source.is_active===item.is_active&&
+      source.price_cents===item.price_cents;
+  }))return null;
+  const matches=projection.filter(item=>item.is_active&&
+    (normalized(item.name)===normalized(selector.exactName)||
+     normalized(item.base_name??item.name)===normalized(selector.exactName)));
+  if(matches.length>30)return null;
   const latest=await readAuthorizedAtomicP1SourceSnapshot();
   if(latest.status!=="available"||latest.snapshot.businessId!==first.snapshot.businessId||
     latest.snapshot.revision!==first.snapshot.revision)return null;
-  if(matches.length===0){
-    // Absence alone does NOT establish permission to create an item:
-    // request owner clarification; do not invent menu rows or ingredients.
-    return {mode:"resolve",fieldId:"owner.clarification",
-      writeCapabilityId:"platform.owner_input.resolve.v1",
-      writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
-      question:{
-        en:en.SupervisorOwnerHelp.catalogMissingQuestion,
-        es:es.SupervisorOwnerHelp.catalogMissingQuestion,
-        ar:ar.SupervisorOwnerHelp.catalogMissingQuestion,
-      },input:{kind:"free_text",hint:{
-        en:en.SupervisorOwnerHelp.catalogMissingHint,
-        es:es.SupervisorOwnerHelp.catalogMissingHint,
-        ar:ar.SupervisorOwnerHelp.catalogMissingHint,
-      }}};
-  }
-  const copy={en:en.SupervisorOwnerHelp,es:es.SupervisorOwnerHelp,ar:ar.SupervisorOwnerHelp};
+  // A negative catalog result does not establish intent to introduce a
+  // product. The semantic Supervisor may still ask a reviewed new-product
+  // question, but a simple "is this on my menu?" must be answered as absent.
+  if(matches.length===0)return null;
+  if(matches.length===1)return {productId:matches[0].id};
   const options=matches.map(m=>({id:m.id,label:Object.fromEntries(
     (["en","es","ar"] as const).map(locale=>[locale,m.name+" — "+
       (m.price_cents===null?copy[locale].priceUnknown:
