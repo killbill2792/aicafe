@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import { randomUUID } from "node:crypto";
 import { authenticatedConversationContext, ConversationApiError } from "@/lib/ai/conversations/auth.server";
 import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.server";
@@ -14,6 +15,16 @@ import { conversationError, conversationJson, parseInput, readBoundedJson, requi
 import { createSupervisorDiagnosticLogger, classifySupervisorError, logSupervisorDebugPayload, type SupervisorStage } from "@/lib/ai/conversations/diagnostics.server";
 import { recordSupervisorProgress, progressFromDiagnostic } from "@/lib/ai/conversations/progress.server";
 import {withSupervisorPrivateTrace} from "@/lib/ai/conversations/privateTrace.server";
+import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
+import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,7 +48,7 @@ export async function POST(request: Request, context: RouteContext) {
   const debugRequestId=randomUUID().slice(0,12);
   return withSupervisorPrivateTrace(async()=>{
   const diagnostics=createSupervisorDiagnosticLogger(console.info,debugRequestId);
-  const model=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+  const model=configuredSupervisorModel();
   let stage:SupervisorStage="conversation_auth";
   diagnostics.emit({stage,model});
   try {
@@ -92,10 +103,46 @@ export async function POST(request: Request, context: RouteContext) {
     const progressAttempt = Date.now();
     let reply;
     try {
-      const completed = await runSupervisorTurn({
+      const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
+        typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
+        .map(m=>m.text!).slice(0,5);
+      // The normal semantic investigation can discover the registered inert
+      // proposal tool in ANY owner language. Model output never authorizes
+      // approval/commit/POS writes, never supplies trusted money or tenant IDs.
+      const proposalTools=supervisorLoopRegistry.list().map(capabilityId=>{
+        const definition=supervisorLoopRegistry.get(capabilityId);
+        return {name:capabilityToolName(capabilityId),
+          description:definition.proposalDescription,
+          parameters:capabilityId===priceExperimentCapabilityId?priceProposalToolJsonSchema:definition.proposalInputJsonSchema};
+      });
+      const completed=await runSupervisorTurn({
         text: input.text, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
+        inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
+          const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
+          const authorized=await authorizedOwnerP1();
+          if(!capabilityId||authorized.identity.businessId!==scope.businessId||
+            authorized.identity.currency!=="USD")return null;
+          const definition=supervisorLoopRegistry.get(capabilityId);
+          if(capabilityId!==priceExperimentCapabilityId)return null;
+          const checked=validatePriceProposalCandidate(rawArgs,
+            await getMenuControlCenter(),[input.text,...olderOwnerTexts]);
+          if(!checked)return null;
+          const proposed=await proposeLoop({businessId:scope.businessId,
+            ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale},
+            supervisorLoopRegistry,new SupabaseLoopRepository(),capabilityId,
+            checked,input.clientMessageId);
+          const copy=({en,es,ar} as const)[input.locale].SupervisorExperiment;
+          const effect=definition.parseEffect(proposed.canonicalEffectPayload);
+          const cents=effect.newPriceCents;
+          const nameValue=effect.productName;
+          if(typeof cents!=="number"||!Number.isSafeInteger(cents)||
+            typeof nameValue!=="string")return null;
+          const text=copy.proposedFromChat.replace("{item}",nameValue).replace("{price}",
+            new Intl.NumberFormat(input.locale,{style:"currency",currency:"USD"}).format(cents/100));
+          return {id:proposed.id,text};
+        }},
         investigationMemory: latestInvestigationMemory(messages,scope.businessId,message.id),
         debugRequestId,
         readRules: async () => (await authenticatedTeamRulesService()).listActiveRules(),

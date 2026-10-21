@@ -54,7 +54,12 @@ export const answerSchema=z.strictObject({
 // two otherwise-clean, well-cited drafts were rejected and exhausted with
 // no way to tell why from the logs alone).
 export const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean(),
-  reason:z.string().min(1).max(300)});
+  reason:z.string().min(1).max(300),
+  // Per-paragraph semantic confirmation lets a negative overall verdict
+  // preserve unrelated, render-validated narrative without trusting cited
+  // action claims. nullish accepts older replies; absent indexes fail closed.
+  supportedParagraphIndices:z.array(z.number().int().min(0).max(7)).max(8).nullish(),
+});
 // Named explicitly (rather than inferred inline at each call site): giving
 // `review`/`rescueReview`/`accReview` an explicit annotation in
 // runInvestigation.server.ts avoids TypeScript's control-flow narrowing

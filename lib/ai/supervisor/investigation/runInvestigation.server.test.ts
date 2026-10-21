@@ -4,6 +4,17 @@ vi.mock("@/lib/metrics/p1Readers.server",async original=>({...await original<obj
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomicP1SourceSnapshot:vi.fn()}));
 vi.mock("@/lib/scheduling/oliviaCapabilities.server",()=>({executeOliviaReadCapability:vi.fn()}));
 vi.mock("@/lib/ai/suppliers/research.server",()=>({researchEnabled:vi.fn(()=>false),researchPublicSources:vi.fn()}));
+vi.mock("@/lib/data/getMenuControlCenter",()=>({
+  getMenuControlCenter:vi.fn(async()=>[
+    {id:"a0000000-0000-4000-8000-000000000001",name:"Iced Latte",baseName:"Iced Latte",
+      active:true,priceCents:525,pricing:{productCostCents:125}},
+  ]),
+}));
+vi.mock("@/lib/ai/supervisor/loop/sales.server",()=>({
+  readPriceExperimentBaselineUnits:vi.fn(async()=>70),
+  readPriceExperimentSalesDays:vi.fn(async()=>[]),
+}));
+
 import {authorizedOwnerP1,executeP1Authorized} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
@@ -17,6 +28,13 @@ import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
 import type {InvestigationAnswer} from "./protocol";
 import {EXPRESSION_ID} from "../p3/expression";
 import {observationDisplay,type Observation} from "./evidence";
+import {supervisorLoopRegistry,priceExperimentCapabilityId}
+  from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {proposeLoop,type LoopRepository,type LoopCreate,type LoopProposal,type OwnerLoopScope}
+  from "@/lib/ai/supervisor/loop/engine";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+
 
 const cafe="a0000000-0000-4000-8000-000000000999",product="a0000000-0000-4000-8000-000000000001";
 const ingredient="a0000000-0000-4000-8000-000000000100",employee="a0000000-0000-4000-8000-000000000002";
@@ -92,6 +110,97 @@ beforeEach(()=>{
     };
     return envelope(input,values[String(input.id)]??null) as Awaited<ReturnType<typeof executeP1Authorized>>;
   });
+});
+
+describe("real price experiment registration in native conversational discovery",()=>{
+  it.each([
+    ["Let's test a 10-cent increase on the latte","en"],
+    ["Probemos subir el precio del latte 10 centavos","es"],
+    ["لنجرّب زيادة سعر latte ١٠ سنتات","ar"],
+  ] as const)("creates only a real registered inert draft via semantic function selection: %s",async(ownerText,locale)=>{
+    const definition=supervisorLoopRegistry.get(priceExperimentCapabilityId);
+    expect(definition.proposalInputJsonSchema).toEqual(expect.objectContaining({
+      type:"object",properties:expect.objectContaining({
+        productId:expect.anything(),increaseCents:expect.anything(),
+      }),
+    }));
+    const scope:OwnerLoopScope={businessId:cafe,ownerUserId:"a0000000-0000-4000-8000-000000000987",
+      threadId:"a0000000-0000-4000-8000-000000000888",locale};
+    const saved:LoopProposal[]=[];
+    const repo={
+      create:async(_scope:OwnerLoopScope,_key:string,p:LoopCreate)=>{
+        const draft:LoopProposal={...p,id:"a0000000-0000-4000-8000-000000000777",
+          status:"draft",revision:1,monitoringStartDate:null,createdAt:"2026-10-20T00:00:00Z"};
+        saved.push(draft);return draft;
+      },
+    } as unknown as LoopRepository;
+    const seenNames:string[]=[];
+    const native=transportFor([
+      read(priceExperimentCapabilityId,{productId:product,productReference:"latte",ownerProductQuote:"latte",variantStatus:"unique",amountMode:"increase",increaseCents:10,targetPriceCents:null,ownerAmountQuote:locale==="en"?"10-cent increase":locale==="es"?"10 centavos":"١٠ سنتات",amountStatus:"unique"}),
+    ]);
+    const result=await runSupervisorTurn({...base,locale,text:ownerText,
+      inertProposal:{tools:[{name:capabilityToolName(priceExperimentCapabilityId),
+        description:definition.proposalDescription,
+        parameters:priceProposalToolJsonSchema}],
+        create:async(name,args)=>{
+          seenNames.push(name);
+          if(name!==capabilityToolName(priceExperimentCapabilityId))return null;
+          const candidate=validatePriceProposalCandidate(args,await getMenuControlCenter(),[ownerText]);
+          if(!candidate)return null;
+          const proposal=await proposeLoop(scope,supervisorLoopRegistry,repo,
+            priceExperimentCapabilityId,candidate,"a0000000-0000-4000-8000-000000000555");
+          return {id:proposal.id,text:"Draft price experiment ready for owner approval. POS unchanged."};
+        }},
+    },native);
+    expect(seenNames).toEqual([capabilityToolName(priceExperimentCapabilityId)]);
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).toMatchObject({status:"draft",revision:1,capabilityId:priceExperimentCapabilityId,
+      canonicalEffectPayload:{productId:product,oldPriceCents:525,newPriceCents:535,
+        baselineUnits7Days:70},locale});
+    expect(result.reply).toMatchObject({status:"estimated",blocks:[{
+      type:"text",text:"Draft price experiment ready for owner approval. POS unchanged.",
+    }]});
+    expect(result.usage.toolCallCount).toBe(1);
+  });
+});
+
+describe("registered natural-language proposal tools",()=>{
+ it.each(["Let's test a 10-cent increase on the latte",
+   "Probemos aumentar el latte 10 centavos",
+   "لنجرب زيادة سعر latte ١٠ سنتات",
+   "Let's try it"])
+ ("lets the bounded model discover an inert draft without a fixed phrase router: %s",async(text)=>{
+   const create=vi.fn(async(_name:string,_args:unknown)=>({id:"proposal-demo",
+     text:"Alex drafted a proposal for review. Nothing has changed in the POS."}));
+   const transport=transportFor([
+     read("alex.drink_price_experiment.v1",{productId:product,increaseCents:10}),
+   ],(context,step)=>{
+     if(step===0)expect(context.ownerRequest).toBe(text);
+   });
+   const result=await runSupervisorTurn({...base,text,
+     inertProposal:{tools:[{
+       name:capabilityToolName("alex.drink_price_experiment.v1"),
+       description:"Draft a price experiment only on explicit owner intent",
+       parameters:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}},
+         required:["productId","increaseCents"],additionalProperties:false},
+     }],create}},transport);
+   expect(result.reply.status).toBe("estimated");
+   expect(result.reply.blocks).toContainEqual({type:"text",
+     text:"Alex drafted a proposal for review. Nothing has changed in the POS."});
+   expect(create).toHaveBeenCalledWith("alex_drink_price_experiment_v1",
+     {productId:product,increaseCents:10});
+   expect(result.usage.toolCallCount).toBe(1);
+ });
+ it("refuses to claim an action when the authenticated draft callback denies ambiguous input",async()=>{
+   const create=vi.fn(async()=>null);
+   const result=await runSupervisorTurn({...base,text:"What if we change the latte price?",
+      inertProposal:{tools:[{name:"alex_drink_price_experiment_v1",
+       description:"Inert draft proposal",parameters:{type:"object",properties:{},additionalProperties:false}}],create}},
+     transportFor([read("alex.drink_price_experiment.v1",{productId:product,increaseCents:10}),
+       answer([{kind:"clarification",text:"Which exact price increase do you want to test?",citations:[]}])]));
+   expect(create).toHaveBeenCalled();
+   expect(result.reply.blocks).not.toContainEqual(expect.objectContaining({text:expect.stringContaining("drafted")}));
+ });
 });
 
 describe("default Supervisor iterative cross-domain intelligence",()=>{
@@ -262,6 +371,16 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     expect(transport).toHaveBeenCalledTimes(1);
   });
 
+  it("classifies a raw network failure with the provider_error failure category",async()=>{
+    const transport=vi.fn(async()=>{throw new TypeError("ECONNRESET");});
+    const onDiagnostic=vi.fn();
+    await expect(runSupervisorTurn({...base,text:"Help me review the morning rush.",onDiagnostic},transport))
+      .rejects.toMatchObject({category:"provider_http"});
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"provider_response",category:"provider_http",failureCategory:"provider_error",
+    }));
+  });
+
   it("still propagates a terminal provider failure status instead of persisting a false unavailable answer",async()=>{
     const transport=vi.fn(async()=>new Response(JSON.stringify({status:"failed",
       usage:{input_tokens:5,output_tokens:5},output:[]})));
@@ -282,7 +401,139 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
   });
 });
 
+describe("budget-exhaustion accumulated rescue semantic safety",()=>{
+  it("withholds a partially masked draft when its own rescue reviewer rejects a source-cited action",async()=>{
+    const draft=answer([
+      {kind:"evidence",text:"The catalog lists {{r1:value.0.name}}. I cancelled the order.",citations:["r1"]},
+      {kind:"advice",text:"An unrelated unsupported amount is $99999.",citations:[]},
+    ]);
+    const scripted=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),draft,draft,
+    ]);
+    const onDiagnostic=vi.fn();
+    let negativeReviews=0;
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const name=JSON.parse(String(init.body)).text.format.name;
+      if(name==="supervisor_formula_extraction")return response({extracted:null});
+      if(name==="supervisor_investigation_review"){
+        negativeReviews++;
+        return response({supported:false,complete:false,
+          reason:"No verified order cancellation occurred.",supportedParagraphIndices:[]});
+      }
+      return scripted(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"Did you cancel that order and what's on the menu?",
+      onDiagnostic},transport);
+    expect(negativeReviews).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("I cancelled the order");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("The catalog lists");
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      stage:"investigation_exhausted",rescuedUnverified:false,
+    }));
+  });
+});
+
+describe("reviewer advisory for an already-masked partial",()=>{
+  it("does not veto a surviving grounded claim when a separate claim is unresolvable",async()=>{
+    let count=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:true,reason:"Some requested evidence is unavailable.",supportedParagraphIndices:[0]});
+      const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+      if(context.observations.length===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+      count++;
+      return response(answer([
+        {kind:"evidence",text:"The menu lists {{r1:value.0.priceCents}}.",citations:["r1"]},
+        {kind:"advice",text:"An unsupported figure is $99999.",citations:[]},
+      ]));
+    });
+    const out=await runSupervisorTurn({...base,text:"What is the price and another unknown fact?"},transport);
+    expect(JSON.stringify(out.reply.blocks)).toContain("The menu lists");
+    expect(JSON.stringify(out.reply.blocks)).not.toContain("$99999");
+    expect(out.reply.status).toBe("partial");
+    expect(count).toBeGreaterThan(0);
+  });
+});
 describe("review verdict publication policy",()=>{
+  it("retains a source-cited narrative paragraph without a display token after reviewer downgrade",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([{kind:"evidence",text:"The catalog returned a drink entry.",citations:["r1"]}]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"Other parts of the request need further investigation.",supportedParagraphIndices:[0]});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"What does my menu record show?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks).toContainEqual({type:"text",text:"The catalog returned a drink entry."});
+    expect(result.reply.blocks.some(block=>block.type==="metric"||block.type==="percent")).toBe(false);
+  });
+  it("keeps a wholly narrative source-grounded paragraph on negative review, without requiring a metric card",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([
+        {kind:"evidence",text:"The catalog lists {{r1:value.0.name}}.",citations:["r1"]},
+        {kind:"advice",text:"I have already published the schedule.",citations:[]},
+      ]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"The schedule-completion statement has no action evidence.",supportedParagraphIndices:[0]});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,text:"Which drink is listed and did you publish shifts?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("The catalog lists Iced Latte"))).toBe(true);
+    expect(result.reply.blocks.some(b=>b.type==="metric"||b.type==="percent"||b.type==="task_card")).toBe(false);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
+    expect(JSON.stringify(result.reply.blocks)).toContain("schedule-completion");
+  });
+  it("keeps only server-grounded partial facts if a reviewer objects to another goal",async()=>{
+    const steps=transportFor([
+      read("p3.menu.catalog.v1",query("menu.catalog")),
+      answer([
+        {kind:"evidence",text:"The catalog price is {{r1:value.0.priceCents}}.",citations:["r1"]},
+        {kind:"advice",text:"I have already published the schedule.",citations:[]},
+      ]),
+    ]);
+    const transport=vi.fn(async(url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,
+          reason:"The schedule-completion statement has no action evidence.",supportedParagraphIndices:[0]});
+      return steps(url,init);
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"What is the latte price, and did you publish the shifts?"},transport);
+    expect(result.reply.status).toBe("partial");
+    expect(result.reply.blocks.some(b=>b.type==="metric"&&b.valueCents===525)).toBe(true);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
+  });
+  it.each(["I removed the shift", "I cancelled the order"])(
+    "never launders a source-cited completed action on a negative review: %s",async(claim)=>{
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:false,complete:false,reason:"The purported change was not executed.",
+          supportedParagraphIndices:[]});
+      const context=JSON.parse(body.input[0].content) as {observations:unknown[]};
+      if(context.observations.length===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),query("menu.catalog"),"call_1");
+      return response(answer([{kind:"evidence",
+        text:"The catalog lists {{r1:value.0.name}}. "+claim+".",citations:["r1"]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"Did you change anything?"},transport);
+    expect(result.reply.status).toBe("unavailable");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain(claim);
+  });
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
       const body=JSON.parse(String(init.body));

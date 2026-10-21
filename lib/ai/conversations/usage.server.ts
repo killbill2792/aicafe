@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationScope } from "./contracts";
@@ -42,7 +43,7 @@ export async function recordSupervisorUsage(params: {
   scope: ConversationScope; threadId: string; ownerMessageId: string; usage: SupervisorUsage;
 }): Promise<void> {
   const { scope, threadId, ownerMessageId, usage } = params;
-  const primaryModel = process.env.SUPERVISOR_OPENAI_MODEL || "gpt-6-luna";
+  const primaryModel = configuredSupervisorModel();
   const fallbackModel = process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
   // Token rates are model-specific. Unknown/snapshot-mismatched model identities,
   // or unconfigured fallback rates, must produce NULL rather than primary pricing.

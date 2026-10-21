@@ -1,0 +1,16 @@
+import {beforeEach,it,expect,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn()}));
+vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:vi.fn()}));
+vi.mock("./sales.server",()=>({readPriceExperimentBaselineUnits:vi.fn(async()=>70),readPriceExperimentSalesDays:vi.fn(async()=>[])}));
+import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {priceExperimentCapability} from "./priceExperiment.server";
+const businessId="a0000000-0000-4000-8000-000000000999",productId="a0000000-0000-4000-8000-000000000001";
+const scope={businessId,ownerUserId:"owner",threadId:"thread",locale:"en" as const};
+const item={id:productId,name:"Latte",priceCents:500,pricing:{productCostCents:125},active:true};
+const menu=vi.mocked(getMenuControlCenter),auth=vi.mocked(authorizedOwnerP1);
+beforeEach(()=>{vi.clearAllMocks();menu.mockResolvedValue([item] as never);auth.mockResolvedValue({identity:{businessId,currency:"USD"}} as never);});
+it("allows an active authenticated product",async()=>{expect((await priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).effect).toMatchObject({newPriceCents:510});});
+it("rejects inactive or ambiguous catalog matches",async()=>{menu.mockResolvedValueOnce([{...item,active:false}] as never);await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).rejects.toThrow("Active product");menu.mockResolvedValueOnce([item,item] as never);await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).rejects.toThrow("Active product");});
+it("rejects wrong business before menu lookup",async()=>{auth.mockResolvedValueOnce({identity:{businessId:"different",currency:"USD"}} as never);await expect(priceExperimentCapability.simulate(scope,{productId,increaseCents:10})).rejects.toThrow("scope");expect(menu).not.toHaveBeenCalled();});

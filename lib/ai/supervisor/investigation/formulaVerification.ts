@@ -3,8 +3,8 @@
  * variable's source is independently resolved (an exact owner-message quote,
  * or a real observation field, never a value the model merely asserts), the
  * formula is evaluated ourselves through the closed-grammar evaluator, and
- * the recomputed value is compared against what the paragraph's prose
- * claimed. Anything that doesn't check out is reported as a specific,
+ * the server inserts the recomputed value into the paragraph; a model-typed
+ * number is never an authoritative output. Unresolvable operations are reported as a specific,
  * narrow failure -- never escalated into discarding more than the one
  * number it concerns (§3's core invariant). */
 import {rat,times,type Rat} from "@/lib/calc/scenarioExpression";
@@ -22,9 +22,7 @@ export type FormulaVerificationFailure=
   |{reason:"requires_registered_calculator"}
   |{reason:"incompatible_units"}
   |{reason:"incompatible_periods"}
-  |{reason:"unparseable_claim"}
-  |{reason:"sub_cent_precision"}
-  |{reason:"result_mismatch";computed:number;claimed:number};
+  |{reason:"sub_cent_precision"};
 export type FormulaVerificationResult={ok:true;value:number}|{ok:false;failure:FormulaVerificationFailure};
 
 const POINTER=/^(r\d+):([a-zA-Z0-9_.]+)$/u;
@@ -325,18 +323,9 @@ export function verifyFormulaEntry(entry:FormulaEntry,ownerText:string,
     return {ok:false,failure:{reason:"incompatible_units"}};
   if(claimUnit==="money"&&currencies.size>0&&!currencies.has(moneyCurrency(entry.claim)))
     return {ok:false,failure:{reason:"incompatible_units"}};
-  const claimed=parseNumericSnippet(entry.claim,locale);
-  if(!claimed)return {ok:false,failure:{reason:"unparseable_claim"}};
+  // The prose claim is ONLY a typed placeholder. Its digits never enter
+  // any verification or comparison; the computed value replaces it on output.
   const computedNumber=ratToNumber(evaluated.value);
-  const claimedNumber=ratToNumber(claimed.rat);
-  // Fixed at half the smallest real unit (a cent, or a percent's equivalent
-  // basis-point scale) -- NEVER derived from however many decimals the claim
-  // text happened to use. A claim written as "$500" (zero decimals) must not
-  // get a +/-$0.50 band just because it omitted its cents; that would let a
-  // true $499.60 silently verify as "$500" (self-review finding).
-  const tolerance=0.005+1e-9;
-  if(Math.abs(computedNumber-claimedNumber)>tolerance)
-    return {ok:false,failure:{reason:"result_mismatch",computed:computedNumber,claimed:claimedNumber}};
   // Cent-precision check (Codex finding): money is integer cents everywhere
   // in this project (CLAUDE.md rule #1) -- "$9.67 / 2" recomputes EXACTLY to
   // 4.835, which could otherwise verify a claim written with that same

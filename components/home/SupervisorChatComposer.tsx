@@ -16,6 +16,7 @@ import type { ConversationMessage, ConversationPage, ConversationThread } from "
 import { beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 import FactSummary from "./FactSummary";
+import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
 
 export type SupervisorChatCopy = {
@@ -174,15 +175,17 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
 }
 
 export default function SupervisorChatComposer({
-  enabled, locale, copy, snapshot, languageSwitch, onActivityChange,
+  enabled, locale, copy, snapshot, languageSwitch, onActivityChange, experimentCopy, initialThreadId, initialProposalId,
 }: {
   enabled: boolean; unavailableReason: SupervisorChatUnavailableReason | null;
   locale: Locale; copy: SupervisorChatCopy; snapshot?: SupervisorHomeSnapshot;
+  experimentCopy?: ExperimentCopy;
+  initialThreadId?:string;initialProposalId?:string;
   languageSwitch?: React.ReactNode;
   onActivityChange?: (active: boolean) => void;
 }) {
   const [threads, setThreads] = useState<ConversationThread[]>([]);
-  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(initialThreadId??null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [optimisticOwner, setOptimisticOwner] = useState<{ id: string; text: string; clientMessageId: string } | null>(null);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -638,6 +641,7 @@ export default function SupervisorChatComposer({
         {progressStatusText(copy, progressStatus) ?? copy.sending}
       </div>}
     </div>
+    {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-[#E9DAC8] bg-[#FFF9F1] px-2 py-2 md:px-4">
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}

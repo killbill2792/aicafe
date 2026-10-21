@@ -23,6 +23,12 @@ export type Observation={id:string;capabilityId:string;input:unknown;result:Reco
 export const investigationLabels=(locale:Locale)=>({en,es,ar}[locale].SupervisorInvestigation);
 const isRecord=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const clean=(v:string)=>v.replace(/[\p{Cc}\p{Cf}]/gu," ").trim();
+/** Format only trusted evaluated results, never the model's placeholder digits. */
+function computedFormulaDisplay(value:number,claim:string,locale:Locale):string{
+  if(/[%٪]/u.test(claim))return new Intl.NumberFormat(locale,{style:"percent",maximumFractionDigits:2}).format(value/100);
+  const currency=/€/u.test(claim)?"EUR":/£/u.test(claim)?"GBP":/¥/u.test(claim)?"JPY":"USD";
+  return new Intl.NumberFormat(locale,{style:"currency",currency}).format(value);
+}
 /** Token values come only from validated tool output. Numeric text, dates,
  * money and URLs cannot be introduced by the narration model. */
 export function observationDisplay(result:Record<string,unknown>,locale:Locale):
@@ -270,7 +276,7 @@ export function renderInvestigationAnswer(answer:InvestigationAnswer,observation
         if(verified.ok){
           paragraphComputed=true;
           for(const id of formulaObservationIds(formulaEntry))formulaCitedIds.add(id);
-          return full;
+          return computedFormulaDisplay(verified.value,full,locale);
         }
         issues.push({kind:"formula_failed",paragraphIndex,text:full,failure:verified.failure});
         return labels.unverifiedValue;
@@ -362,9 +368,6 @@ export function buildClaimFeedback(issues:readonly ClaimIssue[]):string{
       case "formula_failed":
         if(issue.failure.reason==="requires_registered_calculator")return at+
           "the quantity behind \""+issue.text+"\" requires typed quantity units. Call platform.scenario.expression.v1 with authorized operand handles, then cite its result.";
-        if(issue.failure.reason==="result_mismatch")return at+
-          "the claim \""+issue.text+"\" disagrees with independent arithmetic (computed "+
-          issue.failure.computed+"). Call platform.scenario.expression.v1 with the authorized source handles and your intended operation. Use ONLY the returned result; otherwise remove the unsupported claim.";
         return at+"the formula behind \""+issue.text+"\" failed verification ("+issue.failure.reason+
           "). Call platform.scenario.expression.v1 with authorized operands, or correct the verifiable inputs and remove the unsupported number.";
       case "business_claim_uncited":

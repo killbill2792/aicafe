@@ -13,6 +13,7 @@ import { selectedInboxTaskId } from "@/lib/viewmodels/selectedInboxTask";
 import { parseAgentId, type AgentId, type OperatingTask } from "@/lib/operating/tasks";
 import type { ExpenseCategoryCode } from "@/lib/constants";
 import PriceReviewActions from "@/components/operations/PriceReviewActions";
+import ExperimentReportActions from "@/components/operations/ExperimentReportActions";
 import TeamRulesManager from "@/components/operations/TeamRulesManager";
 import OwnerWhatsAppAlerts from "@/components/operations/OwnerWhatsAppAlerts";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
@@ -25,7 +26,7 @@ const parseStatus = (value?: string): InboxStatus => value === "handled" || valu
 
 export default async function OperationsPage({ searchParams }: { searchParams: Promise<{ agent?: string; status?: string; task?: string }> }) {
   await requireOwnBusiness();
-  const [{ agent, status, task }, snapshot, menu, t, tCategories, tRules] = await Promise.all([searchParams, getSnapshot(), getMenuControlCenter(), getTranslations("Operations"), getTranslations("Categories"), getTranslations("TeamRules")]);
+  const [{ agent, status, task }, snapshot, menu, t, tCategories, tRules, tExperiment] = await Promise.all([searchParams, getSnapshot(), getMenuControlCenter(), getTranslations("Operations"), getTranslations("Categories"), getTranslations("TeamRules"), getTranslations("SupervisorExperiment")]);
   const derived = buildOperationsTeamViewModel(snapshot, menu);
   const persisted = await syncAndGetOperatingTasks([...derived.needsYou, ...derived.handled, ...derived.watching]);
   const team = projectOperatingTasks(persisted.tasks);
@@ -71,7 +72,7 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
     <nav className="grid grid-cols-3 gap-1 rounded-2xl bg-card p-1" aria-label={t("inboxStatusLabel")}>
       {(["needs_you", "handled", "watching"] as const).map((value) => <Link key={value} href={{ pathname: "/operations", query: { ...(selectedAgent ? { agent: selectedAgent } : {}), status: value } }} aria-current={selectedStatus === value ? "page" : undefined} className={`flex min-h-12 items-center justify-center rounded-xl px-2 text-center text-sm font-bold no-underline ${selectedStatus === value ? "bg-ink text-paper" : "text-ink-muted"}`}>{t(value === "needs_you" ? "needsYou" : value)} {lists[value].length}</Link>)}
     </nav>
-    <TaskList tasks={lists[selectedStatus]} empty={t(selectedStatus === "needs_you" ? "needsYouEmpty" : selectedStatus === "handled" ? "handledEmpty" : "watchingEmpty")} names={names} t={t} category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId} />
+    <TaskList tasks={lists[selectedStatus]} empty={t(selectedStatus === "needs_you" ? "needsYouEmpty" : selectedStatus === "handled" ? "handledEmpty" : "watchingEmpty")} names={names} t={t} tExperiment={tExperiment} category={(code) => tCategories(code as ExpenseCategoryCode)} selectedTaskId={selectedTaskId} />
     {ownerCanSubscribe && <OwnerWhatsAppAlerts copy={{
       title: t("whatsAppAlertsTitle"), description: t("whatsAppAlertsDescription"),
       enable: t("whatsAppAlertsEnable"), disable: t("whatsAppAlertsDisable"),
@@ -87,6 +88,12 @@ export default async function OperationsPage({ searchParams }: { searchParams: P
 }
 
 function taskHref(task: OperatingTask): string {
+  if(task.kind==="price_experiment_report"){
+    const threadId=task.payload.threadId,proposalId=task.payload.proposalId;
+    if(typeof threadId==="string"&&typeof proposalId==="string")
+      return "/?thread="+encodeURIComponent(threadId)+"&experiment="+encodeURIComponent(proposalId);
+    return "/operations?agent=alex&status=needs_you&task="+encodeURIComponent(task.id);
+  }
   if (task.kind === "price_review" && task.entityId) return priceReviewHref(task.entityId);
   if (task.kind === "staff_coverage") {
     const query = new URLSearchParams();
@@ -99,16 +106,17 @@ function taskHref(task: OperatingTask): string {
   return "/more/uploads/ingredients";
 }
 
-function TaskList({ tasks, empty, names, t, category, selectedTaskId }: { tasks: OperatingTask[]; empty: string; names: Record<AgentId, string>; t: Awaited<ReturnType<typeof getTranslations<"Operations">>>; category: (code: string) => string; selectedTaskId: string|null }) {
+function TaskList({ tasks, empty, names, t, tExperiment, category, selectedTaskId }: { tasks: OperatingTask[]; empty: string; names: Record<AgentId, string>; t: Awaited<ReturnType<typeof getTranslations<"Operations">>>; tExperiment: Awaited<ReturnType<typeof getTranslations<"SupervisorExperiment">>>; category: (code: string) => string; selectedTaskId: string|null }) {
   if (tasks.length === 0) return <section className="rounded-card-lg bg-card p-[18px]"><p className="text-[17px] text-ink-muted">{empty}</p></section>;
   return <section className="flex flex-col gap-3">{tasks.map((task) => {
     const visual = agentVisuals[task.agentId];
     const price = task.kind === "price_review";
+    const experiment=task.kind==="price_experiment_report";
     const itemName = String(task.payload.itemName).replace(" · ", " ");
     const direction = price ? priceReviewDirection(Number(task.payload.currentPriceCents), Number(task.payload.suggestedPriceCents)) : null;
-    const title = price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
-    const detail = price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
-    const action = price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
+    const title = experiment ? tExperiment("reportTask",{item:String(task.payload.itemName??"")}) : price ? t(direction === "low" ? "priceTaskSentenceLow" : "priceTaskSentenceHigh", { item: itemName }) : task.kind === "data_quality" ? t("missingCategory", { category: category(String(task.payload.categoryCode)) }) : task.kind === "staff_coverage" ? t("staffTaskNamed", { issue: String(task.payload.issue ?? task.payload.requestType ?? t("staffCoverageIssue")) }) : t("mayaWatching");
+    const detail = experiment ? tExperiment("reportDetail") : price ? t("priceTaskReason") : task.kind === "data_quality" ? t("addCategoryPrompt", { category: category(String(task.payload.categoryCode)) }) : task.kind === "supply_check" ? t("supplySignal") : t("staffTaskReason");
+    const action = experiment ? tExperiment("reportAction") : price ? t("reviewItem", { item: String(task.payload.itemName).split(" · ")[0] }) : task.kind === "staff_coverage" ? t("openStaff") : task.kind === "data_quality" ? t("openBills") : t("openIngredientCosts");
     const selected=task.id===selectedTaskId;
     return <article key={task.id} id={selected?"selected-task":undefined} tabIndex={selected?-1:undefined}
       data-selected-task={selected?"true":undefined}
@@ -116,8 +124,18 @@ function TaskList({ tasks, empty, names, t, category, selectedTaskId }: { tasks:
       className={`scroll-mt-24 rounded-card-lg border-s-4 p-[18px] ${visual.border} ${visual.softSurface} ${selected?"ring-4 ring-ink shadow-lg":""}`}>
       <div className="flex items-center gap-2"><AgentAvatar agentId={task.agentId} size="task"/><p className={`font-bold ${visual.accent}`}>{names[task.agentId]} · AI</p>{task.payload.pricingIsEstimate === true && <span className="ms-auto"><EstimatePill label={t("estimate")} /></span>}</div>
       <h2 className="mt-3 text-lg font-bold text-ink">{title}</h2><p className="mt-1 text-[17px] font-semibold text-ink">{detail}</p>{price && <p className="mt-1 text-sm text-ink-muted">{t("priceNumbers", { current: formatCents(Number(task.payload.currentPriceCents)), suggested: formatCents(Number(task.payload.suggestedPriceCents)) })}</p>}
+      {task.kind==="price_experiment_report"&&<div className="mt-3 space-y-2 text-[17px]">
+        <p>{tExperiment("reportRevenue",{value:typeof task.payload.observedRevenueCents==="number"?
+          formatCents(task.payload.observedRevenueCents):tExperiment("notAvailable")})}</p>
+        <p>{tExperiment("reportDifference",{value:typeof task.payload.realizedRevenueDifferenceCents==="number"?
+          formatCents(task.payload.realizedRevenueDifferenceCents):tExperiment("notAvailable")})}</p>
+        <p className="font-semibold">{tExperiment("recommendation",{choice:tExperiment(
+          task.payload.recommendation==="keep"?"keep":task.payload.recommendation==="revert"?"revert":"adjust")})}</p>
+        <p className="text-ink-muted">{tExperiment(task.payload.outcomeStatus==="complete"?"reportCompletedCaveat":"reportUncertain")}</p>
+      </div>}
       <Link href={taskHref(task)} className="mt-3 flex min-h-12 items-center justify-center rounded-full bg-ink px-4 text-center font-bold text-paper no-underline">{action}</Link>
       {price && task.status === "needs_owner" && <PriceReviewActions taskId={task.id} keepLabel={t("keepCurrent")} laterLabel={t("later")} snoozeLabels={{ seven: t("remind7"), thirty: t("remind30"), change: t("remindChange") }} cancelLabel={t("cancel")} errorLabel={t("decisionError")} />}
+      {experiment && task.status === "needs_owner" && <ExperimentReportActions taskId={task.id} acknowledgeLabel={tExperiment("reportAcknowledge")} errorLabel={tExperiment("reportAcknowledgeError")} />}
     </article>;
   })}</section>;
 }

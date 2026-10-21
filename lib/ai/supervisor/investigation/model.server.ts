@@ -1,3 +1,4 @@
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import {z} from "zod";
 import {modelTokenUsage,estimateModelCallCostMicros,standardModelTokenRates} from "@/lib/calc/supervisorTokenCost";
@@ -166,10 +167,23 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       });
       if(!response.ok){
         const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
-        let code="";
-        try{const error=await response.json();code=String(error?.error?.code??"");}catch{/* No error body is evidence. */}
-        if(input.usage.modelCallCount===1&&fallback&&fallback!==input.usage.model&&
-          ["model_not_found","model_not_allowed","model_access_denied","model_not_available","model_not_accessible"].includes(code)){
+        let code="",message="";
+        try{
+          const err=await response.json();
+          code=String(err?.error?.code??"").slice(0,80);
+          message=String(err?.error?.message??"").slice(0,500);
+        }catch{/* Missing error body never grants an automatic retry. */}
+        // Model access failures may occur on ANY model call, not only the first.
+        // The shared eight-attempt cap and fallback!==current guard prevent loops.
+        const modelError=["model_not_found","model_not_allowed","model_access_denied",
+          "model_not_available","model_not_accessible","invalid_model"].includes(code)||
+          ([400,403,404].includes(response.status)&&/\bmodel\b/iu.test(message));
+        if(modelError&&fallback&&fallback!==input.usage.model&&
+          input.usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls){
+          input.onDiagnostic?.({stage:"provider_fallback",fromModel:input.usage.model,
+            toModel:fallback,triggerHttpStatus:response.status,triggerProviderErrorCode:code});
+          logSupervisorDebugPayload({point:"model_fallback",requestName:input.name,
+            modelCallCount:input.usage.modelCallCount,httpStatus:response.status});
           input.usage.model=fallback;
           clearTimeout(timeout);
           return requestInvestigationCore({...input,model:fallback});
@@ -194,7 +208,7 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       const tokens=modelTokenUsage(raw.usage);
       const providerModel=typeof raw.model==="string"?raw.model:null;
       const actualModel=providerModel??input.usage.model;
-      const primary=process.env.SUPERVISOR_OPENAI_MODEL||"gpt-6-luna";
+      const primary=configuredSupervisorModel();
       const fallback=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
       const prefix=actualModel===primary?"SUPERVISOR_":
         (fallback&&actualModel===fallback?"SUPERVISOR_FALLBACK_":null);
@@ -369,6 +383,8 @@ async function requestInvestigationCore<T>(input:RequestInvestigationInput<T>,at
       providerErrorCode:classified.providerErrorCode,
       modelCallCount:input.usage.modelCallCount});
     input.onDiagnostic?.({stage:"provider_response",category:classified.category,
+      ...(classified.category==="provider_http"||classified.category==="provider_timeout"?
+        {failureCategory:"provider_error" as const}:{}),
       httpStatus:classified.httpStatus,providerStatus:classified.providerStatus,
       providerErrorCode:classified.providerErrorCode,requestName:input.name,
       invalidPayloadReason:classified.invalidPayloadReason,

@@ -188,7 +188,11 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   // own lifecycle debug points, it is passed in here so the WHOLE turn --
   // route-level points and every investigation round -- shares exactly one id,
   // instead of this loop minting a second, disconnected one.
-  debugRequestId?:string};
+  debugRequestId?:string;
+  /** Registered, typed, INERT proposals only. No approval or effect authority. */
+  inertProposal?:{tools:readonly ToolDef[];
+    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>};
+};
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
   const deadline=Date.now()+INVESTIGATION_LIMITS.elapsedMs;
@@ -222,7 +226,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // leaves nothing cleaner to show (failure() below).
   let bestAccumulated:{issueCount:number;score:number;blocks:SupervisorReplyBlock[];
     evidence:EvidenceReference[];citedIds:string[];status:GroundedSupervisorReply["status"];
-    intent:GroundedSupervisorReply["intent"]}|null=null;
+    intent:GroundedSupervisorReply["intent"];answer:InvestigationAnswer}|null=null;
   // Shared by every place that records a §7 candidate: both the pre-extraction
   // candidate recorded on every issue-bearing round, and a same-round,
   // post-extraction candidate that strictly improves on it. Comparing on
@@ -235,12 +239,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // issues overwrite a cleaner earlier one merely because both happened to
   // render the same number of blocks (now correctly rejected, since a higher
   // issueCount never replaces a lower one regardless of block count).
-  const updateBestAccumulated=(candidate:GroundedSupervisorReply,issueCount:number)=>{
+  const updateBestAccumulated=(candidate:GroundedSupervisorReply,issueCount:number,
+    answer:InvestigationAnswer)=>{
     const score=candidate.blocks.length;
     if(!bestAccumulated||issueCount<bestAccumulated.issueCount||
       (issueCount===bestAccumulated.issueCount&&score>=bestAccumulated.score))
       bestAccumulated={issueCount,score,blocks:candidate.blocks,
-        evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,
+        evidence:candidate.evidence,status:candidate.status,intent:candidate.intent,answer,
         citedIds:observations.filter(o=>o.reference&&candidate.evidence.some(e=>e.identifier===o.reference!.identifier)).map(o=>o.id)};
   };
   const failure=async(budget=false,exhaustionReason?:SupervisorDiagnostic["exhaustionReason"]):
@@ -282,30 +287,55 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         const accReview:ReviewVerdict|ToolCallSignal|null=await requestInvestigation({name:"supervisor_investigation_review",schema:reviewSchema,
           instructions:reviewInstructions,context:{ownerRequest:input.text,ownerLocale:input.locale,ownerStatements,
             observations:observations.map(o=>({id:o.id,capabilityId:o.capabilityId,result:preview(o.result)})),
-            proposedAnswer:null,renderedAnswer:bestAccumulated.blocks},
+            proposedAnswer:bestAccumulated.answer,renderedAnswer:bestAccumulated.blocks},
           apiKey:input.apiKey,model:input.model,transport,usage,deadline,onUsage:input.onUsage,onDiagnostic:input.onDiagnostic});
         // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
         logSupervisorDebugPayload({point:"accumulated_rescue_review_verdict",requestId:debugRequestId,
           supported:accReview&&!isToolCallSignal(accReview)?accReview.supported:null,
           complete:accReview&&!isToolCallSignal(accReview)?accReview.complete:null,
           reason:accReview&&!isToolCallSignal(accReview)?accReview.reason:null});
-        // Complete-but-unsupported is still a delivered response, never an
-        // assertion of facts the reviewer found unsupported.
-        if(accReview&&!isToolCallSignal(accReview)&&!accReview.supported&&accReview.complete)
-          return {reply:{intent:"unknown",status:"insufficient_evidence",evidence:[],
-            blocks:[{type:"warning",code:"SUPERVISOR_UNVERIFIED",
-              text:labels.unverifiedWarning},
-              {type:"text",text:labels.unavailable}]},usage:{...usage}};
-        if(!accReview||isToolCallSignal(accReview)||!accReview.supported)
+        if(!accReview||isToolCallSignal(accReview)){
+          // An unavailable reviewer is not evidence of semantic support.
           accumulatedRescue=false;
-        else if(!accReview.complete && bestAccumulated)
+        }else if(!accReview.supported){
+          // Only independently supported original paragraphs survive. The
+          // renderer rechecks every paragraph and its actual citations;
+          // a source-backed value in one cannot certify another's actions.
+          const safeBlocks:SupervisorReplyBlock[]=[];
+          const safeEvidence:EvidenceReference[]=[];
+          const safeCitedIds=new Set<string>();
+          const selected=new Set(accReview.supportedParagraphIndices??[]);
+          bestAccumulated.answer.paragraphs.forEach((paragraph,index)=>{
+            if(!selected.has(index)||paragraph.kind!=="evidence")return;
+            const checked=renderInvestigationAnswer({paragraphs:[paragraph]},
+              observations,input.locale,{ownerText:input.text});
+            if(!checked||checked.issues.length||checked.evidence.length===0)return;
+            safeBlocks.push(...checked.blocks);
+            for(const ref of checked.evidence)
+              if(!safeEvidence.some(prev=>prev.identifier===ref.identifier))safeEvidence.push(ref);
+            for(const id of checked.citedIds)safeCitedIds.add(id);
+          });
+          if(!safeBlocks.length){
+            accumulatedRescue=false;
+            input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
+          }else{
+            bestAccumulated={...bestAccumulated,status:"partial",
+              blocks:[...bestAccumulated.blocks.filter(block=>block.type==="warning"),
+                ...safeBlocks,missingGoalWarning(accReview.reason)],
+              evidence:safeEvidence,citedIds:[...safeCitedIds]};
+            input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
+              failureCategory:"reviewer_downgraded_to_partial"});
+          }
+        }else if(!accReview.complete){
           bestAccumulated={...bestAccumulated,status:"partial",
             blocks:bestAccumulated.blocks.length<30?
               [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
               bestAccumulated.blocks};
+        }
       }
     }
     input.onDiagnostic?.({stage:"investigation_exhausted",exhaustionReason,
+      failureCategory:budget?"budget_exhausted":undefined,
       modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,rescuedUnverified:rescue||accumulatedRescue});
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     logSupervisorDebugPayload({point:"investigation_exhausted",requestId:debugRequestId,ownerQuestion:input.text,
@@ -387,6 +417,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const toolNameToCapabilityId=new Map<string,string>(
     manifest.map(m=>[capabilityToolName(m.id),m.id] as const));
   toolNameToCapabilityId.set(CALCULATE_TOOL_NAME,EXPRESSION_ID);
+  for(const tool of input.inertProposal?.tools??[]){
+    if(toolNameToCapabilityId.has(tool.name))throw new Error("Duplicate proposal tool name");
+    toolNameToCapabilityId.set(tool.name,"inert_proposal:"+tool.name);
+  }
   const investigationTools:ToolDef[]=[
     ...manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
       name:capabilityToolName(m.id),
@@ -396,6 +430,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             try{return describeSourceFields(z.toJSONSchema(outputFor(key),{unrepresentable:"any",reused:"inline"}));}
             catch{return "";}})():"")).slice(0,1000),
       parameters:m.inputJsonSchema})),
+    ...(input.inertProposal?.tools??[]),
     {name:CALCULATE_TOOL_NAME,
       description:"Combine already-authorized operand handles (from authorizedOperands) using the "+
         "registered expression engine's typed postfix nodes: source(handle), hypothetical, convert, "+
@@ -481,7 +516,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         capabilities:manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
           id:m.id,purpose:m.purpose,currencyPolicy:m.currencyPolicy,inputSchema:m.inputJsonSchema})),
         capabilityLimitations:{financialSnapshot:financialReadsAvailable?"available_or_provisional":"unavailable; financial evidence must not be used",inventory:"No verified stock count or inventory feed is connected.",
-          writes:"Business mutations and publication are not executable in this read/simulation conversation."},
+          writes:input.inertProposal?
+            "Only registered inert proposal drafting is permitted. It needs explicit owner trial intent and exact verified menu/cent input; approval, POS price change and effect commitment require separate owner actions.":
+            "Business mutations and publication are not executable in this read/simulation conversation."},
         observations:views,authorizedOperands:operands.map(o=>({handle:o.handle,unit:o.unit,period:o.period,
           sourceId:o.sourceId,sourceQuality:o.status,entity:projection.choices.find(c=>c.handle===o.handle)?.entityName})),
         remainingModelCalls:INVESTIGATION_LIMITS.modelCalls-usage.modelCallCount,
@@ -697,7 +734,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // Section 7: remember the best-surviving candidate across the WHOLE
         // loop, not just the final attempt, in case nothing cleaner ever
         // arrives before the budget runs out.
-        updateBestAccumulated(reply,rendered.issues.length);
+        updateBestAccumulated(reply,rendered.issues.length,answer);
         // Section 5: one bounded, narrow extraction attempt for the FIRST
         // plain unmatched number that has no cheap direct match (one already
         // matching a real observation gets told to cite it instead, per
@@ -725,7 +762,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               // best-so-far too, or exhaustion later in this same turn could
               // still fall back to the STALE, more-masked pre-extraction
               // version even though a verified, better one now exists.
-              updateBestAccumulated(reply,reRendered.issues.length);
+              updateBestAccumulated(reply,reRendered.issues.length,answer);
             }
           }
         }
@@ -753,7 +790,50 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       logSupervisorDebugPayload({point:"review_verdict",requestId:debugRequestId,round,
         supported:review&&!isToolCallSignal(review)?review.supported:null,
         complete:review&&!isToolCallSignal(review)?review.complete:null,reason:reviewReason});
-      if(review&&!isToolCallSignal(review)&&!review.supported&&review.complete){
+      // Keep server-produced facts AND source-grounded narrative that passed
+      // the claim-by-claim renderer. A valid text-only source description must
+      // not vanish just because it has no numeric value suitable for a box.
+      // Do not preserve unrelated free-form advice or unsupported action
+      // assertions merely because another paragraph cites a real source.
+      const safeParagraphBlocks=new Set<string>();
+      const safeParagraphSources=new Set<string>();
+      // The independent reviewer must positively identify each semantically
+      // valid paragraph. A model-authored sentence citing a real field is
+      // never sufficient to prove an unrelated effect or completed action.
+      const reviewerSafeParagraphs=new Set<number>(
+        review&&!isToolCallSignal(review)?review.supportedParagraphIndices??[]:[]);
+      answer.paragraphs.forEach((paragraph,index)=>{
+        if(!reviewerSafeParagraphs.has(index)||paragraph.kind!=="evidence"||
+          rendered.issues.some(issue=>issue.paragraphIndex===index))return;
+        const checked=renderInvestigationAnswer({paragraphs:[paragraph]},observations,input.locale,
+          {ownerText:input.text});
+        if(!checked||checked.issues.length||!checked.evidence.length)return;
+        // A boxed metric inside an unsupported "I published..." paragraph
+        // is not a license to keep that paragraph OR its box. Both must
+        // originate in a paragraph that independently passed these checks.
+        for(const block of checked.blocks)
+          safeParagraphBlocks.add(JSON.stringify(block));
+        for(const source of checked.evidence)
+          safeParagraphSources.add(source.identifier);
+      });
+      const safeReviewBlocks=reply.blocks.filter(block=>{
+        if(block.type==="warning")return true;
+        if(block.type==="task_card"||block.type==="task_status")
+          return safeParagraphSources.has(block.source.identifier);
+        return safeParagraphBlocks.has(JSON.stringify(block));
+      });
+      const hasSafeReviewFacts=safeReviewBlocks.some(block=>block.type!=="warning");
+      let downgradedByReview=false;
+      if(review&&!isToolCallSignal(review)&&!review.supported&&hasSafeReviewFacts){
+        downgradedByReview=true;
+        reply={...reply,status:"partial",blocks:[
+          ...safeReviewBlocks,
+          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason)]:[]),
+        ]};
+        input.onDiagnostic?.({stage:"grounded_answer",failureCategory:"reviewer_downgraded_to_partial"});
+      }
+      if(review&&!isToolCallSignal(review)&&!review.supported&&!downgradedByReview&&review.complete){
+        input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
         // An OR-positive verdict must produce a user-visible reply, but the
         // reviewer has NOT certified these factual claims. Never publish
         // the rejected draft, even with a disclaimer about invented numbers.
@@ -762,13 +842,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             text:labels.unverifiedWarning},
             {type:"text",text:labels.unavailable}]},usage:{...usage}};
       }
-      if(!review||isToolCallSignal(review)||!review.supported){
+      if(!review||isToolCallSignal(review)||(!review.supported&&!downgradedByReview)){
         // A valid verdict always carries its own specific reason now (§6):
         // name exactly what the reviewer found, instead of the generic line
         // that used to be the only signal across every retry (production
         // incident: two otherwise-clean, well-cited drafts were rejected
         // with no way to tell why, and exhausted repeating the same
         // unspecific feedback until the call budget ran out).
+        input.onDiagnostic?.({stage:"investigation_round",failureCategory:"reviewer_hard_fail"});
         feedback=reviewReason?
           "The independent review found this specific issue: \""+reviewReason+
             "\". Correct exactly that, or ask the specific unresolved question.":
@@ -797,7 +878,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(latest.status!=="available"||latest.snapshot.businessId!==identity.businessId||
           latest.snapshot.revision!==atomic.snapshot.revision)return await failure(false,"snapshot_mismatch");
       }
-      if(!review.complete)reply={...reply!,status:"partial",
+      if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
           [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
@@ -834,7 +915,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       continue;
     }
     const signature=JSON.stringify(canonicalSelector([
-      capabilityId===EXPRESSION_ID?"calculate":"read",capabilityId,args]));
+      capabilityId===EXPRESSION_ID?"calculate":capabilityId.startsWith("inert_proposal:")?"propose":"read",capabilityId,args]));
     if(attempted.has(signature)){
       // Unlike an unknown tool name or a rejected answer draft, a repeated
       // signature here may be re-citing an ALREADY-SUCCESSFUL prior
@@ -848,6 +929,32 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       continue;
     }
     attempted.add(signature);
+    if(capabilityId.startsWith("inert_proposal:")){
+      // The MODEL only selects a typed registered tool. The authenticated
+      // callback validates owner-authored cents and exact catalog identity,
+      // then persists a draft. No model selection can approve or commit.
+      const latestOwner=await authorizedOwnerP1();
+      if(latestOwner.identity.businessId!==identity.businessId||
+        latestOwner.identity.timezone!==identity.timezone||
+        latestOwner.identity.currency!==identity.currency||
+        latestOwner.identity.asOf!==identity.asOf)
+        return await failure(false,"identity_mismatch");
+      let created:{id:string;text:string}|null=null;
+      try{created=await input.inertProposal?.create(step.name,args)??null;}
+      catch{created=null;}
+      if(!created){
+        feedback="The requested draft was not grounded in exactly one owner-stated cent amount and one real unambiguous menu variant. Inspect the catalog or ask one clarification; never invent a proposal.";
+        continue;
+      }
+      usage.toolCallCount++;
+      input.onUsage?.({...usage});
+      input.onDiagnostic?.({stage:"grounded_answer",agent:"alex",
+        groundedStatus:"estimated",modelCallCount:usage.modelCallCount,
+        toolCallCount:usage.toolCallCount});
+      return {reply:{intent:"menu_pricing",status:"estimated",
+        evidence:[{source:"pricing_engine",identifier:"supervisor-proposal:"+created.id,asOf:identity.asOf}],
+        blocks:[{type:"text",text:created.text}]},usage:{...usage}};
+    }
     logSupervisorDebugPayload({point:"tool_request",requestId:debugRequestId,round,
       callId:step.callId,capabilityId,toolArguments:args,parallel:false});
     input.onDiagnostic?.({stage:"investigation_round",

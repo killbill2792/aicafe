@@ -41,3 +41,38 @@ export async function respondToPriceReview(input: unknown): Promise<OwnerTaskDec
   revalidatePath("/");
   return { ok: true };
 }
+
+/**
+ * A terminal experiment report is a notification, not a request to change
+ * the POS price. Only its owning cafe's owner can mark it reviewed.
+ * A conditional update keeps repeated clicks/competing clients idempotent;
+ * subsequent report refreshes update evidence without reopening the task.
+ */
+export async function acknowledgeExperimentReport(input: unknown): Promise<OwnerTaskDecisionResult> {
+  const parsed = z.object({ taskId: z.string().min(1).max(500) }).safeParse(input);
+  if (!parsed.success) return { ok: false, error: "invalid_request" };
+  const { authenticatedConversationContext } = await import("@/lib/ai/conversations/auth.server");
+  let businessId: string;
+  try {
+    businessId = (await authenticatedConversationContext()).scope.businessId;
+  } catch {
+    return { ok: false, error: "owner_access_required" };
+  }
+  const supabase = await createServerSupabaseClient();
+  const { data: row, error: readError } = await supabase.from("operating_tasks")
+    .select("id,kind,status").eq("business_id", businessId)
+    .eq("id", parsed.data.taskId).maybeSingle();
+  if (readError || !row || row.kind !== "price_experiment_report" || row.status !== "needs_owner")
+    return { ok: false, error: "task_not_available" };
+
+  const now = new Date().toISOString();
+  const { data: updated, error } = await supabase.from("operating_tasks")
+    .update({ status: "handled", resolved_at: now, updated_at: now })
+    .eq("business_id", businessId).eq("id", row.id)
+    .eq("kind", "price_experiment_report").eq("status", "needs_owner")
+    .select("id").maybeSingle();
+  if (error || !updated) return { ok: false, error: "task_not_updated" };
+  revalidatePath("/operations");
+  revalidatePath("/");
+  return { ok: true };
+}

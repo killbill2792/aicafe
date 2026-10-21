@@ -4,7 +4,7 @@ const mocks=vi.hoisted(()=>{
   const message={id:"owner-msg",role:"owner",contentType:"text",
     threadId:"a1989b23-e2b8-412e-a08f-46fb2726eedc",text:"Are there any staff problems now?",
     clientMessageId:"5106fd7b-1d80-486c-a026-dc1f39911f4c"};
-  return {message,run:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
+  return {message,run:vi.fn(),propose:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
     getThread:vi.fn(async()=>({title:"Conversation"})),
     addOwner:vi.fn(async()=>message),listMessages:vi.fn()};
 });
@@ -23,6 +23,23 @@ vi.mock("@/lib/ai/cafeTools.server",()=>({
   readSupervisorCafeIdentity:async()=>({asOf:"2026-10-10",timezone:"America/Los_Angeles",cafeName:"Sample"}),
 }));
 vi.mock("@/lib/ai/conversations/runSupervisorTurn.server",()=>({runSupervisorTurn:mocks.run}));
+vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:vi.fn(async()=>({
+  identity:{businessId:"cafe-1",currency:"USD"}}))}));
+vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async()=>[
+ {id:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",name:"Iced Latte",baseName:"Iced Latte",
+  active:true,priceCents:525},
+ {id:"76798875-d648-42b4-95e9-b0f0b2a04def",name:"Mocha",baseName:"Mocha",
+  active:true,priceCents:560},
+])}));
+
+vi.mock("@/lib/ai/supervisor/loop/priceExperiment.server",()=>({priceExperimentCapabilityId:"alex.drink_price_experiment.v1",supervisorLoopRegistry:{
+  list:()=>["alex.drink_price_experiment.v1"],
+  get:()=>({proposalDescription:"Prepare inert owner trial draft",parseEffect:(raw:unknown)=>raw,
+    proposalInputJsonSchema:{type:"object",properties:{productId:{type:"string"},increaseCents:{type:"integer"}}}}),
+}}));
+vi.mock("@/lib/ai/supervisor/loop/engine",()=>({
+  proposeLoop:mocks.propose,
+}));
 vi.mock("@/lib/ai/conversations/usage.server",()=>({
   labelSupervisorThread:async()=>{},recordSupervisorUsage:async()=>{},
 }));
@@ -43,6 +60,7 @@ const ctx={params:Promise.resolve({threadId:mocks.message.threadId})};
 beforeEach(()=>{
   vi.clearAllMocks();
   mocks.getExisting.mockResolvedValue(null);
+  mocks.propose.mockResolvedValue(null);
   mocks.listMessages.mockResolvedValue({items:[
     {id:"m1",role:"owner",text:"What are my best sellers?",blocks:null},
     {id:"m2",role:"supervisor",text:null,blocks:[
@@ -70,6 +88,84 @@ describe("POST uses the single bounded semantic Supervisor path",()=>{
       expect.objectContaining({role:"supervisor",text:expect.stringContaining("Mocha units sold: 20")}),
     ]));
     expect(mocks.persist).toHaveBeenCalledTimes(1);
+  });
+  it("offers a registered inert proposal to the existing semantic model path without regex pre-routing",async()=>{
+    const response=await POST(request("Let's test a 10-cent increase on the latte"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    const input=mocks.run.mock.calls[0][0];
+    expect(input.inertProposal.tools).toContainEqual(expect.objectContaining({
+      name:"alex_drink_price_experiment_v1",
+      description:expect.stringContaining("inert"),
+    }));
+    expect(mocks.propose).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["Let's test a 10-cent increase on the latte","en"],
+    ["Probemos subir el latte 10 centavos","es"],
+    ["لنجرّب زيادة سعر latte ١٠ سنتات","ar"],
+  ] as const)(
+    "uses the registered model tool to CREATE a draft for %s (%s), never approving or committing",
+    async(text,locale)=>{
+      mocks.propose.mockResolvedValueOnce({id:"a1520966-6bca-4774-9f58-31376314845f",
+        canonicalEffectPayload:{productId:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",
+          productName:"Iced Latte",newPriceCents:535}});
+      mocks.run.mockImplementationOnce(async(input)=>{
+        // Simulate the actual semantic model selecting an advertised native
+        // function-call tool. This test fails on commit 8260923: no tool was
+        // registered with the investigation path or handled by its callback.
+        const tool=input.inertProposal.tools.find((t:{name:string})=>t.name===
+          "alex_drink_price_experiment_v1");
+        expect(tool).toEqual(expect.objectContaining({
+          description:expect.stringContaining("inert"),
+          parameters:expect.objectContaining({type:"object"}),
+        }));
+        const drafted=await input.inertProposal.create(tool.name,{
+          productId:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",
+          productReference:"latte",ownerProductQuote:"latte",variantStatus:"unique",
+          amountMode:"increase",increaseCents:10,targetPriceCents:null,
+          ownerAmountQuote:locale==="en"?"10-cent increase":locale==="es"?"10 centavos":"١٠ سنتات",
+          amountStatus:"unique",
+        });
+        expect(drafted?.id).toBe("a1520966-6bca-4774-9f58-31376314845f");
+        return {reply:{intent:"menu_pricing",status:"estimated",
+          evidence:[{source:"pricing_engine",
+            identifier:"supervisor-proposal:"+drafted.id,asOf:"2026-10-10"}],
+          blocks:[{type:"text",text:drafted.text}]},
+          usage:{model:"test",inputTokens:8,outputTokens:10,modelCallCount:1,toolCallCount:1}};
+      });
+      const req=new Request("https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
+        method:"POST",headers:{origin:"https://cafe.test","content-type":"application/json"},
+        body:JSON.stringify({clientMessageId:mocks.message.clientMessageId,text,locale}),
+      });
+      const reply=await POST(req,ctx);
+      expect(reply.status).toBe(201);
+      expect(mocks.run).toHaveBeenCalledTimes(1);
+      expect(mocks.propose).toHaveBeenCalledTimes(1);
+      expect(mocks.propose).toHaveBeenCalledWith(expect.objectContaining({
+        businessId:"cafe-1",ownerUserId:"owner-1",locale}),
+        expect.anything(),expect.anything(),"alex.drink_price_experiment.v1",
+        {productId:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",increaseCents:10},
+        mocks.message.clientMessageId);
+      expect(mocks.persist).toHaveBeenCalledWith(expect.anything(),expect.anything(),
+        expect.objectContaining({status:"estimated",blocks:[
+          expect.objectContaining({text:expect.stringContaining(locale==="en"?"Nothing has changed":
+            locale==="es"?"No se ha cambiado":"لم يتغير")})]}));
+    },
+  );
+  it("refuses a model-selected proposal when two owner amounts are ambiguous",async()=>{
+    mocks.run.mockImplementationOnce(async(input)=>{
+      const selected=input.inertProposal.tools[0];
+      const denied=await input.inertProposal.create(selected.name,{
+        productId:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",increaseCents:10});
+      expect(denied).toBeNull();
+      return {reply:{intent:"unknown",status:"partial",evidence:[],
+        blocks:[{type:"text",text:"Please clarify the increase."}]},
+        usage:{model:"test",inputTokens:8,outputTokens:10,modelCallCount:1,toolCallCount:0}};
+    });
+    const response=await POST(request("Test a 10 cent or 20 cent increase on the latte"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.propose).not.toHaveBeenCalled();
   });
   it("replays the existing reply without another provider call or write",async()=>{
     mocks.getExisting.mockResolvedValue({id:"existing-reply"});

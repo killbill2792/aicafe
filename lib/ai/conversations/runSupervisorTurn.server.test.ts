@@ -170,7 +170,7 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
     });
     await runSupervisorTurn({...base,text:"Hi"},transport);
     const instructions=buildSupervisorInstructions({locale:base.locale,asOf:base.asOf,timezone:base.timezone});
-    const expected=buildSupervisorRequest({model:"gpt-6-luna",instructions,
+    const expected=buildSupervisorRequest({model:"gpt-4.1-mini",instructions,
       input:[{role:"user",content:"Hi"}],round:0});
     expect(bodies[0]).toEqual(expected);
     expect((bodies[0].tools as unknown[]).length).toBe(15);
@@ -782,7 +782,7 @@ describe("Mandatory independent scope-audit provider reliability",()=>{
       expect(h.auditRequests()).toHaveLength(2);
       expect(h.requests).toHaveLength(4);
       expect(h.auditRequests()[0].model).toBe(h.auditRequests()[1].model);
-      expect(h.auditRequests()[0].model).toBe("gpt-6-luna");
+      expect(h.auditRequests()[0].model).toBe("gpt-4.1-mini");
       expect(h.auditRequests()[0]).not.toHaveProperty("tools");
       expect(h.read).toHaveBeenCalledTimes(1);
       expect(h.diagnostics).toContainEqual(expect.objectContaining({
