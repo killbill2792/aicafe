@@ -261,6 +261,9 @@ export async function POST(request: Request, context: RouteContext) {
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,ownerClarification,ownerClarificationReadCapabilityId,
+        // Structured replies resume an earlier goal; they do not create a
+        // fresh owner instruction to restore its old calendar range.
+        replayedOwnerRequest:!!ownerResponse,
         trustedCatalogProductId:trustedResolutionProductId??undefined,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
