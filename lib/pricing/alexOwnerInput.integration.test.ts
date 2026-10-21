@@ -96,7 +96,7 @@ describe("real Alex reader -> confirmed owner input -> original reader again",()
     const registry=createP2Registry([buildAlexP3Registrations()[0]]);
     const result=await registry.invoke(scope,ALEX_P3_REVIEW_ID,{purpose:"pricing_review",
       product:{exactName:"Oat Latte"}});
-    expect(result.status).not.toBe("requires_owner_input");
+    expect((result as {status:string}).status).not.toBe("requires_owner_input");
     expect(state.writes).toBe(0);
   });
 });
