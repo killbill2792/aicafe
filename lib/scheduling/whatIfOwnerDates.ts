@@ -15,6 +15,12 @@ export function hasOwnerScheduleDates(clause:string,asOf:string):boolean{
   return parseOwnerDateWindows(clause,asOf.slice(0,4)+"-12-31").length>0||
     isoDatePattern.test(clause)||nextWeekPattern.test(clause)||thisWeekPattern.test(clause)||namedWeekdays(clause).length>0;
 }
+/** Forward-looking explicit dates must use the exact same interpretation for
+ * immediate schedule reads and durable owner-correction persistence. */
+export function ownerScheduleExplicitDateWindows(clause:string,asOf:string){
+  const direct=parseOwnerDateWindows(clause,asOf);
+  return direct.length?direct:parseOwnerDateWindows(clause,asOf.slice(0,4)+"-12-31");
+}
 const add=(day:string,n:number)=>new Date(Date.parse(day+"T12:00:00Z")+n*86400000)
   .toISOString().slice(0,10);
 const monday=(day:string)=>add(day,-((new Date(day+"T12:00:00Z").getUTCDay()+6)%7));
@@ -33,8 +39,7 @@ export function matchesOwnerScheduleDates(input:{week:string;overrides:readonly 
   if(dates.some(d=>d<input.week||d>add(input.week,6)))return false;
   // Scheduling is forward-looking: a yearless named date can be later in
   // the current year. Historical finance parsing deliberately disallows it.
-  const direct=parseOwnerDateWindows(clause,asOf);
-  const explicit=direct.length?direct:parseOwnerDateWindows(clause,asOf.slice(0,4)+"-12-31");
+  const explicit=ownerScheduleExplicitDateWindows(clause,asOf);
   if(!explicit.length && isoDatePattern.test(clause))return false;
   if(explicit.length){
     return dates.length
