@@ -511,7 +511,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     if((memory?.calendarScopes??[]).some(scope=>scope.domain===domain&&scope.kind===kind))
       return (memory?.calendarScopeOrigins??[]).some(origin=>
         origin.domain===domain&&origin.kind===kind&&origin.requestKey===requestKey);
-    if(input.replayedOwnerRequest)return (memory?.reads??[]).some(read=>{
+    if(input.replayedOwnerRequest&&!(memory?.calendarScopeOrigins??[]).some(origin=>
+      origin.domain===domain&&origin.kind===kind&&origin.requestKey!==requestKey))
+      return (memory?.reads??[]).some(read=>{
       if(readOwner(read.capabilityId)!==domain)return false;
       try{return investigationCalendarScope(JSON.parse(read.inputJson),domain)?.kind===kind;}
       catch{return false;}
