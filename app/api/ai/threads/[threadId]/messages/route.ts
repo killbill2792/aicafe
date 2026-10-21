@@ -7,6 +7,7 @@ import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
 import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
+import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
 import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion} from "@/lib/ai/supervisor/ownerInput/response";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
 import { compactConversationContext } from "@/lib/ai/conversations/context";
@@ -120,7 +121,7 @@ export async function POST(request: Request, context: RouteContext) {
             readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
             request:state.request,questionId:state.questionId});
       }else if(response.action==="confirm"&&state.stage==="confirm"&&state.answer){
-        const applied=await ownerInputWrites.apply(scope,state.request,state.answer);
+        const applied=await commitConfirmedOwnerInput(scope,state);
         if(applied.ok){
           // The next investigation MUST re-read; no cached figure is replayed.
           resumedOriginalText=state.originalText;
