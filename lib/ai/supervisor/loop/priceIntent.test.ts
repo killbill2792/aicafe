@@ -14,6 +14,10 @@ describe("structured price candidate",()=>{
    const ambiguous={...base,productReference:"Latte",ownerProductQuote:"Latte"};
    expect(validatePriceProposalCandidate(ambiguous,menu,["Raise Latte by 10 cents"],id))
      .toEqual({productId:id,increaseCents:10});
+   expect(validatePriceProposalCandidate({...ambiguous,ownerProductQuote:"Latte 12 oz",
+     productReference:"Latte 12 oz"},menu,
+     ["Raise Latte by 10 cents","Owner clarification: Latte 12 oz"],id))
+     .toEqual({productId:id,increaseCents:10});
    expect(validatePriceProposalCandidate({...ambiguous,productId:"another"},menu,
      ["Raise Latte by 10 cents"],id)).toBeNull();
    expect(validatePriceProposalCandidate(ambiguous,menu.map(row=>
