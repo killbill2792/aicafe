@@ -4,15 +4,23 @@ import {X} from "lucide-react";
 import type {OwnerQuestion} from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type OwnerCardCopy={dismiss:string;confirm:string;other:string;answer:string};
+/** Non-durable clarifications are presentation-only and may close locally.
+ * Durable owner-input questions stay visible until the server saves dismissal. */
+export function dismissOwnerQuestion(locallyDismissible:boolean,hide:()=>void,submit:()=>void){
+  if(locallyDismissible)hide();
+  else submit();
+}
 export default function SupervisorOwnerQuestionCard({
-  card,locale,copy,disabled=false,allowOther=true,onAnswer,onDismiss,
+  card,locale,copy,disabled=false,allowOther=true,locallyDismissible=false,onAnswer,onDismiss,
 }:{
   card:OwnerQuestion;locale:"en"|"es"|"ar";copy:OwnerCardCopy;
-  disabled?:boolean;allowOther?:boolean;
+  disabled?:boolean;allowOther?:boolean;locallyDismissible?:boolean;
   onAnswer:(value:string,isOption:boolean)=>void;onDismiss:()=>void;
 }){
   const [answer,setAnswer]=useState("");
   const [showOther,setShowOther]=useState(false);
+  const [locallyClosed,setLocallyClosed]=useState(false);
+  if(locallyClosed&&locallyDismissible)return null;
   const options=card.input.kind==="options"?card.input.options:[];
   const typing=card.input.kind==="free_text"||showOther;
   return <section dir={locale==="ar"?"rtl":"ltr"}
@@ -23,7 +31,7 @@ export default function SupervisorOwnerQuestionCard({
       <button type="button" aria-label={copy.dismiss} title={copy.dismiss}
         disabled={disabled}
         className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink-muted hover:bg-[#F3ECE3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-        onClick={onDismiss}><X size={21} aria-hidden="true"/></button>
+        onClick={()=>dismissOwnerQuestion(locallyDismissible,()=>setLocallyClosed(true),onDismiss)}><X size={21} aria-hidden="true"/></button>
     </div>
     {card.input.kind==="options"&&<div role="group" aria-label={card.title[locale]}
       className={`mt-3 flex flex-col gap-2 ${options.length>5?"max-h-72 overflow-y-auto pe-1":""}`}>
