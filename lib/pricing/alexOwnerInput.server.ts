@@ -76,7 +76,7 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   // Only the live investigation owns a durable pending-question response.
   // Legacy P2/shadow reads have no owner-answer submission lifecycle and
   // must retain their existing typed unavailable/quality reason behavior.
-  if(!scope.ownerClause?.trim()||!selector||!("exactName" in selector)||
+  if(scope.durableOwnerInput!==true||!scope.ownerClause?.trim()||!selector||!("exactName" in selector)||
     scope.role!=="owner"||scope.identity.businessId!==scope.businessId)return null;
   const first=await readAuthorizedAtomicP1SourceSnapshot();
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
