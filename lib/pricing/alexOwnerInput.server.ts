@@ -72,7 +72,7 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
 /** Canonical catalog cardinality is the sole multi-match signal.
  * Query text is a typed read selector, never a keyword guess about the owner. */
 export async function alexProductCatalogResolution(scope:TrustedReadScope,
-  selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|{productId:string}|null>{
+  selector:{productId:string}|{exactName:string}|undefined):Promise<OwnerInputRequest|{productId:string}|{kind:"zero_match";exactName:string;sourceRevision:string}|null>{
   // Only the live investigation owns a durable pending-question response.
   // Legacy P2/shadow reads have no owner-answer submission lifecycle and
   // must retain their existing typed unavailable/quality reason behavior.
@@ -106,7 +106,12 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   // A negative catalog result does not establish intent to introduce a
   // product. The semantic Supervisor may still ask a reviewed new-product
   // question, but a simple "is this on my menu?" must be answered as absent.
-  if(matches.length===0)return null;
+  // A source-complete negative result is still useful information. Ordinary
+  // catalog Q&A must not be misclassified as an intention to create a product.
+  // The live Supervisor can ask for new-item details only when the OWNER goal
+  // warrants it; this result itself authorizes no write.
+  if(matches.length===0)return {kind:"zero_match",exactName:selector.exactName,
+    sourceRevision:first.snapshot.revision};
   if(matches.length===1)return {productId:matches[0].id};
   const copy={en:en.SupervisorOwnerHelp,es:es.SupervisorOwnerHelp,ar:ar.SupervisorOwnerHelp};
   const options=matches.map(m=>({id:m.id,label:Object.fromEntries(
