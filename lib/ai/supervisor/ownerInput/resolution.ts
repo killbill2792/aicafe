@@ -40,25 +40,17 @@ export function ownerResolutionRequest(input:{
   });
 }
 
-/** The owner-resolved context is authoritative only as an OWNER STATEMENT,
- * not as proof of a selected entity. Domain readers still revalidate scope,
- * exact IDs, freshness and matches after the original question is resumed. */
+/** Only free-text corrections are owner-authored statements.
+ * Selected option IDs are separate server-verified selector context; their
+ * display labels (including prices) cannot authorize hypothetical inputs. */
 export function resumeOwnerResolution(original:string,raw:unknown,answer:string):
-  {originalText:string;ownerStatement:string}|null{
+  {originalText:string;ownerStatement:string|null;selectedProductId:string|null}|null{
   const prepared=prepareOwnerResolution(raw,answer);
   if(!prepared)return null;
   const request=ownerInputRequestSchema.parse(raw);
-  const context=Object.entries(request.writeContext)
-    .filter(([key])=>key==="productId"||key==="catalogRevision"||key==="domain")
-    .map(([key,value])=>key+"="+value).join(", ");
-  const isCatalogChoice=request.input.kind==="options"&&
-    request.input.options.some(option=>option.id===prepared.answer)&&
-    (request.writeContext.domain==="menu"||request.writeContext.domain==="menu_proposal");
-  const note="Owner clarification: "+prepared.label+
-    (isCatalogChoice?" (selected catalog productId="+prepared.answer+")":"")+
-    (context?" ("+context+")":"");
-  // Never sacrifice later owner goals to fit a clarification into the
-  // original request. The authenticated API passes this note separately into
-  // the investigation's owner-statement context.
-  return {originalText:original,ownerStatement:note.slice(0,600)};
+  const selected=request.input.kind==="options"&&
+    request.input.options.some(option=>option.id===prepared.answer);
+  return {originalText:original,
+    ownerStatement:selected?null:prepared.answer,
+    selectedProductId:selected?prepared.answer:null};
 }
