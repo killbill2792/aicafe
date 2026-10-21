@@ -1299,13 +1299,26 @@
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "No se pudo confirmar la parte de {domain} de tu solicitud.",
-    "domains": {"menu":"menú","pricing":"precios","scheduling":"horarios","staff":"personal","sales":"ventas","expenses":"gastos","other":"los otros temas"},
+    "domains": {
+      "menu": "menú",
+      "pricing": "precios",
+      "scheduling": "horarios",
+      "staff": "personal",
+      "sales": "ventas",
+      "expenses": "gastos",
+      "other": "los otros temas"
+    },
     "priceUnknown": "precio desconocido",
     "catalogMissingQuestion": "No encontré ese producto activo. ¿Es nuevo? Descríbelo, por favor.",
     "catalogMissingHint": "Indica si es nuevo y sus ingredientes y cantidades, si los conoces.",
     "catalogMultipleQuestion": "¿A cuál de los productos coincidentes te refieres?",
     "stuckDetail": "¿Qué detalle debo aclarar antes de continuar?",
-    "incomplete": "No se pudo confirmar parte de tu solicitud."
+    "incomplete": "No se pudo confirmar parte de tu solicitud.",
+    "detailHint": "Indica el dato que falta con tus propias palabras.",
+    "additionalDetail": "¿Qué detalle adicional debo usar para responder a tu pregunta?",
+    "unknownTool": "¿Qué detalle puedes aclarar para que pueda continuar?",
+    "repeatedTool": "¿Qué debo aclarar antes de continuar con tu solicitud?",
+    "dateClarification": "¿Qué fechas debo utilizar para esta parte de tu solicitud?"
   },
   "SupervisorChat": {
     "ownerInputDismiss": "Ahora no",
