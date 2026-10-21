@@ -279,6 +279,40 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(result.reply.ownerInput?.request.question.en).toBe(question.title.en);
     expect(JSON.stringify(result.reply.blocks)).not.toContain("$999.00");
   });
+  it("uses the last corrected period across chained durable cards instead of replaying stale original dates",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expenses from 2026-10-01 to 2026-10-07 and protect staffing coverage.";
+    const statement="Use 2026-10-08 to 2026-10-14 instead.";
+    const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}],
+      calendarScopes:[{domain:"money",kind:"period" as const,...old}]};
+    const question=await runSupervisorTurn({...base,text:original,
+      replayedOwnerRequest:true,ownerClarification:statement,
+      ownerClarificationReadCapabilityId:capabilityId,investigationMemory:prior},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([
+          {kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]},
+          {kind:"clarification",text:"Which staffing plan should I compare?",citations:[]},
+        ]),
+      ]));
+    expect(question.reply.status).toBe("requires_owner_input");
+    expect(question.reply.ownerInput?.originalText).toBe(original);
+    expect(question.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...corrected});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,
+      replayedOwnerRequest:true,ownerClarification:"The weekday plan",
+      investigationMemory:question.reply.investigationMemory},transportFor([
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
   it("persists period selectors and full goals on a reviewed durable question before its owner answers",async()=>{
     const old={from:"2026-10-01",to:"2026-10-07"};
     const changed={from:"2026-10-08",to:"2026-10-14"};
