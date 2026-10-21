@@ -94,9 +94,9 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
       }}};
   }
   const options=matches.map(m=>({id:m.id,label:{
-    en:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
-    es:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
-    ar:m.name+" — "+(m.price_cents/100).toFixed(2)+" USD",
+    en:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
+    es:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
+    ar:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
   }}));
   return {mode:"resolve",fieldId:"owner.clarification",
     writeCapabilityId:"platform.owner_input.resolve.v1",
