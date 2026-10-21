@@ -2,7 +2,7 @@ import {z} from "zod";
 import {resolveCafeDateRange,type DateSelection} from "@/lib/ai/conversations/dateRange";
 import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
 import type {InvestigationMemory,InvestigationCalendarScope} from "@/lib/ai/conversations/investigationMemory";
-import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek,ownerScheduleExplicitDateWindows} from "@/lib/scheduling/whatIfOwnerDates";
+import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek,ownerScheduleExplicitDateWindows,ownerScheduleWeekFromWeekdays} from "@/lib/scheduling/whatIfOwnerDates";
 
 type ReadSelector=InvestigationMemory["reads"][number];
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -94,6 +94,13 @@ export function authenticatedOwnerCalendarScope(text:string,domain:string,
   // Explicit date windows take precedence over relative week language.
   // Their endpoints must not be bypassed by a convenient "next week" token.
   const explicit=kind==="week"?ownerScheduleExplicitDateWindows(text,asOf):parseOwnerDateWindows(text,asOf);
+  // The canonical scheduling reader also accepts forward weekday phrases
+  // with no numeric date, e.g. "Use Tuesday instead". Preserve the same
+  // resolved week before another owner-input card can supersede this turn.
+  if(kind==="week"&&!explicit.length){
+    const undatedWeek=ownerScheduleWeekFromWeekdays(text,asOf);
+    if(undatedWeek)return {domain,kind,week:undatedWeek};
+  }
   const ranges=explicit.length?explicit:windows(text,asOf);
   if(ranges.length!==1)return null;
   if(kind==="period")return {domain,kind,from:ranges[0].from,to:ranges[0].to};
