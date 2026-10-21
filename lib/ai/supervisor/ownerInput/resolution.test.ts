@@ -49,5 +49,9 @@ describe("one typed, non-writing owner resolution contract",()=>{
     expect(prepareOwnerResolution(free,"    ")).toBeNull();
     expect(prepareOwnerResolution(free,"z".repeat(201))).toBeNull();
     expect(prepareOwnerResolution(free,"I meant next week")).toMatchObject({answer:"I meant next week"});
+    const foreignId="00000012-0000-4000-8000-000000000099";
+    expect(prepareOwnerResolution(free,foreignId)).toBeNull();
+    expect(resumeOwnerResolution("Raise Latte",free,foreignId)).toBeNull();
+    expect(prepareOwnerResolution(request,foreignId)).toBeNull();
   });
 });
