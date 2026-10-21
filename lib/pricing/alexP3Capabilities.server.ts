@@ -152,7 +152,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     purpose: "Read-only summary (recorded price, ingredient cost, recommended price where one " +
       "exists) of a bounded sample of active menu items from the existing reviewed Alex pricing " +
       "reader. Never changes a price or recipe.",
-    ownerInputWriteIds:["menu.ingredient_price.manual.v1"],
+    ownerInputWriteIds:["menu.ingredient_price.manual.v1","platform.owner_input.resolve.v1"],
     sourceIds: ["p1.authoritative_snapshot.v1"],
     canonicalReaderIds: ["alex.pricing.atomic_snapshot"],
     allowedPurposes: ["pricing_review"],
@@ -220,7 +220,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     },
   }, {
     id: ALEX_P3_WHATIF_ID, version: 1 as const, owner: "alex",
-    ownerInputWriteIds:["menu.ingredient_price.manual.v1"],
+    ownerInputWriteIds:["menu.ingredient_price.manual.v1","platform.owner_input.resolve.v1"],
     resultKind: "owner_parameterized_simulation" as const,
     mode: "read" as const, availability: "shadow" as const,
     purpose: "Read-only target-margin/cost-ratio or selling-price-delta what-if for ONE named " +
