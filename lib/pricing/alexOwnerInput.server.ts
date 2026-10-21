@@ -81,23 +81,28 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
   const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\\s+/gu," ").toLocaleLowerCase("en");
-  // This authed, business-scoped projection supplies the canonical family
-  // columns absent from P1's legacy monetary snapshot. Prove it is the SAME
-  // complete menu state, not an unbounded independent roster.
-  const db=await createServerSupabaseClient();
-  const {data:projection,error}=await db.from("menu_items")
-    .select("id,name,base_name,size_label,price_cents,is_active")
-    .eq("business_id",scope.businessId).limit(501);
-  if(error||!projection||projection.length!==first.snapshot.sources.menu.length)return null;
-  const sourceById=new Map(first.snapshot.sources.menu.map(row=>[row.id,row]));
-  if(!projection.every(item=>{
-    const source=sourceById.get(item.id);
-    return source&&source.name===item.name&&source.is_active===item.is_active&&
-      source.price_cents===item.price_cents;
-  }))return null;
-  const matches=projection.filter(item=>item.is_active&&
-    (normalized(item.name)===normalized(selector.exactName)||
-     normalized(item.base_name??item.name)===normalized(selector.exactName)));
+  const exact=first.snapshot.sources.menu.filter(m=>m.is_active&&
+    normalized(m.name)===normalized(selector.exactName));
+  let matches:readonly {id:string;name:string;price_cents:number|null;
+    is_active:boolean;size_label?:string|null}[]=exact;
+  if(exact.length<2){
+    // A verified, business-scoped family projection is needed only when the
+    // atomic canonical names alone cannot prove multiple active variants.
+    const db=await createServerSupabaseClient();
+    const {data:projection,error}=await db.from("menu_items")
+      .select("id,name,base_name,size_label,price_cents,is_active")
+      .eq("business_id",scope.businessId).limit(501);
+    if(error||!projection||projection.length!==first.snapshot.sources.menu.length)return null;
+    const sourceById=new Map(first.snapshot.sources.menu.map(row=>[row.id,row]));
+    if(!projection.every(item=>{
+      const source=sourceById.get(item.id);
+      return source&&source.name===item.name&&source.is_active===item.is_active&&
+        source.price_cents===item.price_cents;
+    }))return null;
+    matches=projection.filter(item=>item.is_active&&
+      (normalized(item.name)===normalized(selector.exactName)||
+       normalized(item.base_name??item.name)===normalized(selector.exactName)));
+  }
   if(matches.length>30)return null;
   const latest=await readAuthorizedAtomicP1SourceSnapshot();
   if(latest.status!=="available"||latest.snapshot.businessId!==first.snapshot.businessId||
