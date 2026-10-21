@@ -59,6 +59,7 @@ export async function persistGroundedSupervisorReply(
     ownerMessageId: ownerMessage.id,
     responder: "bounded-grounded-responses-supervisor-v2",
     ...(safe.investigationMemory?{investigationMemory:safe.investigationMemory}:{}),
+    ...(safe.ownerInput?{ownerInput:safe.ownerInput}:{}),
   };
   const { data, error } = await admin.from("ai_messages").insert({
     id, business_id: scope.businessId, owner_user_id: scope.ownerUserId,
