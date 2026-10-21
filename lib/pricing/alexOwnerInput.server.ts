@@ -2,6 +2,9 @@ import "server-only";
 import type {TrustedReadScope} from "@/lib/ai/supervisor/p2/registry";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type {OwnerInputRequest} from "@/lib/ai/supervisor/ownerInput/contracts";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 
 /** A deterministic source-gap declaration. No model/keyword inspection is used to classify it. */
 export async function alexMissingIngredientCost(scope:TrustedReadScope,
@@ -87,26 +90,27 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
       writeCapabilityId:"platform.owner_input.resolve.v1",
       writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
       question:{
-        en:"I couldn't find that active menu item. Is it a new product? Please describe it.",
-        es:"No encontré ese producto activo. ¿Es nuevo? Descríbelo, por favor.",
-        ar:"لم أجد هذا المنتج في القائمة النشطة. هل هو منتج جديد؟ يُرجى وصفه.",
+        en:en.SupervisorOwnerHelp.catalogMissingQuestion,
+        es:es.SupervisorOwnerHelp.catalogMissingQuestion,
+        ar:ar.SupervisorOwnerHelp.catalogMissingQuestion,
       },input:{kind:"free_text",hint:{
-        en:"Tell me whether this is new, with its ingredients and quantities if known.",
-        es:"Indica si es nuevo y sus ingredientes y cantidades, si los conoces.",
-        ar:"أخبرني هل هو جديد وما المكونات والكميات إن كنت تعرفها.",
+        en:en.SupervisorOwnerHelp.catalogMissingHint,
+        es:es.SupervisorOwnerHelp.catalogMissingHint,
+        ar:ar.SupervisorOwnerHelp.catalogMissingHint,
       }}};
   }
-  const options=matches.map(m=>({id:m.id,label:{
-    en:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
-    es:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
-    ar:m.name+" — "+(m.price_cents===null?"price unknown":(m.price_cents/100).toFixed(2)+" USD"),
-  }}));
+  const copy={en:en.SupervisorOwnerHelp,es:es.SupervisorOwnerHelp,ar:ar.SupervisorOwnerHelp};
+  const options=matches.map(m=>({id:m.id,label:Object.fromEntries(
+    (["en","es","ar"] as const).map(locale=>[locale,m.name+" — "+
+      (m.price_cents===null?copy[locale].priceUnknown:
+        new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(m.price_cents/100))])
+  ) as Record<"en"|"es"|"ar",string>}));
   return {mode:"resolve",fieldId:"owner.clarification",
     writeCapabilityId:"platform.owner_input.resolve.v1",
     writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
     question:{
-      en:"Which matching menu item did you mean?",
-      es:"¿A cuál de los productos coincidentes te refieres?",
-      ar:"أي عنصر من عناصر القائمة المتطابقة تقصد؟",
+      en:en.SupervisorOwnerHelp.catalogMultipleQuestion,
+      es:es.SupervisorOwnerHelp.catalogMultipleQuestion,
+      ar:ar.SupervisorOwnerHelp.catalogMultipleQuestion,
     },input:{kind:"options",options}};
 }
