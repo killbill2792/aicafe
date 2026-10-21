@@ -512,12 +512,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const visibleIds=new Set(modelVisibleIds(manifest.map(m=>m.id)));
   const readOwner=(id:string)=>manifest.find(m=>m.id===id)?.owner;
   const storedCalendarSelector=(domain:string,kind:"period"|"week")=>{
-    if((memory?.calendarScopes??[]).some(scope=>scope.domain===domain&&scope.kind===kind))
-      return (memory?.calendarScopeOrigins??[]).some(origin=>
-        origin.domain===domain&&origin.kind===kind&&origin.requestKey===requestKey);
-    if(input.replayedOwnerRequest&&!(memory?.calendarScopeOrigins??[]).some(origin=>
-      origin.domain===domain&&origin.kind===kind&&origin.requestKey!==requestKey))
-      return (memory?.reads??[]).some(read=>{
+    if(!input.replayedOwnerRequest)return false;
+    const scopes=(memory?.calendarScopes??[]).filter(s=>s.domain===domain&&s.kind===kind);
+    const origins=(memory?.calendarScopeOrigins??[]).filter(o=>o.domain===domain&&o.kind===kind);
+    if(origins.length)return origins.some(o=>o.requestKey===requestKey);
+    // Existing v1 cards without origin metadata need their validated scope
+    // restored during replay; a new identical request gets no such exemption.
+    if(scopes.length)return true;
+    return (memory?.reads??[]).some(read=>{
       if(readOwner(read.capabilityId)!==domain)return false;
       try{return investigationCalendarScope(JSON.parse(read.inputJson),domain)?.kind===kind;}
       catch{return false;}
@@ -1354,7 +1356,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // A result reason must never be mistaken for a registry preflight verdict.
     if(readDomain&&readDispatched){
       const calendar=investigationCalendarScope(args,readDomain);
-      if(calendar)calendarScopes.push(calendar);
+      if(calendar)rememberScope(calendar,capabilityId);
     }
     const id="r"+(observations.length+1);
     const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
