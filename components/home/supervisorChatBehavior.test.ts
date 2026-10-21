@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
-import { beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
@@ -49,6 +49,17 @@ describe("Supervisor chat turn and scroll behavior", () => {
       scrollTop: 165, scrollHeight: 1450, previousScrollHeight: 1000,
       openAtTop: true, followLatest: false,
     })).toBe(615);
+  });
+  it("only the latest pending card remains interactive after a new reply, cancel or newer owner message",()=>{
+    const oldQuestion={...answer,id:"q-old",blocks:[{type:"owner_question",questionId:"q1"}]};
+    const confirmation={...answer,id:"q-confirm",blocks:[{type:"owner_question",questionId:"q2"}]};
+    expect(activeOwnerQuestionMessageId([owner,oldQuestion])).toBe("q-old");
+    expect(activeOwnerQuestionMessageId([owner,oldQuestion,{...owner,id:"typed"}])).toBeNull();
+    expect(activeOwnerQuestionMessageId([owner,oldQuestion,{...owner,id:"typed"},confirmation]))
+      .toBe("q-confirm");
+    expect(activeOwnerQuestionMessageId([owner,oldQuestion,{...owner,id:"typed"},confirmation,
+      {...owner,id:"confirmed"},answer])).toBeNull();
+    expect(activeOwnerQuestionMessageId([owner,oldQuestion,answer])).toBeNull();
   });
   it("uses original retry key and bounds post-answer whitespace", () => {
     expect(sendKey("original-key", "different-key", () => "random")).toBe("original-key");
