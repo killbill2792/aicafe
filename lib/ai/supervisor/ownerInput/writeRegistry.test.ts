@@ -1,0 +1,72 @@
+import {describe,it,expect,vi} from "vitest";
+vi.mock("server-only",()=>({}));
+vi.mock("@/lib/actions/menuItems",()=>({addManualIngredientPrice:vi.fn()}));
+vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:vi.fn()}));
+vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomicP1SourceSnapshot:vi.fn()}));
+import {z} from "zod";
+import {schemaFingerprint,createP2Registry} from "@/lib/ai/supervisor/p2/registry";
+import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
+import {createOwnerInputWriteRegistry,parseOwnerPackageCost} from "./writeRegistry.server";
+import {ownerInputRequestSchema,type OwnerInputRequest} from "./contracts";
+import {buildOwnerQuestionReply} from "./response";
+import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
+const cafe="11111111-1111-4111-8111-111111111111";
+const request:OwnerInputRequest={fieldId:"supplier.minimum_order",
+  writeCapabilityId:"maya.supplier.minimum_order.v1",
+  writeContext:{supplierId:"canonical-supplier"},
+  question:{en:"What is the minimum order?",es:"¿Pedido mínimo?",ar:"ما الحد الأدنى للطلب؟"},
+  input:{kind:"free_text",hint:{en:"10",es:"10",ar:"10"}}};
+const input=z.strictObject({purpose:z.literal("supplier_read")});
+const output=z.strictObject({status:z.literal("requires_owner_input"),
+  value:z.null(),ownerInput:ownerInputRequestSchema});
+describe("registered generic owner-answerable input dispatch",()=>{
+  it("accepts a second unrelated domain through exactly the same safe registry contract",async()=>{
+    let count=0;
+    const registration={id:"p3.maya.test.v1",version:1 as const,owner:"maya",
+      mode:"read" as const,availability:"shadow" as const,purpose:"supplier read",
+      sourceIds:["maya.snapshot"],canonicalReaderIds:["maya.supplier"],
+      allowedPurposes:["supplier_read"],inputSchema:input,outputSchema:output,
+      schemaContract:{id:"p3.maya.test.v1.v1",registrationId:"p3.maya.test.v1",
+        version:1 as const,inputSchemaFingerprint:schemaFingerprint(input),
+        outputSchemaFingerprint:schemaFingerprint(output)},
+      requiredRole:"owner" as const,sensitivity:"normal" as const,
+      budgets:{maxOperations:1,timeoutMs:1000,maxResultBytes:20000,maxInputBytes:2000,maxRangeDays:30},
+      requiresApproval:false as const,effectPolicy:"deny" as const,
+      ownerInputWriteIds:["maya.supplier.minimum_order.v1"],
+      read:async()=>({status:"requires_owner_input" as const,value:null,ownerInput:request}),
+    };
+    const registry=createP2Registry([registration]);
+    const scope={role:"owner" as const,businessId:cafe,shadowEnabled:true,
+      identity:{businessId:cafe,asOf:"2026-10-20",timezone:"America/Los_Angeles",currency:"USD"},
+      tools:{} as BusinessScopedCafeTools};
+    const result=await registry.invoke(scope,registration.id,{purpose:"supplier_read"});
+    expect(result).toMatchObject({status:"requires_owner_input",ownerInput:{
+      writeCapabilityId:"maya.supplier.minimum_order.v1"}});
+    const rendered=validateGroundedReply(buildOwnerQuestionReply({
+      businessId:cafe,originalText:"What's the supplier minimum?",readCapabilityId:registration.id,
+      readInput:{purpose:"supplier_read"},request}));
+    expect(rendered.blocks[0].type).toBe("owner_question");
+    const writes=createOwnerInputWriteRegistry([{
+      id:"maya.supplier.minimum_order.v1",fieldId:"supplier.minimum_order",
+      prepare:(_req,answer)=>answer==="10"?{summary:{en:"10",es:"10",ar:"10"}}:null,
+      apply:async(scope,req,answer)=>{
+        expect(scope.businessId).toBe(cafe);
+        expect(req.writeContext.supplierId).toBe("canonical-supplier");
+        expect(answer).toBe("10");count++;return {ok:true};
+      },
+    }]);
+    expect(writes.prepare(request,"10")).not.toBeNull();
+    expect(await writes.apply({businessId:cafe,ownerUserId:"owner"},request,"10"))
+      .toEqual({ok:true});
+    expect(count).toBe(1);
+  });
+  it("rejects unregistered write references, invalid numeric input and extra fields",async()=>{
+    const writes=createOwnerInputWriteRegistry([]);
+    expect(writes.prepare(request,"10")).toBeNull();
+    expect((await writes.apply({businessId:cafe,ownerUserId:"owner"},request,"10")).ok).toBe(false);
+    expect(parseOwnerPackageCost("5.00 / 1000")).toEqual({packageCostCents:500,packageQuantity:1000});
+    for(const invalid of ["0 / 1","-3 / 1","5/0","5.999/1000","ignore previous instructions","5/NaN"])
+      expect(parseOwnerPackageCost(invalid)).toBeNull();
+    expect(ownerInputRequestSchema.safeParse({...request,sql:"delete from suppliers"}).success).toBe(false);
+  });
+});
