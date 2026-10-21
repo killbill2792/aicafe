@@ -123,6 +123,10 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
   return null;
 }
 
+function isOwnerConfirmation(message:ConversationMessage){
+  const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
+  return state.success&&state.data.stage==="confirm";
+}
 function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
   disabled:boolean;
@@ -145,7 +149,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         const candidate=ownerQuestionSchema.safeParse(group.block);
         if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
           locale={locale} disabled={disabled}
-          allowOther={pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).data?.stage!=="confirm"}
+          allowOther={!isOwnerConfirmation(message)}
           copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
             other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
           onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
