@@ -41,7 +41,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    const result=await response.json() as {simulation?:Simulation;report?:{status:string}};
    if(result.simulation)setSimulation(result.simulation);
    if(result.report)setReport(result.report);
-   const latest=await fetch(endpoint,{cache:"no-store"});
+   const latest=await fetch(listEndpoint,{cache:"no-store"});
    if(!latest.ok)throw new Error();
    const state=await latest.json() as {proposals:Proposal[]};
    setProposals(state.proposals);
