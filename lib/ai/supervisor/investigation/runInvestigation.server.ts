@@ -210,9 +210,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // language, rather than silently publishing an incomplete candidate.
   // Reviewer prose is untrusted diagnostic detail, not localized owner copy.
   // Emit only the bounded reason's PRESENCE to the sanitized diagnostic stream.
-  const missingGoalWarning=(_reason:string):SupervisorReplyBlock=>({
-    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:labels.notConfirmed.replace("{count}","1"),
-  });
+  const missingGoalWarning=(_reason:string,
+    domain?:ReviewVerdict["missingGoalDomain"]):SupervisorReplyBlock=>{
+    const copy=({en,es,ar} as const)[input.locale].SupervisorOwnerHelp;
+    const text=domain?copy.incompleteByDomain.replace("{domain}",copy.domains[domain]):
+      copy.incomplete;
+    return {type:"warning",code:"SUPERVISOR_INCOMPLETE",text};
+  };
   // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
   // production diagnostics logger; only ties this one turn's raw debug
@@ -330,7 +334,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           }else{
             bestAccumulated={...bestAccumulated,status:"partial",
               blocks:[...bestAccumulated.blocks.filter(block=>block.type==="warning"),
-                ...safeBlocks,missingGoalWarning(accReview.reason)],
+                ...safeBlocks,missingGoalWarning(accReview.reason,accReview.missingGoalDomain)],
               evidence:safeEvidence,citedIds:[...safeCitedIds]};
             input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
               failureCategory:"reviewer_downgraded_to_partial"});
@@ -338,7 +342,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         }else if(!accReview.complete){
           bestAccumulated={...bestAccumulated,status:"partial",
             blocks:bestAccumulated.blocks.length<30?
-              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
+              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason,accReview.missingGoalDomain)]:
               bestAccumulated.blocks};
         }
       }
@@ -902,7 +906,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         downgradedByReview=true;
         reply={...reply,status:"partial",blocks:[
           ...safeReviewBlocks,
-          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason)]:[]),
+          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason,review.missingGoalDomain)]:[]),
         ]};
         input.onDiagnostic?.({stage:"grounded_answer",failureCategory:"reviewer_downgraded_to_partial"});
       }
@@ -954,7 +958,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
-          [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
+          [...reply!.blocks,missingGoalWarning(review.reason,review.missingGoalDomain)]:reply!.blocks};
       // Reviewed clarification paragraphs use the SAME ownerInputReply
       // dispatcher, durable pending state, auth and snapshot guards as domain
       // missing-data requests. This path cannot perform a domain write.
