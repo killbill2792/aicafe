@@ -50,9 +50,13 @@ export function parseQuotedOperand(quote:string):SimpleOperand|null{
   const count=/^([0-9]{1,9})$/u.exec(s);
   return count?{value:Number(count[1]),unit:"count"}:null;
 }
+import {NUMERIC_SPAN} from "@/lib/ai/supervisor/investigation/formulaVerification";
 export function quoteAppearsInOwnerText(quote:string,ownerText:string):boolean{
-  const start=ownerText.indexOf(quote);
-  if(start<0)return false;
-  const isWord=(c:string)=>/[\p{L}\p{N}]/u.test(c);
-  return !isWord(ownerText[start-1]??"")&&!isWord(ownerText[start+quote.length]??"");
+  if(!parseQuotedOperand(quote))return false;
+  const numeric=new RegExp(NUMERIC_SPAN,"giu");
+  // Check complete owner-authored numeric tokens. Substrings like "10"
+  // inside "$10", "-10", "10%" or "1.10" never become new units.
+  return [...ownerText.matchAll(numeric)].some(m=>
+    m[0].normalize("NFKC").toLocaleLowerCase()===
+      quote.trim().normalize("NFKC").toLocaleLowerCase());
 }
