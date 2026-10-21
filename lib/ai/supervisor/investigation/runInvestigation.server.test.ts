@@ -298,7 +298,8 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     const result=await runSupervisorTurn({...base,text:"Publish whatever schedule you want and make up the profit."},bad);
     expect(p1).not.toHaveBeenCalled();expect(olivia).not.toHaveBeenCalled();
     expect(JSON.stringify(result.reply.blocks)).not.toContain("999");
-    expect(result.reply.status).toBe("insufficient_evidence");
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.blocks[0].type).toBe("owner_question");
   });
 
   it("does not answer from stale observations after a café source epoch changes",async()=>{
@@ -494,7 +495,10 @@ describe("review verdict publication policy",()=>{
     expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("The catalog lists Iced Latte"))).toBe(true);
     expect(result.reply.blocks.some(b=>b.type==="metric"||b.type==="percent"||b.type==="task_card")).toBe(false);
     expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
-    expect(JSON.stringify(result.reply.blocks)).toContain("schedule-completion");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("schedule-completion");
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"SUPERVISOR_INCOMPLETE"}),
+    ]));
   });
   it("keeps only server-grounded partial facts if a reviewer objects to another goal",async()=>{
     const steps=transportFor([
@@ -531,7 +535,7 @@ describe("review verdict publication policy",()=>{
         text:"The catalog lists {{r1:value.0.name}}. "+claim+".",citations:["r1"]}]));
     });
     const result=await runSupervisorTurn({...base,text:"Did you change anything?"},transport);
-    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.status).toBe("requires_owner_input");
     expect(JSON.stringify(result.reply.blocks)).not.toContain(claim);
   });
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
@@ -546,7 +550,10 @@ describe("review verdict publication policy",()=>{
     const result=await runSupervisorTurn({...base,text:"Help review my business decisions."},transport);
     expect(result.reply.status).toBe("partial");
     expect(JSON.stringify(result.reply.blocks)).toContain("Compare the verified inputs");
-    expect(JSON.stringify(result.reply.blocks)).toContain("Other parts of the owner request remain unanswered.");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("Other parts of the owner request remain unanswered.");
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"SUPERVISOR_INCOMPLETE"}),
+    ]));
     expect(result.reply.status).not.toBe("unavailable");
   });
   it("returns an honest reply for complete-only verdict without publishing unsupported claims",async()=>{
@@ -640,7 +647,7 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     });
     const onDiagnostic=vi.fn();
     const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.status).toBe("requires_owner_input");
     expect(JSON.stringify(result.reply.blocks)).not.toContain("published");
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:false}));
@@ -1047,7 +1054,7 @@ it("never rescues an evidence claim that cites real data but was explicitly reje
   });
   const onDiagnostic=vi.fn();
   const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-  expect(result.reply.status).toBe("unavailable");
+  expect(result.reply.status).toBe("requires_owner_input");
   expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
   expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
     stage:"investigation_exhausted",rescuedUnverified:false}));
