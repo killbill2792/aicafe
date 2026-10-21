@@ -21,7 +21,7 @@ export function prepareOwnerResolution(raw:unknown,answer:string):
     const alternative=answer.trim();
     return alternative&&alternative.length<=200&&
       !request.input.options.some(option=>Object.values(option.label).includes(alternative))&&
-      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(alternative)?
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(alternative)?
       {answer:alternative,label:alternative}:null;
   }
   const value=answer.trim();
