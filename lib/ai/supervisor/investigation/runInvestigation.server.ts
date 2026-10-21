@@ -1062,7 +1062,24 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             input:validOptions?{kind:"options",options:[...known]}:
               {kind:"free_text",hint:hints},
             context:input.inertProposal?.knownClarificationContext?.()});
-          const awaiting=await ownerInputReply("platform.owner_input.resolve.v1",{},
+          // A reviewed question has no domain-issued tool ID of its own.
+          // Bind a calendar answer only when the REGISTERED temporal evidence
+          // leaves one unambiguous domain (and any typed missing-goal domain
+          // agrees). Never infer a privileged domain from untrusted prose.
+          const temporalReads=observations.filter(o=>{
+            const domain=readOwner(o.capabilityId);
+            return domain&&investigationCalendarScope(o.input,domain);
+          });
+          const temporalDomains=[...new Set(temporalReads.map(o=>readOwner(o.capabilityId)!))];
+          const requestedGoalDomain=review.missingGoalDomain;
+          const expectedDomains=requestedGoalDomain==="expenses"?["money"]:
+            requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
+            requestedGoalDomain==="sales"?["sales","money"]:
+            requestedGoalDomain==="pricing"||requestedGoalDomain==="menu"?["alex","pricing","menu"]:null;
+          const singleDomain=temporalDomains.length===1?temporalDomains[0]:null;
+          const origin=singleDomain&&(!expectedDomains||expectedDomains.includes(singleDomain))?
+            [...temporalReads].reverse().find(o=>readOwner(o.capabilityId)===singleDomain)?.capabilityId:null;
+          const awaiting=await ownerInputReply(origin??"platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
           if(awaiting){
             if(reply.evidence.length>0&&awaiting.reply.ownerInput){
