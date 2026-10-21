@@ -32,7 +32,15 @@ import {authorizedOwnerP1,executeP1Authorized} from "@/lib/metrics/p1Readers.ser
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {executeOliviaReadCapability} from "@/lib/scheduling/oliviaCapabilities.server";
 import {researchEnabled,researchPublicSources} from "@/lib/ai/suppliers/research.server";
-import {runSupervisorTurn} from "@/lib/ai/conversations/runSupervisorTurn.server";
+import {runSupervisorTurn as runDefaultSupervisorTurn} from "@/lib/ai/conversations/runSupervisorTurn.server";
+import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
+import {runInvestigationTurn} from "./runInvestigation.server";
+// Compatibility tests deliberately exercise the previous investigator request shape.
+// The new default conversational controller has a separate native-tool suite.
+const runSupervisorTurn=(input:Parameters<typeof runDefaultSupervisorTurn>[0],
+  transport:Parameters<typeof runDefaultSupervisorTurn>[1])=>
+  runInvestigationTurn({...input,apiKey:process.env.OPENAI_API_KEY??"",
+    model:configuredSupervisorModel()},transport);
 import {capabilityToolName,CALCULATE_TOOL_NAME,detectConflictingFacts} from "./runInvestigation.server";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
 import {readers,purposePolicies,type SupportedId} from "@/lib/metrics/p1Catalog";
