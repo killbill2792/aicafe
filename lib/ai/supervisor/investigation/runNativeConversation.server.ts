@@ -47,7 +47,7 @@ const tools=[
     parameters:{type:"object",additionalProperties:false,properties:{name:{type:"string"},input:{type:"object"}},required:["name","input"]}},
 ] as const;
 type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;source:EvidenceReference|null};
-const LIMITS={rounds:12,operations:12,elapsedMs:90000,previewRows:8,maxFacts:100};
+const LIMITS={rounds:12,operations:12,elapsedMs:90000,previewRows:8,maxFacts:500};
 const noDigits=(s:string)=>!/[\p{Nd}$€£¥%٪]|https?:\/\//iu.test(s);
 const localeCopy={
  en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source"},
@@ -294,7 +294,16 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       const label=String(item.name??item.productName??item.displayName??item.employeeName??"").slice(0,120);
       if(label)optionRows.set(item.id,{id:item.id,label});
     }
-    result={count:matching.length,rows:view,sourceObservationId:obs.id};
+    // A search result is a filtered projection of the already-authorized
+    // source. Give its matching rows their own source-backed fact IDs.
+    if(view.length){
+      const projected:Observation={...obs,id:"r"+(observations.length+1),
+        result:{...obs.result,value:view},reference:obs.reference};
+      observations.push(projected);
+      addFacts(projected);
+    }
+    result={count:matching.length,rows:view,sourceObservationId:obs.id,
+      facts:factView().slice(-35)};
    }else result={status:"unavailable",reason:"no_matching_observation"};
   }else if(name==="calculate_verified"){
    const resolve=(factId:unknown,ownerQuote:unknown):SimpleOperand|null=>{
