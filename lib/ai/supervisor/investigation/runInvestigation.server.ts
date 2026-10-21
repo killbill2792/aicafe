@@ -973,7 +973,18 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               {kind:"free_text",hint:hints}});
           const awaiting=await ownerInputReply("platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
-          if(awaiting)return awaiting;
+          if(awaiting){
+            if(reply.evidence.length>0&&awaiting.reply.ownerInput){
+              // Do not drop separately review-approved facts when another
+              // requested goal needs the owner's input. The evidence remains
+              // on the durable reply next to a single pending question.
+              const safeBlocks=reply.blocks.slice(0,29);
+              return {reply:{...reply,status:"requires_owner_input",
+                ownerInput:awaiting.reply.ownerInput,
+                blocks:[...safeBlocks,...awaiting.reply.blocks]},usage:awaiting.usage};
+            }
+            return awaiting;
+          }
         }
       }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
