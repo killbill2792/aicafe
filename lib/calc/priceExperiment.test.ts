@@ -39,6 +39,12 @@ describe("price experiment: canonical integer-cent scenarios",()=>{
       netSalesCents:0,coverage:"actual",source:"rollup"}])).toMatchObject({
       status:"in_progress",observedRevenueCents:0,units:0});
   });
+  it("caps increases relative to price",()=>{
+    const run=(increaseCents:number)=>simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:145,increaseCents,ingredientCostCents:60,units7Days:70});
+    expect(run(100000)).toBeNull();
+    expect(run(73)).toBeNull();
+    expect(run(72)?.newPriceCents).toBe(217);
+  });
   it("rejects impossible cent/volume inputs",()=>{
     expect(simulatePriceExperiment({productId:"x",productName:"X",currentPriceCents:500,
       increaseCents:0.1,ingredientCostCents:5,units7Days:10})).toBeNull();
