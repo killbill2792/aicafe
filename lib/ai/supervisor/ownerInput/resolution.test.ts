@@ -15,8 +15,16 @@ describe("one typed, non-writing owner resolution contract",()=>{
   });
   it("retains the authenticated selection as context, not as a fabricated business fact",()=>{
     const resumed=resumeOwnerResolution("How much does the latte cost?",request,options[0].id);
-    expect(resumed).toContain("selected catalog productId="+options[0].id);
-    expect(resumed).toContain("How much does the latte cost?");
+    expect(resumed?.ownerStatement).toContain("selected catalog productId="+options[0].id);
+    expect(resumed?.originalText).toBe("How much does the latte cost?");
+  });
+  it("never loses a later goal in a near-limit original owner request",()=>{
+    const original="First goal: "+("a".repeat(3780))+" Final goal: protect staff coverage.";
+    const resumed=resumeOwnerResolution(original,request,options[0].id);
+    expect(resumed?.originalText).toBe(original);
+    expect(resumed?.originalText).toContain("Final goal: protect staff coverage.");
+    expect(resumed?.ownerStatement).toContain("Latte 12 oz");
+    expect(resumed?.ownerStatement.length).toBeLessThanOrEqual(600);
   });
   it("never accepts resolution without the dedicated resolution mode and capability",()=>{
     expect(prepareOwnerResolution({...request,mode:"write"},options[0].id)).toBeNull();
