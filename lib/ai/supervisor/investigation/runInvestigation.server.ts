@@ -192,6 +192,9 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   ownerClarification?:string;
   /** Server-issued calendar question capability, never supplied by the model. */
   ownerClarificationReadCapabilityId?:string;
+  /** A durable question replay reuses the old goal; its historical dates
+   * must not override newer, persisted domain calendar scopes. */
+  replayedOwnerRequest?:boolean;
   /** Revalidated server-issued selection, never an owner-authored numeric assumption. */
   trustedCatalogProductId?:string;
   apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
@@ -490,7 +493,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
   const visibleIds=new Set(modelVisibleIds(manifest.map(m=>m.id)));
   const calendarTextForRead=(domain:string)=>authenticatedReadCalendarText(
-    input.text,input.ownerClarification,input.ownerClarificationReadCapabilityId,
+    // The original goals still go to the model intact, but they are NOT a
+    // newly authored date instruction when a durable answer resumes them.
+    input.replayedOwnerRequest?"":input.text,
+    input.ownerClarification,input.ownerClarificationReadCapabilityId,
     domain,identity.asOf,id=>manifest.find(m=>m.id===id)?.owner);
   const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
   // Native function-calling tools: one per discovered read capability, plus
