@@ -14,6 +14,10 @@ describe("Supervisor simple calculator uses exact cents and checked operand type
  it("rejects invented, fractional and wrong-unit inputs",()=>{
   expect(quoteAppearsInOwnerText("10%","increase it 100%")).toBe(false);
   expect(quoteAppearsInOwnerText("10%","increase it 10%")).toBe(true);
+  expect(quoteAppearsInOwnerText("5 cents","raise by 1.5 cents")).toBe(false);
+  expect(quoteAppearsInOwnerText("10","raise by $10")).toBe(false);
+  expect(quoteAppearsInOwnerText("10","raise by -10")).toBe(false);
+  expect(quoteAppearsInOwnerText("10 cents","increase it 10 cents")).toBe(true);
   expect(parseQuotedOperand("1.5 cents")).toBe(null);
   expect(calculateSimple("add",{value:700,unit:"USD_cents"},
     {value:1000,unit:"ratio_bps"})).toBe(null);
