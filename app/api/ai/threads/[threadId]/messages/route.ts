@@ -112,6 +112,7 @@ export async function POST(request: Request, context: RouteContext) {
     // resumable state. A client-supplied question ID or target never grants a write.
     let resumedOriginalText=input.text;
     let trustedResolutionProductId:string|null=null;
+    let ownerClarification:string|undefined;
     let directReply:GroundedSupervisorReply|null=null;
     if(ownerResponse){
       const prior=messages.filter(m=>m.role==="supervisor"&&
@@ -147,7 +148,8 @@ export async function POST(request: Request, context: RouteContext) {
               // Rediscover from the original question without retaining its ID.
               resumedOriginalText=state.originalText;
             }else{
-              resumedOriginalText=resumed;
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement;
               if(state.request.input.kind==="options")
                 trustedResolutionProductId=value;
             }
@@ -163,10 +165,12 @@ export async function POST(request: Request, context: RouteContext) {
               catalogIdentityFingerprint({id:item[0].id,name:item[0].name,
                 base_name:item[0].baseName,size_label:item[0].sizeLabel})===issued;
             if(valid){
-              resumedOriginalText=resumed;
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement;
               trustedResolutionProductId=value;
             }else resumedOriginalText=state.originalText;
-          }else resumedOriginalText=resumed;
+          }else resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement;
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
           directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
@@ -217,7 +221,7 @@ export async function POST(request: Request, context: RouteContext) {
       const completed=directReply?null:await runSupervisorTurn({
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
-        tools, history,
+        tools, history,ownerClarification,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
           knownClarificationContext:()=>reviewedVariantContext,
@@ -230,7 +234,7 @@ export async function POST(request: Request, context: RouteContext) {
           if(capabilityId!==priceExperimentCapabilityId)return null;
           const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            catalog,[resumedOriginalText,...olderOwnerTexts],trustedResolutionProductId);
+            catalog,[resumedOriginalText,ownerClarification??"",...olderOwnerTexts],trustedResolutionProductId);
           if(!checked){
             // The pricing domain alone inspects trusted catalog cardinality.
             // The investigation dispatcher turns the resulting options into
