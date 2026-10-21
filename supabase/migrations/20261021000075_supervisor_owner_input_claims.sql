@@ -89,3 +89,103 @@ revoke all on function public.menu_add_manual_ingredient_price_if_revision(
   uuid,uuid,uuid,text,date,bigint,numeric) from public,anon,authenticated;
 grant execute on function public.menu_add_manual_ingredient_price_if_revision(
   uuid,uuid,uuid,text,date,bigint,numeric) to authenticated;
+
+
+-- Durable owner-question consumption and retry payload. Ordinary messages
+-- continue through ConversationService, but a structured card response is
+-- atomically compare-and-appended under a PER-THREAD lock with its full shape.
+alter table public.ai_messages
+  add column owner_input_prompt_message_id uuid references public.ai_messages(id) on delete cascade,
+  add column owner_input_response jsonb;
+create unique index ai_messages_one_owner_answer_per_prompt
+  on public.ai_messages(thread_id,owner_input_prompt_message_id)
+  where owner_input_prompt_message_id is not null;
+alter table public.ai_messages add constraint ai_messages_owner_input_columns
+  check (
+    (owner_input_prompt_message_id is null and owner_input_response is null)
+    or (
+      role='owner' and owner_input_prompt_message_id is not null
+      and owner_input_response is not null
+      and jsonb_typeof(owner_input_response)='object'
+    )
+  );
+-- Existing authenticated clients may still append only the original,
+-- validated owner text columns; ONLY this reviewed function can set
+-- the new owner-input metadata, preventing direct PostgREST card forgery.
+revoke insert on public.ai_messages from authenticated;
+grant insert (business_id,thread_id,owner_user_id,author_user_id,role,
+  content_type,text_content,structured_content,grounding,client_message_id)
+  on public.ai_messages to authenticated;
+
+create function public.supervisor_submit_owner_question(
+  p_business_id uuid,p_thread_id uuid,p_client_message_id uuid,
+  p_text text,p_response jsonb
+) returns jsonb language plpgsql security definer
+set search_path=pg_catalog,public as $submit_owner$
+declare
+  v_existing public.ai_messages%rowtype;
+  v_last public.ai_messages%rowtype;
+  v_inserted uuid;
+  v_question_id text;
+begin
+  if auth.uid() is null or p_text is null or
+    char_length(btrim(p_text)) not between 1 and 4000 or
+    p_response is null or jsonb_typeof(p_response)<>'object' or
+    (select count(*) from jsonb_object_keys(p_response)) not between 2 and 3 or
+    p_response->>'action' not in ('supply','confirm','dismiss') or
+    coalesce(p_response->>'questionId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+  then return jsonb_build_object('ok',false,'reason','invalid_response');
+  end if;
+  if p_response->>'action'='supply' and
+      (jsonb_typeof(p_response->'value')<>'string' or
+       char_length(p_response->>'value')>200) or
+     p_response->>'action'<>'supply' and p_response ? 'value'
+  then return jsonb_build_object('ok',false,'reason','invalid_response');
+  end if;
+  -- Serializes same-thread writes without table locks or cross-café blocking.
+  perform 1 from public.ai_threads t
+   where t.id=p_thread_id and t.business_id=p_business_id
+     and t.owner_user_id=auth.uid()
+     and exists(select 1 from public.memberships m where
+       m.business_id=t.business_id and m.user_id=auth.uid() and m.role='owner')
+   for update;
+  if not found then return jsonb_build_object('ok',false,'reason','unauthorized');end if;
+
+  select * into v_existing from public.ai_messages
+    where thread_id=p_thread_id and business_id=p_business_id
+      and owner_user_id=auth.uid() and client_message_id=p_client_message_id;
+  if found then
+    if v_existing.role='owner' and v_existing.text_content=p_text and
+      v_existing.owner_input_response=p_response and
+      v_existing.owner_input_prompt_message_id is not null
+    then return jsonb_build_object('ok',true,'replayed',true);end if;
+    return jsonb_build_object('ok',false,'reason','client_key_conflict');
+  end if;
+
+  select * into v_last from public.ai_messages
+    where thread_id=p_thread_id and business_id=p_business_id
+      and owner_user_id=auth.uid()
+    order by created_at desc,id desc limit 1;
+  if not found or v_last.role<>'supervisor' or
+    v_last.grounding->'ownerInput'->>'businessId'<>p_business_id::text or
+    v_last.grounding->'ownerInput'->>'questionId'<>p_response->>'questionId' or
+    (p_response->>'action'='supply' and
+      v_last.grounding->'ownerInput'->>'stage'<>'answer') or
+    (p_response->>'action'='confirm' and
+      v_last.grounding->'ownerInput'->>'stage'<>'confirm')
+  then return jsonb_build_object('ok',false,'reason','owner_input_not_pending');end if;
+  -- The unique prompt index is a second safeguard if another ingestion
+  -- path somehow races this transaction.
+  insert into public.ai_messages(business_id,thread_id,owner_user_id,
+    author_user_id,role,content_type,text_content,structured_content,
+    grounding,client_message_id,owner_input_prompt_message_id,owner_input_response)
+  values(p_business_id,p_thread_id,auth.uid(),auth.uid(),'owner','text',
+    p_text,null,null,p_client_message_id,v_last.id,p_response)
+  returning id into v_inserted;
+  return jsonb_build_object('ok',true,'ownerMessageId',v_inserted);
+end;
+$submit_owner$;
+revoke all on function public.supervisor_submit_owner_question(
+  uuid,uuid,uuid,text,jsonb) from public,anon,authenticated;
+grant execute on function public.supervisor_submit_owner_question(
+  uuid,uuid,uuid,text,jsonb) to authenticated;
