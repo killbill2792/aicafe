@@ -411,6 +411,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     return await failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
     ownerClause:input.text,durableOwnerInput:true,ownerContext:ownerStatements.join("\n")};
+  // The same bounded, selector-only memory accompanies every durable
+  // question, including one asked before a final answer is synthesized.
+  // No financial observations or model-derived balances are persisted.
+  const remembered:InvestigationMemory["reads"]=[];
+  const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
+  const currentMemory=():InvestigationMemory=>({
+    version:1,businessId:identity.businessId,ownerStatements,
+    reads:rememberInvestigationReads(memory?.reads??[],remembered),
+    calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
+  });
   // Every domain returns the same typed owner-answerable gap. The shared
   // loop renders/stores it without knowing any specialist's write contract.
   const ownerInputReply=async(capabilityId:string,args:unknown,result:unknown)=>{
@@ -433,7 +443,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     input.onDiagnostic?.({stage:"grounded_answer",agent:"supervisor",
       groundedStatus:"insufficient_evidence",modelCallCount:usage.modelCallCount,
       toolCallCount:usage.toolCallCount});
-    return {reply,usage:{...usage}};
+    return {reply:{...reply,investigationMemory:currentMemory()},usage:{...usage}};
   };
   // Same dispatcher is used for domain gaps, reviewed questions and
   // no-progress/calendar ambiguity. Only the producer knows why it is stuck.
@@ -511,10 +521,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         "outside this calculator.",
       parameters:z.toJSONSchema(planSchema,{unrepresentable:"any",reused:"inline"})},
   ];
-  const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
+  const observations:Observation[]=[],evidence:ShadowEvidence[]=[];
   const attempted=new Set<string>();
   const calendarReviews=new Map<string,"applies"|"unrelated"|"ambiguous">();
-  const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
   const ownerText=scope.ownerContext;
   let feedback:string|null=null;
   // §1 adaptive budget: a round that repeats a prior attempt verbatim, with
@@ -1027,15 +1036,14 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               const safeBlocks=reply.blocks.filter((_,i)=>i!==index).slice(0,29);
               return {reply:{...reply,status:"requires_owner_input",
                 ownerInput:awaiting.reply.ownerInput,
+                investigationMemory:awaiting.reply.investigationMemory,
                 blocks:[...safeBlocks,...awaiting.reply.blocks]},usage:awaiting.usage};
             }
             return awaiting;
           }
         }
       }
-      const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
-        reads:rememberInvestigationReads(memory?.reads??[],remembered),
-        calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
+      const state=currentMemory();
       input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:reply.status,
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
