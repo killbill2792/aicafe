@@ -125,6 +125,58 @@ try{
   check(tieSaved.length===1&&Number(tieSaved[0].cost_per_base_unit_micros)===504688,
     "database stores exact NUMERIC 504688 for 3.23 / 640");
 
+  // Structured follow-ups are consumed under a per-thread database lock:
+  // the owner message and its full response are one transaction, not two calls.
+  const threadId="11221221-aaaa-4aaa-8aaa-112211221122";
+  const promptId="11221221-bbbb-4bbb-8bbb-112211221122";
+  const questionId="11221221-cccc-4ccc-8ccc-112211221122";
+  const key1="11221221-dddd-4ddd-8ddd-112211221122";
+  const key2="11221221-eeee-4eee-8eee-112211221122";
+  const assistantReplyId="11221221-ffff-4fff-8fff-112211221122";
+  await admin.query("insert into public.ai_threads(id,business_id,owner_user_id,client_request_id) values($1,$2,$3,$4)",
+    [threadId,cafeA,ownerA,"11221221-0123-4123-8123-112211221122"]);
+  await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+    [promptId,cafeA,threadId,ownerA,JSON.stringify([{type:"owner_question",questionId}]),
+      JSON.stringify({status:"requires_owner_input",
+        ownerInput:{questionId,businessId:cafeA,stage:"answer"}})]);
+  const response={questionId,action:"supply",value:"3.23 / 640"};
+  const answerRpc=async(client,key,payload=response)=>(
+    await client.query("select public.supervisor_submit_owner_question($1,$2,$3,$4,$5::jsonb) as outcome",
+      [cafeA,threadId,key,"3.23 / 640",JSON.stringify(payload)])).rows[0].outcome;
+  check(!(await admin.query("select has_function_privilege('anon','public.supervisor_submit_owner_question(uuid,uuid,uuid,text,jsonb)','EXECUTE') as allowed")).rows[0].allowed,
+    "anonymous callers cannot consume Supervisor question");
+  await asOwner(other,ownerB);
+  check((await answerRpc(other,key2)).ok===false,"different café owner denied question");
+  await other.query("COMMIT");
+  await asOwner(owner,ownerA);
+  const firstAnswer=await answerRpc(owner,key1);
+  check(firstAnswer.ok===true,"authorized answer persisted atomically");
+  await asOwner(concurrent,ownerA);
+  let secondDone=false;
+  const secondAnswerPromise=answerRpc(concurrent,key2).then(x=>{secondDone=true;return x;});
+  await new Promise(resolve=>setTimeout(resolve,180));
+  check(!secondDone,"same question concurrent submission waits for thread lock");
+  await owner.query("COMMIT");
+  const secondAnswer=await secondAnswerPromise;
+  await concurrent.query("COMMIT");
+  check(secondAnswer.ok===false&&secondAnswer.reason==="owner_input_not_pending",
+    "second tab cannot advance already-answered question");
+  const recorded=(await admin.query("select owner_input_response,owner_input_prompt_message_id from public.ai_messages where thread_id=$1 and role='owner'",
+    [threadId])).rows;
+  check(recorded.length===1&&recorded[0].owner_input_prompt_message_id===promptId&&
+    recorded[0].owner_input_response.value==="3.23 / 640",
+    "winner's exact structured answer stored with only one owner message");
+  await admin.query("insert into public.ai_messages(id,business_id,thread_id,owner_user_id,role,content_type,structured_content,grounding) values($1,$2,$3,$4,'supervisor','blocks',$5::jsonb,$6::jsonb)",
+    [assistantReplyId,cafeA,threadId,ownerA,JSON.stringify([{type:"text",text:"Next answer"}]),
+      JSON.stringify({status:"insufficient_evidence"})]);
+  await asOwner(owner,ownerA);
+  const recovered=await answerRpc(owner,key1);
+  await owner.query("COMMIT");
+  check(recovered.ok===true&&recovered.replayed===true,
+    "lost HTTP response can replay client ID even after a newer Supervisor reply");
+  check((await admin.query("select count(*)::int as n from public.ai_messages where thread_id=$1 and role='owner'",
+    [threadId])).rows[0].n===1,"replaying after later reply adds no duplicate owner message");
+
   // Two different tenants have different epoch locks. No table-wide lock.
   check((await admin.query("select revision from public.p1_business_source_epochs where business_id=$1",
     [cafeB])).rows.length===1,"unrelated café epoch remains independently accessible");
