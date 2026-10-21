@@ -1298,6 +1298,10 @@
     "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone."
   },
   "SupervisorChat": {
+    "ownerInputDismiss": "Not now",
+    "ownerInputConfirm": "Continue",
+    "ownerInputOther": "Answer another way",
+    "ownerInputAnswer": "Your answer",
     "menuTotal": "Products in your menu",
     "menuActive": "Active menu products",
     "menuCategoryDrink": "Drink products",
