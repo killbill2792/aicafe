@@ -63,6 +63,23 @@ export function authenticatedReadCalendarText(current:string,
     hasInvestigationOwnerCalendarDate(clarification,asOf)?clarification:current;
 }
 
+/** An authenticated correction may precede another question rather than a
+ * reader dispatch. Capture only an unambiguous, parsed selector of the
+ * previously issued domain; no financial observations or dates inferred by
+ * the LLM are persisted. */
+export function authenticatedOwnerCalendarScope(text:string,domain:string,
+  asOf:string,kind:"period"|"week"):InvestigationCalendarScope|null{
+  const ranges=windows(text,asOf);
+  if(ranges.length!==1)return null;
+  if(kind==="period")return {domain,kind,from:ranges[0].from,to:ranges[0].to};
+  const week=ownerScheduleWeek(text,asOf);
+  if(week)return {domain,kind,week};
+  const days=Date.parse(ranges[0].to+"T12:00:00Z")-
+    Date.parse(ranges[0].from+"T12:00:00Z");
+  const monday=new Date(ranges[0].from+"T12:00:00Z").getUTCDay()===1;
+  return monday&&days===6*86400000?{domain,kind,week:ranges[0].from}:null;
+}
+
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
   memory:InvestigationMemory|undefined,_ownerStatements:readonly string[],domain:string,
   domainForRead:(capabilityId:string)=>string|undefined):boolean{
