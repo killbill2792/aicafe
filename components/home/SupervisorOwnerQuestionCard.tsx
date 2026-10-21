@@ -13,8 +13,6 @@ export default function SupervisorOwnerQuestionCard({
 }){
   const [answer,setAnswer]=useState("");
   const [showOther,setShowOther]=useState(false);
-  const [closed,setClosed]=useState(false);
-  if(closed)return null;
   const options=card.input.kind==="options"?card.input.options:[];
   const typing=card.input.kind==="free_text"||showOther;
   return <section dir={locale==="ar"?"rtl":"ltr"}
@@ -25,7 +23,7 @@ export default function SupervisorOwnerQuestionCard({
       <button type="button" aria-label={copy.dismiss} title={copy.dismiss}
         disabled={disabled}
         className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink-muted hover:bg-[#F3ECE3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-        onClick={()=>{setClosed(true);onDismiss();}}><X size={21} aria-hidden="true"/></button>
+        onClick={onDismiss}><X size={21} aria-hidden="true"/></button>
     </div>
     {card.input.kind==="options"&&<div role="group" aria-label={card.title[locale]}
       className={`mt-3 flex flex-col gap-2 ${options.length>5?"max-h-72 overflow-y-auto pe-1":""}`}>
