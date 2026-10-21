@@ -185,6 +185,23 @@ describe("POST owner-input persistence and continuation",()=>{
     expect(mocks.commitOwnerInput).toHaveBeenCalledTimes(1);
     expect(mocks.run.mock.calls[0][0].text).toBe(confirmed.originalText);
   });
+  it("keeps an overlapping approval retriable without saving a false terminal reply",async()=>{
+    const confirmed={...pendingOwnerQuestion,stage:"confirm" as const,
+      answer:"4.50 / 946",summary:{en:"Save?",es:"¿Guardar?",ar:"حفظ؟"}};
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"confirm-card",role:"supervisor",contentType:"blocks",
+        createdAt:"2026-10-20T02:00:00Z",grounding:{ownerInput:confirmed},
+        blocks:[],text:null},mocks.message,
+    ]});
+    mocks.commitOwnerInput.mockResolvedValueOnce({
+      ok:false,reason:"confirmation_in_progress",
+    });
+    const response=await POST(interactiveRequest("confirm"),ctx);
+    expect(response.status).toBe(409);
+    expect(mocks.commitOwnerInput).toHaveBeenCalledTimes(1);
+    expect(mocks.persist).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
+  });
   it("dismisses without writing and allows later re-asking",async()=>{
     expect((await POST(interactiveRequest("dismiss"),ctx)).status).toBe(201);
     expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
