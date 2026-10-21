@@ -123,6 +123,26 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
   return null;
 }
 
+/** Match only an answer AFTER the individual card, before a reissued card.
+ * The confirm stage deliberately reuses the questionId of its supply stage.
+ */
+export function answeredOwnerQuestion(messages:readonly ConversationMessage[],
+  questionMessage:ConversationMessage,questionId:string):ConversationMessage|null{
+ const start=messages.findIndex(m=>m.id===questionMessage.id);
+ if(start<0)return null;
+ const state=pendingOwnerInputSchema.safeParse(questionMessage.grounding?.ownerInput);
+ const stage=state.success?state.data.stage:"answer";
+ for(const next of messages.slice(start+1)){
+   if(next.role==="supervisor"&&next.blocks?.some(b=>
+     typeof b==="object"&&b!==null&&"type" in b&&b.type==="owner_question"&&
+     "questionId" in b&&b.questionId===questionId))break;
+   if(next.role!=="owner"||next.ownerInputResponse?.questionId!==questionId)continue;
+   const action=next.ownerInputResponse.action;
+   if((stage==="answer"&&(action==="supply"||action==="dismiss"))||
+      (stage==="confirm"&&(action==="confirm"||action==="dismiss")))return next;
+ }
+ return null;
+}
 function isOwnerConfirmation(message:ConversationMessage){
   const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
   return state.success&&state.data.stage==="confirm";
@@ -148,16 +168,22 @@ function SupervisorMessage({ message, messages, copy, locale, onOwnerResponse, d
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
-        if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
+        if(candidate.success){
+          const answered=answeredOwnerQuestion(messages,message,candidate.data.questionId);
+          const selected=answered?.ownerInputResponse?.value;
+          const choice=candidate.data.input.kind==="options"?
+            candidate.data.input.options.find(o=>o.id===selected):undefined;
+          return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
           locale={locale} disabled={disabled}
-          resolved={messages.some(next=>next.role==="owner"&&next.ownerInputResponse?.questionId===candidate.data.questionId)}
-          resolvedAnswer={messages.find(next=>next.role==="owner"&&next.ownerInputResponse?.questionId===candidate.data.questionId)?.text??""}
+          resolved={Boolean(answered)}
+          resolvedAnswer={choice?.label[locale]??(answered?.text??"")}
           allowOther={!isOwnerConfirmation(message)}
           locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
           copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
             other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
           onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
           onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
+        }
         return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>;
       })}
     </div>
