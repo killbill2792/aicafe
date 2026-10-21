@@ -40,7 +40,7 @@ import {runInvestigationTurn} from "./runInvestigation.server";
 const runSupervisorTurn=(input:Parameters<typeof runDefaultSupervisorTurn>[0],
   transport:Parameters<typeof runDefaultSupervisorTurn>[1])=>
   runInvestigationTurn({...input,apiKey:process.env.OPENAI_API_KEY??"",
-    model:configuredSupervisorModel()},transport);
+    model:configuredSupervisorModel()},transport??fetch);
 import {capabilityToolName,CALCULATE_TOOL_NAME,detectConflictingFacts} from "./runInvestigation.server";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
 import {readers,purposePolicies,type SupportedId} from "@/lib/metrics/p1Catalog";
