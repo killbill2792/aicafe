@@ -10,7 +10,11 @@ import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInves
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
-import {adaptReviewedClarifications,type KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
+import type {KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
+import {ownerResolutionRequest} from "@/lib/ai/supervisor/ownerInput/resolution";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
 import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
@@ -914,11 +918,27 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
           [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
-      // The older known-record ambiguity flow stays unchanged; only its reviewed
-      // owner-facing question becomes an interactive card after independent review.
-      if(review.supported&&!downgradedByReview)
-        reply=adaptReviewedClarifications(reply,answer,input.locale,
-          input.inertProposal?.knownClarificationOptions?.()??[]);
+      // Reviewed clarification paragraphs use the SAME ownerInputReply
+      // dispatcher, durable pending state, auth and snapshot guards as domain
+      // missing-data requests. This path cannot perform a domain write.
+      if(review.supported&&!downgradedByReview){
+        const clarification=answer.paragraphs.find(p=>p.kind==="clarification"&&p.citations.length===0);
+        if(clarification){
+          const known=input.inertProposal?.knownClarificationOptions?.()??[];
+          const validOptions=known.length>=2&&known.length<=30&&known.every(o=>
+            o.id&&o.label.en&&o.label.es&&o.label.ar);
+          const hints={en:en.SupervisorChat.ownerInputAnswer,
+            es:es.SupervisorChat.ownerInputAnswer,ar:ar.SupervisorChat.ownerInputAnswer};
+          const title={en:clarification.text.slice(0,240),es:clarification.text.slice(0,240),
+            ar:clarification.text.slice(0,240)};
+          const request=ownerResolutionRequest({question:title,
+            input:validOptions?{kind:"options",options:[...known]}:
+              {kind:"free_text",hint:hints}});
+          const awaiting=await ownerInputReply("platform.owner_input.resolve.v1",{},
+            {status:"requires_owner_input",ownerInput:request});
+          if(awaiting)return awaiting;
+        }
+      }
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
