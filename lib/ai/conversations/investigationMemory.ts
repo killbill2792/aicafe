@@ -8,10 +8,16 @@ export const investigationCalendarScopeSchema=z.discriminatedUnion("kind",[
   z.strictObject({domain:z.string().min(1).max(120),kind:z.literal("week"),week:z.string().date()}),
 ]);
 export type InvestigationCalendarScope=z.infer<typeof investigationCalendarScopeSchema>;
+/** Authenticated selector provenance. Ties a date override to the original
+ * owner goal and registered reader without storing financial observations. */
+const calendarScopeOriginSchema=z.strictObject({domain:z.string().min(1).max(120),
+  kind:z.enum(["period","week"]),requestKey:z.string().regex(/^[a-f0-9]{64}$/),
+  capabilityId:z.string().min(1).max(120)});
 export const investigationMemorySchema=z.strictObject({
   version:z.literal(1),businessId:z.string().min(1).max(120),
   ownerStatements:z.array(z.string().min(1).max(4000)).max(6),
   calendarScopes:z.array(investigationCalendarScopeSchema).max(5).optional(),
+  calendarScopeOrigins:z.array(calendarScopeOriginSchema).max(5).optional(),
   reads:z.array(z.strictObject({capabilityId:z.string().min(1).max(120),
     inputJson:z.string().min(2).max(6000)})).max(5),
 });
