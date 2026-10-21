@@ -95,8 +95,8 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
   if (!record(block)) return null;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
-      ? <p className="flex gap-2 rounded-2xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[17px] leading-relaxed text-ink">
-          <AlertCircle aria-hidden="true" size={20} className="mt-1 shrink-0 text-[#A96510]" />{block.text}
+      ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
+          <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
       : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{block.text}</p>;
   }
