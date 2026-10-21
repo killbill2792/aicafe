@@ -15,6 +15,9 @@ const calendarScopeOriginSchema=z.strictObject({domain:z.string().min(1).max(120
   capabilityId:z.string().min(1).max(120)});
 export const investigationMemorySchema=z.strictObject({
   version:z.literal(1),businessId:z.string().min(1).max(120),
+  // Unique to this owner-request instance; chained durable answers reuse it.
+  // Identical wording in a newly authored request must start a new instance.
+  requestKey:z.string().regex(/^[a-f0-9]{64}$/).optional(),
   ownerStatements:z.array(z.string().min(1).max(4000)).max(6),
   calendarScopes:z.array(investigationCalendarScopeSchema).max(5).optional(),
   calendarScopeOrigins:z.array(calendarScopeOriginSchema).max(5).optional(),
