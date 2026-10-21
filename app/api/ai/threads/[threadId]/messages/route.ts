@@ -113,6 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
     // resumable state. A client-supplied question ID or target never grants a write.
     let resumedOriginalText=input.text;
     let trustedResolutionProductId:string|null=null;
+    let trustedResolutionFingerprint:string|null=null;
     let ownerClarification:string|undefined;
     let ownerAuthoredClarification:string|undefined;
     let directReply:GroundedSupervisorReply|null=null;
@@ -141,7 +142,7 @@ export async function POST(request: Request, context: RouteContext) {
             // A legitimate "Answer another way" correction is a new owner
             // statement, not an authorization for any of the issued UUIDs.
             resumedOriginalText=resumed.originalText;
-            ownerClarification=resumed.ownerStatement;
+            ownerClarification=resumed.ownerStatement??undefined;
             ownerAuthoredClarification=value.trim();
           }else if(state.request.writeContext.domain==="menu"&&
             state.request.writeContext.catalogRevision){
@@ -158,9 +159,11 @@ export async function POST(request: Request, context: RouteContext) {
               resumedOriginalText=state.originalText;
             }else{
               resumedOriginalText=resumed.originalText;
-              ownerClarification=resumed.ownerStatement;
-              if(state.request.input.kind==="options")
+              ownerClarification=resumed.ownerStatement??undefined;
+              if(state.request.input.kind==="options"){
                 trustedResolutionProductId=value;
+                trustedResolutionFingerprint=state.request.writeContext["catalogIdentity:"+value]??null;
+              }
             }
           }else if(state.request.writeContext.domain==="menu_proposal"&&
             state.request.input.kind==="options"){
@@ -175,12 +178,32 @@ export async function POST(request: Request, context: RouteContext) {
                 base_name:item[0].baseName,size_label:item[0].sizeLabel})===issued;
             if(valid){
               resumedOriginalText=resumed.originalText;
-              ownerClarification=resumed.ownerStatement;
+              ownerClarification=resumed.ownerStatement??undefined;
               trustedResolutionProductId=value;
+              trustedResolutionFingerprint=issued;
+            }else resumedOriginalText=state.originalText;
+          }else if(state.request.writeContext.domain==="menu_proposal"&&
+            state.request.input.kind==="free_text"&&
+            state.request.writeContext.selectedProductId){
+            const selected=state.request.writeContext.selectedProductId;
+            const fingerprint=state.request.writeContext["catalogIdentity:"+selected];
+            const authorized=await authorizedOwnerP1();
+            const catalog=authorized.identity.businessId===scope.businessId?
+              await getMenuControlCenter():[];
+            const item=catalog.filter(row=>row.id===selected&&row.active);
+            const valid=item.length===1&&typeof fingerprint==="string"&&
+              catalogIdentityFingerprint({id:item[0].id,name:item[0].name,
+                base_name:item[0].baseName,size_label:item[0].sizeLabel})===fingerprint;
+            if(valid){
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement??undefined;
+              ownerAuthoredClarification=value.trim();
+              trustedResolutionProductId=selected;
+              trustedResolutionFingerprint=fingerprint;
             }else resumedOriginalText=state.originalText;
           }else{
             resumedOriginalText=resumed.originalText;
-            ownerClarification=resumed.ownerStatement;
+            ownerClarification=resumed.ownerStatement??undefined;
             if(state.request.input.kind==="free_text")
               ownerAuthoredClarification=value.trim();
           }
@@ -233,9 +256,14 @@ export async function POST(request: Request, context: RouteContext) {
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,ownerClarification,
+        trustedCatalogProductId:trustedResolutionProductId??undefined,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
-          knownClarificationContext:()=>reviewedVariantContext,
+          knownClarificationContext:()=>trustedResolutionProductId&&trustedResolutionFingerprint?{
+            ...reviewedVariantContext,domain:"menu_proposal",
+            selectedProductId:trustedResolutionProductId,
+            ["catalogIdentity:"+trustedResolutionProductId]:trustedResolutionFingerprint,
+          }:reviewedVariantContext,
           create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
           const authorized=await authorizedOwnerP1();
