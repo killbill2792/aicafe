@@ -5,6 +5,7 @@ import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.serve
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
+import {submitOwnerInputMessage} from "@/lib/ai/conversations/ownerInputSubmit.server";
 import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
 import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
@@ -68,21 +69,14 @@ export async function POST(request: Request, context: RouteContext) {
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
     if(input.ownerInputResponse){
-      // Reject stale UI / second-tab clicks BEFORE persisting an owner message.
-      // A replay of the same clientMessageId is allowed to recover its reply.
-      const recent=(await service.listMessages(id,0)).items;
-      const latest=[...recent].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
-      const alreadyPersisted=latest?.role==="owner"&&
-        latest.clientMessageId===input.clientMessageId;
-      if(!alreadyPersisted){
-        const pending=pendingOwnerInputSchema.safeParse(latest?.grounding?.ownerInput);
-        if(latest?.role!=="supervisor"||!pending.success||
-          pending.data.businessId!==scope.businessId||
-          pending.data.questionId!==input.ownerInputResponse.questionId)
-          throw new ConversationApiError(409,"owner_input_not_pending");
-      }
+      // This RPC commits the owner message + structured answer atomically under
+      // a per-thread lock. Distinct clients cannot consume one prompt twice.
+      const submitted=await submitOwnerInputMessage(scope,id,input.clientMessageId,
+        input.text,input.ownerInputResponse);
+      if(!submitted.ok)throw new ConversationApiError(409,submitted.reason);
     }
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
+    const ownerResponse=input.ownerInputResponse??message.ownerInputResponse;
     logSupervisorDebugPayload({point:"owner_message_persisted",requestId:debugRequestId,
       threadId:id,ownerMessageId:message.id,clientMessageId:input.clientMessageId,
       message,ownerRequest:input,ownerScope:{businessId:scope.businessId,ownerUserId:scope.ownerUserId}});
@@ -116,12 +110,12 @@ export async function POST(request: Request, context: RouteContext) {
     // resumable state. A client-supplied question ID or target never grants a write.
     let resumedOriginalText=input.text;
     let directReply:GroundedSupervisorReply|null=null;
-    if(input.ownerInputResponse){
+    if(ownerResponse){
       const prior=messages.filter(m=>m.role==="supervisor"&&
         m.createdAt<=message.createdAt&&m.id!==message.id)
         .sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
       const pending=pendingOwnerInputSchema.safeParse(prior?.grounding?.ownerInput);
-      const response=input.ownerInputResponse;
+      const response=ownerResponse;
       if(!pending.success||pending.data.businessId!==scope.businessId||
         pending.data.questionId!==response.questionId)
         throw new ConversationApiError(409,"owner_input_not_pending");
