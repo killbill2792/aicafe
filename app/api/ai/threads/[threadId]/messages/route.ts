@@ -26,7 +26,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {alexCatalogChoiceStillValid} from "@/lib/pricing/alexOwnerInput.server";
+import {alexCatalogChoiceStillValid,catalogIdentityFingerprint} from "@/lib/pricing/alexOwnerInput.server";
 import {validatePriceProposalCandidate,priceProposalToolJsonSchema,ambiguousPriceProposalOptions} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -151,6 +151,21 @@ export async function POST(request: Request, context: RouteContext) {
               if(state.request.input.kind==="options")
                 trustedResolutionProductId=value;
             }
+          }else if(state.request.writeContext.domain==="menu_proposal"&&
+            state.request.input.kind==="options"){
+            const currentOwner=await authorizedOwnerP1();
+            const catalog=currentOwner.identity.businessId===scope.businessId?
+              await getMenuControlCenter():[];
+            const item=catalog.filter(row=>row.id===value&&row.active);
+            const issued=state.request.writeContext["catalogIdentity:"+value];
+            const valid=state.request.input.options.some(o=>o.id===value)&&
+              item.length===1&&typeof issued==="string"&&
+              catalogIdentityFingerprint({id:item[0].id,name:item[0].name,
+                base_name:item[0].baseName,size_label:item[0].sizeLabel})===issued;
+            if(valid){
+              resumedOriginalText=resumed;
+              trustedResolutionProductId=value;
+            }else resumedOriginalText=state.originalText;
           }else resumedOriginalText=resumed;
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
@@ -186,6 +201,7 @@ export async function POST(request: Request, context: RouteContext) {
     let reply;
     try {
       let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
+      let reviewedVariantContext:Record<string,string>={};
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
         typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
@@ -204,6 +220,7 @@ export async function POST(request: Request, context: RouteContext) {
         tools, history,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
+          knownClarificationContext:()=>reviewedVariantContext,
           create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
           const authorized=await authorizedOwnerP1();
@@ -220,6 +237,15 @@ export async function POST(request: Request, context: RouteContext) {
             // the SAME persisted requires_owner_input state as every other gap.
             reviewedVariantOptions=ambiguousPriceProposalOptions(rawArgs,catalog,
               [input.text,...olderOwnerTexts]);
+            const allowed=new Set(reviewedVariantOptions.map(option=>option.id));
+            reviewedVariantContext=allowed.size>=2?{
+              domain:"menu_proposal",
+              ...Object.fromEntries(catalog.filter(row=>allowed.has(row.id)).map(row=>[
+                "catalogIdentity:"+row.id,catalogIdentityFingerprint({
+                  id:row.id,name:row.name,base_name:row.baseName,size_label:row.sizeLabel,
+                }),
+              ])),
+            }:{};
             return null;
           }
           const proposed=await proposeLoop({businessId:scope.businessId,
