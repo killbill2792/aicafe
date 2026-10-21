@@ -301,9 +301,18 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
            observationReference(identity.businessId,input.asOf,id,value):null,display:{}};
        observations.push(observation);
        addFacts(observation);
+       // Keep the prior trusted dataset analysis engine available for
+       // aggregating this observed source without resending the full array.
+       const q=isRecord(value.quality)?value.quality:null;
+       const completeQuality=q&&Array.isArray(q.missingInputs)&&
+         Array.isArray(q.estimatedInputs)&&Array.isArray(q.staleInputs);
+       const sourceId=typeof value.id==="string"?value.id:id;
+       const dataset=completeQuality?datasetFor(sourceId,value.value,q as {
+         missingInputs:string[];estimatedInputs:string[];staleInputs:string[]}):null;
+       if(dataset)datasets.set(observation.id,{sourceId,dataset,revision:null});
        result={observationId:observation.id,status:value.status,values:preview(value.value),
          quality:preview(value.quality),reason:value.reason??null,facts:factView().slice(-25),
-         totalRows:Array.isArray(value.value)?value.value.length:null,
+         datasetFields:dataset?.fields??null,totalRows:Array.isArray(value.value)?value.value.length:null,
          hint:"For more array rows call search_observation with this observation ID."};
      }
     }
