@@ -67,6 +67,21 @@ export async function POST(request: Request, context: RouteContext) {
       threadId:id,ownerQuestion:input.text});
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
+    if(input.ownerInputResponse){
+      // Reject stale UI / second-tab clicks BEFORE persisting an owner message.
+      // A replay of the same clientMessageId is allowed to recover its reply.
+      const recent=(await service.listMessages(id,0)).items;
+      const latest=[...recent].sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+      const alreadyPersisted=latest?.role==="owner"&&
+        latest.clientMessageId===input.clientMessageId;
+      if(!alreadyPersisted){
+        const pending=pendingOwnerInputSchema.safeParse(latest?.grounding?.ownerInput);
+        if(latest?.role!=="supervisor"||!pending.success||
+          pending.data.businessId!==scope.businessId||
+          pending.data.questionId!==input.ownerInputResponse.questionId)
+          throw new ConversationApiError(409,"owner_input_not_pending");
+      }
+    }
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
     logSupervisorDebugPayload({point:"owner_message_persisted",requestId:debugRequestId,
       threadId:id,ownerMessageId:message.id,clientMessageId:input.clientMessageId,
