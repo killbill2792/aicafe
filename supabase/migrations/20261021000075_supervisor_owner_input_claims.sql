@@ -27,7 +27,7 @@ create function public.menu_add_manual_ingredient_price_if_revision(
   p_business_id uuid, p_menu_item_id uuid, p_ingredient_id uuid,
   p_expected_revision text, p_expected_day date,
   p_package_cost_cents bigint, p_package_quantity numeric
-) returns jsonb language plpgsql security definer
+) returns jsonb language plpgsql strict security definer
 set search_path=pg_catalog,public as $owner_price$
 declare
   v_revision bigint;
