@@ -1297,6 +1297,14 @@
     "invalid": "Enter a target from 0% to 80%.",
     "targetNotFeasible": "This target is not feasible from the current cost structure through pricing alone."
   },
+  "SupervisorOwnerHelp": {
+    "priceUnknown": "price unknown",
+    "catalogMissingQuestion": "I couldn't find that active menu item. Is it a new product? Please describe it.",
+    "catalogMissingHint": "Tell me whether this is new, with its ingredients and quantities if known.",
+    "catalogMultipleQuestion": "Which matching menu item did you mean?",
+    "stuckDetail": "Which detail should I clarify before continuing?",
+    "incomplete": "Part of your request could not be confirmed."
+  },
   "SupervisorChat": {
     "ownerInputDismiss": "Not now",
     "ownerInputConfirm": "Continue",
