@@ -1,3 +1,13 @@
+## Supervisor owner-supplied source facts and adaptive clarification cards — PR #141 (2026-10-21)
+- [x] Add registry-validated `requires_owner_input` result with stable missing field, reviewed write ID, exact scoped source context, and localized question.
+- [x] Generic investigation result handling with no Alex-specific branch; durable question answer/confirm states in conversation grounding; authenticated single-use write claim; original request rerun after authoritative ingredient-price reread.
+- [x] Source-proven Alex single missing-ingredient case reuses `addManualIngredientPrice` and canonical recipe cost reader; do not infer historical sales or invent a missing recipe. Missing data from multiple/ambiguous records remains unavailable, not guessed.
+- [x] Responsive, warm-paper adaptive cards for options and free input, with keyboard focus, 48px targets, cancel, scrollable 8+ options, EN/ES/AR and RTL. Existing variant/amount approval logic unchanged; only reviewed clarification presentation is adapted.
+- [x] Regression tests for extra masked-value copy assertions and grammar, generic second unrelated-domain write capability, missing-cost live-read integration with mocked DB state, selectable/scrollable cards, and idempotent confirmation claim. Final GitHub Actions status must be verified on final HEAD.
+- [x] **Status convention decision:** the existing `ingredient_prices` table and Menu action represent owner-entered prices as `source:'manual'`, while real prices are still freshness-unverified in Alex's quality flags. This is the same convention for chat-originated owner-confirmed package purchases; no synthetic `actual` receipt assertion and no chat-only price-status column. Expense `source/status` requirements remain unchanged; owner-total costs retain their separate `confirmed|estimated` contract. A receipt would be needed to attest independent external price verification. Original SQL schema and existing Menu readers are unchanged.
+- [x] No changes to Olivia, pricing math, POS writes, production migrations or runtime deployment. Migration file for private confirmation claims is committed but not applied to production.
+- [ ] Final CI all green, independent Codex review on final HEAD and owner merge approval required.
+
 ## Universal Supervisor canonical evidence, native multi-call and grounded tracing — Issue #131 (2026-10-19, PR in review)
 - [x] Audit P1 alias families and preserve all original P1 tool contracts.
 - [x] Add field-aware descriptions and canonical monthly-bills cents extraction from one atomic snapshot.
