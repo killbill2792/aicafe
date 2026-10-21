@@ -169,8 +169,10 @@ export async function POST(request: Request, context: RouteContext) {
               ownerClarification=resumed.ownerStatement;
               trustedResolutionProductId=value;
             }else resumedOriginalText=state.originalText;
-          }else resumedOriginalText=resumed.originalText;
-              ownerClarification=resumed.ownerStatement;
+          }else{
+            resumedOriginalText=resumed.originalText;
+            ownerClarification=resumed.ownerStatement;
+          }
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
           directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
