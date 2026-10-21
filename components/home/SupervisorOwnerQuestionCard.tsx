@@ -11,16 +11,22 @@ export function dismissOwnerQuestion(locallyDismissible:boolean,hide:()=>void,su
   else submit();
 }
 export default function SupervisorOwnerQuestionCard({
-  card,locale,copy,disabled=false,allowOther=true,locallyDismissible=false,onAnswer,onDismiss,
+  card,locale,copy,disabled=false,allowOther=true,locallyDismissible=false,resolved=false,resolvedAnswer="",onAnswer,onDismiss,
 }:{
   card:OwnerQuestion;locale:"en"|"es"|"ar";copy:OwnerCardCopy;
   disabled?:boolean;allowOther?:boolean;locallyDismissible?:boolean;
+  resolved?:boolean;resolvedAnswer?:string;
   onAnswer:(value:string,isOption:boolean)=>void;onDismiss:()=>void;
 }){
   const [answer,setAnswer]=useState("");
   const [showOther,setShowOther]=useState(false);
   const [locallyClosed,setLocallyClosed]=useState(false);
   if(locallyClosed&&locallyDismissible)return null;
+  if(resolved)return <section aria-label={card.title[locale]}
+    className="rounded-xl border border-[#D8C8B5] bg-[#F8F4EF] px-4 py-3 text-[17px] text-ink">
+    <p className="font-semibold">{card.title[locale]}</p>
+    <p className="mt-1">{resolvedAnswer}</p>
+  </section>;
   const options=card.input.kind==="options"?card.input.options:[];
   const typing=card.input.kind==="free_text"||showOther;
   return <section dir={locale==="ar"?"rtl":"ltr"}
