@@ -366,6 +366,19 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:old});
   });
+  it("persists an Olivia week correction before any scheduling read",async()=>{
+    const original="Preview the schedule for 2026-10-19.";
+    const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[]};
+    const updated=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-27 instead",
+      ownerClarificationReadCapabilityId:"p3.olivia.records.v1",investigationMemory:prior},
+      transportFor([answer([{kind:"clarification",
+        text:"Which staffing plan should I compare?",citations:[]}])],undefined,true,"staff"));
+    expect(updated.reply.status).toBe("requires_owner_input");
+    expect(updated.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"olivia",kind:"week",week:"2026-10-26"});
+  });
   it("authenticates reviewed expense date corrections before the first source read",async()=>{
     const id="p3.money.expense_entries.v1";
     const original="Show expense entries from 2026-10-01 to 2026-10-07";
