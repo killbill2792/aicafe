@@ -394,6 +394,41 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(p1).toHaveBeenCalledTimes(1);
     expect(p1.mock.calls[0][2]).toMatchObject({period:old});
   });
+  it("issues the first reviewed scheduling card from a typed week reader, then persists its answer",async()=>{
+    const original="Preview the schedule for 2026-10-19";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      answer([{kind:"clarification",text:"Which scheduling week should I preview?",citations:[]}]),
+    ],undefined,true,"scheduling"));
+    const issued=first.reply.ownerInput?.readCapabilityId;
+    expect(issued).toMatch(/^p3\\.olivia\\./);
+    const second=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      investigationMemory:first.reply.investigationMemory,
+      ownerClarification:"Use October 27 instead",
+      ownerClarificationReadCapabilityId:issued},transportFor([
+      answer([{kind:"clarification",text:"Which plan should I compare?",citations:[]}]),
+    ],undefined,true,"staff"));
+    expect(second.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"olivia",kind:"week",week:"2026-10-26"});
+    expect(second.reply.investigationMemory?.calendarScopeOrigins).toEqual(expect.arrayContaining([
+      expect.objectContaining({domain:"olivia",kind:"week",capabilityId:issued}),
+    ]));
+  });
+  it("honors legacy scope provenance on replay without an origin key",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries 2026-10-01 to 2026-10-07";
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      calendarScopes:[{domain:"money",kind:"period" as const,...corrected}],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:corrected}))}]};
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:previous},transportFor([
+      read(id,query("money.expense_entries",{period:corrected})),
+      answer([{kind:"evidence",text:"Retrieved the corrected expense entries.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
   it("persists an Olivia week correction before any scheduling read",async()=>{
     const original="Preview the schedule for 2026-10-19.";
     const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
