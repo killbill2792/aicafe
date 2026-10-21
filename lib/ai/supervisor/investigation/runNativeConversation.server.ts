@@ -325,7 +325,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     const rememberedProduct=priorContext.selectedProductId??input.trustedCatalogProductId;
     const savedItem=rememberedProduct?await getMenuControlCenter().then(items=>
       items.find(row=>row.id===rememberedProduct&&row.active)):undefined;
-    const context=menuOptions?{
+    const context:Record<string,string>|undefined=menuOptions?{
       domain:"menu_proposal",
       ...Object.fromEntries(matched.map(row=>[
         "catalogIdentity:"+row!.id,
