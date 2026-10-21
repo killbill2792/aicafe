@@ -13,6 +13,12 @@ export function prepareOwnerResolution(raw:unknown,answer:string):
   if(request.mode!=="resolve"||
     request.writeCapabilityId!==OWNER_RESOLUTION_ID||
     request.fieldId!==OWNER_RESOLUTION_FIELD)return null;
+  // Applies to BOTH free-text and option alternatives. UUID-shaped answers
+  // identify records, never a genuine requested price or calendar value.
+  const trimmed=answer.trim();
+  if(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(trimmed)&&
+    (request.input.kind!=="options"||!request.input.options.some(o=>o.id===trimmed)))
+    return null;
   if(request.input.kind==="options"){
     const matches=request.input.options.filter(o=>o.id===answer);
     if(matches.length===1)return {answer,label:matches[0].label.en};
