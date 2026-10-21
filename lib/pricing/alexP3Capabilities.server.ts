@@ -59,8 +59,14 @@ const qualitySchema = z.strictObject({
 });
 const ownerInputOutputSchema=z.strictObject({status:z.literal("requires_owner_input"),
   value:z.null(),ownerInput:ownerInputRequestSchema});
+const catalogZeroMatchOutputSchema=z.strictObject({
+  status:z.literal("verified"),id:z.literal("alex.pricing.catalog_zero_match"),
+  value:z.strictObject({requestedName:z.string().min(1).max(120),
+    matchingActiveCount:z.literal(0)}),
+  provenance:provenanceSchema,quality:qualitySchema,
+});
 export const alexP3ReviewOutputSchema = z.union([
-  ownerInputOutputSchema,
+  ownerInputOutputSchema,catalogZeroMatchOutputSchema,
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
   z.strictObject({
     status: z.enum(["verified", "partial"]), id: z.literal("alex.pricing.review"),
@@ -168,6 +174,14 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     async read(scope: TrustedReadScope,rawInput: unknown) {
       const input=rawInput as z.infer<typeof inputSchema>;
       const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection&&"kind" in selection&&selection.kind==="zero_match")
+        return {status:"verified" as const,id:"alex.pricing.catalog_zero_match" as const,
+          value:{requestedName:selection.exactName,matchingActiveCount:0 as const},
+          provenance:{sourceId:"p1.authoritative_snapshot.v1" as const,
+            canonicalReaderId:"alex.pricing.atomic_snapshot" as const,
+            sourceRevision:selection.sourceRevision,purpose:"pricing_review" as const,
+            asOf:scope.identity.asOf},
+          quality:{missingInputs:[],estimatedInputs:[],staleInputs:[]}};
       if(selection&&!("productId" in selection))
         return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
       const raw = await alexReview.read(scope, {
@@ -245,6 +259,8 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       // The domain resolves typed ingredient names inside its source snapshot.
       const input = rawInput as AlexNamedSimulateInput;
       const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection&&"kind" in selection&&selection.kind==="zero_match")
+        return {status:"unavailable" as const,value:null,reason:"product_not_found"};
       if(selection&&!("productId" in selection))
         return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
       const resolvedInput=selection&&"productId" in selection?
