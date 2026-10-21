@@ -27,7 +27,9 @@ export function confirmOwnerQuestion(pending:PendingOwnerInput,
         {id:"dismiss",label:{en:"Not now",es:"Ahora no",ar:"ليس الآن"}},
       ]}}]};
 }
-export function declinedOwnerQuestion():GroundedSupervisorReply{
+export function declinedOwnerQuestion(locale:"en"|"es"|"ar"):GroundedSupervisorReply{
   return {intent:"unknown",status:"insufficient_evidence",evidence:[],
-    blocks:[{type:"text",text:"No information was saved. You can return to the original question later."}]};
+    blocks:[{type:"text",text:{en:"Nothing was saved. You can return to the question later.",
+      es:"No se guardó nada. Puedes volver a esta pregunta cuando quieras.",
+      ar:"لم يتم حفظ أي شيء. يمكنك العودة إلى السؤال لاحقًا."}[locale]}]};
 }
