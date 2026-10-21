@@ -433,6 +433,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           ar:"وضّح التفاصيل الناقصة بكلماتك.",
         }}}),
     });
+  const askWhenStuck=async(question:Record<"en"|"es"|"ar",string>,
+    capabilityId?:string,args?:unknown)=>{
+    // An adaptive stop must NOT throw away a previously grounded, independently
+    // reviewable partial answer or its mandatory source cautions.
+    const rescued=await failure(true,"no_progress");
+    if(rescued.reply.blocks.some(block=>block.type==="text"))
+      return rescued;
+    return await askForHelp(question,capabilityId,args)??rescued;
+  };
   const datasets=new Map<string,StoredDataset>();
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
     buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
@@ -737,10 +746,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // not a repeat, even though the draft text itself is byte-identical.
       const answerSignature=JSON.stringify({answer,observationCount:observations.length});
       if(answerSignature===lastRejectedAnswerSignature)
-        return await askForHelp({en:"What additional detail should I use to answer your question?",
+        return await askWhenStuck({en:"What additional detail should I use to answer your question?",
           es:"¿Qué detalle adicional debo usar para responder a tu pregunta?",
-          ar:"ما التفاصيل الإضافية التي يجب أن أستخدمها للإجابة عن سؤالك؟"})??
-          await failure(true,"no_progress");
+          ar:"ما التفاصيل الإضافية التي يجب أن أستخدمها للإجابة عن سؤالك؟"});
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,
         ownerQuestion:input.text,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
@@ -975,10 +983,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // this exact unknown name was tried before.
       const unknownToolSignature=step.name+":"+observations.length;
       if(unknownToolSignature===lastUnknownToolName)
-        return await askForHelp({en:"What detail can you clarify so I can continue?",
+        return await askWhenStuck({en:"What detail can you clarify so I can continue?",
           es:"¿Qué detalle puedes aclarar para que pueda continuar?",
-          ar:"ما التفاصيل التي يمكنك توضيحها لكي أتمكن من المتابعة؟"})??
-          await failure(true,"no_progress");
+          ar:"ما التفاصيل التي يمكنك توضيحها لكي أتمكن من المتابعة؟"});
       lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
@@ -1003,10 +1010,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       lastDuplicateCapability=capabilityId;
       lastDuplicateObservationCount=observations.length;
       if(duplicateAgain)
-        return await askForHelp({en:"What should I clarify before continuing your request?",
+        return await askWhenStuck({en:"What should I clarify before continuing your request?",
           es:"¿Qué debo aclarar antes de continuar con tu solicitud?",
-          ar:"ما الذي يجب توضيحه قبل متابعة طلبك؟"},capabilityId,args)??
-          await failure(true,"no_progress");
+          ar:"ما الذي يجب توضيحه قبل متابعة طلبك؟"},capabilityId,args);
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
         reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
