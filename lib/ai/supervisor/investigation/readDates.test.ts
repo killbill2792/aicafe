@@ -1,5 +1,5 @@
 import {it,expect} from "vitest";
-import {investigationReadDatesMatch as checkDates,rememberInvestigationReads,investigationCalendarScope,authenticatedReadCalendarText} from "./readDates";
+import {investigationReadDatesMatch as checkDates,rememberInvestigationReads,investigationCalendarScope,authenticatedReadCalendarText,authenticatedOwnerCalendarScope} from "./readDates";
 import type {InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 const matches=(input:unknown,current:string,asOf:string,state:InvestigationMemory|undefined,statements:readonly string[])=>
   checkDates(input,current,asOf,state,statements,"test-domain",()=>"test-domain");
@@ -98,4 +98,11 @@ it("scopes authenticated date corrections to the question's registered reader do
     .toBe(before);
   expect(authenticatedReadCalendarText(before,correction,"forged","money",asOf,forRead))
     .toBe(before);
+});
+
+it("normalizes an authenticated single-date scheduling answer to its Monday week",()=>{
+  expect(authenticatedOwnerCalendarScope("Use 2026-10-27 instead","olivia",asOf,"week"))
+    .toEqual({domain:"olivia",kind:"week",week:"2026-10-26"});
+  expect(authenticatedOwnerCalendarScope("Use 2026-10-27 instead","money",asOf,"period"))
+    .toEqual({domain:"money",kind:"period",from:"2026-10-27",to:"2026-10-27"});
 });
