@@ -1172,9 +1172,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         }
         if(verdict==="ambiguous"){
           const awaiting=await askForHelp({
-            en:"Which dates should I use for this part of your request?",
-            es:"¿Qué fechas debo utilizar para esta parte de tu solicitud?",
-            ar:"ما التواريخ التي يجب أن أستخدمها لهذا الجزء من طلبك؟",
+            en:en.SupervisorOwnerHelp.dateClarification,
+             es:es.SupervisorOwnerHelp.dateClarification,
+             ar:ar.SupervisorOwnerHelp.dateClarification,
           },capabilityId,args);
           if(awaiting)return awaiting;
           feedback="The calendar scope is still unclear. Ask the owner to identify the relevant dates.";continue;
