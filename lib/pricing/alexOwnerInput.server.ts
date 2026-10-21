@@ -80,7 +80,7 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   const first=await readAuthorizedAtomicP1SourceSnapshot();
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
-  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\\s+/gu," ").toLocaleLowerCase("en");
+  const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\s+/gu," ").toLocaleLowerCase("en");
   const exact=first.snapshot.sources.menu.filter(m=>m.is_active&&
     normalized(m.name)===normalized(selector.exactName));
   let matches:readonly {id:string;name:string;price_cents:number|null;
@@ -112,6 +112,7 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   // question, but a simple "is this on my menu?" must be answered as absent.
   if(matches.length===0)return null;
   if(matches.length===1)return {productId:matches[0].id};
+  const copy={en:en.SupervisorOwnerHelp,es:es.SupervisorOwnerHelp,ar:ar.SupervisorOwnerHelp};
   const options=matches.map(m=>({id:m.id,label:Object.fromEntries(
     (["en","es","ar"] as const).map(locale=>[locale,m.name+" — "+
       (m.price_cents===null?copy[locale].priceUnknown:
