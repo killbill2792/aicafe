@@ -145,3 +145,27 @@ export function priceExperimentEstimatedUplift(baseline:PriceExperimentBaseline)
     baseline.newPriceCents<baseline.oldPriceCents)return null;
   return safeProduct(baseline.newPriceCents-baseline.oldPriceCents,baseline.baselineUnits7Days);
 }
+
+/** An honest preview does not require complete historical sales or recipe costs.
+ * It is not an authorized experiment proposal or a demand forecast.
+ */
+export function previewPriceExperiment(input:{
+  productId:string;productName:string;currentPriceCents:number;increaseCents:number;
+  ingredientCostCents:number|null;units7Days:number|null;
+}):{effect:{productId:string;productName:string;oldPriceCents:number;newPriceCents:number};
+ baseline:{estimatedAdditionalRevenue7DaysCents:number|null;missingInputs:string[]}}|null{
+ const {currentPriceCents:price,increaseCents:increase}=input;
+ if(!input.productId||!input.productName||!cents(price)||price===0||!cents(increase)||increase===0||
+   BigInt(increase)*10000n>BigInt(price)*BigInt(MAX_TRIAL_INCREASE_BPS))return null;
+ const next=BigInt(price)+BigInt(increase);
+ if(next>BigInt(Number.MAX_SAFE_INTEGER))return null;
+ const units=cents(input.units7Days??-1)?input.units7Days:null;
+ const estimate=units===null?null:safeProduct(increase,units);
+ return {effect:{productId:input.productId,productName:input.productName,
+   oldPriceCents:price,newPriceCents:Number(next)},
+   baseline:{estimatedAdditionalRevenue7DaysCents:estimate,
+     missingInputs:[
+       ...(!cents(input.ingredientCostCents??-1)?["ingredient_cost"]:[]),
+       ...(units===null?["covered_seven_day_sales"]:[]),
+     ]}};
+}
