@@ -106,3 +106,10 @@ it("normalizes an authenticated single-date scheduling answer to its Monday week
   expect(authenticatedOwnerCalendarScope("Use 2026-10-27 instead","money",asOf,"period"))
     .toEqual({domain:"money",kind:"period",from:"2026-10-27",to:"2026-10-27"});
 });
+
+it("persists multi-day corrections within one scheduling week but rejects cross-week intervals",()=>{
+  expect(authenticatedOwnerCalendarScope("Use 2026-10-20 to 2026-10-21 instead","olivia",asOf,"week"))
+    .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
+  expect(authenticatedOwnerCalendarScope("Use 2026-10-25 to 2026-10-26 instead","olivia",asOf,"week"))
+    .toBeNull();
+});
