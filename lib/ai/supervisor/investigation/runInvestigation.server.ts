@@ -423,7 +423,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // The same bounded, selector-only memory accompanies every durable
   // question, including one asked before a final answer is synthesized.
   // No financial observations or model-derived balances are persisted.
-  const requestKey=createHash("sha256").update(input.text).digest("hex");
+  // A replay continues its issuing owner request; an independently authored
+  // identical sentence is a NEW request with a different calendar origin.
+  const requestKey=input.replayedOwnerRequest&&memory?
+    (memory.requestKey??createHash("sha256").update(input.text).digest("hex")):
+    createHash("sha256").update(randomUUID()).digest("hex");
   const remembered:InvestigationMemory["reads"]=[];
   const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
   const scopeOrigins:NonNullable<InvestigationMemory["calendarScopeOrigins"]>=[];
@@ -432,7 +436,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     scopeOrigins.push({domain:scope.domain,kind:scope.kind,requestKey,capabilityId});
   };
   const currentMemory=():InvestigationMemory=>({
-    version:1,businessId:identity.businessId,ownerStatements,
+    version:1,businessId:identity.businessId,ownerStatements,requestKey,
     reads:rememberInvestigationReads(memory?.reads??[],remembered),
     calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
     calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]).filter(origin=>
