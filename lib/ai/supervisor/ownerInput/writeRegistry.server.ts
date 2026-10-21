@@ -49,16 +49,35 @@ export function createOwnerInputWriteRegistry(definitions:readonly OwnerInputWri
 }
 /** The one permitted input grammar is a USD package cost followed by a positive
  * quantity in the ALREADY-KNOWN canonical ingredient base unit. No freeform AI arithmetic. */
-export function parseOwnerPackageCost(input:string){
-  const parsed=z.string().trim().regex(/^\d{1,6}(?:\.\d{1,2})?\s*\/\s*\d{1,7}(?:\.\d{1,6})?$/).safeParse(input);
+/** PostgreSQL NUMERIC round() on positive values is exact, ties away from zero.
+ * The owner grammar permits at most six quantity decimals; preserve those
+ * decimal digits instead of introducing IEEE-754 half-cent drift. */
+function ownerPackagePriceParts(input:string){
+  const parsed=z.string().trim().regex(/^\\d{1,6}(?:\\.\\d{1,2})?\\s*\\/\\s*\\d{1,7}(?:\\.\\d{1,6})?$/).safeParse(input);
   if(!parsed.success)return null;
   const [price,quantity]=parsed.data.split("/").map(s=>s.trim());
   const [whole,fraction=""]=price.split(".");
   const cents=Number(whole)*100+Number(fraction.padEnd(2,"0"));
-  const count=Number(quantity);
-  return Number.isSafeInteger(cents)&&cents>0&&Number.isFinite(count)&&count>0&&
-    count<=1000000&&Number.isSafeInteger(Math.round(cents/count*1000000))
-    ?{packageCostCents:cents,packageQuantity:count}:null;
+  const [quantityWhole,quantityFraction=""]=quantity.split(".");
+  const scaledQuantity=BigInt(quantityWhole)*1_000_000n+
+    BigInt(quantityFraction.padEnd(6,"0")||"0");
+  if(!Number.isSafeInteger(cents)||cents<=0||scaledQuantity<=0n||
+    scaledQuantity>1_000_000_000_000n)return null;
+  // cost_per_base_unit_micros = round(cents / units * 1,000,000).
+  // units = scaledQuantity / 1,000,000.
+  const numerator=BigInt(cents)*1_000_000_000_000n;
+  const micro=(numerator+scaledQuantity/2n)/scaledQuantity;
+  if(micro<=0n||micro>BigInt(Number.MAX_SAFE_INTEGER))return null;
+  return {packageCostCents:cents,packageQuantity:Number(scaledQuantity)/1_000_000,
+    micro:Number(micro)};
+}
+export function expectedOwnerPriceMicros(input:string):number|null{
+  return ownerPackagePriceParts(input)?.micro??null;
+}
+export function parseOwnerPackageCost(input:string){
+  const value=ownerPackagePriceParts(input);
+  return value?{packageCostCents:value.packageCostCents,
+    packageQuantity:value.packageQuantity}:null;
 }
 export const alexOwnerInputWrite:OwnerInputWriteRegistration={
   id:"menu.ingredient_price.manual.v1",
@@ -89,7 +108,7 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
       p.ingredient_id===request.writeContext.ingredientId&&
       p.effective_from===request.writeContext.businessDay&&p.source==="manual");
     return matches.length===1&&matches[0].cost_per_base_unit_micros===
-      Math.round(amount.packageCostCents/amount.packageQuantity*1000000);
+      expectedOwnerPriceMicros(answer);
   },
   apply:async(scope,request,answer)=>{
     const amount=parseOwnerPackageCost(answer);
