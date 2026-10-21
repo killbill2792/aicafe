@@ -47,7 +47,7 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
   return {fieldId:"ingredient.package_cost_and_quantity",
     writeCapabilityId:"menu.ingredient_price.manual.v1",
     writeContext:{ingredientId:ingredient[0].id,productId:item.id,baseUnit:unit,
-      sourceRevision:snapshot.revision},
+      sourceRevision:snapshot.revision,businessDay:scope.identity.asOf},
     question:{
       en:`What did you pay for ${name} in ${productName}, and how much did you buy?`,
       es:`¿Cuánto pagaste por ${name} para ${productName} y qué cantidad compraste?`,
