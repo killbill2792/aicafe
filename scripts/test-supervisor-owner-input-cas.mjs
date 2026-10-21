@@ -149,6 +149,13 @@ try{
   check((await answerRpc(other,key2)).ok===false,"different café owner denied question");
   await other.query("COMMIT");
   await asOwner(owner,ownerA);
+  const unknownKey=await answerRpc(owner,key2,{questionId,action:"dismiss",extra:1});
+  check(unknownKey.ok===false&&unknownKey.reason==="invalid_response",
+    "direct RPC rejects extra confirmation fields before persisting any message");
+  const unknownSupplyKey=await answerRpc(owner,key2,
+    {questionId,action:"supply",value:"3.23 / 640",extra:1});
+  check(unknownSupplyKey.ok===false&&unknownSupplyKey.reason==="invalid_response",
+    "direct RPC rejects extra answer fields before they could brick strict readers");
   const firstAnswer=await answerRpc(owner,key1);
   check(firstAnswer.ok===true,"authorized answer persisted atomically");
   await asOwner(concurrent,ownerA);
