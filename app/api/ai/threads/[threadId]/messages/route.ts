@@ -26,7 +26,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {validatePriceProposalCandidate,priceProposalToolJsonSchema,priceProposalToolSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema,ambiguousPriceProposalOptions} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
@@ -194,23 +194,11 @@ export async function POST(request: Request, context: RouteContext) {
           const checked=validatePriceProposalCandidate(rawArgs,
             catalog,[input.text,...olderOwnerTexts]);
           if(!checked){
-            // Candidate validation, effect permission and the existing ask-one
-            // logic remain unchanged. This is ONLY a presentation list from
-            // exact active catalog names when the model already reported an
-            // ambiguous known variant.
-            const raw=priceProposalToolSchema.safeParse(rawArgs);
-            if(raw.success&&raw.data.variantStatus==="ambiguous"&&
-              raw.data.ownerProductQuote&&
-              [input.text,...olderOwnerTexts].some(t=>t.normalize("NFKC")
-                .toLocaleLowerCase("en").includes(raw.data.ownerProductQuote!
-                .normalize("NFKC").toLocaleLowerCase("en")))){
-              const q=raw.data.ownerProductQuote.normalize("NFKC").trim().toLocaleLowerCase("en");
-              const matches=catalog.filter(x=>x.active&&
-                x.baseName.normalize("NFKC").trim().toLocaleLowerCase("en")===q);
-              if(matches.length>=2&&matches.length<=30)
-                reviewedVariantOptions=matches.map(x=>({id:x.id,
-                  label:{en:x.name,es:x.name,ar:x.name}}));
-            }
+            // The pricing domain alone inspects trusted catalog cardinality.
+            // The investigation dispatcher turns the resulting options into
+            // the SAME persisted requires_owner_input state as every other gap.
+            reviewedVariantOptions=ambiguousPriceProposalOptions(rawArgs,catalog,
+              [input.text,...olderOwnerTexts]);
             return null;
           }
           const proposed=await proposeLoop({businessId:scope.businessId,
