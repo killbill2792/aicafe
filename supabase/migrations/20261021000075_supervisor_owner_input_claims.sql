@@ -91,6 +91,31 @@ grant execute on function public.menu_add_manual_ingredient_price_if_revision(
   uuid,uuid,uuid,text,date,bigint,numeric) to authenticated;
 
 
+-- Keep the prior append-only Supervisor content predicate exactly as reviewed
+-- in the conversation migration; add only the typed owner-input status. Without
+-- this additive allowance the new card reply cannot be stored at all.
+alter table public.ai_messages drop constraint ai_messages_supervisor_content_check;
+alter table public.ai_messages add constraint ai_messages_supervisor_content_check check (
+  (role='owner'
+    and author_user_id is not null and author_user_id=owner_user_id
+    and content_type='text' and text_content is not null
+    and char_length(btrim(text_content)) between 1 and 4000
+    and structured_content is null and grounding is null
+    and client_message_id is not null)
+  or
+  (role='supervisor'
+    and author_user_id is null and content_type='blocks'
+    and text_content is null and structured_content is not null
+    and grounding is not null
+    and case when jsonb_typeof(structured_content)='array'
+      then jsonb_array_length(structured_content) between 1 and 30
+      else false end
+    and jsonb_typeof(grounding)='object'
+    and coalesce(grounding->>'status','') in (
+      'verified','estimated','partial','unavailable','insufficient_evidence',
+      'requires_owner_input'))
+);
+
 -- Durable owner-question consumption and retry payload. Ordinary messages
 -- continue through ConversationService, but a structured card response is
 -- atomically compare-and-appended under a PER-THREAD lock with its full shape.
