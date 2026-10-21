@@ -50,9 +50,9 @@ type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;source:Evi
 const LIMITS={rounds:12,operations:12,elapsedMs:90000,previewRows:8,maxFacts:500};
 const noDigits=(s:string)=>!/[\p{Nd}$€£¥%٪]|https?:\/\//iu.test(s);
 const localeCopy={
- en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source"},
- es:{fallback:"No pude terminar la solicitud. Esto es lo que pude verificar.",gap:"No pude verificar los datos solicitados.",source:"Verificado",ask:"Aclara un detalle, por favor.",hint:"Tu respuesta",estimate:"Fuente estimada o incompleta"},
- ar:{fallback:"لم أتمكن من إكمال الطلب. إليك ما تمكنت من التحقق منه.",gap:"تعذّر التحقق من البيانات المطلوبة.",source:"موثق",ask:"يرجى توضيح تفصيل واحد.",hint:"إجابتك",estimate:"مصدر تقديري أو غير مكتمل"},
+ en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source",conditional:"Conditional calculation using numbers supplied by the owner; not verified café records."},
+ es:{fallback:"No pude terminar la solicitud. Esto es lo que pude verificar.",gap:"No pude verificar los datos solicitados.",source:"Verificado",ask:"Aclara un detalle, por favor.",hint:"Tu respuesta",estimate:"Fuente estimada o incompleta",conditional:"Cálculo condicional con cifras del propietario; no son datos verificados del negocio."},
+ ar:{fallback:"لم أتمكن من إكمال الطلب. إليك ما تمكنت من التحقق منه.",gap:"تعذّر التحقق من البيانات المطلوبة.",source:"موثق",ask:"يرجى توضيح تفصيل واحد.",hint:"إجابتك",estimate:"مصدر تقديري أو غير مكتمل",conditional:"حساب مشروط بأرقام قدّمها المالك، وليس بيانات مقهى موثّقة."},
 };
 const normalize=(s:string)=>s.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
 function preview(value:unknown):unknown{
@@ -118,11 +118,17 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    reads:[] as {capabilityId:string;inputJson:string}[]});
  const reply=(text:string,ids:string[],status:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
    const selected=pickIds(ids,facts);const structured=factBlocks(selected);
+   const conditional=selected.filter(f=>!f.source&&f.raw!==null);
    const blocks:SupervisorReplyBlock[]=structured.blocks;
    const intro=text.trim().slice(0,1000);
    if(intro)blocks.unshift({type:"text",text:intro});
+   if(conditional.length){
+     if(!structured.evidence.length)blocks.unshift({type:"warning",code:"P3_CONDITIONAL",text:copy.conditional});
+     for(const fact of conditional)blocks.push({type:"text",text:(fact.label+": "+fact.value).slice(0,1200)});
+   }
    if(!blocks.length)blocks.push({type:"text",text:copy.gap});
-   // Partial read-only results are honest even when a source could not be read.
+   if(!structured.evidence.length&&conditional.length)return {intent:"profitability",status:"partial",
+     evidence:[],blocks:blocks.slice(0,30),investigationMemory:memoryState()};
    return {intent:"unknown",status:structured.evidence.length?status:"unavailable",
      evidence:structured.evidence,blocks:blocks.slice(0,30),investigationMemory:memoryState()};
  };
