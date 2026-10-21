@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { buildAlexPricingRegistrations } from "./alexCapabilities.server";
-import {alexMissingIngredientCost} from "./alexOwnerInput.server";
+import {alexMissingIngredientCost,alexProductCatalogResolution} from "./alexOwnerInput.server";
 import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import { alexNamedSimulateInputSchema, namedAlexChangeSchema, type AlexNamedSimulateInput } from "./alexNamedInputs";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
@@ -167,6 +167,8 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     requiresApproval: false as const, effectPolicy: "deny" as const,
     async read(scope: TrustedReadScope,rawInput: unknown) {
       const input=rawInput as z.infer<typeof inputSchema>;
+      const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection)return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
       const raw = await alexReview.read(scope, {
         purpose: "pricing_review", selection:input.product?
           {kind:"specific" as const,items:[input.product]}:
@@ -240,6 +242,8 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     async read(scope: TrustedReadScope, rawInput: unknown) {
       // The domain resolves typed ingredient names inside its source snapshot.
       const input = rawInput as AlexNamedSimulateInput;
+      const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection)return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
       const raw = await alexSimulate.simulate?.(scope, input, undefined);
       const ownerGap=async()=>{
         const gap=await alexMissingIngredientCost(scope,input.product);
