@@ -15,7 +15,13 @@ export function prepareOwnerResolution(raw:unknown,answer:string):
     request.fieldId!==OWNER_RESOLUTION_FIELD)return null;
   if(request.input.kind==="options"){
     const matches=request.input.options.filter(o=>o.id===answer);
-    return matches.length===1?{answer,label:matches[0].label.en}:null;
+    if(matches.length===1)return {answer,label:matches[0].label.en};
+    // "Answer another way" is a genuine owner-authored clarification, not a
+    // selected product. Never reinterpret an unissued UUID as a free-text choice.
+    const alternative=answer.trim();
+    return alternative&&alternative.length<=200&&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(alternative)?
+      {answer:alternative,label:alternative}:null;
   }
   const value=answer.trim();
   return value&&value.length<=200?{answer:value,label:value}:null;
@@ -45,6 +51,7 @@ export function resumeOwnerResolution(original:string,raw:unknown,answer:string)
     .filter(([key])=>key==="productId"||key==="catalogRevision"||key==="domain")
     .map(([key,value])=>key+"="+value).join(", ");
   const isCatalogChoice=request.input.kind==="options"&&
+    request.input.options.some(option=>option.id===prepared.answer)&&
     (request.writeContext.domain==="menu"||request.writeContext.domain==="menu_proposal");
   const note="Owner clarification: "+prepared.label+
     (isCatalogChoice?" (selected catalog productId="+prepared.answer+")":"")+
