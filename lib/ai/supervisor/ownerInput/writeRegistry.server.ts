@@ -59,15 +59,15 @@ function ownerPackagePriceParts(input:string){
   const [whole,fraction=""]=price.split(".");
   const cents=Number(whole)*100+Number(fraction.padEnd(2,"0"));
   const [quantityWhole,quantityFraction=""]=quantity.split(".");
-  const scaledQuantity=BigInt(quantityWhole)*1_000_000n+
+  const scaledQuantity=BigInt(quantityWhole)*BigInt(1_000_000)+
     BigInt(quantityFraction.padEnd(6,"0")||"0");
-  if(!Number.isSafeInteger(cents)||cents<=0||scaledQuantity<=0n||
-    scaledQuantity>1_000_000_000_000n)return null;
+  if(!Number.isSafeInteger(cents)||cents<=0||scaledQuantity<=BigInt(0)||
+    scaledQuantity>BigInt(1_000_000_000_000))return null;
   // cost_per_base_unit_micros = round(cents / units * 1,000,000).
   // units = scaledQuantity / 1,000,000.
-  const numerator=BigInt(cents)*1_000_000_000_000n;
-  const micro=(numerator+scaledQuantity/2n)/scaledQuantity;
-  if(micro<=0n||micro>BigInt(Number.MAX_SAFE_INTEGER))return null;
+  const numerator=BigInt(cents)*BigInt(1_000_000_000_000);
+  const micro=(numerator+scaledQuantity/BigInt(2))/scaledQuantity;
+  if(micro<=BigInt(0)||micro>BigInt(Number.MAX_SAFE_INTEGER))return null;
   return {packageCostCents:cents,packageQuantity:Number(scaledQuantity)/1_000_000,
     micro:Number(micro)};
 }
