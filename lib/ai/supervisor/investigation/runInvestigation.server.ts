@@ -402,7 +402,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const parsedMemory=investigationMemorySchema.safeParse(input.investigationMemory);
   const memory=parsedMemory.success&&parsedMemory.data.businessId===identity.businessId?parsedMemory.data:undefined;
   // Only authenticated same-thread owner statements can ground referents or hypotheticals.
-  const earlierOwnerStatements=investigationOwnerStatements(memory,input.history,input.text);
+  // A durable reply resumes the PREVIOUS owner goal; it is not a newly
+  // authored instruction. Re-merging historical conversation and the old
+  // goal would move outdated date phrases AFTER the corrected saved scope,
+  // falsely making them a fresh calendar correction on the next card.
+  const earlierOwnerStatements=input.replayedOwnerRequest&&memory?
+    [...memory.ownerStatements]:
+    investigationOwnerStatements(memory,input.history,input.text);
   // Preserve the current full request and the newly authenticated clarification
   // within the memory contract's six-statement bound.
   const ownerStatements=input.ownerClarification&&input.ownerClarification.length<=600?
