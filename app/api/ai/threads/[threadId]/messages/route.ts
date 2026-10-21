@@ -23,7 +23,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema,priceProposalToolSchema} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
@@ -142,6 +142,7 @@ export async function POST(request: Request, context: RouteContext) {
     const progressAttempt = Date.now();
     let reply;
     try {
+      let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
         typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
@@ -158,16 +159,38 @@ export async function POST(request: Request, context: RouteContext) {
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
-        inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
+        inertProposal:{tools:proposalTools,
+          knownClarificationOptions:()=>reviewedVariantOptions,
+          create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
           const authorized=await authorizedOwnerP1();
           if(!capabilityId||authorized.identity.businessId!==scope.businessId||
             authorized.identity.currency!=="USD")return null;
           const definition=supervisorLoopRegistry.get(capabilityId);
           if(capabilityId!==priceExperimentCapabilityId)return null;
+          const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            await getMenuControlCenter(),[input.text,...olderOwnerTexts]);
-          if(!checked)return null;
+            catalog,[input.text,...olderOwnerTexts]);
+          if(!checked){
+            // Candidate validation, effect permission and the existing ask-one
+            // logic remain unchanged. This is ONLY a presentation list from
+            // exact active catalog names when the model already reported an
+            // ambiguous known variant.
+            const raw=priceProposalToolSchema.safeParse(rawArgs);
+            if(raw.success&&raw.data.variantStatus==="ambiguous"&&
+              raw.data.ownerProductQuote&&
+              [input.text,...olderOwnerTexts].some(t=>t.normalize("NFKC")
+                .toLocaleLowerCase("en").includes(raw.data.ownerProductQuote!
+                .normalize("NFKC").toLocaleLowerCase("en")))){
+              const q=raw.data.ownerProductQuote.normalize("NFKC").trim().toLocaleLowerCase("en");
+              const matches=catalog.filter(x=>x.active&&
+                x.baseName.normalize("NFKC").trim().toLocaleLowerCase("en")===q);
+              if(matches.length>=2&&matches.length<=30)
+                reviewedVariantOptions=matches.map(x=>({id:x.id,
+                  label:{en:x.name,es:x.name,ar:x.name}}));
+            }
+            return null;
+          }
           const proposed=await proposeLoop({businessId:scope.businessId,
             ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale},
             supervisorLoopRegistry,new SupabaseLoopRepository(),capabilityId,
