@@ -6,7 +6,9 @@ vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomic
 import {z} from "zod";
 import {schemaFingerprint,createP2Registry} from "@/lib/ai/supervisor/p2/registry";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
-import {createOwnerInputWriteRegistry,parseOwnerPackageCost} from "./writeRegistry.server";
+import {createOwnerInputWriteRegistry,parseOwnerPackageCost,alexOwnerInputWrite} from "./writeRegistry.server";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {ownerInputRequestSchema,type OwnerInputRequest} from "./contracts";
 import {buildOwnerQuestionReply} from "./response";
 import {validateGroundedReply} from "@/lib/ai/conversations/replyValidation";
@@ -60,6 +62,27 @@ describe("registered generic owner-answerable input dispatch",()=>{
       .toEqual({ok:true});
     expect(count).toBe(1);
   });
+  it("reconciles the original business date after the café's midnight boundary",async()=>{
+    const ingredientId="44444444-4444-4444-8444-444444444444";
+    const prepared:OwnerInputRequest={...request,
+      fieldId:"ingredient.package_cost_and_quantity",
+      writeCapabilityId:"menu.ingredient_price.manual.v1",
+      writeContext:{ingredientId,productId:"55555555-5555-4555-8555-555555555555",
+        baseUnit:"ml",sourceRevision:"1",businessDay:"2026-10-20"}};
+    vi.mocked(authorizedOwnerP1).mockResolvedValue({identity:{
+      businessId:cafe,currency:"USD",asOf:"2026-10-21",
+    }} as never);
+    vi.mocked(readAuthorizedAtomicP1SourceSnapshot).mockResolvedValue({
+      status:"available",snapshot:{businessId:cafe,sources:{ingredientPrices:[{
+        ingredient_id:ingredientId,effective_from:"2026-10-20",
+        source:"manual",cost_per_base_unit_micros:Math.round(450/946*1000000),
+      }]}},
+    } as never);
+    expect(await alexOwnerInputWrite.verify!({businessId:cafe,ownerUserId:"owner"},
+      prepared,"4.50 / 946")).toBe(true);
+    expect(prepared.writeContext.businessDay).toBe("2026-10-20");
+  });
+
   it("rejects unregistered write references, invalid numeric input and extra fields",async()=>{
     const writes=createOwnerInputWriteRegistry([]);
     expect(writes.prepare(request,"10")).toBeNull();
