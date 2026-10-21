@@ -6,7 +6,7 @@ vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomic
 import {z} from "zod";
 import {schemaFingerprint,createP2Registry} from "@/lib/ai/supervisor/p2/registry";
 import type {BusinessScopedCafeTools} from "@/lib/ai/tools";
-import {createOwnerInputWriteRegistry,parseOwnerPackageCost,alexOwnerInputWrite} from "./writeRegistry.server";
+import {createOwnerInputWriteRegistry,parseOwnerPackageCost,expectedOwnerPriceMicros,alexOwnerInputWrite} from "./writeRegistry.server";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {ownerInputRequestSchema,type OwnerInputRequest} from "./contracts";
@@ -61,6 +61,35 @@ describe("registered generic owner-answerable input dispatch",()=>{
     expect(await writes.apply({businessId:cafe,ownerUserId:"owner"},request,"10"))
       .toEqual({ok:true});
     expect(count).toBe(1);
+  });
+  it("matches PostgreSQL NUMERIC half-up microcent rounding at exact ties",()=>{
+    // IEEE-754 Math.round(323/640*1e6) can incorrectly give 504687.
+    expect(expectedOwnerPriceMicros("3.23 / 640")).toBe(504688);
+    expect(expectedOwnerPriceMicros("4.50 / 946")).toBe(475687);
+    expect(expectedOwnerPriceMicros("0.01 / 0.000001")).toBe(10000000000);
+    expect(expectedOwnerPriceMicros("3.23 / 640.000000")).toBe(504688);
+    expect(parseOwnerPackageCost("3.23 / 640")).toEqual({
+      packageCostCents:323,packageQuantity:640});
+    expect(expectedOwnerPriceMicros("3.23 / 0")).toBeNull();
+  });
+  it("verifies a real database-rounded tie without retrying the claimed write",async()=>{
+    const ingredientId="44444444-4444-4444-8444-444444444444";
+    const prepared:OwnerInputRequest={...request,
+      fieldId:"ingredient.package_cost_and_quantity",
+      writeCapabilityId:"menu.ingredient_price.manual.v1",
+      writeContext:{ingredientId,productId:"55555555-5555-4555-8555-555555555555",
+        baseUnit:"ml",sourceRevision:"1",businessDay:"2026-10-20"}};
+    vi.mocked(authorizedOwnerP1).mockResolvedValue({identity:{
+      businessId:cafe,currency:"USD",asOf:"2026-10-20",
+    }} as never);
+    vi.mocked(readAuthorizedAtomicP1SourceSnapshot).mockResolvedValue({
+      status:"available",snapshot:{businessId:cafe,sources:{ingredientPrices:[{
+        ingredient_id:ingredientId,effective_from:"2026-10-20",
+        source:"manual",cost_per_base_unit_micros:504688,
+      }]}},
+    } as never);
+    expect(await alexOwnerInputWrite.verify!({businessId:cafe,ownerUserId:"owner"},
+      prepared,"3.23 / 640")).toBe(true);
   });
   it("reconciles the original business date after the café's midnight boundary",async()=>{
     const ingredientId="44444444-4444-4444-8444-444444444444";
