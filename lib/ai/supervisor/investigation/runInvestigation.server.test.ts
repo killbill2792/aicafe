@@ -1335,6 +1335,32 @@ it("researches the public clause of a mixed request without sending its private 
   expect(result.usage.modelCallCount).toBe(4);
 });
 
+it("honors a dated answer to an issued financial clarification without dropping original goals",async()=>{
+  const capabilityId="p3.money.expense_entries.v1";
+  const old={from:"2026-10-01",to:"2026-10-07"};
+  const updated={from:"2026-10-08",to:"2026-10-14"};
+  const original="Show expenses 2026-10-01 to 2026-10-07 and protect staffing coverage.";
+  const clarification="Use 2026-10-08 to 2026-10-14 instead";
+  const result=await runSupervisorTurn({...base,text:original,
+    ownerClarification:clarification,ownerClarificationReadCapabilityId:capabilityId,
+    investigationMemory:{version:1,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}],
+      calendarScopes:[{domain:"money",kind:"period",...old}]}},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:updated})),
+      answer([{kind:"evidence",text:"The corrected period's recorded expenses were retrieved.",citations:["r1"]}]),
+    ],(context,step)=>{
+      if(step===0){
+        expect(context.ownerRequest).toBe(original);
+        expect(context.ownerStatements).toContain(clarification);
+      }
+    }));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(p1.mock.calls[0][2]).toMatchObject({period:updated});
+  expect(result.reply.investigationMemory?.ownerStatements).toContain(clarification);
+  expect(result.reply.investigationMemory?.calendarScopes).toContainEqual({
+    domain:"money",kind:"period",...updated});
+});
+
 it("keeps a persisted date correction after its initial source read fails",async()=>{
   const capabilityId="p3.money.expense_entries.v1",oldPeriod={from:"2026-10-01",to:"2026-10-01"},newPeriod={from:"2026-10-02",to:"2026-10-02"};
   const memory={version:1 as const,businessId:cafe,ownerStatements:["Show entries for 2026-10-01"],
