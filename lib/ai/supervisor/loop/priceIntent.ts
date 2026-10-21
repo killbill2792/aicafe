@@ -19,7 +19,7 @@ const words=(s:string)=>s.toLocaleLowerCase("en").normalize("NFKC").split(/[^\p{
 const quoted=(q:string,texts:readonly string[])=>texts.some(t=>t.normalize("NFKC").toLocaleLowerCase("en").includes(q.normalize("NFKC").toLocaleLowerCase("en")));
 export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
  id:string;name:string;baseName:string;sizeLabel?:string|null;active:boolean;
-}[],ownerTexts:readonly string[]):{productId:string;increaseCents:number}|null{
+}[],ownerTexts:readonly string[],trustedProductId?:string|null):{productId:string;increaseCents:number}|null{
  const p=priceProposalToolSchema.safeParse(raw);
  if(!p.success)return null;
  const x=p.data;
@@ -27,6 +27,16 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
    x.productId===null||x.increaseCents===null||x.targetPriceCents!==null||
    !x.ownerProductQuote||!x.productReference||!x.ownerAmountQuote)return null;
  if(!quoted(x.ownerProductQuote,ownerTexts)||!quoted(x.ownerAmountQuote,ownerTexts))return null;
+ if(trustedProductId){
+   // The owner chose this exact ID from a server-sourced card, the route
+   // rechecked its catalog epoch, and this fresh catalog must still show it
+   // as an active size of the quoted product. A model cannot choose another.
+   const chosen=catalog.filter(item=>item.active&&item.id===trustedProductId);
+   if(chosen.length!==1||x.productId!==trustedProductId||
+     words(x.ownerProductQuote).sort().join("|")!==words(chosen[0].baseName).sort().join("|"))
+     return null;
+   return {productId:trustedProductId,increaseCents:x.increaseCents};
+ }
  if(words(x.ownerProductQuote).sort().join("|")!==words(x.productReference).sort().join("|"))return null;
  const selected=words(x.productReference);
  if(selected.length===0)return null;
