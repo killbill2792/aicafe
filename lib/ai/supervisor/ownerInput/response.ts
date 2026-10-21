@@ -33,3 +33,14 @@ export function declinedOwnerQuestion(locale:"en"|"es"|"ar"):GroundedSupervisorR
       es:"No se guardó nada. Puedes volver a esta pregunta cuando quieras.",
       ar:"لم يتم حفظ أي شيء. يمكنك العودة إلى السؤال لاحقًا."}[locale]}]};
 }
+
+/** A failed/uncertain confirmation must not claim "unsaved" or retry a write.
+ * The owner may re-investigate current source state without duplicating effects. */
+export function unresolvedOwnerSave(locale:"en"|"es"|"ar"):GroundedSupervisorReply{
+  return {intent:"unknown",status:"unavailable",evidence:[],
+    blocks:[{type:"text",text:{
+      en:"I could not verify whether that value was saved. I will not submit it again automatically. Ask your original question again to check the latest records.",
+      es:"No pude verificar si se guardó ese valor. No lo enviaré de nuevo automáticamente. Repite la pregunta original para consultar los registros actuales.",
+      ar:"لم أتمكن من التحقق مما إذا تم حفظ هذه القيمة. لن أرسلها مرة أخرى تلقائيًا. أعد طرح سؤالك الأصلي للتحقق من السجلات الحالية.",
+    }[locale]}]};
+}
