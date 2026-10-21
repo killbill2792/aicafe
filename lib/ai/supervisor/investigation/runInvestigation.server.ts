@@ -420,6 +420,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       toolCallCount:usage.toolCallCount});
     return {reply,usage:{...usage}};
   };
+  // Same dispatcher is used for domain gaps, reviewed questions and
+  // no-progress/calendar ambiguity. Only the producer knows why it is stuck.
+  const askForHelp=async(question:Record<"en"|"es"|"ar",string>,
+    capabilityId="platform.owner_input.resolve.v1",args:unknown={})=>
+    ownerInputReply(capabilityId,args,{
+      status:"requires_owner_input",
+      ownerInput:ownerResolutionRequest({question,
+        input:{kind:"free_text",hint:{
+          en:"Give the missing detail in your own words.",
+          es:"Indica el dato que falta con tus propias palabras.",
+          ar:"وضّح التفاصيل الناقصة بكلماتك.",
+        }}}),
+    });
   const datasets=new Map<string,StoredDataset>();
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
     buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
@@ -723,7 +736,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // produces it, resubmitting the identical draft is potential progress,
       // not a repeat, even though the draft text itself is byte-identical.
       const answerSignature=JSON.stringify({answer,observationCount:observations.length});
-      if(answerSignature===lastRejectedAnswerSignature)return await failure(true,"no_progress");
+      if(answerSignature===lastRejectedAnswerSignature)
+        return await askForHelp({en:"What additional detail should I use to answer your question?",
+          es:"¿Qué detalle adicional debo usar para responder a tu pregunta?",
+          ar:"ما التفاصيل الإضافية التي يجب أن أستخدمها للإجابة عن سؤالك؟"})??
+          await failure(true,"no_progress");
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,
         ownerQuestion:input.text,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
@@ -957,7 +974,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // read performed in between genuinely is new information even though
       // this exact unknown name was tried before.
       const unknownToolSignature=step.name+":"+observations.length;
-      if(unknownToolSignature===lastUnknownToolName)return await failure(true,"no_progress");
+      if(unknownToolSignature===lastUnknownToolName)
+        return await askForHelp({en:"What detail can you clarify so I can continue?",
+          es:"¿Qué detalle puedes aclarar para que pueda continuar?",
+          ar:"ما التفاصيل التي يمكنك توضيحها لكي أتمكن من المتابعة؟"})??
+          await failure(true,"no_progress");
       lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
@@ -981,7 +1002,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         lastDuplicateObservationCount===observations.length;
       lastDuplicateCapability=capabilityId;
       lastDuplicateObservationCount=observations.length;
-      if(duplicateAgain)return await failure(true,"no_progress");
+      if(duplicateAgain)
+        return await askForHelp({en:"What should I clarify before continuing your request?",
+          es:"¿Qué debo aclarar antes de continuar con tu solicitud?",
+          ar:"ما الذي يجب توضيحه قبل متابعة طلبك؟"},capabilityId,args)??
+          await failure(true,"no_progress");
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
         reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
@@ -1109,7 +1134,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
-          feedback="The failed-turn date correction could not be bound safely to this domain. Ask the specific unresolved calendar-context question, without choosing an old or unrelated period.";continue;
+          const awaiting=await askForHelp({
+            en:"Which dates should I use for this part of your request?",
+            es:"¿Qué fechas debo utilizar para esta parte de tu solicitud?",
+            ar:"ما التواريخ التي يجب أن أستخدمها لهذا الجزء من طلبك؟",
+          },capabilityId,args);
+          if(awaiting)return awaiting;
+          feedback="The calendar scope is still unclear. Ask the owner to identify the relevant dates.";continue;
         }
         if(verdict==="applies")calendarText=pending;
       }
