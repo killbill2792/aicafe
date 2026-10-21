@@ -1297,6 +1297,14 @@
     "invalid": "Ingresa una meta entre 0% y 80%.",
     "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios."
   },
+  "SupervisorOwnerHelp": {
+    "priceUnknown": "precio desconocido",
+    "catalogMissingQuestion": "No encontré ese producto activo. ¿Es nuevo? Descríbelo, por favor.",
+    "catalogMissingHint": "Indica si es nuevo y sus ingredientes y cantidades, si los conoces.",
+    "catalogMultipleQuestion": "¿A cuál de los productos coincidentes te refieres?",
+    "stuckDetail": "¿Qué detalle debo aclarar antes de continuar?",
+    "incomplete": "No se pudo confirmar parte de tu solicitud."
+  },
   "SupervisorChat": {
     "ownerInputDismiss": "Ahora no",
     "ownerInputConfirm": "Continuar",
