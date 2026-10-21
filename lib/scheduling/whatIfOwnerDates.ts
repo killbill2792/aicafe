@@ -30,6 +30,19 @@ export function ownerScheduleWeek(clause:string,asOf:string):string|null{
   if(thisWeekPattern.test(clause))return monday(asOf);
   return null;
 }
+/** Resolve an undated schedule-week expression with the same forward-looking
+ * weekday convention the canonical read guard uses. Every named weekday
+ * must resolve into ONE containing Monday-Sunday week, otherwise persistence
+ * would silently drop part of the owner's correction. */
+export function ownerScheduleWeekFromWeekdays(clause:string,asOf:string):string|null{
+  const relative=ownerScheduleWeek(clause,asOf);
+  if(relative)return relative;
+  const days=namedWeekdays(clause);
+  if(!days.length)return null;
+  const today=new Date(asOf+"T12:00:00Z").getUTCDay();
+  const weeks=new Set(days.map(day=>monday(add(asOf,(day-today+7)%7))));
+  return weeks.size===1?[...weeks][0]:null;
+}
 /** Calendar grammar only, not question/intent routing. An explicit date binds the
  * simulated horizon; a bare weekday means its next occurrence, including today.
  * This/next week qualify that weekday relative to the trusted café-local clock. */
