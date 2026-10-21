@@ -53,7 +53,7 @@ export function createOwnerInputWriteRegistry(definitions:readonly OwnerInputWri
  * The owner grammar permits at most six quantity decimals; preserve those
  * decimal digits instead of introducing IEEE-754 half-cent drift. */
 function ownerPackagePriceParts(input:string){
-  const parsed=z.string().trim().regex(/^\\d{1,6}(?:\\.\\d{1,2})?\\s*\\/\\s*\\d{1,7}(?:\\.\\d{1,6})?$/).safeParse(input);
+  const parsed=z.string().trim().regex(/^\d{1,6}(?:\.\d{1,2})?\s*\/\s*\d{1,7}(?:\.\d{1,6})?$/).safeParse(input);
   if(!parsed.success)return null;
   const [price,quantity]=parsed.data.split("/").map(s=>s.trim());
   const [whole,fraction=""]=price.split(".");
