@@ -435,21 +435,40 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     calendarScopes.push(scope);
     scopeOrigins.push({domain:scope.domain,kind:scope.kind,requestKey,capabilityId});
   };
-  // Upgrade legacy scope-only memories when their already-issued question
-  // is replayed. Do NOT adopt that legacy scope into a newly authored request
-  // (including identical text), where it would override the new owner's date.
-  const legacyOrigins=input.replayedOwnerRequest&&memory&&!memory.requestKey?
-    (memory.calendarScopes??[]).filter(cal=>!(memory.calendarScopeOrigins??[]).some(origin=>
-      origin.domain===cal.domain&&origin.kind===cal.kind)).map(cal=>({
-      domain:cal.domain,kind:cal.kind,requestKey,capabilityId:"legacy.saved_scope.v1",
-    })): [];
+  // Upgrade legacy temporal read selectors AND scope-only corrections on
+  // the FIRST replay of an already-issued question. Never import them into
+  // an independently authored request with the same wording. Reader metadata
+  // and typed registry preflight authenticate every legacy read before it
+  // can receive request-instance provenance; no observations are persisted.
+  const legacyOrigins=():NonNullable<InvestigationMemory["calendarScopeOrigins"]>=>{
+    if(!input.replayedOwnerRequest||!memory||memory.requestKey)return [];
+    const origins=new Map<string,NonNullable<InvestigationMemory["calendarScopeOrigins"]>[number]>();
+    for(const read of memory.reads){
+      const domain=readOwner(read.capabilityId);
+      if(!domain)continue;
+      try{
+        const args=JSON.parse(read.inputJson);
+        if(!registry.preflightRead(scope,read.capabilityId,args))continue;
+        const calendar=investigationCalendarScope(args,domain);
+        if(calendar)origins.set(domain+":"+calendar.kind,{
+          domain,kind:calendar.kind,requestKey,capabilityId:read.capabilityId});
+      }catch{/* Invalid legacy selectors never authorize a correction. */}
+    }
+    // A validated scope can supersede an older read even if no new read ran.
+    for(const cal of memory.calendarScopes??[]){
+      if((memory.calendarScopeOrigins??[]).some(o=>o.domain===cal.domain&&o.kind===cal.kind))continue;
+      origins.set(cal.domain+":"+cal.kind,{domain:cal.domain,kind:cal.kind,
+        requestKey,capabilityId:"legacy.saved_scope.v1"});
+    }
+    return [...origins.values()].slice(-5);
+  };
   const currentMemory=():InvestigationMemory=>({
     version:1,businessId:identity.businessId,ownerStatements,requestKey,
     reads:rememberInvestigationReads(memory?.reads??[],remembered),
     calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
     calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]).filter(origin=>
       !scopeOrigins.some(next=>next.domain===origin.domain&&next.kind===origin.kind)),
-      ...legacyOrigins.filter(origin=>!scopeOrigins.some(next=>
+      ...legacyOrigins().filter(origin=>!scopeOrigins.some(next=>
         next.domain===origin.domain&&next.kind===origin.kind)),...scopeOrigins].slice(-5),
   });
   // Every domain returns the same typed owner-answerable gap. The shared
