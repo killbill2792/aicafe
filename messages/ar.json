@@ -1297,6 +1297,14 @@
     "invalid": "أدخل هدفًا بين 0% و80%.",
     "targetNotFeasible": "لا يمكن تحقيق هذا الهدف بهيكل التكاليف الحالي عبر التسعير وحده."
   },
+  "SupervisorOwnerHelp": {
+    "priceUnknown": "السعر غير معروف",
+    "catalogMissingQuestion": "لم أجد هذا المنتج في القائمة النشطة. هل هو منتج جديد؟ يُرجى وصفه.",
+    "catalogMissingHint": "أخبرني هل هو جديد وما المكونات والكميات إن كنت تعرفها.",
+    "catalogMultipleQuestion": "أي عنصر من عناصر القائمة المتطابقة تقصد؟",
+    "stuckDetail": "ما التفاصيل التي يجب توضيحها قبل المتابعة؟",
+    "incomplete": "تعذر تأكيد جزء من طلبك."
+  },
   "SupervisorChat": {
     "ownerInputDismiss": "ليس الآن",
     "ownerInputConfirm": "متابعة",
