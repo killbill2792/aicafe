@@ -400,7 +400,7 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
       answer([{kind:"clarification",text:"Which scheduling week should I preview?",citations:[]}]),
     ],undefined,true,"scheduling"));
     const issued=first.reply.ownerInput?.readCapabilityId;
-    expect(issued).toMatch(/^p3\\.olivia\\./);
+    expect(issued).toMatch(/^p3\.olivia\./);
     const second=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
       investigationMemory:first.reply.investigationMemory,
       ownerClarification:"Use October 27 instead",
