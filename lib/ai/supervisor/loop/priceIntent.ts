@@ -29,7 +29,10 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
  if(x.variantStatus!=="unique"||x.amountStatus!=="unique"||x.amountMode!=="increase"||
    x.productId===null||x.increaseCents===null||x.targetPriceCents!==null||
    !x.ownerProductQuote||!x.productReference||!x.ownerAmountQuote)return null;
- if(!quoted(x.ownerProductQuote,ownerTexts)||!quoted(x.ownerAmountQuote,ownerTexts))return null;
+ // Only genuine owner-authored utterances can authorize the amount. Server
+ // option labels, selected-item context and persisted response bubbles are not
+ // monetary instructions.
+ if(!quoted(x.ownerAmountQuote,ownerTexts))return null;
  if(trustedProductId){
    // The owner chose this exact ID from a server-sourced card, the route
    // rechecked its catalog epoch, and this fresh catalog must still show it
@@ -42,11 +45,13 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
     // Both the model's item name and its quoted owner text must identify the
     // authenticated active item, whether named by family or by full variant.
     if(!labels.some(label=>canonical(label)===canonical(x.ownerProductQuote!))||
-      !labels.some(label=>canonical(label)===canonical(x.productReference!)))
+      !labels.some(label=>canonical(label)===canonical(x.productReference!))||
+      !labels.some(label=>quoted(label,ownerTexts)))
       return null;
    return {productId:trustedProductId,increaseCents:x.increaseCents};
  }
- if(words(x.ownerProductQuote).sort().join("|")!==words(x.productReference).sort().join("|"))return null;
+ if(!quoted(x.ownerProductQuote,ownerTexts)||
+   words(x.ownerProductQuote).sort().join("|")!==words(x.productReference).sort().join("|"))return null;
  const selected=words(x.productReference);
  if(selected.length===0)return null;
  const matching=catalog.filter(item=>item.active&&[
