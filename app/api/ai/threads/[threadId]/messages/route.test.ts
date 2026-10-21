@@ -3,18 +3,25 @@ vi.mock("server-only",()=>({}));
 const mocks=vi.hoisted(()=>{
   const message={id:"owner-msg",role:"owner",contentType:"text",
     threadId:"a1989b23-e2b8-412e-a08f-46fb2726eedc",text:"Are there any staff problems now?",
-    clientMessageId:"5106fd7b-1d80-486c-a026-dc1f39911f4c"};
+    clientMessageId:"5106fd7b-1d80-486c-a026-dc1f39911f4c",createdAt:"2026-10-21T03:00:00Z"};
   return {message,run:vi.fn(),propose:vi.fn(),persist:vi.fn(),getExisting:vi.fn(),
+    activeBusinessId:"cafe-1",commitOwnerInput:vi.fn(),prepareOwnerInput:vi.fn(),
     getThread:vi.fn(async()=>({title:"Conversation"})),
     addOwner:vi.fn(async()=>message),listMessages:vi.fn()};
 });
 vi.mock("@/lib/ai/conversations/enabled.server",()=>({isSupervisorChatConfigured:()=>true}));
+vi.mock("@/lib/ai/supervisor/ownerInput/writeRegistry.server",()=>({
+  ownerInputWrites:{prepare:mocks.prepareOwnerInput},
+}));
+vi.mock("@/lib/ai/supervisor/ownerInput/commit.server",()=>({
+  commitConfirmedOwnerInput:mocks.commitOwnerInput,
+}));
 vi.mock("@/lib/ai/conversations/auth.server",()=>({
   ConversationApiError:class ConversationApiError extends Error {
     constructor(public status:number,public code:string){super(code);}
   },
   authenticatedConversationContext:async()=>({
-    scope:{businessId:"cafe-1",ownerUserId:"owner-1"},
+    scope:{businessId:mocks.activeBusinessId,ownerUserId:"owner-1"},
     service:{getThread:mocks.getThread,addOwnerMessage:mocks.addOwner,listMessages:mocks.listMessages},
   }),
 }));
@@ -59,6 +66,9 @@ const request=(text:string)=>new Request("https://cafe.test/api/ai/threads/"+moc
 const ctx={params:Promise.resolve({threadId:mocks.message.threadId})};
 beforeEach(()=>{
   vi.clearAllMocks();
+  mocks.activeBusinessId="cafe-1";
+  mocks.commitOwnerInput.mockResolvedValue({ok:true,replayed:false});
+  mocks.prepareOwnerInput.mockReturnValue({summary:{en:"Save 4.50 USD?",es:"¿Guardar?",ar:"حفظ؟"}});
   mocks.getExisting.mockResolvedValue(null);
   mocks.propose.mockResolvedValue(null);
   mocks.listMessages.mockResolvedValue({items:[
@@ -76,6 +86,71 @@ beforeEach(()=>{
     ...mocks.message,id:"reply-1",role:"supervisor",blocks:reply.blocks,
   }));
 });
+const testCafe="11111111-1111-4111-8111-111111111111";
+const pendingOwnerQuestion={
+  version:1 as const,questionId:"22222222-2222-4222-8222-222222222222",
+  stage:"answer" as const,businessId:testCafe,
+  originalText:"What does my oat latte cost to make?",
+  readCapabilityId:"p3.alex.pricing.review.v1",
+  readInputJson:JSON.stringify({purpose:"pricing_review",product:{productId:"33333333-3333-4333-8333-333333333333"}}),
+  request:{fieldId:"ingredient.package_cost_and_quantity",
+    writeCapabilityId:"menu.ingredient_price.manual.v1",
+    writeContext:{ingredientId:"44444444-4444-4444-8444-444444444444",
+      productId:"33333333-3333-4333-8333-333333333333",sourceRevision:"1",baseUnit:"ml"},
+    question:{en:"What did oat milk cost?",es:"¿Cuánto costó?",ar:"ما التكلفة؟"},
+    input:{kind:"free_text" as const,hint:{en:"4.50 / 946",es:"4.50 / 946",ar:"4.50 / 946"}}},
+  answer:null,summary:null,
+};
+const interactiveRequest=(action:"supply"|"confirm"|"dismiss",value?:string)=>new Request(
+  "https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
+    method:"POST",headers:{origin:"https://cafe.test","content-type":"application/json"},
+    body:JSON.stringify({clientMessageId:mocks.message.clientMessageId,
+      text:action==="supply"?value:"Continue",locale:"en",
+      ownerInputResponse:{questionId:pendingOwnerQuestion.questionId,action,
+        ...(value?{value}:{})}}),
+  });
+describe("POST owner-input persistence and continuation",()=>{
+  beforeEach(()=>{
+    mocks.activeBusinessId=testCafe;
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"last-supervisor",role:"supervisor",contentType:"blocks",createdAt:"2026-10-20T02:00:00Z",
+        grounding:{ownerInput:pendingOwnerQuestion},blocks:[],text:null},
+      mocks.message,
+    ]});
+  });
+  it("does not write or invoke the AI until the owner confirms",async()=>{
+    const response=await POST(interactiveRequest("supply","4.50 / 946"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.prepareOwnerInput).toHaveBeenCalled();
+    expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.persist.mock.calls[0][2]).toMatchObject({
+      status:"requires_owner_input",ownerInput:{stage:"confirm",answer:"4.50 / 946"},
+      blocks:[{type:"owner_question",input:{kind:"options"}}],
+    });
+  });
+  it("uses the reviewed commit gateway and re-runs original question",async()=>{
+    const confirmed={...pendingOwnerQuestion,stage:"confirm" as const,
+      answer:"4.50 / 946",summary:{en:"Save?",es:"¿Guardar?",ar:"حفظ؟"}};
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"confirm-card",role:"supervisor",contentType:"blocks",
+        createdAt:"2026-10-20T02:00:00Z",grounding:{ownerInput:confirmed},
+        blocks:[],text:null},mocks.message,
+    ]});
+    const response=await POST(interactiveRequest("confirm"),ctx);
+    expect(response.status).toBe(201);
+    expect(mocks.commitOwnerInput).toHaveBeenCalledTimes(1);
+    expect(mocks.run).toHaveBeenCalledTimes(1);
+    expect(mocks.run.mock.calls[0][0].text).toBe(confirmed.originalText);
+  });
+  it("dismisses without writing and allows later re-asking",async()=>{
+    expect((await POST(interactiveRequest("dismiss"),ctx)).status).toBe(201);
+    expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
+    expect(mocks.persist.mock.calls[0][2].status).toBe("insufficient_evidence");
+  });
+});
+
 describe("POST uses the single bounded semantic Supervisor path",()=>{
   it("routes staff or any other wording through the model and both sides of history",async()=>{
     const response=await POST(request(mocks.message.text),ctx);
