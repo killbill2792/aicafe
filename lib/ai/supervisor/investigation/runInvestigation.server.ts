@@ -663,7 +663,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         // An identical rejected selection without new observations cannot make progress,
         // even when only one sibling was previously attempted.
         const duplicateBatch=JSON.stringify({
-          calls:step.calls.map(call=>[call.name,call.arguments]).sort((x,y)=>JSON.stringify(x).localeCompare(JSON.stringify(y))),
+          calls:step.calls.map(call=>{
+            let parsed:unknown=call.arguments;
+            try{parsed=JSON.parse(call.arguments);}catch{/* malformed JSON is still a stable signature */}
+            return JSON.stringify([call.name,canonicalSelector(parsed)]);
+          }).sort(),
           observationCount:observations.length,
           rejection:"parallel_preflight",
         });
