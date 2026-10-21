@@ -1116,7 +1116,7 @@ it("never publishes an unsupported answer rejected by the independent evidence r
       response(answer([{kind:"advice",text:"I have secretly published the schedule.",citations:[]}]))});
   const onDiagnostic=vi.fn();
   const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-  expect(result.reply.status).toBe("unavailable");
+  expect(result.reply.status).toBe("requires_owner_input");
   expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
   expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
     stage:"investigation_exhausted",rescuedUnverified:false}));
