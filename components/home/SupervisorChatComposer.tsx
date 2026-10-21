@@ -13,11 +13,14 @@ import { audioExtensionForMime, parseTranscriptionResponse, voiceMessageForError
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
-import { beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
+import SupervisorOwnerQuestionCard from "./SupervisorOwnerQuestionCard";
+import {ownerQuestionSchema,pendingOwnerInputSchema,type OwnerInputResponse}
+  from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type SupervisorChatCopy = {
   askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
@@ -36,6 +39,7 @@ export type SupervisorChatCopy = {
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
   answerFailed: string; retryAnswer: string; todaySummary: string;
+  ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
 type Locale = "en" | "es" | "ar";
@@ -95,8 +99,8 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
   if (!record(block)) return null;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
-      ? <p className="flex gap-2 rounded-2xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[17px] leading-relaxed text-ink">
-          <AlertCircle aria-hidden="true" size={20} className="mt-1 shrink-0 text-[#A96510]" />{block.text}
+      ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
+          <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
       : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{block.text}</p>;
   }
@@ -119,8 +123,14 @@ function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorC
   return null;
 }
 
-function SupervisorMessage({ message, copy, locale }: {
+function isOwnerConfirmation(message:ConversationMessage){
+  const state=pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput);
+  return state.success&&state.data.stage==="confirm";
+}
+function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }: {
   message: ConversationMessage; copy: SupervisorChatCopy; locale: Locale;
+  disabled:boolean;
+  onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
   if (message.role === "owner") return <article className="ms-auto max-w-[88%] rounded-[22px] rounded-ee-md bg-[#EADFCC] px-4 py-3 text-[17px] text-ink shadow-sm">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
@@ -133,9 +143,20 @@ function SupervisorMessage({ message, copy, locale }: {
       {copy.supervisor}
     </div>
     <div className="w-full space-y-3 ps-1">
-      {groupReplyBlocks(message.blocks ?? []).map((group,i)=>group.kind==="facts"
-        ? <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>
-        : <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>)}
+      {groupReplyBlocks(message.blocks ?? []).map((group,i)=>{
+        if(group.kind==="facts")
+          return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
+        const candidate=ownerQuestionSchema.safeParse(group.block);
+        if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
+          locale={locale} disabled={disabled}
+          allowOther={!isOwnerConfirmation(message)}
+          locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
+          copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
+            other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
+          onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
+          onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>;
+      })}
     </div>
   </article>;
 }
@@ -347,7 +368,7 @@ export default function SupervisorChatComposer({
     threadRequestId.current = null;
     return created.thread.id;
   }
-  async function sendText(value: string, existingKey?: string) {
+  async function sendText(value: string, existingKey?: string,ownerInputResponse?:OwnerInputResponse) {
     const text = value.trim();
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
@@ -377,7 +398,7 @@ export default function SupervisorChatComposer({
       const posted = await jsonFrom<MessageResponse>(await fetch(
         "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
           method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clientMessageId, text, locale }),
+          body: JSON.stringify({ clientMessageId, text, locale, ...(ownerInputResponse?{ownerInputResponse}:{}) }),
         }));
       const page = await loadMessages(id);
       setMessages(page.items.length ? page.items : [posted.message, posted.reply]);
@@ -556,6 +577,7 @@ export default function SupervisorChatComposer({
   // owner turn can occur anywhere in history, not only at the end of a thread.
   const displayedMessages: ConversationMessage[] = visibleConversationMessages(
     messages, optimisticOwner, threadId, new Date().toISOString());
+  const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
   const answeredOwnerIds = new Set(messages.flatMap((message) =>
     message.role === "supervisor" && typeof message.grounding?.ownerMessageId === "string"
       ? [message.grounding.ownerMessageId] : []));
@@ -626,11 +648,33 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} />
+        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
+          onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
+            if(sending||!enabled||origin.id!==activeQuestionMessageId)return;
+            const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>
+              typeof b==="object"&&b!==null&&"type" in b&&b.type==="owner_question"));
+            if(!question.success)return;
+            const pending=pendingOwnerInputSchema.safeParse(origin.grounding?.ownerInput);
+            if(pending.success){
+              const action=dismiss||pending.data.stage==="confirm"&&isOption&&value==="dismiss"?
+                "dismiss":pending.data.stage==="confirm"&&isOption&&value==="confirm"?
+                "confirm":"supply";
+              if(pending.data.stage==="confirm"&&action==="supply")return;
+              void sendText(action==="dismiss"?copy.ownerInputDismiss:
+                action==="confirm"?copy.ownerInputConfirm:value,undefined,{
+                questionId:question.data.questionId,action,
+                ...(action==="supply"?{value}:{})});
+              return;
+            }
+            // Existing known-record clarification remains a normal owner statement.
+            if(!dismiss)void sendText(isOption&&question.data.input.kind==="options"?
+              question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value);
+          }}/>
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
-          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined, message.ownerInputResponse)}
             className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
         </div>}
       </div>)}

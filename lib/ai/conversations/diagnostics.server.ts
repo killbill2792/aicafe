@@ -33,7 +33,7 @@ export type SupervisorDiagnostic = {
   scopeAuditComplete?:boolean;
   scopeAuditAmbiguous?:boolean;
   reconciliationOutcome?:ScopeReconciliationOutcome;
-  groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence";
+  groundedStatus?:"verified"|"estimated"|"partial"|"unavailable"|"insufficient_evidence"|"requires_owner_input";
   legacyFallbackReason?:"p3_not_completed"|"p3_failed";
   requestName?:string;
   invalidPayloadReason?:"wrong_text_shape"|"unparseable_json"|"schema_mismatch"|"multiple_function_calls"|"malformed_function_call";
@@ -243,7 +243,7 @@ export function createSupervisorDiagnosticLogger(sink:(line:string)=>void=consol
         ...(safeCount(d.modelCallCount)!==undefined?{modelCallCount:d.modelCallCount}:{}),
         ...(safeCount(d.toolCallCount)!==undefined?{toolCallCount:d.toolCallCount}:{}),
         ...(d.timeout===true?{timeout:true}:{}),
-        ...(d.groundedStatus && ["verified","estimated","partial","unavailable","insufficient_evidence"].includes(d.groundedStatus)?
+        ...(d.groundedStatus && ["verified","estimated","partial","unavailable","insufficient_evidence","requires_owner_input"].includes(d.groundedStatus)?
           {groundedStatus:d.groundedStatus}:{}),
         ...(d.legacyFallbackReason && ["p3_not_completed","p3_failed"].includes(d.legacyFallbackReason)?
           {legacyFallbackReason:d.legacyFallbackReason}:{}),

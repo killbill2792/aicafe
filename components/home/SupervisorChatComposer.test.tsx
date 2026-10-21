@@ -78,7 +78,7 @@ describe("modern Supervisor conversation shell", () => {
     expect(source).toContain('message.role === "owner"');
     expect(source).toContain("answeredOwnerIds");
     expect(source).toContain("pendingOwnerIds.has(message.id)");
-    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined)');
+    expect(source).toContain('sendText(message.text ?? "", message.clientMessageId ?? undefined, message.ownerInputResponse)');
     expect(source).toContain("const clientMessageId = existingKey ?? retryId.current ?? crypto.randomUUID()");
   });
 

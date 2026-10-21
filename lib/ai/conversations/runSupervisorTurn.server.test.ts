@@ -206,7 +206,9 @@ describe("Mocked Responses loop MECHANICS, not evidence of live GPT semantic und
       stage:"provider_response",category:"provider_http",httpStatus:403,
       providerErrorType:"permission_error",providerErrorCode:"organization_blocked",
       providerRequestId:"req_test-403.ABC",round:1,attempt:1}));
-    const serialized=logLines.join("\n");
+    // Request IDs are randomly generated identifiers, so digits in them are not
+    // evidence that the provider financial field leaked. Inspect event payloads.
+    const serialized=events.map(({requestId: _requestId,...fields})=>JSON.stringify(fields)).join("\n");
     for(const forbidden of [sensitive,"not-allow-listed","arbitrary private field","cost","999","message","cafeData","prompt"])
       expect(serialized).not.toContain(forbidden);
   });

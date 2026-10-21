@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 
 /** P2 is an isolated, read-only shadow protocol. No production router imports this module. */
 export const CAPABILITY_MODES = ["read", "simulate", "evaluate", "propose", "approve", "commit"] as const;
 export type CapabilityMode = (typeof CAPABILITY_MODES)[number];
 export type ResultStatus = "verified" | "estimated" | "partial" | "unavailable" |
-  "insufficient_evidence" | "requires_approval" | "conflict" | "failed";
+  "insufficient_evidence" | "requires_approval" | "requires_owner_input" | "conflict" | "failed";
 
 export type TrustedReadScope = {
   /** Constructed only after the P1 owner/membership/selected-business checks. */
@@ -42,6 +43,8 @@ type Base<I extends z.ZodType = z.ZodType, O extends z.ZodType = z.ZodType> = {
   readonly effectPolicy: "deny";
   /** Domain-owned declaration: this read computes an owner-parameterized scenario. */
   readonly resultKind?: "owner_parameterized_simulation";
+  /** Explicit, reviewed write IDs permitted in missing-owner-input results. */
+  readonly ownerInputWriteIds?:readonly string[];
   /** Domain-owned output policy, never a question/intent route. Defaults to USD_only. */
   readonly currencyPolicy?:"independent"|"USD_only";
 };
@@ -323,12 +326,20 @@ export function createP2Registry(registrations:readonly P2Registration[]) {
         if(!validated.success || discardedOutputKeys(output,validated.data))
           return unavailable("invalid_result");
         const actual=validated.data as {
-          status?:string;value?:unknown;reason?:unknown;
+          status?:string;value?:unknown;reason?:unknown;ownerInput?:unknown;
           provenance?:{sourceRevision?:unknown;sourceId?:unknown;canonicalReaderId?:unknown;purpose?:unknown;asOf?:unknown};
           quality?:{missingInputs?:unknown;estimatedInputs?:unknown;staleInputs?:unknown};
         };
         if(["proposal","approve","approval","commit","effect","executedEffects",
           "applied","outbox"].some(k=>Object.hasOwn(actual,k)))return unavailable("invalid_result");
+        if(actual.status==="requires_owner_input"){
+          const request=ownerInputRequestSchema.safeParse(actual.ownerInput);
+          if(!request.success||actual.value!==null||
+            !def.ownerInputWriteIds?.includes(request.data.writeCapabilityId)||
+            Object.keys(actual).some(k=>!["status","value","ownerInput"].includes(k)))
+            return unavailable("invalid_result");
+          return validated.data;
+        }
         if(!["verified","estimated","partial","unavailable","failed","conflict",
           "insufficient_evidence"].includes(actual.status??""))
           return unavailable("invalid_result");

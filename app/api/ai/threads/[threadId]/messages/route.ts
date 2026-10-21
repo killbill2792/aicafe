@@ -5,6 +5,12 @@ import { isSupervisorChatConfigured } from "@/lib/ai/conversations/enabled.serve
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
+import {submitOwnerInputMessage} from "@/lib/ai/conversations/ownerInputSubmit.server";
+import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
+import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
+import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion,unresolvedOwnerSave} from "@/lib/ai/supervisor/ownerInput/response";
+import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
 import { compactConversationContext } from "@/lib/ai/conversations/context";
 import { labelSupervisorThread, recordSupervisorUsage } from "@/lib/ai/conversations/usage.server";
 import { authenticatedTeamRulesService } from "@/lib/ai/policies/auth.server";
@@ -19,7 +25,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema,priceProposalToolSchema} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
@@ -62,7 +68,15 @@ export async function POST(request: Request, context: RouteContext) {
       threadId:id,ownerQuestion:input.text});
     const { service, scope } = await authenticatedConversationContext();
     const thread = await service.getThread(id);
+    if(input.ownerInputResponse){
+      // This RPC commits the owner message + structured answer atomically under
+      // a per-thread lock. Distinct clients cannot consume one prompt twice.
+      const submitted=await submitOwnerInputMessage(scope,id,input.clientMessageId,
+        input.text,input.ownerInputResponse);
+      if(!submitted.ok)throw new ConversationApiError(409,submitted.reason);
+    }
     const message = await service.addOwnerMessage(id, input.clientMessageId, input.text);
+    const ownerResponse=input.ownerInputResponse??message.ownerInputResponse;
     logSupervisorDebugPayload({point:"owner_message_persisted",requestId:debugRequestId,
       threadId:id,ownerMessageId:message.id,clientMessageId:input.clientMessageId,
       message,ownerRequest:input,ownerScope:{businessId:scope.businessId,ownerUserId:scope.ownerUserId}});
@@ -92,6 +106,44 @@ export async function POST(request: Request, context: RouteContext) {
     diagnostics.emit({stage,model});
     const messages = (await service.listMessages(id, 0)).items;
     const history = compactConversationContext(messages, message.id);
+    // The prior assistant's validated server-grounded question is the only
+    // resumable state. A client-supplied question ID or target never grants a write.
+    let resumedOriginalText=input.text;
+    let directReply:GroundedSupervisorReply|null=null;
+    if(ownerResponse){
+      const prior=messages.filter(m=>m.role==="supervisor"&&
+        m.createdAt<=message.createdAt&&m.id!==message.id)
+        .sort((a,b)=>b.createdAt.localeCompare(a.createdAt))[0];
+      const pending=pendingOwnerInputSchema.safeParse(prior?.grounding?.ownerInput);
+      const response=ownerResponse;
+      if(!pending.success||pending.data.businessId!==scope.businessId||
+        pending.data.questionId!==response.questionId)
+        throw new ConversationApiError(409,"owner_input_not_pending");
+      const state=pending.data;
+      if(response.action==="dismiss"){
+        directReply=declinedOwnerQuestion(input.locale);
+      }else if(response.action==="supply"&&state.stage==="answer"){
+        const value=response.value??"";
+        const prepared=ownerInputWrites.prepare(state.request,value);
+        directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
+          buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
+            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
+            request:state.request,questionId:state.questionId});
+      }else if(response.action==="confirm"&&state.stage==="confirm"&&state.answer){
+        const applied=await commitConfirmedOwnerInput(scope,state);
+        if(applied.ok){
+          // The next investigation MUST re-read; no cached figure is replayed.
+          resumedOriginalText=state.originalText;
+        }else if(applied.reason==="confirmation_in_progress"){
+          // An earlier request is still completing the approved write. Do not
+          // attach a misleading final reply to this persisted owner message.
+          // Retrying this client key reconciles the one-shot claim safely.
+          throw new ConversationApiError(409,"confirmation_in_progress");
+        }else{
+          directReply=unresolvedOwnerSave(input.locale);
+        }
+      }else throw new ConversationApiError(409,"owner_input_stage_mismatch");
+    }
     let aggregatedUsage: SupervisorUsage | null = null;
     let progressStep = 0;
     // Fresh per POST invocation, not per browser retry click: a retried
@@ -103,6 +155,7 @@ export async function POST(request: Request, context: RouteContext) {
     const progressAttempt = Date.now();
     let reply;
     try {
+      let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
         typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
@@ -115,20 +168,42 @@ export async function POST(request: Request, context: RouteContext) {
           description:definition.proposalDescription,
           parameters:capabilityId===priceExperimentCapabilityId?priceProposalToolJsonSchema:definition.proposalInputJsonSchema};
       });
-      const completed=await runSupervisorTurn({
-        text: input.text, locale: input.locale, asOf: identity.asOf,
+      const completed=directReply?null:await runSupervisorTurn({
+        text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
         tools, history,
-        inertProposal:{tools:proposalTools,create:async(name,rawArgs)=>{
+        inertProposal:{tools:proposalTools,
+          knownClarificationOptions:()=>reviewedVariantOptions,
+          create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
           const authorized=await authorizedOwnerP1();
           if(!capabilityId||authorized.identity.businessId!==scope.businessId||
             authorized.identity.currency!=="USD")return null;
           const definition=supervisorLoopRegistry.get(capabilityId);
           if(capabilityId!==priceExperimentCapabilityId)return null;
+          const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            await getMenuControlCenter(),[input.text,...olderOwnerTexts]);
-          if(!checked)return null;
+            catalog,[input.text,...olderOwnerTexts]);
+          if(!checked){
+            // Candidate validation, effect permission and the existing ask-one
+            // logic remain unchanged. This is ONLY a presentation list from
+            // exact active catalog names when the model already reported an
+            // ambiguous known variant.
+            const raw=priceProposalToolSchema.safeParse(rawArgs);
+            if(raw.success&&raw.data.variantStatus==="ambiguous"&&
+              raw.data.ownerProductQuote&&
+              [input.text,...olderOwnerTexts].some(t=>t.normalize("NFKC")
+                .toLocaleLowerCase("en").includes(raw.data.ownerProductQuote!
+                .normalize("NFKC").toLocaleLowerCase("en")))){
+              const q=raw.data.ownerProductQuote.normalize("NFKC").trim().toLocaleLowerCase("en");
+              const matches=catalog.filter(x=>x.active&&
+                x.baseName.normalize("NFKC").trim().toLocaleLowerCase("en")===q);
+              if(matches.length>=2&&matches.length<=30)
+                reviewedVariantOptions=matches.map(x=>({id:x.id,
+                  label:{en:x.name,es:x.name,ar:x.name}}));
+            }
+            return null;
+          }
           const proposed=await proposeLoop({businessId:scope.businessId,
             ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale},
             supervisorLoopRegistry,new SupabaseLoopRepository(),capabilityId,
@@ -162,7 +237,8 @@ export async function POST(request: Request, context: RouteContext) {
           });
         },
       });
-      reply = completed.reply;
+      reply = completed?.reply??directReply;
+      if(!reply)throw new Error("Missing owner-input reply");
     } finally {
       // Also record the usage already incurred if a later provider round failed.
       // A failed owner turn remains unanswered and can be retried idempotently.

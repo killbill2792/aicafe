@@ -8,6 +8,9 @@ import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSource
 import {buildAlexPricingRegistrations} from "@/lib/pricing/alexCapabilities.server";
 import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInvestigation.server";
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
+import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
+import {adaptReviewedClarifications,type KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
 import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
@@ -191,7 +194,8 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   debugRequestId?:string;
   /** Registered, typed, INERT proposals only. No approval or effect authority. */
   inertProposal?:{tools:readonly ToolDef[];
-    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>};
+    create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>;
+    knownClarificationOptions?:()=>readonly KnownClarificationOption[]};
 };
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
@@ -387,6 +391,30 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     return await failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
     ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
+  // Every domain returns the same typed owner-answerable gap. The shared
+  // loop renders/stores it without knowing any specialist's write contract.
+  const ownerInputReply=async(capabilityId:string,args:unknown,result:unknown)=>{
+    if(!record(result)||result.status!=="requires_owner_input")return null;
+    const request=ownerInputRequestSchema.safeParse(result.ownerInput);
+    if(!request.success)return null;
+    const current=await authorizedOwnerP1();
+    if(current.identity.businessId!==identity.businessId||
+      current.identity.timezone!==identity.timezone||
+      current.identity.currency!==identity.currency||
+      current.identity.asOf!==identity.asOf)return null;
+    if(atomic.status==="available"){
+      const latest=await readAuthorizedAtomicP1SourceSnapshot();
+      if(latest.status!=="available"||latest.snapshot.businessId!==atomic.snapshot.businessId||
+        latest.snapshot.revision!==atomic.snapshot.revision)return null;
+    }
+    const reply=buildOwnerQuestionReply({businessId:identity.businessId,
+      originalText:input.text,readCapabilityId:capabilityId,readInput:args,
+      request:request.data});
+    input.onDiagnostic?.({stage:"grounded_answer",agent:"supervisor",
+      groundedStatus:"insufficient_evidence",modelCallCount:usage.modelCallCount,
+      toolCallCount:usage.toolCallCount});
+    return {reply,usage:{...usage}};
+  };
   const datasets=new Map<string,StoredDataset>();
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
     buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
@@ -636,6 +664,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }));
       for(const item of completed){
         const {capabilityId,args,result,dispatched,durationMs,definition,call}=item;
+        const awaiting=await ownerInputReply(capabilityId,args,result);
+        if(awaiting)return awaiting;
         if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
         if(dispatched){
           const cal=investigationCalendarScope(args,definition.owner);
@@ -881,6 +911,11 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
           [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
+      // The older known-record ambiguity flow stays unchanged; only its reviewed
+      // owner-facing question becomes an interactive card after independent review.
+      if(review.supported&&!downgradedByReview)
+        reply=adaptReviewedClarifications(reply,answer,input.locale,
+          input.inertProposal?.knownClarificationOptions?.()??[]);
       const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
         reads:rememberInvestigationReads(memory?.reads??[],remembered),
         calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
@@ -1076,6 +1111,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         input.onUsage?.({...usage});
       });
     }
+    const awaiting=await ownerInputReply(capabilityId,args,result);
+    if(awaiting)return awaiting;
     if(!record(result)){
       feedback="The tool result was invalid.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,

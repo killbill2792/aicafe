@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { investigationMemorySchema, type InvestigationMemory } from "./investigationMemory";
+import {ownerQuestionSchema,pendingOwnerInputSchema,ownerInputResponseSchema,type PendingOwnerInput,type OwnerQuestion,type OwnerInputResponse} from "@/lib/ai/supervisor/ownerInput/contracts";
 
 /** The owner supplies content and retry keys, NEVER role, identity, tool names or evidence. */
 export const createThreadInput = z.strictObject({
@@ -10,6 +11,7 @@ export const addOwnerMessageInput = z.strictObject({
   clientMessageId: z.uuid(),
   text: z.string().trim().min(1).max(4000),
   locale: z.enum(["en", "es", "ar"]).default("en"),
+  ownerInputResponse:ownerInputResponseSchema.optional(),
 });
 export const threadIdInput = z.uuid();
 
@@ -42,6 +44,7 @@ export type ConversationMessage = {
   grounding: Record<string, unknown> | null;
   createdAt: string;
   clientMessageId: string | null;
+  ownerInputResponse?:OwnerInputResponse;
 };
 
 export type ConversationPage<T> = { items: T[]; nextOffset: number | null };
@@ -51,7 +54,7 @@ export type SupervisorIntent =
   | "cafe_overview" | "profitability" | "menu_pricing" | "staff"
   | "operating_tasks" | "expenses" | "sales_quantity" | "menu_catalog" | "owner_rules" | "unknown";
 
-export type GroundingStatus = "verified" | "estimated" | "partial" | "unavailable" | "insufficient_evidence";
+export type GroundingStatus = "verified" | "estimated" | "partial" | "unavailable" | "insufficient_evidence" | "requires_owner_input";
 
 export type EvidenceReference = {
   source: "cafe_state" | "historical_rollups" | "staff_timecards" | "pricing_engine" | "operating_tasks" | "owner_rules" | "verified_external" | "unverified_external";
@@ -60,6 +63,7 @@ export type EvidenceReference = {
 };
 
 export type SupervisorReplyBlock =
+  | OwnerQuestion
   | { type: "text"; text: string }
   | { type: "warning"; code: string; text: string }
   | { type: "metric"; label: string; valueCents: number; source: EvidenceReference }
@@ -72,6 +76,7 @@ export type SupervisorReplyBlock =
 
 export type GroundedSupervisorReply = {
   investigationMemory?: InvestigationMemory;
+  ownerInput?:PendingOwnerInput;
   intent: SupervisorIntent;
   status: GroundingStatus;
   evidence: EvidenceReference[];
@@ -122,11 +127,12 @@ const taskBlockSchema = z.strictObject({
 });
 export const groundedReplySchema = z.strictObject({
   investigationMemory: investigationMemorySchema.optional(),
+  ownerInput:pendingOwnerInputSchema.optional(),
   intent: z.enum(["cafe_overview", "profitability", "menu_pricing", "staff",
     "operating_tasks", "expenses", "sales_quantity", "menu_catalog", "owner_rules", "unknown"]),
-  status: z.enum(["verified", "estimated", "partial", "unavailable", "insufficient_evidence"]),
+  status: z.enum(["verified", "estimated", "partial", "unavailable", "insufficient_evidence","requires_owner_input"]),
   evidence: z.array(evidenceReferenceSchema).max(30),
   blocks: z.array(z.discriminatedUnion("type",
     [textBlockSchema, warningBlockSchema, metricBlockSchema, countBlockSchema, percentBlockSchema,
-      taskBlockSchema, taskCardBlockSchema])).min(1).max(30),
+      taskBlockSchema, taskCardBlockSchema,ownerQuestionSchema])).min(1).max(30),
 });

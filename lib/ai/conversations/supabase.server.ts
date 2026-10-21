@@ -4,6 +4,7 @@ import type {
   ConversationMessage, ConversationPage, ConversationScope, ConversationThread,
 } from "./contracts";
 import { PAGE_SIZE, THREAD_PAGE_SIZE } from "./contracts";
+import {ownerInputResponseSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import type { ConversationRepository } from "./service";
 
 type ThreadRow = {
@@ -15,10 +16,11 @@ type MessageRow = {
   content_type: "text" | "blocks"; text_content: string | null;
   structured_content: unknown[] | null; grounding: Record<string, unknown> | null;
   client_message_id: string | null; created_at: string;
+  owner_input_response?:unknown|null;
 };
 
 const THREAD_COLUMNS = "id, title, created_at, updated_at, last_message_at";
-const MESSAGE_COLUMNS = "id, thread_id, role, content_type, text_content, structured_content, grounding, client_message_id, created_at";
+const MESSAGE_COLUMNS = "id, thread_id, role, content_type, text_content, structured_content, grounding, client_message_id, created_at, owner_input_response";
 
 function thread(row: ThreadRow): ConversationThread {
   return {
@@ -28,11 +30,13 @@ function thread(row: ThreadRow): ConversationThread {
 }
 
 function message(row: MessageRow): ConversationMessage {
+  const response=row.owner_input_response==null?null:ownerInputResponseSchema.parse(row.owner_input_response);
   return {
     id: row.id, threadId: row.thread_id, role: row.role,
     contentType: row.content_type, text: row.text_content,
     blocks: row.structured_content, grounding: row.grounding,
     clientMessageId: row.client_message_id, createdAt: row.created_at,
+    ...(response?{ownerInputResponse:response}:{}),
   };
 }
 

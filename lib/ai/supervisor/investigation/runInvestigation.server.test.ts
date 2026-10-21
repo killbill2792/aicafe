@@ -616,7 +616,7 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     expect(result.reply.evidence).toEqual([]);
     expect(result.reply.blocks).toContainEqual(expect.objectContaining({type:"warning",code:"SUPERVISOR_UNVERIFIED"}));
     expect(result.reply.blocks).toContainEqual({type:"text",
-      text:"The listed price is [unchecked value] today."});
+      text:"The listed price is an unverified amount today."});
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:true}));
   });
