@@ -271,6 +271,24 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
 });
 
 describe("default Supervisor iterative cross-domain intelligence",()=>{
+  it("bounds six prior owner statements plus the current request and clarification for persistence",async()=>{
+    const previous=Array.from({length:6},(_,i)=>"Earlier owner instruction "+(i+1));
+    const original="Show me the recorded menu price.";
+    const clarification="Owner clarification: use the oat latte.";
+    const result=await runSupervisorTurn({...base,text:original,
+      ownerClarification:clarification,
+      investigationMemory:{version:1,businessId:cafe,ownerStatements:previous,reads:[]}},
+      transportFor([
+        read("p3.menu.catalog.v1",query("menu.catalog")),
+        answer([{kind:"evidence",text:"The recorded menu price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]}]),
+      ]));
+    expect(result.reply.investigationMemory?.ownerStatements).toHaveLength(6);
+    expect(result.reply.investigationMemory?.ownerStatements).toContain(original);
+    expect(result.reply.investigationMemory?.ownerStatements).toContain(clarification);
+    expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+  });
+
   it.each([[17,35,7409],[19,40,8251],[23,20,10943]])("discovers records and computes unseen price/labor composition (%i items, %i minutes)",async(items,minutes,expected)=>{
     const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Conditional incremental contribution, excluding unobserved overhead and demand",
       nodes:[{op:"source",handle:`menu.product_economics:${product}:priceCents`},
