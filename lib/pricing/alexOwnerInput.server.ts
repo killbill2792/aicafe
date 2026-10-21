@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import type {TrustedReadScope} from "@/lib/ai/supervisor/p2/registry";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {createServerSupabaseClient} from "@/lib/supabase/server";
@@ -81,28 +82,23 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   if(first.status!=="available"||first.snapshot.businessId!==scope.businessId||
     first.snapshot.truncated.menu)return null;
   const normalized=(s:string)=>s.normalize("NFKC").trim().replace(/\s+/gu," ").toLocaleLowerCase("en");
-  const exact=first.snapshot.sources.menu.filter(m=>m.is_active&&
-    normalized(m.name)===normalized(selector.exactName));
-  let matches:readonly {id:string;name:string;price_cents:number|null;
-    is_active:boolean;size_label?:string|null}[]=exact;
-  if(exact.length<2){
-    // A verified, business-scoped family projection is needed only when the
-    // atomic canonical names alone cannot prove multiple active variants.
-    const db=await createServerSupabaseClient();
-    const {data:projection,error}=await db.from("menu_items")
-      .select("id,name,base_name,size_label,price_cents,is_active")
-      .eq("business_id",scope.businessId).limit(501);
-    if(error||!projection||projection.length!==first.snapshot.sources.menu.length)return null;
-    const sourceById=new Map(first.snapshot.sources.menu.map(row=>[row.id,row]));
-    if(!projection.every(item=>{
-      const source=sourceById.get(item.id);
-      return source&&source.name===item.name&&source.is_active===item.is_active&&
-        source.price_cents===item.price_cents;
-    }))return null;
-    matches=projection.filter(item=>item.is_active&&
-      (normalized(item.name)===normalized(selector.exactName)||
-       normalized(item.base_name??item.name)===normalized(selector.exactName)));
-  }
+  // Match against a canonical, tenant-scoped projection that retains the
+  // product family and variant labels. Confirm every row against the atomic
+  // source before issuing a card, even when exact names already match.
+  const db=await createServerSupabaseClient();
+  const {data:projection,error}=await db.from("menu_items")
+    .select("id,name,base_name,size_label,price_cents,is_active")
+    .eq("business_id",scope.businessId).limit(501);
+  if(error||!projection||projection.length!==first.snapshot.sources.menu.length)return null;
+  const sourceById=new Map(first.snapshot.sources.menu.map(row=>[row.id,row]));
+  if(!projection.every(item=>{
+    const source=sourceById.get(item.id);
+    return source&&source.name===item.name&&source.is_active===item.is_active&&
+      source.price_cents===item.price_cents;
+  }))return null;
+  const matches=projection.filter(item=>item.is_active&&
+    (normalized(item.name)===normalized(selector.exactName)||
+     normalized(item.base_name??item.name)===normalized(selector.exactName)));
   if(matches.length>30)return null;
   const latest=await readAuthorizedAtomicP1SourceSnapshot();
   if(latest.status!=="available"||latest.snapshot.businessId!==first.snapshot.businessId||
@@ -120,10 +116,43 @@ export async function alexProductCatalogResolution(scope:TrustedReadScope,
   ) as Record<"en"|"es"|"ar",string>}));
   return {mode:"resolve",fieldId:"owner.clarification",
     writeCapabilityId:"platform.owner_input.resolve.v1",
-    writeContext:{domain:"menu",catalogRevision:first.snapshot.revision},
+    writeContext:{domain:"menu",catalogRevision:first.snapshot.revision,
+      ...Object.fromEntries(matches.map(item=>[
+        "catalogIdentity:"+item.id,catalogIdentityFingerprint(item)]))},
     question:{
       en:en.SupervisorOwnerHelp.catalogMultipleQuestion,
       es:es.SupervisorOwnerHelp.catalogMultipleQuestion,
       ar:ar.SupervisorOwnerHelp.catalogMultipleQuestion,
     },input:{kind:"options",options}};
+}
+
+/** Only stable catalog identity belongs in the choice fingerprint. Price
+ * updates and unrelated business source revisions must NOT invalidate it. */
+export function catalogIdentityFingerprint(item:{
+  id:string;name:string;base_name?:string|null;size_label?:string|null;
+}):string{
+  return createHash("sha256").update(JSON.stringify([
+    item.id,item.name,item.base_name??null,item.size_label??null,
+  ])).digest("hex");
+}
+
+/** Verify a previously issued owner option against current authoritative
+ * menu identity, not simply an active UUID or a business-wide revision. */
+export async function alexCatalogChoiceStillValid(businessId:string,
+  productId:string,issuedFingerprint:string):Promise<boolean>{
+  if(!/^[0-9a-f]{64}$/.test(issuedFingerprint))return false;
+  const snapshot=await readAuthorizedAtomicP1SourceSnapshot();
+  if(snapshot.status!=="available"||snapshot.snapshot.businessId!==businessId||
+    snapshot.snapshot.truncated.menu)return false;
+  const canonical=snapshot.snapshot.sources.menu.filter(m=>m.id===productId&&m.is_active);
+  if(canonical.length!==1)return false;
+  const db=await createServerSupabaseClient();
+  const {data,error}=await db.from("menu_items")
+    .select("id,name,base_name,size_label,price_cents,is_active")
+    .eq("business_id",businessId).eq("id",productId).limit(2);
+  if(error||!data||data.length!==1)return false;
+  const current=data[0];
+  return current.is_active===true&&current.name===canonical[0].name&&
+    current.price_cents===canonical[0].price_cents&&
+    catalogIdentityFingerprint(current)===issuedFingerprint;
 }
