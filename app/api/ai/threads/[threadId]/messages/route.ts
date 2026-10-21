@@ -6,7 +6,8 @@ import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/
 import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/runSupervisorTurn.server";
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
 import {submitOwnerInputMessage} from "@/lib/ai/conversations/ownerInputSubmit.server";
-import {pendingOwnerInputSchema,ownerInputResponseSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {ownerAuthoredProposalTexts} from "@/lib/ai/supervisor/ownerInput/proposalContext";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
 import {resumeOwnerResolution} from "@/lib/ai/supervisor/ownerInput/resolution";
 import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
@@ -218,29 +219,7 @@ export async function POST(request: Request, context: RouteContext) {
     try {
       let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
       let reviewedVariantContext:Record<string,string>={};
-      // Preserve genuinely owner-authored free-text answers through multiple
-      // question cards, while excluding generated labels and selected IDs.
-      // Each structured answer is bound to its issued same-business question.
-      const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id)
-        .sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
-        .flatMap(m=>{
-          if(!m.ownerInputResponse)return typeof m.text==="string"?[m.text]:[];
-          const response=ownerInputResponseSchema.safeParse(m.ownerInputResponse);
-          if(!response.success||response.data.action!=="supply"||!response.data.value)return [];
-          const prior=messages.find(candidate=>candidate.role==="supervisor"&&
-            candidate.createdAt<=m.createdAt&&
-            candidate.grounding?.ownerInput&&
-            typeof candidate.grounding.ownerInput==="object"&&
-            "questionId" in candidate.grounding.ownerInput&&
-            candidate.grounding.ownerInput.questionId===response.data.questionId);
-          const pending=pendingOwnerInputSchema.safeParse(prior?.grounding?.ownerInput);
-          if(!pending.success||pending.data.businessId!==scope.businessId||
-            pending.data.stage!=="answer"||pending.data.request.mode!=="resolve")return [];
-          const value=response.data.value.trim();
-          if(pending.data.request.input.kind==="options"&&
-            pending.data.request.input.options.some(option=>option.id===value))return [];
-          return value?[value]:[];
-        }).slice(0,5);
+      const olderOwnerTexts=ownerAuthoredProposalTexts(messages,message.id,scope.businessId);
       // The normal semantic investigation can discover the registered inert
       // proposal tool in ANY owner language. Model output never authorizes
       // approval/commit/POS writes, never supplies trusted money or tenant IDs.
