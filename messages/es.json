@@ -1298,6 +1298,10 @@
     "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios."
   },
   "SupervisorChat": {
+    "ownerInputDismiss": "Ahora no",
+    "ownerInputConfirm": "Continuar",
+    "ownerInputOther": "Responder de otra forma",
+    "ownerInputAnswer": "Tu respuesta",
     "menuTotal": "Productos en tu menú",
     "menuActive": "Productos activos del menú",
     "menuCategoryDrink": "Bebidas del menú",
