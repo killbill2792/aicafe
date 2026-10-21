@@ -26,6 +26,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
+import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import {validatePriceProposalCandidate,priceProposalToolJsonSchema,ambiguousPriceProposalOptions} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -127,10 +128,25 @@ export async function POST(request: Request, context: RouteContext) {
         const value=response.value??"";
         if(state.request.mode==="resolve"){
           const resumed=resumeOwnerResolution(state.originalText,state.request,value);
-          if(resumed)resumedOriginalText=resumed;
-          else directReply=buildOwnerQuestionReply({businessId:scope.businessId,
-            originalText:state.originalText,readCapabilityId:state.readCapabilityId,
-            readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
+          if(!resumed){
+            directReply=buildOwnerQuestionReply({businessId:scope.businessId,
+              originalText:state.originalText,readCapabilityId:state.readCapabilityId,
+              readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
+          }else if(state.request.writeContext.domain==="menu"&&
+            state.request.writeContext.catalogRevision){
+            // A once-valid option must be rechecked against the current
+            // authenticated catalog epoch before it can guide a new read.
+            const fresh=await readAuthorizedAtomicP1SourceSnapshot();
+            if(fresh.status!=="available"||fresh.snapshot.businessId!==scope.businessId||
+              fresh.snapshot.truncated.menu||
+              fresh.snapshot.revision!==state.request.writeContext.catalogRevision||
+              (state.request.input.kind==="options"&&
+                !fresh.snapshot.sources.menu.some(m=>m.is_active&&m.id===value))){
+              // Ignore stale pin; rediscover current options from the original
+              // question instead of reusing stale IDs or silently committing.
+              resumedOriginalText=state.originalText;
+            }else resumedOriginalText=resumed;
+          }else resumedOriginalText=resumed;
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
           directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
