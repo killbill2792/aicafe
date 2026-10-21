@@ -400,7 +400,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))
     return await failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
-    ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
+    ownerClause:input.text,durableOwnerInput:true,ownerContext:ownerStatements.join("\n")};
   // Every domain returns the same typed owner-answerable gap. The shared
   // loop renders/stores it without knowing any specialist's write contract.
   const ownerInputReply=async(capabilityId:string,args:unknown,result:unknown)=>{
