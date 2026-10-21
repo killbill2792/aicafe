@@ -413,6 +413,32 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
       expect.objectContaining({domain:"olivia",kind:"week",capabilityId:issued}),
     ]));
   });
+  it("migrates legacy read-only temporal provenance across two question cards",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries 2026-10-01 to 2026-10-07 and compare staffing.";
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:corrected}))}]};
+    const middle=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:previous},transportFor([
+      answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}]),
+    ],undefined,true,"staff"));
+    expect(middle.reply.investigationMemory?.calendarScopeOrigins).toEqual(expect.arrayContaining([
+      expect.objectContaining({domain:"money",kind:"period",capabilityId:id}),
+    ]));
+    const newKey=middle.reply.investigationMemory?.requestKey;
+    expect(newKey).toMatch(/^[a-f0-9]{64}$/);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:middle.reply.investigationMemory},
+      transportFor([
+        read(id,query("money.expense_entries",{period:{from:"2026-10-01",to:"2026-10-07"}})),
+        read(id,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"Corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
   it("honors legacy scope provenance on replay without an origin key",async()=>{
     const id="p3.money.expense_entries.v1";
     const original="Show expense entries 2026-10-01 to 2026-10-07";
