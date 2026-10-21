@@ -1865,4 +1865,32 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(result.usage.toolCallCount).toBe(2);
     expect(JSON.stringify(result.reply.blocks)).toContain("$7,467.00");
   });
+
+  it("keeps reviewed source evidence but replaces its duplicated clarification text with one interactive card",async()=>{
+    let steps=0;
+    const question="Which staffing plan should I compare?";
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:false,reason:"Staffing choice needed.",
+          missingGoalDomain:"staff",supportedParagraphIndices:[0]});
+      if(body.text.format.name!=="supervisor_investigation_step")
+        throw new Error("Unexpected model invocation");
+      if(steps++===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),
+          query("menu.catalog"),"call_1");
+      return response(answer([
+        {kind:"evidence",text:"The recorded latte price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]},
+        {kind:"clarification",text:question,citations:[]},
+      ]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare my latte price with staffing options."},transport);
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.evidence.length).toBeGreaterThan(0);
+    expect(result.reply.blocks.filter(b=>b.type==="owner_question")).toHaveLength(1);
+    expect(result.reply.blocks.filter(b=>b.type==="text"&&b.text===question)).toHaveLength(0);
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("$5.25"))).toBe(true);
+  });
 });
