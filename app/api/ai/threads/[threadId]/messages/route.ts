@@ -279,7 +279,8 @@ export async function POST(request: Request, context: RouteContext) {
             // The investigation dispatcher turns the resulting options into
             // the SAME persisted requires_owner_input state as every other gap.
             reviewedVariantOptions=ambiguousPriceProposalOptions(rawArgs,catalog,
-              [input.text,...olderOwnerTexts]);
+              [resumedOriginalText,ownerAuthoredClarification??"",...olderOwnerTexts],
+              trustedResolutionProductId);
             const allowed=new Set(reviewedVariantOptions.map(option=>option.id));
             reviewedVariantContext=allowed.size>=2?{
               domain:"menu_proposal",
