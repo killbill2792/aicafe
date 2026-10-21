@@ -2028,6 +2028,8 @@
     "reportTask": "نتائج تجربة السعر لـ {item}",
     "reportDetail": "راجع المبيعات الفعلية والتقدير المشروط والتوصية.",
     "reportAction": "مراجعة التجربة",
+    "reportAcknowledge": "وضع علامة تمت المراجعة على التقرير",
+    "reportAcknowledgeError": "تعذّر تسجيل مراجعة التقرير. حاول مرة أخرى.",
     "recommendationLabel": "التوصية",
     "recommendKeep": "الإبقاء على السعر",
     "recommendRevert": "العودة إلى السعر السابق",
