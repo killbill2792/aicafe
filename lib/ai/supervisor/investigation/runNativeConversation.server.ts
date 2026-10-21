@@ -321,6 +321,10 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     const catalog=resolved.length>=2?await getMenuControlCenter():[];
     const matched=resolved.length>=2?resolved.map(o=>catalog.find(row=>row.id===o.id&&row.active)):[];
     const menuOptions=matched.length>=2&&matched.every(Boolean);
+    const priorContext=input.inertProposal?.knownClarificationContext?.()??{};
+    const rememberedProduct=priorContext.selectedProductId??input.trustedCatalogProductId;
+    const savedItem=rememberedProduct?await getMenuControlCenter().then(items=>
+      items.find(row=>row.id===rememberedProduct&&row.active)):undefined;
     const context=menuOptions?{
       domain:"menu_proposal",
       ...Object.fromEntries(matched.map(row=>[
@@ -328,6 +332,11 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
         catalogIdentityFingerprint({id:row!.id,name:row!.name,
           base_name:row!.baseName,size_label:row!.sizeLabel}),
       ])),
+    }:savedItem?{
+      domain:"menu_proposal",selectedProductId:savedItem.id,
+      ["catalogIdentity:"+savedItem.id]:catalogIdentityFingerprint({
+        id:savedItem.id,name:savedItem.name,
+        base_name:savedItem.baseName,size_label:savedItem.sizeLabel}),
     }:undefined;
     const request=ownerResolutionRequest({question:loc,input:resolved.length>=2?
       {kind:"options",options:resolved.map(o=>({id:o.id,label:{en:o.label,es:o.label,ar:o.label}}))}:
@@ -545,10 +554,18 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   }else if(name==="prepare_action"){
    const registered=input.inertProposal?.tools.find(t=>t.name===args.name);
    if(registered&&isRecord(args.input)){
-     const prepared=await input.inertProposal?.create(registered.name,args.input)??null;
+     let prepared:{id:string;text:string}|null=null;
+     try{
+       prepared=await input.inertProposal?.create(registered.name,args.input)??null;
+     }catch{
+       // An unavailable recipe or POS baseline must not abort the conversation,
+       // discard verified reads, or pretend a proposal was created.
+       result={status:"unavailable",reason:"proposal_requires_verified_baseline"};
+     }
      if(prepared){
        usage.toolCallCount++;
        const source:EvidenceReference={source:"cafe_state",identifier:"proposal:"+prepared.id,asOf:input.asOf};
+       if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
        return {reply:{intent:"menu_pricing",status:"verified",evidence:[source],
          blocks:[{type:"text",text:prepared.text.slice(0,1200)}],investigationMemory:memoryState()},usage};
      }
@@ -562,5 +579,6 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   input.onDiagnostic?.({stage:"capability_selected",advertisedToolNames:[name],
     modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
  }
+ if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
  return {reply:reply(copy.fallback,[...facts.keys()].slice(-8)),usage};
 }
