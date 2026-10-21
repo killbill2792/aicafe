@@ -1,3 +1,21 @@
+## PR #143 — Native Supervisor conversation instead of investigator/reviewer (2026-10-21)
+
+- [x] Create an isolated branch and draft PR against merged `main`.
+- [x] Wire default Supervisor turn to a native OpenAI function-call conversation, with on-demand source/tool discovery and no mandatory independent model answer reviewer.
+- [x] Render trusted business money/count fields from authoritative tool results; add exact-cents arithmetic for source-bound or owner-quoted operands, not model-authored numeric citations.
+- [x] Keep server-side owner/business checks and reauthorize/snapshot-check at publication.
+- [x] Preserve existing proposal/owner approval/manual POS handoff/cron monitor/report engines; never authorize effects from model-generated text.
+- [x] Persist a direct owner clarification using the existing structured prompt state, bind café menu options to catalog fingerprints, collapse answered prompts and hide duplicate structured reply bubbles.
+- [x] Price experiment UI preview now displays the exact price delta and explicitly names missing seven-day coverage or recipe costs rather than failing with an undifferentiated HTTP 500; keep missing-baseline proposal guard.
+- [x] Add pure calculation, preview, owner question and native turn tests.
+- [ ] Verify complete current-HEAD CI suite; independently review and fix actual findings.
+- [ ] Live OpenAI Responses API + authenticated production-like café end-to-end smoke tests (requires credentials/test environment), especially full 16 oz variant selection and trial initiation.
+- [ ] Preserve/reenable advanced P3 scenario expression and public-research tools in the new control boundary after explicit API/privacy tests; they are not complete in this branch.
+- [ ] Owner review and merge decision; do not merge/deploy here.
+
+**Architecture decision:** OpenAI plans/converses and chooses tools; trusted backend owns reads, sources, integers, owner questions and effects. Missing data is not a technical ask-for-help. No model-based reviewer is required before clarifying or answering.
+
+---
 ## Supervisor unified ask-for-help — in progress (2026-10-21)
 - [ ] Replace independent presentation-only, proposal-variant, calendar and stuck-loop owner questions with the same persisted `requires_owner_input` dispatcher; retain the existing authenticated confirmation claim for durable source writes and introduce a typed, no-domain-write resolution handler.
 - [ ] Establish structural, source-bound read/price disambiguation; handle missing cost/new-item gaps without writing invented records.
