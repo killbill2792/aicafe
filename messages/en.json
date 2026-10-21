@@ -1299,13 +1299,26 @@
   },
   "SupervisorOwnerHelp": {
     "incompleteByDomain": "The {domain} part of your request could not be confirmed.",
-    "domains": {"menu":"menu","pricing":"pricing","scheduling":"scheduling","staff":"staffing","sales":"sales","expenses":"expenses","other":"remaining"},
+    "domains": {
+      "menu": "menu",
+      "pricing": "pricing",
+      "scheduling": "scheduling",
+      "staff": "staffing",
+      "sales": "sales",
+      "expenses": "expenses",
+      "other": "remaining"
+    },
     "priceUnknown": "price unknown",
     "catalogMissingQuestion": "I couldn't find that active menu item. Is it a new product? Please describe it.",
     "catalogMissingHint": "Tell me whether this is new, with its ingredients and quantities if known.",
     "catalogMultipleQuestion": "Which matching menu item did you mean?",
     "stuckDetail": "Which detail should I clarify before continuing?",
-    "incomplete": "Part of your request could not be confirmed."
+    "incomplete": "Part of your request could not be confirmed.",
+    "detailHint": "Give the missing detail in your own words.",
+    "additionalDetail": "What additional detail should I use to answer your question?",
+    "unknownTool": "What detail can you clarify so I can continue?",
+    "repeatedTool": "What should I clarify before continuing your request?",
+    "dateClarification": "Which dates should I use for this part of your request?"
   },
   "SupervisorChat": {
     "ownerInputDismiss": "Not now",
