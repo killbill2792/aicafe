@@ -43,7 +43,7 @@ export function parseQuotedOperand(quote:string):SimpleOperand|null{
   const s=quote.trim();
   const money=/^\$([0-9]{1,9})(?:\.([0-9]{1,2}))?$/u.exec(s);
   if(money)return {value:Number(money[1])*100+Number((money[2]??"").padEnd(2,"0")),unit:"USD_cents"};
-  const cents=/^([0-9]{1,9})(?:\.([0-9]{1,2}))?\s*cents?$/iu.exec(s);
+  const cents=/^([0-9]{1,9})\s*cents?$/iu.exec(s);
   if(cents)return {value:Number(cents[1]),unit:"USD_cents"};
   const percent=/^([0-9]{1,4})(?:\.([0-9]{1,2}))?%$/u.exec(s);
   if(percent)return {value:Number(percent[1])*100+Number((percent[2]??"").padEnd(2,"0")),unit:"ratio_bps"};
