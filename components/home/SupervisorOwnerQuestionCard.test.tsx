@@ -39,6 +39,18 @@ describe("adaptive owner question card",()=>{
     expect(html).toContain('type="submit"');
     expect(html).not.toContain("Latte 0");
   });
+  it("keeps the dismiss control rendered while submitting and after a failed response",()=>{
+    const card=options(2);
+    const pending=renderToStaticMarkup(createElement(SupervisorOwnerQuestionCard,
+      {card,locale:"en" as const,copy,disabled:true,onAnswer:vi.fn(),onDismiss:vi.fn()}));
+    const retryable=render(card);
+    expect(pending).toContain("Which latte?");
+    expect(pending).toContain('aria-label="Not now"');
+    expect(pending).toContain('disabled=""');
+    expect(retryable).toContain("Which latte?");
+    expect(retryable).toContain('aria-label="Not now"');
+    expect(retryable).not.toContain('disabled=""');
+  });
   it("provides an accessible localized dismiss control and Arabic RTL",()=>{
     const html=render(options(2),"ar");
     expect(html).toContain('dir="rtl"');
