@@ -33,8 +33,11 @@ export async function alexMissingIngredientCost(scope:TrustedReadScope,
       p.ingredient_id===line.ingredient_id&&p.effective_from<=scope.identity.asOf);
     return prices.length===0;
   });
-  if(gaps.length!==1)return null;
-  const missing=gaps[0];
+  // Multiple absent prices are resolved one validated owner fact at a time.
+  // This re-enters the original read after each confirmed write, never
+  // claims a complete cost basis from only the first supplied price.
+  if(gaps.length===0)return null;
+  const missing=[...gaps].sort((a,b)=>a.ingredient_id.localeCompare(b.ingredient_id))[0];
   const ingredient=snapshot.sources.ingredients.filter(i=>i.id===missing.ingredient_id);
   if(ingredient.length!==1)return null;
   // Source churn invalidates the candidate, not just its eventual write.
