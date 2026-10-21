@@ -2,7 +2,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 vi.mock("server-only", () => ({}));
 const mockRead = vi.fn();
 const mockSimulate = vi.fn();
-vi.mock("./alexOwnerInput.server",()=>({alexMissingIngredientCost:vi.fn(async()=>null)}));
+vi.mock("./alexOwnerInput.server",()=>({
+  alexMissingIngredientCost:vi.fn(async()=>null),
+  alexProductCatalogResolution:vi.fn(async()=>null),
+}));
 vi.mock("./alexCapabilities.server", () => ({
   buildAlexPricingRegistrations: () => [{ read: mockRead }, { simulate: mockSimulate }],
 }));
