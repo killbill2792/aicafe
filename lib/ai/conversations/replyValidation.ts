@@ -79,7 +79,12 @@ export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedS
     // A reviewed, source-backed PARTIAL result may accompany one durable card
     // without losing the verified work. Every factual block retains its exact
     // validated evidence reference; source-free text stays card-only.
-    if(otherBlocks.length&&(!validated.evidence.length||
+    const conditional=validated.evidence.length===0&&
+      otherBlocks[0]?.type==="warning"&&
+      (otherBlocks[0].code==="P3_CONDITIONAL"||otherBlocks[0].code==="SUPERVISOR_ADVICE")&&
+      otherBlocks.some(block=>block.type==="text")&&
+      otherBlocks.every(block=>block.type==="text"||block.type==="warning");
+    if(otherBlocks.length&&(!validated.evidence.length&&!conditional||
       otherBlocks.some(block=>(block.type==="metric"||block.type==="count"||block.type==="percent"||
           block.type==="task_status"||block.type==="task_card")&&
         !validated.evidence.some(e=>e.source===block.source.source&&
