@@ -2028,6 +2028,8 @@
     "reportTask": "Price experiment results for {item}",
     "reportDetail": "Check observed sales, conditional estimate and keep/revert/adjust recommendation.",
     "reportAction": "Review experiment",
+    "reportAcknowledge": "Mark report as reviewed",
+    "reportAcknowledgeError": "Couldn't mark this report as reviewed. Try again.",
     "recommendationLabel": "Recommendation",
     "recommendKeep": "Keep this price",
     "recommendRevert": "Revert to the earlier price",
