@@ -8,6 +8,7 @@ import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationM
 import {submitOwnerInputMessage} from "@/lib/ai/conversations/ownerInputSubmit.server";
 import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
+import {resumeOwnerResolution} from "@/lib/ai/supervisor/ownerInput/resolution";
 import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
 import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion,unresolvedOwnerSave} from "@/lib/ai/supervisor/ownerInput/response";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -124,11 +125,19 @@ export async function POST(request: Request, context: RouteContext) {
         directReply=declinedOwnerQuestion(input.locale);
       }else if(response.action==="supply"&&state.stage==="answer"){
         const value=response.value??"";
-        const prepared=ownerInputWrites.prepare(state.request,value);
-        directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
-          buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
-            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
-            request:state.request,questionId:state.questionId});
+        if(state.request.mode==="resolve"){
+          const resumed=resumeOwnerResolution(state.originalText,state.request,value);
+          if(resumed)resumedOriginalText=resumed;
+          else directReply=buildOwnerQuestionReply({businessId:scope.businessId,
+            originalText:state.originalText,readCapabilityId:state.readCapabilityId,
+            readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
+        }else{
+          const prepared=ownerInputWrites.prepare(state.request,value);
+          directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
+            buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
+              readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
+              request:state.request,questionId:state.questionId});
+        }
       }else if(response.action==="confirm"&&state.stage==="confirm"&&state.answer){
         const applied=await commitConfirmedOwnerInput(scope,state);
         if(applied.ok){
