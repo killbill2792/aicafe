@@ -659,9 +659,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
           !pendingOwnerCalendarCorrection(v.args,input.text,identity.asOf,memory,ownerStatements));
       if(!canDispatch){
-        const duplicateBatch=requests.length===step.calls.length&&requests.length>=2&&
-          signatures.every(sig=>attempted.has(sig))?
-          JSON.stringify({signatures:[...signatures].sort(),observationCount:observations.length}):null;
+        // An identical rejected selection without new observations cannot make progress,
+        // even when only one sibling was previously attempted.
+        const duplicateBatch=JSON.stringify({
+          calls:step.calls.map(call=>[call.name,call.arguments]).sort((x,y)=>JSON.stringify(x).localeCompare(JSON.stringify(y))),
+          observationCount:observations.length,
+          rejection:"parallel_preflight",
+        });
         if(duplicateBatch&&duplicateBatch===lastDuplicateBatch)
           return await askWhenStuck({
             en:"Which detail should I clarify before continuing?",
