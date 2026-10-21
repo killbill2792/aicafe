@@ -36,3 +36,23 @@ export function validatePriceProposalCandidate(raw:unknown,catalog:readonly {
  return matching.length===1&&matching[0].id===x.productId?
    {productId:x.productId,increaseCents:x.increaseCents}:null;
 }
+
+
+/** Domain-owned, source-verified ambiguous selection for the generic owner-input
+ * mechanism. An ungrounded model claim alone is never enough to offer IDs. */
+export function ambiguousPriceProposalOptions(raw:unknown,catalog:readonly {
+  id:string;name:string;baseName:string;sizeLabel?:string|null;active:boolean;priceCents?:number|null;
+}[],ownerTexts:readonly string[]){
+  const parsed=priceProposalToolSchema.safeParse(raw);
+  if(!parsed.success||!parsed.data.ownerProductQuote||
+    !quoted(parsed.data.ownerProductQuote,ownerTexts))return [];
+  const normalize=(s:string)=>s.normalize("NFKC").trim().toLocaleLowerCase("en");
+  const reference=normalize(parsed.data.ownerProductQuote);
+  const matches=catalog.filter(item=>item.active&&normalize(item.baseName)===reference);
+  if(matches.length<2||matches.length>30)return [];
+  return matches.map(item=>{
+    const label=item.name+(item.sizeLabel?" — "+item.sizeLabel:"")+
+      (typeof item.priceCents==="number"?" — "+(item.priceCents/100).toFixed(2)+" USD":"");
+    return {id:item.id,label:{en:label,es:label,ar:label}};
+  });
+}
