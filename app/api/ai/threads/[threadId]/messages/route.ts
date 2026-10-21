@@ -113,6 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
     let resumedOriginalText=input.text;
     let trustedResolutionProductId:string|null=null;
     let ownerClarification:string|undefined;
+    let ownerAuthoredClarification:string|undefined;
     let directReply:GroundedSupervisorReply|null=null;
     if(ownerResponse){
       const prior=messages.filter(m=>m.role==="supervisor"&&
@@ -134,6 +135,13 @@ export async function POST(request: Request, context: RouteContext) {
             directReply=buildOwnerQuestionReply({businessId:scope.businessId,
               originalText:state.originalText,readCapabilityId:state.readCapabilityId,
               readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
+          }else if(state.request.input.kind==="options"&&
+            !state.request.input.options.some(option=>option.id===value)){
+            // A legitimate "Answer another way" correction is a new owner
+            // statement, not an authorization for any of the issued UUIDs.
+            resumedOriginalText=resumed.originalText;
+            ownerClarification=resumed.ownerStatement;
+            ownerAuthoredClarification=value.trim();
           }else if(state.request.writeContext.domain==="menu"&&
             state.request.writeContext.catalogRevision){
             // Recheck the exact source-bound menu identity that issued this
@@ -172,6 +180,8 @@ export async function POST(request: Request, context: RouteContext) {
           }else{
             resumedOriginalText=resumed.originalText;
             ownerClarification=resumed.ownerStatement;
+            if(state.request.input.kind==="free_text")
+              ownerAuthoredClarification=value.trim();
           }
         }else{
           const prepared=ownerInputWrites.prepare(state.request,value);
@@ -209,7 +219,7 @@ export async function POST(request: Request, context: RouteContext) {
       let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
       let reviewedVariantContext:Record<string,string>={};
       const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
-        typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
+        !m.ownerInputResponse&&typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
         .map(m=>m.text!).slice(0,5);
       // The normal semantic investigation can discover the registered inert
       // proposal tool in ANY owner language. Model output never authorizes
@@ -236,7 +246,7 @@ export async function POST(request: Request, context: RouteContext) {
           if(capabilityId!==priceExperimentCapabilityId)return null;
           const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            catalog,[resumedOriginalText,ownerClarification??"",...olderOwnerTexts],trustedResolutionProductId);
+            catalog,[resumedOriginalText,ownerAuthoredClarification??"",...olderOwnerTexts],trustedResolutionProductId);
           if(!checked){
             // The pricing domain alone inspects trusted catalog cardinality.
             // The investigation dispatcher turns the resulting options into
