@@ -190,6 +190,8 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   history:ConversationalTurn[];investigationMemory?:InvestigationMemory;
   /** Server-validated answer to a durable owner question, separate from full original text. */
   ownerClarification?:string;
+  /** Revalidated server-issued selection, never an owner-authored numeric assumption. */
+  trustedCatalogProductId?:string;
   apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void;
   // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload. When the
