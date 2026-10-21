@@ -124,3 +124,16 @@ it("rejects cross-week explicit dates even when relative text says next week",()
   expect(authenticatedOwnerCalendarScope("Next week, use 2026-10-25 to 2026-10-26 instead","olivia",asOf,"week"))
     .toBeNull();
 });
+
+it("uses the same forward-looking yearless dates as Olivia's immediate guard",()=>{
+  expect(authenticatedOwnerCalendarScope("Use October 27 instead","olivia",asOf,"week"))
+    .toEqual({domain:"olivia",kind:"week",week:"2026-10-26"});
+  expect(authenticatedOwnerCalendarScope("Next week, use October 25 to October 26 instead","olivia",asOf,"week"))
+    .toBeNull();
+});
+it("prefers explicit sub-week dates over conflicting relative wording",()=>{
+  expect(authenticatedOwnerCalendarScope("Next week, use 2026-10-20 to 2026-10-21 instead","olivia",asOf,"week"))
+    .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
+  expect(authenticatedOwnerCalendarScope("Next week, use October 20 to October 21 instead","olivia",asOf,"week"))
+    .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
+});
