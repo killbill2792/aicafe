@@ -13,7 +13,7 @@ import { audioExtensionForMime, parseTranscriptionResponse, voiceMessageForError
 import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
-import { beginOptimisticOwner, sendKey, visibleConversationMessages,
+import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
   transcriptScrollTarget } from "./supervisorChatBehavior";
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
@@ -576,6 +576,7 @@ export default function SupervisorChatComposer({
   // owner turn can occur anywhere in history, not only at the end of a thread.
   const displayedMessages: ConversationMessage[] = visibleConversationMessages(
     messages, optimisticOwner, threadId, new Date().toISOString());
+  const activeQuestionMessageId=activeOwnerQuestionMessageId(displayedMessages);
   const answeredOwnerIds = new Set(messages.flatMap((message) =>
     message.role === "supervisor" && typeof message.grounding?.ownerMessageId === "string"
       ? [message.grounding.ownerMessageId] : []));
@@ -646,8 +647,10 @@ export default function SupervisorChatComposer({
         <Clock3 size={18} aria-hidden="true" /> {copy.more}
       </button>}
       {displayedMessages.map((message) => <div key={message.id} data-client-message-id={message.role === "owner" ? message.clientMessageId ?? undefined : undefined} className="space-y-2">
-        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled}
+        <SupervisorMessage message={message} copy={copy} locale={locale} disabled={sending||!enabled||
+          (message.role==="supervisor"&&message.id!==activeQuestionMessageId)}
           onOwnerResponse={(origin,value,isOption,dismiss=false)=>{
+            if(sending||!enabled||origin.id!==activeQuestionMessageId)return;
             const question=ownerQuestionSchema.safeParse((origin.blocks??[]).find(b=>
               typeof b==="object"&&b!==null&&"type" in b&&b.type==="owner_question"));
             if(!question.success)return;
