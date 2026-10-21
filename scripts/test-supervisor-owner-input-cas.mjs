@@ -17,7 +17,7 @@ const ingredient2="11221221-8888-4888-8888-112211221122";
 const revision=async()=>String((await admin.query(
   "select revision::text from public.p1_business_source_epochs where business_id=$1",[cafeA])).rows[0].revision);
 const activeDay=async()=>String((await admin.query(
-  "select (now() at time zone timezone)::date as day from public.businesses where id=$1",[cafeA])).rows[0].day)
+  "select to_char((now() at time zone timezone)::date,'YYYY-MM-DD') as day from public.businesses where id=$1",[cafeA])).rows[0].day)
   .slice(0,10);
 const params=(item,ing,epoch,day)=>[cafeA,item,ing,epoch,day,450,946];
 const call=async(client,parameters)=>{
