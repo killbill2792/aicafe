@@ -64,7 +64,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
     <select className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       value={itemId} onChange={e=>{setItemId(e.target.value);setSimulation(null);}}>
       {items.map(item=><option key={item.id} value={item.id}>
-        {item.name} · {formatCents(item.priceCents)}</option>)}</select></label>
+        {item.name} · {formatCents(item.priceCents,locale)}</option>)}</select></label>
    <label className="block">{copy.increase}
     <input type="number" className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]"
       min={1} max={100000} step={1} value={cents}
@@ -72,8 +72,8 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    <button className={actionClass} disabled={busy||!itemId||!valid}
      onClick={()=>void invoke({action:"simulate",productId:itemId,increaseCents:delta})}>{copy.preview}</button>
    {simulation&&<div className="space-y-2">
-    <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents)} → {formatCents(simulation.effect.newPriceCents)}</p>
-    <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents)}</p>
+    <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents,locale)} → {formatCents(simulation.effect.newPriceCents,locale)}</p>
+    <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale)}</p>
     <button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"propose",productId:itemId,increaseCents:delta,
         requestKey:crypto.randomUUID(),locale})}>{copy.propose}</button>
@@ -83,18 +83,18 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
        onChange={e=>{setSelectedProposalId(e.target.value);setReport(null);}}
        className="mt-1 min-h-12 w-full rounded-xl border p-2 text-[17px]">
        {proposals.map(x=><option key={x.id} value={x.id}>
-         {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents)} · {status(x.status)}
+         {x.canonical_effect_payload.productName} — {formatCents(x.canonical_effect_payload.newPriceCents,locale)} · {status(x.status)}
        </option>)}
      </select></label>}
    {p&&<div className="space-y-2 border-t pt-3">
     <p className="font-semibold">{p.canonical_effect_payload.productName}:
-      {" "}{formatCents(p.canonical_effect_payload.oldPriceCents)} → {formatCents(p.canonical_effect_payload.newPriceCents)}</p>
+      {" "}{formatCents(p.canonical_effect_payload.oldPriceCents,locale)} → {formatCents(p.canonical_effect_payload.newPriceCents,locale)}</p>
     {p.status==="draft"&&<button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"approve",proposalId:p.id,revision:p.revision})}>{copy.approve}</button>}
     {p.status==="approved"&&<button className={actionClass} disabled={busy}
       onClick={()=>void invoke({action:"commit",proposalId:p.id,revision:p.revision})}>{copy.apply}</button>}
     {p.status==="manual_pending"&&<>
-      <p>{copy.confirmNote} {formatCents(p.canonical_effect_payload.newPriceCents)}</p>
+      <p>{copy.confirmNote} {formatCents(p.canonical_effect_payload.newPriceCents,locale)}</p>
       <button className={actionClass} disabled={busy}
         onClick={()=>void invoke({action:"manual_done",proposalId:p.id,revision:p.revision})}>{copy.done}</button>
     </>}
