@@ -4,6 +4,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
+import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {evaluatePriceExperiment,simulatePriceExperiment,priceExperimentEstimatedUplift,
   type PriceExperimentBaseline,type PriceExperimentDay} from "@/lib/calc/priceExperiment";
 import {readPriceExperimentBaselineUnits,readPriceExperimentSalesDays} from "./sales.server";
@@ -24,8 +25,12 @@ export const priceExperimentCapability=registerLoopCapability({
   effectSchema:baseline,
   simulate:async(scope,input)=>{
     // Existing canonical UI read model has recipe-cost quality + covered item sales.
-    const item=(await getMenuControlCenter()).find(x=>x.id===input.productId);
-    if(!item)throw new Error("Product unavailable in authorized café");
+    const authorized=await authorizedOwnerP1();
+    if(authorized.identity.businessId!==scope.businessId||authorized.identity.currency!=="USD")
+      throw new Error("Price experiment outside authenticated café scope");
+    const matches=(await getMenuControlCenter()).filter(x=>x.active&&x.id===input.productId);
+    if(matches.length!==1)throw new Error("Active product unavailable in authorized café");
+    const item=matches[0];
     const verifiedUnits=await readPriceExperimentBaselineUnits(scope.businessId,item.id);
     const result=simulatePriceExperiment({productId:item.id,productName:item.name,
       currentPriceCents:item.priceCents,increaseCents:input.increaseCents,
