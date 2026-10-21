@@ -200,6 +200,11 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         reviewIngredientCostCents: item.ingredientCostCents,
         currentRecommendationCents: item.currentRecommendationCents,
       }));
+      if((input.product||rows.length===1)&&
+        rows.some(row=>row.reviewIngredientCostCents===null)){
+        const gap=await alexMissingIngredientCost(scope,input.product);
+        if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
+      }
       if(!rows.length){
         const gap=await alexMissingIngredientCost(scope,input.product);
         if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
