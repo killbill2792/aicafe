@@ -16,7 +16,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate,authenticatedReadCalendarText,authenticatedOwnerCalendarScope} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate,authenticatedReadCalendarText,authenticatedOwnerCalendarScope,registeredCalendarKind} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
@@ -542,9 +542,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           if(readOwner(read.capabilityId)!==domain)return [];
           try{const scope=investigationCalendarScope(JSON.parse(read.inputJson),domain);
             return scope?[scope.kind]:[];}catch{return [];}
-        })[0]??"period";
-      const corrected=authenticatedOwnerCalendarScope(
-        input.ownerClarification,domain,identity.asOf,preferred);
+        })[0]??registeredCalendarKind(manifest.find(m=>m.id===input.ownerClarificationReadCapabilityId)?.inputJsonSchema);
+      const corrected=preferred?authenticatedOwnerCalendarScope(
+        input.ownerClarification,domain,identity.asOf,preferred):null;
       if(corrected)rememberScope(corrected,input.ownerClarificationReadCapabilityId);
     }
   }
