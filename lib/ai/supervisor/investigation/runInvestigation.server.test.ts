@@ -393,7 +393,7 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     const capabilityId="p3.money.expense_entries.v1";
     const period={from:"2026-10-01",to:"2026-10-07"};
     const first=await runSupervisorTurn({...base,
-      text:"Compare expenses with next week's staffing options."},transportFor([
+      text:"Compare expenses and staffing options."},transportFor([
       read(capabilityId,query("money.expense_entries",{period})),
       answer([
         {kind:"evidence",text:"The expense entries were retrieved.",citations:["r1"]},
