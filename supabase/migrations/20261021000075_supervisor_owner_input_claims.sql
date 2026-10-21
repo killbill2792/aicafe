@@ -190,3 +190,30 @@ revoke all on function public.supervisor_submit_owner_question(
   uuid,uuid,uuid,text,jsonb) from public,anon,authenticated;
 grant execute on function public.supervisor_submit_owner_question(
   uuid,uuid,uuid,text,jsonb) to authenticated;
+
+
+-- Extend the exact binding constraint introduced in migration 000039.
+-- Do not drop or relax its role, provenance, bounds or grounding checks.
+alter table public.ai_messages drop constraint ai_messages_supervisor_content_check;
+alter table public.ai_messages add constraint ai_messages_supervisor_content_check check (
+  (role = 'owner'
+    and author_user_id is not null and author_user_id = owner_user_id
+    and content_type = 'text' and text_content is not null
+    and char_length(btrim(text_content)) between 1 and 4000
+    and structured_content is null and grounding is null
+    and client_message_id is not null)
+  or
+  (role = 'supervisor'
+    and author_user_id is null and content_type = 'blocks'
+    and text_content is null and structured_content is not null
+    and grounding is not null
+    and case when jsonb_typeof(structured_content) = 'array'
+      then jsonb_array_length(structured_content) between 1 and 30
+      else false end
+    and jsonb_typeof(grounding) = 'object'
+    and coalesce(grounding->>'status', '') in
+      ('verified', 'estimated', 'partial', 'unavailable',
+       'insufficient_evidence', 'requires_owner_input')
+    and (coalesce(grounding->>'status','') <> 'requires_owner_input'
+      or jsonb_typeof(grounding->'ownerInput') = 'object'))
+);
