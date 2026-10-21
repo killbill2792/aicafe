@@ -1298,6 +1298,8 @@
     "targetNotFeasible": "Esta meta no es viable con la estructura de costos actual usando solo precios."
   },
   "SupervisorOwnerHelp": {
+    "incompleteByDomain": "No se pudo confirmar la parte de {domain} de tu solicitud.",
+    "domains": {"menu":"menú","pricing":"precios","scheduling":"horarios","staff":"personal","sales":"ventas","expenses":"gastos","other":"los otros temas"},
     "priceUnknown": "precio desconocido",
     "catalogMissingQuestion": "No encontré ese producto activo. ¿Es nuevo? Descríbelo, por favor.",
     "catalogMissingHint": "Indica si es nuevo y sus ingredientes y cantidades, si los conoces.",
