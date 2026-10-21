@@ -173,7 +173,7 @@ describe("POST owner-input persistence and continuation",()=>{
       answer:"4.50 / 946",summary:{en:"Save?",es:"¿Guardar?",ar:"حفظ؟"}};
     mocks.addOwner.mockResolvedValueOnce({...mocks.message,
       text:"Continue",
-      ownerInputResponse:{questionId:pendingOwnerQuestion.questionId,action:"confirm"}});
+      ownerInputResponse:{questionId:pendingOwnerQuestion.questionId,action:"confirm"}} as never);
     mocks.listMessages.mockResolvedValue({items:[
       {id:"confirm-card",role:"supervisor",contentType:"blocks",
         createdAt:"2026-10-20T02:00:00Z",grounding:{ownerInput:confirmed},
