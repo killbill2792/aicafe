@@ -51,6 +51,18 @@ function windows(text:string,asOf:string){
 export function hasInvestigationOwnerCalendarDate(text:string,asOf:string):boolean{
   return windows(text,asOf).length>0||hasOwnerScheduleDates(text,asOf);
 }
+/** Only an authenticated answer to an issued question for THIS registered
+ * domain can replace the calendar guard's current date. Unrelated specialist
+ * reads remain bound to the original request/remembered domain windows.
+ * The original multi-goal owner text is not changed or shortened. */
+export function authenticatedReadCalendarText(current:string,
+  clarification:string|undefined,issuedCapabilityId:string|undefined,
+  domain:string,asOf:string,domainForRead:(id:string)=>string|undefined):string{
+  return clarification&&issuedCapabilityId&&
+    domainForRead(issuedCapabilityId)===domain&&
+    hasInvestigationOwnerCalendarDate(clarification,asOf)?clarification:current;
+}
+
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
   memory:InvestigationMemory|undefined,_ownerStatements:readonly string[],domain:string,
   domainForRead:(capabilityId:string)=>string|undefined):boolean{
