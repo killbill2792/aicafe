@@ -446,27 +446,47 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       facts:factView().slice(-35)};
    }else result={status:"unavailable",reason:"no_matching_observation"};
   }else if(name==="calculate_verified"){
-   const resolve=(factId:unknown,ownerQuote:unknown):SimpleOperand|null=>{
-     if(typeof factId==="string"&&facts.get(factId)?.raw)return facts.get(factId)!.raw;
-     if(typeof ownerQuote==="string"&&quoteAppearsInOwnerText(ownerQuote,statements.join("\n")))
-       return parseQuotedOperand(ownerQuote);
+   const resolve=(factId:unknown,ownerQuote:unknown):{operand:SimpleOperand;fact:Fact|null;owner:boolean}|null=>{
+     if(typeof factId==="string"){
+       const fact=facts.get(factId);
+       return fact?.raw?{operand:fact.raw,fact,owner:false}:null;
+     }
+     if(typeof ownerQuote==="string"&&quoteAppearsInOwnerText(ownerQuote,statements.join("\n"))){
+       const operand=parseQuotedOperand(ownerQuote);
+       return operand?{operand,fact:null,owner:true}:null;
+     }
      return null;
    };
-   const left=resolve(args.leftFactId,args.leftOwnerQuote),right=resolve(args.rightFactId,args.rightOwnerQuote);
-   const allowed=["add","subtract","multiply","divide","percent_increase","percent_decrease"];
+   const left=resolve(args.leftFactId,args.leftOwnerQuote);
+   const right=resolve(args.rightFactId,args.rightOwnerQuote);
    const operation=String(args.operation??"");
-   const calculated=left&&right&&allowed.includes(operation)?
-     calculateSimple(operation as SimpleOperation,left,right):null;
+   const allowed=["add","subtract","multiply","divide","percent_increase","percent_decrease"];
+   const differentPeriods=Boolean(left?.fact?.period&&right?.fact?.period&&
+      left.fact.period!==right.fact.period);
+   const calculated=left&&right&&!differentPeriods&&identity.currency==="USD"&&
+     allowed.includes(operation)?calculateSimple(operation as SimpleOperation,
+       left.operand,right.operand):null;
    if(calculated){
-     const id="f"+(facts.size+1),source=typeof args.leftFactId==="string"?
-       facts.get(args.leftFactId)?.source??null:null;
+     const id="f"+(facts.size+1);
+     const linked=[left!.fact,right!.fact].filter((f):f is Fact=>f!==null);
+     const sources=[...new Map(linked.flatMap(f=>f.sources??(f.source?[f.source]:[]))
+       .map(v=>[v.identifier,v])).values()];
+     const conditional=left!.owner||right!.owner||linked.some(f=>f.conditional||f.estimated);
      const value=calculated.unit==="USD_cents"?
-       new Intl.NumberFormat(input.locale,{style:"currency",currency:"USD"}).format(calculated.value/100):
+       formatScenarioValue(calculated.value,"USD_cents",input.locale):
        String(calculated.value);
-     facts.set(id,{id,label:"Calculated "+operation.replaceAll("_"," "),raw:calculated,value,source});
-     result={status:"verified",factId:id,unit:calculated.unit,value};
-     usage.toolCallCount++;
-   }else result={status:"unavailable",reason:"unsupported_units_or_unverified_operands"};
+     facts.set(id,{id,label:calculated.unit==="USD_cents"?
+         {en,es,ar}[input.locale].SupervisorInvestigation.factAmount:
+         {en,es,ar}[input.locale].SupervisorInvestigation.factPercent,
+       raw:calculated,value,source:sources[0]??null,sources,conditional,
+       estimated:conditional,
+       observationIds:[...new Set(linked.flatMap(f=>f.observationIds??[]))],
+       period:linked[0]?.period});
+     result={status:conditional?"partial":"verified",factId:id,unit:calculated.unit,
+       value,assumptions:conditional?["Owner input and/or estimated source used."]:[]};
+     usage.toolCallCount++;input.onUsage?.({...usage});
+   }else result={status:"unavailable",reason:differentPeriods?
+     "incompatible_source_periods":"unsupported_units_or_unverified_operands"};
   }else if(name==="prepare_action"){
    const registered=input.inertProposal?.tools.find(t=>t.name===args.name);
    if(registered&&isRecord(args.input)){
