@@ -995,8 +995,19 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             o.id&&o.label.en&&o.label.es&&o.label.ar);
           const hints={en:en.SupervisorChat.ownerInputAnswer,
             es:es.SupervisorChat.ownerInputAnswer,ar:ar.SupervisorChat.ownerInputAnswer};
-          const title={en:clarification.text.slice(0,240),es:clarification.text.slice(0,240),
-            ar:clarification.text.slice(0,240)};
+          // A reviewed original paragraph is NOT necessarily the validated
+          // owner-visible text: server-verified formula substitution may have
+          // replaced its model-typed number. Never restore the raw claim into
+          // a durable question card that bypasses text claim validation.
+          const renderedQuestion=renderInvestigationAnswer({paragraphs:[clarification]},
+            observations,input.locale,{ownerText});
+          const questionText=renderedQuestion?.blocks.find(block=>block.type==="text");
+          if(!renderedQuestion||renderedQuestion.issues.length||!questionText){
+            feedback="The clarification could not be rendered as verified owner-facing text. Ask a safe specific question.";
+            continue;
+          }
+          const safeTitle=questionText.text.slice(0,240);
+          const title={en:safeTitle,es:safeTitle,ar:safeTitle};
           const request=ownerResolutionRequest({question:title,
             input:validOptions?{kind:"options",options:[...known]}:
               {kind:"free_text",hint:hints},
@@ -1011,11 +1022,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               // The rendered clarification is already an inert text block.
               // Replace that one block with the interactive question while
               // preserving independently reviewed evidence, cards and warnings.
-              const renderedQuestion=renderInvestigationAnswer({paragraphs:[clarification]},
-                observations,input.locale,{ownerText:input.text});
-              const questionText=renderedQuestion?.blocks.find(block=>block.type==="text");
-              const index=questionText?reply.blocks.findLastIndex(block=>
-                block.type==="text"&&block.text===questionText.text):-1;
+              const index=reply.blocks.findLastIndex(block=>
+                block.type==="text"&&block.text===questionText.text);
               const safeBlocks=reply.blocks.filter((_,i)=>i!==index).slice(0,29);
               return {reply:{...reply,status:"requires_owner_input",
                 ownerInput:awaiting.reply.ownerInput,
