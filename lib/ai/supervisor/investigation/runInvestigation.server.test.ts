@@ -4,6 +4,19 @@ vi.mock("@/lib/metrics/p1Readers.server",async original=>({...await original<obj
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomicP1SourceSnapshot:vi.fn()}));
 vi.mock("@/lib/scheduling/oliviaCapabilities.server",()=>({executeOliviaReadCapability:vi.fn()}));
 vi.mock("@/lib/ai/suppliers/research.server",()=>({researchEnabled:vi.fn(()=>false),researchPublicSources:vi.fn()}));
+// Live Alex ambiguity checks reread the tenant-scoped canonical menu projection.
+const menuProjection=vi.hoisted(()=>({rows:null as Array<{
+  id:string;name:string;base_name:string;size_label:string|null;
+  price_cents:number|null;is_active:boolean}>|null}));
+vi.mock("@/lib/supabase/server",()=>({
+  createServerSupabaseClient:vi.fn(async()=>({
+    from:(name:string)=>{
+      if(name!=="menu_items")throw new Error("Unexpected Supabase table: "+name);
+      return {select(){return this;},eq(){return this;},
+        limit:async()=>({data:menuProjection.rows,error:null})};
+    },
+  })),
+}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({
   getMenuControlCenter:vi.fn(async()=>[
     {id:"a0000000-0000-4000-8000-000000000001",name:"Iced Latte",baseName:"Iced Latte",
@@ -93,6 +106,8 @@ let key:string|undefined;
 beforeAll(()=>{key=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="mock-key";});
 afterAll(()=>{if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key;});
 beforeEach(()=>{
+  menuProjection.rows=[{id:product,name:"Iced Latte",base_name:"Iced Latte",
+    size_label:null,price_cents:525,is_active:true}];
   vi.clearAllMocks();auth.mockResolvedValue({identity,tools:base.tools});atomic.mockResolvedValue({status:"available",snapshot});
   vi.mocked(researchEnabled).mockReturnValue(false);
   p1.mockImplementation(async(_t,_i,raw)=>{
@@ -207,6 +222,10 @@ describe("registered natural-language proposal tools",()=>{
 describe("unified owner-help response at the real investigation dispatcher",()=>{
   it("routes a typed Alex catalog multi-match through durable ownerInput with no write",async()=>{
     const sameName={...snapshot.sources.menu[0],id:"a0000000-0000-4000-8000-000000000088",price_cents:650};
+    menuProjection.rows=[
+      {id:product,name:"Iced Latte",base_name:"Iced Latte",size_label:null,price_cents:525,is_active:true},
+      {id:sameName.id,name:"Iced Latte",base_name:"Iced Latte",size_label:null,price_cents:650,is_active:true},
+    ];
     atomic.mockResolvedValue({status:"available",
       snapshot:{...snapshot,sources:{...snapshot.sources,
         menu:[snapshot.sources.menu[0],sameName]}}});
