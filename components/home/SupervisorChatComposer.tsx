@@ -150,6 +150,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
           locale={locale} disabled={disabled}
           allowOther={!isOwnerConfirmation(message)}
+          locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
           copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
             other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
           onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
