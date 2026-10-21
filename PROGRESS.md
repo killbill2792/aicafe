@@ -1,3 +1,10 @@
+## Supervisor unified ask-for-help — in progress (2026-10-21)
+- [ ] Replace independent presentation-only, proposal-variant, calendar and stuck-loop owner questions with the same persisted `requires_owner_input` dispatcher; retain the existing authenticated confirmation claim for durable source writes and introduce a typed, no-domain-write resolution handler.
+- [ ] Establish structural, source-bound read/price disambiguation; handle missing cost/new-item gaps without writing invented records.
+- [ ] Remove untrusted reviewer `reason` from owner-facing replies using fixed en/es/ar copy, log only sanitized diagnostics; extend adaptive duplicate-call stuck detection to two consecutive attempts of one capability.
+- [ ] Add end-to-end unification, tenant/replay, language-leak, adaptive-budget and existing-capability regression tests. Verify full CI final HEAD and request independent Codex full-diff review; no merge/migration/deploy.
+- **Change boundary:** formula verification, answerable-partial reviewer policy, proposal approval/commit/manual handoff, price relative cap, verified arithmetic, scope guards and canonical business writes remain untouched except at their narrowly defined shared integration call sites. No new dependencies or production migrations are planned.
+
 ## PR #141 Codex-review follow-up — 2026-10-21
 - [x] Previous Codex findings: what-if registration write ID, transactional Postgres business-epoch CAS for chat-originated Menu ingredient prices, and cross-midnight replay verification bound to the original business date. Added disposable DB tenant isolation, duplicate-confirm concurrency and revisions tests.
 - [x] Next Codex findings: use base-10 exact integer arithmetic to mirror PostgreSQL NUMERIC tie rounding (e.g. $3.23 / 640 = 504688 microcents), and make only the latest pending adaptive question interactive. Preflight rejects stale question responses before saving an owner message; history cards are readable but disabled.

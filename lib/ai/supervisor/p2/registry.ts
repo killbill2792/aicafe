@@ -18,6 +18,8 @@ export type TrustedReadScope = {
   shadowEnabled: boolean;
   /** Audited owner-authored clause, injected by the caller, never model input. */
   ownerClause?: string;
+  /** Set ONLY by a live caller that can persist and resume an owner answer. */
+  durableOwnerInput?: boolean;
   /** Same-thread owner-authored context; never model summaries or grants. */
   ownerContext?: string;
   /** Trusted snapshot readiness; independent domain readers may omit money fields. */

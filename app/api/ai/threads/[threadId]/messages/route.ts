@@ -7,7 +7,9 @@ import { runSupervisorTurn, type SupervisorUsage } from "@/lib/ai/conversations/
 import { latestInvestigationMemory } from "@/lib/ai/conversations/investigationMemory";
 import {submitOwnerInputMessage} from "@/lib/ai/conversations/ownerInputSubmit.server";
 import {pendingOwnerInputSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
+import {ownerAuthoredProposalTexts} from "@/lib/ai/supervisor/ownerInput/proposalContext";
 import {ownerInputWrites} from "@/lib/ai/supervisor/ownerInput/writeRegistry.server";
+import {resumeOwnerResolution} from "@/lib/ai/supervisor/ownerInput/resolution";
 import {commitConfirmedOwnerInput} from "@/lib/ai/supervisor/ownerInput/commit.server";
 import {buildOwnerQuestionReply,confirmOwnerQuestion,declinedOwnerQuestion,unresolvedOwnerSave} from "@/lib/ai/supervisor/ownerInput/response";
 import type {GroundedSupervisorReply} from "@/lib/ai/conversations/contracts";
@@ -25,7 +27,8 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {validatePriceProposalCandidate,priceProposalToolJsonSchema,priceProposalToolSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {alexCatalogChoiceStillValid,catalogIdentityFingerprint} from "@/lib/pricing/alexOwnerInput.server";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema,ambiguousPriceProposalOptions} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
@@ -109,6 +112,11 @@ export async function POST(request: Request, context: RouteContext) {
     // The prior assistant's validated server-grounded question is the only
     // resumable state. A client-supplied question ID or target never grants a write.
     let resumedOriginalText=input.text;
+    let trustedResolutionProductId:string|null=null;
+    let trustedResolutionFingerprint:string|null=null;
+    let ownerClarification:string|undefined;
+    let ownerClarificationReadCapabilityId:string|undefined;
+    let ownerAuthoredClarification:string|undefined;
     let directReply:GroundedSupervisorReply|null=null;
     if(ownerResponse){
       const prior=messages.filter(m=>m.role==="supervisor"&&
@@ -124,16 +132,109 @@ export async function POST(request: Request, context: RouteContext) {
         directReply=declinedOwnerQuestion(input.locale);
       }else if(response.action==="supply"&&state.stage==="answer"){
         const value=response.value??"";
-        const prepared=ownerInputWrites.prepare(state.request,value);
-        directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
-          buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
-            readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
-            request:state.request,questionId:state.questionId});
+        if(state.request.mode==="resolve"){
+          const resumed=resumeOwnerResolution(state.originalText,state.request,value);
+          if(!resumed){
+            directReply=buildOwnerQuestionReply({businessId:scope.businessId,
+              originalText:state.originalText,readCapabilityId:state.readCapabilityId,
+              readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
+          }else if(state.request.input.kind==="options"&&
+            !state.request.input.options.some(option=>option.id===value)){
+            // A legitimate "Answer another way" correction is a new owner
+            // statement, not an authorization for any of the issued UUIDs.
+            resumedOriginalText=resumed.originalText;
+            ownerClarification=resumed.ownerStatement??undefined;
+            ownerAuthoredClarification=value.trim();
+          }else if(state.request.writeContext.domain==="menu"&&
+            state.request.writeContext.catalogRevision){
+            // Recheck the exact source-bound menu identity that issued this
+            // card. A row can remain active while its product family/name
+            // changes; unrelated sales or expenses must not revoke choices.
+            const valid=state.request.input.kind!=="options"||
+              (state.request.input.options.some(option=>option.id===value)&&
+                await alexCatalogChoiceStillValid(scope.businessId,value,
+                  state.request.writeContext["catalogIdentity:"+value]??""));
+            if(!valid){
+              // A stale choice is not authority to select a different product.
+              // Rediscover from the original question without retaining its ID.
+              resumedOriginalText=state.originalText;
+            }else{
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement??undefined;
+              if(state.request.input.kind==="options"){
+                trustedResolutionProductId=value;
+                trustedResolutionFingerprint=state.request.writeContext["catalogIdentity:"+value]??null;
+              }
+            }
+          }else if(state.request.writeContext.domain==="menu_proposal"&&
+            state.request.input.kind==="options"){
+            const currentOwner=await authorizedOwnerP1();
+            const catalog=currentOwner.identity.businessId===scope.businessId?
+              await getMenuControlCenter():[];
+            const item=catalog.filter(row=>row.id===value&&row.active);
+            const issued=state.request.writeContext["catalogIdentity:"+value];
+            const valid=state.request.input.options.some(o=>o.id===value)&&
+              item.length===1&&typeof issued==="string"&&
+              catalogIdentityFingerprint({id:item[0].id,name:item[0].name,
+                base_name:item[0].baseName,size_label:item[0].sizeLabel})===issued;
+            if(valid){
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement??undefined;
+              trustedResolutionProductId=value;
+              trustedResolutionFingerprint=typeof issued==="string"?issued:null;
+            }else resumedOriginalText=state.originalText;
+          }else if(state.request.writeContext.domain==="menu_proposal"&&
+            state.request.input.kind==="free_text"&&
+            state.request.writeContext.selectedProductId){
+            const selected=state.request.writeContext.selectedProductId;
+            const fingerprint=state.request.writeContext["catalogIdentity:"+selected];
+            const authorized=await authorizedOwnerP1();
+            const catalog=authorized.identity.businessId===scope.businessId?
+              await getMenuControlCenter():[];
+            const item=catalog.filter(row=>row.id===selected&&row.active);
+            const valid=item.length===1&&typeof fingerprint==="string"&&
+              catalogIdentityFingerprint({id:item[0].id,name:item[0].name,
+                base_name:item[0].baseName,size_label:item[0].sizeLabel})===fingerprint;
+            if(valid){
+              resumedOriginalText=resumed.originalText;
+              ownerClarification=resumed.ownerStatement??undefined;
+              ownerAuthoredClarification=value.trim();
+              trustedResolutionProductId=selected;
+              trustedResolutionFingerprint=typeof fingerprint==="string"?fingerprint:null;
+            }else resumedOriginalText=state.originalText;
+          }else{
+            resumedOriginalText=resumed.originalText;
+            ownerClarification=resumed.ownerStatement??undefined;
+            if(state.request.input.kind==="free_text")
+              ownerAuthoredClarification=value.trim();
+          }
+          // A validated free-text correction inherits the trusted source
+          // capability that issued this question, not a model-supplied domain.
+          if(ownerClarification)
+            ownerClarificationReadCapabilityId=state.readCapabilityId;
+        }else{
+          const prepared=ownerInputWrites.prepare(state.request,value);
+          directReply=prepared?confirmOwnerQuestion(state,value,prepared.summary):
+            buildOwnerQuestionReply({businessId:scope.businessId,originalText:state.originalText,
+              readCapabilityId:state.readCapabilityId,readInput:JSON.parse(state.readInputJson),
+              request:state.request,questionId:state.questionId});
+        }
       }else if(response.action==="confirm"&&state.stage==="confirm"&&state.answer){
         const applied=await commitConfirmedOwnerInput(scope,state);
         if(applied.ok){
           // The next investigation MUST re-read; no cached figure is replayed.
           resumedOriginalText=state.originalText;
+          // An ingredient-price card can follow a validated variant selection.
+          // Retain only the server-issued product identity, after fresh
+          // tenant-scoped identity revalidation; never replay cached costs.
+          if(state.request.writeCapabilityId==="menu.ingredient_price.manual.v1"){
+            const productId=state.request.writeContext.productId;
+            const fingerprint=state.request.writeContext["catalogIdentity:"+productId];
+            if(productId&&fingerprint&&await alexCatalogChoiceStillValid(scope.businessId,productId,fingerprint)){
+              trustedResolutionProductId=productId;
+              trustedResolutionFingerprint=fingerprint;
+            }
+          }
         }else if(applied.reason==="confirmation_in_progress"){
           // An earlier request is still completing the approved write. Do not
           // attach a misleading final reply to this persisted owner message.
@@ -156,9 +257,8 @@ export async function POST(request: Request, context: RouteContext) {
     let reply;
     try {
       let reviewedVariantOptions:Array<{id:string;label:{en:string;es:string;ar:string}}>=[];
-      const olderOwnerTexts=messages.filter(m=>m.role==="owner"&&m.id!==message.id&&
-        typeof m.text==="string").sort((a,b)=>(b.createdAt??"").localeCompare(a.createdAt??""))
-        .map(m=>m.text!).slice(0,5);
+      let reviewedVariantContext:Record<string,string>={};
+      const olderOwnerTexts=ownerAuthoredProposalTexts(messages,message.id,scope.businessId);
       // The normal semantic investigation can discover the registered inert
       // proposal tool in ANY owner language. Model output never authorizes
       // approval/commit/POS writes, never supplies trusted money or tenant IDs.
@@ -171,9 +271,18 @@ export async function POST(request: Request, context: RouteContext) {
       const completed=directReply?null:await runSupervisorTurn({
         text: resumedOriginalText, locale: input.locale, asOf: identity.asOf,
         timezone: identity.timezone, cafeName: identity.cafeName,
-        tools, history,
+        tools, history,ownerClarification,ownerClarificationReadCapabilityId,
+        // Structured replies resume an earlier goal; they do not create a
+        // fresh owner instruction to restore its old calendar range.
+        replayedOwnerRequest:!!ownerResponse,
+        trustedCatalogProductId:trustedResolutionProductId??undefined,
         inertProposal:{tools:proposalTools,
           knownClarificationOptions:()=>reviewedVariantOptions,
+          knownClarificationContext:()=>trustedResolutionProductId&&trustedResolutionFingerprint?{
+            ...reviewedVariantContext,domain:"menu_proposal",
+            selectedProductId:trustedResolutionProductId,
+            ["catalogIdentity:"+trustedResolutionProductId]:trustedResolutionFingerprint,
+          }:reviewedVariantContext,
           create:async(name,rawArgs)=>{
           const capabilityId=supervisorLoopRegistry.list().find(id=>capabilityToolName(id)===name);
           const authorized=await authorizedOwnerP1();
@@ -183,25 +292,23 @@ export async function POST(request: Request, context: RouteContext) {
           if(capabilityId!==priceExperimentCapabilityId)return null;
           const catalog=await getMenuControlCenter();
           const checked=validatePriceProposalCandidate(rawArgs,
-            catalog,[input.text,...olderOwnerTexts]);
+            catalog,[resumedOriginalText,ownerAuthoredClarification??"",...olderOwnerTexts],trustedResolutionProductId);
           if(!checked){
-            // Candidate validation, effect permission and the existing ask-one
-            // logic remain unchanged. This is ONLY a presentation list from
-            // exact active catalog names when the model already reported an
-            // ambiguous known variant.
-            const raw=priceProposalToolSchema.safeParse(rawArgs);
-            if(raw.success&&raw.data.variantStatus==="ambiguous"&&
-              raw.data.ownerProductQuote&&
-              [input.text,...olderOwnerTexts].some(t=>t.normalize("NFKC")
-                .toLocaleLowerCase("en").includes(raw.data.ownerProductQuote!
-                .normalize("NFKC").toLocaleLowerCase("en")))){
-              const q=raw.data.ownerProductQuote.normalize("NFKC").trim().toLocaleLowerCase("en");
-              const matches=catalog.filter(x=>x.active&&
-                x.baseName.normalize("NFKC").trim().toLocaleLowerCase("en")===q);
-              if(matches.length>=2&&matches.length<=30)
-                reviewedVariantOptions=matches.map(x=>({id:x.id,
-                  label:{en:x.name,es:x.name,ar:x.name}}));
-            }
+            // The pricing domain alone inspects trusted catalog cardinality.
+            // The investigation dispatcher turns the resulting options into
+            // the SAME persisted requires_owner_input state as every other gap.
+            reviewedVariantOptions=ambiguousPriceProposalOptions(rawArgs,catalog,
+              [resumedOriginalText,ownerAuthoredClarification??"",...olderOwnerTexts],
+              trustedResolutionProductId);
+            const allowed=new Set(reviewedVariantOptions.map(option=>option.id));
+            reviewedVariantContext=allowed.size>=2?{
+              domain:"menu_proposal",
+              ...Object.fromEntries(catalog.filter(row=>allowed.has(row.id)).map(row=>[
+                "catalogIdentity:"+row.id,catalogIdentityFingerprint({
+                  id:row.id,name:row.name,base_name:row.baseName,size_label:row.sizeLabel,
+                }),
+              ])),
+            }:{};
             return null;
           }
           const proposed=await proposeLoop({businessId:scope.businessId,

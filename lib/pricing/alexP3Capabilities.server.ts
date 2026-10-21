@@ -1,7 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { buildAlexPricingRegistrations } from "./alexCapabilities.server";
-import {alexMissingIngredientCost} from "./alexOwnerInput.server";
+import {alexMissingIngredientCost,alexProductCatalogResolution} from "./alexOwnerInput.server";
 import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import { alexNamedSimulateInputSchema, namedAlexChangeSchema, type AlexNamedSimulateInput } from "./alexNamedInputs";
 import { schemaFingerprint, type ReadRegistration, type TrustedReadScope } from
@@ -59,8 +59,14 @@ const qualitySchema = z.strictObject({
 });
 const ownerInputOutputSchema=z.strictObject({status:z.literal("requires_owner_input"),
   value:z.null(),ownerInput:ownerInputRequestSchema});
+const catalogZeroMatchOutputSchema=z.strictObject({
+  status:z.literal("verified"),id:z.literal("alex.pricing.catalog_zero_match"),
+  value:z.strictObject({requestedName:z.string().min(1).max(120),
+    matchingActiveCount:z.literal(0)}),
+  provenance:provenanceSchema,quality:qualitySchema,
+});
 export const alexP3ReviewOutputSchema = z.union([
-  ownerInputOutputSchema,
+  ownerInputOutputSchema,catalogZeroMatchOutputSchema,
   z.strictObject({ status: z.literal("unavailable"), value: z.null(), reason: z.string().min(1).max(100) }),
   z.strictObject({
     status: z.enum(["verified", "partial"]), id: z.literal("alex.pricing.review"),
@@ -152,7 +158,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     purpose: "Read-only summary (recorded price, ingredient cost, recommended price where one " +
       "exists) of a bounded sample of active menu items from the existing reviewed Alex pricing " +
       "reader. Never changes a price or recipe.",
-    ownerInputWriteIds:["menu.ingredient_price.manual.v1"],
+    ownerInputWriteIds:["menu.ingredient_price.manual.v1","platform.owner_input.resolve.v1"],
     sourceIds: ["p1.authoritative_snapshot.v1"],
     canonicalReaderIds: ["alex.pricing.atomic_snapshot"],
     allowedPurposes: ["pricing_review"],
@@ -167,9 +173,21 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     requiresApproval: false as const, effectPolicy: "deny" as const,
     async read(scope: TrustedReadScope,rawInput: unknown) {
       const input=rawInput as z.infer<typeof inputSchema>;
+      const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection&&"kind" in selection&&selection.kind==="zero_match")
+        return {status:"verified" as const,id:"alex.pricing.catalog_zero_match" as const,
+          value:{requestedName:selection.exactName,matchingActiveCount:0 as const},
+          provenance:{sourceId:"p1.authoritative_snapshot.v1" as const,
+            canonicalReaderId:"alex.pricing.atomic_snapshot" as const,
+            sourceRevision:selection.sourceRevision,purpose:"pricing_review" as const,
+            asOf:scope.identity.asOf},
+          quality:{missingInputs:[],estimatedInputs:[],staleInputs:[]}};
+      if(selection&&!("productId" in selection))
+        return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
+      const resolvedProduct=selection&&"productId" in selection?selection:input.product;
       const raw = await alexReview.read(scope, {
         purpose: "pricing_review", selection:input.product?
-          {kind:"specific" as const,items:[input.product]}:
+          {kind:"specific" as const,items:[resolvedProduct!]}:
           { kind: "all_active" as const, offset: 0, limit: MAX_ROWS },
       });
       if (!raw || typeof raw !== "object" || !("status" in raw) ||
@@ -177,7 +195,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
         !("value" in raw) || !raw.value || typeof raw.value !== "object" ||
         !("provenance" in raw) || !("quality" in raw))
         {
-          const gap=await alexMissingIngredientCost(scope,input.product);
+          const gap=await alexMissingIngredientCost(scope,resolvedProduct);
           if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
           return { status: "unavailable" as const, value: null,
             reason: raw && typeof raw === "object" && "reason" in raw && typeof raw.reason === "string"
@@ -202,11 +220,11 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
       }));
       if((input.product||rows.length===1)&&
         rows.some(row=>row.reviewIngredientCostCents===null)){
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedProduct);
         if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
       }
       if(!rows.length){
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedProduct);
         if(gap)return {status:"requires_owner_input" as const,value:null,ownerInput:gap};
         return { status: "unavailable" as const, value: null, reason: "no_ready_items" };
       }
@@ -218,7 +236,7 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     },
   }, {
     id: ALEX_P3_WHATIF_ID, version: 1 as const, owner: "alex",
-    ownerInputWriteIds:["menu.ingredient_price.manual.v1"],
+    ownerInputWriteIds:["menu.ingredient_price.manual.v1","platform.owner_input.resolve.v1"],
     resultKind: "owner_parameterized_simulation" as const,
     mode: "read" as const, availability: "shadow" as const,
     purpose: "Read-only target-margin/cost-ratio or selling-price-delta what-if for ONE named " +
@@ -240,9 +258,16 @@ export function buildAlexP3Registrations(): readonly [ReadRegistration, ReadRegi
     async read(scope: TrustedReadScope, rawInput: unknown) {
       // The domain resolves typed ingredient names inside its source snapshot.
       const input = rawInput as AlexNamedSimulateInput;
-      const raw = await alexSimulate.simulate?.(scope, input, undefined);
+      const selection=await alexProductCatalogResolution(scope,input.product);
+      if(selection&&"kind" in selection&&selection.kind==="zero_match")
+        return {status:"unavailable" as const,value:null,reason:"product_not_found"};
+      if(selection&&!("productId" in selection))
+        return {status:"requires_owner_input" as const,value:null,ownerInput:selection};
+      const resolvedInput=selection&&"productId" in selection?
+        {...input,product:selection}:input;
+      const raw = await alexSimulate.simulate?.(scope, resolvedInput, undefined);
       const ownerGap=async()=>{
-        const gap=await alexMissingIngredientCost(scope,input.product);
+        const gap=await alexMissingIngredientCost(scope,resolvedInput.product);
         return gap?{status:"requires_owner_input" as const,value:null,ownerInput:gap}:null;
       };
       if (!raw || typeof raw !== "object" || !("status" in raw) ||

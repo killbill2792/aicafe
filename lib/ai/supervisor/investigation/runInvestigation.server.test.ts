@@ -4,6 +4,19 @@ vi.mock("@/lib/metrics/p1Readers.server",async original=>({...await original<obj
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({readAuthorizedAtomicP1SourceSnapshot:vi.fn()}));
 vi.mock("@/lib/scheduling/oliviaCapabilities.server",()=>({executeOliviaReadCapability:vi.fn()}));
 vi.mock("@/lib/ai/suppliers/research.server",()=>({researchEnabled:vi.fn(()=>false),researchPublicSources:vi.fn()}));
+// Live Alex ambiguity checks reread the tenant-scoped canonical menu projection.
+const menuProjection=vi.hoisted(()=>({rows:null as Array<{
+  id:string;name:string;base_name:string;size_label:string|null;
+  price_cents:number|null;is_active:boolean}>|null}));
+vi.mock("@/lib/supabase/server",()=>({
+  createServerSupabaseClient:vi.fn(async()=>({
+    from:(name:string)=>{
+      if(name!=="menu_items")throw new Error("Unexpected Supabase table: "+name);
+      return {select(){return this;},eq(){return this;},
+        limit:async()=>({data:menuProjection.rows,error:null})};
+    },
+  })),
+}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({
   getMenuControlCenter:vi.fn(async()=>[
     {id:"a0000000-0000-4000-8000-000000000001",name:"Iced Latte",baseName:"Iced Latte",
@@ -70,13 +83,15 @@ function envelope(input:Record<string,unknown>,value:unknown){
 }
 const toolCallResponse=(name:string,args:unknown,callId:string)=>new Response(JSON.stringify({status:"completed",
   usage:{input_tokens:10,output_tokens:10},output:[{type:"function_call",call_id:callId,name,arguments:JSON.stringify(args)}]}));
-function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true){
+function transportFor(steps:unknown[],inspect?:(context:Record<string,unknown>,step:number)=>void,privacySafe=true,
+  reviewedClarificationGoal?: "expenses"|"scheduling"|"staff"|"sales"|"menu"|"pricing"|"other"){
   let next=0,callSeq=0;
   return vi.fn(async(_url:string,init:RequestInit)=>{
     const body=JSON.parse(String(init.body));
     if(body.text.format.name==="supervisor_calendar_context_review")return response({verdict:"applies"});
     if(body.text.format.name==="supervisor_public_query_review")return response({safe:privacySafe});
-    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true,reason:"ok"});
+    if(body.text.format.name==="supervisor_investigation_review")return response({supported:true,complete:true,reason:"ok",
+      clarificationGoalDomain:reviewedClarificationGoal??null});
     expect(body.text.format.name).toBe("supervisor_investigation_step");
     inspect?.(JSON.parse(body.input[0].content),next);
     const entry=steps[next++]??answer([{kind:"clarification",text:"Which remaining option should I investigate?",citations:[]}]);
@@ -93,6 +108,8 @@ let key:string|undefined;
 beforeAll(()=>{key=process.env.OPENAI_API_KEY;process.env.OPENAI_API_KEY="mock-key";});
 afterAll(()=>{if(key===undefined)delete process.env.OPENAI_API_KEY;else process.env.OPENAI_API_KEY=key;});
 beforeEach(()=>{
+  menuProjection.rows=[{id:product,name:"Iced Latte",base_name:"Iced Latte",
+    size_label:null,price_cents:525,is_active:true}];
   vi.clearAllMocks();auth.mockResolvedValue({identity,tools:base.tools});atomic.mockResolvedValue({status:"available",snapshot});
   vi.mocked(researchEnabled).mockReturnValue(false);
   p1.mockImplementation(async(_t,_i,raw)=>{
@@ -203,7 +220,385 @@ describe("registered natural-language proposal tools",()=>{
  });
 });
 
+
+describe("unified owner-help response at the real investigation dispatcher",()=>{
+  it("routes a typed Alex catalog multi-match through durable ownerInput with no write",async()=>{
+    const sameName={...snapshot.sources.menu[0],id:"a0000000-0000-4000-8000-000000000088",price_cents:650};
+    menuProjection.rows=[
+      {id:product,name:"Iced Latte",base_name:"Iced Latte",size_label:null,price_cents:525,is_active:true},
+      {id:sameName.id,name:"Iced Latte",base_name:"Iced Latte",size_label:null,price_cents:650,is_active:true},
+    ];
+    atomic.mockResolvedValue({status:"available",
+      snapshot:{...snapshot,sources:{...snapshot.sources,
+        menu:[snapshot.sources.menu[0],sameName]}}});
+    const result=await runSupervisorTurn({...base,text:"What's the pricing for Iced Latte?"},transportFor([
+      read("p3.alex.pricing.review.v1",{purpose:"pricing_review",product:{exactName:"Iced Latte"}})
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.ownerInput?.readCapabilityId).toBe("p3.alex.pricing.review.v1");
+    expect(result.reply.blocks[0]).toMatchObject({type:"owner_question",
+      input:{kind:"options",options:[{id:product},{id:sameName.id}]}});
+    expect(result.usage.toolCallCount).toBe(1);
+  });
+  it("asks whether a zero-match typed Alex selector is a new product, without creating it",async()=>{
+    const result=await runSupervisorTurn({...base,text:"I want to introduce a new matcha drink."},transportFor([
+      read("p3.alex.pricing.review.v1",{purpose:"pricing_review",product:{exactName:"Matcha"}})
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.blocks[0]).toMatchObject({type:"owner_question",input:{kind:"free_text"}});
+    expect(result.usage.toolCallCount).toBe(1);
+  });
+  it("does not publish the reviewer's Arabic reason in English owner replies",async()=>{
+    const marker="سبب داخلي غير موثوق";
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:false,reason:marker});
+      return response(answer([{kind:"advice",text:"Check your verified sources before deciding.",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"What should I check?"},transport);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain(marker);
+    expect(result.reply.blocks.some(x=>x.type==="warning"&&x.code==="SUPERVISOR_INCOMPLETE")).toBe(true);
+  });
+  it("uses the validated computed amount rather than a forged formula claim in a durable question",async()=>{
+    const draft=answer([{kind:"clarification",
+      text:"Given $3 and $1.83, the total is $999.00. Which staffing plan should I compare?",
+      citations:[],formulas:[{claim:"$999.00",formula:"a + b",
+        variables:[{name:"a",value:3,source:"$3"},{name:"b",value:1.83,source:"$1.83"}]}]}]);
+    const result=await runSupervisorTurn({...base,
+      text:"With $3 and $1.83, compare a staffing plan and ask which one."},
+      transportFor([draft]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    const question=result.reply.blocks.find(b=>b.type==="owner_question");
+    expect(question?.type).toBe("owner_question");
+    if(question?.type!=="owner_question")throw new Error("Missing reviewed owner question");
+    expect(question.title.en).toContain("$4.83");
+    expect(question.title.en).not.toContain("$999.00");
+    expect(question.title.es).not.toContain("$999.00");
+    expect(question.title.ar).not.toContain("$999.00");
+    expect(result.reply.ownerInput?.request.question.en).toBe(question.title.en);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("$999.00");
+  });
+  it("uses the last corrected period across chained durable cards instead of replaying stale original dates",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expenses from 2026-10-01 to 2026-10-07 and protect staffing coverage.";
+    const statement="Use 2026-10-08 to 2026-10-14 instead.";
+    const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}],
+      calendarScopes:[{domain:"money",kind:"period" as const,...old}]};
+    const question=await runSupervisorTurn({...base,text:original,
+      replayedOwnerRequest:true,ownerClarification:statement,
+      ownerClarificationReadCapabilityId:capabilityId,investigationMemory:prior},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([
+          {kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]},
+          {kind:"clarification",text:"Which staffing plan should I compare?",citations:[]},
+        ]),
+      ]));
+    expect(question.reply.status).toBe("requires_owner_input");
+    expect(question.reply.ownerInput?.originalText).toBe(original);
+    expect(question.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...corrected});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,
+      replayedOwnerRequest:true,ownerClarification:"The weekday plan",
+      investigationMemory:question.reply.investigationMemory},transportFor([
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("persists period selectors and full goals on a reviewed durable question before its owner answers",async()=>{
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const changed={from:"2026-10-08",to:"2026-10-14"};
+    const capabilityId="p3.money.expense_entries.v1";
+    const original="Compare our spending with the staffing plan, then show other financial risks.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([
+        {kind:"evidence",text:"The expense entries were retrieved for this comparison.",citations:["r1"]},
+        {kind:"clarification",text:"Which staffing plan should I compare?",citations:[]},
+      ]),
+    ]));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.investigationMemory?.ownerStatements).toContain(original);
+    expect(first.reply.investigationMemory?.reads).toContainEqual({
+      capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))});
+    expect(first.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...old});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,
+      ownerClarification:"The weekday plan",
+      investigationMemory:first.reply.investigationMemory},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:changed})),
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([{kind:"evidence",
+        text:"The recorded expense entries were retrieved for the original period.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
+  it("keeps original calendar dates when a first reviewed card appears before any read",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const other={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expense entries 2026-10-01 to 2026-10-07 and staffing plans.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}]),
+    ]));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.investigationMemory?.calendarScopes??[]).toEqual([]);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:first.reply.investigationMemory},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:other})),
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        answer([{kind:"evidence",text:"The original period's expenses were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
+  it("treats a new identical owner request as a new calendar instance",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries from 2026-10-01 to 2026-10-07";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const changed={from:"2026-10-08",to:"2026-10-14"};
+    const oldKey="a".repeat(64);
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      requestKey:oldKey,
+      calendarScopes:[{domain:"money",kind:"period" as const,...changed}],
+      calendarScopeOrigins:[{domain:"money",kind:"period" as const,
+        requestKey:oldKey,capabilityId:id}],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:changed}))}]};
+    const newCard=await runSupervisorTurn({...base,text:original,investigationMemory:previous},
+      transportFor([answer([{kind:"clarification",text:"Which expense category?",citations:[]}])],
+        undefined,true,"expenses"));
+    expect(newCard.reply.investigationMemory?.requestKey).not.toBe(oldKey);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:newCard.reply.investigationMemory,
+      ownerClarificationReadCapabilityId:newCard.reply.ownerInput?.readCapabilityId},
+      transportFor([
+        read(id,query("money.expense_entries",{period:changed})),
+        read(id,query("money.expense_entries",{period:old})),
+        answer([{kind:"evidence",text:"Original date entries retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
+  it("issues the first reviewed scheduling card from a typed week reader, then persists its answer",async()=>{
+    const original="Preview the schedule for 2026-10-19";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      answer([{kind:"clarification",text:"Which scheduling week should I preview?",citations:[]}]),
+    ],undefined,true,"scheduling"));
+    const issued=first.reply.ownerInput?.readCapabilityId;
+    expect(issued).toMatch(/^p3\.olivia\./);
+    const second=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      investigationMemory:first.reply.investigationMemory,
+      ownerClarification:"Use October 27 instead",
+      ownerClarificationReadCapabilityId:issued},transportFor([
+      answer([{kind:"clarification",text:"Which plan should I compare?",citations:[]}]),
+    ],undefined,true,"staff"));
+    expect(second.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"olivia",kind:"week",week:"2026-10-26"});
+    expect(second.reply.investigationMemory?.calendarScopeOrigins).toEqual(expect.arrayContaining([
+      expect.objectContaining({domain:"olivia",kind:"week",capabilityId:issued}),
+    ]));
+  });
+  it("migrates legacy read-only temporal provenance across two question cards",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries 2026-10-01 to 2026-10-07 and compare staffing.";
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:corrected}))}]};
+    const middle=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:previous},transportFor([
+      answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}]),
+    ],undefined,true,"staff"));
+    expect(middle.reply.investigationMemory?.calendarScopeOrigins).toEqual(expect.arrayContaining([
+      expect.objectContaining({domain:"money",kind:"period",capabilityId:id}),
+    ]));
+    const newKey=middle.reply.investigationMemory?.requestKey;
+    expect(newKey).toMatch(/^[a-f0-9]{64}$/);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:middle.reply.investigationMemory},
+      transportFor([
+        read(id,query("money.expense_entries",{period:{from:"2026-10-01",to:"2026-10-07"}})),
+        read(id,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"Corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("honors legacy scope provenance on replay without an origin key",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries 2026-10-01 to 2026-10-07";
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      calendarScopes:[{domain:"money",kind:"period" as const,...corrected}],
+      reads:[{capabilityId:id,inputJson:JSON.stringify(query("money.expense_entries",{period:corrected}))}]};
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies",investigationMemory:previous},transportFor([
+      read(id,query("money.expense_entries",{period:corrected})),
+      answer([{kind:"evidence",text:"Retrieved the corrected expense entries.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("persists an Olivia week correction before any scheduling read",async()=>{
+    const original="Preview the schedule for 2026-10-19.";
+    const prior={version:1 as const,businessId:cafe,ownerStatements:[original],
+      reads:[]};
+    const updated=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-27 instead",
+      ownerClarificationReadCapabilityId:"p3.olivia.records.v1",investigationMemory:prior},
+      transportFor([answer([{kind:"clarification",
+        text:"Which staffing plan should I compare?",citations:[]}])],undefined,true,"staff"));
+    expect(updated.reply.status).toBe("requires_owner_input");
+    expect(updated.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"olivia",kind:"week",week:"2026-10-26"});
+  });
+  it("authenticates reviewed expense date corrections before the first source read",async()=>{
+    const id="p3.money.expense_entries.v1";
+    const original="Show expense entries from 2026-10-01 to 2026-10-07";
+    const first=await runSupervisorTurn({...base,text:original},
+      transportFor([answer([{kind:"clarification",
+        text:"Which expense category should I inspect?",citations:[]}])],undefined,true,"expenses"));
+    expect(first.reply.ownerInput?.readCapabilityId).not.toBe("platform.owner_input.resolve.v1");
+    expect(first.reply.ownerInput?.readCapabilityId).toBeTruthy();
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Supplies; use 2026-10-08 to 2026-10-14 instead",
+      ownerClarificationReadCapabilityId:first.reply.ownerInput?.readCapabilityId,
+      investigationMemory:first.reply.investigationMemory},transportFor([
+      read(id,query("money.expense_entries",{period:corrected})),
+      answer([{kind:"evidence",text:"Expense entries were retrieved for the corrected dates.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("binds an answered reviewed expense-period card to its unique registered source",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare recorded expenses and staffing options.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([{kind:"evidence",text:"The recorded expense entries were retrieved.",citations:["r1"]},
+        {kind:"clarification",text:"Which expense period should I compare next?",citations:[]}]),
+    ],undefined,true,"expenses"));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.ownerInput?.readCapabilityId).toBe(capabilityId);
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-08 to 2026-10-14 instead.",
+      ownerClarificationReadCapabilityId:first.reply.ownerInput?.readCapabilityId,
+      investigationMemory:first.reply.investigationMemory},transportFor([
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The replacement period entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("does not bind a staffing clarification to unrelated expense evidence",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const period={from:"2026-10-01",to:"2026-10-07"};
+    const first=await runSupervisorTurn({...base,
+      text:"Compare expenses and staffing options."},transportFor([
+      read(capabilityId,query("money.expense_entries",{period})),
+      answer([
+        {kind:"evidence",text:"The expense entries were retrieved.",citations:["r1"]},
+        {kind:"clarification",text:"Which staffing week should I plan?",citations:[]},
+      ]),
+    ],undefined,true,"staff"));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.ownerInput?.readCapabilityId).toBe("platform.owner_input.resolve.v1");
+    expect(first.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...period});
+  });
+  it("binds an expense clarification with mixed money and Olivia temporal history",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const expense={from:"2026-10-01",to:"2026-10-07"};
+    const memory={version:1 as const,businessId:cafe,
+      ownerStatements:["Compare expenses and staffing options."],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:expense}))},
+        {capabilityId:"p3.olivia.records.v1",inputJson:JSON.stringify({
+          purpose:"scheduling_investigation",request:{capability:"olivia.schedule.preview",version:1,week:"2026-10-19"}})}],
+      calendarScopes:[{domain:"money",kind:"period" as const,...expense},
+        {domain:"olivia",kind:"week" as const,week:"2026-10-19"}]};
+    const result=await runSupervisorTurn({...base,text:"Compare expenses and staffing options.",
+      investigationMemory:memory},transportFor([
+        answer([{kind:"clarification",text:"Which expense period should I compare next?",citations:[]}]),
+      ],undefined,true,"expenses"));
+    expect(result.reply.ownerInput?.readCapabilityId).toBe(capabilityId);
+  });
+  it("persists a corrected period through a second question even without dispatching a reader",async()=>{
+    const capabilityId="p3.money.expense_entries.v1";
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const corrected={from:"2026-10-08",to:"2026-10-14"};
+    const original="Compare expenses 2026-10-01 to 2026-10-07 and staffing options.";
+    const previous={version:1 as const,businessId:cafe,ownerStatements:[original],
+      calendarScopes:[{domain:"money",kind:"period" as const,...old}],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}]};
+    const middle=await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"Use 2026-10-08 to 2026-10-14 instead.",
+      ownerClarificationReadCapabilityId:capabilityId,investigationMemory:previous},
+      transportFor([answer([{kind:"clarification",text:"Which staffing plan should I compare?",citations:[]}])]));
+    expect(p1).not.toHaveBeenCalled();
+    expect(middle.reply.status).toBe("requires_owner_input");
+    expect(middle.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...corrected});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,replayedOwnerRequest:true,
+      ownerClarification:"The weekday plan",investigationMemory:middle.reply.investigationMemory},
+      transportFor([
+        read(capabilityId,query("money.expense_entries",{period:old})),
+        read(capabilityId,query("money.expense_entries",{period:corrected})),
+        answer([{kind:"evidence",text:"The corrected expense entries were retrieved.",citations:["r1"]}]),
+      ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:corrected});
+  });
+  it("uses the same pending owner-input dispatcher for reviewed free-text clarification",async()=>{
+    const result=await runSupervisorTurn({...base,text:"Can you tell which one?"},transportFor([
+      answer([{kind:"clarification",text:"Which option do you mean?",citations:[]}])
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.blocks).toMatchObject([{type:"owner_question"}]);
+  });
+});
+
 describe("default Supervisor iterative cross-domain intelligence",()=>{
+  it("bounds six prior owner statements plus the current request and clarification for persistence",async()=>{
+    const previous=Array.from({length:6},(_,i)=>"Earlier owner instruction "+(i+1));
+    const original="Show me the recorded menu price.";
+    const clarification="Owner clarification: use the oat latte.";
+    const result=await runSupervisorTurn({...base,text:original,
+      ownerClarification:clarification,
+      investigationMemory:{version:1,businessId:cafe,ownerStatements:previous,reads:[]}},
+      transportFor([
+        read("p3.menu.catalog.v1",query("menu.catalog")),
+        answer([{kind:"evidence",text:"The recorded menu price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]}]),
+      ]));
+    expect(result.reply.investigationMemory?.ownerStatements).toHaveLength(6);
+    expect(result.reply.investigationMemory?.ownerStatements).toContain(original);
+    expect(result.reply.investigationMemory?.ownerStatements).toContain(clarification);
+    expect(validateGroundedReply(result.reply)).toEqual(result.reply);
+  });
+
   it.each([[17,35,7409],[19,40,8251],[23,20,10943]])("discovers records and computes unseen price/labor composition (%i items, %i minutes)",async(items,minutes,expected)=>{
     const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Conditional incremental contribution, excluding unobserved overhead and demand",
       nodes:[{op:"source",handle:`menu.product_economics:${product}:priceCents`},
@@ -297,8 +692,14 @@ describe("default Supervisor iterative cross-domain intelligence",()=>{
     ]);
     const result=await runSupervisorTurn({...base,text:"Publish whatever schedule you want and make up the profit."},bad);
     expect(p1).not.toHaveBeenCalled();expect(olivia).not.toHaveBeenCalled();
-    expect(JSON.stringify(result.reply.blocks)).not.toContain("999");
-    expect(result.reply.status).toBe("insufficient_evidence");
+    // A random question UUID may contain 999; only rendered owner copy can
+    // leak the model's forged money figure.
+    const ownerCopy=result.reply.blocks.map(block=>
+      block.type==="owner_question"?JSON.stringify({title:block.title,input:block.input}):
+      block.type==="text"||block.type==="warning"?block.text:"").join(" ");
+    expect(ownerCopy).not.toContain("999");
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.blocks[0].type).toBe("owner_question");
   });
 
   it("does not answer from stale observations after a café source epoch changes",async()=>{
@@ -494,7 +895,10 @@ describe("review verdict publication policy",()=>{
     expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("The catalog lists Iced Latte"))).toBe(true);
     expect(result.reply.blocks.some(b=>b.type==="metric"||b.type==="percent"||b.type==="task_card")).toBe(false);
     expect(JSON.stringify(result.reply.blocks)).not.toContain("already published");
-    expect(JSON.stringify(result.reply.blocks)).toContain("schedule-completion");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("schedule-completion");
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"SUPERVISOR_INCOMPLETE"}),
+    ]));
   });
   it("keeps only server-grounded partial facts if a reviewer objects to another goal",async()=>{
     const steps=transportFor([
@@ -531,7 +935,7 @@ describe("review verdict publication policy",()=>{
         text:"The catalog lists {{r1:value.0.name}}. "+claim+".",citations:["r1"]}]));
     });
     const result=await runSupervisorTurn({...base,text:"Did you change anything?"},transport);
-    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.status).toBe("requires_owner_input");
     expect(JSON.stringify(result.reply.blocks)).not.toContain(claim);
   });
   it("publishes a supported but incomplete answer as a partial reply",async()=>{
@@ -546,7 +950,10 @@ describe("review verdict publication policy",()=>{
     const result=await runSupervisorTurn({...base,text:"Help review my business decisions."},transport);
     expect(result.reply.status).toBe("partial");
     expect(JSON.stringify(result.reply.blocks)).toContain("Compare the verified inputs");
-    expect(JSON.stringify(result.reply.blocks)).toContain("Other parts of the owner request remain unanswered.");
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("Other parts of the owner request remain unanswered.");
+    expect(result.reply.blocks).toEqual(expect.arrayContaining([
+      expect.objectContaining({type:"warning",code:"SUPERVISOR_INCOMPLETE"}),
+    ]));
     expect(result.reply.status).not.toBe("unavailable");
   });
   it("returns an honest reply for complete-only verdict without publishing unsupported claims",async()=>{
@@ -640,7 +1047,7 @@ describe("direct-answer investigation rounds report why they were rejected",()=>
     });
     const onDiagnostic=vi.fn();
     const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-    expect(result.reply.status).toBe("unavailable");
+    expect(result.reply.status).toBe("requires_owner_input");
     expect(JSON.stringify(result.reply.blocks)).not.toContain("published");
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
       stage:"investigation_exhausted",rescuedUnverified:false}));
@@ -1047,7 +1454,7 @@ it("never rescues an evidence claim that cites real data but was explicitly reje
   });
   const onDiagnostic=vi.fn();
   const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-  expect(result.reply.status).toBe("unavailable");
+  expect(result.reply.status).toBe("requires_owner_input");
   expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
   expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
     stage:"investigation_exhausted",rescuedUnverified:false}));
@@ -1061,7 +1468,7 @@ it("never publishes an unsupported answer rejected by the independent evidence r
       response(answer([{kind:"advice",text:"I have secretly published the schedule.",citations:[]}]))});
   const onDiagnostic=vi.fn();
   const result=await runSupervisorTurn({...base,text:"Can you inspect scheduling options?",onDiagnostic},transport);
-  expect(result.reply.status).toBe("unavailable");
+  expect(result.reply.status).toBe("requires_owner_input");
   expect(JSON.stringify(result.reply.blocks)).not.toContain("secretly");
   expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
     stage:"investigation_exhausted",rescuedUnverified:false}));
@@ -1236,6 +1643,32 @@ it("researches the public clause of a mixed request without sending its private 
     answer([{kind:"evidence",text:"Here is a public supplier lead: {{r1:value.0.url}}. Verify current prices before ordering.",citations:["r1"]}])]));
   expect(researchPublicSources).toHaveBeenCalledWith("nearby supplier prices",expect.any(Function),expect.any(Number));
   expect(result.usage.modelCallCount).toBe(4);
+});
+
+it("honors a dated answer to an issued financial clarification without dropping original goals",async()=>{
+  const capabilityId="p3.money.expense_entries.v1";
+  const old={from:"2026-10-01",to:"2026-10-07"};
+  const updated={from:"2026-10-08",to:"2026-10-14"};
+  const original="Show expenses 2026-10-01 to 2026-10-07 and protect staffing coverage.";
+  const clarification="Use 2026-10-08 to 2026-10-14 instead";
+  const result=await runSupervisorTurn({...base,text:original,
+    ownerClarification:clarification,ownerClarificationReadCapabilityId:capabilityId,
+    investigationMemory:{version:1,businessId:cafe,ownerStatements:[original],
+      reads:[{capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))}],
+      calendarScopes:[{domain:"money",kind:"period",...old}]}},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:updated})),
+      answer([{kind:"evidence",text:"The corrected period's recorded expenses were retrieved.",citations:["r1"]}]),
+    ],(context,step)=>{
+      if(step===0){
+        expect(context.ownerRequest).toBe(original);
+        expect(context.ownerStatements).toContain(clarification);
+      }
+    }));
+  expect(p1).toHaveBeenCalledTimes(1);
+  expect(p1.mock.calls[0][2]).toMatchObject({period:updated});
+  expect(result.reply.investigationMemory?.ownerStatements).toContain(clarification);
+  expect(result.reply.investigationMemory?.calendarScopes).toContainEqual({
+    domain:"money",kind:"period",...updated});
 });
 
 it("keeps a persisted date correction after its initial source read fails",async()=>{
@@ -1717,6 +2150,38 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(result.reply.status).not.toBe("unavailable");
   });
 
+  it("stops repeatedly rejected parallel calls even when JSON selector keys and sibling order change",async()=>{
+    const good=query("menu.catalog");
+    const bad={...query("labor.employee_wages"),unknownProperty:"forbidden"};
+    let steps=0;
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      expect(body.text.format.name).toBe("supervisor_investigation_step");
+      const first=steps++===0;
+      const entries=first?[
+        {name:capabilityToolName("p3.menu.catalog.v1"),args:good},
+        {name:capabilityToolName("p3.labor.employee_wages.v1"),args:bad},
+      ]:[
+        {name:capabilityToolName("p3.labor.employee_wages.v1"),args:{
+          unknownProperty:"forbidden",purpose:bad.purpose,id:bad.id,version:bad.version,
+        }},
+        {name:capabilityToolName("p3.menu.catalog.v1"),args:{
+          purpose:good.purpose,id:good.id,version:good.version,
+        }},
+      ];
+      return new Response(JSON.stringify({status:"completed",
+        usage:{input_tokens:10,output_tokens:10},
+        output:entries.map((entry,i)=>({type:"function_call",call_id:"call_"+steps+"_"+i,
+          name:entry.name,arguments:JSON.stringify(entry.args)}))}));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare menu prices and employee wages."},transport);
+    expect(p1).not.toHaveBeenCalled();
+    expect(result.usage.toolCallCount).toBe(0);
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(steps).toBe(2);
+  });
+
   it("preflights every sibling and dispatches none when one schema is invalid",async()=>{
     let steps=0;
     const transport=vi.fn(async(_url:string,init:RequestInit)=>{
@@ -1809,5 +2274,33 @@ describe("canonical source operands and native concurrent reads",()=>{
     expect(p1).toHaveBeenCalledTimes(1);
     expect(result.usage.toolCallCount).toBe(2);
     expect(JSON.stringify(result.reply.blocks)).toContain("$7,467.00");
+  });
+
+  it("keeps reviewed source evidence but replaces its duplicated clarification text with one interactive card",async()=>{
+    let steps=0;
+    const question="Which staffing plan should I compare?";
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:false,reason:"Staffing choice needed.",
+          missingGoalDomain:"staff",supportedParagraphIndices:[0]});
+      if(body.text.format.name!=="supervisor_investigation_step")
+        throw new Error("Unexpected model invocation");
+      if(steps++===0)
+        return toolCallResponse(capabilityToolName("p3.menu.catalog.v1"),
+          query("menu.catalog"),"call_1");
+      return response(answer([
+        {kind:"evidence",text:"The recorded latte price is {{r1:value.0.priceCents}}.",
+          citations:["r1"]},
+        {kind:"clarification",text:question,citations:[]},
+      ]));
+    });
+    const result=await runSupervisorTurn({...base,
+      text:"Compare my latte price with staffing options."},transport);
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.evidence.length).toBeGreaterThan(0);
+    expect(result.reply.blocks.filter(b=>b.type==="owner_question")).toHaveLength(1);
+    expect(result.reply.blocks.filter(b=>b.type==="text"&&b.text===question)).toHaveLength(0);
+    expect(result.reply.blocks.some(b=>b.type==="text"&&b.text.includes("$5.25"))).toBe(true);
   });
 });

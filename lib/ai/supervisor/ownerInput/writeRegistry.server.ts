@@ -23,7 +23,7 @@ export function createOwnerInputWriteRegistry(definitions:readonly OwnerInputWri
   }
   function selected(raw:unknown){
     const request=ownerInputRequestSchema.safeParse(raw);
-    if(!request.success)return null;
+    if(!request.success||request.data.mode==="resolve")return null;
     const entry=byId.get(request.data.writeCapabilityId);
     return entry&&entry.fieldId===request.data.fieldId?{entry,request:request.data}:null;
   }

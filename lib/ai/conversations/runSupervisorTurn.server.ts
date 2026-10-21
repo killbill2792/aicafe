@@ -850,7 +850,9 @@ export async function runSupervisorTurn(
     // diagnostics.server.ts. The API route's own per-turn correlation id,
     // threaded through so the investigation loop's round-by-round debug
     // trace shares it rather than minting a second, disconnected id.
-    debugRequestId?:string;inertProposal?:InvestigationInput["inertProposal"]},
+    debugRequestId?:string;inertProposal?:InvestigationInput["inertProposal"];
+    ownerClarification?:string;trustedCatalogProductId?:string;
+    ownerClarificationReadCapabilityId?:string;replayedOwnerRequest?:boolean},
   transport:Transport=fetch,
 ):Promise<{reply:GroundedSupervisorReply;usage:SupervisorUsage}>{
   const apiKey=process.env.OPENAI_API_KEY;

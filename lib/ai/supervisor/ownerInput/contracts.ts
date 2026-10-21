@@ -6,6 +6,7 @@ const localized=z.strictObject({en:z.string().min(1).max(240),
 export const ownerInputRequestSchema=z.strictObject({
   fieldId:z.string().min(1).max(120),
   writeCapabilityId:z.string().min(1).max(120),
+  mode:z.enum(["write","resolve"]).optional(),
   writeContext:z.record(z.string().min(1).max(80),z.string().max(200)),
   question:localized,
   input:z.discriminatedUnion("kind",[

@@ -33,7 +33,7 @@ vi.mock("@/lib/ai/cafeTools.server",()=>({
 }));
 vi.mock("@/lib/ai/conversations/runSupervisorTurn.server",()=>({runSupervisorTurn:mocks.run}));
 vi.mock("@/lib/metrics/p1Readers.server",()=>({authorizedOwnerP1:vi.fn(async()=>({
-  identity:{businessId:"cafe-1",currency:"USD"}}))}));
+  identity:{businessId:mocks.activeBusinessId,currency:"USD"}}))}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async()=>[
  {id:"c580ce3e-c67d-4abc-a7b8-90795a4bf265",name:"Iced Latte",baseName:"Iced Latte",
   active:true,priceCents:525},
@@ -59,6 +59,7 @@ vi.mock("@/lib/ai/conversations/replyWriter.server",()=>({
   getExistingSupervisorReply:mocks.getExisting,persistGroundedSupervisorReply:mocks.persist,
 }));
 import {POST} from "./route";
+import {catalogIdentityFingerprint} from "@/lib/pricing/alexOwnerInput.server";
 import {SupervisorStageError} from "@/lib/ai/conversations/diagnostics.server";
 import {SupervisorReplyValidationError} from "@/lib/ai/conversations/replyValidation";
 const request=(text:string)=>new Request("https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
@@ -211,6 +212,57 @@ describe("POST owner-input persistence and continuation",()=>{
 });
 
 describe("POST uses the single bounded semantic Supervisor path",()=>{
+  it("keeps a confirmed catalog choice after a later owner-authored amount card, without replaying option prices",async()=>{
+    mocks.activeBusinessId=testCafe;
+    const productId="c580ce3e-c67d-4abc-a7b8-90795a4bf265";
+    const selectedFingerprint=catalogIdentityFingerprint({
+      id:productId,name:"Iced Latte",base_name:"Iced Latte",size_label:null});
+    const catalogQuestion="11111111-2222-4222-8222-111111111111";
+    const amountQuestion="11111111-3333-4333-8333-111111111111";
+    const selectedOptions=[
+      {id:productId,label:{en:"Iced Latte — $5.25",es:"Iced Latte — US$5.25",ar:"لاتيه"}},
+      {id:"76798875-d648-42b4-95e9-b0f0b2a04def",
+        label:{en:"Mocha — $5.60",es:"Mocha",ar:"موكا"}},
+    ];
+    const resolveRequest=(questionId:string,input:object,ctx:Record<string,string>)=>({
+      ...pendingOwnerQuestion,questionId,businessId:testCafe,originalText:"Raise Iced Latte",
+      readCapabilityId:"platform.owner_input.resolve.v1",readInputJson:"{}",
+      request:{mode:"resolve",fieldId:"owner.clarification",
+        writeCapabilityId:"platform.owner_input.resolve.v1",
+        writeContext:ctx,question:{en:"Which details?",es:"¿Qué detalles?",ar:"ما التفاصيل؟"},input},
+    });
+    const context={domain:"menu_proposal",selectedProductId:productId,
+      ["catalogIdentity:"+productId]:selectedFingerprint};
+    const current={...mocks.message,text:"10 cents",createdAt:"2026-10-21T03:05:00Z",
+      ownerInputResponse:{questionId:amountQuestion,action:"supply",value:"10 cents"}};
+    mocks.addOwner.mockResolvedValueOnce(current as never);
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"select-card",role:"supervisor",createdAt:"2026-10-21T03:01:00Z",
+        grounding:{ownerInput:resolveRequest(catalogQuestion,{kind:"options",options:selectedOptions},
+          {domain:"menu_proposal",["catalogIdentity:"+productId]:selectedFingerprint})}},
+      {id:"chosen",role:"owner",createdAt:"2026-10-21T03:02:00Z",
+        text:"Iced Latte — $5.25",ownerInputResponse:{
+          questionId:catalogQuestion,action:"supply",value:productId}},
+      {id:"amount-card",role:"supervisor",createdAt:"2026-10-21T03:04:00Z",
+        grounding:{ownerInput:resolveRequest(amountQuestion,{kind:"free_text",
+          hint:{en:"Amount",es:"Cantidad",ar:"المبلغ"}},context)}},
+      current,
+    ]});
+    const req=new Request("https://cafe.test/api/ai/threads/"+mocks.message.threadId+"/messages",{
+      method:"POST",headers:{origin:"https://cafe.test","content-type":"application/json"},
+      body:JSON.stringify({clientMessageId:mocks.message.clientMessageId,
+        text:"10 cents",locale:"en",ownerInputResponse:current.ownerInputResponse}),
+    });
+    const response=await POST(req,ctx);
+    expect(response.status).toBe(201);
+    const investigation=mocks.run.mock.calls[0][0];
+    expect(investigation.text).toBe("Raise Iced Latte");
+    expect(investigation.ownerClarification).toBe("10 cents");
+    expect(investigation.trustedCatalogProductId).toBe(productId);
+    expect(investigation.history.some((turn:{role:string;text:string})=>
+      turn.role==="owner"&&turn.text.includes("$5.25"))).toBe(false);
+  });
+
   it("routes staff or any other wording through the model and both sides of history",async()=>{
     const response=await POST(request(mocks.message.text),ctx);
     expect(response.status).toBe(201);

@@ -1,7 +1,7 @@
 import "server-only";
 import {modelVisibleIds,describeSourceFields} from "./canonicalCapabilities";
 import {outputFor} from "@/lib/metrics/p1Readers.server";
-import {randomUUID} from "node:crypto";
+import {randomUUID,createHash} from "node:crypto";
 import {z} from "zod";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
 import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
@@ -10,9 +10,13 @@ import {buildOliviaInvestigationRegistration} from "@/lib/scheduling/oliviaInves
 import {buildAlexP3Registrations} from "@/lib/pricing/alexP3Capabilities.server";
 import {ownerInputRequestSchema} from "@/lib/ai/supervisor/ownerInput/contracts";
 import {buildOwnerQuestionReply} from "@/lib/ai/supervisor/ownerInput/response";
-import {adaptReviewedClarifications,type KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
+import type {KnownClarificationOption} from "@/lib/ai/supervisor/ownerInput/clarifications";
+import {ownerResolutionRequest} from "@/lib/ai/supervisor/ownerInput/resolution";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import {buildOliviaP3Registrations} from "@/lib/scheduling/oliviaP3Capabilities.server";
-import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate} from "./readDates";
+import {investigationReadDatesMatch,rememberInvestigationReads,investigationCalendarScope,rememberCalendarScopes,pendingOwnerCalendarCorrection,hasInvestigationOwnerCalendarDate,authenticatedReadCalendarText,authenticatedOwnerCalendarScope,registeredCalendarKind} from "./readDates";
 import {investigationMemorySchema,investigationOwnerStatements,type InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 import type {ConversationalTurn} from "@/lib/ai/conversations/context";
 import type {GroundedSupervisorReply,SupervisorReplyBlock,EvidenceReference} from "@/lib/ai/conversations/contracts";
@@ -184,6 +188,15 @@ function calendar(asOf:string){
 }
 export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:string;
   history:ConversationalTurn[];investigationMemory?:InvestigationMemory;
+  /** Server-validated answer to a durable owner question, separate from full original text. */
+  ownerClarification?:string;
+  /** Server-issued calendar question capability, never supplied by the model. */
+  ownerClarificationReadCapabilityId?:string;
+  /** A durable question replay reuses the old goal; its historical dates
+   * must not override newer, persisted domain calendar scopes. */
+  replayedOwnerRequest?:boolean;
+  /** Revalidated server-issued selection, never an owner-authored numeric assumption. */
+  trustedCatalogProductId?:string;
   apiKey:string;model:string;onUsage?:(usage:InvestigationUsage)=>void;
   onDiagnostic?:(event:SupervisorDiagnostic)=>void;
   // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload. When the
@@ -195,7 +208,8 @@ export type InvestigationInput={text:string;locale:Locale;asOf:string;timezone:s
   /** Registered, typed, INERT proposals only. No approval or effect authority. */
   inertProposal?:{tools:readonly ToolDef[];
     create:(name:string,args:unknown)=>Promise<{id:string;text:string}|null>;
-    knownClarificationOptions?:()=>readonly KnownClarificationOption[]};
+    knownClarificationOptions?:()=>readonly KnownClarificationOption[];
+    knownClarificationContext?:()=>Record<string,string>};
 };
 export async function runInvestigationTurn(input:InvestigationInput,transport:InvestigationTransport):
   Promise<{reply:GroundedSupervisorReply;usage:InvestigationUsage}>{
@@ -204,10 +218,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const labels=investigationLabels(input.locale);
   // Surface precisely which owner goal remains unanswered, in the owner's
   // language, rather than silently publishing an incomplete candidate.
-  const incompleteNotice=(reason:string)=>(labels.unansweredGoal+reason).slice(0,1100);
-  const missingGoalWarning=(reason:string):SupervisorReplyBlock=>({
-    type:"warning",code:"SUPERVISOR_INCOMPLETE",text:incompleteNotice(reason),
-  });
+  // Reviewer prose is untrusted diagnostic detail, not localized owner copy.
+  // Emit only the bounded reason's PRESENCE to the sanitized diagnostic stream.
+  const missingGoalWarning=(_reason:string,
+    domain?:ReviewVerdict["missingGoalDomain"]):SupervisorReplyBlock=>{
+    const copy=({en,es,ar} as const)[input.locale].SupervisorOwnerHelp;
+    const text=domain?copy.incompleteByDomain.replace("{domain}",copy.domains[domain]):
+      copy.incomplete;
+    return {type:"warning",code:"SUPERVISOR_INCOMPLETE",text};
+  };
   // TEMPORARY, TEST-ENVIRONMENT-ONLY correlation id -- see
   // logSupervisorDebugPayload. Shares no identifier with the sanitized
   // production diagnostics logger; only ties this one turn's raw debug
@@ -325,7 +344,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           }else{
             bestAccumulated={...bestAccumulated,status:"partial",
               blocks:[...bestAccumulated.blocks.filter(block=>block.type==="warning"),
-                ...safeBlocks,missingGoalWarning(accReview.reason)],
+                ...safeBlocks,missingGoalWarning(accReview.reason,accReview.missingGoalDomain)],
               evidence:safeEvidence,citedIds:[...safeCitedIds]};
             input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:"partial",
               failureCategory:"reviewer_downgraded_to_partial"});
@@ -333,7 +352,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         }else if(!accReview.complete){
           bestAccumulated={...bestAccumulated,status:"partial",
             blocks:bestAccumulated.blocks.length<30?
-              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason)]:
+              [...bestAccumulated.blocks,missingGoalWarning(accReview.reason,accReview.missingGoalDomain)]:
               bestAccumulated.blocks};
         }
       }
@@ -383,14 +402,75 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   const parsedMemory=investigationMemorySchema.safeParse(input.investigationMemory);
   const memory=parsedMemory.success&&parsedMemory.data.businessId===identity.businessId?parsedMemory.data:undefined;
   // Only authenticated same-thread owner statements can ground referents or hypotheticals.
-  const ownerStatements=investigationOwnerStatements(memory,input.history,input.text);
+  // A durable reply resumes the PREVIOUS owner goal; it is not a newly
+  // authored instruction. Re-merging historical conversation and the old
+  // goal would move outdated date phrases AFTER the corrected saved scope,
+  // falsely making them a fresh calendar correction on the next card.
+  const earlierOwnerStatements=input.replayedOwnerRequest&&memory?
+    [...memory.ownerStatements]:
+    investigationOwnerStatements(memory,input.history,input.text);
+  // Preserve the current full request and the newly authenticated clarification
+  // within the memory contract's six-statement bound.
+  const ownerStatements=input.ownerClarification&&input.ownerClarification.length<=600?
+    [...earlierOwnerStatements,input.ownerClarification].slice(-6):earlierOwnerStatements;
   const atomic=await readAuthorizedAtomicP1SourceSnapshot();
   const financialReadsAvailable=atomic.status==="available"||atomic.reason==="rpc_not_installed";
   if(atomic.status==="available"&&(atomic.snapshot.businessId!==identity.businessId||
     atomic.snapshot.currency!==identity.currency||atomic.snapshot.timezone!==identity.timezone))
     return await failure(false,"snapshot_mismatch");
   const scope={financialReadsAvailable,role:"owner" as const,businessId:identity.businessId,identity,tools,shadowEnabled:true,
-    ownerClause:input.text,ownerContext:ownerStatements.join("\n")};
+    ownerClause:input.text,durableOwnerInput:true,ownerContext:ownerStatements.join("\n")};
+  // The same bounded, selector-only memory accompanies every durable
+  // question, including one asked before a final answer is synthesized.
+  // No financial observations or model-derived balances are persisted.
+  // A replay continues its issuing owner request; an independently authored
+  // identical sentence is a NEW request with a different calendar origin.
+  const requestKey=input.replayedOwnerRequest&&memory?
+    (memory.requestKey??createHash("sha256").update(input.text).digest("hex")):
+    createHash("sha256").update(randomUUID()).digest("hex");
+  const remembered:InvestigationMemory["reads"]=[];
+  const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
+  const scopeOrigins:NonNullable<InvestigationMemory["calendarScopeOrigins"]>=[];
+  const rememberScope=(scope:NonNullable<InvestigationMemory["calendarScopes"]>[number],capabilityId:string)=>{
+    calendarScopes.push(scope);
+    scopeOrigins.push({domain:scope.domain,kind:scope.kind,requestKey,capabilityId});
+  };
+  // Upgrade legacy temporal read selectors AND scope-only corrections on
+  // the FIRST replay of an already-issued question. Never import them into
+  // an independently authored request with the same wording. Reader metadata
+  // and typed registry preflight authenticate every legacy read before it
+  // can receive request-instance provenance; no observations are persisted.
+  const legacyOrigins=():NonNullable<InvestigationMemory["calendarScopeOrigins"]>=>{
+    if(!input.replayedOwnerRequest||!memory||memory.requestKey)return [];
+    const origins=new Map<string,NonNullable<InvestigationMemory["calendarScopeOrigins"]>[number]>();
+    for(const read of memory.reads){
+      const domain=readOwner(read.capabilityId);
+      if(!domain)continue;
+      try{
+        const args=JSON.parse(read.inputJson);
+        if(!registry.preflightRead(scope,read.capabilityId,args))continue;
+        const calendar=investigationCalendarScope(args,domain);
+        if(calendar)origins.set(domain+":"+calendar.kind,{
+          domain,kind:calendar.kind,requestKey,capabilityId:read.capabilityId});
+      }catch{/* Invalid legacy selectors never authorize a correction. */}
+    }
+    // A validated scope can supersede an older read even if no new read ran.
+    for(const cal of memory.calendarScopes??[]){
+      if((memory.calendarScopeOrigins??[]).some(o=>o.domain===cal.domain&&o.kind===cal.kind))continue;
+      origins.set(cal.domain+":"+cal.kind,{domain:cal.domain,kind:cal.kind,
+        requestKey,capabilityId:"legacy.saved_scope.v1"});
+    }
+    return [...origins.values()].slice(-5);
+  };
+  const currentMemory=():InvestigationMemory=>({
+    version:1,businessId:identity.businessId,ownerStatements,requestKey,
+    reads:rememberInvestigationReads(memory?.reads??[],remembered),
+    calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes),
+    calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]).filter(origin=>
+      !scopeOrigins.some(next=>next.domain===origin.domain&&next.kind===origin.kind)),
+      ...legacyOrigins().filter(origin=>!scopeOrigins.some(next=>
+        next.domain===origin.domain&&next.kind===origin.kind)),...scopeOrigins].slice(-5),
+  });
   // Every domain returns the same typed owner-answerable gap. The shared
   // loop renders/stores it without knowing any specialist's write contract.
   const ownerInputReply=async(capabilityId:string,args:unknown,result:unknown)=>{
@@ -413,7 +493,29 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     input.onDiagnostic?.({stage:"grounded_answer",agent:"supervisor",
       groundedStatus:"insufficient_evidence",modelCallCount:usage.modelCallCount,
       toolCallCount:usage.toolCallCount});
-    return {reply,usage:{...usage}};
+    return {reply:{...reply,investigationMemory:currentMemory()},usage:{...usage}};
+  };
+  // Same dispatcher is used for domain gaps, reviewed questions and
+  // no-progress/calendar ambiguity. Only the producer knows why it is stuck.
+  const askForHelp=async(question:Record<"en"|"es"|"ar",string>,
+    capabilityId="platform.owner_input.resolve.v1",args:unknown={})=>
+    ownerInputReply(capabilityId,args,{
+      status:"requires_owner_input",
+      ownerInput:ownerResolutionRequest({question,
+        input:{kind:"free_text",hint:{
+          en:en.SupervisorOwnerHelp.detailHint,
+          es:es.SupervisorOwnerHelp.detailHint,
+          ar:ar.SupervisorOwnerHelp.detailHint,
+        }}}),
+    });
+  const askWhenStuck=async(question:Record<"en"|"es"|"ar",string>,
+    capabilityId?:string,args?:unknown)=>{
+    // An adaptive stop must NOT throw away a previously grounded, independently
+    // reviewable partial answer or its mandatory source cautions.
+    const rescued=await failure(true,"no_progress");
+    if(rescued.reply.blocks.some(block=>block.type==="text"))
+      return rescued;
+    return await askForHelp(question,capabilityId,args)??rescued;
   };
   const datasets=new Map<string,StoredDataset>();
   const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
@@ -437,6 +539,47 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     })]);
   const manifest=registry.discover(scope).filter(m=>!isRedundantModelRead(m.id));
   const visibleIds=new Set(modelVisibleIds(manifest.map(m=>m.id)));
+  const readOwner=(id:string)=>manifest.find(m=>m.id===id)?.owner;
+  const storedCalendarSelector=(domain:string,kind:"period"|"week")=>{
+    if(!input.replayedOwnerRequest)return false;
+    const scopes=(memory?.calendarScopes??[]).filter(s=>s.domain===domain&&s.kind===kind);
+    const origins=(memory?.calendarScopeOrigins??[]).filter(o=>o.domain===domain&&o.kind===kind);
+    if(origins.length)return origins.some(o=>o.requestKey===requestKey);
+    // Legacy v1 scope-only state is trusted only before an instance key has
+    // been minted. On its first replay it is upgraded into scoped provenance.
+    if(memory?.requestKey)return false;
+    if(scopes.length)return true;
+    return (memory?.reads??[]).some(read=>{
+      if(readOwner(read.capabilityId)!==domain)return false;
+      try{return investigationCalendarScope(JSON.parse(read.inputJson),domain)?.kind===kind;}
+      catch{return false;}
+    });
+  };
+  const calendarTextForRead=(domain:string,args:unknown)=>{
+    const kind=investigationCalendarScope(args,domain)?.kind;
+    // The original owner goals are the fallback until an authoritative
+    // selector for THIS domain and shape has actually superseded them.
+    // A replay alone is not a fresh date override of an updated scope.
+    const original=input.replayedOwnerRequest&&kind&&storedCalendarSelector(domain,kind)?
+      "":input.text;
+    return authenticatedReadCalendarText(original,input.ownerClarification,
+      input.ownerClarificationReadCapabilityId,domain,identity.asOf,readOwner);
+  };
+  if(input.ownerClarification&&input.ownerClarificationReadCapabilityId&&
+    hasInvestigationOwnerCalendarDate(input.ownerClarification,identity.asOf)){
+    const domain=readOwner(input.ownerClarificationReadCapabilityId);
+    if(domain){
+      const preferred=(memory?.calendarScopes??[]).find(scope=>scope.domain===domain)?.kind??
+        (memory?.reads??[]).flatMap(read=>{
+          if(readOwner(read.capabilityId)!==domain)return [];
+          try{const scope=investigationCalendarScope(JSON.parse(read.inputJson),domain);
+            return scope?[scope.kind]:[];}catch{return [];}
+        })[0]??registeredCalendarKind(manifest.find(m=>m.id===input.ownerClarificationReadCapabilityId)?.inputJsonSchema);
+      const corrected=preferred?authenticatedOwnerCalendarScope(
+        input.ownerClarification,domain,identity.asOf,preferred):null;
+      if(corrected)rememberScope(corrected,input.ownerClarificationReadCapabilityId);
+    }
+  }
   const independentP1Ids=new Set((Object.keys(values) as SupportedId[]).map(k=>"p3."+k+".v1"));
   // Native function-calling tools: one per discovered read capability, plus
   // the registered expression calculator. toolNameToCapabilityId maps a
@@ -466,10 +609,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         "outside this calculator.",
       parameters:z.toJSONSchema(planSchema,{unrepresentable:"any",reused:"inline"})},
   ];
-  const observations:Observation[]=[],evidence:ShadowEvidence[]=[],remembered:InvestigationMemory["reads"]=[];
+  const observations:Observation[]=[],evidence:ShadowEvidence[]=[];
   const attempted=new Set<string>();
   const calendarReviews=new Map<string,"applies"|"unrelated"|"ambiguous">();
-  const calendarScopes:NonNullable<InvestigationMemory["calendarScopes"]>=[];
   const ownerText=scope.ownerContext;
   let feedback:string|null=null;
   // §1 adaptive budget: a round that repeats a prior attempt verbatim, with
@@ -478,6 +620,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   // last rejected, and the exact direct-answer draft last rejected.
   let lastUnknownToolName:string|null=null;
   let lastRejectedAnswerSignature:string|null=null;
+  let lastDuplicateCapability:string|null=null;
+  let lastDuplicateObservationCount=-1;
+  let lastDuplicateBatch:string|null=null;
   for(let round=0;usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls-1&&Date.now()<deadline;round++){
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     // Logs whatever specific retry feedback (§5b/§6) the PREVIOUS round's
@@ -539,6 +684,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // never a second hand-written envelope describing which path it took.
       tools:finalizeOnly?undefined:investigationTools,
       context:{ownerRequest:input.text,locale:input.locale,
+        // Revalidated canonical selector, NOT a new owner-authored price.
+        confirmedCatalogSelection:input.trustedCatalogProductId?
+          {productId:input.trustedCatalogProductId}:null,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
@@ -617,14 +765,32 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         signatures.every(sig=>!attempted.has(sig))&&
         // All-or-nothing registered input validation before starting any
         // sibling: schema, unknown fields, role, purpose, byte/range limits.
-        requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args))&&
+        requests.every(v=>registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args))&&
         requests.every(v=>
           (v.definition.currencyPolicy==="independent"||
             identity.currency==="USD"&&financialReadsAvailable)&&
-          investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,ownerStatements,
+          investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,ownerStatements,
             v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
-          !pendingOwnerCalendarCorrection(v.args,input.text,identity.asOf,memory,ownerStatements));
+          !pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,ownerStatements));
       if(!canDispatch){
+        // An identical rejected selection without new observations cannot make progress,
+        // even when only one sibling was previously attempted.
+        const duplicateBatch=JSON.stringify({
+          calls:step.calls.map(call=>{
+            let parsed:unknown=call.arguments;
+            try{parsed=JSON.parse(call.arguments);}catch{/* malformed JSON is still a stable signature */}
+            return JSON.stringify([call.name,canonicalSelector(parsed)]);
+          }).sort(),
+          observationCount:observations.length,
+          rejection:"parallel_preflight",
+        });
+        if(duplicateBatch&&duplicateBatch===lastDuplicateBatch)
+          return await askWhenStuck({
+            en:en.SupervisorOwnerHelp.stuckDetail,
+            es:es.SupervisorOwnerHelp.stuckDetail,
+            ar:ar.SupervisorOwnerHelp.stuckDetail,
+          });
+        lastDuplicateBatch=duplicateBatch;
         feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
         logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
           outcome:"rejected_preflight",requested:step.calls.map(c=>({name:c.name,arguments:c.arguments,callId:c.callId})),
@@ -633,19 +799,20 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             canonicalSelectorsUnique:new Set(signatures).size===signatures.length,
             canonicalSourcesUnique:new Set(sourceSelections).size===sourceSelections.length,
             neverAttemptedBefore:signatures.every(sig=>!attempted.has(sig)),
-            registeredInputsValid:requests.every(v=>registry.preflightRead(scope,v.capabilityId,v.args)),
+            registeredInputsValid:requests.every(v=>registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args)),
             perCall:requests.map(v=>({
               callId:v.call.callId,capabilityId:v.capabilityId,
               currencyAndSnapshotPermitted:v.definition.currencyPolicy==="independent"||
                 (identity.currency==="USD"&&financialReadsAvailable),
-              datesMatch:investigationReadDatesMatch(v.args,input.text,identity.asOf,memory,
+              datesMatch:investigationReadDatesMatch(v.args,calendarTextForRead(v.definition.owner,v.args),identity.asOf,memory,
                 ownerStatements,v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner),
-              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,input.text,
+              noPendingCalendarCorrection:!pendingOwnerCalendarCorrection(v.args,calendarTextForRead(v.definition.owner,v.args),
                 identity.asOf,memory,ownerStatements),
-              registryPreflight:registry.preflightRead(scope,v.capabilityId,v.args),
+              registryPreflight:registry.preflightRead({...scope,ownerClause:calendarTextForRead(v.definition.owner,v.args)},v.capabilityId,v.args),
             }))}});
         continue;
       }
+      lastDuplicateBatch=null;
       for(const signature of signatures)attempted.add(signature);
       logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
         outcome:"concurrent",requested:requests.map(v=>v.capabilityId)});
@@ -655,7 +822,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       const completed=await Promise.all(requests.map(async selectedRead=>{
         let dispatched=false;
         const operationStartedAt=Date.now();
-        const result=await registry.invoke(scope,selectedRead.capabilityId,selectedRead.args,()=>{
+        const result=await registry.invoke({...scope,ownerClause:calendarTextForRead(selectedRead.definition.owner,selectedRead.args)},selectedRead.capabilityId,selectedRead.args,()=>{
           dispatched=true;
           usage.toolCallCount++;
           input.onUsage?.({...usage});
@@ -669,7 +836,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         if(!record(result)){feedback="A parallel source returned an invalid result.";continue;}
         if(dispatched){
           const cal=investigationCalendarScope(args,definition.owner);
-          if(cal)calendarScopes.push(cal);
+          if(cal)rememberScope(cal,capabilityId);
         }
         const id="r"+(observations.length+1);
         const successful=["partial","verified","estimated","conditional"].includes(String(result.status));
@@ -716,7 +883,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // produces it, resubmitting the identical draft is potential progress,
       // not a repeat, even though the draft text itself is byte-identical.
       const answerSignature=JSON.stringify({answer,observationCount:observations.length});
-      if(answerSignature===lastRejectedAnswerSignature)return await failure(true,"no_progress");
+      if(answerSignature===lastRejectedAnswerSignature)
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.additionalDetail,
+          es:es.SupervisorOwnerHelp.additionalDetail,
+          ar:ar.SupervisorOwnerHelp.additionalDetail});
       // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
       logSupervisorDebugPayload({point:"direct_answer_attempt",requestId:debugRequestId,round,
         ownerQuestion:input.text,modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount,
@@ -858,7 +1028,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
         downgradedByReview=true;
         reply={...reply,status:"partial",blocks:[
           ...safeReviewBlocks,
-          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason)]:[]),
+          ...(safeReviewBlocks.length<30?[missingGoalWarning(review.reason,review.missingGoalDomain)]:[]),
         ]};
         input.onDiagnostic?.({stage:"grounded_answer",failureCategory:"reviewer_downgraded_to_partial"});
       }
@@ -910,15 +1080,99 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       if(!review.complete&&!downgradedByReview)reply={...reply!,status:"partial",
         blocks:reply!.blocks.length<30?
-          [...reply!.blocks,missingGoalWarning(review.reason)]:reply!.blocks};
-      // The older known-record ambiguity flow stays unchanged; only its reviewed
-      // owner-facing question becomes an interactive card after independent review.
-      if(review.supported&&!downgradedByReview)
-        reply=adaptReviewedClarifications(reply,answer,input.locale,
-          input.inertProposal?.knownClarificationOptions?.()??[]);
-      const state:InvestigationMemory={version:1,businessId:identity.businessId,ownerStatements,
-        reads:rememberInvestigationReads(memory?.reads??[],remembered),
-        calendarScopes:rememberCalendarScopes(memory?.calendarScopes??[],calendarScopes)};
+          [...reply!.blocks,missingGoalWarning(review.reason,review.missingGoalDomain)]:reply!.blocks};
+      // Reviewed clarification paragraphs use the SAME ownerInputReply
+      // dispatcher, durable pending state, auth and snapshot guards as domain
+      // missing-data requests. This path cannot perform a domain write.
+      if(review.supported&&!downgradedByReview){
+        const clarification=answer.paragraphs.find(p=>p.kind==="clarification"&&p.citations.length===0);
+        if(clarification){
+          const known=input.inertProposal?.knownClarificationOptions?.()??[];
+          const validOptions=known.length>=2&&known.length<=30&&known.every(o=>
+            o.id&&o.label.en&&o.label.es&&o.label.ar);
+          const hints={en:en.SupervisorChat.ownerInputAnswer,
+            es:es.SupervisorChat.ownerInputAnswer,ar:ar.SupervisorChat.ownerInputAnswer};
+          // A reviewed original paragraph is NOT necessarily the validated
+          // owner-visible text: server-verified formula substitution may have
+          // replaced its model-typed number. Never restore the raw claim into
+          // a durable question card that bypasses text claim validation.
+          const renderedQuestion=renderInvestigationAnswer({paragraphs:[clarification]},
+            observations,input.locale,{ownerText});
+          const questionText=renderedQuestion?.blocks.find(block=>block.type==="text");
+          if(!renderedQuestion||renderedQuestion.issues.length||!questionText){
+            feedback="The clarification could not be rendered as verified owner-facing text. Ask a safe specific question.";
+            continue;
+          }
+          const safeTitle=questionText.text.slice(0,240);
+          const title={en:safeTitle,es:safeTitle,ar:safeTitle};
+          const request=ownerResolutionRequest({question:title,
+            input:validOptions?{kind:"options",options:[...known]}:
+              {kind:"free_text",hint:hints},
+            context:input.inertProposal?.knownClarificationContext?.()});
+          // A reviewed question has no domain-issued tool ID of its own.
+          // Bind a calendar answer only when the REGISTERED temporal evidence
+          // leaves one unambiguous domain (and any typed missing-goal domain
+          // agrees). Never infer a privileged domain from untrusted prose.
+          const temporalReads=observations.filter(o=>{
+            const domain=readOwner(o.capabilityId);
+            return domain&&investigationCalendarScope(o.input,domain);
+          });
+          const temporalHistory=(memory?.reads??[]).filter(r=>{
+            const domain=readOwner(r.capabilityId);
+            if(!domain)return false;
+            try{return !!investigationCalendarScope(JSON.parse(r.inputJson),domain);}
+            catch{return false;}
+          });
+          const requestedGoalDomain=review.clarificationGoalDomain;
+          const expectedDomains=requestedGoalDomain==="expenses"?["money"]:
+            requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
+            requestedGoalDomain==="sales"?["sales","money"]:
+            requestedGoalDomain==="pricing"||requestedGoalDomain==="menu"?["alex","pricing","menu"]:null;
+          // Match the independently reviewed goal to a REGISTERED temporal
+          // input shape. Scheduling works in weeks, not labor-ledger periods.
+          const kindForGoal=requestedGoalDomain==="scheduling"?"week":
+            requestedGoalDomain==="expenses"||requestedGoalDomain==="sales"?"period":null;
+          const candidates=expectedDomains?manifest.filter(m=>
+            expectedDomains.includes(m.owner)&&
+            (kindForGoal===null||registeredCalendarKind(m.inputJsonSchema)===kindForGoal)&&
+            registeredCalendarKind(m.inputJsonSchema)!==null):[];
+          const allowedIds=new Set(candidates.map(m=>m.id));
+          const temporalInScope=[
+            ...temporalReads.map(o=>o.capabilityId).filter(id=>allowedIds.has(id)),
+            ...temporalHistory.map(r=>r.capabilityId).filter(id=>allowedIds.has(id)),
+          ];
+          const relevantDomains=[...new Set(temporalInScope.map(id=>readOwner(id)!).filter(Boolean))];
+          const registeredGoalDomains=[...new Set(candidates.map(m=>m.owner))];
+          const singleDomain=relevantDomains.length===1?relevantDomains[0]:
+            relevantDomains.length===0&&registeredGoalDomains.length===1?registeredGoalDomains[0]:null;
+          const origin=singleDomain?
+            [...temporalInScope].reverse().find(id=>readOwner(id)===singleDomain)??
+              candidates.find(m=>m.owner===singleDomain)?.id:null;
+          const awaiting=await ownerInputReply(origin??"platform.owner_input.resolve.v1",{},
+            {status:"requires_owner_input",ownerInput:request});
+          if(awaiting){
+            if(awaiting.reply.ownerInput&&reply.blocks.some(block=>block.type==="text"&&block.text!==questionText.text)&&
+              (reply.evidence.length>0||reply.blocks.some(block=>block.type==="warning"&&
+                (block.code==="P3_CONDITIONAL"||block.code==="SUPERVISOR_ADVICE")))){
+              // Do not drop separately review-approved facts when another
+              // requested goal needs the owner's input. The evidence remains
+              // on the durable reply next to a single pending question.
+              // The rendered clarification is already an inert text block.
+              // Replace that one block with the interactive question while
+              // preserving independently reviewed evidence, cards and warnings.
+              const index=reply.blocks.findLastIndex(block=>
+                block.type==="text"&&block.text===questionText.text);
+              const safeBlocks=reply.blocks.filter((_,i)=>i!==index).slice(0,29);
+              return {reply:{...reply,status:"requires_owner_input",
+                ownerInput:awaiting.reply.ownerInput,
+                investigationMemory:awaiting.reply.investigationMemory,
+                blocks:[...safeBlocks,...awaiting.reply.blocks]},usage:awaiting.usage};
+            }
+            return awaiting;
+          }
+        }
+      }
+      const state=currentMemory();
       input.onDiagnostic?.({stage:"grounded_answer",groundedStatus:reply.status,
         modelCallCount:usage.modelCallCount,toolCallCount:usage.toolCallCount});
       return {reply:{...reply,investigationMemory:state},usage:{...usage}};
@@ -934,7 +1188,10 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // read performed in between genuinely is new information even though
       // this exact unknown name was tried before.
       const unknownToolSignature=step.name+":"+observations.length;
-      if(unknownToolSignature===lastUnknownToolName)return await failure(true,"no_progress");
+      if(unknownToolSignature===lastUnknownToolName)
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.unknownTool,
+          es:es.SupervisorOwnerHelp.unknownTool,
+          ar:ar.SupervisorOwnerHelp.unknownTool});
       lastUnknownToolName=unknownToolSignature;
       feedback="Unknown tool selection. Choose one of the registered capabilities.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
@@ -952,17 +1209,22 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     const signature=JSON.stringify(canonicalSelector([
       capabilityId===EXPRESSION_ID?"calculate":capabilityId.startsWith("inert_proposal:")?"propose":"read",capabilityId,args]));
     if(attempted.has(signature)){
-      // Unlike an unknown tool name or a rejected answer draft, a repeated
-      // signature here may be re-citing an ALREADY-SUCCESSFUL prior
-      // operation (harmless, just wasteful) rather than repeating a FAILED
-      // one -- so this stays a feedback-and-retry, never the adaptive
-      // budget's immediate stop (section 1), which is reserved for a round
-      // that repeats a prior failed attempt with no new information.
+      // Two consecutive redundant selections on one registered capability
+      // with no intervening observation prove a no-progress loop.
+      const duplicateAgain=lastDuplicateCapability===capabilityId&&
+        lastDuplicateObservationCount===observations.length;
+      lastDuplicateCapability=capabilityId;
+      lastDuplicateObservationCount=observations.length;
+      if(duplicateAgain)
+        return await askWhenStuck({en:en.SupervisorOwnerHelp.repeatedTool,
+          es:es.SupervisorOwnerHelp.repeatedTool,
+          ar:ar.SupervisorOwnerHelp.repeatedTool},capabilityId,args);
       feedback="That exact operation has already been attempted. Use its result or a different investigation step.";
       logSupervisorDebugPayload({point:"tool_rejected",requestId:debugRequestId,round,
         reasonCode:"duplicate_attempt",capabilityId,toolArguments:args,feedback});
       continue;
     }
+    lastDuplicateCapability=null;
     attempted.add(signature);
     if(capabilityId.startsWith("inert_proposal:")){
       // The MODEL only selects a typed registered tool. The authenticated
@@ -1066,8 +1328,8 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       }
       // Preserve validated period/week selectors across date-free follow-ups,
       // including nested domain requests. Explicit new owner dates supersede them.
-      let calendarText=input.text;
-      const pending=pendingOwnerCalendarCorrection(args,input.text,identity.asOf,memory,ownerStatements);
+      let calendarText=calendarTextForRead(readDomain,args);
+      const pending=pendingOwnerCalendarCorrection(args,calendarText,identity.asOf,memory,ownerStatements);
       if(pending){
         const key=readDomain+":"+investigationCalendarScope(args,readDomain)?.kind+":"+pending;
         let verdict=calendarReviews.get(key);
@@ -1084,7 +1346,13 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           calendarReviews.set(key,verdict);
         }
         if(verdict==="ambiguous"){
-          feedback="The failed-turn date correction could not be bound safely to this domain. Ask the specific unresolved calendar-context question, without choosing an old or unrelated period.";continue;
+          const awaiting=await askForHelp({
+            en:en.SupervisorOwnerHelp.dateClarification,
+             es:es.SupervisorOwnerHelp.dateClarification,
+             ar:ar.SupervisorOwnerHelp.dateClarification,
+          },capabilityId,args);
+          if(awaiting)return awaiting;
+          feedback="The calendar scope is still unclear. Ask the owner to identify the relevant dates.";continue;
         }
         if(verdict==="applies")calendarText=pending;
       }
@@ -1103,7 +1371,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           currency:identity.currency,financialReadsAvailable,feedback});
         continue;
       }
-      result=await registry.invoke(scope,capabilityId,args,()=>{
+      result=await registry.invoke({...scope,ownerClause:calendarText},capabilityId,args,()=>{
         // Fired strictly after typed registry preflight, before reader execution.
         // Domain failures still consume a real operation; malformed inputs do not.
         readDispatched=true;
@@ -1124,7 +1392,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
     // A result reason must never be mistaken for a registry preflight verdict.
     if(readDomain&&readDispatched){
       const calendar=investigationCalendarScope(args,readDomain);
-      if(calendar)calendarScopes.push(calendar);
+      if(calendar)rememberScope(calendar,capabilityId);
     }
     const id="r"+(observations.length+1);
     const successful=["partial","verified","estimated","conditional"].includes(String(result.status));

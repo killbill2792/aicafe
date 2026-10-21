@@ -2,7 +2,7 @@ import {z} from "zod";
 import {resolveCafeDateRange,type DateSelection} from "@/lib/ai/conversations/dateRange";
 import {parseOwnerDateWindows} from "@/lib/ai/conversations/ownerDateIntent";
 import type {InvestigationMemory,InvestigationCalendarScope} from "@/lib/ai/conversations/investigationMemory";
-import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek} from "@/lib/scheduling/whatIfOwnerDates";
+import {hasOwnerScheduleDates,matchesOwnerScheduleDates,ownerScheduleWeek,ownerScheduleExplicitDateWindows,ownerScheduleWeekFromWeekdays} from "@/lib/scheduling/whatIfOwnerDates";
 
 type ReadSelector=InvestigationMemory["reads"][number];
 const record=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==="object"&&!Array.isArray(v);
@@ -48,9 +48,81 @@ function windows(text:string,asOf:string){
 /** Whether a same-thread owner statement could supply a corrected calendar
  * window. Reuse the exact validated relative/explicit date grammar that the
  * actual read selector guard uses; never classify owner business intent. */
+/** Derive the accepted selector shape from a registered reader's input JSON
+ * schema. Never guess period/week from specialist names or owner prose. */
+export function registeredCalendarKind(schema:unknown):"period"|"week"|null{
+  const found=new Set<"period"|"week">();
+  const visit=(node:unknown,depth:number)=>{
+    if(depth>14||!record(node))return;
+    const properties=record(node.properties)?node.properties:null;
+    if(properties){
+      if(record(properties.period))found.add("period");
+      if(record(properties.week))found.add("week");
+      for(const child of Object.values(properties))visit(child,depth+1);
+    }
+    for(const key of ["$defs","definitions"]){
+      if(record(node[key]))for(const child of Object.values(node[key]))visit(child,depth+1);
+    }
+    for(const key of ["anyOf","oneOf","allOf"]){
+      if(Array.isArray(node[key]))for(const child of node[key])visit(child,depth+1);
+    }
+  };
+  visit(schema,0);
+  return found.size===1?[...found][0]:null;
+}
 export function hasInvestigationOwnerCalendarDate(text:string,asOf:string):boolean{
   return windows(text,asOf).length>0||hasOwnerScheduleDates(text,asOf);
 }
+/** Only an authenticated answer to an issued question for THIS registered
+ * domain can replace the calendar guard's current date. Unrelated specialist
+ * reads remain bound to the original request/remembered domain windows.
+ * The original multi-goal owner text is not changed or shortened. */
+export function authenticatedReadCalendarText(current:string,
+  clarification:string|undefined,issuedCapabilityId:string|undefined,
+  domain:string,asOf:string,domainForRead:(id:string)=>string|undefined):string{
+  return clarification&&issuedCapabilityId&&
+    domainForRead(issuedCapabilityId)===domain&&
+    hasInvestigationOwnerCalendarDate(clarification,asOf)?clarification:current;
+}
+
+/** An authenticated correction may precede another question rather than a
+ * reader dispatch. Capture only an unambiguous, parsed selector of the
+ * previously issued domain; no financial observations or dates inferred by
+ * the LLM are persisted. */
+export function authenticatedOwnerCalendarScope(text:string,domain:string,
+  asOf:string,kind:"period"|"week"):InvestigationCalendarScope|null{
+  // Explicit date windows take precedence over relative week language.
+  // Their endpoints must not be bypassed by a convenient "next week" token.
+  const explicit=kind==="week"?ownerScheduleExplicitDateWindows(text,asOf):parseOwnerDateWindows(text,asOf);
+  // The canonical scheduling reader also accepts forward weekday phrases
+  // with no numeric date, e.g. "Use Tuesday instead". Preserve the same
+  // resolved week before another owner-input card can supersede this turn.
+  if(kind==="week"&&!explicit.length){
+    const undatedWeek=ownerScheduleWeekFromWeekdays(text,asOf);
+    if(undatedWeek)return {domain,kind,week:undatedWeek};
+  }
+  const ranges=explicit.length?explicit:windows(text,asOf);
+  if(ranges.length!==1)return null;
+  if(kind==="period")return {domain,kind,from:ranges[0].from,to:ranges[0].to};
+  const week=ownerScheduleWeek(text,asOf);
+  if(!explicit.length&&week)return {domain,kind,week};
+  const days=Date.parse(ranges[0].to+"T12:00:00Z")-
+    Date.parse(ranges[0].from+"T12:00:00Z");
+  const monday=new Date(ranges[0].from+"T12:00:00Z").getUTCDay()===1;
+  if(monday&&days===6*86400000)return {domain,kind,week:ranges[0].from};
+  // Any unambiguous sub-week correction remains in a single scheduling
+  // week. Normalize both endpoints before persisting across further cards.
+  const containingWeek=(day:string)=>{
+    const date=new Date(day+"T12:00:00Z");
+    date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+6)%7));
+    return date.toISOString().slice(0,10);
+  };
+  const start=containingWeek(ranges[0].from),end=containingWeek(ranges[0].to);
+  // As in the canonical scheduling guard, explicit dates outrank casual
+  // relative language. Cross-week explicit ranges remain unpersistable.
+  return start===end?{domain,kind,week:start}:null;
+}
+
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
   memory:InvestigationMemory|undefined,_ownerStatements:readonly string[],domain:string,
   domainForRead:(capabilityId:string)=>string|undefined):boolean{

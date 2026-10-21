@@ -55,6 +55,13 @@ export const answerSchema=z.strictObject({
 // no way to tell why from the logs alone).
 export const reviewSchema=z.strictObject({supported:z.boolean(),complete:z.boolean(),
   reason:z.string().min(1).max(300),
+  // Untrusted prose stays diagnostic-only. This bounded category is used
+  // solely to select an owner-locale, preauthored incomplete-goal label.
+  missingGoalDomain:z.enum(["menu","pricing","scheduling","staff","sales","expenses","other"]).nullish(),
+  // Distinct from missingGoalDomain (null when review is complete): the
+  // reviewer must affirm which owner goal a clarification actually concerns.
+  // Neither a prior read nor the question text itself may grant a domain.
+  clarificationGoalDomain:z.enum(["menu","pricing","scheduling","staff","sales","expenses","other"]).nullish(),
   // Per-paragraph semantic confirmation lets a negative overall verdict
   // preserve unrelated, render-validated narrative without trusting cited
   // action claims. nullish accepts older replies; absent indexes fail closed.

@@ -70,10 +70,27 @@ export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedS
   const validated = groundedReplySchema.parse(reply);
   // A server-validated question is a pending request, never a verified business fact.
   if(validated.status==="requires_owner_input"){
-    if(!validated.ownerInput||validated.evidence.length!==0||validated.blocks.length!==1||
-      validated.blocks[0].type!=="owner_question"||
-      validated.blocks[0].questionId!==validated.ownerInput.questionId)
+    const cards=validated.blocks.filter(block=>block.type==="owner_question");
+    if(!validated.ownerInput||cards.length!==1||
+      cards[0].type!=="owner_question"||
+      cards[0].questionId!==validated.ownerInput.questionId)
       throw new SupervisorReplyValidationError("missing_evidence","Invalid owner-input state",validated);
+    const otherBlocks=validated.blocks.filter(block=>block.type!=="owner_question");
+    // A reviewed, source-backed PARTIAL result may accompany one durable card
+    // without losing the verified work. Every factual block retains its exact
+    // validated evidence reference; source-free text stays card-only.
+    const conditional=validated.evidence.length===0&&
+      otherBlocks[0]?.type==="warning"&&
+      (otherBlocks[0].code==="P3_CONDITIONAL"||otherBlocks[0].code==="SUPERVISOR_ADVICE")&&
+      otherBlocks.some(block=>block.type==="text")&&
+      otherBlocks.every(block=>block.type==="text"||block.type==="warning");
+    if(otherBlocks.length&&(!validated.evidence.length&&!conditional||
+      otherBlocks.some(block=>(block.type==="metric"||block.type==="count"||block.type==="percent"||
+          block.type==="task_status"||block.type==="task_card")&&
+        !validated.evidence.some(e=>e.source===block.source.source&&
+          e.identifier===block.source.identifier&&e.asOf===block.source.asOf))))
+      throw new SupervisorReplyValidationError("missing_evidence",
+        "Owner-input partial evidence failed its source contract",validated);
     return validated;
   }
   // The P3 arithmetic evaluator can produce a deterministic owner-only what-if
