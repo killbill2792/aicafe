@@ -1,5 +1,5 @@
 import {it,expect} from "vitest";
-import {investigationReadDatesMatch as checkDates,rememberInvestigationReads,investigationCalendarScope,authenticatedReadCalendarText,authenticatedOwnerCalendarScope} from "./readDates";
+import {investigationReadDatesMatch as checkDates,rememberInvestigationReads,investigationCalendarScope,authenticatedReadCalendarText,authenticatedOwnerCalendarScope,registeredCalendarKind} from "./readDates";
 import type {InvestigationMemory} from "@/lib/ai/conversations/investigationMemory";
 const matches=(input:unknown,current:string,asOf:string,state:InvestigationMemory|undefined,statements:readonly string[])=>
   checkDates(input,current,asOf,state,statements,"test-domain",()=>"test-domain");
@@ -111,5 +111,16 @@ it("persists multi-day corrections within one scheduling week but rejects cross-
   expect(authenticatedOwnerCalendarScope("Use 2026-10-20 to 2026-10-21 instead","olivia",asOf,"week"))
     .toEqual({domain:"olivia",kind:"week",week:"2026-10-19"});
   expect(authenticatedOwnerCalendarScope("Use 2026-10-25 to 2026-10-26 instead","olivia",asOf,"week"))
+    .toBeNull();
+});
+
+it("infers only unambiguous temporal input shapes from registered schemas",()=>{
+  expect(registeredCalendarKind({properties:{request:{oneOf:[{properties:{week:{type:"string"}}}]}}})).toBe("week");
+  expect(registeredCalendarKind({properties:{period:{properties:{from:{},to:{}}}}})).toBe("period");
+  expect(registeredCalendarKind({properties:{week:{type:"string"},period:{type:"object"}}})).toBeNull();
+  expect(registeredCalendarKind({properties:{productId:{type:"string"}}})).toBeNull();
+});
+it("rejects cross-week explicit dates even when relative text says next week",()=>{
+  expect(authenticatedOwnerCalendarScope("Next week, use 2026-10-25 to 2026-10-26 instead","olivia",asOf,"week"))
     .toBeNull();
 });
