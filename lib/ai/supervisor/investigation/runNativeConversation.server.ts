@@ -267,12 +267,31 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   try{
    response=await transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
     headers:{"content-type":"application/json",authorization:"Bearer "+input.apiKey},
-    body:JSON.stringify({model:input.model,...supervisorModelProfile(input.model),store:false,
+    body:JSON.stringify({model:usage.model,...supervisorModelProfile(usage.model),store:false,
      max_output_tokens:2400,instructions,input:messages,
      tools:tools.map(tool=>({...tool,strict:false})),parallel_tool_calls:false,
      text:{format:{type:"json_schema",name:"supervisor_conversation",strict:true,schema:responseSchema}}})});
   }finally{clearTimeout(timer);}
-  if(!response.ok){failures++;if(failures>1)break;continue;}
+  if(!response.ok){
+    let code="",message="";
+    try{
+      const err=await response.json() as {error?:{code?:unknown;message?:unknown}};
+      code=String(err.error?.code??"").slice(0,80);
+      message=String(err.error?.message??"").slice(0,300);
+    }catch{/* Missing error details do not allow arbitrary retries. */}
+    const configured=process.env.SUPERVISOR_OPENAI_FALLBACK_MODEL?.trim();
+    const accessError=["model_not_found","model_not_allowed","model_access_denied",
+      "model_not_available","model_not_accessible","invalid_model"].includes(code)||
+      ([400,403,404].includes(response.status)&&/\bmodel\b/iu.test(message));
+    if(accessError&&configured&&configured!==usage.model&&
+       usage.modelCallCount<LIMITS.rounds){
+      input.onDiagnostic?.({stage:"provider_fallback",fromModel:usage.model,
+        toModel:configured,triggerHttpStatus:response.status,triggerProviderErrorCode:code});
+      usage.model=configured;
+      continue;
+    }
+    failures++;if(failures>1)break;continue;
+  }
   const payload=await response.json() as Data;
   const u=isRecord(payload.usage)?payload.usage:{};
   usage.inputTokens+=typeof u.input_tokens==="number"?u.input_tokens:0;
@@ -332,7 +351,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   const describe=(d:typeof descriptions[number])=>({id:d.id,purpose:d.purpose,parameters:d.inputJsonSchema});
   if(name==="discover_tools"){
    const q=normalize(String(args.query??"")).split(" ").filter(w=>w.length>2);
-   const ranked=descriptions.map(d=>{
+   const ranked=[...descriptions,...simulations].map(d=>{
      const hay=normalize(d.id+" "+d.purpose);
      return {d,score:q.reduce((n,w)=>n+(hay.includes(w)?1:0),0)};
    }).sort((a,b)=>b.score-a.score);
@@ -343,8 +362,15 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   }else if(name==="read_cafe"){
    const id=String(args.id??"");
    const d=descriptions.find(d=>d.id===id);
-   if(d&&discovered.has(id)&&isRecord(args.input)&&registry.preflightRead(scope,id,args.input)){
-    const value=await registry.invoke(scope,id,args.input,()=>{usage.toolCallCount++;input.onUsage?.({...usage});});
+   const ownerText=authenticatedReadCalendarText(input.text,input.ownerClarification,
+     input.ownerClarificationReadCapabilityId,d?.owner??"",identity.asOf,
+     capabilityId=>descriptions.find(r=>r.id===capabilityId)?.owner);
+   const datesMatch=d&&investigationReadDatesMatch(args.input,ownerText,
+     identity.asOf,memory,statements,d.owner,id=>descriptions.find(r=>r.id===id)?.owner);
+   if(d&&discovered.has(id)&&isRecord(args.input)&&datesMatch&&
+     registry.preflightRead({...scope,ownerClause:ownerText},id,args.input)){
+    const value=await registry.invoke({...scope,ownerClause:ownerText},id,args.input,
+      ()=>{usage.toolCallCount++;input.onUsage?.({...usage});});
     if(isRecord(value)){
      if(value.status==="requires_owner_input"&&isRecord(value.ownerInput)){
        const request=ownerResolutionRequest({question:{
@@ -364,9 +390,12 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
        }
        result={status:"unavailable",reason:"invalid_owner_input"};
      }else{
+       const displayed=observationDisplay(value,input.locale);
        const observation:Observation={id:"r"+(observations.length+1),capabilityId:id,input:args.input,
-         result:value,reference:["verified","estimated","partial"].includes(String(value.status))?
-           observationReference(identity.businessId,input.asOf,id,value):null,display:{}};
+         result:value,sourceContract:typeof value.id==="string"?value.id:undefined,
+         reference:["verified","estimated","partial"].includes(String(value.status))?
+           observationReference(identity.businessId,input.asOf,id,value):null,
+         display:displayed.display,displayKind:displayed.kind,displayRaw:displayed.raw};
        observations.push(observation);
        addFacts(observation);
        // Keep the prior trusted dataset analysis engine available for
@@ -378,13 +407,23 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
        const dataset=completeQuality?datasetFor(sourceId,value.value,q as {
          missingInputs:string[];estimatedInputs:string[];staleInputs:string[]}):null;
        if(dataset)datasets.set(observation.id,{sourceId,dataset,revision:null});
+       if(observation.reference){
+         shadowEvidence.push({clause:input.text,capabilityId:id,
+           status:value.status as "verified"|"partial"|"estimated",result:value,reason:null});
+         if(!id.startsWith("p3.platform.")&&!id.startsWith("p3.public."))
+           remembered.push({capabilityId:id,inputJson:JSON.stringify(args.input)});
+         const calendar=investigationCalendarScope(args.input,d.owner);
+         if(calendar)scopes.push(calendar);
+       }
        result={observationId:observation.id,status:value.status,values:preview(value.value),
          quality:preview(value.quality),reason:value.reason??null,facts:factView().slice(-25),
-         datasetFields:dataset?.fields??null,totalRows:Array.isArray(value.value)?value.value.length:null,
+         datasetFields:dataset?.fields??null,collections:recordCollections(value.value),
+         totalRows:Array.isArray(value.value)?value.value.length:null,
          hint:"For more array rows call search_observation with this observation ID."};
      }
     }
-   }else result={status:"unavailable",reason:"unknown_or_invalid_read",hint:"Discover tools and follow their exact schema."};
+   }else result={status:"unavailable",reason:datesMatch===false?"owner_date_mismatch":"unknown_or_invalid_read",
+     hint:"Discover tools and follow their exact schema; never substitute a different owner period."};
   }else if(name==="search_observation"){
    const obs=observations.find(o=>o.id===args.observationId);
    const query=normalize(String(args.query??""));
