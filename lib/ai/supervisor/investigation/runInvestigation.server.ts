@@ -582,6 +582,9 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
       // never a second hand-written envelope describing which path it took.
       tools:finalizeOnly?undefined:investigationTools,
       context:{ownerRequest:input.text,locale:input.locale,
+        // Revalidated canonical selector, NOT a new owner-authored price.
+        confirmedCatalogSelection:input.trustedCatalogProductId?
+          {productId:input.trustedCatalogProductId}:null,
         calendar:calendar(identity.asOf),timezone:identity.timezone,currency:identity.currency,
         ownerStatements,previousConversation:input.history.slice(-6),rememberedSelectors:memory?.reads??[],
         capabilities:manifest.filter(m=>visibleIds.has(m.id)).map(m=>({
@@ -992,7 +995,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
           const request=ownerResolutionRequest({question:title,
             input:validOptions?{kind:"options",options:[...known]}:
               {kind:"free_text",hint:hints},
-            context:validOptions?input.inertProposal?.knownClarificationContext?.():undefined});
+            context:input.inertProposal?.knownClarificationContext?.()});
           const awaiting=await ownerInputReply("platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
           if(awaiting){
