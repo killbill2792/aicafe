@@ -986,7 +986,15 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
               // Do not drop separately review-approved facts when another
               // requested goal needs the owner's input. The evidence remains
               // on the durable reply next to a single pending question.
-              const safeBlocks=reply.blocks.slice(0,29);
+              // The rendered clarification is already an inert text block.
+              // Replace that one block with the interactive question while
+              // preserving independently reviewed evidence, cards and warnings.
+              const renderedQuestion=renderInvestigationAnswer({paragraphs:[clarification]},
+                observations,input.locale,{ownerText:input.text});
+              const questionText=renderedQuestion?.blocks.find(block=>block.type==="text");
+              const index=questionText?reply.blocks.findLastIndex(block=>
+                block.type==="text"&&block.text===questionText.text):-1;
+              const safeBlocks=reply.blocks.filter((_,i)=>i!==index).slice(0,29);
               return {reply:{...reply,status:"requires_owner_input",
                 ownerInput:awaiting.reply.ownerInput,
                 blocks:[...safeBlocks,...awaiting.reply.blocks]},usage:awaiting.usage};
