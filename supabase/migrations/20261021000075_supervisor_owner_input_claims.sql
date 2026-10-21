@@ -132,6 +132,7 @@ begin
     char_length(btrim(p_text)) not between 1 and 4000 or
     p_response is null or jsonb_typeof(p_response)<>'object' or
     (select count(*) from jsonb_object_keys(p_response)) not between 2 and 3 or
+    p_response->>'action' is null or
     p_response->>'action' not in ('supply','confirm','dismiss') or
     coalesce(p_response->>'questionId','') !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
   then return jsonb_build_object('ok',false,'reason','invalid_response');
@@ -167,12 +168,12 @@ begin
       and owner_user_id=auth.uid()
     order by created_at desc,id desc limit 1;
   if not found or v_last.role<>'supervisor' or
-    v_last.grounding->'ownerInput'->>'businessId'<>p_business_id::text or
-    v_last.grounding->'ownerInput'->>'questionId'<>p_response->>'questionId' or
+    v_last.grounding->'ownerInput'->>'businessId' is distinct from p_business_id::text or
+    v_last.grounding->'ownerInput'->>'questionId' is distinct from p_response->>'questionId' or
     (p_response->>'action'='supply' and
-      v_last.grounding->'ownerInput'->>'stage'<>'answer') or
+      v_last.grounding->'ownerInput'->>'stage' is distinct from 'answer') or
     (p_response->>'action'='confirm' and
-      v_last.grounding->'ownerInput'->>'stage'<>'confirm')
+      v_last.grounding->'ownerInput'->>'stage' is distinct from 'confirm')
   then return jsonb_build_object('ok',false,'reason','owner_input_not_pending');end if;
   -- The unique prompt index is a second safeguard if another ingestion
   -- path somehow races this transaction.
