@@ -12,7 +12,7 @@ vi.mock("./alexCapabilities.server", () => ({
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import { createP2Registry } from "@/lib/ai/supervisor/p2/registry";
 import { buildAlexP3Registrations, ALEX_P3_REVIEW_ID, ALEX_P3_WHATIF_ID } from "./alexP3Capabilities.server";
-import {alexProductCatalogResolution} from "./alexOwnerInput.server";
+import {alexProductCatalogResolution,alexMissingIngredientCost} from "./alexOwnerInput.server";
 import { presentRegisteredReads } from "@/lib/ai/supervisor/p3/readEvidencePresentation";
 
 const scope = {
@@ -27,9 +27,23 @@ const provenance = { sourceId: "p1.authoritative_snapshot.v1", canonicalReaderId
 const simulateProvenance = { ...provenance, purpose: "pricing_simulate" };
 const quality = { missingInputs: [], estimatedInputs: [], staleInputs: [] };
 
-beforeEach(() => { mockRead.mockReset(); mockSimulate.mockReset(); });
+beforeEach(() => { mockRead.mockReset(); mockSimulate.mockReset();
+  vi.mocked(alexProductCatalogResolution).mockReset().mockResolvedValue(null);
+  vi.mocked(alexMissingIngredientCost).mockReset().mockResolvedValue(null);
+});
 
 describe("Alex P3 pricing-review registration", () => {
+  it("passes the source-resolved product ID into ingredient-cost help",async()=>{
+    const chosenId="a0000000-0000-4000-8000-000000000012";
+    vi.mocked(alexProductCatalogResolution).mockResolvedValueOnce({productId:chosenId});
+    mockRead.mockResolvedValue({status:"unavailable",value:null,reason:"missing_inputs"});
+    const [reg]=buildAlexP3Registrations();
+    await reg.read({...scope,durableOwnerInput:true,ownerClause:"Latte ingredient price"},
+      {purpose:"pricing_review",product:{exactName:"Latte"}});
+    expect(alexMissingIngredientCost).toHaveBeenCalledWith(
+      expect.anything(),{productId:chosenId});
+  });
+
   it("keeps an authoritative zero-match result as verified source evidence",async()=>{
     vi.mocked(alexProductCatalogResolution).mockResolvedValueOnce({
       kind:"zero_match",exactName:"Espresso",sourceRevision:"catalog-10",
@@ -126,6 +140,17 @@ describe("Alex P3 pricing-review registration", () => {
 });
 
 describe("Alex P3 pricing-what-if registration (self-contained, no prior lookup needed)", () => {
+  it("resolves the product for ingredient-price gap detection in scenarios",async()=>{
+    const chosenId="a0000000-0000-4000-8000-000000000012";
+    vi.mocked(alexProductCatalogResolution).mockResolvedValueOnce({productId:chosenId});
+    mockSimulate.mockResolvedValue({status:"unavailable",value:null,reason:"missing_inputs"});
+    const [,whatIf]=buildAlexP3Registrations();
+    await whatIf.read({...scope,durableOwnerInput:true,ownerClause:"Latte quantity"},
+      {purpose:"pricing_simulate",product:{exactName:"Latte"},changes:[]});
+    expect(alexMissingIngredientCost).toHaveBeenCalledWith(
+      expect.anything(),{productId:chosenId});
+  });
+
   it("registers cleanly into the P2/P3 capability registry and is discoverable", () => {
     const [, whatIf] = buildAlexP3Registrations();
     const registry = createP2Registry([whatIf]);
