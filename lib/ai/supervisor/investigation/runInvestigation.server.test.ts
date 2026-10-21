@@ -32,7 +32,7 @@ import {supervisorLoopRegistry,priceExperimentCapabilityId}
   from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {proposeLoop,type LoopRepository,type LoopCreate,type LoopProposal,type OwnerLoopScope}
   from "@/lib/ai/supervisor/loop/engine";
-import {ownerQuotedPriceDelta,ownerNamedUniqueProduct} from "@/lib/ai/supervisor/loop/priceIntent";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 
 
@@ -136,19 +136,17 @@ describe("real price experiment registration in native conversational discovery"
     } as unknown as LoopRepository;
     const seenNames:string[]=[];
     const native=transportFor([
-      read(priceExperimentCapabilityId,{productId:product,increaseCents:10}),
+      read(priceExperimentCapabilityId,{productId:product,productReference:"latte",ownerProductQuote:"latte",variantStatus:"unique",amountMode:"increase",increaseCents:10,targetPriceCents:null,ownerAmountQuote:locale==="en"?"10-cent increase":locale==="es"?"10 centavos":"١٠ سنتات",amountStatus:"unique"}),
     ]);
     const result=await runSupervisorTurn({...base,locale,text:ownerText,
       inertProposal:{tools:[{name:capabilityToolName(priceExperimentCapabilityId),
         description:definition.proposalDescription,
-        parameters:definition.proposalInputJsonSchema}],
+        parameters:priceProposalToolJsonSchema}],
         create:async(name,args)=>{
           seenNames.push(name);
           if(name!==capabilityToolName(priceExperimentCapabilityId))return null;
-          const candidate=args as {productId:string;increaseCents:number};
-          const catalog=(await getMenuControlCenter()).filter(x=>x.active);
-          if(!ownerQuotedPriceDelta(ownerText,undefined,candidate.increaseCents)||
-             !ownerNamedUniqueProduct(ownerText,undefined,candidate.productId,catalog))return null;
+          const candidate=validatePriceProposalCandidate(args,await getMenuControlCenter(),[ownerText]);
+          if(!candidate)return null;
           const proposal=await proposeLoop(scope,supervisorLoopRegistry,repo,
             priceExperimentCapabilityId,candidate,"a0000000-0000-4000-8000-000000000555");
           return {id:proposal.id,text:"Draft price experiment ready for owner approval. POS unchanged."};
