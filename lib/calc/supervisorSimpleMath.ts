@@ -7,9 +7,9 @@ export type SimpleUnit="USD_cents"|"count"|"ratio_bps";
 export type SimpleOperand={value:number;unit:SimpleUnit};
 
 function roundHalfUp(n:bigint,d:bigint):bigint{
-  if(d<=0n)throw new Error("Invalid divisor");
-  const sign=n<0n?-1n:1n,positive=n<0n?-n:n;
-  return sign*((positive*2n+d)/(2n*d));
+  if(d<=BigInt(0))throw new Error("Invalid divisor");
+  const sign=n<BigInt(0)?-BigInt(1):BigInt(1),positive=n<BigInt(0)?-n:n;
+  return sign*((positive*BigInt(2)+d)/(BigInt(2)*d));
 }
 function safe(n:bigint):number|null{
   return n<=BigInt(Number.MAX_SAFE_INTEGER)&&n>=BigInt(-Number.MAX_SAFE_INTEGER)?Number(n):null;
@@ -29,12 +29,12 @@ export function calculateSimple(op:SimpleOperation,a:SimpleOperand,b:SimpleOpera
     return value===null?null:{value,unit:"USD_cents"};
   }
   if(op==="divide"){
-    if(a.unit!=="USD_cents"||!["count","ratio_bps"].includes(b.unit)||y<=0n)return null;
-    const value=safe(roundHalfUp(x*(b.unit==="ratio_bps"?10000n:1n),y));
+    if(a.unit!=="USD_cents"||!["count","ratio_bps"].includes(b.unit)||y<=BigInt(0))return null;
+    const value=safe(roundHalfUp(x*(b.unit==="ratio_bps"?BigInt(10000):BigInt(1)),y));
     return value===null?null:{value,unit:"USD_cents"};
   }
-  if(a.unit!=="USD_cents"||b.unit!=="ratio_bps"||y<0n||y>1000000n)return null;
-  const delta=roundHalfUp(x*y,10000n);
+  if(a.unit!=="USD_cents"||b.unit!=="ratio_bps"||y<BigInt(0)||y>BigInt(1000000))return null;
+  const delta=roundHalfUp(x*y,BigInt(10000));
   const value=safe(op==="percent_increase"?x+delta:x-delta);
   return value===null?null:{value,unit:"USD_cents"};
 }
