@@ -251,6 +251,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    "For any factual price, wage, cost, quantity, time, percentage or date from business records, select fact IDs returned by the server. Do not write these values into your own text.",
    "The server displays fact IDs as verified rendered values. Your text is short natural connecting prose without numbers, monetary symbols, factual action-completion claims, URLs or unsupported café assertions.",
    "For computations call calculate_verified with exact owner quotes or authorized facts. Never do business arithmetic yourself.",
+   "For advanced cross-domain what-if scenarios discover platform scenario expression, use registered source handles and simulate_cafe. Never invent a calculated result.",
    "Only ask a clarification if distinct interpretations materially change the request. For possible multiple variants, inspect the catalog and then select real option IDs.",
    "For a genuine clarification set mode=clarify, text=one precise question, optionIds=matching known record IDs or [] for free text; factIds=[]. No second model reviewer exists.",
    "For answer mode, select the most relevant available fact IDs (maximum 12); if partial state so explicitly. Do not re-request the same failed tool indefinitely.",
@@ -445,6 +446,60 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     result={count:matching.length,rows:view,sourceObservationId:obs.id,
       facts:factView().slice(-35)};
    }else result={status:"unavailable",reason:"no_matching_observation"};
+  }else if(name==="simulate_cafe"){
+   const id=String(args.id??"");
+   const simulation=simulations.find(m=>m.id===id);
+   const plan=planSchema.safeParse(args.input);
+   if(!simulation||!discovered.has(id)||!plan.success||id!==EXPRESSION_ID||
+      identity.currency!=="USD"){
+     result={status:"unavailable",reason:"unknown_or_invalid_simulation"};
+   }else{
+     const projection=projectP1Evidence(shadowEvidence,identity.businessId,input.text,
+       null,statements.slice(-6),snapshot.status==="available"?snapshot.snapshot:undefined);
+     const derived=datasetOperands(observations,scope);
+     const available=[...projection.operands,...derived.operands];
+     const handles=new Set(plan.data.nodes.flatMap(n=>n.op==="source"?[n.handle]:[]));
+     const selected=available.filter(o=>handles.has(o.handle));
+     if(selected.length!==handles.size||selected.length>12){
+       result={status:"unavailable",reason:"missing_or_unapproved_operand",
+         authorizedOperands:available.slice(0,12).map(o=>({handle:o.handle,unit:o.unit}))};
+     }else{
+       const bindings=[...projection.bindings,...derived.bindings].filter(b=>
+         selected.some(o=>o.capabilityId===b.capabilityId));
+       const checked=await registry.invokeSimulation(scope,EXPRESSION_ID,plan.data,{
+         businessId:identity.businessId,locationId:null,currency:"USD",
+         ownerMessage:statements.join("\n").slice(-4000),
+         operands:plan.data.purpose==="no_external_sources"?[]:selected,bindings,
+       },()=>{usage.toolCallCount++;input.onUsage?.({...usage});});
+       const valid=simulationOutputSchema.safeParse(checked);
+       if(!valid.success||valid.data.status==="unavailable"){
+         result={status:"unavailable",reason:"simulation_unavailable",
+           authorizedOperands:available.slice(0,12).map(o=>({handle:o.handle,unit:o.unit}))};
+       }else{
+         const computed=valid.data;
+         const sourceObservations=observations.filter(o=>selected.some(a=>
+           a.capabilityId===o.capabilityId)&&o.reference);
+         const refs=[...new Map(sourceObservations.flatMap(o=>o.reference?[o.reference]:[])
+           .map(r=>[r.identifier,r])).values()];
+         const calculatedId="f"+(facts.size+1);
+         const currency=computed.unit==="USD_cents"&&typeof computed.value==="number";
+         const formatted=typeof computed.value==="number"?
+           formatScenarioValue(computed.value,computed.unit,input.locale):"";
+         facts.set(calculatedId,{
+           id:calculatedId,
+           label:currency?{en,es,ar}[input.locale].SupervisorInvestigation.factAmount:
+             {en,es,ar}[input.locale].SupervisorInvestigation.factPercent,
+           value:formatted,raw:currency?{value:computed.value as number,unit:"USD_cents"}:null,
+           source:refs[0]??null,sources:refs,
+           observationIds:sourceObservations.map(o=>o.id),conditional:true,estimated:true,
+         });
+         result={status:computed.status,factId:calculatedId,unit:computed.unit,
+           value:formatted,sourceHandles:computed.sourceHandles,assumptions:computed.assumptions,
+           missingInputs:computed.missingInputs,
+           authorizedOperands:available.slice(0,12).map(o=>({handle:o.handle,unit:o.unit}))};
+       }
+     }
+   }
   }else if(name==="calculate_verified"){
    const resolve=(factId:unknown,ownerQuote:unknown):{operand:SimpleOperand;fact:Fact|null;owner:boolean}|null=>{
      if(typeof factId==="string"){
