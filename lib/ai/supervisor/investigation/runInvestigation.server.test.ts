@@ -203,6 +203,54 @@ describe("registered natural-language proposal tools",()=>{
  });
 });
 
+
+describe("unified owner-help response at the real investigation dispatcher",()=>{
+  it("routes a typed Alex catalog multi-match through durable ownerInput with no write",async()=>{
+    const sameName={...snapshot.sources.menu[0],id:"a0000000-0000-4000-8000-000000000088",price_cents:650};
+    atomic.mockResolvedValue({status:"available",
+      snapshot:{...snapshot,sources:{...snapshot.sources,
+        menu:[snapshot.sources.menu[0],sameName]}}});
+    const result=await runSupervisorTurn({...base,text:"What's the pricing for Iced Latte?"},transportFor([
+      read("p3.alex.pricing.review.v1",{purpose:"pricing_review",product:{exactName:"Iced Latte"}})
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.ownerInput?.readCapabilityId).toBe("p3.alex.pricing.review.v1");
+    expect(result.reply.blocks[0]).toMatchObject({type:"owner_question",
+      input:{kind:"options",options:[{id:product},{id:sameName.id}]}});
+    expect(result.usage.toolCallCount).toBe(1);
+  });
+  it("asks whether a zero-match typed Alex selector is a new product, without creating it",async()=>{
+    const result=await runSupervisorTurn({...base,text:"I want to introduce a new matcha drink."},transportFor([
+      read("p3.alex.pricing.review.v1",{purpose:"pricing_review",product:{exactName:"Matcha"}})
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.blocks[0]).toMatchObject({type:"owner_question",input:{kind:"free_text"}});
+    expect(result.usage.toolCallCount).toBe(1);
+  });
+  it("does not publish the reviewer's Arabic reason in English owner replies",async()=>{
+    const marker="سبب داخلي غير موثوق";
+    const transport=vi.fn(async(_url:string,init:RequestInit)=>{
+      const body=JSON.parse(String(init.body));
+      if(body.text.format.name==="supervisor_investigation_review")
+        return response({supported:true,complete:false,reason:marker});
+      return response(answer([{kind:"advice",text:"Check your verified sources before deciding.",citations:[]}]));
+    });
+    const result=await runSupervisorTurn({...base,text:"What should I check?"},transport);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain(marker);
+    expect(result.reply.blocks.some(x=>x.type==="warning"&&x.code==="SUPERVISOR_INCOMPLETE")).toBe(true);
+  });
+  it("uses the same pending owner-input dispatcher for reviewed free-text clarification",async()=>{
+    const result=await runSupervisorTurn({...base,text:"Can you tell which one?"},transportFor([
+      answer([{kind:"clarification",text:"Which option do you mean?",citations:[]}])
+    ]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    expect(result.reply.ownerInput?.request.mode).toBe("resolve");
+    expect(result.reply.blocks).toMatchObject([{type:"owner_question"}]);
+  });
+});
+
 describe("default Supervisor iterative cross-domain intelligence",()=>{
   it.each([[17,35,7409],[19,40,8251],[23,20,10943]])("discovers records and computes unseen price/labor composition (%i items, %i minutes)",async(items,minutes,expected)=>{
     const plan={capabilityId:EXPRESSION_ID,version:1,purpose:"preauthorized_operands",description:"Conditional incremental contribution, excluding unobserved overhead and demand",
