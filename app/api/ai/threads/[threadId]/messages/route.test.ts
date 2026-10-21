@@ -143,6 +143,18 @@ describe("POST owner-input persistence and continuation",()=>{
     expect(mocks.run).toHaveBeenCalledTimes(1);
     expect(mocks.run.mock.calls[0][0].text).toBe(confirmed.originalText);
   });
+  it("rejects an old card before creating an orphan owner message",async()=>{
+    mocks.listMessages.mockResolvedValue({items:[
+      {id:"newer-reply",role:"supervisor",contentType:"blocks",
+        createdAt:"2026-10-21T04:00:00Z",grounding:{status:"verified"},
+        blocks:[{type:"text",text:"Newer answer"}],text:null},
+    ]});
+    const response=await POST(interactiveRequest("supply","3.23 / 640"),ctx);
+    expect(response.status).toBe(409);
+    expect(mocks.addOwner).not.toHaveBeenCalled();
+    expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
   it("dismisses without writing and allows later re-asking",async()=>{
     expect((await POST(interactiveRequest("dismiss"),ctx)).status).toBe(201);
     expect(mocks.commitOwnerInput).not.toHaveBeenCalled();
