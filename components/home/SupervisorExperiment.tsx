@@ -5,6 +5,7 @@ export type ExperimentCopy={
   open:string;close:string;product:string;increase:string;preview:string;propose:string;
   approve:string;apply:string;done:string;report:string;waiting:string;loading:string;
   error:string;condition:string;confirmNote:string;reportNote:string;
+  incomplete:string;missingCost:string;missingSales:string;cannotPropose:string;
   selectProposal:string;statusDraft:string;statusApproved:string;statusManual:string;
   statusMonitoring:string;statusExecuting:string;statusRejected:string;
   statusInProgress:string;statusComplete:string;statusInsufficient:string;
@@ -13,7 +14,7 @@ type Item={id:string;name:string;priceCents:number};
 type Proposal={id:string;revision:number;status:string;monitoring_start_date:string|null;
   canonical_effect_payload:{productName:string;oldPriceCents:number;newPriceCents:number}};
 type Simulation={effect:{productName:string;oldPriceCents:number;newPriceCents:number};
-  baseline:{estimatedAdditionalRevenue7DaysCents:number}};
+  baseline:{estimatedAdditionalRevenue7DaysCents:number|null;missingInputs:string[]}};
 export default function SupervisorExperiment({threadId,locale,copy,initialProposalId,refreshVersion}:{
   threadId:string;locale:"en"|"es"|"ar";copy:ExperimentCopy;initialProposalId?:string;refreshVersion?:number}){
  const [open,setOpen]=useState(Boolean(initialProposalId)),[busy,setBusy]=useState(false);
@@ -73,8 +74,13 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
      onClick={()=>void invoke({action:"simulate",productId:itemId,increaseCents:delta})}>{copy.preview}</button>
    {simulation&&<div className="space-y-2">
     <p>{simulation.effect.productName}: {formatCents(simulation.effect.oldPriceCents,locale)} → {formatCents(simulation.effect.newPriceCents,locale)}</p>
-    <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale)}</p>
-    <button className={actionClass} disabled={busy}
+    {simulation.baseline.estimatedAdditionalRevenue7DaysCents!==null?
+      <p>{copy.condition} {formatCents(simulation.baseline.estimatedAdditionalRevenue7DaysCents,locale)}</p>:
+      <p>{copy.incomplete}</p>}
+    {simulation.baseline.missingInputs.includes("ingredient_cost")&&<p>{copy.missingCost}</p>}
+    {simulation.baseline.missingInputs.includes("covered_seven_day_sales")&&<p>{copy.missingSales}</p>}
+    {simulation.baseline.missingInputs.length>0&&<p>{copy.cannotPropose}</p>}
+    <button className={actionClass} disabled={busy||simulation.baseline.missingInputs.length>0}
       onClick={()=>void invoke({action:"propose",productId:itemId,increaseCents:delta,
         requestKey:crypto.randomUUID(),locale})}>{copy.propose}</button>
    </div>}
