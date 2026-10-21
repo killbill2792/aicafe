@@ -61,8 +61,10 @@ export function ambiguousPriceProposalOptions(raw:unknown,catalog:readonly {
   const matches=catalog.filter(item=>item.active&&normalize(item.baseName)===reference);
   if(matches.length<2||matches.length>30)return [];
   return matches.map(item=>{
-    const label=item.name+(item.sizeLabel?" — "+item.sizeLabel:"")+
-      (typeof item.priceCents==="number"?" — "+(item.priceCents/100).toFixed(2)+" USD":"");
-    return {id:item.id,label:{en:label,es:label,ar:label}};
+    const displayName=item.name;
+    const label=(locale:"en"|"es"|"ar")=>displayName+
+      (typeof item.priceCents==="number"?" — "+
+        new Intl.NumberFormat(locale,{style:"currency",currency:"USD"}).format(item.priceCents/100):"");
+    return {id:item.id,label:{en:label("en"),es:label("es"),ar:label("ar")}};
   });
 }
