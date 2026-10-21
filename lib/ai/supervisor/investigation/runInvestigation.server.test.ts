@@ -260,6 +260,55 @@ describe("unified owner-help response at the real investigation dispatcher",()=>
     expect(JSON.stringify(result.reply.blocks)).not.toContain(marker);
     expect(result.reply.blocks.some(x=>x.type==="warning"&&x.code==="SUPERVISOR_INCOMPLETE")).toBe(true);
   });
+  it("uses the validated computed amount rather than a forged formula claim in a durable question",async()=>{
+    const draft=answer([{kind:"clarification",
+      text:"Given $3 and $1.83, the total is $999.00. Which staffing plan should I compare?",
+      citations:[],formulas:[{claim:"$999.00",formula:"a + b",
+        variables:[{name:"a",value:3,source:"$3"},{name:"b",value:1.83,source:"$1.83"}]}]}]);
+    const result=await runSupervisorTurn({...base,
+      text:"With $3 and $1.83, compare a staffing plan and ask which one."},
+      transportFor([draft]));
+    expect(result.reply.status).toBe("requires_owner_input");
+    const question=result.reply.blocks.find(b=>b.type==="owner_question");
+    expect(question?.type).toBe("owner_question");
+    if(question?.type!=="owner_question")throw new Error("Missing reviewed owner question");
+    expect(question.title.en).toContain("$4.83");
+    expect(question.title.en).not.toContain("$999.00");
+    expect(question.title.es).not.toContain("$999.00");
+    expect(question.title.ar).not.toContain("$999.00");
+    expect(result.reply.ownerInput?.request.question.en).toBe(question.title.en);
+    expect(JSON.stringify(result.reply.blocks)).not.toContain("$999.00");
+  });
+  it("persists period selectors and full goals on a reviewed durable question before its owner answers",async()=>{
+    const old={from:"2026-10-01",to:"2026-10-07"};
+    const changed={from:"2026-10-08",to:"2026-10-14"};
+    const capabilityId="p3.money.expense_entries.v1";
+    const original="Compare our spending with the staffing plan, then show other financial risks.";
+    const first=await runSupervisorTurn({...base,text:original},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([
+        {kind:"evidence",text:"The expense entries were retrieved for this comparison.",citations:["r1"]},
+        {kind:"clarification",text:"Which staffing plan should I compare?",citations:[]},
+      ]),
+    ]));
+    expect(first.reply.status).toBe("requires_owner_input");
+    expect(first.reply.investigationMemory?.ownerStatements).toContain(original);
+    expect(first.reply.investigationMemory?.reads).toContainEqual({
+      capabilityId,inputJson:JSON.stringify(query("money.expense_entries",{period:old}))});
+    expect(first.reply.investigationMemory?.calendarScopes).toContainEqual({
+      domain:"money",kind:"period",...old});
+    p1.mockClear();
+    await runSupervisorTurn({...base,text:original,
+      ownerClarification:"The weekday plan",
+      investigationMemory:first.reply.investigationMemory},transportFor([
+      read(capabilityId,query("money.expense_entries",{period:changed})),
+      read(capabilityId,query("money.expense_entries",{period:old})),
+      answer([{kind:"evidence",
+        text:"The recorded expense entries were retrieved for the original period.",citations:["r1"]}]),
+    ]));
+    expect(p1).toHaveBeenCalledTimes(1);
+    expect(p1.mock.calls[0][2]).toMatchObject({period:old});
+  });
   it("uses the same pending owner-input dispatcher for reviewed free-text clarification",async()=>{
     const result=await runSupervisorTurn({...base,text:"Can you tell which one?"},transportFor([
       answer([{kind:"clarification",text:"Which option do you mean?",citations:[]}])
