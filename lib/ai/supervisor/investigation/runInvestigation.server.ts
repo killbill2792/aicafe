@@ -1093,8 +1093,6 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             try{return !!investigationCalendarScope(JSON.parse(r.inputJson),domain);}
             catch{return false;}
           });
-          const temporalDomains=[...new Set([...temporalReads.map(o=>readOwner(o.capabilityId)!),
-            ...temporalHistory.map(r=>readOwner(r.capabilityId)!)])];
           const requestedGoalDomain=review.clarificationGoalDomain;
           const expectedDomains=requestedGoalDomain==="expenses"?["money"]:
             requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
