@@ -10,4 +10,13 @@ describe("structured price candidate",()=>{
  it("rejects target-price confusion",()=>expect(check({amountMode:"target",increaseCents:null,targetPriceCents:700},"Increase Latte 12 oz to 10 cents")).toBeNull());
  it("rejects wrong-size UUID",()=>expect(check({productId:"another"},"Try Latte 12 oz by 10 cents")).toBeNull());
  it("rejects underspecified variants",()=>expect(check({productReference:"Latte",ownerProductQuote:"Latte"},"Increase Latte by 10 cents")).toBeNull());
+ it("accepts only the owner-selected active variant for an otherwise ambiguous price proposal",()=>{
+   const ambiguous={...base,productReference:"Latte",ownerProductQuote:"Latte"};
+   expect(validatePriceProposalCandidate(ambiguous,menu,["Raise Latte by 10 cents"],id))
+     .toEqual({productId:id,increaseCents:10});
+   expect(validatePriceProposalCandidate({...ambiguous,productId:"another"},menu,
+     ["Raise Latte by 10 cents"],id)).toBeNull();
+   expect(validatePriceProposalCandidate(ambiguous,menu.map(row=>
+     row.id===id?{...row,active:false}:row),["Raise Latte by 10 cents"],id)).toBeNull();
+ });
 });
