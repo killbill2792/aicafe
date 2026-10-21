@@ -42,7 +42,7 @@ export async function commitConfirmedOwnerInput(scope:OwnerInputWriteScope,
     // authoritative data. Never call the domain writer again under this ID.
     if(previous.data.state!=="applied"&&previous.data.state!=="started")
       return {ok:false,reason:"prior_attempt_uncertain"};
-    if(!(await ownerInputWrites.verify(scope,pending.request,pending.answer)))
+    if(!(await ownerInputWrites.verify(scope,pending.request,pending.answer!)))
       return {ok:false,reason:"prior_attempt_unverified"};
     if(previous.data.state==="started"){
       const marked=await admin.from("supervisor_owner_input_claims")
@@ -53,7 +53,7 @@ export async function commitConfirmedOwnerInput(scope:OwnerInputWriteScope,
     }
     return {ok:true,replayed:true};
   }
-  const applied=await ownerInputWrites.apply(scope,pending.request,pending.answer);
+  const applied=await ownerInputWrites.apply(scope,pending.request,pending.answer!);
   if(!applied.ok)return applied;
   const marked=await admin.from("supervisor_owner_input_claims")
     .update({state:"applied",updated_at:new Date().toISOString()})
