@@ -507,6 +507,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
   let lastRejectedAnswerSignature:string|null=null;
   let lastDuplicateCapability:string|null=null;
   let lastDuplicateObservationCount=-1;
+  let lastDuplicateBatch:string|null=null;
   for(let round=0;usage.modelCallCount<INVESTIGATION_LIMITS.modelCalls-1&&Date.now()<deadline;round++){
     // TEMPORARY, TEST-ENVIRONMENT-ONLY -- see logSupervisorDebugPayload.
     // Logs whatever specific retry feedback (§5b/§6) the PREVIOUS round's
@@ -654,6 +655,16 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             v.definition.owner,id=>manifest.find(m=>m.id===id)?.owner)&&
           !pendingOwnerCalendarCorrection(v.args,input.text,identity.asOf,memory,ownerStatements));
       if(!canDispatch){
+        const duplicateBatch=requests.length===step.calls.length&&requests.length>=2&&
+          signatures.every(sig=>attempted.has(sig))?
+          JSON.stringify({signatures:[...signatures].sort(),observationCount:observations.length}):null;
+        if(duplicateBatch&&duplicateBatch===lastDuplicateBatch)
+          return await askWhenStuck({
+            en:"Which detail should I clarify before continuing?",
+            es:"¿Qué detalle debo aclarar antes de continuar?",
+            ar:"ما التفاصيل التي يجب توضيحها قبل المتابعة؟",
+          });
+        lastDuplicateBatch=duplicateBatch;
         feedback="This multi-tool selection is dependent, redundant, out of scope, or over budget. Choose independent authorized source reads only; use a canonical structured source once, then calculate from its returned operands. Otherwise make one sequential request.";
         logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
           outcome:"rejected_preflight",requested:step.calls.map(c=>({name:c.name,arguments:c.arguments,callId:c.callId})),
@@ -675,6 +686,7 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             }))}});
         continue;
       }
+      lastDuplicateBatch=null;
       for(const signature of signatures)attempted.add(signature);
       logSupervisorDebugPayload({point:"parallel_batch",requestId:debugRequestId,round,
         outcome:"concurrent",requested:requests.map(v=>v.capabilityId)});
