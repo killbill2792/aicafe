@@ -1100,18 +1100,26 @@ export async function runInvestigationTurn(input:InvestigationInput,transport:In
             requestedGoalDomain==="scheduling"||requestedGoalDomain==="staff"?["olivia","labor"]:
             requestedGoalDomain==="sales"?["sales","money"]:
             requestedGoalDomain==="pricing"||requestedGoalDomain==="menu"?["alex","pricing","menu"]:null;
-          const relevantDomains=expectedDomains?temporalDomains.filter(d=>expectedDomains.includes(d)):[];
-          // Before any temporal read, a positive independent reviewer goal
-          // still allows one registered domain to authenticate its dated
-          // clarification. Never infer a domain from the question prose.
-          const registeredGoalDomains=expectedDomains?
-            [...new Set(manifest.filter(m=>expectedDomains.includes(m.owner)).map(m=>m.owner))]:[];
+          // Match the independently reviewed goal to a REGISTERED temporal
+          // input shape. Scheduling works in weeks, not labor-ledger periods.
+          const kindForGoal=requestedGoalDomain==="scheduling"?"week":
+            requestedGoalDomain==="expenses"||requestedGoalDomain==="sales"?"period":null;
+          const candidates=expectedDomains?manifest.filter(m=>
+            expectedDomains.includes(m.owner)&&
+            (kindForGoal===null||registeredCalendarKind(m.inputJsonSchema)===kindForGoal)&&
+            registeredCalendarKind(m.inputJsonSchema)!==null):[];
+          const allowedIds=new Set(candidates.map(m=>m.id));
+          const temporalInScope=[
+            ...temporalReads.map(o=>o.capabilityId).filter(id=>allowedIds.has(id)),
+            ...temporalHistory.map(r=>r.capabilityId).filter(id=>allowedIds.has(id)),
+          ];
+          const relevantDomains=[...new Set(temporalInScope.map(id=>readOwner(id)!).filter(Boolean))];
+          const registeredGoalDomains=[...new Set(candidates.map(m=>m.owner))];
           const singleDomain=relevantDomains.length===1?relevantDomains[0]:
             relevantDomains.length===0&&registeredGoalDomains.length===1?registeredGoalDomains[0]:null;
-          const origin=singleDomain&&expectedDomains?.includes(singleDomain)?
-            ([...temporalReads].reverse().find(o=>readOwner(o.capabilityId)===singleDomain)?.capabilityId??
-              [...temporalHistory].reverse().find(r=>readOwner(r.capabilityId)===singleDomain)?.capabilityId??
-              manifest.find(m=>m.owner===singleDomain)?.id):null;
+          const origin=singleDomain?
+            [...temporalInScope].reverse().find(id=>readOwner(id)===singleDomain)??
+              candidates.find(m=>m.owner===singleDomain)?.id:null;
           const awaiting=await ownerInputReply(origin??"platform.owner_input.resolve.v1",{},
             {status:"requires_owner_input",ownerInput:request});
           if(awaiting){
