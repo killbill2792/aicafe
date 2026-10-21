@@ -12,6 +12,7 @@ export type OwnerInputWriteRegistration={
   prepare:(request:OwnerInputRequest,answer:string)=>PreparedInput|null;
   apply:(scope:OwnerInputWriteScope,request:OwnerInputRequest,answer:string)=>
     Promise<{ok:true}|{ok:false;reason:string}>;
+  verify?:(scope:OwnerInputWriteScope,request:OwnerInputRequest,answer:string)=>Promise<boolean>;
 };
 /** The registry is compiled from domain-owned reviewed handlers; the model may only select an ID. */
 export function createOwnerInputWriteRegistry(definitions:readonly OwnerInputWriteRegistration[]){
@@ -31,6 +32,12 @@ export function createOwnerInputWriteRegistry(definitions:readonly OwnerInputWri
     prepare:(raw:unknown,answer:string):PreparedInput|null=>{
       const match=selected(raw);
       return match?match.entry.prepare(match.request,answer):null;
+    },
+    async verify(scope:OwnerInputWriteScope,raw:unknown,answer:string){
+      const match=selected(raw);
+      return !!match&&!!match.entry.verify&&
+        !!match.entry.prepare(match.request,answer)&&
+        await match.entry.verify(scope,match.request,answer);
     },
     async apply(scope:OwnerInputWriteScope,raw:unknown,answer:string){
       const match=selected(raw);
@@ -67,6 +74,19 @@ export const alexOwnerInputWrite:OwnerInputWriteRegistration={
       es:`Confirma: ¿guardar ${label} como precio indicado por el propietario? (Sin recibo verificado.)`,
       ar:`يرجى التأكيد: هل نحفظ ${label} كسعر ذكره المالك؟ (لم يتم التحقق من إيصال.)`,
     }};
+  },
+  verify:async(scope,request,answer)=>{
+    const amount=parseOwnerPackageCost(answer);
+    if(!amount)return false;
+    const {identity}=await authorizedOwnerP1();
+    if(identity.businessId!==scope.businessId||identity.currency!=="USD")return false;
+    const source=await readAuthorizedAtomicP1SourceSnapshot();
+    if(source.status!=="available"||source.snapshot.businessId!==scope.businessId)return false;
+    const matches=source.snapshot.sources.ingredientPrices.filter(p=>
+      p.ingredient_id===request.writeContext.ingredientId&&
+      p.effective_from===identity.asOf&&p.source==="manual");
+    return matches.length===1&&matches[0].cost_per_base_unit_micros===
+      Math.round(amount.packageCostCents/amount.packageQuantity*1000000);
   },
   apply:async(scope,request,answer)=>{
     const amount=parseOwnerPackageCost(answer);
