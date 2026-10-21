@@ -19,8 +19,8 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {ownerQuotedPriceDelta,ownerNamedUniqueProduct} from "@/lib/ai/supervisor/loop/priceIntent";
-import {supervisorLoopRegistry} from "@/lib/ai/supervisor/loop/priceExperiment.server";
+import {validatePriceProposalCandidate,priceProposalToolJsonSchema} from "@/lib/ai/supervisor/loop/priceIntent";
+import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -113,7 +113,7 @@ export async function POST(request: Request, context: RouteContext) {
         const definition=supervisorLoopRegistry.get(capabilityId);
         return {name:capabilityToolName(capabilityId),
           description:definition.proposalDescription,
-          parameters:definition.proposalInputJsonSchema};
+          parameters:capabilityId===priceExperimentCapabilityId?priceProposalToolJsonSchema:definition.proposalInputJsonSchema};
       });
       const completed=await runSupervisorTurn({
         text: input.text, locale: input.locale, asOf: identity.asOf,
@@ -125,18 +125,14 @@ export async function POST(request: Request, context: RouteContext) {
           if(!capabilityId||authorized.identity.businessId!==scope.businessId||
             authorized.identity.currency!=="USD")return null;
           const definition=supervisorLoopRegistry.get(capabilityId);
-          if(!rawArgs||typeof rawArgs!=="object"||Array.isArray(rawArgs))return null;
-          const raw=rawArgs as Record<string,unknown>;
-          if(typeof raw.productId!=="string"||typeof raw.increaseCents!=="number"||
-            !Number.isSafeInteger(raw.increaseCents))return null;
-          const prior=olderOwnerTexts[0];
-          if(!ownerQuotedPriceDelta(input.text,prior,raw.increaseCents))return null;
-          const menu=(await getMenuControlCenter()).filter(x=>x.active);
-          if(!ownerNamedUniqueProduct(input.text,prior,raw.productId,menu))return null;
+          if(capabilityId!==priceExperimentCapabilityId)return null;
+          const checked=validatePriceProposalCandidate(rawArgs,
+            await getMenuControlCenter(),[input.text,...olderOwnerTexts]);
+          if(!checked)return null;
           const proposed=await proposeLoop({businessId:scope.businessId,
             ownerUserId:scope.ownerUserId,threadId:id,locale:input.locale},
             supervisorLoopRegistry,new SupabaseLoopRepository(),capabilityId,
-            rawArgs,input.clientMessageId);
+            checked,input.clientMessageId);
           const copy=({en,es,ar} as const)[input.locale].SupervisorExperiment;
           const effect=definition.parseEffect(proposed.canonicalEffectPayload);
           const cents=effect.newPriceCents;
