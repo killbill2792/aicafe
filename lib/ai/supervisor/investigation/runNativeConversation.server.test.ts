@@ -31,7 +31,10 @@ vi.mock("@/lib/ai/supervisor/p3/sourceRegistry.server",()=>({
     inputJsonSchema:{type:"object",additionalProperties:false,
       properties:{purpose:{type:"string"}},required:["purpose"]}}],
   preflightRead:()=>true,
-  invoke:async()=>fixtures.invoke(),
+  invoke:async(_scope:unknown,_id:unknown,_input:unknown,onDispatch?:()=>void)=>{
+    onDispatch?.();
+    return fixtures.invoke();
+  },
  }),
 }));
 import {runNativeConversationTurn} from "./runNativeConversation.server";
