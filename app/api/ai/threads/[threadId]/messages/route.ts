@@ -26,7 +26,7 @@ import {proposeLoop} from "@/lib/ai/supervisor/loop/engine";
 import {capabilityToolName} from "@/lib/ai/supervisor/investigation/runInvestigation.server";
 import {getMenuControlCenter} from "@/lib/data/getMenuControlCenter";
 import {authorizedOwnerP1} from "@/lib/metrics/p1Readers.server";
-import {readAuthorizedAtomicP1SourceSnapshot} from "@/lib/metrics/p1AtomicSourceSnapshot.server";
+import {alexCatalogChoiceStillValid} from "@/lib/pricing/alexOwnerInput.server";
 import {validatePriceProposalCandidate,priceProposalToolJsonSchema,ambiguousPriceProposalOptions} from "@/lib/ai/supervisor/loop/priceIntent";
 import {supervisorLoopRegistry,priceExperimentCapabilityId} from "@/lib/ai/supervisor/loop/priceExperiment.server";
 import {SupabaseLoopRepository} from "@/lib/ai/supervisor/loop/supabase.server";
@@ -135,16 +135,16 @@ export async function POST(request: Request, context: RouteContext) {
               readInput:JSON.parse(state.readInputJson),request:state.request,questionId:state.questionId});
           }else if(state.request.writeContext.domain==="menu"&&
             state.request.writeContext.catalogRevision){
-            // A once-valid option must be rechecked against the current
-            // authenticated catalog epoch before it can guide a new read.
-            const fresh=await readAuthorizedAtomicP1SourceSnapshot();
-            if(fresh.status!=="available"||fresh.snapshot.businessId!==scope.businessId||
-              fresh.snapshot.truncated.menu||
-              (state.request.input.kind==="options"&&
-                (!state.request.input.options.some(o=>o.id===value)||
-                 !fresh.snapshot.sources.menu.some(m=>m.is_active&&m.id===value)))){
-              // Ignore stale pin; rediscover current options from the original
-              // question instead of reusing stale IDs or silently committing.
+            // Recheck the exact source-bound menu identity that issued this
+            // card. A row can remain active while its product family/name
+            // changes; unrelated sales or expenses must not revoke choices.
+            const valid=state.request.input.kind!=="options"||
+              (state.request.input.options.some(option=>option.id===value)&&
+                await alexCatalogChoiceStillValid(scope.businessId,value,
+                  state.request.writeContext["catalogIdentity:"+value]??""));
+            if(!valid){
+              // A stale choice is not authority to select a different product.
+              // Rediscover from the original question without retaining its ID.
               resumedOriginalText=state.originalText;
             }else{
               resumedOriginalText=resumed;
