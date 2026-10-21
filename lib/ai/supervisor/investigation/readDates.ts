@@ -78,12 +78,15 @@ export function authenticatedOwnerCalendarScope(text:string,domain:string,
     Date.parse(ranges[0].from+"T12:00:00Z");
   const monday=new Date(ranges[0].from+"T12:00:00Z").getUTCDay()===1;
   if(monday&&days===6*86400000)return {domain,kind,week:ranges[0].from};
-  // A single explicit scheduling day is a valid correction to its containing
-  // Monday-Sunday week. Only normalize an unambiguous single-day window.
-  if(ranges[0].from!==ranges[0].to)return null;
-  const date=new Date(ranges[0].from+"T12:00:00Z");
-  date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+6)%7));
-  return {domain,kind,week:date.toISOString().slice(0,10)};
+  // Any unambiguous sub-week correction remains in a single scheduling
+  // week. Normalize both endpoints before persisting across further cards.
+  const containingWeek=(day:string)=>{
+    const date=new Date(day+"T12:00:00Z");
+    date.setUTCDate(date.getUTCDate()-((date.getUTCDay()+6)%7));
+    return date.toISOString().slice(0,10);
+  };
+  const start=containingWeek(ranges[0].from),end=containingWeek(ranges[0].to);
+  return start===end?{domain,kind,week:start}:null;
 }
 
 export function investigationReadDatesMatch(input:unknown,current:string,asOf:string,
