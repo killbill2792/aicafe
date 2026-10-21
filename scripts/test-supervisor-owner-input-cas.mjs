@@ -107,6 +107,24 @@ try{
   check((await admin.query("select count(*)::int as n from public.ingredient_prices where ingredient_id=$1",
     [ingredient2])).rows[0].n===1,"race results in exactly one price");
 
+  // PostgreSQL NUMERIC rounds exact half-microcent ties away from zero.
+  // The application must verify the same 504688 value without float drift.
+  const tieIngredient="11221221-9999-4999-8999-112211221122";
+  await admin.query("insert into public.ingredients(id,business_id,name,base_unit) values($1,$2,'Half-up test','ml')",
+    [tieIngredient,cafeA]);
+  await admin.query("insert into public.recipe_lines(menu_item_id,ingredient_id,quantity) values($1,$2,10)",
+    [product2,tieIngredient]);
+  const tieEpoch=await revision();
+  await asOwner(owner,ownerA);
+  const tie=await call(owner,[cafeA,product2,tieIngredient,tieEpoch,day,323,640]);
+  await owner.query("COMMIT");
+  check(tie.ok===true,"valid half-microcent package price accepted");
+  const tieSaved=(await admin.query(
+    "select cost_per_base_unit_micros from public.ingredient_prices where ingredient_id=$1",
+    [tieIngredient])).rows;
+  check(tieSaved.length===1&&Number(tieSaved[0].cost_per_base_unit_micros)===504688,
+    "database stores exact NUMERIC 504688 for 3.23 / 640");
+
   // Two different tenants have different epoch locks. No table-wide lock.
   check((await admin.query("select revision from public.p1_business_source_epochs where business_id=$1",
     [cafeB])).rows.length===1,"unrelated café epoch remains independently accessible");
