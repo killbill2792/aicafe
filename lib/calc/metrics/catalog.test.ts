@@ -1,5 +1,5 @@
 import { describe,expect,it } from "vitest";
-import { computeMetric,metricCatalog,type MetricDailyInput } from "./catalog";
+import { computeMetric,metricCatalog,verifiedDailyCogs,type MetricDailyInput } from "./catalog";
 
 const itemId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const ingredientId="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -56,6 +56,17 @@ describe("M1 typed metric catalog",()=>{
     expect(result.coverage).toBe(0);
     const covered=computeMetric("sales_per_labor_hour",{fromHour:10,toHour:12},recorded);
     expect(covered).toEqual({value:8000,coverage:1,missing:[]});
+  });
+  it("proves COGS only when every cost is known and the rollup reconciles",()=>{
+    expect(verifiedDailyCogs(recorded.items!,8)).toBe(true);
+    expect(verifiedDailyCogs(recorded.items!,9)).toBe(false);
+    const incomplete={...recorded.items![0],recipeLines:[],ownerCostCents:null};
+    expect(verifiedDailyCogs([incomplete],0)).toBe(false);
+    expect(verifiedDailyCogs([],0)).toBe(true);
+    expect(computeMetric("cogs_pct",{},{
+      ...recorded,facts:{...recorded.facts!,ingredientsCents:8},
+      cogsCoverageVerified:verifiedDailyCogs(recorded.items!,8),
+    }).value).toBe(4);
   });
   it("has the requested catalog and validated metric parameters",()=>{
     expect(Object.keys(metricCatalog)).toHaveLength(13);

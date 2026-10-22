@@ -22,6 +22,20 @@ export type ItemEvidence = {
   ingredientPriceMicros: Record<string,number>;
   ownerCostCents: number | null;
 };
+/** A daily COGS figure is usable only when every sold item has verified
+ * cost and the total reconciles to the source rollup. Unknown is never zero. */
+export function verifiedDailyCogs(items:ItemEvidence[],rollupCostCents:number):boolean {
+  if(!Number.isSafeInteger(rollupCostCents)||rollupCostCents<0)return false;
+  let computed=0;
+  for(const item of items){
+    if(!Number.isFinite(item.units)||item.units<0)return false;
+    const resolved=resolveProductCost(
+      evaluateRecipeCost(item.recipeLines,item.ingredientPriceMicros),item.ownerCostCents);
+    if(resolved.costCents===null||!Number.isFinite(resolved.costCents))return false;
+    computed+=item.units*resolved.costCents;
+  }
+  return Number.isFinite(computed)&&roundHalfUpToCent(computed)===rollupCostCents;
+}
 export type MetricDailyInput = {
   date: string;
   facts?: DailyFacts;

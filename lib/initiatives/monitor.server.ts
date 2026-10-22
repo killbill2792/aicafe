@@ -78,7 +78,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           (eligibleCorrection || !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1)));
         if(!computed.length)continue;
         const input=await readMetricDay(initiative.business_id,date,{
-          items:computed.some(m=>m.metric_key?.startsWith("item_")),
+          items:computed.some(m=>m.metric_key?.startsWith("item_")||m.metric_key==="cogs_pct"),
           hours:computed.some(m=>m.metric_key==="sales_per_labor_hour"),
           ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
             .map(m=>String(m.params.ingredientId)),

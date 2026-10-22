@@ -8,7 +8,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { readPeriodItemSales } from "./periodItemSales.server";
-import type { MetricDailyInput, ItemEvidence } from "@/lib/calc/metrics/catalog";
+import { verifiedDailyCogs, type MetricDailyInput, type ItemEvidence } from "@/lib/calc/metrics/catalog";
 import type { Timecard, RecipeLine } from "@/lib/calc/types";
 import type { ProposeInitiative, InitiativeScope, InitiativeRow, MetricRow,
   ObservationRow, EvaluationRow } from "@/lib/initiatives/contracts";
@@ -325,5 +325,7 @@ export async function readMetricDay(businessId:string,date:string,
     input.ingredientPriceMicros=priceMap;
     if(input.items)input.items=input.items.map(i=>({...i,ingredientPriceMicros:priceMap}));
   }
+  if(input.items&&facts?.salesDataStatus==="actual")
+    input.cogsCoverageVerified=verifiedDailyCogs(input.items,facts.ingredientsCents);
   return input; // running costs intentionally not guessed: unavailable until daily source is verified
 }
