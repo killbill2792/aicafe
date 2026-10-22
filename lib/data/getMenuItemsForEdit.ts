@@ -184,7 +184,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       name: item.name,
       baseName: item.base_name ?? item.name,
       sizeLabel: item.size_label ?? null,
-      priceCents: item.price_cents ?? 0,
+      priceCents: Number(item.price_cents),
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
       menuGroup: item.menu_group ?? null,
