@@ -686,7 +686,7 @@ function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
 const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
   en:{zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90},
   es:{cero:0,uno:1,una:1,un:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,dieciséis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiuno:21,veintidós:22,veintidos:22,veintitrés:23,veintitres:23,veinticuatro:24,veinticinco:25,veintiséis:26,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29,treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90},
-  ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
+  ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشر":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
 };
 type SpokenWord={word:string;start:number;end:number;group:number};
 type SpokenValue={value:number;kind:Kind};
@@ -737,6 +737,9 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
       minor!==undefined&&minor>=20&&minor%10===0){
       // In Arabic, "خمسة وخمسون" is 55, with the units first.
       value+=minor;next+=2;
+    }else if(locale==="ar"&&major>0&&major<10&&connector===0&&minor===10){
+      // A teen ("خمسة عشر") is one number, not the price five.
+      value+=10;next++;
     }
     return {value,next};
   };
@@ -764,7 +767,10 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
       attachedMoney=true;next++;
       const conjunct=is(next,joiners,currentGroup)?1:0;
       const fractional=words[next+conjunct]?.group===currentGroup?number(next+conjunct):null;
-      if(fractional&&fractional.value<=99){
+      if(fractional&&fractional.value<=99&&
+        !is(fractional.next,dollars,currentGroup)){
+        // "five dollars and ten dollars" states two whole prices.
+        // A second currency unit cannot be a fractional-cent component.
         next=fractional.next;
         const explicitCents=is(next,centsUnits,currentGroup);
         value+=explicitCents?fractional.value:
