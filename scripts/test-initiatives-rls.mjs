@@ -66,11 +66,30 @@ try{
     "a rejected child metric must roll back its parent in the same transaction");
   await db.query("insert into initiative_metrics(id,initiative_id,role,source,metric_key,comparator,target_kind,target) values($1,$2,'primary','computed','net_sales','gte','absolute',100)",[MID,ID]);
   await db.query("insert into initiative_observations(metric_id,business_date,value,coverage,source) values($1,'2026-10-15',100,1,'computed')",[MID]);
-  await db.query("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest) values($1,'2026-10-15','on_track','keep','on_track:keep')",[ID]);
+  await db.query("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest,transition_key) values($1,'2026-10-15','on_track','keep','on_track:keep','initial-transition')",[ID]);
+  const checkinId="77777777-7777-4777-8777-777777777777";
+  await db.query("insert into initiative_metrics(id,initiative_id,role,source,metric_key,comparator,target_kind,target,checkin_question,checkin_audience,data_gap) values($1,$2,'guardrail','checkin',null,'gte','absolute',1,'Did it arrive?','owner','owner response')",[checkinId,ID]);
+  await db.query("update owner_initiatives set status='active' where id=$1",[ID]);
+  const checkinSql="select record_owner_initiative_checkin_atomic($1,$2,$3,$4,$5,$6,$7,$8) as result";
+  const firstArgs=[BIZ,A,checkinId,"2026-10-15",null,"first note",null,"first-operation-key"];
+  const first=(await db.query(checkinSql,firstArgs)).rows[0].result;
+  assert.deepEqual(first,{created:true,corrected:false,revision:1});
+  const correction=[BIZ,A,checkinId,"2026-10-15",1,"corrected",1,"second-operation-key"];
+  assert.deepEqual((await db.query(checkinSql,correction)).rows[0].result,
+    {created:false,corrected:true,revision:2});
+  assert.deepEqual((await db.query(checkinSql,firstArgs)).rows[0].result,first,
+    "a delayed duplicate operation must not overwrite the correction");
+  const saved=(await db.query("select value,revision,coverage from initiative_observations where metric_id=$1",[checkinId])).rows[0];
+  assert.equal(Number(saved.value),1);
+  assert.equal(saved.revision,2);
+  assert.equal(Number(saved.coverage),1);
+  await assert.rejects(db.query(checkinSql,[BIZ,A,checkinId,"2026-10-15",0,"stale",1,"third-operation-key"]),{code:"40001"});
+  await assert.rejects(db.query(checkinSql,[BIZ,B,checkinId,"2026-10-15",1,"forged",null,"foreign-operation-key"]),{code:"42501"});
   await actor(A,async()=>{
     for(const table of ["owner_initiatives","initiative_metrics","initiative_observations","initiative_evaluations"])
       assert.equal((await db.query("select * from "+table)).rowCount,
-        table==="owner_initiatives"||table==="initiative_metrics"?2:1,table);
+        table==="owner_initiatives"?2:table==="initiative_metrics"?3:
+          table==="initiative_observations"?2:1,table);
     await denied("update owner_initiatives set status='active'");
     await denied("delete from initiative_metrics");
     await denied("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest) values ('44444444-4444-4444-8444-444444444444','2026-10-15','met','keep','forged')");
