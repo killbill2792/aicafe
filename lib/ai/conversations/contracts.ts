@@ -90,7 +90,7 @@ export const evidenceReferenceSchema = z.strictObject({
   asOf: z.string().min(1).max(40),
 });
 const textBlockSchema = z.strictObject({
-  type: z.literal("text"), text: z.string().trim().min(1).max(1200),
+  type: z.literal("text"), text: z.string().min(1).max(1200),
 });
 const warningBlockSchema = z.strictObject({
   type: z.literal("warning"), code: z.string().min(1).max(80),
