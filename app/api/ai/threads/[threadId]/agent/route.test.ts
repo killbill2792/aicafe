@@ -5,7 +5,7 @@ const fake = vi.hoisted(() => ({
   writes: 0, usageChecks: 0, quotaExhausted: false, ownerWrites: 0,
   loopCalls: 0, stored: false, storageFails: false,
   usageRecorded: [] as Array<{modelCalls:number; toolCalls:number}>,
-  queued: [] as Array<{text:string;endReason:string;results?: Array<Record<string,unknown>>}>,
+  queued: [] as Array<{text:string;endReason:string;resetChars?:number;results?: Array<Record<string,unknown>>}>,
 }));
 vi.mock("@/lib/ai/conversations/auth.server", () => ({
   ConversationApiError: class extends Error {
@@ -48,9 +48,13 @@ vi.mock("@/lib/ai/conversations/usage.server", () => ({
   },
 }));
 vi.mock("@/lib/ai/agent/loop.server", () => ({
-  runAgentTurn: async (args: {onDelta?: (delta:string)=>void}) => {
+  runAgentTurn: async (args: {onDelta?: (delta:string)=>void;onReset?: (count:number)=>void}) => {
     fake.loopCalls++;
     const next = fake.queued.shift() ?? {text:"Here is the answer.",endReason:"complete"};
+    if (next.resetChars) {
+      args.onDelta?.("Wrong");
+      args.onReset?.(next.resetChars);
+    }
     if (next.text) args.onDelta?.(next.text);
     const results = next.results ?? [{source:"menu_items",period:null,missing:[]}];
     return { text:next.text,endReason:next.endReason,status:{status:"complete",missing:[]},
@@ -186,6 +190,24 @@ describe("default authenticated streaming agent route", () => {
     expect(fake.stored).toBe(false);
     expect(fake.usageRecorded).toEqual([{modelCalls:1,toolCalls:1}]);
     fake.storageFails=false;
+  });
+
+  it("forwards the reset event so provisional failed text is removed on the client", async () => {
+    fake.writes=0;fake.ownerWrites=0;fake.loopCalls=0;
+    fake.stored=false;fake.quotaExhausted=false;fake.storageFails=false;fake.usageRecorded=[];
+    fake.queued=[{text:"not confirmed.",endReason:"provider_error",resetChars:5}];
+    const reply=await POST(new Request(
+      "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent",{
+        method:"POST",headers:{"origin":"http://localhost:3000","content-type":"application/json"},
+        body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",
+          text:"Menu?",locale:"en"}),
+      }),{params:Promise.resolve({threadId:"11111111-1111-4111-8111-111111111111"})});
+    const output=await reply.text();
+    expect(output).toContain('event: delta\\ndata: {"text":"Wrong"}');
+    expect(output).toContain('event: reset\\ndata: {"discardChars":5}');
+    expect(output).toContain('event: delta\\ndata: {"text":"not confirmed."}');
+    expect(output).toContain('event: done');
+    expect(fake.usageRecorded).toHaveLength(1);
   });
 
 });
