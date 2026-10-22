@@ -159,7 +159,7 @@ BEGIN
         OR ((a->>'start') IS NOT NULL AND (
           (a->>'start') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' OR
           (a->>'end') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' OR
-          (a->>'start')=(a->>'end'))))
+          (a->>'start')=(a->>'end')))
    ) OR
    (SELECT count(*) FROM jsonb_array_elements(p_payload->'availability')) <>
    (SELECT count(DISTINCT a->>'day')
