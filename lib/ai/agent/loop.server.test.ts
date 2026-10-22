@@ -62,6 +62,8 @@ describe("recorded Responses streaming fixtures", () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
     expect(requests).toHaveLength(3);
     expect(requests[2].tool_choice).toBe("none");
+    expect(JSON.stringify(requests[2].input)).toContain("invalid_arguments");
+    expect(JSON.stringify(requests[2].input)).toContain("issues");
     const input = requests[2].input;
     expect(Array.isArray(input)).toBe(true);
     if (!Array.isArray(input)) throw new Error("expected message array");
@@ -70,6 +72,29 @@ describe("recorded Responses streaming fixtures", () => {
     expect(recordIds("function_call")).toEqual(recordIds("function_call_output"));
     expect(result.endReason).toBe("tool_errors");
     expect(result.status).toMatchObject({status:"partial"});
+  });
+  it("returns Zod details and pairs every skipped call when tool budget is exceeded", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const provider: AgentProvider = async function* (params) {
+      requests.push(params);
+      if (requests.length === 1) {
+        for (let i = 0; i < 9; i++)
+          yield call("get_menu_items",'{"query":null,"limit":null}',"call-"+i);
+        yield completed;
+      } else { yield text("Only part of the menu could be checked."); yield completed; }
+    };
+    const result = await runAgentTurn({ownerText:"Show everything",context,provider});
+    expect(result.usage.toolCalls).toBe(8);
+    expect(result.endReason).toBe("budget");
+    expect(requests).toHaveLength(2);
+    const input = requests[1].input;
+    if (!Array.isArray(input)) throw new Error("expected request input");
+    const collect = (type: string) => input.filter(v => v?.type === type).map(v => v.call_id).sort();
+    expect(collect("function_call")).toEqual(collect("function_call_output"));
+    const skipped = input.find(v => v?.type === "function_call_output" && v.call_id === "call-8");
+    expect(skipped?.output).toContain("budget_exceeded");
+    expect(requests[1].tools).toEqual(requests[0].tools);
+    expect(requests[1].tool_choice).toBe("none");
   });
   it("keeps streamed text after provider error and makes no-tool fallback", async () => {
     const requests: Record<string, unknown>[] = [];
