@@ -755,13 +755,16 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
     if(is(next,decimalWords,currentGroup)){
       const fractional=words[next+1]?.group===currentGroup?number(next+1):null;
       if(!fractional){i=next+1;continue;}
-      const component= fractional.value<10 ? fractional.value*10 : fractional.value;
-      value+=component;
       next=fractional.next;
-      // "point zero five" is five cents, not fifty cents.
-      if(fractional.value===0){
-        const second=words[next]?.group===currentGroup?number(next):null;
-        if(second&&second.value<10){value+=second.value;next=second.next;}
+      // A spoken decimal can contain either a whole two-digit fractional
+      // number ("point fifty") or two individual digits ("point two five").
+      // Consume both digits as ONE amount, never publish "$8.20" early.
+      const digitAfter=words[next]?.group===currentGroup?number(next):null;
+      if(fractional.value<10&&digitAfter&&digitAfter.value<10){
+        value+=fractional.value*10+digitAfter.value;
+        next=digitAfter.next;
+      }else{
+        value+=fractional.value<10?fractional.value*10:fractional.value;
       }
     } else if(is(next,dollars,currentGroup)){
       attachedMoney=true;next++;
@@ -828,10 +831,14 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
  const operands=money.slice(0,index).filter(c=>c.start>boundary);
  if(operands.length<2)return null;
- const phrase=text.slice(operands[0].end,v.start);
- const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
- if(!marker.test(phrase))return null;
+ // A total marker must introduce THIS result after the final operand.
+ // Looking anywhere to the left wrongly treats subsequent facts ("tip $1")
+ // as arithmetic results of an earlier "total $11.50".
+ const immediate=text.slice(operands[operands.length-1].end,v.start);
+ const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
+ if(!resultMarker.test(immediate))return null;
  if(operands.length>3)return false;
+ const phrase=text.slice(operands[0].end,v.start);
  const toCents=(c:{kind:Kind;value:number})=>c.kind==="money"?c.value:Math.round(c.value*100);
  const amounts=operands.map(toCents);
  if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
@@ -839,7 +846,8 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const targetClause=text.slice(operands[operands.length-1].end,v.start);
  if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu.test(targetClause))return null;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
- const expected=sumCents(amounts,(amount,index)=>subtraction&&index>0?-amount:amount);
+ const signedAmounts=amounts.map((amount,index)=>subtraction&&index>0?-amount:amount);
+ const expected=sumCents(signedAmounts,amount=>amount);
  return Math.abs(expected-toCents(v))<=1;
 }
 
