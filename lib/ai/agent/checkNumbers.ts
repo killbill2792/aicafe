@@ -705,7 +705,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;k
    const centsTail=m[7]?dict[m[7].toLowerCase()]:undefined;
    const colloquial=m[8]?dict[m[8].toLowerCase()]:undefined;
    let value=integer*100;
-   if(fractional!==undefined)value+=fractionTail===undefined?fractional*10:fractional*10+fractionTail;
+   if(fractional!==undefined)value+=fractionTail===undefined?(fractional<10?fractional*10:fractional):fractional*10+fractionTail;
    else if(cents!==undefined)value+=cents+(centsTail??0);
    else if(colloquial!==undefined&&colloquial>=10)value+=colloquial;
    out.push({value:monetary?value:value/100,kind:monetary?"money":"number"});
@@ -715,7 +715,8 @@ function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;k
 function proposedDuration(text:string,start:number,end:number):boolean{
  const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
  return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
-  /(?:\b(?:for|during|try|test|run|plan|over|por|durante|probar)\b|(?:لمدة|خلال|نجرب))\s*$/iu.test(before);
+  /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
+  /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
 function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
  locale:AgentLocale,allowed:ReadonlySet<number>):boolean{
@@ -724,13 +725,17 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
  if(index<2)return false;
  const prefix=text.slice(0,v.start);
- const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"));
+ const sentenceStops=[...prefix.matchAll(/(?<!\\d)\\.(?=\\s+[A-Z])/gu)].map(m=>m.index);
+ const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
  const operands=money.slice(0,index).filter(c=>c.start>boundary);
  if(operands.length<2||operands.length>3)return false;
  const toCents=(c:{kind:Kind;value:number})=>c.kind==="money"?c.value:Math.round(c.value*100);
  const amounts=operands.map(toCents);
  if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
  const phrase=text.slice(operands[0].end,v.start);
+ // Arithmetic in descriptive prose cannot manufacture a business KPI.
+ const targetClause=text.slice(operands[operands.length-1].end,v.start);
+ if(/\\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin)\\b/iu.test(targetClause))return false;
  const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
  if(!marker.test(phrase))return false;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
