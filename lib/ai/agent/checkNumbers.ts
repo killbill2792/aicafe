@@ -94,14 +94,16 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
  * Legacy unscoped keys cannot overrule newer scoped values. */
+function offsetDate(date:string,days:number):string {
+  return new Date(Date.parse(date+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
+}
 function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvidence[]{
   type Value=NumericEvidence["values"][number];
-  // Different menu items may legitimately share a legacy key *within* one
-  // read; a later read supersedes only matching keyed evidence.
-  const bySource=new Map<string,{values:Map<string,Value[]>;times:VerifiedTime[]}>();
+  const bySource=new Map<string,{values:Map<string,Value[]>;times:VerifiedTime[];
+    prices:Map<string,MenuPrice>}>();
   for(const entry of entries){
     let slot=bySource.get(entry.tool);
-    if(!slot){slot={values:new Map(),times:[]};bySource.set(entry.tool,slot);}
+    if(!slot){slot={values:new Map(),times:[],prices:new Map()};bySource.set(entry.tool,slot);}
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
       if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
@@ -109,24 +111,51 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       group.push(v);grouped.set(v.key,group);
     }
     for(const [key,group] of grouped){
-      if(key.includes("/")){
-        // Typed item/period evidence invalidates older unscoped values.
+      if(key.includes("/"))
         slot.values.delete(key.split("/").at(-1)??"");
-      }
       slot.values.set(key,group);
     }
-    if(Array.isArray(entry.times)&&entry.times.length){
-      // A new observed schedule/hours read replaces that source's old
-      // temporal snapshot; do not union contradictory old clock claims.
-      slot.times=entry.times.slice(0,60).filter(t=>
-        t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
-        typeof t.day==="string"&&typeof t.role==="string"&&
-        typeof t.complete==="boolean");
+    for(const price of entry.prices??[]){
+      if(typeof price.id==="string"&&typeof price.name==="string"&&
+        Number.isSafeInteger(price.priceCents))slot.prices.set(price.id,price);
+    }
+    const times=(entry.times??[]).slice(0,60).filter(t=>
+      t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
+      typeof t.day==="string"&&typeof t.role==="string"&&typeof t.complete==="boolean");
+    if(entry.timeScope?.kind==="hours"){
+      const updated=new Set(entry.timeScope.days);
+      slot.times=slot.times.filter(t=>!(["open","close"].includes(t.role)&&updated.has(t.day)));
+      slot.times.push(...times);
+    }else if(entry.timeScope?.kind==="schedule"){
+      const {from,to}=entry.timeScope;
+      if(from<=to){
+        const retained:VerifiedTime[]=[];
+        for(const t of slot.times){
+          if(!["shiftStart","shiftEnd"].includes(t.role)||
+            (t.validTo??"9999-12-31")<from||(t.validFrom??"0000-01-01")>to){
+            retained.push(t);continue;
+          }
+          // Read windows may overlap partially. Subtract only the observed
+          // window, leaving accurately sourced adjacent periods intact.
+          if(t.validFrom&&t.validFrom<from)
+            retained.push({...t,validTo:offsetDate(from,-1)});
+          if(t.validTo&&t.validTo>to)
+            retained.push({...t,validFrom:offsetDate(to,1)});
+        }
+        slot.times=[...retained,...times];
+      }
+    }else if(times.length){
+      // Older saved payloads without scope can still provide typed clocks.
+      const oldKeys=new Set(times.map(t=>[t.day,t.role,t.person,t.validFrom,t.validTo].join("/")));
+      slot.times=slot.times.filter(t=>
+        !oldKeys.has([t.day,t.role,t.person,t.validFrom,t.validTo].join("/")));
+      slot.times.push(...times);
     }
   }
   return [...bySource].map(([tool,slot])=>({
-    tool,values:[...slot.values.values()].flat(),times:slot.times
-  })).filter(e=>e.values.length>0||e.times.length>0);
+    tool,values:[...slot.values.values()].flat(),times:slot.times,
+    prices:[...slot.prices.values()]
+  })).filter(e=>e.values.length>0||e.times.length>0||e.prices.length>0);
 }
 
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
