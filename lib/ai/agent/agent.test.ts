@@ -1188,3 +1188,19 @@ describe("review: no partial Arabic teens or mixed-dollar cents",()=>{
    expect(checkNumbers("$5.10","The price is five dollars and ten cents.",[],"en")).toEqual([]);
  });
 });
+
+
+describe("derived-value scoping is language-agnostic",()=>{
+ const numbers={source:"profitability",period:null,missing:[],
+   netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+ it("does not invent a new KPI after an English sentence boundary",()=>{
+   expect(checkNumbers("$5.50 costs and $6.00 sales. Profit is $11.50",
+     "",[numbers],"en").map(x=>x.text)).toContain("$11.50");
+ });
+ it("does not invent Spanish or Arabic profit from unrelated amounts",()=>{
+   expect(checkNumbers("$5.50 costos y $6.00 ventas. ganancia $11.50",
+     "",[numbers],"es").map(x=>x.text)).toContain("$11.50");
+   expect(checkNumbers("$5.50 التكاليف و $6.00 المبيعات. الربح $11.50",
+     "",[numbers],"ar").map(x=>x.text)).toContain("$11.50");
+ });
+});
