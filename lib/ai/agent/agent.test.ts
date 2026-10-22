@@ -1032,8 +1032,11 @@ describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
    expect(checkNumbers("السعر $8.50","السعر ثمانية فاصلة خمسة دولار",[],"ar")).toEqual([]);
    expect(checkNumbers("السعر $5.50","السعر خمسة دولارات وخمسون سنتا",[],"ar")).toEqual([]);
  });
- it("never turns spoken quantities into arbitrary money",()=>{
+ it("keeps spoken counts separate from owner money",()=>{
+   expect(checkNumbers("You sold 8 drinks.","We sold eight drinks.",[],"en")).toEqual([]);
+   expect(checkNumbers("You sold 8 drinks.","Vendimos ocho bebidas.",[],"es")).toEqual([]);
    expect(checkNumbers("Your profit is $8.","We sold eight drinks.",[],"en").map(x=>x.text)).toEqual(["$8"]);
+   expect(checkNumbers("Margin is 8.5.","Margin is eight point five.",[],"en")).toEqual([]);
  });
  it("accepts explicit two and three operand money totals but not wrong totals",()=>{
    expect(checkNumbers("$5.50 and $6.00, together $11.50.","",[menu],"en")).toEqual([]);
