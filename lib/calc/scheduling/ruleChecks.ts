@@ -1,4 +1,4 @@
-import { elapsedMinutes, paidMinutes, minuteOfDay } from "./shiftCost";
+import { elapsedMinutes, paidMinutes } from "./shiftCost";
 export type RuleSettings={
  meal_break_enabled:boolean; meal_break_minutes:number; meal_break_after_minutes:number;
  rest_break_enabled:boolean; rest_break_minutes:number; rest_break_every_minutes:number;
@@ -13,7 +13,14 @@ export type TimecardForRules={
  breaks:{start:string;end:string;paid:boolean}[];
 };
 export type RuleViolation={timecardId:string;employeeId:string;key:"meal"|"rest_break"|"weekly_overtime"|"daily_overtime"|"short_rest";details:string};
-export function checkTimecardRules(cards:TimecardForRules[],rules:RuleSettings):RuleViolation[]{
+export function localWeekStart(isoInstant:string,timezone:string):string {
+ const parts=new Intl.DateTimeFormat("en-US",{timeZone:timezone,year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date(isoInstant));
+ const value=(key:string)=>parts.find(part=>part.type===key)?.value??"";
+ const date=value("year")+"-"+value("month")+"-"+value("day");
+ const weekday=new Date(date+"T12:00:00Z").getUTCDay();
+ return new Date(Date.parse(date+"T12:00:00Z")-((weekday+6)%7)*86400000).toISOString().slice(0,10);
+}
+export function checkTimecardRules(cards:TimecardForRules[],rules:RuleSettings,timezone="UTC"):RuleViolation[]{
  const result:RuleViolation[]=[];
  const sorted=[...cards].sort((a,b)=>a.start.localeCompare(b.start));
  const prior=new Map<string,TimecardForRules>();
@@ -35,8 +42,7 @@ export function checkTimecardRules(cards:TimecardForRules[],rules:RuleSettings):
       add("rest_break","Recorded paid rest breaks are shorter than expected");
    if(rules.daily_ot_enabled&&worked>rules.daily_ot_after_minutes)
       add("daily_overtime","Paid hours exceed the configured daily threshold");
-   const day=new Date(from);const weekday=day.getUTCDay();day.setUTCDate(day.getUTCDate()-(weekday+6)%7);
-   const key=card.employeeId+"|"+day.toISOString().slice(0,10);
+   const key=card.employeeId+"|"+localWeekStart(card.start,timezone);
    const before=paidByWeek.get(key)??0;
    if(rules.weekly_ot_enabled&&before+worked>rules.weekly_ot_after_minutes)
       add("weekly_overtime","Paid hours exceed the configured weekly threshold");
@@ -59,4 +65,4 @@ export function checkShiftLength(start:string,end:string,breakMinutes:number,
  return {tooLong:rules.max_shift_enabled&&minutes>rules.max_shift_minutes,
    tooShort:rules.min_shift_enabled&&minutes<rules.min_shift_minutes,paid};
 }
-void minuteOfDay;
+

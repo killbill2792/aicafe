@@ -3,14 +3,7 @@ import {z} from "zod";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {staffReadScope} from "@/lib/scheduling/staffScope.server";
-const DEFAULT_TEAM_RULES={
- meal_break_enabled:true,meal_break_minutes:30,meal_break_after_minutes:300,
- rest_break_enabled:true,rest_break_minutes:10,rest_break_every_minutes:240,
- weekly_ot_enabled:true,weekly_ot_after_minutes:2400,ot_multiplier_bp:15000,
- daily_ot_enabled:false,daily_ot_after_minutes:480,
- max_shift_enabled:true,max_shift_minutes:600,min_shift_enabled:true,min_shift_minutes:180,
- min_rest_enabled:true,min_rest_minutes:600,coverage_enabled:true,min_headcount:2
-} as const;
+import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
 const shape={
  meal_break_enabled:z.boolean(),meal_break_minutes:z.number().int().min(0).max(240),
  meal_break_after_minutes:z.number().int().min(0).max(1440),

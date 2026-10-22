@@ -4,6 +4,8 @@ import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {getCafeProfile} from "@/lib/data/getCafeProfile";
 import {staffReadScope} from "@/lib/scheduling/staffScope.server";
+import {DEFAULT_TEAM_RULES} from "@/lib/calc/scheduling/teamRuleDefaults";
+import {DEMO_BUSINESS_ID} from "@/lib/constants";
 import {getTeamRules} from "./teamRules";
 import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
 import {shiftCost,roleWageAverages,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
@@ -20,9 +22,9 @@ export async function getWeekSchedule(raw:unknown){
  const p=weekInput.safeParse(raw);if(!p.success||!monday(p.data.weekStart))return {ok:false as const,error:"invalid_week"};
  const owner=await staffReadScope();if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
- if(!owner.supabase)return {ok:true as const,data:{
+ if(!owner.supabase||owner.businessId===DEMO_BUSINESS_ID)return {ok:true as const,data:{
   dates,weekStart:p.data.weekStart,team:[],shifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
-  gaps:[],openHours:null,currency:owner.currency,rules:{},availability:[],readOnly:true,timezone:owner.timezone
+  gaps:[],openHours:null,currency:owner.currency,rules:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},availability:[],readOnly:true,timezone:owner.timezone
  }};
  const [people,shifts,profile,ruleResult,availability]=await Promise.all([
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,color_index")
