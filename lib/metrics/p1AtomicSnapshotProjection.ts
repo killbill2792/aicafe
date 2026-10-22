@@ -1,3 +1,4 @@
+import { latestEffectiveIngredientPrice } from "@/lib/calc/ingredientPriceSelection";
 import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type { SupportedId } from "@/lib/metrics/p1Catalog";
 export type AtomicProjectionUnit = "USD_cents" | "USD_cents_per_item" | "USD_cents_per_US_gallon" | "USD_cents_per_hour" | "ratio_bps";
@@ -42,17 +43,10 @@ function product(snapshot:AtomicP1SourceSnapshot,id:string,asOf:string):
     if(!snapshot.sources.ingredients.some(i=>i.id===row.ingredient_id)||
       !Number.isFinite(row.quantity)||row.quantity<0)
       return blocked("invalid_recipe_ingredient");
-    // SQL orders by ID, NOT effective date. Choose most recent valid as-of
-    // source price and reject duplicates at the chosen effective date.
-    const candidates=snapshot.sources.ingredientPrices.filter(p=>
-      p.ingredient_id===row.ingredient_id&&p.effective_from<=asOf)
-      .sort((a,b)=>b.effective_from.localeCompare(a.effective_from));
-    if(!candidates.length||!safe(candidates[0].cost_per_base_unit_micros)||
-      candidates[0].cost_per_base_unit_micros<0)
-      return result(leaves,["ingredient_price_missing"]);
-    if(candidates.length>1&&candidates[0].effective_from===candidates[1].effective_from)
-      return blocked("ambiguous_ingredient_price");
-    prices[row.ingredient_id]=candidates[0].cost_per_base_unit_micros;
+    const price=latestEffectiveIngredientPrice(snapshot.sources.ingredientPrices,row.ingredient_id,asOf);
+    if(price.status==="missing")return result(leaves,["ingredient_price_missing"]);
+    if(price.status!=="ready")return blocked("ambiguous_or_invalid_ingredient_price");
+    prices[row.ingredient_id]=price.price.cost_per_base_unit_micros;
   }
   const computed=evaluateRecipeCost(recipe.map(r=>({
     ingredientId:r.ingredient_id,quantity:r.quantity,
@@ -161,13 +155,10 @@ export function extractAtomicSnapshot(
       for(const ingredient of snapshot.sources.ingredients){
         // Mass and count units cannot be converted to liquid US gallons.
         if(ingredient.base_unit!=="ml")continue;
-        const candidates=snapshot.sources.ingredientPrices.filter(p=>
-          p.ingredient_id===ingredient.id&&p.effective_from<=asOf)
-          .sort((a,b)=>b.effective_from.localeCompare(a.effective_from));
-        if(!candidates.length||candidates.length>1&&
-          candidates[0].effective_from===candidates[1].effective_from)continue;
+        const price=latestEffectiveIngredientPrice(snapshot.sources.ingredientPrices,ingredient.id,asOf);
+        if(price.status!=="ready")continue;
         const amount=ingredientUsdUsGallonCents(
-          candidates[0].cost_per_base_unit_micros);
+          price.price.cost_per_base_unit_micros);
         if(amount===null||amount>1_000_000_000_000)continue;
         leaves.push({key:ingredient.id,name:ingredient.name,
           field:"pricePerGallon",value:amount,
