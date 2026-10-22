@@ -458,6 +458,8 @@ export default function SupervisorChatComposer({
     if (!threadId || nextOffset === null || loading) return;
     const node = transcript.current;
     previousScrollHeight.current = node ? node.scrollHeight : null;
+    // Preserve the reader's position even when history is prepended to a short page.
+    pinned.current = false;
     setLoading(true);
     try {
       const page = await loadMessages(threadId, nextOffset);
@@ -635,7 +637,7 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
-    <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-4 md:px-6 md:py-5"
+    <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
       onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
       <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-end gap-4">
       {displayedMessages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-2 py-3 text-center">
