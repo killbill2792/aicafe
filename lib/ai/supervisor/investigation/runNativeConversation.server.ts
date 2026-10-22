@@ -287,10 +287,12 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  ].join(" ");
  let failures=0;
  for(let round=0;round<LIMITS.rounds&&Date.now()<deadline;round++){
+  const remaining=deadline-Date.now();
+  if(remaining<=250)break;
   usage.modelCallCount++;
   input.onUsage?.({...usage});
   const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),18000);
+  const timer=setTimeout(()=>controller.abort(),Math.min(18000,remaining));
   let response:Response;
   try{
    response=await transport(SUPERVISOR_ENDPOINT,{method:"POST",signal:controller.signal,
@@ -299,6 +301,10 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      max_output_tokens:2400,instructions,input:messages,
      tools:tools.map(tool=>({...tool,strict:false})),parallel_tool_calls:false,
      text:{format:{type:"json_schema",name:"supervisor_conversation",strict:true,schema:responseSchema}}})});
+  }catch{
+    // The owner should still receive already verified facts when a provider
+    // times out or disconnects. Do not make the route fail with an HTTP error.
+    failures++;break;
   }finally{clearTimeout(timer);}
   if(!response.ok){
     let code="",message="";
@@ -389,7 +395,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    // server-controlled values, identities and calculations.
    return {reply:reply(result.text.trim(),result.factIds),usage};
   }
-  if(usage.toolCallCount>=LIMITS.operations)break;
+  if(usage.toolCallCount>=LIMITS.operations||Date.now()>=deadline)break;
   const c=calls[0],name=String(c.name??""),callId=String(c.call_id??"");
   let args:Data={};
   try{const decoded=JSON.parse(String(c.arguments??"{}"));if(isRecord(decoded))args=decoded;}
@@ -419,6 +425,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    const financialBlocked=!financialReadsAvailable&&Boolean(d)&&
      (d!.sensitivity==="financial"||
        /^p3\.(?:money|sales|labor|alex|pricing)\./u.test(id));
+   if(d&&Date.now()+d.budgets.timeoutMs>=deadline)break;
    if(d&&discovered.has(id)&&isRecord(args.input)&&datesMatch&&!financialBlocked&&
      registry.preflightRead({...scope,ownerClause:ownerText},id,args.input)){
     const value=await registry.invoke({...scope,ownerClause:ownerText},id,args.input,
@@ -515,6 +522,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       identity.currency!=="USD"){
      result={status:"unavailable",reason:"unknown_or_invalid_simulation"};
    }else{
+     if(Date.now()+simulation.budgets.timeoutMs>=deadline)break;
      const projection=projectP1Evidence(shadowEvidence,identity.businessId,input.text,
        null,statements.slice(-6),snapshot.status==="available"?snapshot.snapshot:undefined);
      const derived=datasetOperands(observations,scope);
@@ -615,6 +623,9 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
   }else if(name==="prepare_action"){
    const registered=input.inertProposal?.tools.find(t=>t.name===args.name);
    if(registered&&isRecord(args.input)){
+     // Proposal preparation can involve a DB simulation. Refuse to initiate
+     // it in the final seconds of the shared turn deadline.
+     if(Date.now()+10000>=deadline)break;
      let prepared:{id:string;text:string}|null=null;
      try{
        prepared=await input.inertProposal?.create(registered.name,args.input)??null;
