@@ -84,7 +84,7 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       // A new observed schedule/hours read replaces that source's old
       // temporal snapshot; do not union contradictory old clock claims.
       slot.times=entry.times.slice(0,60).filter(t=>
-        t&&typeof t.time==="string"&&/^(?:[01]\\d|2[0-3]):[0-5]\\d$/u.test(t.time)&&
+        t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
         typeof t.day==="string"&&typeof t.role==="string"&&
         typeof t.complete==="boolean");
     }
