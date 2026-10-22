@@ -367,12 +367,18 @@ type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
   validFrom?:string;validTo?:string};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
-const clockPattern = /(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}:[٠-٩۰-۹\d]{2}(?:\s*(?:AM|PM))?(?![٠-٩۰-۹\d])|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}\s*(?:AM|PM)\b|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}h(?:[٠-٩۰-۹\d]{2})?\b/giu;
+// The clock token includes the meridiem: dropping Arabic "مساءً" silently
+// turns a 5 PM closing claim into the wrong 05:00 morning assertion.
+const clockPattern = /(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}:[٠-٩۰-۹\d]{2}(?:\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*))?(?![٠-٩۰-۹\d])|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}\s*(?:AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}h(?:[٠-٩۰-۹\d]{2})?\b/giu;
 function canonicalClock(clock:ClockSpan):string|null {
-  const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
+  const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM|صباح[\u064b-\u065f]*|مساء[\u064b-\u065f]*)|h(\d{2})?)?$/iu);
   if(!matched)return null;
   let hour=Number(matched[1]);
-  if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
+  if(matched[3]){
+    const evening=/^(?:PM|مساء)/iu.test(matched[3]);
+    hour=(hour%12)+(evening?12:0);
+  }
+  if(hour>23||Number(matched[2]??matched[4]??"00")>59)return null;
   return String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
 }
 
@@ -581,6 +587,12 @@ function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
   return known;
 }
 
+function canonicalPricesExistInRead(previous:readonly NumericEvidence[],
+  current:readonly AgentToolResult[]):boolean {
+  return previous.some(e=>(e.prices?.length??0)>0)||
+    current.some(r=>r.source==="menu_items"||r.source==="product_costs");
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -592,14 +604,30 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const entry of evidence){
     for(const v of entry.values){
       if(!Number.isFinite(v.value))continue;
-      if(v.unit==="cents")allowed.money.add(v.value);
+      // Item-scoped prices are replaced by the canonical product ID map.
+      // Legacy unscoped price values cannot outrank named current products.
+      if(v.unit==="cents"&&
+        !(v.key.endsWith("priceCents")&&
+          (v.key.includes("item:")||canonicalPricesExistInRead(previousEvidence,results))))
+        allowed.money.add(v.value);
       if(v.unit==="bps")allowed.percent.add(v.value);
       if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
       if(v.unit==="count"&&trustedCountKey(v.key))allowed.number.add(v.value);
     }
   }
-  const menuPrices=evidence.filter(e=>e.tool==="menu_items").flatMap(e=>e.prices??[]);
-  const itemPrices=evidence.flatMap(e=>e.prices??[]);
+  // A menu price describes a product ID, not the tool that happened to read
+  // it. Reconcile chronologically across menu_items and product_costs before
+  // comparing named prices or authorizing money amounts.
+  const canonicalPrices=new Map<string,MenuPrice>();
+  const chronological=[...previousEvidence,...compactEvidence(results,Infinity)];
+  for(const entry of chronological){
+    for(const id of entry.invalidatedPriceIds??[])canonicalPrices.delete(id);
+    for(const price of entry.prices??[])
+      if(typeof price.id==="string"&&typeof price.name==="string"&&
+        Number.isSafeInteger(price.priceCents))canonicalPrices.set(price.id,price);
+  }
+  const itemPrices=[...canonicalPrices.values()];
+  const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
@@ -674,14 +702,20 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       }
       return true;
     }
-    if(v.kind==="money"){
+    // Named price and comparison claims are identity-sensitive. Validate
+    // them BEFORE checking whether some unrelated raw amount happens to match.
+    const moneyLike=v.kind==="money"||
+      (v.kind==="number"&&isCurrencylessMoneyClaim(text,v.start,v.end));
+    if(moneyLike){
+      const cents=v.kind==="money"?v.value:Math.round(v.value*100);
+      const comparison=/^\s*(?:more than|less than|cheaper than|pricier than)\b/iu.test(text.slice(v.end));
+      if(comparison)return !verifiedMenuDifference(text,v.start,v.end,cents,menuPrices);
       const itemPrice=directItemPriceClaim(text,v.start,v.end,itemPrices);
-      if(itemPrice!==null)return Math.abs(itemPrice-v.value)>1;
+      if(itemPrice!==null)return Math.abs(itemPrice-cents)>1;
     }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
-    if(v.kind==="money"&&verifiedMenuDifference(text,v.start,v.end,v.value,menuPrices))return false;
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
