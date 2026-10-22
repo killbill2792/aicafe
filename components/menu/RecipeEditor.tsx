@@ -253,7 +253,7 @@ export default function RecipeEditor({
               </div>
             )}
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
+              <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-accent px-4 text-sm font-bold text-on-accent disabled:opacity-40">
                 {t("addIngredient")}
               </button>
             </div>
@@ -262,7 +262,7 @@ export default function RecipeEditor({
 
         {error && <p className="text-sm text-warn">{error}</p>}
         {justAdded && !error && <p className="text-sm font-semibold text-good">{t("ingredientAdded")}</p>}
-        <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={cancelEditing} className="min-h-12 rounded-full border border-line font-semibold text-ink-muted">{t("cancel")}</button><button type="button" onClick={saveRecipe} disabled={isPending} className="min-h-12 rounded-full bg-ink font-bold text-paper disabled:opacity-40">{t("done")}</button></div>
+        <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={cancelEditing} className="min-h-12 rounded-full border border-line font-semibold text-ink-muted">{t("cancel")}</button><button type="button" onClick={saveRecipe} disabled={isPending} className="min-h-12 rounded-full bg-accent font-bold text-on-accent disabled:opacity-40">{t("done")}</button></div>
       </div>}
     </div>
   );

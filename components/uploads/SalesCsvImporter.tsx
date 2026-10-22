@@ -142,7 +142,7 @@ export default function SalesCsvImporter({
     return (
       <label className="flex flex-col items-center gap-3 rounded-card-lg border-2 border-dashed border-line bg-card p-8 text-center">
         <span className="text-base font-semibold text-ink">{labels.uploadPrompt}</span>
-        <span className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper">{labels.chooseFile}</span>
+        <span className="rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-on-accent">{labels.chooseFile}</span>
         <input
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
@@ -253,7 +253,7 @@ export default function SalesCsvImporter({
         type="button"
         onClick={handleImport}
         disabled={!complete || parsed.valid.length === 0 || isPending || stage === "working"}
-        className="h-14 rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-40"
+        className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {stage === "done" ? `${labels.imported} (${summary?.imported ?? 0})` : stage === "error" ? labels.tryAgain : labels.import}
       </button>

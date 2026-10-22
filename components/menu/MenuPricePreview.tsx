@@ -180,7 +180,7 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
     <p className="mt-3 text-sm text-ink-muted">{t("priceBasisAvoidDoubleCount")}</p>
     {error&&<p role="alert" className="mt-2 text-[17px] text-warn">{t("priceBasisInvalid")}</p>}
     <button type="button" onClick={confirm}
-      className="mt-3 min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper">
+      className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent">
       {t("priceBasisConfirm")}
     </button>
     <p className="mt-2 text-sm text-ink-muted">{confirmed?t("priceBasisPreviewConfirmed"):t("priceBasisPreviewOnly")}</p>

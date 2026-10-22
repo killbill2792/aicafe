@@ -102,7 +102,7 @@ function BillForm({
         />
       </label>
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
