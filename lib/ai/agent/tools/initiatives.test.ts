@@ -21,7 +21,22 @@ describe("initiative tools adhere to strict agent contracts",()=>{
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
       expect(tool.parameters).toHaveProperty("additionalProperties",false);
     }
-    expect(initiativeToolSchemas.propose_initiative.safeParse({...proposal,threadId:undefined}).success).toBe(false);
+    const toolProposal={
+      kind:proposal.kind,title:proposal.title,changeDescription:proposal.changeDescription,
+      changeSpecJson:"{}",adapterId:proposal.adapterId,startsOn:proposal.startsOn,
+      endsOn:proposal.endsOn,baselineFrom:proposal.baselineFrom,baselineTo:proposal.baselineTo,
+      checkinCadence:proposal.checkinCadence,
+      metrics:proposal.metrics.map(m=>({...m,params:{
+        itemId:null,ingredientId:null,fromHour:null,toHour:null,
+      }})),
+    };
+    expect(initiativeToolSchemas.propose_initiative.safeParse(toolProposal).success).toBe(true);
+    expect(initiativeToolSchemas.propose_initiative.safeParse({...toolProposal,threadId:uuid}).success).toBe(false);
+    const schema=initiativeToolDefinitions.find(t=>t.name==="propose_initiative")!.parameters;
+    const metrics=schema.properties?.metrics as {items?: {properties?: Record<string,unknown>}} | undefined;
+    expect(metrics?.items?.properties).toHaveProperty("params");
+    const params=metrics!.items!.properties!.params as {additionalProperties?:unknown};
+    expect(params.additionalProperties).toBe(false);
   });
   it("accepts valid goal data and rejects invented metric keys",()=>{
     expect(proposeInitiativeSchema.safeParse(proposal).success).toBe(true);
