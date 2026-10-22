@@ -171,8 +171,8 @@ export default function MonthCalendar({
             >
               {cell.day}
               {milestoneCode && (
-                <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-good">
-                  <PlainIcon code={milestoneCode as ExpenseIconCode} size={12} color="#fff" />
+                <span className="absolute -bottom-1 -end-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-good">
+                  <PlainIcon code={milestoneCode as ExpenseIconCode} size={12} color="rgb(var(--c-on-pos))" />
                 </span>
               )}
             </button>
