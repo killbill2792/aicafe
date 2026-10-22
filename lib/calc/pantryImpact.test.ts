@@ -13,6 +13,7 @@ describe("pantry price impact", () => {
     expect(row.marginBeforeCents).toBe(512);
     expect(row.marginAfterCents).toBe(502);
     expect(row.marginChangeCents).toBe(-10);
+    expect(row.afterCostBasis).toBe("recipe");
   });
   it("does not invent costs where other recipe ingredients are unpriced", () => {
     const [row] = calculatePantryPriceImpact(items, lines, { milk: 200_000 }, "milk", 300_000);
@@ -22,10 +23,18 @@ describe("pantry price impact", () => {
   });
   it("preserves an owner's aggregate fallback while a recipe is incomplete", () => {
     const [row] = calculatePantryPriceImpact(items, lines, { milk: 200_000 },
-      "milk", 300_000, { latte: 99 });
+      "milk", 300_000, { latte: { costCents: 99, status: "estimated" } });
     expect(row.beforeCostCents).toBe(99);
     expect(row.afterCostCents).toBe(99);
     expect(row.marginChangeCents).toBe(0);
+    expect(row.beforeCostBasis).toBe("owner_total_estimated");
+    expect(row.afterCostBasis).toBe("owner_total_estimated");
+  });
+  it("preserves confirmed fallback status without calling it a priced recipe", () => {
+    const [row] = calculatePantryPriceImpact(items, lines, { milk: 200_000 },
+      "milk", 300_000, { latte: { costCents: 99, status: "confirmed" } });
+    expect(row.beforeCostBasis).toBe("owner_total_confirmed");
+    expect(row.afterCostBasis).toBe("owner_total_confirmed");
   });
   it("does not assign a margin to draft items without a selling price", () => {
     const [row] = calculatePantryPriceImpact([{ ...items[0], priceCents: null }],
