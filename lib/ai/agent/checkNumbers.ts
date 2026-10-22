@@ -837,7 +837,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
  // Arithmetic in descriptive prose cannot manufacture a business KPI.
  const targetClause=text.slice(operands[operands.length-1].end,v.start);
- if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu.test(targetClause))return false;
+ if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu.test(targetClause))return null;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
  const expected=sumCents(amounts,(amount,index)=>subtraction&&index>0?-amount:amount);
  return Math.abs(expected-toCents(v))<=1;
