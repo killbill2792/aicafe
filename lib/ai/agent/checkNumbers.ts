@@ -5,7 +5,16 @@ export type NumericEvidence = {tool:string;values:Array<{key:string;value:number
 // This same contract applies to current-turn and persisted numeric evidence.
 const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
 const NON_EVIDENCE_FIELDS = new Set(["source","agentId","labels","period","date",
-  "missing","estimated","warnings","stale","quality","missingInputs","estimatedInputs","staleInputs"]);
+  "missing","estimated","warnings","stale","quality","missingInputs","estimatedInputs","staleInputs",
+  "dayOfWeek","weekday","dayIndex","weekDay","dayNumber","sortOrder","priority","index"]);
+// Quantities must have documented business meaning; a numeric enum or arbitrary
+// internal field does not become evidence of how many drinks were sold.
+const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalUnits","totalCount",
+  "coveredSalesDays","expectedSalesDays","salesDays","laborDays","expectedDays",
+  "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
+  "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount"]);
+const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
+  COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
 export function compactEvidence(results:readonly AgentToolResult[]):NumericEvidence[]{
   let remaining=100;
@@ -32,7 +41,8 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
       }
       if(typeof v!=="number"||!Number.isFinite(v))return;
       const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
-        /Margin$|Ratio$/.test(key)?"ratio":"count";
+        /Margin$|Ratio$/.test(key)?"ratio":COUNTABLE_FIELDS.has(key)?"count":null;
+      if(!unit)return;
       const value=/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v;
       values.push({key:periodKey+scope+key,value,unit});remaining--;
     };
@@ -152,7 +162,8 @@ const DAY_MENTIONS = [
 ];
 type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd";
 type ClockSpan = RegExpMatchArray & {index:number};
-type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null};
+type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
+  validFrom?:string;validTo?:string};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
 const clockPattern = /(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu;
 function canonicalClock(clock:ClockSpan):string|null {
@@ -168,6 +179,17 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),
     prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
   const phrase=text.slice(sentenceStart,clock.index);
+  // In an opening-hours range the second endpoint is closing time, even
+  // though "open" remains the closest action verb: "open from 8 to 5".
+  const precedingClocks=[...phrase.matchAll(clockPattern)] as ClockSpan[];
+  const previous=precedingClocks.at(-1);
+  if(previous){
+    const between=phrase.slice(previous.index+previous[0].length);
+    const beforeFirst=phrase.slice(0,previous.index);
+    if(/\\bto\\s*$/iu.test(between)&&
+      /\\b(?:open|opens|opening|abrimos|abre|abren)\\s+from\\s*$/iu.test(beforeFirst))
+      return "close";
+  }
   // EN/ES/AR owner prose is free-form. Recognize common shift paraphrases
   // and localized hours, but never exempt an unrecognized business clock.
   const actions=[...phrase.matchAll(
@@ -210,6 +232,19 @@ function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):strin
   return [...new Set(selected.map(m=>m.day))];
 }
 type ShiftPersonClaim = {kind:"general"}|{kind:"named";name:string}|{kind:"unresolved"};
+// Candidate captures intentionally include a possible second name word. Trim
+// sentence connectors/weekdays instead of turning "Monday Ada" or "Ada on"
+// into a different employee identity. Preserve genuine two-word names.
+function normalizedEmployeeName(raw:string):string {
+  const connectors=new Set(["on","for","the","at","in","by","of","a","an","de","el","la"]);
+  const weekdays=new Set(["monday","tuesday","wednesday","thursday","friday","saturday",
+    "sunday","mon","tue","wed","thu","fri","sat","sun","lunes","martes","miércoles",
+    "miercoles","jueves","viernes","sábado","sabado","domingo"]);
+  const parts=raw.trim().toLocaleLowerCase().split(/\\s+/u);
+  while(parts.length>1&&(connectors.has(parts[0])||weekdays.has(parts[0])))parts.shift();
+  while(parts.length>1&&(connectors.has(parts.at(-1)??"")||weekdays.has(parts.at(-1)??"")))parts.pop();
+  return parts.join(" ");
+}
 function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   const prefix=text.slice(0,clock.index);
   const start=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf(";"))+1;
@@ -220,17 +255,55 @@ function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   // Preserve the named person across qualifiers such as "Bob's morning
   // shift" and after-the-clock "shift ... for Bob" constructions.
   const possessive=[...before.matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}\d-]+\s+){0,5}shift\b/giu)].at(-1);
-  if(possessive)return {kind:"named",name:possessive[1].trim().toLocaleLowerCase()};
+  if(possessive)return {kind:"named",name:normalizedEmployeeName(possessive[1])};
   const subject=[...before.matchAll(/(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their)\s+(?:[\p{L}\p{M}]+\s+){0,3}shift\b/giu)].at(-1);
-  if(subject)return {kind:"named",name:subject[1].trim().toLocaleLowerCase()};
+  if(subject)return {kind:"named",name:normalizedEmployeeName(subject[1])};
   const forPerson=(before+" "+after).match(/\bfor\s+([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)/iu);
-  if(forPerson)return {kind:"named",name:forPerson[1].trim().toLocaleLowerCase()};
+  if(forPerson)return {kind:"named",name:normalizedEmployeeName(forPerson[1])};
   // If this is explicitly someone's shift but the name could not be parsed,
   // fail closed instead of silently treating the claim as any employee.
   if(/['’]s[^.!?;\n]{0,90}\bshift\b|\bfor\s+\S+/iu.test(before+" "+after))
     return {kind:"unresolved"};
   return {kind:"general"};
 }
+const CALENDAR_MONTHS:Record<string,number>={
+  january:1,jan:1,enero:1,يناير:1, february:2,feb:2,febrero:2,فبراير:2,
+  march:3,mar:3,marzo:3,مارس:3, april:4,apr:4,abril:4,أبريل:4,ابريل:4,
+  may:5,mayo:5,مايو:5, june:6,jun:6,junio:6,يونيو:6,
+  july:7,jul:7,julio:7,يوليو:7, august:8,aug:8,agosto:8,أغسطس:8,اغسطس:8,
+  september:9,sep:9,sept:9,septiembre:9,setiembre:9,سبتمبر:9,
+  october:10,oct:10,octubre:10,أكتوبر:10,اكتوبر:10,
+  november:11,nov:11,noviembre:11,نوفمبر:11,
+  december:12,dec:12,diciembre:12,ديسمبر:12
+};
+const MONTH_LABEL=Object.keys(CALENDAR_MONTHS).join("|");
+function isoCalendarDate(year:number,month:number,day:number):string|null{
+  if(year<1900||year>2100||month<1||month>12||day<1||day>31)return null;
+  const d=new Date(Date.UTC(year,month-1,day));
+  if(d.getUTCFullYear()!==year||d.getUTCMonth()+1!==month||d.getUTCDate()!==day)return null;
+  return d.toISOString().slice(0,10);
+}
+/** undefined = no asserted date; null = asserted but unparsable date. */
+function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string|null|undefined{
+  const prior=text.slice(0,clock.index);
+  const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
+    prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
+  const endAfter=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
+  const sentenceEnd=endAfter<0?text.length:clockEnd(clock)+endAfter;
+  const previous=clocks.filter(c=>c.index<clock.index&&c.index>=sentenceStart).at(-1);
+  const next=clocks.find(c=>c.index>clock.index&&c.index<sentenceEnd);
+  const clause=ascii(text.slice(previous?clockEnd(previous):sentenceStart,next?next.index:sentenceEnd));
+  const iso=clause.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/u);
+  if(iso)return isoCalendarDate(Number(iso[1]),Number(iso[2]),Number(iso[3]));
+  const months=new RegExp("("+MONTH_LABEL+")","iu");
+  if(!months.test(clause))return undefined;
+  const forward=clause.match(new RegExp("("+MONTH_LABEL+")\\s+(\\d{1,2})(?:st|nd|rd|th)?[,]?\\s+(\\d{4})","iu"));
+  if(forward)return isoCalendarDate(Number(forward[3]),CALENDAR_MONTHS[forward[1].toLocaleLowerCase()],Number(forward[2]));
+  const reverse=clause.match(new RegExp("(\\d{1,2})\\s+(?:de\\s+)?("+MONTH_LABEL+")\\s+(?:de\\s+)?(\\d{4})","iu"));
+  if(reverse)return isoCalendarDate(Number(reverse[3]),CALENDAR_MONTHS[reverse[2].toLocaleLowerCase()],Number(reverse[1]));
+  return null;
+}
+
 function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
   for(const r of results){
@@ -263,10 +336,17 @@ function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
       const day=DAY_MENTIONS[s.dayOfWeek]?.key;
       if(!day)continue;
       const person=typeof s.displayName==="string"?s.displayName.trim().toLocaleLowerCase():null;
+      const periodFrom=typeof r.period?.from==="string"?r.period.from:null;
+      const periodTo=typeof r.period?.to==="string"?r.period.to:null;
+      const activeFrom=typeof s.effectiveFrom==="string"?s.effectiveFrom:null;
+      const activeTo=typeof s.effectiveTo==="string"?s.effectiveTo:null;
+      const validFrom=[periodFrom,activeFrom].filter((x):x is string=>x!==null).sort().at(-1);
+      const validTo=[periodTo,activeTo].filter((x):x is string=>x!==null).sort()[0];
       for(const [field,role] of [["startTime","shiftStart"],["endTime","shiftEnd"]] as const){
         const time=s[field];
         if(typeof time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time))
-          known.push({day,time,role,complete:r.missing.length===0,person});
+          known.push({day,time,role,complete:r.missing.length===0,person,
+            validFrom,validTo});
       }
     }
   }
@@ -293,7 +373,7 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
   else if (/Percent$/.test(key)) allowed.percent.add(Math.round(data*100));
   else if (/Bps$/.test(key)) allowed.percent.add(Math.round(data));
   else if (/Margin$|Ratio$/.test(key)) allowed.percent.add(Math.round(data * 10000));
-  else allowed.number.add(data);
+  else if(COUNTABLE_FIELDS.has(key))allowed.number.add(data);
 }
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
@@ -310,7 +390,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       if(v.unit==="cents")allowed.money.add(v.value);
       if(v.unit==="bps")allowed.percent.add(v.value);
       if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
-      if(v.unit==="count")allowed.number.add(v.value);
+      if(v.unit==="count"&&trustedCountKey(v.key))allowed.number.add(v.value);
     }
   }
   const ownerNumbers=candidates(ownerText,locale);
@@ -368,9 +448,15 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       const canonical=canonicalClock(clock);
       if(canonical){
         const days=mentionedWeekdays(text,clock,clocks);
+        const claimedDate=claimedClockDate(text,clock,clocks);
+        const calendarDay=claimedDate?DAY_MENTIONS[new Date(claimedDate+"T12:00:00Z").getUTCDay()]?.key:null;
+        const dateAgrees=claimedDate!==null&&
+          (!claimedDate||days.length===0||days.includes(calendarDay??""));
         const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
-        const verified=person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
+        const verified=dateAgrees&&person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
           h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
+          (!claimedDate||h.day===calendarDay)&&
+          (!claimedDate||(!h.validFrom||claimedDate>=h.validFrom)&&(!h.validTo||claimedDate<=h.validTo))&&
           (person.kind==="general"||(person.kind==="named"&&h.person===person.name))));
         // Owner words also need the same asserted time *role*, weekday and
         // named employee. Matching a bare "8:00" cannot prove opening hours
@@ -379,6 +465,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
           if(timeRole(ownerText,ownerClock)!==role||canonicalClock(ownerClock)!==canonical)return false;
           const ownerDays=mentionedWeekdays(ownerText,ownerClock,ownerClocks);
           if(days.length&&!days.every(day=>ownerDays.includes(day)))return false;
+          const ownerDate=claimedClockDate(ownerText,ownerClock,ownerClocks);
+          if(claimedDate===null||ownerDate===null)return false;
+          if(claimedDate&&ownerDate!==claimedDate)return false;
           const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):{kind:"general" as const};
           if(person.kind==="unresolved"||ownerPerson.kind==="unresolved")return false;
           return person.kind==="general"||
