@@ -66,9 +66,9 @@ export async function getTeam(raw:unknown){
 }
 export async function getShiftCost(raw:unknown){
  const p=shiftInput.safeParse(raw);if(!p.success)return {ok:false as const,error:"invalid_input"};
- const ws=plusDays(p.data.date,-(new Date(p.data.date+"T12:00:00Z").getUTCDay()+6)%7);
+ const ws=plusDays(p.data.date,-((new Date(p.data.date+"T12:00:00Z").getUTCDay()+6)%7));
  const schedule=await getWeekSchedule({weekStart:ws});if(!schedule.ok)return schedule;
- const person=schedule.data.team.find(p=>p.id===p.data.employeeId);
+ const person=schedule.data.team.find(person=>person.id===p.data.employeeId);
  if(!person)return {ok:false as const,error:"unknown_employee"};
  const roleAverage=roleWageAverages(schedule.data.team);
  const breakMinutes=p.data.breakMinutes??(elapsedMinutes(p.data.start,p.data.end,p.data.end<p.data.start)>
