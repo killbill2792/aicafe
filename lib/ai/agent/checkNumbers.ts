@@ -1,5 +1,5 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
-import { menuPriceDifferencesCents } from "@/lib/calc/agentPriceDifferences";
+import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string};
@@ -259,6 +259,44 @@ function isCurrencylessMoneyClaim(text: string, start: number, end: number): boo
 
 /** Known configured hours remain evidence for their own weekday even when
  * other weekdays are missing. An unknown weekday is never silently closed. */
+/** A computed price difference is valid only for both named menu items and
+ * the asserted direction, never for any arbitrary pair in the price list. */
+function verifiedMenuDifference(text:string,start:number,end:number,cents:number,
+  prices:readonly MenuPrice[]):boolean {
+  if(cents<0)return false;
+  const before=text.slice(0,start);
+  const sentenceStart=Math.max(before.lastIndexOf("."),before.lastIndexOf("!"),
+    before.lastIndexOf("?"),before.lastIndexOf("\n"))+1;
+  const lhs=before.slice(sentenceStart);
+  const after=text.slice(end);
+  const sentenceEnd=after.search(/[.!?\n]/u);
+  const rhs=after.slice(0,sentenceEnd<0?undefined:sentenceEnd);
+  const comparison=rhs.match(/^\s*(more than|less than|cheaper than|pricier than)\s+(?:the\s+)?/iu);
+  if(!comparison)return false;
+  const matchName=(name:string,part:string,pos:number):boolean=>{
+    if(part.toLocaleLowerCase().slice(pos,pos+name.length)!==name.toLocaleLowerCase())return false;
+    const prev=part[pos-1]??" ",next=part[pos+name.length]??" ";
+    return !/[\p{L}\p{M}\p{N}]/u.test(prev)&&!/[\p{L}\p{M}\p{N}]/u.test(next);
+  };
+  const named=prices.filter(p=>p.name.trim()&&Number.isSafeInteger(p.priceCents));
+  const leftMatches=named.map(p=>{
+    const at=lhs.toLocaleLowerCase().lastIndexOf(p.name.toLocaleLowerCase());
+    return {price:p,at:at>=0&&matchName(p.name,lhs,at)?at:-1};
+  }).filter(x=>x.at>=0).sort((a,b)=>b.at-a.at);
+  const rightPart=rhs.slice(comparison[0].length);
+  const rightMatches=named.filter(p=>matchName(p.name,rightPart,0))
+    .sort((a,b)=>b.name.length-a.name.length);
+  if(!leftMatches.length||!rightMatches.length)return false;
+  const left=leftMatches[0].price,right=rightMatches[0];
+  if(left.id===right.id||
+    leftMatches.some(x=>x.at===leftMatches[0].at&&x.price.id!==left.id)||
+    rightMatches.some(x=>x.name.toLocaleLowerCase()===right.name.toLocaleLowerCase()&&x.id!==right.id))
+    return false;
+  const direction=/^(?:more|pricier)/iu.test(comparison[1])?"more":"less";
+  const delta=menuPriceDifferenceCents(left.priceCents,right.priceCents,direction);
+  return delta!==null&&Math.abs(delta-cents)<=1;
+}
+
 const DAY_MENTIONS = [
   {key:"sun", pattern:/\b(?:sunday|sun|domingo)\b|الأحد/iu},
   {key:"mon", pattern:/\b(?:monday|mon|lunes)\b|(?:الإثنين|الاثنين)/iu},
@@ -478,7 +516,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // Merge prior and current tool observations *before* authorizing values.
   // A partial refresh of Latte's 850-cent price supersedes 600 cents even
   // when other menu items were truncated or remain unknown.
-  const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results)]);
+  const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)]);
   for(const entry of evidence){
     for(const v of entry.values.slice(0,100)){
       if(!Number.isFinite(v.value))continue;
@@ -488,13 +526,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       if(v.unit==="count"&&trustedCountKey(v.key))allowed.number.add(v.value);
     }
   }
-  const menuPrices:number[]=[];
-  for(const entry of evidence){
-    if(entry.tool!=="menu_items")continue;
-    for(const v of entry.values)
-      if(v.unit==="cents"&&v.key.endsWith("priceCents"))menuPrices.push(v.value);
-  }
-  const priceDifferences=menuPriceDifferencesCents(menuPrices);
+  const menuPrices=evidence.filter(e=>e.tool==="menu_items").flatMap(e=>e.prices??[]);
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
@@ -572,17 +604,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
-    if(v.kind==="money"){
-      const before=text.slice(0,v.start),after=text.slice(v.end);
-      const sentence=text.slice(Math.max(before.lastIndexOf("."),before.lastIndexOf("!"),
-        before.lastIndexOf("?"),before.lastIndexOf("\n"))+1,
-        v.end+(after.search(/[.!?\n]/u)<0?after.length:after.search(/[.!?\n]/u)));
-      const explicitItemComparison=/\b(?:latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie|menu item|drink)\b/iu.test(sentence);
-      const financialMetric=/\b(?:profit|loss|revenue|sales|rent|payroll|bill|salary|fee|wages)\b/iu.test(sentence);
-      if(v.value>=0&&explicitItemComparison&&!financialMetric&&
-        /\b(?:more than|less than|cheaper than|pricier than)\b/iu.test(sentence)&&
-        priceDifferences.has(v.value))return false;
-    }
+    if(v.kind==="money"&&verifiedMenuDifference(text,v.start,v.end,v.value,menuPrices))return false;
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
