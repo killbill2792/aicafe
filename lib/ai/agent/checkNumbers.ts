@@ -4,7 +4,8 @@ import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>;
-  times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[]};
+  times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
+  invalidatedKeys?:string[];invalidatedPriceIds?:string[]};
 // Only business collections, not diagnostics or metadata, establish counts.
 // This same contract applies to current-turn and persisted numeric evidence.
 const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
@@ -26,6 +27,7 @@ const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??
 export function compactEvidence(results:readonly AgentToolResult[],limit=100):NumericEvidence[]{
   const gathered=results.map(r=>{
     const values:NumericEvidence["values"]=[];
+    const invalidatedKeys:string[]=[];
     const periodKey=r.period?r.period.from+"/"+r.period.to+"/":"";
     const rootId=typeof r.itemId==="string"?r.itemId:null;
     const rootScope=rootId?"item:"+rootId+"/":"";
@@ -49,38 +51,54 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
         }
         return;
       }
+      const valueKey=periodKey+scope+key;
+      if(v===null && (/Cents$|Micros$|Bps$|Percent$|Margin$|Ratio$/u.test(key)||
+        COUNTABLE_FIELDS.has(key))) {
+        invalidatedKeys.push(valueKey);return;
+      }
       if(typeof v!=="number"||!Number.isFinite(v))return;
       const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
         /Margin$|Ratio$/.test(key)?"ratio":COUNTABLE_FIELDS.has(key)?"count":null;
       if(!unit)return;
-      values.push({key:periodKey+scope+key,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
+      invalidatedKeys.push(valueKey);
+      values.push({key:valueKey,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
     walk(r,"",0,rootScope);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
     let timeScope:TimeScope|undefined;
     if(r.source==="locations.open_hours"){
-      if(r.hours&&typeof r.hours==="object"&&!Array.isArray(r.hours))
-        timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key).filter(d=>Object.hasOwn(r.hours as object,d))};
-      else if(r.hours===null&&r.missing.includes("businessHoursNotSet"))
-        timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key)};
+      // Successful partial configuration explicitly invalidates the days
+      // listed as unset; a network/reader failure does not.
+      const present=r.hours&&typeof r.hours==="object"&&!Array.isArray(r.hours)
+        ? DAY_MENTIONS.map(d=>d.key).filter(d=>Object.hasOwn(r.hours as object,d)) : [];
+      const unset=r.missing.filter(x=>/^businessHoursNotSet:(?:sun|mon|tue|wed|thu|fri|sat)$/u.test(x))
+        .map(x=>x.slice("businessHoursNotSet:".length));
+      const allUnset=r.hours===null&&r.missing.includes("businessHoursNotSet")
+        ? DAY_MENTIONS.map(d=>d.key):[];
+      const days=[...new Set([...present,...unset,...allUnset])];
+      if(days.length)timeScope={kind:"hours",days};
     }
     // A failed schedule read is not an empty observed schedule. Clear an
     // existing window only if a successful reader explicitly returned shifts.
     if(r.source==="recurring_schedule"&&Array.isArray(r.shifts)&&r.period?.from&&r.period?.to)
       timeScope={kind:"schedule",from:r.period.from,to:r.period.to};
     const prices:MenuPrice[]=[];
+    const invalidatedPriceIds:string[]=[];
     const record=(item:unknown)=>{
       if(!item||typeof item!=="object"||Array.isArray(item))return;
       const row=item as Record<string,unknown>;
-      if(typeof row.id==="string"&&typeof row.name==="string"&&
-        typeof row.priceCents==="number"&&Number.isSafeInteger(row.priceCents))
+      if(typeof row.id!=="string")return;
+      if(row.priceCents===null){invalidatedPriceIds.push(row.id);return;}
+      if(typeof row.name==="string"&&typeof row.priceCents==="number"&&
+        Number.isSafeInteger(row.priceCents))
         prices.push({id:row.id,name:row.name,priceCents:row.priceCents});
     };
     if(r.source==="menu_items"&&Array.isArray(r.items))r.items.forEach(record);
     if(r.source==="product_costs")record(r.item);
     // Pricing recommendations can report a singleton itemId, but its
     // display name is not available: retain scoped cents, not invented names.
-    return {tool:r.source,values,times,timeScope,prices:prices.slice(0,25)};
+    return {tool:r.source,values,times,timeScope,prices:prices.slice(0,25),
+      invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds};
   });
   if(Number.isFinite(limit)){
     // Latest reads and item prices are the most valuable persisted evidence.
@@ -95,7 +113,8 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
   }
   return gathered.filter(e=>e.values.length>0||e.times.length>0||
     (e.timeScope?.kind==="hours"&&e.timeScope.days.length>0)||
-    e.timeScope?.kind==="schedule"||e.prices.length>0);
+    e.timeScope?.kind==="schedule"||e.prices.length>0||
+    e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
@@ -116,11 +135,20 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       const group=grouped.get(v.key)??[];
       group.push(v);grouped.set(v.key,group);
     }
+    // Clear all refreshed or explicitly unknown keys, even when the
+    // 100-value persistence budget dropped their new values. A failed read
+    // exposes no observations and therefore cannot invalidate anything.
+    for(const key of entry.invalidatedKeys??[]){
+      if(typeof key!=="string")continue;
+      slot.values.delete(key);
+      if(key.includes("/"))slot.values.delete(key.split("/").at(-1)??"");
+    }
     for(const [key,group] of grouped){
-      if(key.includes("/"))
-        slot.values.delete(key.split("/").at(-1)??"");
+      if(key.includes("/"))slot.values.delete(key.split("/").at(-1)??"");
       slot.values.set(key,group);
     }
+    for(const id of entry.invalidatedPriceIds??[])
+      if(typeof id==="string")slot.prices.delete(id);
     for(const price of entry.prices??[]){
       if(typeof price.id==="string"&&typeof price.name==="string"&&
         Number.isSafeInteger(price.priceCents))slot.prices.set(price.id,price);
@@ -562,7 +590,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // when other menu items were truncated or remain unknown.
   const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results,Infinity)]);
   for(const entry of evidence){
-    for(const v of entry.values.slice(0,100)){
+    for(const v of entry.values){
       if(!Number.isFinite(v.value))continue;
       if(v.unit==="cents")allowed.money.add(v.value);
       if(v.unit==="bps")allowed.percent.add(v.value);
