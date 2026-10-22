@@ -8,7 +8,7 @@ import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
 import {shiftCost,roleWageAverages,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
 const iso=z.iso.date(),hhmm=z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const weekInput=z.strictObject({weekStart:iso});
-export const shiftInput=z.strictObject({
+const shiftInput=z.strictObject({
  id:z.string().uuid().optional(),employeeId:z.string().uuid(),date:iso,
  start:hhmm,end:hhmm,breakMinutes:z.number().int().min(0).max(240).optional(),
  repeatWeekly:z.boolean().optional()
