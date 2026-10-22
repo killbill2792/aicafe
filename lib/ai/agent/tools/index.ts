@@ -9,72 +9,69 @@ import ar from "@/messages/ar.json";
 export type AgentLocale = "en" | "es" | "ar";
 export type AgentToolResult = {
   source: string; period: CafeStatePeriod | null; missing: string[];
-  labels: Record<string, string>; [field: string]: unknown;
+  [field: string]: unknown;
 };
 export type AgentToolContext = {
   tools: Pick<BusinessScopedCafeTools, "getProfitability" | "getSalesTrend" | "getMenuCatalog">;
   asOf: string; locale: AgentLocale;
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
-const menuSchema = z.strictObject({});
+// Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
+const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
 const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema } as const;
 export type AgentToolName = keyof typeof schemas;
 const descriptions: Record<AgentToolName, string> = {
-  get_profit: "Read actual profit and costs for a current calendar period; reports missing inputs.",
-  get_sales: "Read recorded daily sales with coverage for a current calendar period.",
-  get_menu_items: "Read up to eight active menu items, IDs and current prices.",
+  get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
+  get_sales: "Read covered daily sales in a current calendar period.",
+  get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
-export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => ({
-  type: "function" as const, name, description: descriptions[name], strict: true as const,
-  parameters: z.toJSONSchema(schemas[name], { target: "draft-07" }),
-}));
+export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
+  const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name], { target: "draft-07" });
+  void _schema;
+  return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
+});
+export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
+  JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
-function requestedPeriod(choice: "today" | "week" | "month", asOf: string): CafeStatePeriod {
+export function requestedPeriod(choice: "today" | "week" | "month", asOf: string): CafeStatePeriod {
   const start = choice === "today" ? asOf
     : choice === "month" ? asOf.slice(0, 7) + "-01"
     : new Date(Date.parse(asOf + "T12:00:00Z") - 6 * 86400000).toISOString().slice(0, 10);
   return { from: start, to: asOf };
 }
-const labelFiles = { en, es, ar };
-function labels(locale: AgentLocale): Record<string, string> {
-  return labelFiles[locale].AgentFields;
+function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
+  return { source, period, missing: missing.length ? missing : ["sourceUnavailable"] };
 }
-function absent(source: string, period: CafeStatePeriod | null, missing: string[], locale: AgentLocale): AgentToolResult {
-  return { source, period, missing: missing.length ? missing : ["sourceUnavailable"], labels: labels(locale) };
-}
-
-/** Only pre-authorized, tenant-bound readers reach these handlers. No model-supplied business ID. */
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
-  const validName = name as AgentToolName;
-  const input = schemas[validName].parse(raw);
-  if (validName === "get_menu_items") {
+  if (name === "get_menu_items") {
+    const input = menuSchema.parse(raw);
     const slice = await ctx.tools.getMenuCatalog();
-    if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs, ctx.locale);
-    const items = slice.value.filter(item => item.active).slice(0, 8).map(item => ({
-      id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
-    }));
-    return { source: "menu_items", period: null, labels: labels(ctx.locale),
-      missing: [...slice.quality.missingInputs, ...(slice.value.filter(item => item.active).length > 8 ? ["moreMenuItems"] : [])],
-      items };
+    if (!slice.available) return absent("menu_items", null, slice.quality.missingInputs);
+    const filtered = slice.value.filter(item => item.active &&
+      (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
+    const limit = input.limit ?? 8;
+    return { source: "menu_items", period: null,
+      missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
+      items: filtered.slice(0, limit).map(item => ({
+        id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
+      })) };
   }
-  const period = requestedPeriod((input as z.infer<typeof periodSchema>).period, ctx.asOf);
-  if (validName === "get_profit") {
-    // The existing canonical profit calculation supports only current-month snapshots.
-    if (period.from < ctx.asOf.slice(0, 7) + "-01")
-      return absent("profitability", period, ["profitPeriodOutsideCurrentMonth"], ctx.locale);
+  const { period: choice } = periodSchema.parse(raw);
+  const period = requestedPeriod(choice, ctx.asOf);
+  if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
-    if (!slice.available) return absent("profitability", period, slice.quality.missingInputs, ctx.locale);
-    return { source: "profitability", period, labels: labels(ctx.locale),
-      missing: slice.quality.missingInputs, estimated: slice.quality.estimatedInputs,
+    if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);
+    return { source: "profitability", period, missing: slice.quality.missingInputs,
+      estimated: slice.quality.estimatedInputs,
       netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
       coveredSalesDays: slice.value.coveredSalesDays, expectedSalesDays: slice.value.expectedSalesDays };
   }
+  if (name !== "get_sales") throw new Error("unknown_tool");
   const slice = await ctx.tools.getSalesTrend(period);
-  if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs, ctx.locale);
-  return { source: "daily_rollups", period, labels: labels(ctx.locale),
-    missing: slice.quality.missingInputs,
+  if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs);
+  return { source: "daily_rollups", period, missing: slice.quality.missingInputs,
     netSalesCents: netSalesCentsForPeriod(slice.value),
     days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
 }
