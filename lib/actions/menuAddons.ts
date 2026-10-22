@@ -24,7 +24,7 @@ export async function getMenuProductAddons(productIds:string[]):Promise<MenuAddo
  const {data,error}=await ctx.db.from("menu_product_addons")
  .select("ingredient_id,kind,enabled,is_default,upcharge_cents,display_unit,display_quantity")
  .eq("business_id",ctx.businessId).in("menu_item_id",parsed.data);
- if(error||!data)throw new Error("Could not load add-ons.");
+ if(error?.code==="42P01")return []; // Preview may run before additive migration; do not break menu detail.\n if(error||!data)throw new Error("Could not load add-ons.");
  return data.map(row=>({ingredientId:row.ingredient_id,kind:row.kind as MenuAddon["kind"],enabled:row.enabled,
  isDefault:row.is_default,upchargeCents:Number(row.upcharge_cents),
  displayUnit:row.display_unit as MenuAddon["displayUnit"],displayQuantity:Number(row.display_quantity)}));
