@@ -1,6 +1,6 @@
 "use client";
 import {useState,useTransition} from "react";
-import {updateTeamRules,addCustomRule,removeCustomRule,DEFAULT_TEAM_RULES} from "@/lib/actions/teamRules";
+import {updateTeamRules,addCustomRule,removeCustomRule} from "@/lib/actions/teamRules";
 import Link from "next/link";
 type Rules=Record<string,unknown>&{owner_set:string[];custom:{id:string;rule_text:string}[]};
 const groups=[
