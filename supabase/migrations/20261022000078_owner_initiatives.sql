@@ -255,3 +255,112 @@ revoke all on function record_owner_initiative_checkin_atomic(
   uuid,uuid,uuid,date,numeric,text,int,text) from public,anon,authenticated;
 grant execute on function record_owner_initiative_checkin_atomic(
   uuid,uuid,uuid,date,numeric,text,int,text) to service_role;
+
+
+-- Durable and exclusive bounded monitor work leases. A queued row is not a claim:
+-- overlapping cron invocations must not hold simultaneous writer authority.
+alter table owner_initiatives
+  add column monitor_lease_token uuid,
+  add column monitor_lease_until timestamptz;
+create index owner_initiatives_lease_idx on owner_initiatives
+  (monitor_lease_until,monitor_checked_at) where status='active';
+
+create or replace function claim_owner_initiative_monitor(
+  p_id uuid,p_revision int,p_token uuid
+) returns int language plpgsql security definer set search_path=public
+as $$
+declare v_revision int;
+begin
+  update owner_initiatives set
+    monitor_lease_token=p_token,monitor_lease_until=now()+interval '90 seconds',
+    monitor_checked_at=now(),updated_at=now(),revision=revision+1
+  where id=p_id and revision=p_revision and status='active'
+    and (monitor_lease_until is null or monitor_lease_until<=now())
+  returning revision into v_revision;
+  return v_revision;
+end;
+$$;
+revoke all on function claim_owner_initiative_monitor(uuid,int,uuid) from public,anon,authenticated;
+grant execute on function claim_owner_initiative_monitor(uuid,int,uuid) to service_role;
+
+create or replace function release_owner_initiative_monitor(
+  p_id uuid,p_token uuid,p_completed boolean
+) returns boolean language plpgsql security definer set search_path=public
+as $$
+declare v_id uuid;
+begin
+  update owner_initiatives set
+    monitor_lease_token=null,monitor_lease_until=null,
+    status=case when p_completed then 'completed' else status end,
+    updated_at=now()
+  where id=p_id and monitor_lease_token=p_token and status='active'
+  returning id into v_id;
+  return v_id is not null;
+end;
+$$;
+revoke all on function release_owner_initiative_monitor(uuid,uuid,boolean) from public,anon,authenticated;
+grant execute on function release_owner_initiative_monitor(uuid,uuid,boolean) to service_role;
+
+-- Serializable with claim/release via the parent row lock. A worker that lost
+-- its lease can never write a late observation, including after a long timeout.
+create or replace function write_owner_initiative_monitor_observation(
+  p_business_id uuid,p_owner_user_id uuid,p_initiative_id uuid,p_token uuid,
+  p_metric_id uuid,p_date date,p_value numeric,p_coverage numeric,p_note text
+) returns boolean language plpgsql security definer set search_path=public
+as $$
+declare permitted uuid; stored uuid;
+begin
+  select id into permitted from owner_initiatives
+    where id=p_initiative_id and business_id=p_business_id and owner_user_id=p_owner_user_id
+      and monitor_lease_token=p_token and monitor_lease_until>now()
+      and status='active' for update;
+  if permitted is null then return false; end if;
+  if not exists(select 1 from initiative_metrics where id=p_metric_id
+       and initiative_id=p_initiative_id and source='computed') then
+    raise exception 'monitor metric scope mismatch' using errcode='42501';
+  end if;
+  insert into initiative_observations as existing (
+    metric_id,business_date,value,coverage,source,note,revision
+  ) values (p_metric_id,p_date,p_value,p_coverage,'computed',p_note,1)
+  on conflict (metric_id,business_date) do update set
+    value=excluded.value,coverage=excluded.coverage,note=excluded.note,
+    revision=existing.revision+1
+    where existing.source='computed' and existing.coverage<=excluded.coverage
+      and (existing.value is distinct from excluded.value
+        or existing.coverage is distinct from excluded.coverage
+        or existing.note is distinct from excluded.note)
+  returning metric_id into stored;
+  return stored is not null;
+end;
+$$;
+revoke all on function write_owner_initiative_monitor_observation(
+  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text) from public,anon,authenticated;
+grant execute on function write_owner_initiative_monitor_observation(
+  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text) to service_role;
+
+create or replace function write_owner_initiative_monitor_evaluation(
+  p_business_id uuid,p_owner_user_id uuid,p_initiative_id uuid,p_token uuid,
+  p_as_of date,p_status text,p_recommendation text,p_results jsonb,
+  p_inputs jsonb,p_transition_key text,p_digest text
+) returns boolean language plpgsql security definer set search_path=public
+as $$
+declare permitted uuid; stored uuid;
+begin
+  select id into permitted from owner_initiatives
+    where id=p_initiative_id and business_id=p_business_id and owner_user_id=p_owner_user_id
+      and monitor_lease_token=p_token and monitor_lease_until>now()
+      and status='active' for update;
+  if permitted is null then return false; end if;
+  insert into initiative_evaluations (
+    initiative_id,as_of,status,recommendation,results,inputs,transition_key,digest
+  ) values (
+    p_initiative_id,p_as_of,p_status,p_recommendation,p_results,p_inputs,
+    p_transition_key,p_digest
+  ) on conflict (initiative_id,digest) do nothing returning id into stored;
+  return stored is not null;
+end;
+$$;
+revoke all on function write_owner_initiative_monitor_evaluation(
+  uuid,uuid,uuid,uuid,date,text,text,jsonb,jsonb,text,text) from public,anon,authenticated;
+grant execute on function write_owner_initiative_monitor_evaluation(
+  uuid,uuid,uuid,uuid,date,text,text,jsonb,jsonb,text,text) to service_role;
