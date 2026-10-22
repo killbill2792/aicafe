@@ -18,6 +18,7 @@ create table owner_initiatives (
   status text not null default 'proposed' check (status in ('proposed','active','completed','cancelled','reverted')),
   locale text not null check (locale in ('en','es','ar')),
   revision int not null default 1 check (revision > 0),
+  evidence_revision bigint not null default 0 check (evidence_revision >= 0),
   monitor_checked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -193,7 +194,7 @@ create or replace function record_owner_initiative_checkin_atomic(
 ) returns jsonb language plpgsql security definer set search_path=public
 as $$
 declare
-  start_day date; end_day date; current_revision int;
+  start_day date; end_day date; current_revision int; initiative_key uuid;
   old_value numeric; old_note text; old_source text;
   old_operation initiative_checkin_operations%rowtype;
   is_new boolean := false; is_correction boolean := false;
@@ -205,11 +206,12 @@ begin
     and user_id=p_owner_user_id and role='owner') then
     raise exception 'owner membership required' using errcode='42501';
   end if;
-  select i.starts_on,i.ends_on into start_day,end_day
+  select i.id,i.starts_on,i.ends_on into initiative_key,start_day,end_day
     from initiative_metrics m join owner_initiatives i on i.id=m.initiative_id
     where m.id=p_metric_id and m.source='checkin'
       and m.checkin_audience='owner' and i.business_id=p_business_id
-      and i.owner_user_id=p_owner_user_id and i.status='active';
+      and i.owner_user_id=p_owner_user_id and i.status='active'
+    for update of i;
   if not found or p_date<start_day or p_date>end_day then
     raise exception 'check-in not authorized' using errcode='42501';
   end if;
@@ -248,6 +250,13 @@ begin
   insert into initiative_checkin_operations(metric_id,operation_key,business_date,
     revision,created,corrected)
     values(p_metric_id,p_operation_key,p_date,current_revision,is_new,is_correction);
+  if is_new or is_correction then
+    -- Owner corrections invalidate the active monitor lease. All fenced writes
+    -- and terminal completion from its old evidence snapshot must then fail.
+    update owner_initiatives set evidence_revision=evidence_revision+1,
+      monitor_lease_token=null,monitor_lease_until=null,updated_at=now()
+      where id=initiative_key;
+  end if;
   return jsonb_build_object('created',is_new,'corrected',is_correction,
     'revision',current_revision);
 end;
@@ -285,7 +294,7 @@ revoke all on function claim_owner_initiative_monitor(uuid,int,uuid) from public
 grant execute on function claim_owner_initiative_monitor(uuid,int,uuid) to service_role;
 
 create or replace function release_owner_initiative_monitor(
-  p_id uuid,p_token uuid,p_completed boolean
+  p_id uuid,p_token uuid,p_completed boolean,p_expected_evidence_revision bigint
 ) returns boolean language plpgsql security definer set search_path=public
 as $$
 declare v_id uuid;
@@ -295,12 +304,13 @@ begin
     status=case when p_completed then 'completed' else status end,
     updated_at=now()
   where id=p_id and monitor_lease_token=p_token and status='active'
+    and (not p_completed or evidence_revision=p_expected_evidence_revision)
   returning id into v_id;
   return v_id is not null;
 end;
 $$;
-revoke all on function release_owner_initiative_monitor(uuid,uuid,boolean) from public,anon,authenticated;
-grant execute on function release_owner_initiative_monitor(uuid,uuid,boolean) to service_role;
+revoke all on function release_owner_initiative_monitor(uuid,uuid,boolean,bigint) from public,anon,authenticated;
+grant execute on function release_owner_initiative_monitor(uuid,uuid,boolean,bigint) to service_role;
 
 -- Serializable with claim/release via the parent row lock. A worker that lost
 -- its lease can never write a late observation, including after a long timeout.

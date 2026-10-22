@@ -165,13 +165,16 @@ export async function listMonitorBatch() {
 }
 export async function readMonitorGraph(initiative:InitiativeRow) {
   const db=await serviceOwnerAccess({businessId:initiative.business_id,ownerUserId:initiative.owner_user_id});
-  const [metricResult,businessResult,evaluationResult]=await Promise.all([
+  const [metricResult,businessResult,evaluationResult,revisionResult]=await Promise.all([
     db.from("initiative_metrics").select(metricColumns).eq("initiative_id",initiative.id),
     db.from("businesses").select("timezone").eq("id",initiative.business_id).single(),
     db.from("initiative_evaluations").select("*").eq("initiative_id",initiative.id)
       .order("as_of",{ascending:false}).order("created_at",{ascending:false}).limit(1),
+    db.from("owner_initiatives").select("evidence_revision")
+      .eq("id",initiative.id).eq("business_id",initiative.business_id).single(),
   ]);
-  if(metricResult.error||businessResult.error||evaluationResult.error||!businessResult.data)
+  if(metricResult.error||businessResult.error||evaluationResult.error||revisionResult.error||
+    !revisionResult.data||!businessResult.data)
     throw new Error("initiative monitor source unavailable");
   const metrics=(metricResult.data??[]) as MetricRow[];
   const observations:ObservationRow[]=[];
@@ -193,7 +196,7 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
       if(offset===2000)throw new Error("initiative observation coverage exceeds cap");
     }
   }
-  return {metrics,observations,
+  return {metrics,observations,evidenceRevision:Number(revisionResult.data.evidence_revision),
     timezone:businessResult.data.timezone||"America/Los_Angeles",
     latest:((evaluationResult.data??[])[0]??null) as EvaluationRow|null};
 }
@@ -205,10 +208,12 @@ export async function claimMonitorInitiative(initiative:InitiativeRow,token:stri
   if(error)throw error;
   return typeof data==="number"?{...initiative,revision:data}:null;
 }
-export async function releaseMonitorInitiative(id:string,token:string,completed:boolean) {
+export async function releaseMonitorInitiative(id:string,token:string,completed:boolean,
+  evidenceRevision:number) {
   const db=createAdminSupabaseClient();
   const {error}=await db.rpc("release_owner_initiative_monitor",{
     p_id:id,p_token:token,p_completed:completed,
+    p_expected_evidence_revision:evidenceRevision,
   });
   if(error)throw error;
 }

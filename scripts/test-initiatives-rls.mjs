@@ -111,8 +111,8 @@ try{
   const invalidated=(await db.query("select value,coverage from initiative_observations where metric_id=$1 and business_date='2026-10-16'",[MID])).rows[0];
   assert.equal(invalidated.value,null);
   assert.equal(Number(invalidated.coverage),0);
-  const released=(await db.query("select release_owner_initiative_monitor($1,$2,$3) as released",
-    [ID,t1,false])).rows[0].released;
+  const released=(await db.query("select release_owner_initiative_monitor($1,$2,$3,$4) as released",
+    [ID,t1,false,0])).rows[0].released;
   assert.equal(released,true);
   assert.equal((await db.query(observationSql,[...leaseObsArgs.slice(0,6),200,1,null,false])).rows[0].wrote,false,
     "late worker must not write after releasing its lease");
@@ -120,7 +120,7 @@ try{
     "late worker cannot write evaluations");
   assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,leased+1,
     "a released job can be claimed by next worker");
-  await db.query("select release_owner_initiative_monitor($1,$2,$3)",[ID,t2,false]);
+  await db.query("select release_owner_initiative_monitor($1,$2,$3)",[ID,t2,false,0]);
   await actor(A,async()=>{
     for(const table of ["owner_initiatives","initiative_metrics","initiative_observations","initiative_evaluations"])
       assert.equal((await db.query("select * from "+table)).rowCount,

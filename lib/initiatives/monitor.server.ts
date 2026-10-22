@@ -43,6 +43,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     if(Date.now()>=deadline)break;
     let completed=false;
     let claim:InitiativeRow|null=null;
+    let graphEvidenceRevision=0;
     const token=randomUUID();
     const started=Date.now();
     const assertBudget=()=>{if(Date.now()>deadline-8_000 || Date.now()-started>10_000)
@@ -54,6 +55,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       if(!claim)continue;
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
       const graph=await readMonitorGraph(initiative);
+      graphEvidenceRevision=graph.evidenceRevision??0;
       const domain=initiativeDomain(initiative,graph.metrics);
       const today=formatInTimeZone(now,graph.timezone,"yyyy-MM-dd");
       const yesterday=dayOffset(today,-1);
@@ -258,7 +260,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     }catch{stats.failed++;}
     finally{
       if(claim){
-        try{await releaseMonitorInitiative(initiative.id,token,completed);}catch{stats.failed++;}
+        try{await releaseMonitorInitiative(initiative.id,token,completed,graphEvidenceRevision);}catch{stats.failed++;}
       }
     }
   }
