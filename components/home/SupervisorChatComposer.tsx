@@ -38,7 +38,7 @@ export type SupervisorChatCopy = {
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
-  answerFailed: string; retryAnswer: string; todaySummary: string;
+  answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
@@ -79,14 +79,31 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorChatCopy; locale: Locale }) {
+function verifiedTextPieces(text: string, spans: readonly { start: number; end: number }[], label: string) {
+  const parts: React.ReactNode[] = [];
+  let offset = 0;
+  for (const span of [...spans].sort((a,b) => a.start - b.start)) {
+    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) ||
+      span.start < offset || span.end > text.length || span.end <= span.start) continue;
+    if (offset < span.start) parts.push(text.slice(offset, span.start));
+    parts.push(<span key={span.start} className="inline">
+      <span className="underline decoration-dotted">{text.slice(span.start, span.end)}</span>
+      <span role="note" className="ms-1 rounded-full border border-current px-1 text-xs">{label}</span>
+    </span>);
+    offset = span.end;
+  }
+  parts.push(text.slice(offset));
+  return parts;
+}
+
+function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; unverified?: { start: number; end: number }[] }) {
   if (!record(block)) return null;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{block.text}</p>;
+      : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{verifiedTextPieces(block.text,unverified,copy.unverified)}</p>;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -139,7 +156,12 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
             other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
           onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
           onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>;
+        const metadata = record(message.grounding?.agentMetadata) ? message.grounding.agentMetadata : null;
+        const rawSpans = Array.isArray(metadata?.unverified) ? metadata.unverified : [];
+        const spans = rawSpans.filter(record)
+          .filter(v => v.blockIndex === i && typeof v.start === "number" && typeof v.end === "number")
+          .map(v => ({ start: Number(v.start), end: Number(v.end) }));
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} unverified={spans}/>;
       })}
     </div>
   </article>;
