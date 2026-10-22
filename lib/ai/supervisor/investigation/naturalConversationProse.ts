@@ -16,9 +16,10 @@ const words={
 };
 const normalize=(s:string)=>s.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 function category(span:string,following:string){
- const combined=normalize(span+" "+following.slice(0,18));
- if(/[%٪]/u.test(span))return "percent";
- if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|(?:دولار|سنت)/iu.test(span))
+ const immediate=following.match(/^\s{0,3}(?:percent|por ciento|cents?|centavos?|dollars?|d[oó]lares?|usd|ounces?|oz|ml|kg|lbs?|cl|pt|qt|gal|دولار|سنت|بالمئة|في المئة)/iu)?.[0]??"";
+ const combined=normalize(span+" "+immediate);
+ if(/[%٪]|\b(?:percent|por ciento)\b|(?:بالمئة|في المئة)/iu.test(combined))return "percent";
+ if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|(?:دولار|سنت)/iu.test(combined))
    return "money";
  if(/\b(?:oz|ounces?|ml|kg|lbs?|cl|pt|qt|gal)\b/iu.test(combined))return "size";
  return "plain";
@@ -34,7 +35,7 @@ function claimKey(span:string,after:string):string{
  // "$7", "$7.00" and "7 dollars" are the same value; "10 cents" is
  // not the same as "$10". Avoid floating-point arithmetic here.
  if(kind==="money"){
-   const minor=/(?:\bcents?\b|\bcentavos?\b|سنت)/iu.test(span);
+   const minor=/(?:\bcents?\b|\bcentavos?\b|سنت)/iu.test(span+" "+after.slice(0,16));
    const [whole,fraction=""]=n.split(".");
    if(!/^\d+$/u.test(whole)||fraction.length>2||!/^\d*$/u.test(fraction))return kind+":"+n;
    const cents=BigInt(whole)*(minor?BigInt(1):BigInt(100))+
