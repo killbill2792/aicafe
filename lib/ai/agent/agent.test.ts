@@ -1153,3 +1153,22 @@ describe("spoken grammar: compound order and quantity boundaries",()=>{
    expect(checkNumbers("We sold 5 lattes","We sold five lattes for ten dollars",[],"en")).toEqual([]);
  });
 });
+
+
+describe("review: expression and explicit-unit boundaries",()=>{
+ it("does not reinterpret exactly five cents as fifty cents",()=>{
+   expect(checkNumbers("Price is $5.05.","Price is five dollars and five cents.",[],"en")).toEqual([]);
+   expect(checkNumbers("Price is $5.50.","Price is five dollars and five cents.",[],"en")
+     .map(x=>x.text)).toEqual(["$5.50"]);
+   expect(checkNumbers("El precio es $5.05.","El precio es cinco dólares y cinco centavos.",[],"es")).toEqual([]);
+ });
+ it("never combines a spoken amount across a period or comma",()=>{
+   const owner="The price is twenty. Five dollars was the old price.";
+   expect(checkNumbers("The new price is $20.","The price is twenty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The new price is $25.",owner,[],"en")
+     .map(x=>x.text)).toEqual(["$25"]);
+   expect(checkNumbers("The new price is $5.",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$35","El precio es treinta. Y cinco dólares antes.",[],"es")
+     .map(x=>x.text)).toEqual(["$35"]);
+ });
+});
