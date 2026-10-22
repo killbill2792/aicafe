@@ -66,64 +66,7 @@ export function buildReplyValidationFallbackReply(locale: "en" | "es" | "ar"): G
 }
 
 /** Reject metrics with no exact source citation before the privileged insert. */
+/** Shape/size validation only; business facts are checked by agent/checkNumbers. */
 export function validateGroundedReply(reply: GroundedSupervisorReply): GroundedSupervisorReply {
-  const validated = groundedReplySchema.parse(reply);
-  // A server-validated question is a pending request, never a verified business fact.
-  if(validated.status==="requires_owner_input"){
-    const cards=validated.blocks.filter(block=>block.type==="owner_question");
-    if(!validated.ownerInput||cards.length!==1||
-      cards[0].type!=="owner_question"||
-      cards[0].questionId!==validated.ownerInput.questionId)
-      throw new SupervisorReplyValidationError("missing_evidence","Invalid owner-input state",validated);
-    const otherBlocks=validated.blocks.filter(block=>block.type!=="owner_question");
-    // A reviewed, source-backed PARTIAL result may accompany one durable card
-    // without losing the verified work. Every factual block retains its exact
-    // validated evidence reference; source-free text stays card-only.
-    const conditional=validated.evidence.length===0&&
-      otherBlocks[0]?.type==="warning"&&
-      (otherBlocks[0].code==="P3_CONDITIONAL"||otherBlocks[0].code==="SUPERVISOR_ADVICE")&&
-      otherBlocks.some(block=>block.type==="text")&&
-      otherBlocks.every(block=>block.type==="text"||block.type==="warning");
-    if(otherBlocks.length&&(!validated.evidence.length&&!conditional||
-      otherBlocks.some(block=>(block.type==="metric"||block.type==="count"||block.type==="percent"||
-          block.type==="task_status"||block.type==="task_card")&&
-        !validated.evidence.some(e=>e.source===block.source.source&&
-          e.identifier===block.source.identifier&&e.asOf===block.source.asOf))))
-      throw new SupervisorReplyValidationError("missing_evidence",
-        "Owner-input partial evidence failed its source contract",validated);
-    return validated;
-  }
-  // The P3 arithmetic evaluator can produce a deterministic owner-only what-if
-  // using no café reads. Its result is necessarily conditional and consists
-  // entirely of server-built text/warnings; it must never fabricate café
-  // evidence just to satisfy the generic grounding requirement.
-  const sourceFreeP3 = validated.status === "partial" &&
-    validated.intent === "profitability" && validated.evidence.length === 0 &&
-    validated.blocks[0]?.type === "warning" &&
-    validated.blocks[0].code === "P3_CONDITIONAL" &&
-    validated.blocks.some(b => b.type === "text") &&
-    validated.blocks.every(b => b.type === "text" || b.type === "warning");
-  const sourceFreeAdvice=validated.status==="partial"&&validated.intent==="unknown"&&
-    validated.evidence.length===0&&validated.blocks[0]?.type==="warning"&&
-    validated.blocks[0].code==="SUPERVISOR_ADVICE"&&
-    validated.blocks.every(b=>b.type==="text"||b.type==="warning");
-  if (!["insufficient_evidence","unavailable"].includes(validated.status) &&
-      validated.evidence.length === 0 && !sourceFreeP3 && !sourceFreeAdvice) {
-    throw new SupervisorReplyValidationError("missing_evidence",
-      "Supervisor response requires trusted evidence", validated);
-  }
-  if (["insufficient_evidence","unavailable"].includes(validated.status) &&
-      validated.blocks.some((block) => block.type === "metric" || block.type === "count" || block.type === "percent" || block.type === "task_status" || block.type === "task_card")) {
-    throw new SupervisorReplyValidationError("insufficient_evidence_with_metrics",
-      "Insufficient evidence cannot contain factual metrics or task claims", validated);
-  }
-  for (const block of validated.blocks) {
-    if ((block.type === "metric" || block.type === "count" || block.type === "percent" || block.type === "task_status" || block.type === "task_card") &&
-        !validated.evidence.some((e) => e.source === block.source.source &&
-          e.identifier === block.source.identifier && e.asOf === block.source.asOf)) {
-      throw new SupervisorReplyValidationError("missing_grounding_reference",
-        "Metric or task is missing its exact grounding reference", validated);
-    }
-  }
-  return validated;
+  return groundedReplySchema.parse(reply);
 }
