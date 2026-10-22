@@ -156,8 +156,15 @@ export async function monitorInitiatives(now:Date=new Date(),
       // After the correction window, finish exactly the outstanding final
       // evidence sweep. Other rotation priorities may repeatedly consume
       // slots and starve older required dates, preventing completion.
+      // Rotate over the STABLE full date universe, not the shrinking set of
+      // missing samples. An unrefreshable date must be retried eventually but
+      // cannot monopolize all eight slots and starve newer source corrections.
+      const sweepOffset=requiredDates.length?
+        (Math.max(0,initiative.revision-1)*8)%requiredDates.length:0;
+      const sweepOrder=[...requiredDates.slice(sweepOffset),
+        ...requiredDates.slice(0,sweepOffset)];
       const pending=afterWindow?
-        requiredDates.filter(requiresFreshVerification).slice(0,8):
+        sweepOrder.filter(requiresFreshVerification).slice(0,8):
         [...selected,...covered.filter(d=>!selected.includes(d))
           .slice(0,Math.max(0,8-selected.length))].slice(0,8);
       for(const date of pending){
