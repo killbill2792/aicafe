@@ -13,9 +13,10 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
         return;
       }
       if(typeof v!=="number"||!Number.isFinite(v))return;
-      const unit=/Cents$/.test(key)?"cents":/Bps$/.test(key)?"bps":
+      const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
         /Margin$|Ratio$/.test(key)?"ratio":"count";
-      values.push({key,value:v,unit});remaining--;
+      const value=/Micros$/.test(key)?v/10000:/Percent$/.test(key)?v*100:v;
+      values.push({key,value,unit});remaining--;
     };
     if(r.missing.length===0)walk(r,"",0);
     return {tool:r.source,values};
@@ -98,6 +99,8 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
   }
   if (typeof data !== "number" || !Number.isFinite(data)) return;
   if (/Cents$/.test(key)) allowed.money.add(Math.round(data));
+  else if (/Micros$/.test(key)) allowed.money.add(data/10000);
+  else if (/Percent$/.test(key)) allowed.percent.add(Math.round(data*100));
   else if (/Bps$/.test(key)) allowed.percent.add(Math.round(data));
   else if (/Margin$|Ratio$/.test(key)) allowed.percent.add(Math.round(data * 10000));
   else allowed.number.add(data);
@@ -122,8 +125,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   for(const kind of ["money","percent","number"] as const){
     const source=[...allowed[kind]].slice(0,60);
     for(let i=0;i<source.length;i++)for(let j=0;j<source.length;j++){
+      if(i===j)continue;
       const a=source[i],b=source[j];
-      allowed[kind].add(a+b);allowed[kind].add(a-b);
+      if(/\b(?:more than|less than|difference|increase|decrease|higher|lower|change|extra|combined|total of)\b/i.test(text)){
+        allowed[kind].add(a+b);allowed[kind].add(a-b);
+      }
       if(kind==="money"){
         if(b!==0)allowed.number.add(a/b);
         if(a!==0)allowed.percent.add(Math.round(((b-a)/Math.abs(a))*10000));
@@ -139,8 +145,10 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.kind==="number" && /^[.)]\s/u.test(after) && /(?:^|\s)$/u.test(before))return false;
     const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
     if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
-      /\b\d{1,2}h(?:\d{2})?\b/iu.test(local)))return false;
-    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^(?:\\s*)(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?)/iu.test(after))return false;
+      /\b\d{1,2}h(?:\d{2})?\b/iu.test(local))) {
+      if(!/\b(?:we\s+open|we\s+close|open\s+at|close\s+at|shift\s+(?:starts|ends)|business\s+hours)\b/i.test(text))return false;
+    }
+    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^\s*(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?|coffees?)/iu.test(after))return false;
     return ![...allowed[v.kind]].some(x =>
     Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
   })
