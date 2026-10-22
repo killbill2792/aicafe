@@ -211,6 +211,10 @@ describe("Codex: list markers cannot hide unsupported facts", () => {
       .map(v => v.text)).toEqual(["5"]);
     expect(checkNumbers("We sold 999) drinks.", "", [], "en")
       .map(v => v.text)).toEqual(["999"]);
+    expect(checkNumbers("9. Sales are unavailable.", "", [], "en")
+      .map(v => v.text)).toEqual(["9"]); // a number at line start is not automatically an ordered list
+    expect(checkNumbers("2. Latte", "", [], "en")
+      .map(v => v.text)).toEqual(["2"]); // a list with no first item is not proven to be a list
   });
   it("preserves real line-based and compact sequential numbered lists", () => {
     expect(checkNumbers("1. Latte\n2. Mocha\n3) Tea", "", [], "en")).toEqual([]);
