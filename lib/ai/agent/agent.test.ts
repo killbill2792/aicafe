@@ -794,3 +794,117 @@ describe("failed read versus explicitly absent temporal data",()=>{
       "",[],"en",[...old,...failed])).toEqual([]);
   });
 });
+
+
+describe("Codex: scoped invalidations, item identity and Arabic clocks",()=>{
+  const oldTuesday={source:"locations.open_hours",period:null,missing:[],
+    hours:{mon:[["08:00","17:00"]],tue:[["09:00","18:00"]]}};
+  const partial={source:"locations.open_hours",period:null,
+    missing:["businessHoursNotSet:tue","businessHoursNotSet:wed"],
+    hours:{mon:[["08:00","17:00"]]}};
+  it("invalidates specifically unset weekdays without dropping known Monday",()=>{
+    const previous=compactEvidence([oldTuesday]);
+    const updated=compactEvidence([partial]);
+    expect(updated[0].timeScope).toEqual({kind:"hours",days:["mon","tue","wed"]});
+    expect(checkNumbers("We open at 9:00 AM on Tuesday.","",[],"en",
+      [...previous,...updated]).length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[],"en",
+      [...previous,...updated])).toEqual([]);
+    const failed=compactEvidence([{source:"locations.open_hours",period:null,
+      missing:["businessHoursReaderUnavailable"],hours:null}]);
+    expect(checkNumbers("We open at 9:00 AM on Tuesday.","",[],"en",
+      [...previous,...failed])).toEqual([]);
+  });
+  it("keeps numeric invalidations even when all 100 persistence slots are used",()=>{
+    const previous=compactEvidence([{source:"expenses",period:null,missing:[],
+      recordedActualTotalCents:600}]);
+    const current=[
+      {source:"expenses",period:null,missing:[],recordedActualTotalCents:850},
+      {source:"labor_and_attendance",period:null,missing:[],
+        laborDays:Array.from({length:31},(_,i)=>({
+          date:"2026-10-"+String(i+1).padStart(2,"0"),
+          wagesCents:1000+i,staffTaxCents:100,loadedStaffCostCents:1100+i}))},
+      {source:"menu_items",period:null,missing:[],
+        items:Array.from({length:25},(_,i)=>({
+          id:"item-"+i,name:"Item "+i,priceCents:300+i}))}
+    ];
+    const newSaved=compactEvidence(current);
+    expect(newSaved[0].values).toHaveLength(0);
+    expect(newSaved[0].invalidatedKeys).toContain("recordedActualTotalCents");
+    expect(checkNumbers("Recorded expenses are $6.","",[],"en",
+      [...previous,...newSaved]).map(x=>x.text)).toEqual(["$6"]);
+  });
+  it("reconciles a named product price read through another tool",()=>{
+    const old=compactEvidence([{source:"menu_items",period:null,missing:[],
+      items:[{id:"latte",name:"Latte",priceCents:600}]}]);
+    const current=compactEvidence([{source:"product_costs",period:null,missing:[],
+      item:{id:"latte",name:"Latte",priceCents:850}}]);
+    expect(checkNumbers("Latte costs $6.","",[],"en",
+      [...old,...current]).map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[],"en",
+      [...old,...current])).toEqual([]);
+    expect(checkNumbers("Latte costs $6.","",
+      [{source:"product_costs",period:null,missing:[],
+        item:{id:"latte",name:"Latte",priceCents:850}}],"en",old)
+      .map(v=>v.text)).toEqual(["$6"]);
+  });
+  it("invalidates now-unknown recipe costs without treating a read error as a refresh",()=>{
+    const before=compactEvidence([{source:"product_costs",period:null,missing:[],
+      item:{id:"latte",name:"Latte",priceCents:850,
+        recipeCostCents:125,ingredientsCentsToday:125}}]);
+    const unknown=compactEvidence([{source:"product_costs",period:null,
+      missing:["ingredientCostUnavailable"],
+      item:{id:"latte",name:"Latte",priceCents:850,
+        recipeCostCents:null,ingredientsCentsToday:null}}]);
+    expect(unknown[0].invalidatedKeys).toContain("item:latte/recipeCostCents");
+    expect(checkNumbers("Ingredients cost $1.25.","",[],"en",
+      [...before,...unknown]).map(v=>v.text)).toEqual(["$1.25"]);
+    const error=compactEvidence([{source:"product_costs",period:null,
+      missing:["sourceUnavailable"]}]);
+    expect(checkNumbers("Ingredients cost $1.25.","",[],"en",
+      [...before,...error])).toEqual([]);
+  });
+  it("checks the direction of menu comparisons before matching any raw price",()=>{
+    const menu={source:"menu_items",period:null,missing:[],items:[
+      {id:"latte",name:"Latte",priceCents:850},
+      {id:"mocha",name:"Mocha",priceCents:600},
+      {id:"tea",name:"Tea",priceCents:250}]};
+    expect(checkNumbers("Mocha is $2.50 more than Latte.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+    expect(checkNumbers("Latte is $2.50 more than Mocha.","",[menu],"en"))
+      .toEqual([]);
+    expect(checkNumbers("Latte is $2.50 less than Mocha.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+  });
+  it("validates currency-less prices against the named product",()=>{
+    const menu={source:"menu_items",period:null,missing:[],items:[
+      {id:"latte",name:"Latte",priceCents:850},
+      {id:"mocha",name:"Mocha",priceCents:600}]};
+    expect(checkNumbers("Latte costs 6.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["6"]);
+    expect(checkNumbers("Latte costs 8.50.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Mocha costs 6.","",[menu],"en")).toEqual([]);
+  });
+  it("authorizes all source-backed current labor values beyond 100 historic entries",()=>{
+    const earlier=compactEvidence([{source:"labor_and_attendance",
+      period:{from:"2026-09-01",to:"2026-09-30"},missing:[],
+      laborDays:Array.from({length:30},(_,i)=>({
+        date:"2026-09-"+String(i+1).padStart(2,"0"),
+        wagesCents:100+i,staffTaxCents:100,loadedStaffCostCents:200+i}))}],Infinity);
+    const current={source:"labor_and_attendance",
+      period:{from:"2026-10-01",to:"2026-10-22"},missing:[],
+      laborDays:Array.from({length:22},(_,i)=>({
+        date:"2026-10-"+String(i+1).padStart(2,"0"),
+        wagesCents:1000+i,staffTaxCents:250,loadedStaffCostCents:1250+i}))};
+    expect(checkNumbers("Staff tax is $2.50.","",[current],"en",earlier)).toEqual([]);
+  });
+  it("respects Arabic evening meridiems when checking claimed closing time",()=>{
+    const morning={source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["01:00","05:00"]]}};
+    const evening={source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["08:00","17:00"]]}};
+    const claim="نغلق الساعة ٥:٠٠ مساءً يوم الاثنين.";
+    expect(checkNumbers(claim,"",[morning],"ar").length).toBeGreaterThan(0);
+    expect(checkNumbers(claim,"",[evening],"ar")).toEqual([]);
+  });
+});
