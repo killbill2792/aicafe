@@ -114,6 +114,10 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const {identity,tools:cafeTools}=await authorizedOwnerP1();
  if(identity.asOf!==input.asOf||identity.timezone!==input.timezone)throw new Error("Supervisor source identity changed");
  const snapshot=await readAuthorizedAtomicP1SourceSnapshot();
+ if(snapshot.status==="available"&&(snapshot.snapshot.businessId!==identity.businessId||
+    snapshot.snapshot.currency!==identity.currency||
+    snapshot.snapshot.timezone!==identity.timezone))
+    throw new Error("Supervisor source snapshot does not match authorized café");
  const financialReadsAvailable=snapshot.status==="available"||snapshot.reason==="rpc_not_installed";
  const sourceStillCurrent=async()=>{
    const latest=await authorizedOwnerP1();
@@ -315,10 +319,16 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
    if(result.mode==="clarify"){
     // Clarification prose cannot smuggle record facts or unverified numbers.
-    const question=result.text.trim().slice(0,220);
-    if(!question||!noDigits(question))break;
+    const requestedQuestion=result.text.trim().slice(0,220);
+    if(!requestedQuestion)break;
+    // A model may mention option numbers in its suggested question.
+    // Never publish those numbers as model prose; the server-rendered
+    // authorized choices show the actual sizes and labels instead.
+    const question=noDigits(requestedQuestion)?requestedQuestion:copy.ask;
     const resolved=pickIds(result.optionIds,optionRows);
-    const loc={en:question,es:question,ar:question};
+    const loc={en:input.locale==="en"?question:localeCopy.en.ask,
+      es:input.locale==="es"?question:localeCopy.es.ask,
+      ar:input.locale==="ar"?question:localeCopy.ar.ask};
     // A selected menu variant must survive the owner reply as an authenticated
     // catalog identity; a generic option label is never a product ID or a money quote.
     const catalog=resolved.length>=2?await getMenuControlCenter():[];
@@ -495,8 +505,12 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
            authorizedOperands:available.slice(0,12).map(o=>({handle:o.handle,unit:o.unit}))};
        }else{
          const computed=valid.data;
-         const sourceObservations=observations.filter(o=>selected.some(a=>
-           a.capabilityId===o.capabilityId)&&o.reference);
+         const sourceObservations=observations.filter(o=>o.reference&&selected.some(a=>{
+           if(a.capabilityId!==o.capabilityId)return false;
+           if(a.handle.startsWith("dataset:"))return a.handle.startsWith("dataset:"+o.id+":");
+           const period=isRecord(o.input)&&isRecord(o.input.period)?o.input.period:null;
+           return !a.period||Boolean(period&&period.from===a.period.from&&period.to===a.period.to);
+         }));
          const refs=[...new Map(sourceObservations.flatMap(o=>o.reference?[o.reference]:[])
            .map(r=>[r.identifier,r])).values()];
          const calculatedId="f"+(facts.size+1);
