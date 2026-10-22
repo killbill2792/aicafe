@@ -333,7 +333,7 @@ describe("Codex: assistant formatting never becomes cross-turn evidence", () => 
 describe("Codex: partial hours preserve weekday-specific verified times", () => {
   const partial={source:"locations.open_hours",period:null,
     missing:["businessHoursNotSet:tue","businessHoursNotSet:wed"],
-    hours:{mon:[["08:00","17:00"]],tue:[]}};
+    hours:{mon:[["08:00","17:00"]]}};
   it("verifies a configured Monday time even when other weekdays are unknown", () => {
     expect(checkNumbers("We open at 8:00 AM on Monday.", "", [partial], "en")).toEqual([]);
     expect(checkNumbers("We close at 5:00 PM on Monday.", "", [partial], "en")).toEqual([]);
@@ -351,5 +351,49 @@ describe("Codex: partial hours preserve weekday-specific verified times", () => 
   it("retains multilingual weekday-specific grounding", () => {
     expect(checkNumbers("We open at 8:00 AM on lunes.", "", [partial], "es")).toEqual([]);
     expect(checkNumbers("We open at 8:00 AM on الاثنين.", "", [partial], "ar")).toEqual([]);
+  });
+});
+
+
+describe("Codex: typed roles, weekdays and staff identity in time evidence", () => {
+  const hours={source:"locations.open_hours",period:null,missing:[],
+    hours:{mon:[["08:00","17:00"]],tue:[["09:00","18:00"]]}};
+  const schedule={source:"recurring_schedule",period:{from:"2026-10-26",to:"2026-11-01"},
+    missing:[],shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+      endTime:"16:00",effectiveFrom:"2026-10-26",effectiveTo:null}]};
+  it("does not interchange opening and closing endpoints", () => {
+    expect(checkNumbers("We open at 8:00 AM on Monday.", "", [hours], "en")).toEqual([]);
+    expect(checkNumbers("We close at 5:00 PM on Monday.", "", [hours], "en")).toEqual([]);
+    expect(checkNumbers("We open at 5:00 PM on Monday.", "", [hours], "en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We close at 8:00 AM on Monday.", "", [hours], "en")
+      .length).toBeGreaterThan(0);
+  });
+  it("matches each time with its respective weekday in a shared sentence", () => {
+    expect(checkNumbers("We open at 8:00 AM on Monday and 9:00 AM on Tuesday.",
+      "", [hours], "en")).toEqual([]);
+    expect(checkNumbers("We open Monday at 8:00 AM and Tuesday at 9:00 AM.",
+      "", [hours], "en")).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on Monday and Tuesday.",
+      "", [hours], "en").length).toBeGreaterThan(0);
+    const shared={...hours,hours:{mon:[["08:00","17:00"]],tue:[["08:00","18:00"]]}};
+    expect(checkNumbers("We open at 8:00 AM on Monday and Tuesday.",
+      "", [shared], "en")).toEqual([]);
+  });
+  it("does not use Ada's Monday shift to prove a Tuesday shift or location opening", () => {
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday.",
+      "", [schedule], "en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift ends at 4:00 PM on Monday.",
+      "", [schedule], "en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Tuesday.",
+      "", [schedule], "en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Bob’s shift starts at 8:00 AM on Monday.",
+      "", [schedule], "en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift ends at 8:00 AM on Monday.",
+      "", [schedule], "en").length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Tuesday.",
+      "", [schedule], "en").length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Monday.",
+      "", [schedule], "en").length).toBeGreaterThan(0);
   });
 });
