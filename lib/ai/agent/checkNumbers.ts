@@ -47,6 +47,14 @@ function appendInitiativeNumericEvidence(
   const unit=metricCatalog[keyParsed.data].unit;
   if(detail.unit!==unit||unit==="microcents_per_base_unit")return;
   const metricRoot="initiative:"+initiative.id+"/metric:"+detail.id+"/";
+  // Relative improvement targets are themselves percentages, not an
+  // implicit dollar/count threshold. Treat the owner's approved spec as
+  // typed percentage evidence, separate from the computed test target.
+  const relativeKey=metricRoot+"relativeChangeBps";
+  invalidatedKeys.push(relativeKey);
+  if(detail.targetKind==="relative_pct"&&
+    typeof detail.target==="number"&&Number.isFinite(detail.target))
+    values.push({key:relativeKey,value:detail.target*100,unit:"bps"});
   const keyFor=(field:string,date?:string)=>
     metricRoot+(date?"day:"+date+"/":"")+field+
       (unit==="count"?"/count":unit==="cents"?"Cents":unit==="bps"?"Bps":"Ratio");

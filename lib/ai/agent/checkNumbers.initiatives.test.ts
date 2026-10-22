@@ -60,7 +60,12 @@ describe("catalog-scoped initiative numeric verification",()=>{
     const relative:AgentToolResult={...base,
       metricEvaluation:null,
       metricDetail:{...base.metricDetail as object,targetKind:"relative_pct",target:15}};
-    expect(compactEvidence([relative]).flatMap(x=>x.values)).toEqual([]);
+    const typed=compactEvidence([relative]).flatMap(x=>x.values);
+    expect(typed).toEqual(expect.arrayContaining([
+      expect.objectContaining({value:1500,unit:"bps"}),
+      expect.objectContaining({value:12000,unit:"cents"}),
+    ]));
+    expect(checkNumbers("Our goal is +15%","",[relative],"en")).toEqual([]);
     expect(checkNumbers("Our target was $0.15","",[relative],"en").length)
       .toBeGreaterThan(0);
   });
