@@ -111,12 +111,13 @@ export async function runAgentTurn(args: {
         }
         usage.toolCalls++;
         let result: AgentToolResult;
+        let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
           result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
             new Promise<never>((_, reject) => {
               const left = deadline - now();
               if (left <= 0) reject(new Error("deadline"));
-              else setTimeout(() => reject(new Error("deadline")), left);
+              else toolTimer = setTimeout(() => reject(new Error("deadline")), left);
             })]);
           failures = 0;
         } catch (error) {
@@ -126,7 +127,7 @@ export async function runAgentTurn(args: {
           } : error instanceof SyntaxError ? { error: "invalid_json" }
             : { error: now() >= deadline ? "deadline_exceeded" : "tool_unavailable" };
           result = { source: tool.name, period: null, missing: [String(detail.error)], ...detail };
-        }
+        } finally { clearTimeout(toolTimer); }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
         if (failures >= 2) {
