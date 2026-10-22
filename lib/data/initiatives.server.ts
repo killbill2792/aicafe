@@ -78,12 +78,27 @@ export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeI
   if(lookupError||!data)throw lookupError??new Error("initiative request unavailable");
   return data as InitiativeRow;
 }
-export async function listOwnerInitiatives(scope:InitiativeScope,status?:string) {
+export async function listOwnerInitiatives(scope:InitiativeScope,status?:string,afterId?:string) {
   const db=await ownerAccess(scope);
+  // Stable keyset cursor: resolve it under the SAME owner, tenant and filter.
+  let cursor:{id:string;created_at:string}|null=null;
+  if(afterId){
+    let lookup=db.from("owner_initiatives").select("id,created_at")
+      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId)
+      .eq("id",afterId);
+    if(status)lookup=lookup.eq("status",status);
+    const result=await lookup.maybeSingle();
+    if(result.error)throw result.error;
+    if(!result.data)throw new Error("initiative list cursor unavailable");
+    cursor=result.data;
+  }
   let query=db.from("owner_initiatives").select(columns)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
   if(status)query=query.eq("status",status);
-  const {data,error}=await query.order("created_at",{ascending:false}).limit(20);
+  if(cursor)query=query.or("created_at.lt."+cursor.created_at+
+    ",and(created_at.eq."+cursor.created_at+",id.lt."+cursor.id+")");
+  const {data,error}=await query.order("created_at",{ascending:false})
+    .order("id",{ascending:false}).limit(6);
   if(error)throw error;
   return (data??[]) as InitiativeRow[];
 }

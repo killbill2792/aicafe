@@ -42,7 +42,7 @@ const proposalArgs=z.strictObject({
   checkinCadence:z.enum(["daily","every_3_days","weekly","end_only"]),
   metrics:z.array(toolMetric).min(1).max(12),
 });
-const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
+const listArgs=z.strictObject({status:initiativeStatusSchema.nullable(),afterId:z.uuid().nullable()});
 const statusArgs=z.strictObject({id:z.uuid(),metricId:z.uuid().nullable(),date:z.iso.date().nullable()});
 const checkinArgs=z.strictObject({
   metricId:z.uuid(),date:z.iso.date(),expectedRevision:z.number().int().positive().nullable(),
@@ -57,7 +57,7 @@ export const initiativeToolSchemas={
 } as const;
 const descriptions={
   propose_initiative:"Create an INERT goal/experiment proposal. Write an object as changeSpecJson. Use checkin with a question and gap for noncatalog measurements. Owner approves separately.",
-  get_initiatives:"Read this owner's recent goals and experiments.",
+  get_initiatives:"Read 5 owner initiatives per page. Pass nextAfterId as afterId to continue; both status and afterId are nullable.",
   get_initiative_status:"Get a compact initiative status with ALL metric IDs. For a detailed question, target or historical check-in revision, send metricId and date together; otherwise both null.",
   record_checkin:"Record an owner's check-in for a check-in metric. This never applies a change.",
 };
@@ -127,10 +127,13 @@ export async function executeInitiativeTool(
   }
   if(name==="get_initiatives"){
     const input=listArgs.parse(raw);
-    const items=await listOwnerInitiatives(scope,input.status??undefined);
+    const rows=await listOwnerInitiatives(scope,input.status??undefined,input.afterId??undefined);
+    const hasMore=rows.length>5;
+    const items=rows.slice(0,5);
     return {source:"owner_initiatives",period:null,missing:[],
-      items:items.map(i=>({id:i.id,title:i.title,kind:i.kind,status:i.status,
-        startsOn:i.starts_on,endsOn:i.ends_on}))};
+      items:items.map(i=>({id:i.id,title:Array.from(i.title).slice(0,72).join(""),
+        kind:i.kind,status:i.status,startsOn:i.starts_on,endsOn:i.ends_on})),
+      hasMore,nextAfterId:hasMore?items[items.length-1]?.id??null:null};
   }
   if(name==="get_initiative_status"){
     const {id,metricId,date}=statusArgs.parse(raw);

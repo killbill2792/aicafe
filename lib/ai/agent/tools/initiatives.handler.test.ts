@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeInitiativeTool, initiativeToolDefinitions } from "./initiatives";
 import type { AgentToolContext } from "./index";
 
-const state=vi.hoisted(()=>({owner:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",proposals:0,checkins:0,metricCount:1,heavy:false,withTypedMetrics:false}));
+const state=vi.hoisted(()=>({owner:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",proposals:0,checkins:0,metricCount:1,heavy:false,withTypedMetrics:false,listCount:1}));
 const businessId="11111111-1111-4111-8111-111111111111";
 const threadId="22222222-2222-4222-8222-222222222222";
 const initiativeId="33333333-3333-4333-8333-333333333333";
@@ -13,8 +13,13 @@ vi.mock("@/lib/ai/conversations/auth.server",()=>({
 vi.mock("@/lib/data/initiatives.server",()=>({
   createOwnerInitiative:async()=>{state.proposals++;return {id:"33333333-3333-4333-8333-333333333333",revision:1,
     kind:"goal",title:"Keep coffee revenue",change_description:""};},
-  listOwnerInitiatives:async()=>[{id:"33333333-3333-4333-8333-333333333333",status:"active",
-    title:"Keep coffee revenue",kind:"goal",starts_on:"2026-10-22",ends_on:"2026-10-29"}],
+  listOwnerInitiatives:async(_scope:unknown,_status:unknown,afterId?:string)=>
+    Array.from({length:Math.max(0,state.listCount-(afterId?5:0))},(_,i)=>({
+      id:i===0&&!afterId?initiativeId:
+        String((afterId?6:1)+i).padStart(8,"0")+"-3333-4333-8333-333333333333",
+      status:"active",title:state.heavy?"🌱".repeat(160):"Keep coffee revenue",
+      kind:"goal",starts_on:"2026-10-22",ends_on:"2026-10-29",
+    })).slice(0,6),
   readOwnerInitiative:async()=>({
     initiative:{id:"33333333-3333-4333-8333-333333333333",status:"active",title:"Keep coffee revenue",revision:2,
       starts_on:"2026-10-22",ends_on:"2026-10-29"},
@@ -66,7 +71,7 @@ const proposal={
     comparator:"gte",targetKind:"absolute",target:1,checkinQuestion:"Was everything ready?",
     checkinAudience:"owner",dataGap:"Needs owner answer"}],
 };
-beforeEach(()=>{state.proposals=0;state.checkins=0;state.metricCount=1;state.heavy=false;state.withTypedMetrics=false;});
+beforeEach(()=>{state.proposals=0;state.checkins=0;state.metricCount=1;state.heavy=false;state.withTypedMetrics=false;state.listCount=1;});
 describe("owner-scoped initiative agent handlers",()=>{
   it("proposes only with server-origin thread and returns actionable metric IDs",async()=>{
     const result=await executeInitiativeTool("propose_initiative",proposal,context);
@@ -79,7 +84,7 @@ describe("owner-scoped initiative agent handlers",()=>{
     expect(state.proposals).toBe(1);
   });
   it("lists owner-only IDs and reads metric questions and dates",async()=>{
-    const list=await executeInitiativeTool("get_initiatives",{status:null},context);
+    const list=await executeInitiativeTool("get_initiatives",{status:null,afterId:null},context);
     expect(list.items).toEqual([expect.objectContaining({id:initiativeId,status:"active"})]);
     const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId,metricId:null,date:null},context);
     expect(detail.metrics).toEqual([expect.objectContaining({id:metricId,source:"checkin"})]);
@@ -89,6 +94,19 @@ describe("owner-scoped initiative agent handlers",()=>{
     },context);
     expect(selected.metricDetail).toMatchObject({id:metricId,question:"Was everything ready?"});
     expect(detail.missing).toEqual(["evaluationPending","checkinPending"]);
+  });
+  it("pages compact titles and keeps the entire serialized list within budget",async()=>{
+    state.heavy=true;state.listCount=20;
+    const first=await executeInitiativeTool("get_initiatives",{status:null,afterId:null},context);
+    expect((first.items as unknown[])).toHaveLength(5);
+    expect(first.hasMore).toBe(true);
+    expect(typeof first.nextAfterId).toBe("string");
+    expect(JSON.stringify(first).length).toBeLessThan(3300);
+    const next=await executeInitiativeTool("get_initiatives",{
+      status:null,afterId:first.nextAfterId,
+    },context);
+    expect((next.items as unknown[])).toHaveLength(5);
+    expect(JSON.stringify(next).length).toBeLessThan(3300);
   });
   it("returns every proposed metric plus the thirteenth confirmation guardrail",async()=>{
     state.metricCount=13;
