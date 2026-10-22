@@ -23,17 +23,25 @@ export function visibleConversationMessages(
   }];
 }
 
-/** Viewport-only scroll policy: new conversations start at the beginning,
- * outgoing turns follow the latest message, and older history keeps its anchor. */
+/** Tolerate a few pixels of sub-pixel rounding and touch scroll momentum. */
+export function isTranscriptNearBottom({
+  scrollTop, scrollHeight, clientHeight,
+}: { scrollTop: number; scrollHeight: number; clientHeight: number }, threshold = 64): boolean {
+  return scrollHeight - clientHeight - scrollTop <= threshold;
+}
+
+/** Scroll to the actual bottom when pinned; prepend is a separate operation that
+ * must preserve the reader's viewport even if the previous state was pinned. */
 export function transcriptScrollTarget({
-  scrollTop, scrollHeight, previousScrollHeight, openAtTop, followLatest,
+  scrollTop, scrollHeight, clientHeight, previousScrollHeight, pinned,
 }: {
-  scrollTop: number; scrollHeight: number; previousScrollHeight: number | null;
-  openAtTop: boolean; followLatest: boolean;
+  scrollTop: number; scrollHeight: number; clientHeight: number;
+  previousScrollHeight: number | null; pinned: boolean;
 }): number | null {
-  if (previousScrollHeight !== null) return scrollTop + scrollHeight - previousScrollHeight;
-  if (openAtTop) return 0;
-  return followLatest ? scrollHeight : null;
+  if (previousScrollHeight !== null) {
+    return Math.max(0, scrollTop + scrollHeight - previousScrollHeight);
+  }
+  return pinned ? Math.max(0, scrollHeight - clientHeight) : null;
 }
 
 /** Only a question on the latest message is interactive. Older cards remain
