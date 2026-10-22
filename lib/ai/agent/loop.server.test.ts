@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { runAgentTurn, type AgentProvider } from "./loop.server";
 import type { AgentToolContext } from "./tools";
 
@@ -199,6 +199,42 @@ describe("recorded Responses streaming fixtures", () => {
     expect(reply.text).toBe("Safe. Final.");
     expect(deltas).toEqual(["Safe. ","Wrong","Final."]);
     expect(resets).toEqual([5]);
+  });
+  it("reserves the last twelve seconds for a final answer when a tool read hangs", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-21T12:00:00Z"));
+    try {
+      const requests: Record<string, unknown>[] = [];
+      const hung: AgentToolContext = {
+        ...context, tools: {
+          ...context.tools,
+          getMenuCatalog: async () => new Promise<Awaited<ReturnType<
+            AgentToolContext["tools"]["getMenuCatalog"]>>>(() => {}),
+        },
+      };
+      const provider: AgentProvider = async function* (params) {
+        requests.push(params);
+        if (requests.length === 1) {
+          yield call("get_menu_items",'{"query":null,"limit":null}',"timed-read");
+          yield completed;
+        } else {
+          yield text("The menu read timed out; I cannot verify it yet.");
+          yield completed;
+        }
+      };
+      const pending = runAgentTurn({ownerText:"Menu?",context:hung,provider});
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.advanceTimersByTimeAsync(48000);
+      const result = await pending;
+      expect(requests).toHaveLength(2);
+      expect(requests[1].tool_choice).toBe("none");
+      expect(result.usage.modelCalls).toBe(2);
+      expect(result.usage.toolCalls).toBe(1);
+      expect(result.endReason).toBe("timeout");
+      expect(result.text).toBe("The menu read timed out; I cannot verify it yet.");
+      expect(result.results[0].missing).toContain("deadline_exceeded");
+      expect(result.usage.latencyMs).toBe(48000);
+    } finally { vi.useRealTimers(); }
   });
   it("stops after six regular model calls and only one final call", async () => {
     let count = 0;
