@@ -5,6 +5,8 @@ const itemA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const itemB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const state=vi.hoisted(()=>({
   covered:true,unlinkedCount:0,
+  priceRows:[] as Array<{id:string;ingredient_id:string;effective_from:string;recorded_at:string;cost_per_base_unit_micros:number}>,
+  ingredientIds:[] as string[],
   canonical:[] as Array<{id:string;units:number}>,
   lines:[] as Array<{id:string;order_id:string;menu_item_id:string|null;
     quantity:number;net_sales_cents:number;modifiers:unknown[]}>,
@@ -30,6 +32,8 @@ vi.mock("@/lib/supabase/admin",()=>({
         if(table==="orders")return [{id:"order-1",pos_order_id:"square:order-1",
           net_sales_cents:1200}];
         if(table==="order_lines")return state.lines;
+        if(table==="ingredients")return state.ingredientIds.map(id=>({id}));
+        if(table==="ingredient_prices")return state.priceRows;
         if(table==="menu_item_cost_fallbacks")return [
           {menu_item_id:itemA,cost_cents:10},{menu_item_id:itemB,cost_cents:10},
         ];
@@ -54,6 +58,7 @@ vi.mock("@/lib/supabase/admin",()=>({
 beforeEach(()=>{
   state.covered=true;state.unlinkedCount=0;
   state.canonical.length=0;state.lines.length=0;
+  state.priceRows.length=0;state.ingredientIds.length=0;
   for(let i=0;i<1200;i++)state.lines.push({
     id:String(i).padStart(8,"0"),order_id:"order-1",menu_item_id:i<1000?itemA:itemB,
     quantity:1,net_sales_cents:1,modifiers:[],
@@ -91,5 +96,22 @@ describe("M1 canonical item evidence reader",()=>{
       items:true,hours:false,ingredientIds:[],
     });
     expect(unavailable.itemCoverageInvalidated).toBe(false);
+  });
+  it("uses Pantry's latest same-day recorded price, not an arbitrary first row",async()=>{
+    const ingredientId="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+    state.ingredientIds.push(ingredientId);
+    state.priceRows.push({
+      id:"11111111-1111-4111-8111-111111111111",
+      ingredient_id:ingredientId,effective_from:"2026-10-05",
+      recorded_at:"2026-10-05T12:00:00.100001Z",cost_per_base_unit_micros:100000,
+    },{
+      id:"22222222-2222-4222-8222-222222222222",
+      ingredient_id:ingredientId,effective_from:"2026-10-05",
+      recorded_at:"2026-10-05T12:00:00.100002Z",cost_per_base_unit_micros:150000,
+    });
+    const day=await readMetricDay("business","2026-10-05",{
+      items:false,hours:false,ingredientIds:[ingredientId],
+    });
+    expect(computeMetric("ingredient_unit_cost",{ingredientId},day).value).toBe(150000);
   });
 });
