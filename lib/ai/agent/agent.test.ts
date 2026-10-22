@@ -1236,3 +1236,34 @@ describe("CI and Codex: closed money expressions and decimal digits",()=>{
       .map(v=>v.text)).toEqual(["$2.00"]);
   });
 });
+
+
+describe("Codex: expression-local operands and mixed operators",()=>{
+  const observed={source:"profitability",period:null,missing:[],
+    firstCents:1000,secondCents:300,thirdCents:200};
+  it("uses each operator instead of subtracting every later amount",()=>{
+    expect(checkNumbers("$10 minus $3 plus $2 = $9.","",[observed],"en")).toEqual([]);
+    expect(checkNumbers("$10 minus $3 plus $2 = $5.","",[observed],"en")
+      .map(x=>x.text)).toEqual(["$5"]);
+    expect(checkNumbers("$10 plus $3 minus $2 = $11.","",[observed],"en")).toEqual([]);
+    expect(checkNumbers("$10 plus $3 minus $2 = $9.","",[observed],"en")
+      .map(x=>x.text)).toEqual(["$9"]);
+  });
+  it("does not pull an unrelated budget into a price total",()=>{
+    const values={source:"profitability",period:null,missing:[],
+      budgetCents:1000,firstPriceCents:600,secondPriceCents:550,
+      combinedPriceCents:1150};
+    expect(checkNumbers("Our budget is $10, prices are $6 and $5.50, total $11.50.","",
+      [values],"en")).toEqual([]);
+    expect(checkNumbers("Our budget is $10, prices are $6 and $5.50, total $12.","",
+      [values],"en").map(x=>x.text)).toEqual(["$12"]);
+  });
+  it("does not certify the sum of distinct KPIs as a business result",()=>{
+    const metrics={source:"profitability",period:null,missing:[],
+      netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+    expect(checkNumbers("$5.50 costs and $6.00 sales, together $11.50.","",
+      [metrics],"en").map(x=>x.text)).toEqual(["$11.50"]);
+    expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $0.50.","",
+      [metrics],"en")).toEqual([]);
+  });
+});
