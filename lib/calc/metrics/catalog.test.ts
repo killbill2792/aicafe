@@ -7,7 +7,7 @@ const recorded:MetricDailyInput={
   date:"2026-10-21",
   facts:{date:"2026-10-21",netSalesCents:20000,ordersCount:20,drinksCount:23,
     ingredientsCents:6000,wagesCents:5000,staffTaxCents:600,
-    cardFeesCents:400,voidsCents:0,salesDataStatus:"actual"},
+    cardFeesCents:400,voidsCents:0,salesDataStatus:"actual",staffTaxStatus:"actual"},
   items:[{itemId,units:4,revenueCents:2800,
     recipeLines:[{ingredientId,quantity:2}],
     ingredientPriceMicros:{[ingredientId]:1_000_000},ownerCostCents:90}],
@@ -17,6 +17,7 @@ const recorded:MetricDailyInput={
   timecards:[{clockIn:"2026-10-21T17:00:00Z",clockOut:"2026-10-21T19:00:00Z",
     hourlyWageCents:2000,breaks:[]}],
   timezone:"America/Los_Angeles",
+  cogsCoverageVerified:true,laborCoverageVerified:true,itemRevenueVerified:true,attendanceCoverageVerified:true,
 };
 describe("M1 typed metric catalog",()=>{
   it("uses canonical sales and margin calculators",()=>{
@@ -42,6 +43,11 @@ describe("M1 typed metric catalog",()=>{
     }
     expect(computeMetric("item_margin",{itemId}, {...recorded,items:undefined}).value).toBeNull();
     expect(computeMetric("net_profit",{}, {...recorded,runningCostsCents:undefined}).value).toBeNull();
+    expect(computeMetric("cogs_pct",{}, {...recorded,cogsCoverageVerified:false}).value).toBeNull();
+    expect(computeMetric("labor_cost",{}, {...recorded,laborCoverageVerified:false}).value).toBeNull();
+    expect(computeMetric("labor_pct",{}, {...recorded,facts:{...recorded.facts!,staffTaxStatus:"estimated"}}).value).toBeNull();
+    expect(computeMetric("item_revenue",{itemId}, {...recorded,itemRevenueVerified:false}).coverage).toBe(0);
+    expect(computeMetric("sales_per_labor_hour",{fromHour:10,toHour:11},{...recorded,attendanceCoverageVerified:false}).value).toBeNull();
   });
   it("rejects malformed hour range and reports labor-hour gaps",()=>{
     expect(()=>computeMetric("sales_per_labor_hour",{fromHour:18,toHour:9},recorded)).toThrow();

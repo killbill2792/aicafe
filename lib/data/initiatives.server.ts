@@ -202,14 +202,15 @@ export async function readMetricDay(businessId:string,date:string,
   opts:{items:boolean;hours:boolean;ingredientIds:string[]}):Promise<MetricDailyInput> {
   const db=createAdminSupabaseClient();
   const day=await db.from("daily_rollups").select(
-    "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,sales_data_status,card_fees_cents,voids_cents"
+    "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,staff_tax_status,sales_data_status,card_fees_cents,voids_cents"
   ).eq("business_id",businessId).eq("business_date",date).maybeSingle();
   if(day.error)throw day.error;
   const facts=day.data?{
     date:day.data.business_date,netSalesCents:Number(day.data.net_sales_cents),
     ordersCount:Number(day.data.orders_count),drinksCount:Number(day.data.drinks_count),
     ingredientsCents:Number(day.data.ingredients_cents),wagesCents:Number(day.data.staff_wages_cents),
-    staffTaxCents:Number(day.data.staff_tax_cents),salesDataStatus:day.data.sales_data_status,
+    staffTaxCents:Number(day.data.staff_tax_cents),staffTaxStatus:day.data.staff_tax_status,
+    salesDataStatus:day.data.sales_data_status,
     cardFeesCents:Number(day.data.card_fees_cents),voidsCents:Number(day.data.voids_cents),
   }:undefined;
   const input:MetricDailyInput={date,facts};
@@ -240,12 +241,22 @@ export async function readMetricDay(businessId:string,date:string,
     const coverage=await readPeriodItemSales(db,businessId,{from:date,to:date});
     if(coverage.covered){
     const lines=await db.from("order_lines")
-      .select("menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
+      .select("order_id,menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
       .eq("orders.business_id",businessId).eq("orders.business_date",date)
       .eq("voided",false).limit(1001);
     if(lines.error)throw lines.error;
     if((lines.data??[]).length<=1000 && !(lines.data??[]).some(x=>x.menu_item_id===null)){
       const ids=[...new Set((lines.data??[]).map(x=>x.menu_item_id).filter((x):x is string=>!!x))];
+      // Order-level discounts/refunds cannot be assigned to items by assumption.
+      const orders=await db.from("orders").select("id,net_sales_cents")
+        .eq("business_id",businessId).eq("business_date",date).limit(1001);
+      if(orders.error)throw orders.error;
+      const attributed=new Map<string,number>();
+      for(const line of lines.data??[])
+        attributed.set(line.order_id,(attributed.get(line.order_id)??0)+Number(line.net_sales_cents));
+      input.itemRevenueVerified=(orders.data??[]).length<=1000&&
+        (orders.data??[]).length===attributed.size&&
+        (orders.data??[]).every(o=>attributed.get(o.id)===Number(o.net_sales_cents));
       const totals=new Map<string,{units:number;revenueCents:number}>();
       for(const line of lines.data??[]){
         const current=totals.get(line.menu_item_id!)??{units:0,revenueCents:0};

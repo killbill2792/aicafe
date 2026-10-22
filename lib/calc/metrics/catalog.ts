@@ -31,6 +31,10 @@ export type MetricDailyInput = {
   ingredientPriceMicros?: Record<string,number>;
   runningCostsCents?: number;
   timezone?: string;
+  cogsCoverageVerified?:boolean;
+  laborCoverageVerified?:boolean;
+  itemRevenueVerified?:boolean;
+  attendanceCoverageVerified?:boolean;
 };
 type Definition = {
   key: MetricKey; unit: MetricUnit;
@@ -57,6 +61,7 @@ const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" |
   const row = day.items.find(i => i.itemId === id);
   if (!row) return known(0); // covered item sales; no lines for this item is a real zero
   if (field === "units") return known(row.units);
+  if (!day.itemRevenueVerified) return missing("itemRevenueAllocationUnverified");
   if (field === "revenue") return known(row.revenueCents);
   const recipe = evaluateRecipeCost(row.recipeLines, row.ingredientPriceMicros);
   const resolved = resolveProductCost(recipe, row.ownerCostCents);
@@ -64,7 +69,7 @@ const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" |
   return known(roundHalfUpToCent(row.revenueCents - row.units * resolved.costCents));
 };
 const hourly = (day: MetricDailyInput, params: MetricParams): MetricResult => {
-  if (!sales(day) || !day.orders || !day.timecards || !day.timezone) return missing("hourlySalesOrTimecards");
+  if (!sales(day) || !day.orders || !day.timecards || !day.timezone || !day.attendanceCoverageVerified) return missing("hourlySalesOrAttendanceCoverage");
   const parsed = hours.parse(params);
   const start = fromZonedTime(day.date + "T" + String(parsed.fromHour).padStart(2,"0") + ":00:00",day.timezone);
   const endDate = parsed.toHour === 24 ? new Date(Date.parse(day.date + "T12:00:00Z") + 86400000).toISOString().slice(0,10) : day.date;
@@ -78,10 +83,10 @@ const hourly = (day: MetricDailyInput, params: MetricParams): MetricResult => {
   }).reduce((n,o)=>n+o.netSalesCents,0);
   let paid=0;
   for(const tc of day.timecards){
-    if(!tc.clockOut) return missing("openTimecard");
     const a = Math.max(start.getTime(),Date.parse(tc.clockIn));
-    const b = Math.min(end.getTime(),Date.parse(tc.clockOut));
+    const b = Math.min(end.getTime(),tc.clockOut ? Date.parse(tc.clockOut) : end.getTime());
     if(b<=a)continue;
+    if(!tc.clockOut) return missing("openOverlappingTimecard");
     const clipped:Timecard = { ...tc, clockIn:new Date(a).toISOString(),clockOut:new Date(b).toISOString(),
       breaks:tc.breaks.map(br => ({...br,start:new Date(Math.max(a,Date.parse(br.start))).toISOString(),
         end:new Date(Math.max(a,Math.min(b,Date.parse(br.end)))).toISOString()})) };
@@ -96,13 +101,13 @@ export const metricCatalog: Record<MetricKey, Definition> = {
   item_units:{key:"item_units",unit:"count",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"units")},
   item_revenue:{key:"item_revenue",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"revenue")},
   item_margin:{key:"item_margin",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"margin")},
-  cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("salesOrCogs")},
-  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts?known(staffCostCentsForPeriod([d.facts])):missing("labor")},
-  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)?ratioBps(staffCostCentsForPeriod([d.facts!]),d.facts!.netSalesCents):missing("salesOrLabor")},
+  cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("cogsCompleteness")},
+  labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"?known(staffCostCentsForPeriod([d.facts])):missing("laborProvenance")},
+  labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"?ratioBps(staffCostCentsForPeriod([d.facts!]),d.facts!.netSalesCents):missing("laborProvenance")},
   sales_per_labor_hour:{key:"sales_per_labor_hour",unit:"cents",paramsSchema:hours,compute:hourly},
-  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.runningCostsCents!==undefined?
+  operating_margin:{key:"operating_margin",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&d.runningCostsCents!==undefined?
     ratioBps(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents),d.facts!.netSalesCents):missing("runningCostsOrSales")},
-  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.runningCostsCents!==undefined?
+  net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&d.runningCostsCents!==undefined?
     known(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)):missing("runningCostsOrSales")},
   ingredient_unit_cost:{key:"ingredient_unit_cost",unit:"cents",paramsSchema:ingredient,compute:(d,p)=>
     d.ingredientPriceMicros?.[String(p.ingredientId)]!==undefined?
