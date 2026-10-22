@@ -35,7 +35,7 @@ describe("staff schedule truth",()=>{
      {employeeId:"2",date:"2026-10-28",start:"07:00",end:"14:30",breakMinutes:0,wageCents:1800},
      {employeeId:"1",date:"2026-11-01",start:"07:00",end:"15:00",breakMinutes:0,wageCents:1800},
      {employeeId:"2",date:"2026-11-01",start:"07:00",end:"13:30",breakMinutes:0,wageCents:1800}];
-   expect(coverageGaps(["2026-10-28","2026-11-01"],shifts,{wed:[...open.wed],sun:[...open.sun]},2))
+   expect(coverageGaps(["2026-10-28","2026-11-01"],shifts,{wed:open.wed.map(([start,end]):[string,string]=>[start,end]),sun:open.sun.map(([start,end]):[string,string]=>[start,end])},2))
      .toMatchObject([{start:"14:30",end:"16:00"},{start:"13:30",end:"15:00"}]);
  });
  it("only applies entered weekly limits",()=>{

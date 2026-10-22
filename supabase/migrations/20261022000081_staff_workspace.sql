@@ -6,9 +6,15 @@ ALTER TABLE public.employees
   ADD COLUMN IF NOT EXISTS max_weekly_minutes integer CHECK (max_weekly_minutes BETWEEN 0 AND 10080),
   ADD COLUMN IF NOT EXISTS available_days smallint[],
   ADD COLUMN IF NOT EXISTS color_index smallint CHECK (color_index BETWEEN 0 AND 15);
-ALTER TABLE public.employees ADD CONSTRAINT employee_weekly_bounds
-  CHECK (min_weekly_minutes IS NULL OR max_weekly_minutes IS NULL
-    OR min_weekly_minutes <= max_weekly_minutes);
+DO $
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint
+    WHERE conrelid='public.employees'::regclass AND conname='employee_weekly_bounds') THEN
+    ALTER TABLE public.employees ADD CONSTRAINT employee_weekly_bounds
+      CHECK (min_weekly_minutes IS NULL OR max_weekly_minutes IS NULL
+        OR min_weekly_minutes <= max_weekly_minutes);
+  END IF;
+END $;
 ALTER TABLE public.staff_schedules ALTER COLUMN hourly_wage_cents DROP NOT NULL;
 
 CREATE TABLE public.team_rules (
