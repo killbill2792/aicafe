@@ -45,6 +45,6 @@ describe("M1 monitor semantic idempotency",()=>{
     expect(again.failed).toBe(0);
     expect(state.keys.size).toBe(2);
     expect(state.sampled).toBe(0);
-    expect(state.rotated).toBe(4); // claim + terminal transition per run
+    expect(state.rotated).toBe(2); // one claim rotation per run during correction window
   });
 });
