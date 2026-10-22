@@ -46,11 +46,14 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         byMetric.set(metric.id,graph.observations.filter(o=>o.metric_id===metric.id));
       // Process up to seven previously unsampled dates per run to bound the cron.
       // Rotation means long outages catch up over successive runs without starving tenants.
-      const pending=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
-        !byMetric.get(m.id)?.some(o=>o.business_date===d))).slice(0,7);
+      const fresh=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
+        !byMetric.get(m.id)?.some(o=>o.business_date===d)));
+      const retry=days.filter(d=>d>=dayOffset(asOf,-14)&&graph.metrics.some(m=>m.source==="computed" &&
+        byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage<1))).slice(-7);
+      const pending=[...fresh,...retry].slice(0,7);
       for(const date of pending){
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
-          !byMetric.get(m.id)?.some(o=>o.business_date===date));
+          !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1));
         if(!computed.length)continue;
         const input=await readMetricDay(initiative.business_id,date,{
           items:computed.some(m=>m.metric_key?.startsWith("item_")),
@@ -71,7 +74,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       }
       for(const metric of graph.metrics.filter(m=>m.source==="checkin")){
         const already=byMetric.get(metric.id)??[];
-        for(const date of allDays(initiative.starts_on,asOf)){
+        const dueDates=allDays(initiative.starts_on,asOf)
+          .filter(date=>due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on));
+        for(const date of dueDates.slice(-1)){
           if(!due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on))continue;
           if(already.some(o=>o.business_date===date))continue;
           const t=translations[initiative.locale];

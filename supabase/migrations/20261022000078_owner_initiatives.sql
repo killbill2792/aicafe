@@ -23,7 +23,7 @@ create table owner_initiatives (
   foreign key (business_id,thread_id,owner_user_id)
     references ai_threads(business_id,id,owner_user_id) on delete cascade,
   check (ends_on >= starts_on + 6 and ends_on <= starts_on + 91),
-  check (baseline_from < starts_on),
+  check (baseline_from < starts_on and baseline_from >= starts_on - 92),
   check (baseline_to is null or (baseline_to >= baseline_from and baseline_to < starts_on)),
   check (kind <> 'goal' or (adapter_id is null and change_description = ''))
 );

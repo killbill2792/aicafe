@@ -2,6 +2,7 @@ import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
+import { readPeriodItemSales } from "./periodItemSales.server";
 import type { MetricDailyInput, ItemEvidence } from "@/lib/calc/metrics/catalog";
 import type { Timecard, RecipeLine } from "@/lib/calc/types";
 import type { ProposeInitiative, InitiativeScope, InitiativeRow, MetricRow,
@@ -45,6 +46,19 @@ export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeI
     params:m.params,comparator:m.comparator,target_kind:m.targetKind,target:m.target,
     checkin_question:m.checkinQuestion,checkin_audience:m.checkinAudience,data_gap:m.dataGap,
   }));
+  if(input.kind==="experiment"&&input.adapterId===null){
+    const question={
+      en:"Did you make the change on {date}?",
+      es:"¿Hiciste el cambio el {date}?",
+      ar:"هل أجريت التغيير في {date}؟",
+    }[locale].replace("{date}",input.startsOn);
+    rows.push({
+      initiative_id:data.id,role:"guardrail",source:"checkin",metric_key:null,
+      params:{changeConfirmation:true},comparator:"gte",target_kind:"absolute",
+      target:1,checkin_question:question,checkin_audience:"owner",
+      data_gap:"changeRequiresOwnerConfirmation",
+    });
+  }
   const inserted=await db.from("initiative_metrics").insert(rows);
   if(inserted.error) {
     const cleanup=await db.from("owner_initiatives").delete().eq("id",data.id)
@@ -219,6 +233,10 @@ export async function readMetricDay(businessId:string,date:string,
   }
   const needed=new Set(opts.ingredientIds);
   if(opts.items){
+    // Item economics cannot be inferred from a covered daily total alone.
+    // Canonical POS provenance first proves exact item participation.
+    const coverage=await readPeriodItemSales(db,businessId,{from:date,to:date});
+    if(coverage.covered){
     const lines=await db.from("order_lines")
       .select("menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
       .eq("orders.business_id",businessId).eq("orders.business_date",date)
@@ -252,6 +270,7 @@ export async function readMetricDay(businessId:string,date:string,
         recipeLines:recipesByItem.get(itemId)??[],ingredientPriceMicros:{},
         ownerCostCents:fallbackMap.get(itemId)??null,
       }));
+    }
     }
   }
   if(needed.size){

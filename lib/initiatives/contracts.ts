@@ -21,7 +21,7 @@ export const initiativeMetricSchema = z.strictObject({
       ctx.addIssue({code:"custom",message:"computed metric requires key and no question"});
     else if(!metricCatalog[metric.metricKey].paramsSchema.safeParse(metric.params).success)
       ctx.addIssue({code:"custom",message:"invalid metric parameters"});
-  } else if(metric.metricKey!==null||!metric.checkinQuestion||!metric.checkinAudience) {
+  } else if(metric.metricKey!==null||!metric.checkinQuestion||!metric.checkinAudience||!metric.dataGap) {
     ctx.addIssue({code:"custom",message:"unavailable metric requires a check-in question"});
   }
 });
@@ -43,9 +43,13 @@ export const proposeInitiativeSchema=z.strictObject({
   const length=(end-start)/86400000+1;
   if(length<7||length>92||!Number.isInteger(length))
     ctx.addIssue({code:"custom",message:"monitoring window must contain 7 to 92 days"});
+  if((start-Date.parse(value.baselineFrom+"T12:00:00Z"))/86400000>92)
+    ctx.addIssue({code:"custom",message:"baseline window exceeds 92 days"});
   if(value.baselineFrom>=value.startsOn||
      (value.baselineTo!==null&&(value.baselineTo<value.baselineFrom||value.baselineTo>=value.startsOn)))
     ctx.addIssue({code:"custom",message:"baseline must predate the change"});
+  if(value.kind==="experiment"&&!value.changeDescription.trim())
+    ctx.addIssue({code:"custom",message:"experiment requires an explicit description of the change"});
   if(value.kind==="goal"&&(value.changeDescription.trim()!==""||value.adapterId!==null))
     ctx.addIssue({code:"custom",message:"goal has no operational change"});
   if(!value.metrics.some(m=>m.role==="primary"))
