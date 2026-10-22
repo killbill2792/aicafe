@@ -13,7 +13,23 @@ for(const id of [A,B,M]) await db.query("insert into auth.users values ($1)",[id
 for(const [id,role] of [[A,"owner"],[B,"owner"],[M,"manager"]]) await db.query("insert into memberships values ($1,$2,$3)",[C,id,role]);
 await db.query(readFileSync(new URL("../supabase/migrations/20261022000077_team_updates.sql",import.meta.url),"utf8"));
 await db.query("insert into team_updates(business_id,owner_user_id,agent_id,domain,kind,severity,subject_type,text,locale,dedupe_key) values ($1,$2,'alex','menu_pricing','review','info','menu_item','Text','en','key1')",[C,A]);
-await actor(A,async()=>{assert.equal((await db.query("select id from team_updates")).rowCount,1);assert.equal((await db.query("update team_updates set status='seen' returning id")).rowCount,1);let code;try{await db.query("update team_updates set text='forged'");}catch(e){code=e.code;}assert.equal(code,"42501");});
+async function denyQuery(sql) {
+  await db.query("savepoint expected_denial");
+  let code;
+  try { await db.query(sql); } catch (error) { code = error.code; }
+  await db.query("rollback to savepoint expected_denial");
+  await db.query("release savepoint expected_denial");
+  assert.equal(code, "42501", "authenticated role must not perform: " + sql);
+}
+await actor(A, async () => {
+  assert.equal((await db.query("select id from team_updates")).rowCount, 1);
+  assert.equal((await db.query("update team_updates set status='seen' returning id")).rowCount, 1);
+  await denyQuery("update team_updates set text='forged'");
+  await denyQuery("update team_updates set owner_user_id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'");
+  await denyQuery("insert into team_updates(business_id,owner_user_id,agent_id,domain,kind,severity,subject_type,text,locale,dedupe_key) values ('11111111-1111-4111-8111-111111111111','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','alex','menu_pricing','review','info','menu_item','fake','en','fake')");
+});
+assert.equal((await db.query("select status from team_updates where dedupe_key='key1'")).rows[0].status, "seen", "successful status update must commit despite denied writes");
+assert.equal((await db.query("select text from team_updates where dedupe_key='key1'")).rows[0].text, "Text");
 for(const id of [B,M])await actor(id,async()=>{assert.equal((await db.query("select id from team_updates")).rowCount,0);assert.equal((await db.query("update team_updates set status='seen' returning id")).rowCount,0);});
 await assert.rejects(db.query("insert into team_updates(business_id,owner_user_id,agent_id,domain,kind,severity,subject_type,text,locale,dedupe_key) values ($1,$2,'alex','menu_pricing','review','info','menu_item','Text','en','key1')",[C,A]),{code:"23505"});
 console.log("M0 Postgres: owner-only read, status-only update, dedupe passed");
