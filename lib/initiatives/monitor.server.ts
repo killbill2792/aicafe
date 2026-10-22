@@ -34,11 +34,28 @@ function initiativeDomain(initiative:InitiativeRow,metrics:MetricRow[]) {
   return "money" as const;
 }
 export type MonitorStats={checked:number;sampled:number;updates:number;failed:number};
+/** Abort both the awaited operation and its underlying PostgREST fetch.
+ * An uncooperative mocked/stalled promise also cannot block the cron loop. */
+export async function runWithMonitorDeadline<T>(signal:AbortSignal,
+  run:()=>Promise<T>):Promise<T>{
+  if(signal.aborted)throw new Error("monitor source deadline exceeded");
+  return new Promise<T>((resolve,reject)=>{
+    const onAbort=()=>{signal.removeEventListener("abort",onAbort);
+      reject(new Error("monitor source deadline exceeded"));};
+    signal.addEventListener("abort",onAbort,{once:true});
+    Promise.resolve().then(run).then(value=>{
+      signal.removeEventListener("abort",onAbort);resolve(value);
+    },error=>{signal.removeEventListener("abort",onAbort);reject(error);});
+  });
+}
 
-export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorStats> {
-  const queue=await listMonitorBatch();
+export async function monitorInitiatives(now:Date=new Date(),
+  budgets:{overallMs?:number;perItemMs?:number}={}):Promise<MonitorStats> {
+  const overallMs=budgets.overallMs??100_000; // 20 seconds below platform limit
+  const globalSignal=AbortSignal.timeout(overallMs);
+  const deadline=Date.now()+overallMs;
+  const queue=await runWithMonitorDeadline(globalSignal,()=>listMonitorBatch(globalSignal));
   const stats:MonitorStats={checked:queue.length,sampled:0,updates:0,failed:0};
-  const deadline=Date.now()+100_000; // leave 20s for Vercel finalization
   for(const initiative of queue){
     if(Date.now()>=deadline)break;
     let completed=false;
@@ -46,15 +63,20 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     let graphEvidenceRevision=0;
     const token=randomUUID();
     const started=Date.now();
-    const assertBudget=()=>{if(Date.now()>deadline-8_000 || Date.now()-started>10_000)
+    const perItemMs=Math.min(budgets.perItemMs??10_000,
+      Math.max(1,deadline-Date.now()-2_000));
+    const itemSignal=AbortSignal.any([globalSignal,AbortSignal.timeout(perItemMs)]);
+    const assertBudget=()=>{if(itemSignal.aborted||
+      Date.now()>deadline-2_000||Date.now()-started>perItemMs)
       throw new Error("monitor work time budget exhausted");};
+    const guarded=<T>(run:()=>Promise<T>)=>runWithMonitorDeadline(itemSignal,run);
     try{
       // Rotate FIRST: a killed or slow execution cannot monopolize the oldest batch.
       // Compare-and-swap prevents concurrent cron runs processing the same revision.
-      claim=await claimMonitorInitiative(initiative,token);
+      claim=await guarded(()=>claimMonitorInitiative(initiative,token,itemSignal));
       if(!claim)continue;
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
-      const graph=await readMonitorGraph(initiative);
+      const graph=await guarded(()=>readMonitorGraph(initiative,itemSignal));
       graphEvidenceRevision=graph.evidenceRevision??0;
       const domain=initiativeDomain(initiative,graph.metrics);
       const today=formatInTimeZone(now,graph.timezone,"yyyy-MM-dd");
@@ -136,12 +158,12 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
           (eligibleCorrection || !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1)));
         if(!computed.length)continue;
-        const input=await readMetricDay(initiative.business_id,date,{
+        const input=await guarded(()=>readMetricDay(initiative.business_id,date,{
           items:computed.some(m=>m.metric_key?.startsWith("item_")||m.metric_key==="cogs_pct"),
           hours:computed.some(m=>m.metric_key==="sales_per_labor_hour"),
           ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
             .map(m=>String(m.params.ingredientId)),
-        });
+        },itemSignal));
         for(const metric of computed){
           assertBudget();
           if(!metric.metric_key)continue;
@@ -160,7 +182,8 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             revision:(previous?.revision??0)+(evidenceChanged?1:0),
             verified_at:now.toISOString(),
           };
-          if(await persistMetricObservation(scope,initiative.id,token,row,result.invalidatesPrevious===true)){
+          if(await guarded(()=>persistMetricObservation(scope,initiative.id,token,row,
+            result.invalidatesPrevious===true,itemSignal))){
             stats.sampled++;
             if(position>=0)prior[position]=row;
             else prior.push(row);
@@ -180,7 +203,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           assertBudget();
           const t=translations[initiative.locale];
           const question=metric.checkin_question??t.checkinDefault;
-          const result=await writeTeamUpdate({
+          const result=await guarded(()=>writeTeamUpdate({
             businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
             domain,kind:"initiative_checkin",severity:"action",
             subjectType:"owner_initiative",subjectId:initiative.id,
@@ -189,7 +212,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             locale:initiative.locale,
             actions:[{kind:"checkin",metricId:metric.id,question,date}],
             dedupeKey:"initiative:"+initiative.id+":checkin:"+metric.id+":"+date,
-          });
+          },itemSignal));
           if(result.created)stats.updates++;
         }
       }
@@ -235,13 +258,13 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       const inputs={asOf,endsOn:initiative.ends_on,kind:initiative.kind,
         minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id)),
         evidenceVersions:versions};
-      await persistInitiativeEvaluation(scope,initiative.id,asOf,
-        evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey,token);
+      await guarded(()=>persistInitiativeEvaluation(scope,initiative.id,asOf,
+        evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey,token,itemSignal));
       // Retry an undelivered status notification independently. The M0 unique
       // dedupe key avoids a duplicate owner update if the first attempt succeeded.
       const t=translations[initiative.locale];
       assertBudget();
-      const written=await writeTeamUpdate({
+      const written=await guarded(()=>writeTeamUpdate({
         businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
         domain,kind:"initiative_evaluation",
         severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
@@ -252,7 +275,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
         locale:initiative.locale,actions:[{kind:"open"}],
         dedupeKey:"initiative:"+initiative.id+":transition:"+transitionKey,
-      });
+      },itemSignal));
       if(written.created)stats.updates++;
       // Keep a 14-day correction window for delayed POS/timecard evidence.
       const testAttempted=graph.metrics.filter(metric=>metric.source==="computed").every(metric=>
@@ -265,7 +288,11 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     }catch{stats.failed++;}
     finally{
       if(claim){
-        try{await releaseMonitorInitiative(initiative.id,token,completed,graphEvidenceRevision);}catch{stats.failed++;}
+        try{
+          const releaseSignal=AbortSignal.timeout(2_000);
+          await runWithMonitorDeadline(releaseSignal,()=>releaseMonitorInitiative(
+            initiative.id,token,completed,graphEvidenceRevision,releaseSignal));
+        }catch{stats.failed++;}
       }
     }
   }
