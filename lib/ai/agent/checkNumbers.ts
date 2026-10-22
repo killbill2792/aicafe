@@ -221,6 +221,8 @@ function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   // shift" and after-the-clock "shift ... for Bob" constructions.
   const possessive=[...before.matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}\d-]+\s+){0,5}shift\b/giu)].at(-1);
   if(possessive)return {kind:"named",name:possessive[1].trim().toLocaleLowerCase()};
+  const subject=[...before.matchAll(/(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their)\s+(?:[\p{L}\p{M}]+\s+){0,3}shift\b/giu)].at(-1);
+  if(subject)return {kind:"named",name:subject[1].trim().toLocaleLowerCase()};
   const forPerson=(before+" "+after).match(/\bfor\s+([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)/iu);
   if(forPerson)return {kind:"named",name:forPerson[1].trim().toLocaleLowerCase()};
   // If this is explicitly someone's shift but the name could not be parsed,
