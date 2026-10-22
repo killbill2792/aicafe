@@ -126,11 +126,14 @@ export async function monitorInitiatives(now:Date=new Date(),
       // Every attempted source sample, including a previously uncovered one,
       // needs a final successful source recheck after the correction window.
       // A null observation value is a valid *rechecked gap*, not verified zero.
-      const requiresFreshVerification=(date:string)=>graph.metrics.some(metric=>
-        metric.source==="computed"&&(byMetric.get(metric.id)??[]).some(o=>
-          o.business_date===date&&
-          (!o.verified_at||!Number.isFinite(Date.parse(o.verified_at))||
-            Date.parse(o.verified_at)<finalRecheckFrom)));
+      const requiresFreshVerification=(date:string)=>graph.metrics.some(metric=>{
+        if(metric.source!=="computed")return false;
+        const row=(byMetric.get(metric.id)??[]).find(o=>o.business_date===date);
+        // Missing samples are unverified too. Never allow a terminal sweep to
+        // skip an unattempted metric/day or a previously uncovered observation.
+        return !row||!row.verified_at||!Number.isFinite(Date.parse(row.verified_at))||
+          Date.parse(row.verified_at)<finalRecheckFrom;
+      });
       const eligibleCorrection=!afterWindow||requiredDates.some(requiresFreshVerification);
       // Oldest successfully verified evidence first: revisiting a day moves it
       // to the tail, so large windows cannot repeatedly starve older samples.
@@ -147,12 +150,16 @@ export async function monitorInitiatives(now:Date=new Date(),
             .sort()[0]??"";
           return earliest(a).localeCompare(earliest(b))||a.localeCompare(b);
         });
-      const firstPass=[...freshTest.slice(0,afterWindow?2:3),
-        ...freshBaseline.slice(0,afterWindow?1:2),
-        ...rotated(incomplete,afterWindow?1:2)];
+      const firstPass=[...freshTest.slice(0,3),
+        ...freshBaseline.slice(0,2),...rotated(incomplete,2)];
       const selected=[...new Set(firstPass)];
-      const pending=[...selected,...covered.filter(d=>!selected.includes(d))
-        .slice(0,Math.max(0,8-selected.length))].slice(0,8);
+      // After the correction window, finish exactly the outstanding final
+      // evidence sweep. Other rotation priorities may repeatedly consume
+      // slots and starve older required dates, preventing completion.
+      const pending=afterWindow?
+        requiredDates.filter(requiresFreshVerification).slice(0,8):
+        [...selected,...covered.filter(d=>!selected.includes(d))
+          .slice(0,Math.max(0,8-selected.length))].slice(0,8);
       for(const date of pending){
         assertBudget();
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
