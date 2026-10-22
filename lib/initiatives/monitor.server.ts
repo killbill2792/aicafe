@@ -88,13 +88,39 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         const offset=initiative.revision%items.length;
         return [...items.slice(offset),...items.slice(0,offset)].slice(0,max);
       };
-      const eligibleCorrection=today<=dayOffset(initiative.ends_on,14);
-      const covered=eligibleCorrection?days.filter(d=>graph.metrics.some(metric=>
-        metric.source==="computed" &&
-        byMetric.get(metric.id)?.some(o=>o.business_date===d&&o.coverage>=1))):[];
-      const pending=[...freshTest.slice(0,3),...freshBaseline.slice(0,2),
-        ...rotated(incomplete,1),...rotated(covered,1)]
-        .filter((day,index,array)=>array.indexOf(day)===index).slice(0,7);
+      // A long initiative may have 99 required covered dates (92 test + 7 weekday
+      // baselines). Do not close after rereading only 14 of them.
+      // Keep the lease-backed monitor active until every confirmed sample has
+      // been checked AFTER the 14-day source-correction window expires.
+      const correctionExpiry=dayOffset(initiative.ends_on,14);
+      const afterWindow=today>correctionExpiry;
+      const requiredDates=[...new Set([...testDates,...closestBaseline])];
+      const requiresFreshVerification=(date:string)=>graph.metrics.some(metric=>
+        metric.source==="computed"&&(byMetric.get(metric.id)??[]).some(o=>
+          o.business_date===date&&o.coverage>=1&&
+          (!o.verified_at||o.verified_at.slice(0,10)<=correctionExpiry)));
+      const eligibleCorrection=!afterWindow||requiredDates.some(requiresFreshVerification);
+      // Oldest successfully verified evidence first: revisiting a day moves it
+      // to the tail, so large windows cannot repeatedly starve older samples.
+      const covered=requiredDates.filter(d=>graph.metrics.some(metric=>
+        metric.source==="computed"&&
+        byMetric.get(metric.id)?.some(o=>o.business_date===d&&o.coverage>=1)))
+        .filter(d=>!afterWindow||requiresFreshVerification(d))
+        .sort((a,b)=>{
+          const earliest=(d:string)=>graph.metrics
+            .filter(metric=>metric.source==="computed")
+            .flatMap(metric=>(byMetric.get(metric.id)??[])
+              .filter(o=>o.business_date===d&&o.coverage>=1)
+              .map(o=>o.verified_at??""))
+            .sort()[0]??"";
+          return earliest(a).localeCompare(earliest(b))||a.localeCompare(b);
+        });
+      const firstPass=[...freshTest.slice(0,afterWindow?2:3),
+        ...freshBaseline.slice(0,afterWindow?1:2),
+        ...rotated(incomplete,afterWindow?1:2)];
+      const selected=[...new Set(firstPass)];
+      const pending=[...selected,...covered.filter(d=>!selected.includes(d))
+        .slice(0,Math.max(0,8-selected.length))].slice(0,8);
       for(const date of pending){
         assertBudget();
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
@@ -113,7 +139,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           const row:ObservationRow={
             metric_id:metric.id,business_date:date,value:result.value,
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
-            revision:1,verified_at:new Date().toISOString(),
+            revision:1,verified_at:now.toISOString(),
           };
           if(await persistMetricObservation(scope,initiative.id,token,row,result.invalidatesPrevious===true)){
             stats.sampled++;
@@ -208,8 +234,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         testDates.every(date=>(byMetric.get(metric.id)??[]).some(o=>o.business_date===date)));
       const baselineAttempted=graph.metrics.filter(metric=>metric.source==="computed").every(metric=>
         closestBaseline.every(date=>(byMetric.get(metric.id)??[]).some(o=>o.business_date===date)));
-      completed=asOf>=initiative.ends_on&&today>dayOffset(initiative.ends_on,14)&&
-        testAttempted&&baselineAttempted;
+      const correctionSweepDone=!requiredDates.some(requiresFreshVerification);
+      completed=asOf>=initiative.ends_on&&afterWindow&&
+        testAttempted&&baselineAttempted&&correctionSweepDone;
     }catch{stats.failed++;}
     finally{
       if(claim){
