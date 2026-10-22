@@ -396,3 +396,38 @@ as $$
 $$;
 revoke all on function initiative_daily_order_sales_proof(uuid,date) from public,anon,authenticated;
 grant execute on function initiative_daily_order_sales_proof(uuid,date) to service_role;
+
+
+-- The notification outbox write and lease/evidence check are one transaction.
+-- A stale worker may not publish a recommendation from an invalidated snapshot.
+create or replace function insert_monitor_team_update_fenced(
+  p_initiative_id uuid,p_token uuid,p_evidence_revision bigint,p_row jsonb
+) returns text language plpgsql security definer set search_path=public
+as $$
+declare b uuid; u uuid; saved uuid;
+begin
+  select i.business_id,i.owner_user_id into b,u from owner_initiatives i
+    where i.id=p_initiative_id and i.monitor_lease_token=p_token
+      and i.monitor_lease_until>now() and i.evidence_revision=p_evidence_revision
+      and i.status='active' for update of i;
+  if not found then return 'stale'; end if;
+  if p_row->>'business_id' is distinct from b::text or
+     p_row->>'owner_user_id' is distinct from u::text or
+     p_row->>'subject_type' is distinct from 'owner_initiative' or
+     p_row->>'subject_id' is distinct from p_initiative_id::text then
+    raise exception 'team update tenant/initiative scope mismatch' using errcode='42501';
+  end if;
+  insert into team_updates(business_id,owner_user_id,agent_id,domain,kind,
+    severity,subject_type,subject_id,facts,text,locale,actions,dedupe_key)
+  values(b,u,p_row->>'agent_id',p_row->>'domain',p_row->>'kind',
+    p_row->>'severity','owner_initiative',p_initiative_id,
+    coalesce(p_row->'facts','{}'::jsonb),p_row->>'text',p_row->>'locale',
+    coalesce(p_row->'actions','[]'::jsonb),p_row->>'dedupe_key')
+  on conflict (business_id,dedupe_key) do nothing returning id into saved;
+  return case when saved is null then 'duplicate' else 'created' end;
+end;
+$$;
+revoke all on function insert_monitor_team_update_fenced(uuid,uuid,bigint,jsonb)
+  from public,anon,authenticated;
+grant execute on function insert_monitor_team_update_fenced(uuid,uuid,bigint,jsonb)
+  to service_role;

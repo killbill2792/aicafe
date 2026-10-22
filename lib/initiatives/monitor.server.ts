@@ -165,7 +165,7 @@ export async function monitorInitiatives(now:Date=new Date(),
             .map(m=>String(m.params.itemId)),
           ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
             .map(m=>String(m.params.ingredientId)),
-        },itemSignal));
+        },itemSignal,{initiativeId:initiative.id,token,evidenceRevision:graphEvidenceRevision}));
         for(const metric of computed){
           assertBudget();
           if(!metric.metric_key)continue;
@@ -214,7 +214,7 @@ export async function monitorInitiatives(now:Date=new Date(),
             locale:initiative.locale,
             actions:[{kind:"checkin",metricId:metric.id,question,date}],
             dedupeKey:"initiative:"+initiative.id+":checkin:"+metric.id+":"+date,
-          },itemSignal));
+          },itemSignal,{initiativeId:initiative.id,token,evidenceRevision:graphEvidenceRevision}));
           if(result.created)stats.updates++;
         }
       }

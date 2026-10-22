@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { insertTeamUpdate } from "@/lib/data/teamUpdates.server";
+import { insertTeamUpdate,type MonitorUpdateLease } from "@/lib/data/teamUpdates.server";
 import { agentForTask, type OperatingTaskKind } from "@/lib/operating/tasks";
 import { teamUpdateActionKindSchema, teamUpdateDomainSchema } from "./contracts";
 
@@ -29,7 +29,7 @@ const domainTaskKind: Record<z.infer<typeof teamUpdateDomainSchema>, OperatingTa
 
 /** Validate and map owner-facing messages; persistence lives exclusively in lib/data. */
 export async function writeTeamUpdate(input: WriteTeamUpdateInput,
-  signal?:AbortSignal): Promise<{ created: boolean }> {
+  signal?:AbortSignal,lease?:MonitorUpdateLease): Promise<{ created: boolean }> {
   const value = writeTeamUpdateSchema.parse(input);
   const created = await insertTeamUpdate({
     business_id: value.businessId,
@@ -45,6 +45,6 @@ export async function writeTeamUpdate(input: WriteTeamUpdateInput,
     locale: value.locale,
     actions: value.actions,
     dedupe_key: value.dedupeKey,
-  },signal);
+  },signal,lease);
   return { created };
 }

@@ -120,6 +120,15 @@ try{
     "late worker cannot write evaluations");
   assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,leased+1,
     "a released job can be claimed by next worker");
+  const updateSql="select insert_monitor_team_update_fenced($1,$2,$3,$4) as result";
+  const updatedRow={business_id:BIZ,owner_user_id:A,agent_id:"leo",domain:"money",
+    kind:"initiative_evaluation",severity:"info",subject_type:"owner_initiative",
+    subject_id:ID,text:"Review initiative evidence",locale:"en",
+    facts:{status:"met"},actions:[{kind:"open"}],
+    dedupe_key:"initiative:"+ID+":transition:fence-test-1"};
+  const beforeNotice=Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision);
+  assert.equal((await db.query(updateSql,[ID,t2,beforeNotice,JSON.stringify(updatedRow)])).rows[0].result,"created");
+  assert.equal((await db.query(updateSql,[ID,t2,beforeNotice,JSON.stringify(updatedRow)])).rows[0].result,"duplicate");
   // A newer check-in invalidates the claim before terminal completion.
   const beforeCorrection=Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision);
   const lastCorrection=[BIZ,A,checkinId,"2026-10-15",0,"owner changed answer",2,"fourth-operation-key"];
@@ -132,6 +141,9 @@ try{
   assert.equal((await db.query(observationSql,
     [...leaseObsArgs.slice(0,3),t2,...leaseObsArgs.slice(4)])).rows[0].wrote,false);
   assert.equal((await db.query("select status from owner_initiatives where id=$1",[ID])).rows[0].status,"active");
+  assert.equal((await db.query(updateSql,[ID,t2,beforeNotice,JSON.stringify({
+    ...updatedRow,dedupe_key:"initiative:"+ID+":transition:stale",
+  })])).rows[0].result,"stale");
   const freshLease="abababab-abab-4bab-8bab-abababababab";
   assert.equal((await db.query(leaseSql,[ID,leased+1,freshLease])).rows[0].revision,leased+2);
   const newEvidenceRevision=Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision);
