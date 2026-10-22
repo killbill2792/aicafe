@@ -142,6 +142,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       }
     }
   }
+  const knownTimes = results.filter(r=>r.missing.length===0&&/hours|schedule/.test(r.source))
+    .map(r=>JSON.stringify(r)).join(" ");
   return candidates(text, locale).filter(v => {
     const before=text.slice(0,v.start), after=text.slice(v.end);
     if(v.kind==="number" && /(?:^|\s)$/u.test(before) && /^\d+[.)]\s/u.test(text.slice(v.start)))return false;
@@ -150,6 +152,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
       /\b\d{1,2}h(?:\d{2})?\b/iu.test(local))) {
       if(!/\b(?:we\s+open|we\s+close|open\s+at|close\s+at|shift\s+(?:starts|ends)|business\s+hours)\b/i.test(text))return false;
+      const matched=local.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+      if(matched){
+        let hour=Number(matched[1]);
+        if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
+        const canonical=String(hour).padStart(2,"0")+":"+matched[2];
+        if(knownTimes.includes(canonical)||ownerText.includes(matched[0])||ownerText.includes(canonical))return false;
+      }
     }
     if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^\s*(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?|coffees?)/iu.test(after))return false;
     return ![...allowed[v.kind]].some(x =>
