@@ -5,14 +5,15 @@ const fixtures=vi.hoisted(()=>{
  const latte18="a0000000-0000-4000-8000-000000000018";
  const rows=[{id:latte16,name:"Latte 16 oz",priceCents:700},
    {id:latte18,name:"Latte 18 oz",priceCents:750}];
- return {latte16,latte18,rows,invoke:vi.fn()};
+ return {latte16,latte18,rows,invoke:vi.fn(),snapshotReason:"rpc_not_installed",
+   sensitivity:"normal" as string};
 });
 vi.mock("@/lib/metrics/p1Readers.server",()=>({
  authorizedOwnerP1:vi.fn(async()=>({identity:{businessId:"a0000000-0000-4000-8000-000000000999",
    asOf:"2026-10-21",timezone:"America/Los_Angeles",currency:"USD"},tools:{}})),
 }));
 vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({
- readAuthorizedAtomicP1SourceSnapshot:vi.fn(async()=>({status:"unavailable",reason:"rpc_not_installed"})),
+ readAuthorizedAtomicP1SourceSnapshot:vi.fn(async()=>({status:"unavailable",reason:fixtures.snapshotReason})),
 }));
 vi.mock("@/lib/pricing/alexP3Capabilities.server",()=>({buildAlexP3Registrations:()=>[]}));
 vi.mock("@/lib/ai/supervisor/p3/operandProjection.server",()=>({projectP1Evidence:()=>({operands:[],bindings:[],choices:[],missing:[]})}));
@@ -29,7 +30,7 @@ vi.mock("@/lib/ai/supervisor/p3/sourceRegistry.server",()=>({
  isRedundantModelRead:()=>false,
  createP3ReadRegistry:()=>({
   discover:()=>[{id:"p3.menu.catalog.v1",purpose:"Read menu catalog product prices and active drink variants",
-    sensitivity:"normal",budgets:{timeoutMs:1000},
+    sensitivity:fixtures.sensitivity,budgets:{timeoutMs:1000},
     inputJsonSchema:{type:"object",additionalProperties:false,
       properties:{purpose:{type:"string"}},required:["purpose"]}}],
   preflightRead:()=>true,
@@ -61,7 +62,8 @@ function transport(...steps:unknown[]){
  });
  return {send,bodies};
 }
-beforeEach(()=>{vi.clearAllMocks();fixtures.invoke.mockImplementation(async()=>successful());});
+beforeEach(()=>{vi.clearAllMocks();fixtures.snapshotReason="rpc_not_installed";
+ fixtures.sensitivity="normal";fixtures.invoke.mockImplementation(async()=>successful());});
 const discover=call("discover_tools",{query:"menu catalog prices"});
 const read=call("read_cafe",{id:"p3.menu.catalog.v1",input:{purpose:"read"}});
 describe("native owner conversation without separate review",()=>{
@@ -120,6 +122,26 @@ describe("native owner conversation without separate review",()=>{
   expect(text).not.toContain("$999");
   expect(result.reply.blocks).toEqual(expect.arrayContaining([
     expect.objectContaining({type:"metric",valueCents:700})]));
+ });
+ it("blocks financial source reads when authoritative snapshot integrity fails",async()=>{
+  fixtures.snapshotReason="invalid_source_snapshot";
+  fixtures.sensitivity="financial";
+  const t=transport(discover,read,answer("answer","The financial data was not available."));
+  const result=await runNativeConversationTurn(args("What are my actual costs?"),t.send);
+  expect(fixtures.invoke).not.toHaveBeenCalled();
+  expect(result.reply.status).toBe("unavailable");
+ });
+ it("returns already verified facts after a provider disconnect instead of an HTTP failure",async()=>{
+  const t=transport(discover,read);
+  const send=vi.fn(async(url:string,request:RequestInit)=>{
+    if(t.send.mock.calls.length>=2)throw new Error("network disconnected");
+    return t.send(url,request);
+  });
+  const result=await runNativeConversationTurn(args("What is my latte price?"),send);
+  expect(result.reply.status).toBe("partial");
+  expect(result.reply.blocks).toEqual(expect.arrayContaining([
+    expect.objectContaining({type:"metric",valueCents:700})]));
+  expect(send).toHaveBeenCalledTimes(3);
  });
  it("does not transform a missing data result into an owner clarification",async()=>{
   fixtures.invoke.mockResolvedValue({status:"unavailable",value:null,reason:"sales_coverage_missing"});
