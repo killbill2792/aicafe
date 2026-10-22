@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { requestedPeriod } from "./index";
+import { requestedPeriod } from "./period";
 import type { AgentToolContext, AgentToolResult } from "./index";
 
 const period=z.strictObject({period:z.enum(["today","week","month"])});
