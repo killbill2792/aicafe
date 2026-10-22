@@ -15,6 +15,27 @@ export type Evaluation = {
     baseline:number|null;current:number|null;target:number|null;coverage:number;met:boolean|null;
   }>;
 };
+
+/** Maximum same-weekday test coverage achievable from an immutable baseline.
+ * A relative target needs a historical reference; an absolute target does not.
+ * Dates are UTC-noon anchors to avoid local DST shifts. */
+export function achievableWeekdayBaselineCoverage(
+  baselineFrom:string,baselineTo:string,startOn:string,endOn:string,
+):number {
+  const day=(s:string)=>Date.parse(s+"T12:00:00Z");
+  const baselineDays=new Set<number>();
+  const from=day(baselineFrom),until=day(baselineTo);
+  const start=day(startOn),end=day(endOn);
+  if(![from,until,start,end].every(Number.isFinite)||until<from||start> end||
+    start<=until||(end-start)/86400000>=92||(until-from)/86400000>=92)return 0;
+  for(let d=from;d<=until;d+=86400000)baselineDays.add(new Date(d).getUTCDay());
+  let possible=0,total=0;
+  for(let d=start;d<=end;d+=86400000){
+    total++;
+    if(baselineDays.has(new Date(d).getUTCDay()))possible++;
+  }
+  return total?possible/total:0;
+}
 const weekday = (s:string)=>new Date(s+"T12:00:00Z").getUTCDay();
 const average = (nums:number[])=>nums.reduce((a,b)=>a+b,0)/nums.length;
 /** Match every test day to the closest covered baseline of the same weekday. */

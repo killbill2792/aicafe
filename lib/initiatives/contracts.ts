@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { metricCatalog, metricKeySchema } from "@/lib/calc/metrics/catalog";
+import {achievableWeekdayBaselineCoverage} from "@/lib/calc/initiatives/evaluate";
 
 export const initiativeStatusSchema = z.enum(["proposed","active","completed","cancelled","reverted"]);
 export const evaluationStatusSchema = z.enum(["on_track","off_track","met","missed","insufficient_data"]);
@@ -57,6 +58,11 @@ export const proposeInitiativeSchema=initiativeProposalBaseSchema.superRefine((v
     ctx.addIssue({code:"custom",message:"experiment requires an explicit description of the change"});
   if(value.kind==="goal"&&(value.changeDescription.trim()!==""||value.adapterId!==null))
     ctx.addIssue({code:"custom",message:"goal has no operational change"});
+  if(value.metrics.some(m=>m.source==="computed"&&m.targetKind==="relative_pct")&&
+    achievableWeekdayBaselineCoverage(value.baselineFrom,
+      value.baselineTo??new Date(start-86400000).toISOString().slice(0,10),
+      value.startsOn,value.endsOn)<0.8)
+    ctx.addIssue({code:"custom",message:"baseline cannot cover enough test weekdays for relative goals"});
   if(!value.metrics.some(m=>m.role==="primary"))
     ctx.addIssue({code:"custom",message:"initiative requires a primary metric"});
 });

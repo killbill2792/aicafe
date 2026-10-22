@@ -40,6 +40,14 @@ describe("initiative tools adhere to strict agent contracts",()=>{
   });
   it("accepts valid goal data and rejects invented metric keys",()=>{
     expect(proposeInitiativeSchema.safeParse(proposal).success).toBe(true);
+    // Missing six weekdays is structural, not a temporary import gap.
+    expect(proposeInitiativeSchema.safeParse({
+      ...proposal,baselineFrom:"2026-10-21",baselineTo:"2026-10-21",
+    }).success).toBe(false);
+    expect(proposeInitiativeSchema.safeParse({
+      ...proposal,baselineFrom:"2026-10-21",baselineTo:"2026-10-21",
+      metrics:[{...proposal.metrics[0],targetKind:"absolute",target:100}],
+    }).success).toBe(true);
     expect(metricKeySchema.safeParse("made_up_margin").success).toBe(false);
     expect(proposeInitiativeSchema.safeParse({...proposal,metrics:[{
       ...proposal.metrics[0],metricKey:"invented"
