@@ -74,7 +74,7 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
 function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number; wholePercent: boolean }> {
   const found: Array<UnverifiedNumber & { value: number; wholePercent: boolean }> = [];
   for (const m of text.matchAll(numberPattern(locale))) {
-    const token = m[0].trim(), money = new RegExp(currency, "u").test(token);
+    const token = m[0].trim(), money = new RegExp(currency, "iu").test(token);
     const percent = /[%٪]$/.test(token);
     const raw = token.replace(new RegExp(currency, "giu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
     const value = decimal(raw, locale);
@@ -132,8 +132,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   }
   return candidates(text, locale).filter(v => {
     const before=text.slice(0,v.start), after=text.slice(v.end);
-    if(/(?:^|\\n)\\s*\\d+[.)]\\s*$/u.test(before) && v.kind==="number")return false;
-    if(/(?:\\d{1,2}:\\d{2}|\\d{1,2}h(?:\\d{2})?|\\d{1,2}\\s*(?:AM|PM))$/iu.test(before+v.text+after.slice(0,5).split(/\\s|[,.]/)[0]))return false;
+    if(v.kind==="number" && /(?:^|\n)\s*$/u.test(before) && /^\d+[.)]\s/u.test(text.slice(v.start)))return false;
+    if(v.kind==="number" && /^\s*[.)]\s/u.test(after) && /(?:^|\n)\s*$/u.test(before))return false;
+    const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
+    if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
+      /\b\d{1,2}h(?:\d{2})?\b/iu.test(local)))return false;
     if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^(?:\\s*)(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?)/iu.test(after))return false;
     return ![...allowed[v.kind]].some(x =>
     Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
