@@ -12,7 +12,8 @@ const NON_EVIDENCE_FIELDS = new Set(["source","agentId","labels","period","date"
 const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalUnits","totalCount",
   "coveredSalesDays","expectedSalesDays","salesDays","laborDays","expectedDays",
   "missingProductCostCount","drinksNeededPerDay","drinksPerHour","todayDrinks",
-  "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount"]);
+  "ordersCount","staffCount","shiftCount","employeesCount","attendanceCount",
+  "timecardCount","onClockCount"]);
 const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
@@ -293,8 +294,11 @@ function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string
   const previous=clocks.filter(c=>c.index<clock.index&&c.index>=sentenceStart).at(-1);
   const next=clocks.find(c=>c.index>clock.index&&c.index<sentenceEnd);
   const clause=ascii(text.slice(previous?clockEnd(previous):sentenceStart,next?next.index:sentenceEnd));
-  const iso=clause.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/u);
+  const iso=clause.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/u);
   if(iso)return isoCalendarDate(Number(iso[1]),Number(iso[2]),Number(iso[3]));
+  // Locale-ambiguous short slash dates are an explicit claim, not a reason
+  // to silently treat a shift as undated.
+  if(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/u.test(clause))return null;
   const months=new RegExp("("+MONTH_LABEL+")","iu");
   if(!months.test(clause))return undefined;
   const forward=clause.match(new RegExp("("+MONTH_LABEL+")\\s+(\\d{1,2})(?:st|nd|rd|th)?[,]?\\s+(\\d{4})","iu"));
