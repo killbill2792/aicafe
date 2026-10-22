@@ -15,6 +15,7 @@ vi.mock("@/lib/metrics/p1AtomicSourceSnapshot.server",()=>({
  readAuthorizedAtomicP1SourceSnapshot:vi.fn(async()=>({status:"unavailable",reason:"rpc_not_installed"})),
 }));
 vi.mock("@/lib/pricing/alexP3Capabilities.server",()=>({buildAlexP3Registrations:()=>[]}));
+vi.mock("@/lib/ai/supervisor/p3/operandProjection.server",()=>({projectP1Evidence:()=>({operands:[],bindings:[],choices:[],missing:[]})}));
 vi.mock("@/lib/scheduling/oliviaP3Capabilities.server",()=>({buildOliviaP3Registrations:()=>[]}));
 vi.mock("@/lib/pricing/alexCapabilities.server",()=>({buildAlexPricingRegistrations:()=>[{}]}));
 vi.mock("@/lib/scheduling/oliviaInvestigation.server",()=>({buildOliviaInvestigationRegistration:()=>({})}));
