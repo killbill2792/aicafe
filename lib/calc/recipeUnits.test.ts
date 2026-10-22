@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity } from "./recipeUnits";
+import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity, packBaseQuantity, packToCostPerBaseMicros, plainQuantity, stepFor } from "./recipeUnits";
 
 describe("recipeDisplayUnitsFor", () => {
   it("lets a brand-new volume ingredient use ml, fl oz, or an exact pump conversion", () => {
@@ -79,5 +79,43 @@ describe("toBaseUnitQuantity", () => {
     // each only valid with a count-based ingredient
     expect(toBaseUnitQuantity("each", 1, "g")).toBeNull();
     expect(toBaseUnitQuantity("each", 1, "ml")).toBeNull();
+  });
+});
+
+
+describe("pack unit conversion and pack pricing", () => {
+  it("converts US volume packs (and disambiguates oz as fluid for milk)", () => {
+    expect(packBaseQuantity(1, "gal", "ml")).toBeCloseTo(3785.411784, 6);
+    expect(packBaseQuantity(1, "qt", "ml")).toBeCloseTo(946.352946, 6);
+    expect(packBaseQuantity(32, "oz", "ml")).toBeCloseTo(946.352946, 5);
+    expect(packToCostPerBaseMicros(1, "gal", 1899, "ml")).toBe(
+      Math.round(1899 * 1_000_000 / 3785.411784));
+  });
+  it("converts weights and the industry-standard case(n) packs", () => {
+    expect(packBaseQuantity(5, "lb", "g")).toBeCloseTo(2267.96185);
+    expect(packBaseQuantity(1, "oz", "g")).toBeCloseTo(28.349523125);
+    expect(packBaseQuantity(1, "case(1000)", "each")).toBe(1000);
+    expect(packToCostPerBaseMicros(1, "case(1000)", 5000, "each")).toBe(5000);
+  });
+  it("blocks mismatched physical dimensions and malformed or unsafe packs", () => {
+    expect(packBaseQuantity(1, "lb", "ml")).toBeNull();
+    expect(packBaseQuantity(1, "oz", "each")).toBeNull();
+    expect(packBaseQuantity(1, "case(0)", "each")).toBeNull();
+    expect(packBaseQuantity(1, "case(999999999999999999)", "each")).toBeNull();
+    expect(packToCostPerBaseMicros(1, "gal", -5, "ml")).toBeNull();
+    expect(packToCostPerBaseMicros(0, "gal", 100, "ml")).toBeNull();
+  });
+  it("uses owner-friendly step sizes and fractions with no decimals", () => {
+    expect(stepFor("shot")).toBe(1);
+    expect(stepFor("pump")).toBe(1);
+    expect(stepFor("fl_oz")).toBe(0.5);
+    expect(stepFor("oz_wt")).toBe(0.5);
+    expect(plainQuantity(2, "shot")).toBe("2 shots");
+    expect(plainQuantity(0.5, "fl_oz")).toBe("½ oz");
+    expect(plainQuantity(0.25, "fl_oz")).toBe("¼ oz");
+    expect(plainQuantity(0.75, "fl_oz")).toBe("¾ oz");
+    expect(plainQuantity(1, "cup", "en", 12)).toBe("1 cup (12 oz)");
+    expect(plainQuantity(2, "cup", "es")).toBe("2 tazas");
+    expect(plainQuantity(1, "cup", "ar")).toContain("كوب");
   });
 });
