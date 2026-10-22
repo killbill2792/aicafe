@@ -42,6 +42,7 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
 export async function runAgentTurn(args: {
   ownerText: string; history?: Array<{ role: "user" | "assistant"; content: string }>;
   context: AgentToolContext; provider?: AgentProvider; onDelta?: (delta: string) => void;
+  onReset?: (discardChars: number) => void;
   now?: () => number;
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
@@ -59,6 +60,7 @@ export async function runAgentTurn(args: {
   });
   const call = async (final: boolean) => {
     const calls: ToolCall[] = [], output: unknown[] = [];
+    const callTextStart = text.length;
     let completed = false;
     const remaining = deadline - now();
     if (remaining <= 0) throw new Error("deadline");
@@ -89,6 +91,13 @@ export async function runAgentTurn(args: {
       if (!completed) throw new Error("provider_incomplete");
       input.push(...output);
       return calls;
+    } catch (error) {
+      const discardChars = text.length - callTextStart;
+      if (discardChars > 0) {
+        text = text.slice(0, callTextStart);
+        args.onReset?.(discardChars);
+      }
+      throw error;
     } finally { clearTimeout(timeout); }
   };
   try {
@@ -158,6 +167,7 @@ export async function runAgentTurn(args: {
           const timeout = setTimeout(() => finalController.abort(), left);
           try {
             usage.modelCalls++;
+            const finalTextStart = text.length;
             let completed = false;
             for await (const event of provider(request(true), finalController.signal)) {
               if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
@@ -173,6 +183,13 @@ export async function runAgentTurn(args: {
               }
             }
             if (!completed) throw new Error("provider_incomplete");
+          } catch (error) {
+            const discardChars = text.length - finalTextStart;
+            if (discardChars > 0) {
+              text = text.slice(0, finalTextStart);
+              args.onReset?.(discardChars);
+            }
+            throw error;
           } finally { clearTimeout(timeout); }
         }
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
@@ -181,6 +198,7 @@ export async function runAgentTurn(args: {
   usage.latencyMs = now() - started;
   const status = statusFromResults(results);
   return { text, endReason, status,
-    unverified: checkNumbers(text, args.ownerText, results.map(r => r.result), args.context.locale),
+    unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
+      args.ownerText ].join("\n"), results.map(r => r.result), args.context.locale),
     results: results.map(r => r.result), usage };
 }
