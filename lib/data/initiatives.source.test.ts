@@ -19,6 +19,7 @@ vi.mock("@/lib/supabase/admin",()=>({
   createAdminSupabaseClient:()=>({
     from:(table:string)=>{
       let head=false;
+      let queryKind:"all"|"csv"|"missing"="all";
       const get=()=>{
         if(table==="daily_rollups")return [{
           business_date:"2026-10-05",net_sales_cents:1200,orders_count:1,
@@ -34,10 +35,11 @@ vi.mock("@/lib/supabase/admin",()=>({
         ];
         return [];
       };
-      const result=()=>({data:head?null:get(),count:head?state.unlinkedCount:null,error:null});
+      const result=()=>({data:head?null:get(),count:head?(table==="orders"?queryKind==="all"?get().length:0:state.unlinkedCount):null,error:null});
       const q:Record<string,unknown>={
         select:(_columns:string,opts?:{head?:boolean})=>{head=opts?.head===true;return q;},
-        eq:()=>q,is:()=>q,gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,
+        eq:()=>q,is:(column:string)=>{if(column==="pos_order_id")queryKind="missing";return q;},
+        like:()=>{queryKind="csv";return q;},gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,
         limit:(n:number)=>Promise.resolve({...result(),data:get().slice(0,n)}),
         range:(from:number,to:number)=>Promise.resolve({...result(),
           data:get().slice(from,to+1)}),

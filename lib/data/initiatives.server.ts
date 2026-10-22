@@ -10,6 +10,7 @@ import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
 import { readPeriodItemSales } from "./periodItemSales.server";
+import { latestEffectiveIngredientPrice } from "@/lib/calc/ingredientPriceSelection";
 import { verifiedDailyCogs, type MetricDailyInput, type ItemEvidence } from "@/lib/calc/metrics/catalog";
 import type { Timecard, RecipeLine } from "@/lib/calc/types";
 import type { ProposeInitiative, InitiativeScope, InitiativeRow, MetricRow,
@@ -421,15 +422,30 @@ export async function readMetricDay(businessId:string,date:string,
       .eq("business_id",businessId).in("id",[...needed]);
     if(ingredients.error)throw ingredients.error;
     const scopedIds=(ingredients.data??[]).map(i=>i.id);
-    const priceResult=scopedIds.length?await db.from("ingredient_prices")
-      .select("ingredient_id,effective_from,cost_per_base_unit_micros")
-      .in("ingredient_id",scopedIds).lte("effective_from",date)
-      .order("effective_from",{ascending:false}).limit(1000):null;
-    if(priceResult?.error)throw priceResult.error;
+    // Preserve Pantry's same-day correction ordering (recorded_at microseconds,
+    // then id), instead of selecting whichever equal-date row PostgREST returns.
+    const prices: Array<{id:string;ingredient_id:string;effective_from:string;
+      recorded_at:string;cost_per_base_unit_micros:number}>=[];
+    if(scopedIds.length){
+      for(let offset=0;offset<5000;offset+=500){
+        const page=await db.from("ingredient_prices")
+          .select("id,ingredient_id,effective_from,recorded_at,cost_per_base_unit_micros")
+          .in("ingredient_id",scopedIds).lte("effective_from",date)
+          .order("effective_from",{ascending:false})
+          .order("recorded_at",{ascending:false}).order("id",{ascending:false})
+          .range(offset,offset+499);
+        if(page.error)throw page.error;
+        const records=page.data??[];
+        prices.push(...records);
+        if(records.length<500)break;
+        if(offset===4500)throw new Error("ingredient price history exceeds bounded source");
+      }
+    }
     const priceMap:Record<string,number>={};
-    for(const r of priceResult?.data??[])
-      if(priceMap[r.ingredient_id]===undefined)
-        priceMap[r.ingredient_id]=Number(r.cost_per_base_unit_micros);
+    for(const id of scopedIds){
+      const latest=latestEffectiveIngredientPrice(prices,id,date);
+      if(latest.status==="ready")priceMap[id]=latest.price.cost_per_base_unit_micros;
+    }
     input.ingredientPriceMicros=priceMap;
     if(input.items)input.items=input.items.map(i=>({...i,ingredientPriceMicros:priceMap}));
   }
