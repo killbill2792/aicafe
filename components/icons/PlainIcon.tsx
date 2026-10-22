@@ -5,7 +5,7 @@ export default function PlainIcon({
   code,
   size = 24,
   color = "currentColor",
-  detailColor = "#fff",
+  detailColor = "rgb(var(--c-surface))",
   label,
   className,
 }: {
