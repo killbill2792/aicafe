@@ -100,3 +100,9 @@ begin
     option_cost,option_unit,option_quantity);
  end loop;
 end;$$;
+
+-- RLS does not grant SQL privileges; make the new owner tools available
+-- without exposing privileged service-role writes or changing P1.
+grant select,insert,update,delete on public.menu_product_addons to authenticated;
+grant select,insert,update,delete on public.menu_combo_components to authenticated;
+grant execute on function public.save_menu_product_addons(uuid,uuid,jsonb) to authenticated;
