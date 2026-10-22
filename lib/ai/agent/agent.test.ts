@@ -1015,3 +1015,279 @@ describe("Codex: product identity, dated facts and partial schedule trust bounda
       "",[],"en",[...old,...complete]).length).toBeGreaterThan(0);
   });
 });
+
+
+describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
+ const menu={source:"menu_items",period:null,missing:[],items:[
+   {id:"a",name:"Latte",priceCents:550},{id:"b",name:"Mocha",priceCents:600}]};
+ it("accepts owner-provided English monetary words",()=>{
+   expect(checkNumbers("The owner price is $8.50.","Our price is eight point five dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $5.50.","Set price to five fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $8.50.","Price is eight dollars fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $9.50.","Price is eight dollars fifty.",[],"en").map(x=>x.text)).toEqual(["$9.50"]);
+ });
+ it("accepts owner monetary words in Spanish and Arabic",()=>{
+   expect(checkNumbers("El precio es $8.50.","El precio es ocho coma cinco dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("El precio es $5.50.","El precio es cinco con cincuenta.",[],"es")).toEqual([]);
+   expect(checkNumbers("السعر $8.50","السعر ثمانية فاصلة خمسة دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("السعر $5.50","السعر خمسة دولارات وخمسون سنتا",[],"ar")).toEqual([]);
+ });
+ it("keeps spoken counts separate from owner money",()=>{
+   expect(checkNumbers("You sold 8 drinks.","We sold eight drinks.",[],"en")).toEqual([]);
+   expect(checkNumbers("You sold 8 drinks.","Vendimos ocho bebidas.",[],"es")).toEqual([]);
+   expect(checkNumbers("Your profit is $8.","We sold eight drinks.",[],"en").map(x=>x.text)).toEqual(["$8"]);
+   expect(checkNumbers("Margin is 8.5.","Margin is eight point five.",[],"en")).toEqual([]);
+ });
+ it("accepts explicit two and three operand money totals but not wrong totals",()=>{
+   expect(checkNumbers("$5.50 and $6.00, together $11.50.","",[menu],"en")).toEqual([]);
+   expect(checkNumbers("$5.50 and $6.00, together $12.","",[menu],"en").map(x=>x.text)).toEqual(["$12"]);
+   const three={source:"expenses",period:null,missing:[],aCents:250,bCents:300,cCents:400};
+   expect(checkNumbers("$2.50, $3.00 and $4.00, total $9.50.","",[three],"en")).toEqual([]);
+   expect(checkNumbers("$2.50, $3.00 and $4.00, total $10.","",[three],"en").map(x=>x.text)).toEqual(["$10"]);
+ });
+ it("checks explicit money differences without unbounded arithmetic closure",()=>{
+   expect(checkNumbers("$8.50 owner price vs $5.50 menu = $3 more.",
+     "Owner price is $8.50.",[menu],"en")).toEqual([]);
+   expect(checkNumbers("$8.50 owner price vs $5.50 menu = $4 more.",
+     "Owner price is $8.50.",[menu],"en").map(x=>x.text)).toEqual(["$4"]);
+   expect(checkNumbers("Profit is $11.50.", "",[menu],"en").map(x=>x.text)).toEqual(["$11.50"]);
+ });
+ it("ignores proposed durations, not business-duration assertions",()=>{
+   expect(checkNumbers("Try this for 7 days, then test for 2 weeks.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Prueba esto por 7 días.","",[],"es")).toEqual([]);
+   expect(checkNumbers("نجرب لمدة 7 أيام.","",[],"ar")).toEqual([]);
+   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
+ });
+});
+
+
+describe("review: no arithmetic or owner-speech laundering",()=>{
+ it("rejects a fictional profit computed by adding costs and sales",()=>{
+   const observed={source:"profitability",period:null,missing:[],
+     netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+   expect(checkNumbers("$5.50 total costs and $6.00 sales. Profit is $11.50.",
+     "",[observed],"en").map(x=>x.text)).toContain("$11.50");
+ });
+ it("treats spoken fifty as fifty cents, not five dollars",()=>{
+   expect(checkNumbers("Price $5.50.","Price cinco con cincuenta.",[],"es")).toEqual([]);
+   expect(checkNumbers("Price $8.50.","Price eight point fifty dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("Price $10.","Price cinco con cincuenta.",[],"es").map(x=>x.text)).toEqual(["$10"]);
+ });
+ it("never reclassifies owner counts because a later sentence asks about profit",()=>{
+   expect(checkNumbers("Profit is $8.","We sold eight drinks. What is our profit?",
+     [],"en").map(x=>x.text)).toEqual(["$8"]);
+ });
+ it("only exempts proposals, not historical durations",()=>{
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2"]);
+ });
+});
+
+
+describe("review: cents and compound amounts preserve owner intent",()=>{
+ it("standalone cents cannot silently become whole dollars",()=>{
+   expect(checkNumbers("$0.50","The price is fifty cents.",[],"en")).toEqual([]);
+   expect(checkNumbers("$50","The price is fifty cents.",[],"en").map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("$0.50","El precio es cincuenta centavos.",[],"es")).toEqual([]);
+   expect(checkNumbers("$50","El precio es cincuenta centavos.",[],"es").map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("compound twenties and thirties are whole prices",()=>{
+   expect(checkNumbers("$25","The price is twenty five dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("$20","The price is twenty five dollars.",[],"en").map(x=>x.text)).toEqual(["$20"]);
+   expect(checkNumbers("$35","El precio es treinta y cinco dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("$30","El precio es treinta y cinco dólares.",[],"es").map(x=>x.text)).toEqual(["$30"]);
+ });
+});
+
+
+describe("systemic review: signed typed speech and locally bound totals",()=>{
+ it("treats positive and negative owner monetary speech as different evidence",()=>{
+   expect(checkNumbers("Profit is -$50.","Our profit is minus fifty dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is $50.","Our profit is minus fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("Profit is -$5.50.","Profit is minus five fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is -$5.50.","Ganancia menos cinco con cincuenta dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("Profit is $50.","Ganancia menos cincuenta dólares.",[],"es")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("الربح -$50","الربح سالب خمسون دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("الربح $50","الربح سالب خمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("does not extract fictitious smaller values from unsupported hundreds",()=>{
+   expect(checkNumbers("Price is $50.","Price is one hundred and fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("Price is $1.","Price is one hundred and fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$1"]);
+ });
+ it("keeps percentage, number and money words in separate units",()=>{
+   expect(checkNumbers("Margin 8.5%","Margin eight point five percent",[],"en")).toEqual([]);
+   expect(checkNumbers("Margin 8.5%","Margin eight point five",[],"en")
+     .map(x=>x.text)).toEqual(["8.5%"]);
+   expect(checkNumbers("We sold 8 drinks.","We sold eight drinks.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is $8.","We sold eight drinks. What is our profit?",[],"en")
+     .map(x=>x.text)).toEqual(["$8"]);
+ });
+ it("rejects wrong arithmetic even when the wrong result is another observed value",()=>{
+   const prices={source:"menu_items",period:null,missing:[],
+     items:[{id:"a",name:"Latte",priceCents:550},
+       {id:"b",name:"Mocha",priceCents:600},
+       {id:"c",name:"Tea",priceCents:1200}]};
+   expect(checkNumbers("$5.50 and $6.00, together $11.50.","",[prices],"en")).toEqual([]);
+   expect(checkNumbers("$5.50 and $6.00, together $12.","",[prices],"en")
+     .map(x=>x.text)).toEqual(["$12"]);
+ });
+});
+
+
+describe("spoken grammar: compound order and quantity boundaries",()=>{
+ it("parses Arabic units-before-tens without leaking component amounts",()=>{
+   expect(checkNumbers("$55","السعر خمسة وخمسون دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("$5","السعر خمسة وخمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("$50","السعر خمسة وخمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("does not treat item quantities as prices when money follows in a sentence",()=>{
+   expect(checkNumbers("Price is $5","We sold five lattes for ten dollars",[],"en")
+     .map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("We sold 5 lattes","We sold five lattes for ten dollars",[],"en")).toEqual([]);
+ });
+});
+
+
+describe("review: expression and explicit-unit boundaries",()=>{
+ it("does not reinterpret exactly five cents as fifty cents",()=>{
+   expect(checkNumbers("Price is $5.05.","Price is five dollars and five cents.",[],"en")).toEqual([]);
+   expect(checkNumbers("Price is $5.50.","Price is five dollars and five cents.",[],"en")
+     .map(x=>x.text)).toEqual(["$5.50"]);
+   expect(checkNumbers("El precio es $5.05.","El precio es cinco dólares y cinco centavos.",[],"es")).toEqual([]);
+ });
+ it("never combines a spoken amount across a period or comma",()=>{
+   const owner="The price is twenty. Five dollars was the old price.";
+   expect(checkNumbers("The new price is $20.","The price is twenty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The new price is $25.",owner,[],"en")
+     .map(x=>x.text)).toEqual(["$25"]);
+   expect(checkNumbers("The new price is $5.",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$35","El precio es treinta. Y cinco dólares antes.",[],"es")
+     .map(x=>x.text)).toEqual(["$35"]);
+ });
+});
+
+
+describe("review: no partial Arabic teens or mixed-dollar cents",()=>{
+ it("parses the full Arabic teen expression, never an embedded five-dollar value",()=>{
+   expect(checkNumbers("$15","السعر خمسة عشر دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("$5","السعر خمسة عشر دولار",[],"ar").map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("$15","السعر خمسة عشرة دولار",[],"ar")).toEqual([]);
+ });
+ it("keeps two explicit dollar-denominated numbers separate",()=>{
+   const owner="The prices are five dollars and ten dollars.";
+   expect(checkNumbers("$5",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$10",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$5.10",owner,[],"en").map(x=>x.text)).toEqual(["$5.10"]);
+   expect(checkNumbers("$5.10","The price is five dollars and ten cents.",[],"en")).toEqual([]);
+ });
+});
+
+
+describe("derived-value scoping is language-agnostic",()=>{
+ const numbers={source:"profitability",period:null,missing:[],
+   netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+ it("does not invent a new KPI after an English sentence boundary",()=>{
+   expect(checkNumbers("$5.50 costs and $6.00 sales. Profit is $11.50",
+     "",[numbers],"en").map(x=>x.text)).toContain("$11.50");
+ });
+ it("does not invent Spanish or Arabic profit from unrelated amounts",()=>{
+   expect(checkNumbers("$5.50 costos y $6.00 ventas. ganancia $11.50",
+     "",[numbers],"es").map(x=>x.text)).toContain("$11.50");
+   expect(checkNumbers("$5.50 التكاليف و $6.00 المبيعات. الربح $11.50",
+     "",[numbers],"ar").map(x=>x.text)).toContain("$11.50");
+ });
+});
+
+describe("tool KPIs remain authoritative despite nearby arithmetic",()=>{
+ const result={source:"profitability",period:null,missing:[],
+   netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+ it("allows explicit verified profit and refuses unsupported profits",()=>{
+   expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $0.50.","",[result],"en")).toEqual([]);
+   expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $11.50.","",[result],"en")
+     .map(x=>x.text)).toContain("$11.50");
+ });
+});
+
+
+describe("CI and Codex: closed money expressions and decimal digits",()=>{
+  it("consumes two spoken fractional digits as a single cent value",()=>{
+    expect(checkNumbers("Price is $8.25.","Price is eight point two five dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Price is $8.20.","Price is eight point two five dollars.",[],"en")
+      .map(v=>v.text)).toEqual(["$8.20"]);
+    expect(checkNumbers("Price is $8.05.","Price is eight point zero five dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Price is $8.50.","Price is eight point fifty dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Precio $8.25.","Precio ocho coma dos cinco dólares.",[],"es")).toEqual([]);
+    expect(checkNumbers("السعر $8.25","السعر ثمانية فاصلة اثنين خمسة دولار",[],"ar")).toEqual([]);
+  });
+  it("does not inherit a previous total marker when validating a later business fact",()=>{
+    const tool={source:"profitability",period:null,missing:[],
+      netSalesCents:600,totalCostsCents:550,tipCents:100};
+    expect(checkNumbers("$6.00 and $5.50, total $11.50, tip $1.00.","",[tool],"en")).toEqual([]);
+    expect(checkNumbers("$6.00 and $5.50, total $12, tip $1.00.","",[tool],"en")
+      .map(v=>v.text)).toEqual(["$12"]);
+    expect(checkNumbers("$6.00 and $5.50, total $11.50, tip $2.00.","",[tool],"en")
+      .map(v=>v.text)).toEqual(["$2.00"]);
+  });
+});
+
+
+describe("Codex: expression-local operands and mixed operators",()=>{
+  const observed={source:"profitability",period:null,missing:[],
+    firstCents:1000,secondCents:300,thirdCents:200};
+  it("uses each operator instead of subtracting every later amount",()=>{
+    expect(checkNumbers("$10 minus $3 plus $2 = $9.","",[observed],"en")).toEqual([]);
+    expect(checkNumbers("$10 minus $3 plus $2 = $5.","",[observed],"en")
+      .map(x=>x.text)).toEqual(["$5"]);
+    expect(checkNumbers("$10 plus $3 minus $2 = $11.","",[observed],"en")).toEqual([]);
+    expect(checkNumbers("$10 plus $3 minus $2 = $9.","",[observed],"en")
+      .map(x=>x.text)).toEqual(["$9"]);
+  });
+  it("does not pull an unrelated budget into a price total",()=>{
+    const values={source:"profitability",period:null,missing:[],
+      budgetCents:1000,firstPriceCents:600,secondPriceCents:550,
+      combinedPriceCents:1150};
+    expect(checkNumbers("Our budget is $10, prices are $6 and $5.50, total $11.50.","",
+      [values],"en")).toEqual([]);
+    expect(checkNumbers("Our budget is $10, prices are $6 and $5.50, total $12.","",
+      [values],"en").map(x=>x.text)).toEqual(["$12"]);
+  });
+  it("does not certify the sum of distinct KPIs as a business result",()=>{
+    const metrics={source:"profitability",period:null,missing:[],
+      netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+    expect(checkNumbers("$5.50 costs and $6.00 sales, together $11.50.","",
+      [metrics],"en").map(x=>x.text)).toEqual(["$11.50"]);
+    expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $0.50.","",
+      [metrics],"en")).toEqual([]);
+  });
+});
+
+
+describe("Codex: explicit result boundary and symbolic cents",()=>{
+ const observed={source:"profitability",period:null,missing:[],
+   tenCents:1000,threeCents:300,twoCents:200,
+   sixCents:600,fiveFiftyCents:550,unrelatedCents:1200};
+ it("does not mistake an operand's minus sign for a result marker",()=>{
+   expect(checkNumbers("$10 plus $3 minus $2 = $11.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$10 plus $3 minus $2 = $7.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$7"]);
+   expect(checkNumbers("$10 minus $3 plus $2 = $9.","",[observed],"en")).toEqual([]);
+ });
+ it("verifies symbolic addition even when plus is absorbed into the currency token",()=>{
+   expect(checkNumbers("$6 + $5.50 = $11.50.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$6 + $5.50 = $12.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$12"]);
+   expect(checkNumbers("$6 +$5.50 = $11.50.","",[observed],"en")).toEqual([]);
+ });
+ it("understands symbolic subtraction without inventing negative evidence",()=>{
+   expect(checkNumbers("$6 - $5.50 = $0.50.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$6 - $5.50 = $11.50.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$11.50"]);
+ });
+});

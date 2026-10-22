@@ -1,5 +1,6 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
+import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
@@ -678,6 +679,216 @@ function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   });
 }
 
+
+// Owner-spoken numbers are parsed as complete, bounded expressions. A monetary
+// sign, major unit, cents, and quantity unit may not be separated or borrowed
+// from another sentence. Unsupported/ambiguous expressions fail closed.
+const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
+  en:{zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90},
+  es:{cero:0,uno:1,una:1,un:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,dieciséis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiuno:21,veintidós:22,veintidos:22,veintitrés:23,veintitres:23,veinticuatro:24,veinticinco:25,veintiséis:26,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29,treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90},
+  ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشر":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
+};
+type SpokenWord={word:string;start:number;end:number;group:number};
+type SpokenValue={value:number;kind:Kind};
+function ownerWordTokens(text:string,locale:AgentLocale):SpokenWord[]{
+  const words:SpokenWord[]=[];
+  let group=0,lastEnd=0;
+  for(const match of text.matchAll(/[\p{L}\p{M}]+/gu)){
+    // Only whitespace or hyphens can join one number expression.
+    if(/[^\s-]/u.test(text.slice(lastEnd,match.index)))group++;
+    lastEnd=match.index+match[0].length;
+    const word=match[0].replace(/[\u064b-\u065f]/gu,"").toLocaleLowerCase();
+    if(locale==="ar"&&word.startsWith("و")&&
+      !Object.hasOwn(WORD_NUMBERS.ar,word)&&
+      Object.hasOwn(WORD_NUMBERS.ar,word.slice(1))){
+      words.push({word:"و",start:match.index,end:match.index+1,group});
+      words.push({word:word.slice(1),start:match.index+1,end:match.index+match[0].length,group});
+    }else words.push({word,start:match.index,end:match.index+match[0].length,group});
+  }
+  return words;
+}
+function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
+  const words=ownerWordTokens(text,locale),dict=WORD_NUMBERS[locale];
+  const signs=locale==="en"?["minus","negative"]:locale==="es"?["menos","negativo","negativa"]:["سالب","ناقص"];
+  const joiners=locale==="en"?["and"]:locale==="es"?["y"]:["و"];
+  const decimalWords=locale==="en"?["point"]:locale==="es"?["coma","punto","con"]:["فاصلة","فاصل"];
+  const dollars=locale==="en"?["dollar","dollars","buck","bucks"]:
+    locale==="es"?["dólar","dólares","dolar","dolares","euro","euros"]:["دولار","دولارات","ريال","ريالات","درهم","دراهم"];
+  const centsUnits=locale==="en"?["cent","cents"]:
+    locale==="es"?["centavo","centavos","céntimo","céntimos"]:["سنت","سنتا","سنتات"];
+  const percents=locale==="en"?["percent"]:locale==="es"?["porciento"]:["بالمئة","بالمائة"];
+  const unsupported=locale==="en"?["hundred","thousand","million"]:
+    locale==="es"?["cien","ciento","cientos","mil","millón","millon"]:["مئة","مائة","ألف","الف"];
+  const monetaryContext=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|loss|salary|wages?|fee|bill|latte|mocha|espresso|precio|cuesta|costo|coste|dólares?|centavos?|alquiler|ganancia)\b|(?:سعر|ثمن|تكلفة|دولار|سنت|ربح|خسارة)/iu;
+  const quantities=/^(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|lattes?|mochas?|items?|units?|servings?|tickets?|shifts?|workers?|bebidas?|personas?|días?|semanas?|artículos?|clientes?|موظفين|أشخاص|اشخاص|أيام|ايام|أسابيع|أكواب|مشروبات|طلبات)(?!\p{L})/iu;
+  const result:SpokenValue[]=[];
+  const is=(i:number,list:readonly string[],group?:number)=>i<words.length&&
+    (group===undefined||words[i].group===group)&&list.includes(words[i].word);
+  const number=(at:number):{value:number;next:number}|null=>{
+    const major=words[at]&&dict[words[at].word];
+    if(major===undefined)return null;
+    let next=at+1,value=major;
+    const connector=is(next,joiners,words[at].group)?1:0;
+    const minor=words[next+connector]?.group===words[at].group?
+      dict[words[next+connector].word]:undefined;
+    if(major>=20&&major%10===0&&minor!==undefined&&minor>0&&minor<10){
+      value+=minor;next+=connector+1;
+    }else if(locale==="ar"&&major>0&&major<10&&connector===1&&
+      minor!==undefined&&minor>=20&&minor%10===0){
+      // In Arabic, "خمسة وخمسون" is 55, with the units first.
+      value+=minor;next+=2;
+    }else if(locale==="ar"&&major>0&&major<10&&connector===0&&minor===10){
+      // A teen ("خمسة عشر") is one number, not the price five.
+      value+=10;next++;
+    }
+    return {value,next};
+  };
+  for(let i=0;i<words.length;){
+    const initial=i,negative=is(i,signs);
+    if(negative)i++;
+    if(negative&&words[i]?.group!==words[initial].group){i=initial+1;continue;}
+    const whole=number(i);
+    if(!whole){i=initial+1;continue;}
+    let next=whole.next,value=whole.value*100;
+    const currentGroup=words[i].group;
+    let attachedMoney=false,attachedPercent=false;
+    if(is(next,decimalWords,currentGroup)){
+      const fractional=words[next+1]?.group===currentGroup?number(next+1):null;
+      if(!fractional){i=next+1;continue;}
+      next=fractional.next;
+      // A spoken decimal can contain either a whole two-digit fractional
+      // number ("point fifty") or two individual digits ("point two five").
+      // Consume both digits as ONE amount, never publish "$8.20" early.
+      const digitAfter=words[next]?.group===currentGroup?number(next):null;
+      if(fractional.value<10&&digitAfter&&digitAfter.value<10){
+        value+=fractional.value*10+digitAfter.value;
+        next=digitAfter.next;
+      }else{
+        value+=fractional.value<10?fractional.value*10:fractional.value;
+      }
+    } else if(is(next,dollars,currentGroup)){
+      attachedMoney=true;next++;
+      const conjunct=is(next,joiners,currentGroup)?1:0;
+      const fractional=words[next+conjunct]?.group===currentGroup?number(next+conjunct):null;
+      if(fractional&&fractional.value<=99&&
+        !is(fractional.next,dollars,currentGroup)){
+        // "five dollars and ten dollars" states two whole prices.
+        // A second currency unit cannot be a fractional-cent component.
+        next=fractional.next;
+        const explicitCents=is(next,centsUnits,currentGroup);
+        value+=explicitCents?fractional.value:
+          fractional.value<10?fractional.value*10:fractional.value;
+        if(explicitCents)next++;
+      }
+    } else if(is(next,centsUnits,currentGroup)){
+      attachedMoney=true;value=whole.value;next++;
+    } else {
+      const colloquial=words[next]?.group===currentGroup?number(next):null;
+      if(colloquial&&whole.value<=19&&colloquial.value>=10&&colloquial.value<=99){
+        value+=colloquial.value;next=colloquial.next;
+        attachedMoney=true;
+      }
+    }
+    if(is(next,dollars,currentGroup)){attachedMoney=true;next++;}
+    if(is(next,percents,currentGroup)){attachedPercent=true;next++;}
+    else if(locale==="es"&&is(next,["por"],currentGroup)&&is(next+1,["ciento"],currentGroup)){
+      attachedPercent=true;next+=2;
+    }
+    if(is(next,centsUnits,currentGroup)&&!attachedMoney){attachedMoney=true;value=Math.round(value/100);next++;}
+    const prefix=text.slice(Math.max(0,words[initial].start-100),words[initial].start);
+    const before=prefix.split(/[.!?;\n]/u).pop()??"";
+    const after=text.slice(words[next-1].end).split(/[.!?;\n]/u)[0]??"";
+    const explicitQuantity=quantities.test(after.trimStart());
+    // A larger unsupported numeral contaminates its entire clause: never
+    // reinterpret just the trailing "fifty" in "one hundred and fifty".
+    const clause=[before,after].join(" ").toLocaleLowerCase();
+    const unsupportedAdjacent=unsupported.some(word=>new RegExp("(?<!\\p{L})"+word+"(?!\\p{L})","iu").test(clause));
+    if(unsupportedAdjacent||(explicitQuantity&&attachedMoney)){i=next;continue;}
+    const money=!explicitQuantity&&(attachedMoney||monetaryContext.test(before)||monetaryContext.test(after.slice(0,30)));
+    const signed=negative?-1:1;
+    result.push({value:signed*(attachedPercent?value:money?value:value/100),
+      kind:attachedPercent?"percent":money?"money":"number"});
+    i=next;
+  }
+  return result;
+}
+function proposedDuration(text:string,start:number,end:number):boolean{
+ const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
+ return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
+  /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
+  /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
+}
+type MathOp="add"|"subtract";
+/** A join belongs to an arithmetic expression, not arbitrary neighboring
+ * money mentions ("Budget $10, prices are $6 and $5.50"). */
+function arithmeticConnector(text:string):MathOp|null {
+  if(/^\s*,\s*$/u.test(text))return "add";
+  if(/^\s*(?:\+|and|plus|y|más|زائد|و)\s*$/iu.test(text))return "add";
+  if(/^\s*(?:-|minus|less|menos|ناقص)\s*$/iu.test(text))return "subtract";
+  // Labels are allowed around a comparison, but only an explicit operator
+  // permits it. This is the owner-price vs menu-price form.
+  if(text.length<=65&&/\b(?:vs\.?|versus)\b/iu.test(text))return "subtract";
+  return null;
+}
+/** numberPattern consumes a sign before currency as part of its token.
+ * In an expression between two amounts, that leading sign is the operator. */
+function symbolicMoneyOperator(token:string):MathOp|null {
+  const sign=token.trimStart().match(/^([+\-−])\s*(?=[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|ريال|درهم)/iu)?.[1];
+  return sign==="+"?"add":sign==="-"||sign==="−"?"subtract":null;
+}
+function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
+ locale:AgentLocale,allowed:ReadonlySet<number>):boolean|null {
+  const money=candidates(text,locale).filter(c=>c.kind==="money"||
+    (c.kind==="number"&&isCurrencylessMoneyClaim(text,c.start,c.end)));
+  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
+  if(index<2)return null;
+  const prefix=text.slice(0,v.start);
+  // Sentence boundaries apply in every supported locale, not just EN.
+  const sentenceStops=[...prefix.matchAll(/\.(?![\d٠-٩۰-۹])/gu)].map(m=>m.index);
+  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),
+    prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
+  const prior=money.slice(0,index).filter(c=>c.start>boundary);
+  if(prior.length<2)return null;
+  // Require the marker immediately before the proposed result. An earlier
+  // "total" cannot mark a later, independently reported tip as arithmetic.
+  const immediate=text.slice(prior[prior.length-1].end,v.start);
+  const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|diferencia)\b|(?:المجموع|الإجمالي|الفرق|معا|معًا)|=/iu;
+  if(!resultMarker.test(immediate))return null;
+  // A KPI is valid only when backed by a tool or an owner statement, never
+  // by generic arithmetic of other business observations.
+  const kpi=/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu;
+  if(kpi.test(immediate))return null;
+  const operands=[prior[prior.length-1]];
+  const operators:MathOp[]=[];
+  for(let pos=prior.length-2;pos>=0;pos--){
+    const following=operands[0];
+    const between=text.slice(prior[pos].end,following.start);
+    const join=arithmeticConnector(between)||
+      (between.trim()===""?symbolicMoneyOperator(following.text):null);
+    if(!join)break; // unrelated preceding money belongs to another claim
+    operands.unshift(prior[pos]);
+    operators.unshift(join);
+    if(operands.length>3)return false; // only 2-3 operands supported
+  }
+  if(operands.length<2)return null;
+  const toCents=(c:{kind:Kind;value:number})=>
+    c.kind==="money"?c.value:Math.round(c.value*100);
+  const cents=operands.map((operand,i)=>{
+    const raw=toCents(operand);
+    // An operator incorporated into a following money token is not the
+    // amount's sign: "$6 -$5.50" must read 600 - 550, not 600 - (-550).
+    return i>0&&symbolicMoneyOperator(operand.text) ? Math.abs(raw) : raw;
+  });
+  if(!cents.every(amount=>[...allowed].some(a=>Math.abs(a-amount)<=1)))return false;
+  // A sum of two unrelated business KPIs is not tool-backed merely because
+  // its operands are individually observed.
+  const expression=text.slice(operands[0].start,v.start);
+  if(kpi.test(expression))return null;
+  const signed=cents.map((amount,i)=>i===0||operators[i-1]==="add"?amount:-amount);
+  const expected=sumCents(signed,amount=>amount);
+  return Math.abs(expected-toCents(v))<=1;
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -723,6 +934,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
+  for(const spoken of spokenOwnerValues(ownerText,locale))allowed[spoken.kind].add(spoken.value);
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
   // chips. Clock formatting and list markers can pass without a source.
   // Only owner statements and typed tool evidence can authorize a claim.
@@ -748,6 +960,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const ownerClocks = [...ownerText.matchAll(clockPattern)] as ClockSpan[];
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
+    if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
     const clock = v.kind==="number" ? clocks.find(m =>
       v.start < clockEnd(m) && v.end > m.index) : undefined;
     if(clock){
@@ -815,9 +1028,23 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       const itemPrice=directItemPriceClaim(text,v.start,v.end,itemPrices);
       if(itemPrice!==null)return Math.abs(itemPrice-cents)>1;
     }
+    // An explicit arithmetic claim is checked before raw value membership:
+    // an unrelated observed $12 must never validate 5.50 + 6.00 = $12.
+    if(moneyLike){
+      const derived=explicitLocalArithmetic(text,v,locale,allowed.money);
+      if(derived!==null)return !derived;
+    }
+    // A signed currency operand in an explicit symbolic expression is an
+    // operation on an observed positive amount, not a new negative KPI.
+    if(v.kind==="money"&&symbolicMoneyOperator(v.text)&&v.value<0){
+      const earlier=candidates(text,locale).filter(c=>c.kind==="money"&&c.end<=v.start).at(-1);
+      if(earlier&&text.slice(earlier.end,v.start).trim()===""&&
+        [...allowed.money].some(a=>Math.abs(a-Math.abs(v.value))<=1))return false;
+    }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
+
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
