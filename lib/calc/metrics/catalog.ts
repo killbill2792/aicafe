@@ -45,6 +45,8 @@ export type MetricDailyInput = {
   date: string;
   facts?: DailyFacts;
   items?: ItemEvidence[];
+  validItemIds?:string[];
+  salesTotalCoverageVerified?:boolean;
   /** A complete successful source check proved that old participation is wrong. */
   itemCoverageInvalidated?:boolean;
   itemCostCoverageVerified?:boolean;
@@ -78,11 +80,14 @@ const missing = (reason: string, invalidatesPrevious=false): MetricResult => ({
 const known = (value: number): MetricResult =>
   Number.isFinite(value) ? { value, coverage: 1, missing: [] } : missing("invalidValue");
 const sales = (day: MetricDailyInput): DailyFacts | null =>
-  day.facts && day.facts.salesDataStatus === "actual" ? day.facts : null;
+  day.facts && day.facts.salesDataStatus === "actual" &&
+    day.salesTotalCoverageVerified===true ? day.facts : null;
 const ratioBps = (part: number, total: number): MetricResult =>
   total > 0 ? known(Math.round(part * 10000 / total)) : missing("noSalesDenominator",true);
 const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" | "revenue" | "margin"): MetricResult => {
   const id = String(params.itemId);
+  if(!day.validItemIds)return missing("itemIdentityUnverified");
+  if(!day.validItemIds.includes(id))return missing("itemNotInBusiness",true);
   if (!sales(day) || !day.items)
     return missing("itemSalesCoverage",day.itemCoverageInvalidated===true);
   const row = day.items.find(i => i.itemId === id);

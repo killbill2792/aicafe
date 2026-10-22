@@ -19,6 +19,7 @@ const recorded:MetricDailyInput={
   timezone:"America/Los_Angeles",
   cogsCoverageVerified:true,laborCoverageVerified:true,itemRevenueVerified:true,attendanceCoverageVerified:true,
   transactionCountVerified:true,itemCostCoverageVerified:true,
+  salesTotalCoverageVerified:true,validItemIds:[itemId],
 };
 describe("M1 typed metric catalog",()=>{
   it("uses canonical sales and margin calculators",()=>{

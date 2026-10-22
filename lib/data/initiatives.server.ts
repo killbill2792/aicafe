@@ -41,6 +41,16 @@ export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeI
   if(input.adapterId!==null&&!Object.hasOwn(initiativeAdapters,input.adapterId))
     throw new Error("unknown initiative adapter");
   const db=await serviceOwnerAccess(scope);
+  const requiredItems=[...new Set(input.metrics.filter(m=>
+    m.source==="computed"&&m.metricKey?.startsWith("item_"))
+    .map(m=>String(m.params.itemId)))];
+  if(requiredItems.length){
+    const found=await db.from("menu_items").select("id").eq("business_id",scope.businessId)
+      .in("id",requiredItems);
+    if(found.error)throw found.error;
+    if((found.data??[]).length!==requiredItems.length)
+      throw new Error("initiative item metric must reference a business-owned item");
+  }
   const rows=input.metrics.map(m=>({
     role:m.role,source:m.source,metric_key:m.metricKey,params:m.params,
     comparator:m.comparator,target_kind:m.targetKind,target:m.target,
@@ -250,7 +260,7 @@ export async function persistInitiativeEvaluation(scope:InitiativeScope,initiati
   return data===true;
 }
 export async function readMetricDay(businessId:string,date:string,
-  opts:{items:boolean;hours:boolean;ingredientIds:string[]},
+  opts:{items:boolean;hours:boolean;ingredientIds:string[];itemIds?:string[]},
   signal?:AbortSignal):Promise<MetricDailyInput> {
   const db=createAdminSupabaseClient(signal);
   const day=await db.from("daily_rollups").select(
@@ -266,26 +276,30 @@ export async function readMetricDay(businessId:string,date:string,
     cardFeesCents:Number(day.data.card_fees_cents),voidsCents:Number(day.data.voids_cents),
   }:undefined;
   const input:MetricDailyInput={date,facts};
-  // A product/day CSV row is a synthetic order, not a transaction.
-  // Count independently in PostgreSQL: both the rollup AND a limit(1001)
-  // probe may have been truncated to PostgREST's 1000-row response cap.
-  const transactionBase=()=>db.from("orders").select("id",{count:"exact",head:true})
-    .eq("business_id",businessId).eq("business_date",date);
-  const [totalOrders,csvDash,csvColon,missingPosId]=await Promise.all([
-    transactionBase(),
-    db.from("orders").select("id",{count:"exact",head:true})
-      .eq("business_id",businessId).eq("business_date",date).like("pos_order_id","csv-%"),
-    db.from("orders").select("id",{count:"exact",head:true})
-      .eq("business_id",businessId).eq("business_date",date).like("pos_order_id","csv:%"),
-    db.from("orders").select("id",{count:"exact",head:true})
-      .eq("business_id",businessId).eq("business_date",date).is("pos_order_id",null),
-  ]);
-  const counts=[totalOrders,csvDash,csvColon,missingPosId];
-  if(counts.some(result=>result.error))throw new Error("transaction count proof unavailable");
-  input.transactionCountVerified=Boolean(facts&&facts.salesDataStatus==="actual"&&
-    counts.every(result=>result.count!==null&&result.count!==undefined)&&
-    totalOrders.count===facts.ordersCount&&csvDash.count===0&&
-    csvColon.count===0&&missingPosId.count===0);
+  // A SQL-side exact count and sum prove source completeness independently of
+  // the rollup's row-limited POS reader. Aggregate-only CSV sales can prove
+  // their NET TOTAL without inventing transaction counts or average tickets.
+  const source=await db.rpc("initiative_daily_order_sales_proof",{
+    p_business_id:businessId,p_date:date,
+  }).single();
+  if(source.error||!source.data)throw new Error("sales provenance unavailable");
+  const orderCount=Number(source.data.order_count);
+  const netSourceCents=Number(source.data.net_sales_cents);
+  const syntheticCount=Number(source.data.synthetic_count);
+  const validNumbers=[orderCount,netSourceCents,syntheticCount]
+    .every(Number.isSafeInteger);
+  input.salesTotalCoverageVerified=Boolean(facts&&facts.salesDataStatus==="actual"&&
+    validNumbers&&netSourceCents===facts.netSalesCents);
+  input.transactionCountVerified=Boolean(input.salesTotalCoverageVerified&&
+    syntheticCount===0&&orderCount===facts?.ordersCount);
+  const itemIds=opts.itemIds??[];
+  if(itemIds.length){
+    const distinct=[...new Set(itemIds)];
+    const scoped=await db.from("menu_items").select("id")
+      .eq("business_id",businessId).in("id",distinct);
+    if(scoped.error)throw scoped.error;
+    input.validItemIds=(scoped.data??[]).map(row=>row.id);
+  }
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)

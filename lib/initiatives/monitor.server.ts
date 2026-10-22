@@ -161,6 +161,8 @@ export async function monitorInitiatives(now:Date=new Date(),
         const input=await guarded(()=>readMetricDay(initiative.business_id,date,{
           items:computed.some(m=>m.metric_key?.startsWith("item_")||m.metric_key==="cogs_pct"),
           hours:computed.some(m=>m.metric_key==="sales_per_labor_hour"),
+          itemIds:computed.filter(m=>m.metric_key?.startsWith("item_"))
+            .map(m=>String(m.params.itemId)),
           ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
             .map(m=>String(m.params.ingredientId)),
         },itemSignal));

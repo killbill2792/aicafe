@@ -379,3 +379,20 @@ revoke all on function write_owner_initiative_monitor_evaluation(
   uuid,uuid,uuid,uuid,date,text,text,jsonb,jsonb,text,text) from public,anon,authenticated;
 grant execute on function write_owner_initiative_monitor_evaluation(
   uuid,uuid,uuid,uuid,date,text,text,jsonb,jsonb,text,text) to service_role;
+
+
+-- Aggregate all order rows inside PostgreSQL; PostgREST's 1000-row response
+-- cap and the daily rollup's old limited-source reader cannot certify sales.
+-- Synthetic CSV product groups retain a provable SALES sum but are not orders.
+create or replace function initiative_daily_order_sales_proof(
+  p_business_id uuid,p_date date
+) returns table(order_count bigint,net_sales_cents bigint,synthetic_count bigint)
+language sql security definer set search_path=public
+as $$
+  select count(*)::bigint,coalesce(sum(o.net_sales_cents),0)::bigint,
+    count(*) filter(where o.pos_order_id is null
+      or o.pos_order_id like 'csv-%' or o.pos_order_id like 'csv:%')::bigint
+  from orders o where o.business_id=p_business_id and o.business_date=p_date;
+$$;
+revoke all on function initiative_daily_order_sales_proof(uuid,date) from public,anon,authenticated;
+grant execute on function initiative_daily_order_sales_proof(uuid,date) to service_role;
