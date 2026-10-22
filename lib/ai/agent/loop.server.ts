@@ -1,9 +1,10 @@
+import { ZodError } from "zod";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
+import { agentToolDefinitions, agentLabelsPrompt, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
 import { statusFromResults } from "./status";
 import { checkNumbers } from "./checkNumbers";
 
-export type EndReason = "complete" | "budget" | "timeout" | "provider_error";
+export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
 export type AgentProvider = (params: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<Event>;
@@ -46,12 +47,12 @@ export async function runAgentTurn(args: {
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
   const input: unknown[] = [...(args.history ?? []), { role: "user", content: args.ownerText }];
-  const results: Array<{callId: string; result: AgentToolResult}> = [];
+  const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   const model = configuredSupervisorModel();
   const request = (final: boolean) => ({
-    model, instructions: SYSTEM_PROMPT, tools: final ? [] : agentToolDefinitions,
+    model, instructions: SYSTEM_PROMPT + "\n" + agentLabelsPrompt, tools: agentToolDefinitions,
     tool_choice: final ? "none" : "auto", stream: true,
     max_output_tokens: 1200, prompt_cache_key: "cafe-agent-v1", input,
   });
@@ -90,37 +91,61 @@ export async function runAgentTurn(args: {
     } finally { clearTimeout(timeout); }
   };
   try {
-    for (let round = 0; round < 6; round++) {
+    for (let round = 0; round < 5; round++) {
       if (now() >= deadline) { endReason = "timeout"; break; }
       let calls: ToolCall[];
       try { calls = await call(false); }
       catch { endReason = now() >= deadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       if (!calls.length) { finished = true; break; }
-      for (const tool of calls) {
-        if (usage.toolCalls >= 8 || now() >= deadline) { endReason = now() >= deadline ? "timeout" : "budget"; break; }
+      for (let index = 0; index < calls.length; index++) {
+        const tool = calls[index];
+        if (usage.toolCalls >= 8 || now() >= deadline || failures >= 2) {
+          endReason = now() >= deadline ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
+          for (const skipped of calls.slice(index)) {
+            const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
+            input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
+            results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
+              result: { source: skipped.name, period: null, missing: [error] } });
+          }
+          break;
+        }
         usage.toolCalls++;
         let result: AgentToolResult;
         try {
           result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
-            new Promise<never>((_, reject) => { const left = deadline - now();
+            new Promise<never>((_, reject) => {
+              const left = deadline - now();
               if (left <= 0) reject(new Error("deadline"));
-              else { const timer = setTimeout(() => reject(new Error("deadline")), left);
-                controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true }); }
+              else setTimeout(() => reject(new Error("deadline")), left);
             })]);
           failures = 0;
-        } catch {
+        } catch (error) {
           failures++;
-          result = { source: tool.name, period: null, labels: {}, missing: ["toolUnavailable"], error: "tool_unavailable" };
+          const detail = error instanceof ZodError ? {
+            error: "invalid_arguments", issues: error.issues.map(issue => ({ path: issue.path, code: issue.code }))
+          } : error instanceof SyntaxError ? { error: "invalid_json" }
+            : { error: now() >= deadline ? "deadline_exceeded" : "tool_unavailable" };
+          result = { source: tool.name, period: null, missing: [String(detail.error)], ...detail };
         }
-        results.push({ callId: tool.call_id, result });
+        results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
-        if (failures >= 2) { endReason = "budget"; break; }
+        if (failures >= 2) {
+          endReason = "tool_errors";
+          // Respond to all calls already returned in this response before the next request.
+          for (const skipped of calls.slice(index + 1)) {
+            input.push({ type: "function_call_output", call_id: skipped.call_id,
+              output: JSON.stringify({ error: "tool_errors" }) });
+            results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
+              result: { source: skipped.name, period: null, missing: ["tool_errors"] } });
+          }
+          break;
+        }
       }
       if (endReason !== "complete") break;
-      if (round === 5 || usage.toolCalls >= 8) { endReason = "budget"; break; }
+      if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished) {
+    if (!finished && usage.modelCalls < 6) {
       // Exactly one final no-tool request; never allow another model tool call.
       // On provider failure, already-streamed text remains intact.
       try {
