@@ -115,6 +115,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.unit==="count")allowed.number.add(v.value);
   }
   candidates(ownerText+"\n"+previousAssistantText, locale).forEach(v => allowed[v.kind].add(v.value));
+  // One monetary amount can be expressed as dollars without a currency symbol; owner numbers can be monetary.
+  for(const cents of [...allowed.money])allowed.number.add(cents/100);
+  for(const plain of [...allowed.number])allowed.money.add(Math.round(plain*100));
   // Derived amounts are supported only by same-unit pairs, never by arbitrary cross-unit arithmetic.
   for(const kind of ["money","percent","number"] as const){
     const source=[...allowed[kind]].slice(0,60);
@@ -132,8 +135,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   }
   return candidates(text, locale).filter(v => {
     const before=text.slice(0,v.start), after=text.slice(v.end);
-    if(v.kind==="number" && /(?:^|\n)\s*$/u.test(before) && /^\d+[.)]\s/u.test(text.slice(v.start)))return false;
-    if(v.kind==="number" && /^\s*[.)]\s/u.test(after) && /(?:^|\n)\s*$/u.test(before))return false;
+    if(v.kind==="number" && /(?:^|\s)$/u.test(before) && /^\d+[.)]\s/u.test(text.slice(v.start)))return false;
+    if(v.kind==="number" && /^[.)]\s/u.test(after) && /(?:^|\s)$/u.test(before))return false;
     const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
     if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
       /\b\d{1,2}h(?:\d{2})?\b/iu.test(local)))return false;
