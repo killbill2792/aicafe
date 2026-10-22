@@ -1,3 +1,4 @@
+import type { OpenHours } from "@/lib/business/openHours";
 import type { CafeStateService } from "@/lib/operating/cafeState";
 import type { CafeDecision, CafeSignal, CafeStatePeriod, KnownSlice, CafePeriodProfitability, CafeLaborDay, BusinessCostSummary } from "@/lib/operating/types";
 import type { DecisionStore } from "@/lib/operating/decisions";
@@ -29,6 +30,8 @@ export interface CafeToolset {
   getBreakEven(businessId: string): Promise<KnownSlice<BreakEvenProjection>>;
   getExpenseChanges(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<never>>;
   getLaborMetrics(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafeLaborDay[]>>;
+  getBusinessHours(businessId:string):Promise<KnownSlice<OpenHours>>;
+  getIngredientCosts(businessId:string,asOf:string,query:string|null,limit:number):Promise<KnownSlice<{items:Array<{id:string;name:string;baseUnit:string;costPerBaseUnitMicros:number|null;effectiveFrom:string|null}>}>>;
   getInventoryStatus(businessId: string): Promise<KnownSlice<never>>;
   getTeamTasks(businessId: string): Promise<KnownSlice<OperatingTask[]>>;
   getActiveSignals(businessId: string): Promise<CafeSignal[]>;
@@ -69,6 +72,7 @@ export class StructuredCafeTools implements CafeToolset {
       menuCatalog: CafeToolset["getMenuCatalog"];
       staffAttendance: CafeToolset["getStaffAttendance"];
     },
+    private extraReaders?: {hours:CafeToolset["getBusinessHours"];ingredientCosts:CafeToolset["getIngredientCosts"]},
     private domainReaders?: {
       currentStaff: CafeToolset["getCurrentStaff"];
       recurringSchedule: CafeToolset["getRecurringSchedule"];
@@ -150,6 +154,8 @@ export class StructuredCafeTools implements CafeToolset {
   async getLaborMetrics(businessId: string, period: CafeStatePeriod): Promise<KnownSlice<CafeLaborDay[]>> {
     return (await this.states.getHistoricalState(businessId, period)).labor;
   }
+  getBusinessHours(businessId:string){return this.extraReaders?.hours(businessId)??Promise.resolve(missing<OpenHours>("businessHoursNotSet"));}
+  getIngredientCosts(businessId:string,asOf:string,query:string|null,limit:number){return this.extraReaders?.ingredientCosts(businessId,asOf,query,limit)??Promise.resolve(missing<{items:Array<{id:string;name:string;baseUnit:string;costPerBaseUnitMicros:number|null;effectiveFrom:string|null}>}>("ingredientPricesUnavailable"));}
   async getInventoryStatus(businessId: string): Promise<KnownSlice<never>> {
     return (await this.states.getCurrentState(businessId)).inventory;
   }
@@ -209,6 +215,8 @@ export class BusinessScopedCafeTools {
   getExpenseChanges(period: CafeStatePeriod) { return this.tools.getExpenseChanges(this.businessId, period); }
   getLaborMetrics(period: CafeStatePeriod) { return this.tools.getLaborMetrics(this.businessId, period); }
   getInventoryStatus() { return this.tools.getInventoryStatus(this.businessId); }
+  getBusinessHours(){return this.tools.getBusinessHours(this.businessId);}
+  getIngredientCosts(asOf:string,query:string|null,limit:number){return this.tools.getIngredientCosts(this.businessId,asOf,query,limit);}
   getTeamTasks() { return this.tools.getTeamTasks(this.businessId); }
   getActiveSignals() { return this.tools.getActiveSignals(this.businessId); }
   getDecisionHistory() { return this.tools.getDecisionHistory(this.businessId); }

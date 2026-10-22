@@ -49,7 +49,7 @@ describe("recorded Responses streaming fixtures", () => {
     ])});
     expect(result.usage.toolCalls).toBe(1);
     expect(result.status.status).toBe("complete");
-    expect(result.results).toEqual([{ source: "menu_items", period: null, missing: [], items: [
+    expect(result.results).toEqual([{ source: "menu_items", period: null, agentId:"alex", missing: [], items: [
       { id: "item-1", name: "Latte", category: "drink", priceCents: 450 },
     ] }]);
     expect(result.unverified).toEqual([]);
@@ -247,5 +247,39 @@ describe("recorded Responses streaming fixtures", () => {
     expect(result.endReason).toBe("budget");
     expect(result.usage.modelCalls).toBe(6); // five regular calls, one final tool-free attempt
     expect(result.usage.toolCalls).toBe(5);
+  });
+});
+
+describe("tool start labels and cross-turn numeric grounding",()=>{
+  it("attributes actual tool starts and does not re-label plain completion",async()=>{
+    const starts:Array<{name:string;agentId:string}>=[];
+    const result=await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
+      [call("get_menu_items",'{"query":null,"limit":null}',"label-1"),completed],
+      [text("A latte costs $4.50."),completed],
+    ]),onTool:(name,agentId)=>starts.push({name,agentId})});
+    expect(starts).toEqual([{name:"get_menu_items",agentId:"alex"}]);
+    expect(result.agentIds).toEqual(["alex"]);
+    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="items:item-1/priceCents")?.value).toBe(450);
+  });
+  it("does not convert a previously formatted assistant list into sales evidence",async()=>{
+    const formatted="1. Review your menu\n2. Check your staffing";
+    const unsupported=await runAgentTurn({ownerText:"What happened?",context,
+      history:[{role:"assistant",content:formatted}],
+      provider:fixture([[text("You sold 2 drinks."),completed]])});
+    expect(unsupported.unverified.map(v=>v.text)).toEqual(["2"]);
+    const ownerGrounded=await runAgentTurn({ownerText:"Repeat my quantity",context,
+      history:[{role:"user",content:"I sold 2 drinks."},{role:"assistant",content:formatted}],
+      provider:fixture([[text("You sold 2 drinks."),completed]])});
+    expect(ownerGrounded.unverified).toEqual([]);
+  });
+  it("reuses a prior tool's cents evidence without a new read",async()=>{
+    const result=await runAgentTurn({ownerText:"Repeat that price",context,
+      previousEvidence:[{tool:"menu_items",values:[{key:"priceCents",value:850,unit:"cents"}]}],
+      provider:fixture([[text("The latte costs $8.50."),completed]])});
+    expect(result.unverified).toEqual([]);
+    const hallucinated=await runAgentTurn({ownerText:"Repeat that price",context,
+      previousEvidence:[{tool:"menu_items",values:[{key:"priceCents",value:850,unit:"cents"}]}],
+      provider:fixture([[text("The latte costs $9.75."),completed]])});
+    expect(hallucinated.unverified.map(v=>v.text)).toEqual(["$9.75"]);
   });
 });

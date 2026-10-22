@@ -223,7 +223,7 @@ export const PUBLIC_TOOL_METHODS = [
   "getRecordedExpenses","getProductSales","getItemSalesCoverage","getMenuCatalog",
   "getStaffAttendance","getCurrentStaff","getRecurringSchedule","getBreakEven",
   "getExpenseChanges","getLaborMetrics","getInventoryStatus","getTeamTasks",
-  "getActiveSignals","getDecisionHistory","getOperatingSnapshot",
+  "getActiveSignals","getDecisionHistory","getOperatingSnapshot","getBusinessHours","getIngredientCosts",
 ] as const satisfies readonly (keyof BusinessScopedCafeTools)[];
 
 export const readers = {
@@ -301,6 +301,8 @@ export const classified = {
   getActiveSignals:{kind:"restricted",reason:"Live signal generation loads unbounded menu/pricing observations; needs bounded source before registration"},
   getExpenseSummary:{kind:"restricted",reason:"Projected running-cost rows lack authoritative source and actual/estimated provenance; use recorded expense entries instead"},
   getExpenseChanges:{kind:"unsupported",reason:"Comparable historical cost series not implemented"},
+  getBusinessHours:{kind:"restricted",reason:"Bounded authenticated agent-only business-hours reader, not a P1 catalog selector"},
+  getIngredientCosts:{kind:"restricted",reason:"Bounded authenticated agent-only price-history reader, not a P1 catalog selector"},
   getInventoryStatus:{kind:"unsupported",reason:"No verified stock counts or inventory feed"},
   getOperatingSnapshot:{kind:"restricted",reason:"Composite raw signal and decision provenance"},
   getTeamTasks:{kind:"restricted",reason:"Legacy unbounded internal inbox includes private payload and evidence; P1 uses bounded readP1TaskPage"},

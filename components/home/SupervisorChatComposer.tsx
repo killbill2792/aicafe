@@ -429,8 +429,11 @@ export default function SupervisorChatComposer({
             const type = frame.split(/\r?\n/).find(line => line.startsWith("event: "))?.slice(7);
             const data = frame.split(/\r?\n/).find(line => line.startsWith("data: "))?.slice(6);
             if (!data) continue;
-            const event = JSON.parse(data) as { text?: string; code?: string; discardChars?: number };
-            if (type === "delta" && typeof event.text === "string") {
+            const event = JSON.parse(data) as { text?: string; code?: string; discardChars?: number; agentId?:string };
+            if (type === "tool" && (event.agentId === "alex" || event.agentId === "olivia" ||
+              event.agentId === "maya" || event.agentId === "leo")) {
+              setProgressStatus({agent:event.agentId,stage:"reading"});
+            } else if (type === "delta" && typeof event.text === "string") {
               setStreamedText(current => current + event.text);
               setProgressStatus({ agent: "supervisor", stage: "answering" });
             } else if (type === "reset" && Number.isSafeInteger(event.discardChars) &&
