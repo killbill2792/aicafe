@@ -4,6 +4,7 @@ import { conversationError, parseInput, readBoundedJson, requireSameOrigin } fro
 import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.server";
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
+import type { NumericEvidence } from "@/lib/ai/agent/checkNumbers";
 import { runAgentTurn } from "@/lib/ai/agent/loop.server";
 import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
@@ -23,7 +24,8 @@ export async function POST(request: Request, context: RouteContext) {
     const readiness = await getSupervisorChatReadiness(true);
     if (!readiness.enabled) throw new ConversationApiError(503, readiness.reason);
     const thread = await service.getThread(id);
-    await assertOwnerAgentTurnAvailable(scope);
+    try { await assertOwnerAgentTurnAvailable(scope); }
+    catch(error){ if(error instanceof ConversationApiError)console.error("agent_sse_error",{code:error.code}); throw error; }
     const owner = await service.addOwnerMessage(id, input.clientMessageId, input.text);
     const prior = await getExistingSupervisorReply(scope, owner);
     if (thread.title === null) {
@@ -43,13 +45,28 @@ export async function POST(request: Request, context: RouteContext) {
           const [tools, identity, page] = await Promise.all([
             createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), service.listMessages(id, 0),
           ]);
+          const priorAssistant=page.items.filter(m=>m.role==="supervisor"&&m.id!==owner.id).slice(-8);
+          const previousEvidence:NumericEvidence[]=priorAssistant.flatMap(m=>{
+            const candidate=m.grounding?.agentMetadata;
+            if(!candidate||typeof candidate!=="object"||!Object.hasOwn(candidate,"evidence"))return [];
+            const entries=(candidate as {evidence?:unknown}).evidence;
+            if(!Array.isArray(entries))return [];
+            return entries.filter((x):x is NumericEvidence=>x&&typeof x==="object"&&
+              typeof x.tool==="string"&&Array.isArray(x.values)).slice(0,8);
+          });
+          const previousAssistantText=priorAssistant.flatMap(m=>{
+            const text=m.text??(m.blocks??[]).flatMap(b=>b&&typeof b==="object"&&"text" in b?[String(b.text)]:[]).join(" ");
+            const spans=(m.grounding?.agentMetadata as {unverified?:Array<{start:number;end:number;blockIndex:number}>}|undefined)?.unverified??[];
+            return spans.length?[]:[text];
+          }).join("\n");
           const history = page.items.filter(m => m.id !== owner.id &&
             (m.role === "owner" || m.role === "supervisor")).slice(-8)
             .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
               content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
-            context: { tools, asOf: identity.asOf, locale: input.locale },
+            context: { tools, asOf: identity.asOf, locale: input.locale,timezone:identity.timezone },
+            previousEvidence,previousAssistantText,onTool:(name,agentId)=>emit("tool",{name,agentId}),
             onDelta: delta => emit("delta", { text: delta }),
             onReset: discardChars => emit("reset", { discardChars }) });
           let reply: Awaited<ReturnType<typeof persistAgentReply>>;
@@ -61,6 +78,10 @@ export async function POST(request: Request, context: RouteContext) {
             try { await recordAgentTurnUsage(scope, owner, result); }
             catch { console.error("agent_usage_write_failed"); } // no owner data logged
           }
+          console.info("agent_turn", {turn:"agent",endReason:result.endReason,
+            status:result.status.status,modelCalls:result.usage.modelCalls,
+            toolCalls:result.usage.toolCalls,tools:result.tools??[],
+            latencyMs:result.usage.latencyMs,unverifiedCount:result.unverified.length});
           emit("done", { reply, status: result.status, endReason: result.endReason,
             unverified: result.unverified, usage: result.usage });
         } catch (error) {
@@ -69,6 +90,7 @@ export async function POST(request: Request, context: RouteContext) {
             error instanceof AgentReplyStorageError ? "reply_storage_failed" :
             error instanceof AgentEmptyReplyError ? "agent_turn_failed" :
             "agent_turn_failed";
+          console.error("agent_sse_error",{code});
           emit("error", { code, ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}) });
         } finally { controller.close(); }
       },

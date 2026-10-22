@@ -1,15 +1,15 @@
 import { ZodError } from "zod";
 import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
-import { agentToolDefinitions, agentLabelsPrompt, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
+import { agentToolDefinitions, agentLabelsPrompt, agentForTool, executeAgentTool, type AgentToolContext, type AgentToolResult } from "./tools";
 import { statusFromResults } from "./status";
-import { checkNumbers } from "./checkNumbers";
+import { checkNumbers,compactEvidence,type NumericEvidence } from "./checkNumbers";
 
 export type EndReason = "complete" | "budget" | "timeout" | "provider_error" | "tool_errors";
 type ToolCall = { type: "function_call"; name: string; arguments: string; call_id: string };
 type Event = { type: string; [key: string]: unknown };
 export type AgentProvider = (params: Record<string, unknown>, signal: AbortSignal) => AsyncIterable<Event>;
 export type AgentTurn = { text: string; endReason: EndReason; status: ReturnType<typeof statusFromResults>;
-  unverified: ReturnType<typeof checkNumbers>; results: AgentToolResult[];
+  unverified: ReturnType<typeof checkNumbers>; results: AgentToolResult[]; evidence?: NumericEvidence[]; tools?:string[]; agentIds?:string[];
   usage: { modelCalls: number; toolCalls: number; inputTokens: number; cachedTokens: number; outputTokens: number; latencyMs: number } };
 export const SYSTEM_PROMPT = "You help an independent cafe owner in their language. Be concise, truthful, helpful. Use tools for business facts. Never invent numbers, missing data or completed actions. Ask one specific clarifying question naturally when needed. On incomplete evidence explain what is known and missing. No JSON envelope.";
 
@@ -43,7 +43,8 @@ export async function runAgentTurn(args: {
   ownerText: string; history?: Array<{ role: "user" | "assistant"; content: string }>;
   context: AgentToolContext; provider?: AgentProvider; onDelta?: (delta: string) => void;
   onReset?: (discardChars: number) => void;
-  now?: () => number;
+  now?: () => number; onTool?: (name:string,agentId:string)=>void;
+  previousEvidence?:readonly NumericEvidence[]; previousAssistantText?:string;
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
@@ -121,6 +122,7 @@ export async function runAgentTurn(args: {
           break;
         }
         usage.toolCalls++;
+        args.onTool?.(tool.name,agentForTool(tool.name));
         let result: AgentToolResult;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
         try {
@@ -200,6 +202,9 @@ export async function runAgentTurn(args: {
   const status = statusFromResults(results);
   return { text, endReason, status,
     unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
-      args.ownerText ].join("\n"), results.map(r => r.result), args.context.locale),
+      args.ownerText ].join("\n"), results.map(r=>r.result), args.context.locale,args.previousEvidence,
+      args.previousAssistantText),
+    evidence:compactEvidence(results.map(r=>r.result)),
+    tools:[...new Set(results.map(r=>r.name))],agentIds:[...new Set(results.map(r=>agentForTool(r.name)))],
     results: results.map(r => r.result), usage };
 }
