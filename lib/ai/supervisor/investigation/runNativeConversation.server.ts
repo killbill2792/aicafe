@@ -70,9 +70,9 @@ const LIMITS={rounds:INVESTIGATION_LIMITS.modelCalls,
  operations:INVESTIGATION_LIMITS.operations,elapsedMs:INVESTIGATION_LIMITS.elapsedMs,
  previewRows:8,maxFacts:500};
 const localeCopy={
- en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source",conditional:"Conditional calculation using numbers supplied by the owner; not verified café records."},
- es:{fallback:"No pude terminar la solicitud. Esto es lo que pude verificar.",gap:"No pude verificar los datos solicitados.",source:"Verificado",ask:"Aclara un detalle, por favor.",hint:"Tu respuesta",estimate:"Fuente estimada o incompleta",conditional:"Cálculo condicional con cifras del propietario; no son datos verificados del negocio."},
- ar:{fallback:"لم أتمكن من إكمال الطلب. إليك ما تمكنت من التحقق منه.",gap:"تعذّر التحقق من البيانات المطلوبة.",source:"موثق",ask:"يرجى توضيح تفصيل واحد.",hint:"إجابتك",estimate:"مصدر تقديري أو غير مكتمل",conditional:"حساب مشروط بأرقام قدّمها المالك، وليس بيانات مقهى موثّقة."},
+ en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",hint:"Your answer",estimate:"Estimated or incomplete source",conditional:"Conditional calculation using numbers supplied by the owner; not verified café records."},
+ es:{fallback:"No pude terminar la solicitud. Esto es lo que pude verificar.",gap:"No pude verificar los datos solicitados.",source:"Verificado",hint:"Tu respuesta",estimate:"Fuente estimada o incompleta",conditional:"Cálculo condicional con cifras del propietario; no son datos verificados del negocio."},
+ ar:{fallback:"لم أتمكن من إكمال الطلب. إليك ما تمكنت من التحقق منه.",gap:"تعذّر التحقق من البيانات المطلوبة.",source:"موثق",hint:"إجابتك",estimate:"مصدر تقديري أو غير مكتمل",conditional:"حساب مشروط بأرقام قدّمها المالك، وليس بيانات مقهى موثّقة."},
 };
 const normalize=(s:string)=>s.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu," ").trim();
 function preview(value:unknown):unknown{
@@ -435,9 +435,6 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       ()=>{usage.toolCallCount++;input.onUsage?.({...usage});});
     if(isRecord(value)){
      if(value.status==="requires_owner_input"&&isRecord(value.ownerInput)){
-       const request=ownerResolutionRequest({question:{
-         en:copy.ask,es:copy.ask,ar:copy.ask},input:{kind:"free_text",hint:{
-         en:localeCopy.en.hint,es:localeCopy.es.hint,ar:localeCopy.ar.hint}}});
        // Domain-authorized missing inputs are handled by the existing durable card path.
        const requestFromDomain=z.any().safeParse(value.ownerInput);
        const prepared=requestFromDomain.success?value.ownerInput:null;
