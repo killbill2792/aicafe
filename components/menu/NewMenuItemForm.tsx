@@ -4,7 +4,8 @@ import { useTranslations } from "next-intl";
 import { Coffee,Utensils,ShoppingBag,Package } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { addMenuItem,saveMenuItemAggregateCost } from "@/lib/actions/menuItems";
-import { applyTemplate } from "@/lib/actions/pantry";
+import { applyTemplate, addFromStarter } from "@/lib/actions/pantry";
+import { recipeSizesFor, templateRecipeForSize } from "@/lib/menu/recipeTemplates";
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
 import SizeLabelClarifyDialog from "./SizeLabelClarifyDialog";
@@ -23,7 +24,11 @@ export default function NewMenuItemForm({menuGroupOptions}:{menuGroupOptions:str
    const result=await addMenuItem({name:name.trim(),sizeLabel:resolvedSize.trim()||undefined,priceCents:Math.round(Number(price)*100),menuGroup:group.trim()||undefined,category:kind==="food"?"FOOD":kind==="retail"?"RETAIL":undefined});
    if(!result.ok){setError(result.error);return;}
    if(mode==="quick"){const cents=Math.round(Number(cost)*100);if(cents>0){const saved=await saveMenuItemAggregateCost({menuItemId:result.id,costCents:cents,estimated:true});if(!saved.ok){setError(t("error"));return;}}}
-   if(mode==="template"&&template.key){const applied=await applyTemplate(result.id,template.key);if(!applied.ok){setError(applied.missingPantry?.length?t("templateMissing"):t("error"));router.push(`/menu/${result.id}?setupRecipe=1`);return;}}
+   if(mode==="template"&&template.key){
+     const keys=[...new Set(recipeSizesFor(template.key).flatMap(size=>templateRecipeForSize(template.key!,size)?.map(line=>line.starterKey)??[]))];
+     const installed=await addFromStarter(keys);
+     if(!installed.ok){setError(t("templateMissing"));router.push(`/menu/${result.id}?setupRecipe=1`);return;}
+     const applied=await applyTemplate(result.id,template.key);if(!applied.ok){setError(applied.missingPantry?.length?t("templateMissing"):t("error"));router.push(`/menu/${result.id}?setupRecipe=1`);return;}}
    router.push(`/menu/${result.id}?setupRecipe=1`);
  });}
  return <div className="mx-auto w-full max-w-3xl text-ink">
