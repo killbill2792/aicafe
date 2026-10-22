@@ -14,7 +14,7 @@ export type StarterIngredient = {
   baseUnitsPerOperationalUnit?: number;
 };
 const milk = (key: string, name: string, ounces: number): StarterIngredient => ({
-  key, name, category: "milk", baseUnit: "ml", packQuantity: ounces, packUnit: ounces === 128 ? "gal" : "fl_oz",
+  key, name, category: "milk", baseUnit: "ml", packQuantity: ounces === 128 ? 1 : ounces, packUnit: ounces === 128 ? "gal" : "fl_oz",
 });
 const syrup = (key: string, name: string): StarterIngredient => ({
   key, name, category: "syrup", baseUnit: "ml", packQuantity: 750, packUnit: "ml",
