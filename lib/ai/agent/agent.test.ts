@@ -17,6 +17,17 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(checkNumbers("١٢٣٫٩٩ د.إ", "", [base], "ar")).toHaveLength(1);
     expect(checkNumbers("We agreed on 5", "5", [], "en")).toEqual([]);
   });
+  it("treats Arabic comma as grouping and Arabic dot as decimal before locale rules", () => {
+    const evidence = [{source:"profitability",period:null,missing:[],priceCents:123400}];
+    expect(checkNumbers("١٬٢٣٤ دولار", "", evidence, "ar")).toEqual([]);
+    expect(checkNumbers("١٬٢٣٤ دولار", "", [
+      {source:"profitability",period:null,missing:[],priceCents:123},
+    ], "ar").map(n=>n.text)).toEqual(["١٬٢٣٤ دولار"]);
+    expect(checkNumbers("١٬٢٣٤٫٥٠ دولار", "", [
+      {source:"profitability",period:null,missing:[],priceCents:123450},
+    ], "ar")).toEqual([]);
+    expect(checkNumbers("١٬٢٣٤٫٥٠ دولار", "", evidence, "ar")).toHaveLength(1);
+  });
   it("uses whole-percent tolerance without allowing misleading decimal percents", () => {
     expect(checkNumbers("13% margin", "", [base], "en")).toEqual([]); // 12.5% rounded to a whole percent
     expect(checkNumbers("13.1% margin", "", [base], "en")).toHaveLength(1);
