@@ -34,6 +34,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(checkNumbers("We sold 2026 coffees", "", [], "en").map(n => n.text)).toEqual(["2026"]);
     expect(checkNumbers("We sold ٢٠٢٦ coffees", "", [], "ar").map(n => n.text)).toEqual(["٢٠٢٦"]);
     expect(checkNumbers("in 2026", "", [], "en")).toEqual([]);
+    expect(checkNumbers("October 21, 2026", "", [], "en")).toEqual([]);
     expect(checkNumbers("October 2026", "", [], "en")).toEqual([]);
     expect(checkNumbers("Q3 2026", "", [], "en")).toEqual([]);
     expect(checkNumbers("FY 2026", "", [], "en")).toEqual([]);

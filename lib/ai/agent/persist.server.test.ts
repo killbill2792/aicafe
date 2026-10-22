@@ -18,7 +18,9 @@ describe("database-safe agent persistence payload", () => {
       source:"get_sales",period:null,missing:["tool_unavailable"],error:"tool_unavailable",
     }] };
     const partial = { ...turn("Not all data"), status: { status:"partial" as const,missing:["sales"] },
-      results:[{source:"daily_rollups",period:null,missing:["sales"]}] };
+      results:[{source:"menu_items",period:null,missing:[]},
+        {source:"daily_rollups",period:null,missing:["sales"]}],
+      usage:{...turn("").usage,toolCalls:2} };
     expect(persistedAgentStatus(greeting)).toBe("verified");
     expect(persistedAgentStatus(failed)).toBe("unavailable");
     expect(persistedAgentStatus(partial)).toBe("partial");

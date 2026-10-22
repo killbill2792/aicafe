@@ -31,6 +31,7 @@ function numberPattern(locale: AgentLocale): RegExp {
 }
 const months = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
 const monthBefore = new RegExp(months + "[\\s,]*$", "iu");
+const monthDayBefore = new RegExp(months + "[\\s]+[٠-٩۰-۹\\d]{1,2}[,\\s]*$", "iu");
 const monthAfter = new RegExp("^\\s*(?:de\\s+)?" + months + "(?!\\p{L})", "iu");
 const yearBefore = /(?:^|[\s(])(?:in|en|del|año|year|fy|q[1-4]|عام|سنة)\s*$/iu;
 const isoDate = /[٠-٩۰-۹\d]{4}[-/][٠-٩۰-۹\d]{1,2}[-/][٠-٩۰-۹\d]{1,2}/gu;
@@ -42,7 +43,8 @@ function isCalendarNumber(text: string, start: number, end: number, value: numbe
   const before = text.slice(Math.max(0, start - 28), start);
   const after = text.slice(end, end + 28);
   if (value >= 2000 && value <= 2100) {
-    return monthBefore.test(before) || monthAfter.test(after) || yearBefore.test(before);
+    return monthBefore.test(before) || monthDayBefore.test(before) ||
+      monthAfter.test(after) || yearBefore.test(before);
   }
   if (value >= 1 && value <= 31)
     return monthBefore.test(before) || monthAfter.test(after);
