@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
   id: "stored-owner", threadId: "thread", role: "owner", contentType: "text",
@@ -47,6 +47,26 @@ describe("Supervisor chat turn and scroll behavior", () => {
       scrollTop: 350, scrollHeight: 2500, clientHeight: 500,
       previousScrollHeight: null, pinned: false,
     })).toBeNull();
+  });
+  it("does not spend the history anchor on intermediate streaming updates", () => {
+    let committed = 0;
+    let applied = 0;
+    const pendingHeight = 1000;
+    const streamed = { scrollTop: 165, scrollHeight: 1100, clientHeight: 500 };
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
+    expect(transcriptScrollTarget({
+      ...streamed, previousScrollHeight: null, pinned: false,
+    })).toBeNull();
+
+    // Only the history page commit advances this version. Stream deltas do not.
+    committed++;
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(true);
+    expect(transcriptScrollTarget({
+      scrollTop: streamed.scrollTop, scrollHeight: 1550,
+      clientHeight: 500, previousScrollHeight: pendingHeight, pinned: false,
+    })).toBe(715);
+    applied = committed;
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
   });
   it("preserves viewport when older messages are prepended without snapping to latest", () => {
     expect(transcriptScrollTarget({
