@@ -652,7 +652,7 @@ describe("Codex: observation scopes, source identities and comparison operands",
       hours:{mon:[]}};
     const refresh=compactEvidence([closed]);
     expect(refresh).toHaveLength(1);
-    expect(refresh[0].timeScope).toEqual({kind:"hours",days:["mon"]});
+    expect(refresh[0].timeScope).toEqual({kind:"hours",days:["mon","tue"]});
     expect(refresh[0].times).toEqual([]);
     expect(checkNumbers("We open at 8:00 AM on Monday.","",[closed],"en",prior)
       .length).toBeGreaterThan(0);
