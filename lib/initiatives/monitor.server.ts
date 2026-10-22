@@ -24,6 +24,14 @@ const due = (from:string,date:string,cadence:InitiativeRow["checkin_cadence"],en
 };
 const interpolate = (s:string,title:string,date:string) =>
   s.replaceAll("{title}",title).replaceAll("{date}",date);
+function initiativeDomain(initiative:InitiativeRow,metrics:MetricRow[]) {
+  if(initiative.adapter_id==="price_change"||
+    metrics.some(m=>m.metric_key?.startsWith("item_")))return "menu_pricing" as const;
+  if(metrics.some(m=>["labor_cost","labor_pct","sales_per_labor_hour"].includes(m.metric_key??"")))
+    return "labor" as const;
+  if(metrics.some(m=>m.metric_key==="ingredient_unit_cost"))return "supplies" as const;
+  return "money" as const;
+}
 export type MonitorStats={checked:number;sampled:number;updates:number;failed:number};
 
 export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorStats> {
@@ -34,6 +42,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     try{
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
       const graph=await readMonitorGraph(initiative);
+      const domain=initiativeDomain(initiative,graph.metrics);
       const today=formatInTimeZone(now,graph.timezone,"yyyy-MM-dd");
       const yesterday=dayOffset(today,-1);
       if(yesterday<initiative.starts_on)continue;
@@ -86,7 +95,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           const question=metric.checkin_question??t.checkinDefault;
           const result=await writeTeamUpdate({
             businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
-            domain:"money",kind:"initiative_checkin",severity:"action",
+            domain,kind:"initiative_checkin",severity:"action",
             subjectType:"owner_initiative",subjectId:initiative.id,
             facts:{initiativeId:initiative.id,metricId:metric.id,date},
             text:interpolate(t.checkin,initiative.title,date)+" "+question,
@@ -128,7 +137,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           const t=translations[initiative.locale];
           const written=await writeTeamUpdate({
             businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
-            domain:"money",kind:"initiative_evaluation",severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
+            domain,kind:"initiative_evaluation",severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
             subjectType:"owner_initiative",subjectId:initiative.id,
             facts:{initiativeId:initiative.id,status:evaluation.status,recommendation:evaluation.recommendation,asOf},
             text:interpolate(t.evaluation,initiative.title,asOf)+" "+t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
