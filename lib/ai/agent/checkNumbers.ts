@@ -15,7 +15,7 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
       if(typeof v!=="number"||!Number.isFinite(v))return;
       const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
         /Margin$|Ratio$/.test(key)?"ratio":"count";
-      const value=/Micros$/.test(key)?v/10000:/Percent$/.test(key)?v*100:v;
+      const value=/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v;
       values.push({key,value,unit});remaining--;
     };
     if(r.missing.length===0)walk(r,"",0);
@@ -89,7 +89,7 @@ function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber &
   return found;
 }
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
-  if (Array.isArray(data)) { allowed.number.add(data.length); data.forEach(v => allowFromData(v, allowed, key)); return; }
+  if (Array.isArray(data)) { if(/^(?:items|people|shifts|laborDays|days|categories|attendanceRecords)$/u.test(key))allowed.number.add(data.length); data.forEach(v => allowFromData(v, allowed, key)); return; }
   if (data && typeof data === "object") {
     for (const [k,v] of Object.entries(data)) {
       if (k === "labels" || k === "period" || k === "date") continue;
@@ -99,7 +99,7 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
   }
   if (typeof data !== "number" || !Number.isFinite(data)) return;
   if (/Cents$/.test(key)) allowed.money.add(Math.round(data));
-  else if (/Micros$/.test(key)) allowed.money.add(data/10000);
+  else if (/Micros$/.test(key)) allowed.money.add(data/1000000);
   else if (/Percent$/.test(key)) allowed.percent.add(Math.round(data*100));
   else if (/Bps$/.test(key)) allowed.percent.add(Math.round(data));
   else if (/Margin$|Ratio$/.test(key)) allowed.percent.add(Math.round(data * 10000));
@@ -117,10 +117,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
     if(v.unit==="count")allowed.number.add(v.value);
   }
-  candidates(ownerText+"\n"+previousAssistantText, locale).forEach(v => allowed[v.kind].add(v.value));
+  const ownerNumbers=candidates(ownerText,locale);
+  ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
+  candidates(previousAssistantText,locale).forEach(v=>allowed[v.kind].add(v.value));
+  for(const v of ownerNumbers)if(v.kind==="number")allowed.money.add(Math.round(v.value*100));
   // One monetary amount can be expressed as dollars without a currency symbol; owner numbers can be monetary.
   for(const cents of [...allowed.money])allowed.number.add(cents/100);
-  for(const plain of [...allowed.number])allowed.money.add(Math.round(plain*100));
+
   // Derived amounts are supported only by same-unit pairs, never by arbitrary cross-unit arithmetic.
   for(const kind of ["money","percent","number"] as const){
     const source=[...allowed[kind]].slice(0,60);
