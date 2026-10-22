@@ -87,18 +87,24 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
   let saved: ConversationMessage;
   try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata); }
   catch { throw new AgentReplyStorageError(); }
-  try {
-    // The existing owner-scoped ledger RPC allows up to five tool calls per
-    // increment. Split the eight-tool turn without requiring a migration.
-    const total = turn.usage.toolCalls;
-    for (let part = 0; part < Math.max(1, Math.ceil(total / 5)); part++) {
-      await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id,
-        usage: { model: configuredSupervisorModel(),
-          modelCallCount: part === 0 ? turn.usage.modelCalls : 0,
-          toolCallCount: Math.min(5, total - part * 5),
-          inputTokens: part === 0 ? turn.usage.inputTokens : 0,
-          outputTokens: part === 0 ? turn.usage.outputTokens : 0 } });
-    }
-  } catch { /* telemetry failure must not corrupt a persisted reply */ }
   return saved;
+}
+/** One invocation per model-run turn, including blank and failed persistence.
+ * The existing RPC accepts at most five tool calls per increment.
+ */
+export function agentUsageIncrements(turn: AgentTurn) {
+  const calls = turn.usage.toolCalls;
+  return Array.from({ length: Math.max(1, Math.ceil(calls / 5)) }, (_, index) => ({
+    model: configuredSupervisorModel(),
+    modelCallCount: index === 0 ? turn.usage.modelCalls : 0,
+    toolCallCount: Math.min(5, calls - index * 5),
+    inputTokens: index === 0 ? turn.usage.inputTokens : 0,
+    outputTokens: index === 0 ? turn.usage.outputTokens : 0,
+  }));
+}
+export async function recordAgentTurnUsage(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
+  if (turn.usage.modelCalls < 1) return;
+  for (const usage of agentUsageIncrements(turn)) {
+    await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id, usage });
+  }
 }
