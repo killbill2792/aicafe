@@ -7,33 +7,66 @@ import type { AgentTurn } from "./loop.server";
 
 type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
-  if (!turn.results.length || turn.results.every(result => "error" in result))
+  if (turn.usage.toolCalls === 0 && turn.endReason === "complete") return "verified";
+  if (turn.usage.toolCalls === 0 || !turn.results.length ||
+    turn.results.every(result => typeof result.error === "string"))
     return "unavailable";
   return turn.status.status === "complete" ? "verified" : "partial";
 }
-/** No truncation. Each block is <= 1,200 characters; DB allows up to 30 blocks. */
-export function splitAgentText(text: string) {
+type Span = { start: number; end: number };
+// Protect recorded claims and even *verified* currency tokens from block boundaries.
+const moneyToken = /(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*|[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))/gu;
+
+/** Preserve every character, preferring paragraphs, lines then whitespace. */
+export function splitAgentText(text: string, unverified: readonly Span[] = []) {
   const value = text || " ";
+  const protectedSpans: Span[] = [...unverified];
+  for (const match of value.matchAll(moneyToken))
+    protectedSpans.push({ start: match.index, end: match.index + match[0].length });
+  const safe = (at: number) => !protectedSpans.some(span => span.start < at && at < span.end);
   const blocks: Array<{ type: "text"; text: string }> = [];
-  for (let at = 0; at < value.length; at += 1200) {
-    if (blocks.length === 30) throw new Error("agent_reply_too_long");
-    blocks.push({ type: "text", text: value.slice(at, at + 1200) });
+  let start = 0;
+  while (start < value.length) {
+    if (blocks.length >= 30) throw new Error("agent_reply_too_long");
+    const limit = Math.min(start + 1200, value.length);
+    let end = limit;
+    if (limit < value.length) {
+      const choices: number[][] = [[], [], []];
+      for (let i = start + 1; i < limit; i++) {
+        if (!safe(i + 1)) continue;
+        if (value[i] === "\n" && value[i - 1] === "\n") choices[0].push(i + 1);
+        else if (value[i] === "\n") choices[1].push(i + 1);
+        else if (/\s/u.test(value[i])) choices[2].push(i + 1);
+      }
+      const preferred = choices.find(choices => choices.length);
+      if (preferred) end = preferred[preferred.length - 1];
+      else if (!safe(end)) {
+        // A >1200-character token may be hard-split, but never through a
+        // currency/number claim, even when the adjacent word is oversized.
+        while (end > start && !safe(end)) end--;
+        if (end === start) throw new Error("agent_reply_too_long");
+      }
+    }
+    blocks.push({ type: "text", text: value.slice(start, end) });
+    start = end;
   }
   return blocks;
 }
 export function agentReplyPayload(turn: AgentTurn) {
-  const blocks = splitAgentText(turn.text);
+  const blocks = splitAgentText(turn.text, turn.unverified);
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks };
-  // The offset is relative to each persisted text block, not the streaming string.
   const unverified = turn.unverified.flatMap(item => {
     const rows: Array<typeof item & {blockIndex:number}> = [];
+    let offset = 0;
     for (let i = 0; i < blocks.length; i++) {
-      const start = Math.max(item.start, i * 1200), end = Math.min(item.end, (i + 1) * 1200);
+      const start = Math.max(item.start, offset);
+      const end = Math.min(item.end, offset + blocks[i].text.length);
       if (end > start) rows.push({
-        ...item, start: start - i * 1200, end: end - i * 1200,
-        text: blocks[i].text.slice(start - i * 1200, end - i * 1200), blockIndex: i,
+        ...item, start: start - offset, end: end - offset,
+        text: blocks[i].text.slice(start - offset, end - offset), blockIndex: i,
       });
+      offset += blocks[i].text.length;
     }
     return rows;
   });
