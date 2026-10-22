@@ -67,7 +67,7 @@ export const scheduleReadTools={
    return {source:"team_rules+staff_custom_rules",period:null,agentId:"olivia",
      missing:custom.length>30?["moreCustomRules"]:[],estimated:false,
      verifiedLegalProfile:false,defaultsOverridden:owner_set,
-     settings:values,customRules:custom.slice(0,30).map(r=>({id:r.id,text:r.rule_text}))};
+     settings:values,customRules:custom.slice(0,30).map((r:{id:string;rule_text:string})=>({id:r.id,text:r.rule_text}))};
   }
  },
  get_coverage_gaps:{
