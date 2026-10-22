@@ -100,7 +100,7 @@ EmptyState and PersonaAvatar.
 
 ## Supervisor AI caveats (low emphasis)
 
-A caveat about AI-sourced information in the Supervisor chat is **inline supporting text**, not a high-stakes alert. Use `text-ink-muted` (#6B5B4E) on the chat's light surface, at **17px minimum** with body line-height at least 1.4; it passes WCAG AA contrast. A small decorative alert/info icon may precede the text, but do not add a border, filled tint, card, or boxed warning. Preserve the text itself and readable focus/RTL behavior. This is **not** the `warn-tint` missing-expense-category banner, which retains its own higher-emphasis pattern below.
+A caveat about AI-sourced information in the Supervisor chat is **inline supporting text**, not a high-stakes alert. Use semantic `text-muted` on the current theme's chat surface, at **17px minimum** with body line-height at least 1.4; its theme-specific colors pass WCAG AA contrast. A small decorative alert/info icon may precede the text, but do not add a border, filled tint, card, or boxed warning. Preserve the text itself and readable focus/RTL behavior. This is **not** the `warn-tint` missing-expense-category banner, which retains its own higher-emphasis pattern below.
 
 ## Words (plain language glossary)
 Never show the left column to users. Use the right column.

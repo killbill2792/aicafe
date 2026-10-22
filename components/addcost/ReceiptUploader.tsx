@@ -87,7 +87,7 @@ export default function ReceiptUploader({
             <span className="text-lg font-bold">{formatCents(result.receipt.total_cents)}</span>
           </div>
           <span className="text-sm text-ink-muted">{result.receipt.date ?? "—"}</span>
-          <div className="flex flex-col gap-1.5 border-t border-[#EFE7DB] pt-2">
+          <div className="flex flex-col gap-1.5 border-t border-line pt-2">
             {result.receipt.lines.map((line, i) => (
               <div key={i} className="flex justify-between text-sm">
                 <span className="flex-1 text-ink-muted">{line.description}</span>

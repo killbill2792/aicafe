@@ -97,7 +97,7 @@ export default function StatementUploader({
           const category = line.correctedCategory ?? (line.category === "exclude" ? "other" : line.category);
           const isExcluded = line.category === "exclude" && !line.correctedCategory;
           return (
-            <div key={line.i} className="flex flex-col gap-2 border-b border-[#EFE7DB] p-2.5 last:border-b-0">
+            <div key={line.i} className="flex flex-col gap-2 border-b border-line p-2.5 last:border-b-0">
               <div className="flex items-center justify-between gap-2">
                 <span className="flex-1 text-[15px] font-semibold text-ink">{line.description}</span>
                 <span className="text-base font-bold">{formatCents(line.amountCents)}</span>

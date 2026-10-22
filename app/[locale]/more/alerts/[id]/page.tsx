@@ -39,7 +39,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
 
       <section className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-6 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warn-tint text-warn">
-          <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="#B4460E" />
+          <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
         {alert.impactCents !== null && (
           <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn"><Money cents={alert.impactCents} /></span></>
