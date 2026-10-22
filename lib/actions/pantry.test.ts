@@ -30,7 +30,7 @@ function fakeDb(ownIngredient: boolean) {
           eq: () => ({ single: async () => ({
             data: ownIngredient ? { id: INGREDIENT, base_unit: "ml" } : null, error: null,
           }) }),
-          in: async () => ({ data: [], error: null }),
+          in: async () => ({ data: [], error: null, count: 0 }),
         }),
       }),
     };
