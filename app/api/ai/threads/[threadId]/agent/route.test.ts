@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 const fake = vi.hoisted(() => ({
   reply: { id: "reply-1", grounding: { status: "verified" }, blocks: [{ type:"text",text:"Here is the answer." }] },
   writes: 0, usageChecks: 0, quotaExhausted: false, ownerWrites: 0,
-  loopCalls: 0, stored: false, storageFails: false,
+  loopCalls: 0, stored: false, storageFails: false, usageFails: false,
   usageRecorded: [] as Array<{modelCalls:number; toolCalls:number}>,
   queued: [] as Array<{text:string;endReason:string;resetChars?:number;results?: Array<Record<string,unknown>>}>,
 }));
@@ -75,9 +75,10 @@ vi.mock("@/lib/ai/agent/persist.server", () => {
     },
     recordAgentTurnUsage: async (_scope:unknown,_owner:unknown,turn:{
       usage:{modelCalls:number;toolCalls:number}
-    }) => { fake.usageRecorded.push({
-      modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,
-    }); },
+    }) => {
+      fake.usageRecorded.push({modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls});
+      if (fake.usageFails) throw new Error("usage_rpc_unavailable");
+    },
   };
 });
 import { POST } from "./route";
@@ -208,6 +209,27 @@ describe("default authenticated streaming agent route", () => {
     expect(output).toContain('event: delta\ndata: {"text":"not confirmed."}');
     expect(output).toContain('event: done');
     expect(fake.usageRecorded).toHaveLength(1);
+  });
+
+  it("emits done for a saved reply even if usage accounting fails", async () => {
+    fake.writes=0;fake.stored=false;fake.quotaExhausted=false;fake.storageFails=false;
+    fake.usageFails=true;fake.usageRecorded=[];fake.queued=[];
+    const error=vi.spyOn(console,"error").mockImplementation(()=>{});
+    try {
+      const response=await POST(new Request(
+        "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent",{
+          method:"POST",headers:{"origin":"http://localhost:3000","content-type":"application/json"},
+          body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",
+            text:"Menu?",locale:"en"}),
+        }),{params:Promise.resolve({threadId:"11111111-1111-4111-8111-111111111111"})});
+      const output=await response.text();
+      expect(output).toContain("event: done");
+      expect(output).not.toContain("event: error");
+      expect(fake.stored).toBe(true);
+      expect(fake.writes).toBe(1);
+      expect(fake.usageRecorded).toEqual([{modelCalls:1,toolCalls:1}]);
+      expect(error).toHaveBeenCalledWith("agent_usage_write_failed");
+    } finally {fake.usageFails=false;error.mockRestore();}
   });
 
 });
