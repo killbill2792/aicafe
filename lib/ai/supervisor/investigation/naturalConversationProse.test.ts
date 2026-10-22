@@ -6,6 +6,14 @@ describe("native Supervisor prose grounding without generic questions",()=>{
   expect(groundedNaturalProse(question,["12 oz latte","16 oz latte","10 cents"],"en"))
     .toEqual({text:question,redacted:false});
  });
+ it("retains verified hyphenated, Spanish and Arabic size options",()=>{
+  expect(groundedNaturalProse("Choose the 12-ounce or 16-ounce latte.",
+    ["12 oz latte","16 oz latte"],"en").redacted).toBe(false);
+  expect(groundedNaturalProse("¿Prefieres el latte de 12 onzas o 16 onzas?",
+    ["12 oz latte","16 oz latte"],"es").redacted).toBe(false);
+  expect(groundedNaturalProse("هل تفضل لاتيه 12 أونصة أو 16 أونصة؟",
+    ["12 oz latte","16 oz latte"],"ar").redacted).toBe(false);
+ });
  it("allows natural equivalent monetary expressions with exact cents",()=>{
   const out=groundedNaturalProse("Your latte costs $7.00. Increase it by $0.10?",
     ["$7","10 cents"],"en");
