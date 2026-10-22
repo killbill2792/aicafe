@@ -1,5 +1,26 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 
+export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>};
+export function compactEvidence(results:readonly AgentToolResult[]):NumericEvidence[]{
+  let remaining=100;
+  return results.map(r=>{
+    const values:NumericEvidence["values"]=[];
+    const walk=(v:unknown,key:string,depth:number)=>{
+      if(remaining<=0||depth>6)return;
+      if(Array.isArray(v)){for(const item of v){if(remaining<=0)break;walk(item,key,depth+1);}return;}
+      if(v&&typeof v==="object"){
+        for(const [k,item] of Object.entries(v))walk(item,k,depth+1);
+        return;
+      }
+      if(typeof v!=="number"||!Number.isFinite(v))return;
+      const unit=/Cents$/.test(key)?"cents":/Bps$/.test(key)?"bps":
+        /Margin$|Ratio$/.test(key)?"ratio":"count";
+      values.push({key,value:v,unit});remaining--;
+    };
+    if(r.missing.length===0)walk(r,"",0);
+    return {tool:r.source,values};
+  }).filter(x=>x.values.length>0);
+}
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
 type Kind = UnverifiedNumber["kind"];
 const ascii = (s: string) => s.replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660))
@@ -19,7 +40,7 @@ function decimal(raw: string, locale: AgentLocale): number {
   }
   return Number(s);
 }
-const currency = "(?:[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولار)";
+const currency = "(?:[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولار|دولارات|ريال|درهم|dollars?|euros?|pesos?|dólares?)";
 const digits = "[-+−]?[٠-٩۰-۹\\d]+";
 function numberPattern(locale: AgentLocale): RegExp {
   // Ordinary spaces separate words (and numbers); localized nonbreaking
@@ -55,7 +76,7 @@ function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber &
   for (const m of text.matchAll(numberPattern(locale))) {
     const token = m[0].trim(), money = new RegExp(currency, "u").test(token);
     const percent = /[%٪]$/.test(token);
-    const raw = token.replace(new RegExp(currency, "gu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
+    const raw = token.replace(new RegExp(currency, "giu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
     const value = decimal(raw, locale);
     if (!Number.isFinite(value)) continue;
     const kind: Kind = money ? "money" : percent ? "percent" : "number";
@@ -67,7 +88,7 @@ function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber &
   return found;
 }
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
-  if (Array.isArray(data)) { data.forEach(v => allowFromData(v, allowed, key)); return; }
+  if (Array.isArray(data)) { allowed.number.add(data.length); data.forEach(v => allowFromData(v, allowed, key)); return; }
   if (data && typeof data === "object") {
     for (const [k,v] of Object.entries(data)) {
       if (k === "labels" || k === "period" || k === "date") continue;
@@ -82,11 +103,40 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
   else allowed.number.add(data);
 }
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
-export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale): UnverifiedNumber[] {
+export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
+  previousEvidence:readonly NumericEvidence[] = [], previousAssistantText = ""): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
   results.forEach(r => allowFromData(r, allowed));
-  candidates(ownerText, locale).forEach(v => allowed[v.kind].add(v.value));
-  return candidates(text, locale).filter(v => ![...allowed[v.kind]].some(x =>
-    Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0)))
+  for(const e of previousEvidence)for(const v of e.values.slice(0,100)){
+    if(!Number.isFinite(v.value))continue;
+    if(v.unit==="cents")allowed.money.add(v.value);
+    if(v.unit==="bps")allowed.percent.add(v.value);
+    if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
+    if(v.unit==="count")allowed.number.add(v.value);
+  }
+  candidates(ownerText+"\n"+previousAssistantText, locale).forEach(v => allowed[v.kind].add(v.value));
+  // Derived amounts are supported only by same-unit pairs, never by arbitrary cross-unit arithmetic.
+  for(const kind of ["money","percent","number"] as const){
+    const source=[...allowed[kind]].slice(0,60);
+    for(let i=0;i<source.length;i++)for(let j=0;j<source.length;j++){
+      const a=source[i],b=source[j];
+      allowed[kind].add(a+b);allowed[kind].add(a-b);
+      if(kind==="money"){
+        if(b!==0)allowed.number.add(a/b);
+        if(a!==0)allowed.percent.add(Math.round(((b-a)/Math.abs(a))*10000));
+      }else if(kind==="number"){
+        allowed.number.add(a*b);
+        if(b!==0)allowed.number.add(a/b);
+      }
+    }
+  }
+  return candidates(text, locale).filter(v => {
+    const before=text.slice(0,v.start), after=text.slice(v.end);
+    if(/(?:^|\\n)\\s*\\d+[.)]\\s*$/u.test(before) && v.kind==="number")return false;
+    if(/(?:\\d{1,2}:\\d{2}|\\d{1,2}h(?:\\d{2})?|\\d{1,2}\\s*(?:AM|PM))$/iu.test(before+v.text+after.slice(0,5).split(/\\s|[,.]/)[0]))return false;
+    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^(?:\\s*)(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?)/iu.test(after))return false;
+    return ![...allowed[v.kind]].some(x =>
+    Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
+  })
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
 }
