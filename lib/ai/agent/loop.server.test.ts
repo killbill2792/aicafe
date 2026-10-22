@@ -44,11 +44,14 @@ describe("recorded Responses streaming fixtures", () => {
   });
   it("calls one bounded read tool, then answers", async () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider:fixture([
-      [call("get_menu_items","{}","call1"),completed],
+      [call("get_menu_items",'{"query":null,"limit":null}',"call1"),completed],
       [text("Latte costs $4.50."),completed],
     ])});
     expect(result.usage.toolCalls).toBe(1);
     expect(result.status.status).toBe("complete");
+    expect(result.results).toEqual([{ source: "menu_items", period: null, missing: [], items: [
+      { id: "item-1", name: "Latte", category: "drink", priceCents: 450 },
+    ] }]);
     expect(result.unverified).toEqual([]);
   });
   it("makes exactly one no-tool final call on repeated tool failures", async () => {
