@@ -16,12 +16,12 @@ const words={
 };
 const normalize=(s:string)=>s.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 function category(span:string,following:string){
- const immediate=following.match(/^\s{0,3}(?:percent|por ciento|cents?|centavos?|dollars?|d[oó]lares?|usd|ounces?|oz|ml|kg|lbs?|cl|pt|qt|gal|دولار|سنت|بالمئة|في المئة)/iu)?.[0]??"";
+ const immediate=following.match(/^[\s-]{0,3}(?:percent|por ciento|cents?|centavos?|dollars?|d[oó]lares?|usd|ounces?|onzas?|oz|ml|kg|lbs?|cl|pt|qt|gal|أونصة|دولار|سنت|بالمئة|في المئة)/iu)?.[0]??"";
  const combined=normalize(span+" "+immediate);
  if(/[%٪]|\b(?:percent|por ciento)\b|(?:بالمئة|في المئة)/iu.test(combined))return "percent";
  if(/[$€£¥]|\b(?:dollars?|d[oó]lares?|usd|cents?|centavos?)\b|(?:دولار|سنت)/iu.test(combined))
    return "money";
- if(/\b(?:oz|ounces?|ml|kg|lbs?|cl|pt|qt|gal)\b/iu.test(combined))return "size";
+ if(/\b(?:oz|ounces?|onzas?|ml|kg|lbs?|cl|pt|qt|gal)\b|أونصة/iu.test(combined))return "size";
  return "plain";
 }
 function magnitude(span:string):string{
