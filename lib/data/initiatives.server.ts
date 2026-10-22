@@ -32,46 +32,37 @@ async function serviceOwnerAccess(scope:InitiativeScope) {
   if(error||data?.role!=="owner")throw new Error("initiative owner membership required");
   return db;
 }
-export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeInitiative,locale:"en"|"es"|"ar") {
+export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeInitiative,
+  locale:"en"|"es"|"ar",requestKey:string) {
   await ownerAccess(scope);
-  if(input.adapterId!==null && !Object.hasOwn(initiativeAdapters,input.adapterId))
+  if(input.adapterId!==null&&!Object.hasOwn(initiativeAdapters,input.adapterId))
     throw new Error("unknown initiative adapter");
   const db=await serviceOwnerAccess(scope);
-  const thread=await db.from("ai_threads").select("id").eq("id",input.threadId)
-    .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).maybeSingle();
-  if(thread.error||!thread.data)throw new Error("initiative thread access denied");
-  const {data,error}=await db.from("owner_initiatives").insert({
-    business_id:scope.businessId,owner_user_id:scope.ownerUserId,thread_id:input.threadId,
-    kind:input.kind,title:input.title,change_description:input.changeDescription,
-    change_spec:input.changeSpec,adapter_id:input.adapterId,starts_on:input.startsOn,
-    ends_on:input.endsOn,baseline_from:input.baselineFrom,baseline_to:input.baselineTo,
-    checkin_cadence:input.checkinCadence,status:"proposed",locale,
-  }).select(columns).single();
-  if(error||!data)throw error??new Error("initiative insert failed");
   const rows=input.metrics.map(m=>({
-    initiative_id:data.id,role:m.role,source:m.source,metric_key:m.metricKey,
-    params:m.params,comparator:m.comparator,target_kind:m.targetKind,target:m.target,
+    role:m.role,source:m.source,metric_key:m.metricKey,params:m.params,
+    comparator:m.comparator,target_kind:m.targetKind,target:m.target,
     checkin_question:m.checkinQuestion,checkin_audience:m.checkinAudience,data_gap:m.dataGap,
   }));
+  // No shipped adapter applies a change: every experiment needs an owner-confirmed
+  // intervention, including the metric-only price-change suggestion adapter.
   if(input.kind==="experiment"){
-    // The metric-only price adapter does NOT apply a change. All experiments
-    // require the owner to confirm that the intervention actually occurred.
     const question={en:en.Initiatives,es:es.Initiatives,ar:ar.Initiatives}[locale]
       .confirmChange.replace("{date}",input.startsOn);
-    rows.push({
-      initiative_id:data.id,role:"guardrail",source:"checkin",metric_key:null,
+    rows.push({role:"guardrail",source:"checkin",metric_key:null,
       params:{changeConfirmation:true},comparator:"gte",target_kind:"absolute",
       target:1,checkin_question:question,checkin_audience:"owner",
-      data_gap:"changeRequiresOwnerConfirmation",
-    });
+      data_gap:"changeRequiresOwnerConfirmation"});
   }
-  const inserted=await db.from("initiative_metrics").insert(rows);
-  if(inserted.error) {
-    const cleanup=await db.from("owner_initiatives").delete().eq("id",data.id)
-      .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId);
-    if(cleanup.error)throw new Error("initiative creation requires cleanup");
-    throw inserted.error;
-  }
+  const {data:id,error}=await db.rpc("create_owner_initiative_atomic",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_thread_id:input.threadId,p_request_key:requestKey,
+    p_proposal:{...input,locale},p_metrics:rows,
+  });
+  if(error||typeof id!=="string")throw error??new Error("initiative create unavailable");
+  const {data, error:lookupError}=await db.from("owner_initiatives").select(columns)
+    .eq("id",id).eq("business_id",scope.businessId)
+    .eq("owner_user_id",scope.ownerUserId).single();
+  if(lookupError||!data)throw lookupError??new Error("initiative request unavailable");
   return data as InitiativeRow;
 }
 export async function listOwnerInitiatives(scope:InitiativeScope,status?:string) {

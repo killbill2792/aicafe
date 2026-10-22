@@ -49,7 +49,7 @@ export async function POST(request: Request, context: RouteContext) {
               content: m.text ?? (m.blocks ?? []).flatMap(b => b && typeof b === "object" && "text" in b ?
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
-            context: { tools, asOf: identity.asOf, locale: input.locale, threadId: id },
+            context: { tools, asOf: identity.asOf, locale: input.locale, threadId: id, ownerMessageId: owner.id },
             onDelta: delta => emit("delta", { text: delta }),
             onReset: discardChars => emit("reset", { discardChars }) });
           let reply: Awaited<ReturnType<typeof persistAgentReply>>;

@@ -14,7 +14,7 @@ export type AgentToolResult = {
 };
 export type AgentToolContext = {
   tools: Pick<BusinessScopedCafeTools, "getProfitability" | "getSalesTrend" | "getMenuCatalog">;
-  asOf: string; locale: AgentLocale; threadId?: string;
+  asOf: string; locale: AgentLocale; threadId?: string; ownerMessageId?:string;
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.

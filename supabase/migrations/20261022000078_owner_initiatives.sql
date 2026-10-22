@@ -4,6 +4,7 @@ create table owner_initiatives (
   business_id uuid not null references businesses(id) on delete cascade,
   owner_user_id uuid not null references auth.users(id) on delete cascade,
   thread_id uuid not null,
+  request_key text not null,
   kind text not null check (kind in ('goal','experiment')),
   title text not null check (char_length(btrim(title)) between 1 and 160),
   change_description text not null default '',
@@ -20,6 +21,7 @@ create table owner_initiatives (
   monitor_checked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
+  unique (business_id,owner_user_id,request_key),
   foreign key (business_id,thread_id,owner_user_id)
     references ai_threads(business_id,id,owner_user_id) on delete cascade,
   check (ends_on >= starts_on + 6 and ends_on <= starts_on + 91),
@@ -101,3 +103,63 @@ create policy "initiative evaluations owner read" on initiative_evaluations for 
 revoke all on owner_initiatives,initiative_metrics,initiative_observations,initiative_evaluations from public,anon,authenticated;
 grant select on owner_initiatives,initiative_metrics,initiative_observations,initiative_evaluations to authenticated;
 grant all on owner_initiatives,initiative_metrics,initiative_observations,initiative_evaluations to service_role;
+
+
+-- A single service-role RPC atomically creates both an inert proposal and its
+-- metric rows. The logical owner message/arguments key survives tool-call retries.
+create or replace function create_owner_initiative_atomic(
+  p_business_id uuid, p_owner_user_id uuid, p_thread_id uuid,
+  p_request_key text, p_proposal jsonb, p_metrics jsonb
+) returns uuid language plpgsql security definer set search_path=public
+as $$
+declare new_id uuid; metric jsonb;
+begin
+  if char_length(p_request_key) < 12 or
+     jsonb_typeof(p_metrics) <> 'array' or jsonb_array_length(p_metrics) < 1
+     or jsonb_array_length(p_metrics)>13 then
+    raise exception 'invalid initiative input' using errcode='23514';
+  end if;
+  if not exists(select 1 from memberships where business_id=p_business_id
+       and user_id=p_owner_user_id and role='owner')
+     or not exists(select 1 from ai_threads where business_id=p_business_id
+       and owner_user_id=p_owner_user_id and id=p_thread_id) then
+    raise exception 'owner/thread scope mismatch' using errcode='42501';
+  end if;
+  insert into owner_initiatives(
+    business_id,owner_user_id,thread_id,request_key,
+    kind,title,change_description,change_spec,adapter_id,starts_on,ends_on,
+    baseline_from,baseline_to,checkin_cadence,status,locale
+  ) values (
+    p_business_id,p_owner_user_id,p_thread_id,p_request_key,
+    p_proposal->>'kind',p_proposal->>'title',p_proposal->>'changeDescription',
+    coalesce(p_proposal->'changeSpec','{}'::jsonb),p_proposal->>'adapterId',
+    (p_proposal->>'startsOn')::date,(p_proposal->>'endsOn')::date,
+    (p_proposal->>'baselineFrom')::date,(p_proposal->>'baselineTo')::date,
+    p_proposal->>'checkinCadence','proposed',p_proposal->>'locale'
+  ) on conflict (business_id,owner_user_id,request_key) do nothing returning id into new_id;
+  if new_id is null then
+    select id into new_id from owner_initiatives
+      where business_id=p_business_id and owner_user_id=p_owner_user_id
+        and request_key=p_request_key;
+    if new_id is null then raise exception 'initiative request conflict'; end if;
+    return new_id;
+  end if;
+  for metric in select value from jsonb_array_elements(p_metrics) loop
+    insert into initiative_metrics(
+      initiative_id,role,source,metric_key,params,comparator,target_kind,target,
+      checkin_question,checkin_audience,data_gap
+    ) values (
+      new_id,metric->>'role',metric->>'source',metric->>'metric_key',
+      coalesce(metric->'params','{}'::jsonb),metric->>'comparator',
+      metric->>'target_kind',(metric->>'target')::numeric,
+      metric->>'checkin_question',metric->>'checkin_audience',metric->>'data_gap'
+    );
+  end loop;
+  if not exists(select 1 from initiative_metrics where initiative_id=new_id and role='primary')
+    then raise exception 'primary initiative metric required' using errcode='23514';
+  end if;
+  return new_id;
+end;
+$$;
+revoke all on function create_owner_initiative_atomic(uuid,uuid,uuid,text,jsonb,jsonb) from public,anon,authenticated;
+grant execute on function create_owner_initiative_atomic(uuid,uuid,uuid,text,jsonb,jsonb) to service_role;

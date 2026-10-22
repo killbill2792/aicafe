@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import { z } from "zod";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { proposeInitiativeSchema,initiativeStatusSchema } from "@/lib/initiatives/contracts";
@@ -103,7 +104,9 @@ export async function executeInitiativeTool(
         return {...m,params};
       }),
     });
-    const created=await createOwnerInitiative(scope,input,ctx.locale);
+    if(!ctx.ownerMessageId)throw new Error("initiative owner message context unavailable");
+    const requestKey=createHash("sha256").update(ctx.ownerMessageId+":"+JSON.stringify(input)).digest("hex");
+    const created=await createOwnerInitiative(scope,input,ctx.locale,requestKey);
     return {source:"owner_initiatives",period:null,missing:[],
       id:created.id,status:"proposed",kind:created.kind,title:created.title,
       metrics:(await readOwnerInitiative(scope,created.id))?.metrics.map(m=>({id:m.id,
