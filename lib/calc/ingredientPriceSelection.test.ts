@@ -13,6 +13,16 @@ describe("atomic as-of ingredient price",()=>{
     const r=latestEffectiveIngredientPrice([b,a],"milk","2026-10-22");
     expect(r).toEqual({status:"ready",price:b});
   });
+  it("preserves differences smaller than a millisecond across same-day corrections",()=>{
+    const earlier=make("zzzz","2026-10-22","2026-10-22T15:00:00.123100+00:00",100);
+    const later=make("aaaa","2026-10-22","2026-10-22T15:00:00.123900+00:00",200);
+    expect(latestEffectiveIngredientPrice([earlier,later],"milk","2026-10-22")).toEqual({status:"ready",price:later});
+  });
+  it("compares the correct instant even for different timezone offsets",()=>{
+    const earlier=make("zzzz","2026-10-22","2026-10-22T15:00:00.123100+00:00",100);
+    const later=make("aaaa","2026-10-22","2026-10-22T10:00:00.123900-05:00",200);
+    expect(latestEffectiveIngredientPrice([earlier,later],"milk","2026-10-22")).toEqual({status:"ready",price:later});
+  });
   it("uses the last effective date not a future price",()=>{
     const a=make("aaa","2026-10-20","2026-10-20T15:00:00+00:00");
     const b=make("bbb","2026-10-24","2026-10-24T15:00:00+00:00");
