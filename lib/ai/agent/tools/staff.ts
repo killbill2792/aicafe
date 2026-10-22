@@ -38,7 +38,7 @@ export const staffTools = {
     },
   },
   get_labor: {
-    agentId:"olivia",schema:period,description:"Actual labor-day costs and recorded attendance for a current period.",
+    agentId:"olivia",schema:period,description:"Labor-day costs, including estimated inputs, and recorded attendance for a current period.",
     execute:async(raw:unknown,ctx:AgentToolContext):Promise<AgentToolResult>=>{
       const choice=period.parse(raw).period,p=requested(choice,ctx.asOf);
       if(!ctx.tools.getLaborMetrics||!ctx.tools.getStaffAttendance||!ctx.timezone)
@@ -46,7 +46,7 @@ export const staffTools = {
       const [labor,attendance]=await Promise.all([ctx.tools.getLaborMetrics(p),
         ctx.tools.getStaffAttendance(p,ctx.timezone)]);
       const issues=[...labor.quality.missingInputs,...attendance.quality.missingInputs];
-      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,
+      return {source:"labor_and_attendance",period:p,agentId:"olivia",missing:issues,estimated:[...labor.quality.estimatedInputs,...attendance.quality.estimatedInputs],
         laborDays:labor.available?labor.value.slice(-31).map(d=>({
           date:d.date,wagesCents:d.wagesCents,staffTaxCents:d.staffTaxCents,
           loadedStaffCostCents:d.loadedStaffCostCents})):null,
