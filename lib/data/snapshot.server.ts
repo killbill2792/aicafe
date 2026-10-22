@@ -9,6 +9,8 @@ import type { BusinessSnapshot, MenuItemSnapshot, RunningCostLine, StaffShift } 
 import { isExpectedCostCategory } from "@/lib/expenses/expectedCosts";
 import { normalizeOpenHours } from "@/lib/business/openHours";
 import { readPeriodItemSales } from "./periodItemSales.server";
+import {readMenuComboCostComponents} from "./comboCosts.server";
+import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
 
 /** Real Supabase-backed snapshot. Untested against a live project (see PROGRESS.md "Needs connecting"). */
 export async function getBusinessSnapshotFromDb(
@@ -277,6 +279,20 @@ async function getMenuItemSnapshots(
   }
   const aggregateByItem = new Map((aggregateCosts ?? []).map((row) => [row.menu_item_id, row]));
 
+
+  const baseCosts=new Map(items.map(item=>{
+    const lines=(recipeLines??[]).filter(r=>r.menu_item_id===item.id)
+      .map(r=>({ingredientId:r.ingredient_id,quantity:Number(r.quantity)}));
+    const aggregate=aggregateByItem.get(item.id);
+    const resolved=resolveProductCost(evaluateRecipeCost(lines,latestPriceMicros),aggregate?Number(aggregate.cost_cents):null);
+    return[item.id,{
+      costCents:resolved.costCents,status:resolved.status,
+      estimated:resolved.source==="owner_total"&&aggregate?.status==="estimated",
+    }] as const;
+  }));
+  const comboRows=await readMenuComboCostComponents(supabase,businessId,itemIds);
+  const comboCosts=resolveComboCosts(comboRows,baseCosts);
+
   return items.map((item) => {
     const lines = (recipeLines ?? [])
       .filter((r) => r.menu_item_id === item.id)
@@ -284,11 +300,13 @@ async function getMenuItemSnapshots(
     const recipeCost = evaluateRecipeCost(lines, latestPriceMicros);
     const aggregate = aggregateByItem.get(item.id);
     const resolvedCost = resolveProductCost(recipeCost, aggregate ? Number(aggregate.cost_cents) : null);
-    const ingredientsCentsToday = resolvedCost.costCents ?? 0;
+    const combo=comboCosts.get(item.id);
+    const currentStatus=combo?.status??resolvedCost.status;
+    const ingredientsCentsToday = (combo?combo.costCents:resolvedCost.costCents) ?? 0;
     const costQuality =
-      resolvedCost.status !== "READY"
+      currentStatus !== "READY"
         ? null
-        : resolvedCost.source === "owner_total" && aggregate?.status === "estimated"
+        : combo?.estimated || (!combo && resolvedCost.source === "owner_total" && aggregate?.status === "estimated")
           ? "estimated" as const
           : "actual" as const;
     return {
@@ -301,11 +319,11 @@ async function getMenuItemSnapshots(
       ingredientsCentsToday,
       // Lines with no priced ingredient cost 0 by default, not because the drink is actually
       // free to make — flag it as incomplete so the UI doesn't show a false 100% margin.
-      hasRecipe: lines.length > 0,
-      costStatus: resolvedCost.status,
-      costSource: resolvedCost.source,
-      recipeCostCents: recipeCost.costCents,
-      recipeCostStatus: recipeCost.status,
+      hasRecipe: lines.length > 0 || Boolean(combo),
+      costStatus: currentStatus,
+      costSource: combo ? "combo" : resolvedCost.source,
+      recipeCostCents: combo ? null : recipeCost.costCents,
+      recipeCostStatus: combo?.status ?? recipeCost.status,
       ownerTotalCostCents: resolvedCost.ownerTotalCostCents,
       costDifferenceCents: resolvedCost.differenceCents,
       costQuality,
