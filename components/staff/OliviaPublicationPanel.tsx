@@ -98,7 +98,7 @@ export default function OliviaPublicationPanel({week,latest,publishedRevision,
     {latest?.status==="approved" &&
       <button type="button" onClick={()=>transition("publish")}
         disabled={pending||!enabled}
-        className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-50">
+        className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-50">
         {t("publishSchedule")}
       </button>}
     {error&&<p role="alert" className="text-sm text-warn">{error}</p>}

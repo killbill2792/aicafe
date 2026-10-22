@@ -164,7 +164,7 @@ function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; se
                   onClick={()=>beginEdit(rule)} className={button + " border border-ink text-ink"}>{copy.editAsDraft}</button>}
                 {rule.status === "draft" && <>
                   <button type="button" disabled={busy} onClick={() => void review(rule, "approve")}
-                    className={button + " bg-ink text-paper"}>{copy.approve}</button>
+                    className={button + " bg-accent text-on-accent"}>{copy.approve}</button>
                   <button type="button" disabled={busy} onClick={() => void review(rule, "reject")}
                     className={button + " border border-ink text-ink"}>{copy.reject}</button>
                 </>}
@@ -173,7 +173,7 @@ function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; se
                   className={button + " border border-ink text-ink"}>{copy.pause}</button>}
                 {rule.status === "paused" && <button type="button" disabled={busy}
                   onClick={() => void review(rule, "resume")}
-                  className={button + " bg-ink text-paper"}>{copy.resume}</button>}
+                  className={button + " bg-accent text-on-accent"}>{copy.resume}</button>}
               </div>
             </article>)}
           </div>
@@ -192,7 +192,7 @@ function TeamRulesManagerBody({ copy, selectedAgent }: { copy: TeamRulesCopy; se
           placeholder={copy.instructionHint} onChange={(event) => setInstruction(event.target.value)}/>
         {editingFrom&&<p className="rounded-xl bg-surface p-3 text-[15px] font-semibold text-ink">{copy.editNotice}</p>}
         <button type="submit" disabled={busy || instruction.trim().length < 5}
-          className={button + " bg-ink text-paper"}>{busy ? copy.saving : copy.saveDraft}</button>
+          className={button + " bg-accent text-on-accent"}>{busy ? copy.saving : copy.saveDraft}</button>
       </div>
     </form>
 

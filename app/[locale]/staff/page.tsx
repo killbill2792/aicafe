@@ -118,7 +118,7 @@ export default async function StaffPage() {
             <h2 className="text-[17px] font-bold text-ink">{t("teamToday")}</h2>
             <p className="text-sm text-ink-muted">{t("teamTodayHint")}</p>
           </div>
-          <Link href="/more/manage-staff" className="flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
+          <Link href="/more/manage-staff" className="flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-on-accent no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addStaff")}
           </Link>
         </div>

@@ -259,7 +259,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
       }} className="h-12 rounded-xl border border-line bg-paper px-3" />
     </label>
     <button type="button" disabled={pending} onClick={preview}
-      className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-50">
+      className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-50">
       {t("generate")}
     </button>
     {error && <p role="alert" className="text-base text-warn">{error}</p>}
@@ -360,7 +360,7 @@ export default function OliviaPlanningPanel({ today, currency, publicationEnable
           week={week} disabled={pending} frozenShiftKeys={frozenShiftKeys}/>
         <div className="flex flex-wrap gap-3">
           <button type="button" disabled={pending} onClick={saveEdit}
-            className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-50">
+            className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-50">
             {t("saveEditedDraft")}
           </button>
           <button type="button" disabled={pending}

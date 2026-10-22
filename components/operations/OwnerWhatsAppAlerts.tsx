@@ -36,7 +36,7 @@ export default function OwnerWhatsAppAlerts({copy}:{
   <h2 className="font-headline text-2xl font-bold text-ink">{copy.title}</h2>
   <p className="mt-2 text-[17px] leading-relaxed text-ink-muted">{copy.description}</p>
   <button type="button" onClick={()=>void change()} disabled={loading||saving}
-   className="mt-3 min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper disabled:opacity-50">
+   className="mt-3 min-h-12 rounded-full bg-accent px-5 text-[17px] font-bold text-on-accent disabled:opacity-50">
    {loading||saving?copy.loading:optedIn?copy.disable:copy.enable}
   </button>
   <p role="status" aria-live="polite" className="mt-2 text-[17px] text-ink-muted">{notice}</p>
