@@ -1321,6 +1321,7 @@
     "dateClarification": "Which dates should I use for this part of your request?"
   },
   "SupervisorChat": {
+    "unverified": "Unverified",
     "ownerInputDismiss": "Not now",
     "ownerInputConfirm": "Continue",
     "ownerInputOther": "Answer another way",
