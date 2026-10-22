@@ -2284,6 +2284,44 @@
     "increaseQuantity": "زيادة الكمية",
     "lowerPrice": "خفض سعر المجموعة",
     "raisePrice": "رفع سعر المجموعة",
-    "savedCombo": "تم حفظ المجموعة"
+    "savedCombo": "تم حفظ المجموعة",
+    "templates": {
+      "latte": {
+        "name": "لاتيه",
+        "subtitle": "إسبريسو مع الحليب"
+      },
+      "cappuccino": {
+        "name": "كابتشينو",
+        "subtitle": "رغوة أكثر"
+      },
+      "americano": {
+        "name": "أمريكانو",
+        "subtitle": "إسبريسو مع الماء"
+      },
+      "mocha": {
+        "name": "موكا",
+        "subtitle": "لاتيه بالشوكولاتة"
+      },
+      "iced-latte": {
+        "name": "لاتيه مثلج",
+        "subtitle": "إسبريسو بارد وحليب"
+      },
+      "cold-brew": {
+        "name": "قهوة باردة",
+        "subtitle": "مركّز مع الثلج"
+      },
+      "chai-latte": {
+        "name": "شاي",
+        "subtitle": "شاي متبّل مع الحليب"
+      },
+      "matcha-latte": {
+        "name": "ماتشا",
+        "subtitle": "شاي أخضر مع الحليب"
+      },
+      "pastry": {
+        "name": "مخبوزات",
+        "subtitle": "جاهزة أو مخبوزة"
+      }
+    }
   }
 }
