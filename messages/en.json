@@ -2325,6 +2325,10 @@
     },
     "saveBeforeSwap": "Save recipe changes before swapping ingredients.",
     "saveBeforeSizeChange": "Save recipe changes before changing which sizes you sell.",
-    "addMilkFirst": "Add a milk ingredient to the recipe first."
+    "addMilkFirst": "Add a milk ingredient to the recipe first.",
+    "savesYou": "Saves you {amount}",
+    "aboutSame": "Costs about the same",
+    "costBasisForSize": "Cost difference shown for {size}",
+    "priceEstimate": "Estimate"
   }
 }
