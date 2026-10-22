@@ -1,3 +1,4 @@
+import { latestEffectiveIngredientPrice } from "@/lib/calc/ingredientPriceSelection";
 import { z } from "zod";
 import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import { MENU_ITEM_CATEGORY_CODES } from "@/lib/constants";
@@ -151,15 +152,12 @@ function findMenu(snapshot:Snapshot,query:z.infer<typeof selector>):Row|{error:s
     {error:matches.length===0?"product_not_found":"ambiguous_canonical_name_use_product_id"};
 }
 
-/** Canonical historical-effective ingredient price *as of the trusted café day*.
- * Same-day duplicates are conflicts, not arbitrary row-order tie-breaks. */
+/** One canonical as-of choice for both corrections on the same café day and
+ * genuinely ambiguous historical snapshots without recorded timestamps. */
 function ingredientPrice(snapshot:Snapshot,id:string,day:string):Price|{error:string}{
-  const rows=snapshot.sources.ingredientPrices.filter(p=>p.ingredient_id===id&&p.effective_from<=day);
-  if(!rows.length)return {error:"ingredient_price_missing:"+id};
-  const date=rows.reduce((max,row)=>row.effective_from>max?row.effective_from:max,"");
-  const latest=rows.filter(row=>row.effective_from===date);
-  return latest.length===1&&latest[0].cost_per_base_unit_micros>=0?
-    latest[0]:{error:"ambiguous_or_invalid_ingredient_price:"+id};
+  const result=latestEffectiveIngredientPrice(snapshot.sources.ingredientPrices,id,day);
+  if(result.status==="ready")return result.price;
+  return {error:(result.status==="missing"?"ingredient_price_missing:":"ambiguous_or_invalid_ingredient_price:")+id};
 }
 const isError=(x:object):x is {error:string}=>"error" in x;
 

@@ -56,7 +56,7 @@ export async function getPricingInputs(supabase: SupabaseClient, businessId: str
   if (quantitiesResult.error) throw quantitiesResult.error;
   if (fallbackResult.error) throw fallbackResult.error;
   const ingredientIds = [...new Set((recipesResult.data ?? []).map((line) => line.ingredient_id))];
-  const priceResult = ingredientIds.length ? await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }) : { data: [], error: null };
+  const priceResult = ingredientIds.length ? await supabase.from("ingredient_prices").select("ingredient_id, cost_per_base_unit_micros, effective_from").in("ingredient_id", ingredientIds).lte("effective_from", todayDateStr).order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true }) : { data: [], error: null };
   if (priceResult.error) throw priceResult.error;
   const prices: Record<string, number> = {};
   for (const row of priceResult.data ?? []) prices[row.ingredient_id] = row.cost_per_base_unit_micros;

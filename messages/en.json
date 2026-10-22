@@ -2123,5 +2123,53 @@
       "caramelSky": "Caramel Sky",
       "cherryCola": "Cherry Cola"
     }
+  },
+  "Pantry": {
+    "quantity": {
+      "shot": "{quantity} {count, plural, one {shot} other {shots}}",
+      "pump": "{quantity} {count, plural, one {pump} other {pumps}}",
+      "fl_oz": "{quantity} oz",
+      "oz_wt": "{quantity} oz",
+      "g": "{quantity} g",
+      "ml": "{quantity} ml",
+      "each": "{quantity} {count, plural, one {item} other {items}}",
+      "cup": "{quantity} {count, plural, one {cup} other {cups}}"
+    },
+    "starters": {
+      "milk-whole": "Whole milk",
+      "milk-2-percent": "2% milk",
+      "milk-skim": "Skim milk",
+      "milk-oat": "Oat milk",
+      "milk-almond": "Almond milk",
+      "milk-soy": "Soy milk",
+      "milk-coconut": "Coconut milk",
+      "half-and-half": "Half & half",
+      "heavy-cream": "Heavy cream",
+      "espresso-beans": "Espresso beans",
+      "drip-coffee": "Drip coffee beans",
+      "cold-brew-concentrate": "Cold brew concentrate",
+      "syrup-vanilla": "Vanilla syrup",
+      "syrup-caramel": "Caramel syrup",
+      "syrup-hazelnut": "Hazelnut syrup",
+      "syrup-vanilla-sugar-free": "Sugar-free vanilla syrup",
+      "sauce-mocha": "Mocha sauce",
+      "sauce-white-mocha": "White mocha sauce",
+      "sauce-caramel": "Caramel sauce",
+      "matcha": "Matcha powder",
+      "chai-concentrate": "Chai concentrate",
+      "tea-bag": "Tea bags",
+      "filtered-water": "Filtered water",
+      "lid-hot": "Hot cup lids",
+      "lid-cold": "Cold cup lids",
+      "sleeve": "Cup sleeves",
+      "straw": "Straws",
+      "cup-hot-8": "Hot cup 8 oz",
+      "cup-hot-12": "Hot cup 12 oz",
+      "cup-hot-16": "Hot cup 16 oz",
+      "cup-hot-20": "Hot cup 20 oz",
+      "cup-cold-16": "Cold cup 16 oz",
+      "cup-cold-20": "Cold cup 20 oz",
+      "cup-cold-24": "Cold cup 24 oz"
+    }
   }
 }

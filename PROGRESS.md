@@ -1,4 +1,5 @@
 ## Now
+- [ ] PR #150: verify pantry migration/RLS, recipe actions, all-size templates, tests and human review before merge.
 - [ ] Review PR M0: team_updates storage/writer/owner reads, including PostgreSQL RLS and full CI; migration not deployed.
 - [ ] Run one live owner agent smoke test before production deployment of #146.
 

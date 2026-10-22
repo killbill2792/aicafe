@@ -121,6 +121,15 @@ export const SOURCE_SURFACES = {
     SnapshotCafeStateService:{restricted:"State loader requires scoped projections; not a model-visible generic record dump"},
     cafeStateFromSnapshot:{capabilities:["money.profitability","money.business_costs","sales.daily","labor.daily_costs"]},
   },
+  "lib/data/pantry.server.ts": {
+    listPantry:{restricted:"Owner-scoped pantry and supplier cost inventory; no direct agent read contract"},
+    addFromStarter:{restricted:"Writes starter ingredients; requires explicit owner action and tenant checks"},
+    savePackPrice:{restricted:"Creates effective-date supplier pricing; not a read-only agent capability"},
+    previewPriceImpact:{restricted:"Owner-requested hypothetical margin preview; not an authorized agent source"},
+    applyTemplate:{restricted:"Replaces size-family recipes; requires explicit owner action"},
+    swapIngredient:{restricted:"Mutates all matching recipe sizes; not a model-readable source"},
+    scaleRecipeToSize:{restricted:"Mutates a target recipe; not a model-readable source"},
+  },
   "lib/data/getPricingInputs.ts": {
     getPricingInputs:{restricted:"Raw pricing inputs may include cost internals; read through canonical pricing recommendation"},
   },
