@@ -44,7 +44,7 @@ export async function runAgentTurn(args: {
   context: AgentToolContext; provider?: AgentProvider; onDelta?: (delta: string) => void;
   onReset?: (discardChars: number) => void;
   now?: () => number; onTool?: (name:string,agentId:string)=>void;
-  previousEvidence?:readonly NumericEvidence[]; previousAssistantText?:string;
+  previousEvidence?:readonly NumericEvidence[];
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
   const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
@@ -204,8 +204,7 @@ export async function runAgentTurn(args: {
   const status = statusFromResults(results);
   return { text, endReason, status,
     unverified: checkNumbers(text, [ ...(args.history ?? []).filter(message => message.role === "user").map(message => message.content),
-      args.ownerText ].join("\n"), results.map(r=>r.result), args.context.locale,args.previousEvidence,
-      args.previousAssistantText),
+      args.ownerText ].join("\n"), results.map(r=>r.result), args.context.locale,args.previousEvidence),
     evidence:compactEvidence(results.map(r=>r.result)),
     tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results: results.map(r => r.result), usage };
