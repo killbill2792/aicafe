@@ -630,12 +630,14 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      // it in the final seconds of the shared turn deadline.
      if(Date.now()+10000>=deadline)break;
      let prepared:{id:string;text:string}|null=null;
+     let proposalFailure:string|null=null;
      try{
        prepared=await input.inertProposal?.create(registered.name,args.input)??null;
      }catch{
        // An unavailable recipe or POS baseline must not abort the conversation,
        // discard verified reads, or pretend a proposal was created.
-       result={status:"unavailable",reason:"proposal_requires_verified_baseline"};
+       proposalFailure="proposal_requires_verified_baseline";
+       hadUnavailable=true;
      }
      if(prepared){
        usage.toolCallCount++;
@@ -646,7 +648,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      }
      const known=input.inertProposal?.knownClarificationOptions?.()??[];
      for(const x of known)optionRows.set(x.id,{id:x.id,label:x.label[input.locale]});
-     result={status:"unavailable",reason:"action_needs_unique_product_or_verified_baseline",
+     result={status:"unavailable",reason:proposalFailure??"action_needs_unique_product_or_verified_baseline",
        availableOptions:known.map(o=>({id:o.id,label:o.label[input.locale]}))};
    }else result={status:"unavailable",reason:"unregistered_action"};
   }
