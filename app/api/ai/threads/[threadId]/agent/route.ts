@@ -5,7 +5,7 @@ import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.s
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import { runAgentTurn } from "@/lib/ai/agent/loop.server";
-import { persistAgentReply, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
+import { persistAgentReply, recordAgentTurnUsage, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
 
 export const runtime = "nodejs";
@@ -50,12 +50,16 @@ export async function POST(request: Request, context: RouteContext) {
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
             context: { tools, asOf: identity.asOf, locale: input.locale },
-            onDelta: delta => emit("delta", { text: delta }) });
-          if (!result.text.trim()) {
-            emit("error", { code: "agent_turn_failed", retryable: true });
-            return;
+            onDelta: delta => emit("delta", { text: delta }),
+            onReset: discardChars => emit("reset", { discardChars }) });
+          let reply: Awaited<ReturnType<typeof persistAgentReply>>;
+          try {
+            if (!result.text.trim()) throw new AgentEmptyReplyError();
+            reply = await persistAgentReply(scope, owner, result);
+          } finally {
+            // Billable usage must be counted even for blank, oversized or failed writes.
+            await recordAgentTurnUsage(scope, owner, result);
           }
-          const reply = await persistAgentReply(scope, owner, result);
           emit("done", { reply, status: result.status, endReason: result.endReason,
             unverified: result.unverified, usage: result.usage });
         } catch (error) {
