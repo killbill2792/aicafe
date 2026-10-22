@@ -301,18 +301,22 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
   if (![productId, fromId, toId].every((id) => uuid.safeParse(id).success)) return bad("invalid_ingredient");
   const scope = await activeScope();
   if (!scope) return bad("sign_in_required");
-  if (fromId === toId) return { ok: true, itemIds: [] };
   const siblings = await productSiblings(scope, productId);
   if (!siblings) return bad("product_not_found");
   const { data: ingredients, error: ingredientsError } = await scope.db.from("ingredients")
     .select("id, base_unit").eq("business_id", scope.businessId).in("id", [fromId, toId]);
-  if (ingredientsError || !ingredients || ingredients.length !== 2) return bad("ingredient_not_found");
+  if (ingredientsError || !ingredients || ingredients.length !== (fromId === toId ? 1 : 2)) return bad("ingredient_not_found");
   const to = ingredients.find((ingredient) => ingredient.id === toId)!;
-  const from = ingredients.find((ingredient) => ingredient.id === fromId)!;
+  if (fromId === toId) return { ok: true, itemIds: [] };
   const { data: rows, error } = await scope.db.from("recipe_lines")
     .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity")
     .in("menu_item_id", siblings.map((s) => s.id));
   if (error || !rows) return queryFailed("pantry:swap:lines", error);
+  const { data: allBases, error: basesError } = await scope.db.from("ingredients")
+    .select("id, base_unit").eq("business_id", scope.businessId)
+    .in("id", [...new Set(rows.map((row) => row.ingredient_id))]);
+  if (basesError || !allBases) return bad("ingredient_not_found");
+  const byIngredientId = new Map(allBases.map((ingredient) => [ingredient.id, ingredient]));
   const conversions = await conversionsFor(scope, [toId]);
   const changes: { menuItemId: string; lines: ReplacementLine[] }[] = [];
   for (const sibling of siblings) {
@@ -322,8 +326,9 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
     const lines: ReplacementLine[] = [];
     for (const row of existing) {
       const isChanged = row.ingredient_id === fromId;
-      const base = isChanged ? from.base_unit as BaseUnit : undefined;
-      const displayUnit = (row.display_unit || base || "each") as RecipeDisplayUnit;
+      const originalIngredient = byIngredientId.get(row.ingredient_id);
+      if (!originalIngredient) return bad("ingredient_not_found");
+      const displayUnit = (row.display_unit || originalIngredient.base_unit) as RecipeDisplayUnit;
       const displayQuantity = row.display_quantity === null ? Number(row.quantity) : Number(row.display_quantity);
       const quantity = isChanged ? toBaseUnitQuantity(displayUnit, displayQuantity,
         to.base_unit as BaseUnit, conversions.get(toId) ?? []) : Number(row.quantity);
