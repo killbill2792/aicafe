@@ -2,6 +2,7 @@
 import {z} from "zod";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
+import {staffReadScope} from "@/lib/scheduling/staffScope.server";
 const DEFAULT_TEAM_RULES={
  meal_break_enabled:true,meal_break_minutes:30,meal_break_after_minutes:300,
  rest_break_enabled:true,rest_break_minutes:10,rest_break_every_minutes:240,
@@ -26,8 +27,9 @@ const shape={
 const teamRulePatch=z.strictObject(Object.fromEntries(Object.entries(shape).map(([k,v])=>[k,v.optional()])) as {[K in keyof typeof shape]:z.ZodOptional<(typeof shape)[K]>});
 const ruleKeys=Object.keys(shape) as (keyof typeof shape)[];
 export async function getTeamRules(){
- const owner=await requireSchedulingOwner();
- if(!owner)return {ok:false as const,error:"unauthorized"};
+ const owner=await staffReadScope();
+ if(!owner.ok)return {ok:false as const,error:"unauthorized"};
+ if(!owner.supabase)return {ok:true as const,data:{...DEFAULT_TEAM_RULES,owner_set:[],custom:[]},readOnly:true};
  const {data,error}=await owner.supabase.from("team_rules").select("*").eq("business_id",owner.businessId).maybeSingle();
  if(error)return {ok:false as const,error:"storage_unavailable"};
  const {data:custom,error:customError}=await owner.supabase.from("staff_custom_rules")
@@ -35,7 +37,7 @@ export async function getTeamRules(){
  if(customError)return {ok:false as const,error:"storage_unavailable"};
  return {ok:true as const,data:{...DEFAULT_TEAM_RULES,...data,
    owner_set:(data?.owner_set as string[]|undefined)??[],
-   custom:custom??[]}};
+   custom:custom??[]},readOnly:owner.readOnly};
 }
 export async function updateTeamRules(raw:unknown){
  const parsed=teamRulePatch.safeParse(raw);

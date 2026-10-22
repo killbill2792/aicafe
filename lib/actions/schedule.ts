@@ -3,6 +3,7 @@ import {z} from "zod";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
 import {getCafeProfile} from "@/lib/data/getCafeProfile";
+import {staffReadScope} from "@/lib/scheduling/staffScope.server";
 import {getTeamRules} from "./teamRules";
 import {coverageGaps} from "@/lib/calc/scheduling/coverageGaps";
 import {shiftCost,roleWageAverages,aggregateCosts,elapsedMinutes,type CostShift} from "@/lib/calc/scheduling/shiftCost";
@@ -17,13 +18,17 @@ const monday=(date:string)=>{const d=new Date(date+"T12:00:00Z");return d.getUTC
 const plusDays=(date:string,n:number)=>new Date(Date.parse(date+"T12:00:00Z")+n*86400000).toISOString().slice(0,10);
 export async function getWeekSchedule(raw:unknown){
  const p=weekInput.safeParse(raw);if(!p.success||!monday(p.data.weekStart))return {ok:false as const,error:"invalid_week"};
- const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
+ const owner=await staffReadScope();if(!owner.ok)return {ok:false as const,error:"unauthorized"};
  const dates=Array.from({length:7},(_,i)=>plusDays(p.data.weekStart,i));
+ if(!owner.supabase)return {ok:true as const,data:{
+  dates,weekStart:p.data.weekStart,team:[],shifts:[],total:{paidMinutes:0,knownCostCents:0,estimateCount:0,unknownCount:0,estimated:false},
+  gaps:[],openHours:null,currency:owner.currency,rules:{},availability:[],readOnly:true,timezone:owner.timezone
+ }};
  const [people,shifts,profile,ruleResult,availability]=await Promise.all([
   owner.supabase.from("employees").select("id,display_name,role,active,default_hourly_wage_cents,wage_amount_cents,wage_period,available_days,min_weekly_minutes,max_weekly_minutes,phone_e164,color_index")
     .eq("business_id",owner.businessId).eq("active",true).order("display_name"),
   owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
-    .gte("local_date",dates[0]).lte("local_date",dates[6]).order("start_local"),
+    .gte("local_date",dates[0]).lte("local_date",dates[6]).is("deleted_at",null).order("start_local"),
   getCafeProfile(),getTeamRules(),
   owner.supabase.from("staff_availability_rules").select("employee_id,day_of_week,start_local,end_local,effective_from,effective_to")
    .eq("business_id",owner.businessId).lte("effective_from",dates[6])
@@ -52,7 +57,7 @@ export async function getWeekSchedule(raw:unknown){
  return {ok:true as const,data:{
    dates,team,shifts:mapped,total,gaps,openHours:profile.openHours,
    currency:profile.currency,rules:ruleResult.data,
-   availability:availability.data??[],weekStart:p.data.weekStart
+   availability:availability.data??[],weekStart:p.data.weekStart,readOnly:owner.readOnly,timezone:owner.timezone
  }};
 }
 export async function getCoverageGaps(raw:unknown){
@@ -95,7 +100,7 @@ export async function upsertShift(raw:unknown){
    start_local:p.data.start,end_local:p.data.end,overnight,break_minutes:breakMinutes,
    break_source:p.data.breakMinutes==null?"rule":"owner",status:"draft",source:"owner"};
  const query=p.data.id?owner.supabase.from("scheduled_shifts").update(row).eq("id",p.data.id)
-  .eq("business_id",owner.businessId).select("id").maybeSingle()
+   .eq("business_id",owner.businessId).is("deleted_at",null).select("id").maybeSingle()
   :owner.supabase.from("scheduled_shifts").insert(row).select("id").single();
  const saved=await query;if(saved.error||!saved.data)return {ok:false as const,error:"storage_unavailable"};
  if(p.data.repeatWeekly){
@@ -109,34 +114,31 @@ export async function upsertShift(raw:unknown){
 export async function removeShift(raw:unknown){
  const p=z.strictObject({id:z.string().uuid()}).safeParse(raw);if(!p.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
- const {data,error}=await owner.supabase.from("scheduled_shifts").delete().eq("business_id",owner.businessId)
-  .eq("id",p.data.id).select("*").maybeSingle();
+ const {data,error}=await owner.supabase.from("scheduled_shifts").update({deleted_at:new Date().toISOString()})
+  .eq("business_id",owner.businessId).eq("id",p.data.id).is("deleted_at",null).select("id").maybeSingle();
  if(error||!data)return {ok:false as const,error:"not_found"};
- revalidatePath("/staff");return {ok:true as const,removed:data};
+ revalidatePath("/staff");return {ok:true as const,id:data.id as string};
 }
 export async function restoreShift(raw:unknown){
- const p=z.strictObject({removed:z.record(z.string(),z.unknown())}).safeParse(raw);
- if(!p.success)return {ok:false as const,error:"invalid_input"};
+ const parsed=z.strictObject({id:z.string().uuid()}).safeParse(raw);
+ if(!parsed.success)return {ok:false as const,error:"invalid_input"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
- const row=p.data.removed;if(row.business_id!==owner.businessId)return {ok:false as const,error:"unauthorized"};
- const safe=shiftInput.safeParse({id:row.id,employeeId:row.employee_id,date:row.local_date,
-  start:String(row.start_local).slice(0,5),end:String(row.end_local).slice(0,5),
-  breakMinutes:row.break_minutes});
- if(!safe.success)return {ok:false as const,error:"invalid_input"};
- const {error}=await owner.supabase.from("scheduled_shifts").insert(row);
- if(error)return {ok:false as const,error:"storage_unavailable"};
- revalidatePath("/staff");return {ok:true as const};
+ const {data,error}=await owner.supabase.from("scheduled_shifts").update({deleted_at:null})
+  .eq("business_id",owner.businessId).eq("id",parsed.data.id)
+  .not("deleted_at","is",null).select("id").maybeSingle();
+ if(error||!data)return {ok:false as const,error:"not_found"};
+ revalidatePath("/staff");return {ok:true as const,id:data.id as string};
 }
 export async function copyWeek(raw:unknown){
  const p=z.strictObject({fromWeekStart:iso,toWeekStart:iso}).safeParse(raw);
  if(!p.success||!monday(p.data.fromWeekStart)||!monday(p.data.toWeekStart)||p.data.fromWeekStart===p.data.toWeekStart)
  return {ok:false as const,error:"invalid_week"};
  const owner=await requireSchedulingOwner();if(!owner)return {ok:false as const,error:"unauthorized"};
- const source=await owner.supabase.from("scheduled_shifts").select("*").eq("business_id",owner.businessId)
-  .gte("local_date",p.data.fromWeekStart).lte("local_date",plusDays(p.data.fromWeekStart,6));
+ const source=await owner.supabase.from("scheduled_shifts").select("*") .eq("business_id",owner.businessId)
+  .is("deleted_at",null).gte("local_date",p.data.fromWeekStart).lte("local_date",plusDays(p.data.fromWeekStart,6));
  if(source.error)return {ok:false as const,error:"storage_unavailable"};
- const existing=await owner.supabase.from("scheduled_shifts").select("id").eq("business_id",owner.businessId)
-  .gte("local_date",p.data.toWeekStart).lte("local_date",plusDays(p.data.toWeekStart,6)).limit(1);
+ const existing=await owner.supabase.from("scheduled_shifts").select("id") .eq("business_id",owner.businessId)
+  .is("deleted_at",null).gte("local_date",p.data.toWeekStart).lte("local_date",plusDays(p.data.toWeekStart,6)).limit(1);
  if(existing.error||existing.data?.length)return {ok:false as const,error:"target_week_not_empty"};
  const shiftDays=Math.round((Date.parse(p.data.toWeekStart)-Date.parse(p.data.fromWeekStart))/86400000);
  if(!source.data?.length)return {ok:true as const,count:0};
@@ -157,7 +159,7 @@ export async function sendSchedule(raw:unknown){
     .filter(s=>s.employeeId===person.id).map(s=>s.date+" "+s.start+"–"+s.end).join("; ")
  })).filter(x=>x.text.endsWith(" — ")===false);
  const {error}=await owner.supabase.from("scheduled_shifts").update({status:"sent"})
-  .eq("business_id",owner.businessId).gte("local_date",p.data.weekStart)
+   .eq("business_id",owner.businessId).is("deleted_at",null).gte("local_date",p.data.weekStart)
   .lte("local_date",plusDays(p.data.weekStart,6));
  if(error)return {ok:false as const,error:"storage_unavailable"};
  // WhatsApp transport is intentionally not connected: owner gets copy-ready text instead.
