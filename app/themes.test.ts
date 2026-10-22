@@ -20,7 +20,8 @@ describe("theme foundation",()=>{
       for(const [a,b,min] of [
         ["text","bg",4.5],["text","surface",4.5],["muted","bg",4.5],["muted","surface",4.5],
         ["onAccent","accent",4.5],["accentText","surface",4.5],["accentText","accentSoft",4.5],["onPos","pos",4.5],["onWarn","warnText",4.5],["onNeg","neg",4.5],["onChartStaff","chart-staff",4.5],["onChartIngredients","chart-ingredients",4.5],["onChartRunning","chart-running",4.5],["onChartFees","chart-fees",4.5],["warnText","surface",4.5],
-        ["pos","surface",4.5],["neg","surface",4.5],["line","surface",1.3],["focus","surface",3],
+        ...(["text","muted","pos","neg","warnText","accentText"] as const).flatMap(fg => (["bg","surface","surface2"] as const).map(bg => [fg,bg,4.5] as const)),
+        ["line","surface",1.3],["focus","surface",3],
         ["pos","posSoft",4.5],["neg","negSoft",4.5],["warnText","warnSoft",4.5],
       ] as const)expect(contrast(t[a],t[b]),`${theme.id}/${mode}/${a}-${b}`).toBeGreaterThanOrEqual(min);
     }
