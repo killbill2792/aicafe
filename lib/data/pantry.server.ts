@@ -454,3 +454,27 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
  changes[0].expectedSourceLines=anchorEdit?[...anchorEdit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId)):snapshotLines(rows.filter(row=>row.menu_item_id===parsed.data.productId));
  return verifiedWrite(scope,parsed.data.productId,changes);
 }
+
+/** Owner-named pantry items extend P1's existing tenant-scoped ingredient model. */
+const customPantryInput=z.strictObject({
+ name:z.string().trim().min(1).max(60),
+ category:z.enum(["coffee","milk","syrup","sauce","powder","tea","packaging","bakery","food","other"]),
+ baseUnit:z.enum(["g","ml","each"]),
+});
+export async function createPantryIngredient(input:z.infer<typeof customPantryInput>):Promise<PantryResult>{
+ const parsed=customPantryInput.safeParse(input);if(!parsed.success)return bad("invalid_input");
+ const scope=await activeScope();if(!scope)return bad("sign_in_required");
+ const {error}=await scope.db.from("ingredients").insert({business_id:scope.businessId,name:parsed.data.name,category:parsed.data.category,base_unit:parsed.data.baseUnit});
+ if(error)return queryFailed("pantry:createIngredient",error);
+ return{ok:true};
+}
+const editPantryInput=customPantryInput.pick({name:true,category:true}).extend({id:uuid}).strict();
+export async function updatePantryIngredient(input:z.infer<typeof editPantryInput>):Promise<PantryResult>{
+ const parsed=editPantryInput.safeParse(input);if(!parsed.success)return bad("invalid_input");
+ const scope=await activeScope();if(!scope)return bad("sign_in_required");
+ const {data,error}=await scope.db.from("ingredients").update({name:parsed.data.name,category:parsed.data.category})
+  .eq("business_id",scope.businessId).eq("id",parsed.data.id).select("id");
+ if(error)return queryFailed("pantry:updateIngredient",error);
+ if(!data?.length)return bad("ingredient_not_found");
+ return{ok:true};
+}
