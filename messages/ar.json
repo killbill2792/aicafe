@@ -2088,5 +2088,18 @@
     "statusInProgress": "المراقبة مستمرة",
     "statusComplete": "اكتمل تقرير الأيام السبعة",
     "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية"
+  },
+  "AgentFields": {
+    "netSalesCents": "صافي المبيعات",
+    "totalCostsCents": "إجمالي التكاليف",
+    "ownerProfitCents": "ربح المالك",
+    "operatingMargin": "هامش التشغيل",
+    "coveredSalesDays": "أيام البيانات",
+    "expectedSalesDays": "الأيام المتوقعة",
+    "items": "عناصر القائمة",
+    "priceCents": "السعر",
+    "days": "المبيعات اليومية",
+    "missing": "بيانات ناقصة"
   }
+
 }
