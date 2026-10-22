@@ -53,7 +53,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
       return;
     }
     startTransition(async () => {
-      const result = await saveMenuItemAggregateCost({ menuItemId: item.id, costCents: cents });
+      const result = await saveMenuItemAggregateCost({ menuItemId: item.id, costCents: cents, estimated: true });
       setMessage({ id: item.id, text: result.ok ? labels.saved : labels.error, good: result.ok });
       if (result.ok) router.refresh();
     });
