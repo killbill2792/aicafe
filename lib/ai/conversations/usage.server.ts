@@ -1,6 +1,8 @@
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { ConversationApiError } from "./auth.server";
 import type { ConversationScope } from "./contracts";
 export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
 
@@ -71,6 +73,24 @@ export async function recordSupervisorUsage(params: {
 /** Read via the owner's cookie-authenticated, RLS-enforced client, not service role.
  * The caller is authenticatedConversationContext() with exact owner/café checks.
  */
+/** Owner-scoped ledger gate before launching a billable agent turn.
+ * Uses existing RLS-protected usage records; no migration is needed.
+ * The beta cap is per owner and UTC day, separate from model/tool budgets.
+ */
+export const MAX_OWNER_AGENT_TURNS_PER_DAY = 100;
+export async function assertOwnerAgentTurnAvailable(scope: ConversationScope): Promise<void> {
+  const session = await createServerSupabaseClient();
+  const todayUtc = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+  const { count, error } = await session.from("ai_usage_events")
+    .select("id", { count: "exact", head: true })
+    .eq("business_id", scope.businessId)
+    .eq("owner_user_id", scope.ownerUserId)
+    .gte("created_at", todayUtc);
+  if (error || count === null) throw new ConversationApiError(503, "usage_unavailable");
+  if (count >= MAX_OWNER_AGENT_TURNS_PER_DAY)
+    throw new ConversationApiError(429, "owner_usage_limit_reached");
+}
+
 export function summarizeSupervisorUsage(rows: Array<{
   input_tokens: number; output_tokens: number; estimated_cost_micros: number | null;
 }>) {
