@@ -177,7 +177,7 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
   const [itemsResult, linesResult, fallbackResult] = await Promise.all([
     scope.db.from("menu_items").select("id, name, price_cents", { count: "exact" }).eq("business_id", scope.businessId).in("id", itemIds),
     scope.db.from("recipe_lines").select("menu_item_id, ingredient_id, quantity", { count: "exact" }).in("menu_item_id", itemIds),
-    scope.db.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents", { count: "exact" }).eq("business_id", scope.businessId).in("menu_item_id", itemIds),
+    scope.db.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, status", { count: "exact" }).eq("business_id", scope.businessId).in("menu_item_id", itemIds),
   ]);
   if (itemsResult.error || linesResult.error || fallbackResult.error
       || !itemsResult.data || !linesResult.data || !fallbackResult.data
@@ -188,8 +188,9 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
   const lines = linesResult.data as StoredLine[];
   const prices = await currentPrices(scope, [...new Set(lines.map((line) => line.ingredient_id))]);
   const beforePrices = Object.fromEntries([...prices].map(([id, value]) => [id, value.cost]));
-  const afterPrices = { ...beforePrices, [ingredient.id]: proposed };
-  const fallbacks = new Map(fallbackResult.data.map((row) => [row.menu_item_id, Number(row.cost_cents)]));
+    const fallbacks = Object.fromEntries(fallbackResult.data.map((row) => [row.menu_item_id, {
+    costCents: Number(row.cost_cents), status: row.status as "confirmed" | "estimated",
+  }]));
   const affectedItems = calculatePantryPriceImpact(
     itemsResult.data.map((item) => ({
       id: item.id, name: item.name,
@@ -199,7 +200,7 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
       menuItemId: line.menu_item_id, ingredientId: line.ingredient_id,
       quantity: Number(line.quantity),
     })),
-    beforePrices, ingredient.id, proposed, Object.fromEntries(fallbacks),
+    beforePrices, ingredient.id, proposed, fallbacks,
   );
   return { ok: true, costPerBaseMicros: proposed, affectedItems };
 }
