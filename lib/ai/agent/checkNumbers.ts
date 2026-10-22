@@ -1,4 +1,5 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
+import { menuPriceDifferencesCents } from "@/lib/calc/agentPriceDifferences";
 
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>};
 // Only business collections, not diagnostics or metadata, establish counts.
@@ -51,6 +52,33 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
     return {tool:r.source,values};
   }).filter(x=>x.values.length>0);
 }
+/** Saved turns arrive oldest first. An updated value for the same
+ * source/item/period key replaces its predecessor, never unions with it.
+ * Legacy unscoped keys cannot overrule newer scoped values. */
+function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvidence[]{
+  const bySource=new Map<string,Map<string,NumericEvidence["values"][number]>>();
+  for(const entry of entries){
+    let values=bySource.get(entry.tool);
+    if(!values){values=new Map();bySource.set(entry.tool,values);}
+    const later=entry.values.filter(v=>typeof v.key==="string"&&Number.isFinite(v.value));
+    if(later.length===0)continue;
+    for(const v of later){
+      const leaf=v.key.split("/").at(-1)??"";
+      if(v.key.includes("/")){
+        // An item-scoped price supersedes old pre-provenance price entries.
+        if(values.has(leaf))values.delete(leaf);
+      }else{
+        // Later unscoped reads cannot retain older unscoped versions.
+        for(const key of [...values.keys()])
+          if(key===v.key)values.delete(key);
+      }
+      values.set(v.key,v);
+    }
+  }
+  return [...bySource].map(([tool,values])=>({tool,values:[...values.values()]}))
+    .filter(e=>e.values.length>0);
+}
+
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
 type Kind = UnverifiedNumber["kind"];
 const ascii = (s: string) => s.replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660))
@@ -387,7 +415,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // A successful read of a source supersedes every older claim from that
   // source. Fail closed for legacy saved evidence lacking item/period keys.
   const freshSources=new Set(results.filter(r=>r.missing.length===0).map(r=>r.source));
-  for(const e of previousEvidence){
+  const saved=reconcileSavedEvidence(previousEvidence);
+  for(const e of saved){
     if(freshSources.has(e.tool))continue;
     for(const v of e.values.slice(0,100)){
       if(!Number.isFinite(v.value))continue;
@@ -397,6 +426,23 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       if(v.unit==="count"&&trustedCountKey(v.key))allowed.number.add(v.value);
     }
   }
+  // Price deltas are *not* general arithmetic evidence. Only comparable menu
+  // prices from the same source support an explicit local price comparison.
+  const menuPrices:number[]=[];
+  for(const r of results){
+    if(r.source!=="menu_items"||r.missing.length!==0||!Array.isArray(r.items))continue;
+    for(const item of r.items){
+      if(item&&typeof item==="object"&&"priceCents" in item&&
+        typeof item.priceCents==="number")menuPrices.push(item.priceCents);
+    }
+  }
+  for(const e of saved){
+    if(e.tool!=="menu_items"||freshSources.has(e.tool))continue;
+    for(const v of e.values){
+      if(v.unit==="cents"&&v.key.endsWith("priceCents"))menuPrices.push(v.value);
+    }
+  }
+  const priceDifferences=menuPriceDifferencesCents(menuPrices);
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
@@ -415,18 +461,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   // Monetary evidence stays in cents. Check currency-less monetary wording
   // at each candidate, rather than authorizing the value as a generic count.
 
-  // Derived amounts are supported only by same-unit pairs, never by arbitrary cross-unit arithmetic.
-  for(const kind of ["money","percent","number"] as const){
-    const source=[...allowed[kind]].slice(0,60);
-    for(let i=0;i<source.length;i++)for(let j=0;j<source.length;j++){
-      if(i===j)continue;
-      const a=source[i],b=source[j];
-      if(/\b(?:more than|less than|difference|increase|decrease|higher|lower|change|extra|combined|total of)\b/i.test(text)){
-        allowed[kind].add(a+b);allowed[kind].add(a-b);
-      }
-
-    }
-  }
+  // No reply-wide arithmetic closure. Any new business calculation belongs
+  // in lib/calc and must be tied to the claim's specific metric/source.
   const observed=[...observedHours(results),...observedShifts(results)];
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
@@ -484,6 +520,14 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
+    if(v.kind==="money"){
+      const before=text.slice(0,v.start),after=text.slice(v.end);
+      const sentence=text.slice(Math.max(before.lastIndexOf("."),before.lastIndexOf("!"),
+        before.lastIndexOf("?"),before.lastIndexOf("\\n"))+1,
+        v.end+(after.search(/[.!?\\n]/u)<0?after.length:after.search(/[.!?\\n]/u)));
+      if(/\b(?:more than|less than|cheaper than|pricier than)\b/iu.test(sentence)&&
+        priceDifferences.has(Math.abs(v.value)))return false;
+    }
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
