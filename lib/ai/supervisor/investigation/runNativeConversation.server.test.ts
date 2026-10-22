@@ -29,6 +29,7 @@ vi.mock("@/lib/ai/supervisor/p3/sourceRegistry.server",()=>({
  isRedundantModelRead:()=>false,
  createP3ReadRegistry:()=>({
   discover:()=>[{id:"p3.menu.catalog.v1",purpose:"Read menu catalog product prices and active drink variants",
+    sensitivity:"normal",budgets:{timeoutMs:1000},
     inputJsonSchema:{type:"object",additionalProperties:false,
       properties:{purpose:{type:"string"}},required:["purpose"]}}],
   preflightRead:()=>true,
@@ -67,7 +68,7 @@ describe("native owner conversation without separate review",()=>{
  it("discovers, retrieves, and displays source-bound latte prices without numeric prose tokens",async()=>{
   const t=transport(discover,read,answer("answer","Here is the recorded price.",["f2"]));
   const result=await runNativeConversationTurn(args("What is the price of my latte?"),t.send);
-  expect(result.reply.status).toBe("partial");
+  expect(result.reply.status).toBe("verified");
   expect(result.reply.blocks).toEqual(expect.arrayContaining([
    expect.objectContaining({type:"metric",valueCents:700})]));
   expect(result.usage.modelCallCount).toBe(3);
@@ -82,6 +83,26 @@ describe("native owner conversation without separate review",()=>{
   expect(result.reply.ownerInput?.request.writeContext.domain).toBe("menu_proposal");
   expect(result.reply.ownerInput?.request.input.kind).toBe("options");
   expect(result.reply.blocks[0]).toMatchObject({type:"owner_question"});
+ });
+ it("preserves the model's specific numerical clarification and sourced option labels",async()=>{
+  const question="Would you like to increase the 16 oz or 18 oz latte?";
+  const t=transport(discover,read,answer("clarify",question,[],[fixtures.latte16,fixtures.latte18]));
+  const result=await runNativeConversationTurn(args("Raise my latte price by 10 cents"),t.send);
+  expect(result.reply.status).toBe("requires_owner_input");
+  const card=result.reply.blocks.find(x=>x.type==="owner_question");
+  expect(card?.title.en).toBe(question);
+  expect(card?.input.kind).toBe("options");
+  if(card?.input.kind==="options")
+    expect(card.input.options.map(o=>o.label.en)).toEqual(["Latte 16 oz","Latte 18 oz"]);
+ });
+ it("keeps a natural fact-grounded explanation without inserting boilerplate",async()=>{
+  const t=transport(discover,read,
+    answer("answer","Your 16 oz latte is recorded at $7.00.",["f2"]));
+  const result=await runNativeConversationTurn(args("What is the 16 oz latte price?"),t.send);
+  expect(result.reply.status).toBe("verified");
+  expect(result.reply.blocks).toEqual(expect.arrayContaining([
+    expect.objectContaining({type:"text",text:"Your 16 oz latte is recorded at $7.00."}),
+    expect.objectContaining({type:"metric",valueCents:700})]));
  });
  it("uses exact server-calculated cents for ten percent, not a model-written number",async()=>{
   const calculate=call("calculate_verified",{operation:"percent_increase",leftFactId:"f2",
