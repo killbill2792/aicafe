@@ -42,6 +42,18 @@ try{
  await rejected(()=>increment(null,0),/Invalid or unauthorized/);
  await db.query("RESET ROLE");
  check((await db.query("SELECT model_call_count FROM public.ai_usage_events WHERE owner_message_id=$1",[message])).rows[0].model_call_count===10,"invalid increments change no usage");
+ // Simulate a retry of the SAME owner message after UTC midnight without
+ // changing the database clock: move its first-day ledger row to yesterday.
+ const today=(await db.query("SELECT (statement_timestamp() AT TIME ZONE 'UTC')::date AS day")).rows[0].day;
+ await db.query("UPDATE public.ai_usage_events SET attempt_day=((statement_timestamp() AT TIME ZONE 'UTC')::date - 1) WHERE owner_message_id=$1",[message]);
+ await db.query("SET LOCAL ROLE service_role");
+ await increment(2,1);
+ await db.query("RESET ROLE");
+ const dated=(await db.query("SELECT attempt_day,model_call_count,tool_call_count FROM public.ai_usage_events WHERE owner_message_id=$1 ORDER BY attempt_day",[message])).rows;
+ check(dated.length===2,"cross-midnight retries must have separate ledger rows");
+ check(dated[0].model_call_count===10&&dated[1].model_call_count===2,"previous-day model calls cannot carry into the new day");
+ check(dated[0].tool_call_count===6&&dated[1].tool_call_count===1,"new-day tool calls are attributed separately");
+ check(new Date(dated[1].attempt_day).toISOString().slice(0,10)===new Date(today).toISOString().slice(0,10),"retry row has UTC attempt date");
  console.log(`PASS: ${assertions} real PostgreSQL investigation usage assertions`);
 }finally{
  await db.query("ROLLBACK");
