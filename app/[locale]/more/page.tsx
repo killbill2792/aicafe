@@ -1,5 +1,8 @@
 import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Percent, Receipt, Shield, Store, Target, Trash2, TrendingUp, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { cookies } from "next/headers";
+import { parseThemeCookie, parseModeCookie } from "@/app/themes";
+import { ThemePicker } from "@/components/ui/ThemePicker";
 import { requireUser } from "@/lib/auth/requireUser";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -10,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function MorePage() {
   const user = await requireUser();
+  const cookieStore = await cookies();
   const [t, tProfile] = await Promise.all([getTranslations("More"), getTranslations("CafeProfile")]);
 
   const links = [
@@ -58,6 +62,8 @@ export default async function MorePage() {
           </Link>
         ))}
       </div>
+
+      <ThemePicker initialTheme={parseThemeCookie(cookieStore.get("cp_theme")?.value)} initialMode={parseModeCookie(cookieStore.get("cp_mode")?.value)} />
 
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {accountLinks.map(({ href, Icon, label, warn }) => (

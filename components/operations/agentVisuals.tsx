@@ -65,6 +65,6 @@ export function AgentAvatar({ agentId, size = "hero", selected = false }: { agen
 
   return <span className="relative block h-52 w-full" aria-hidden="true">
     <span className={`absolute inset-x-[9%] bottom-2 top-4 rounded-[48%_52%_44%_56%/54%_42%_58%_46%] transition-all duration-200 motion-reduce:transition-none ${visual.backdrop} ${selected ? `${visual.glow} scale-[1.04]` : "group-hover:scale-[1.02] group-hover:brightness-[1.03] group-hover:shadow-lg group-focus-visible:scale-[1.02] group-focus-visible:brightness-[1.03] group-focus-visible:shadow-lg"}`} />
-    <Image src={visual.avatar} alt="" fill sizes="(min-width: 768px) 190px, 72vw" className={`z-10 object-contain object-bottom drop-shadow-[0_12px_12px_rgba(42,29,20,0.18)] transition-transform duration-200 motion-reduce:transition-none ${selected ? "scale-[1.05]" : "group-hover:scale-[1.02] group-focus-visible:scale-[1.02]"}`} />
+    <Image src={visual.avatar} alt="" fill sizes="(min-width: 768px) 190px, 72vw" className={`z-10 object-contain object-bottom drop-shadow-md transition-transform duration-200 motion-reduce:transition-none ${selected ? "scale-[1.05]" : "group-hover:scale-[1.02] group-focus-visible:scale-[1.02]"}`} />
   </span>;
 }

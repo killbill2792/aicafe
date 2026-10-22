@@ -3,6 +3,8 @@
 - [ ] Remove remaining legacy investigation/reviewer modules only after import dependents and old route tests can be retired without orphaned references.
 
 ## Next
+- [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
+
 - [ ] Add grounded quick-reply chips and proposal/approval flows.
 - [ ] Add rolling conversation summaries and remove unused legacy routes.
 - [ ] Reconcile the AI usage ledger's per-increment limits with the agent's budget before general release.
