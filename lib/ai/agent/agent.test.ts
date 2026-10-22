@@ -17,6 +17,23 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(checkNumbers("١٢٣٫٩٩ د.إ", "", [base], "ar")).toHaveLength(1);
     expect(checkNumbers("We agreed on 5", "5", [], "en")).toEqual([]);
   });
+  it("preserves a minus sign before currency prefixes and rejects sign-reversed profit", () => {
+    const positive = { source:"profitability",period:null,missing:[],ownerProfitCents:12345 };
+    const negative = { source:"profitability",period:null,missing:[],ownerProfitCents:-12345 };
+    const text = "Profit -$123.45";
+    expect(checkNumbers(text,"",[positive],"en")).toEqual([
+      { text:"-$123.45",start:7,end:15,kind:"money" },
+    ]);
+    expect(checkNumbers(text,"",[negative],"en")).toEqual([]);
+    expect(checkNumbers("Profit $-123.45","",[positive],"en").map(v=>v.text)).toEqual(["$-123.45"]);
+    expect(checkNumbers("Profit $-123.45","",[negative],"en")).toEqual([]);
+    expect(checkNumbers("Profit - $123.45","",[positive],"en").map(v=>v.text)).toEqual(["- $123.45"]);
+    expect(checkNumbers("Profit - $123.45","",[negative],"en")).toEqual([]);
+    const negativeEuro = {source:"profitability",period:null,missing:[],ownerProfitCents:-1200};
+    expect(checkNumbers("Loss −€12","",[negativeEuro],"en")).toEqual([]);
+    expect(checkNumbers("Loss −€12","",[positive],"en").map(v=>v.text)).toEqual(["−€12"]);
+    expect(checkNumbers("Profit +$123.45","",[positive],"en")).toEqual([]);
+  });
   it("treats Arabic comma as grouping and Arabic dot as decimal before locale rules", () => {
     const evidence = [{source:"profitability",period:null,missing:[],priceCents:123400}];
     expect(checkNumbers("١٬٢٣٤ دولار", "", evidence, "ar")).toEqual([]);
