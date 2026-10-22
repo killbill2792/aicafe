@@ -29,7 +29,7 @@ alter table public.ingredient_prices
   add constraint ingredient_prices_pack_unit_check
   check (pack_unit is null or pack_unit in (
     'gal','qt','l','ml','fl_oz','lb','kg','oz_wt','g','each','dozen','oz'
-  ) or pack_unit ~ '^case[(][1-9][0-9]*[)]
+  ) or pack_unit ~ '^case[(][1-9][0-9]*[)]$');
 
 -- Stable latest-effective pricing when the owner changes a pack twice on the same day.
 create index if not exists ingredient_prices_effective_recorded_idx
