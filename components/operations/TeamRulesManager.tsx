@@ -23,7 +23,7 @@ async function readResponse<T>(response: Response): Promise<T> {
 }
 
 const surface = "rounded-2xl border border-line bg-card p-4 md:p-5";
-const field = "min-h-12 w-full rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+const field = "min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 const button = "min-h-12 rounded-full px-4 text-[17px] font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-50";
 
 /** A selected-agent change remounts the editor rather than using a synchronous
