@@ -2284,6 +2284,44 @@
     "increaseQuantity": "Increase quantity",
     "lowerPrice": "Lower combo price",
     "raisePrice": "Raise combo price",
-    "savedCombo": "Combo saved"
+    "savedCombo": "Combo saved",
+    "templates": {
+      "latte": {
+        "name": "Latte",
+        "subtitle": "Espresso + milk"
+      },
+      "cappuccino": {
+        "name": "Cappuccino",
+        "subtitle": "More foam"
+      },
+      "americano": {
+        "name": "Americano",
+        "subtitle": "Espresso + water"
+      },
+      "mocha": {
+        "name": "Mocha",
+        "subtitle": "Chocolate latte"
+      },
+      "iced-latte": {
+        "name": "Iced latte",
+        "subtitle": "Cold espresso + milk"
+      },
+      "cold-brew": {
+        "name": "Cold brew",
+        "subtitle": "Concentrate + ice"
+      },
+      "chai-latte": {
+        "name": "Chai",
+        "subtitle": "Spiced chai + milk"
+      },
+      "matcha-latte": {
+        "name": "Matcha",
+        "subtitle": "Green tea latte"
+      },
+      "pastry": {
+        "name": "Pastry",
+        "subtitle": "Bought-in or baked"
+      }
+    }
   }
 }
