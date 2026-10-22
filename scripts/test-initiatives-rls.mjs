@@ -44,15 +44,33 @@ try{
   for(const [thread,owner] of [[THREAD,A],[THREAD_B,B]])
     await db.query("insert into ai_threads values($1,$2,$3)",[BIZ,thread,owner]);
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000078_owner_initiatives.sql",import.meta.url),"utf8"));
-  const insert="insert into owner_initiatives(id,business_id,owner_user_id,thread_id,kind,title,change_description,starts_on,ends_on,baseline_from,checkin_cadence,locale) values($1,$2,$3,$4,'goal','Daily sales','','2026-10-15','2026-10-22','2026-10-08','daily','en')";
+  const insert="insert into owner_initiatives(id,business_id,owner_user_id,thread_id,request_key,kind,title,change_description,starts_on,ends_on,baseline_from,checkin_cadence,locale) values($1,$2,$3,$4,'fixture-request-key','goal','Daily sales','','2026-10-15','2026-10-22','2026-10-08','daily','en')";
   await db.query(insert,[ID,BIZ,A,THREAD]);
   await assert.rejects(db.query(insert,["66666666-6666-4666-8666-666666666666",BIZ,A,THREAD_B]),{code:"23503"});
+  const payload={kind:"goal",title:"Atomic goal",changeDescription:"",changeSpec:{},
+    adapterId:null,startsOn:"2026-10-15",endsOn:"2026-10-22",
+    baselineFrom:"2026-10-08",baselineTo:"2026-10-14",
+    checkinCadence:"daily",locale:"en"};
+  const metric=[{role:"primary",source:"computed",metric_key:"net_sales",
+    params:{},comparator:"gte",target_kind:"absolute",target:100,
+    checkin_question:null,checkin_audience:null,data_gap:null}];
+  const args=[BIZ,A,THREAD,"idempotent-key-123456",payload,metric];
+  const rpc="select create_owner_initiative_atomic($1,$2,$3,$4,$5,$6) as id";
+  const created=(await db.query(rpc,args)).rows[0].id;
+  const retried=(await db.query(rpc,args)).rows[0].id;
+  assert.equal(created,retried,"logical proposal retry must return the original initiative");
+  assert.equal((await db.query("select id from initiative_metrics where initiative_id=$1",[created])).rowCount,1);
+  await assert.rejects(db.query(rpc,[BIZ,A,THREAD,"bad-metric-request-123456",payload,
+    [{...metric[0],role:"invented"}]]),{code:"23514"});
+  assert.equal((await db.query("select id from owner_initiatives where request_key='bad-metric-request-123456'")).rowCount,0,
+    "a rejected child metric must roll back its parent in the same transaction");
   await db.query("insert into initiative_metrics(id,initiative_id,role,source,metric_key,comparator,target_kind,target) values($1,$2,'primary','computed','net_sales','gte','absolute',100)",[MID,ID]);
   await db.query("insert into initiative_observations(metric_id,business_date,value,coverage,source) values($1,'2026-10-15',100,1,'computed')",[MID]);
   await db.query("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest) values($1,'2026-10-15','on_track','keep','on_track:keep')",[ID]);
   await actor(A,async()=>{
     for(const table of ["owner_initiatives","initiative_metrics","initiative_observations","initiative_evaluations"])
-      assert.equal((await db.query("select * from "+table)).rowCount,1,table);
+      assert.equal((await db.query("select * from "+table)).rowCount,
+        table==="owner_initiatives"||table==="initiative_metrics"?2:1,table);
     await denied("update owner_initiatives set status='active'");
     await denied("delete from initiative_metrics");
     await denied("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest) values ('44444444-4444-4444-8444-444444444444','2026-10-15','met','keep','forged')");
