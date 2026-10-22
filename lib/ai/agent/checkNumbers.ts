@@ -202,7 +202,6 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const knownTimes = results.filter(r=>r.missing.length===0&&/hours|schedule/.test(r.source))
     .map(r=>JSON.stringify(r)).join(" ");
   return candidates(text, locale).filter(v => {
-    const before=text.slice(0,v.start), after=text.slice(v.end);
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
     if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
