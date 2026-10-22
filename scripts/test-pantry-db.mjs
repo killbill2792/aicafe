@@ -205,13 +205,13 @@ try {
       upchargeCents:0,displayUnit:"ml",displayQuantity:1});
     await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,target,
       JSON.stringify({options:[option(alt)],recipeChanges:changes})]);
-    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[PARENT,alt])).rowCount,1);
+    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[target,alt])).rowCount,1);
     assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt);
     await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,target,
       JSON.stringify({options:[option(owned["milk-whole"])],recipeChanges:changes})],"40001");
     assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt,
       "failed concurrent recipe change must never change saved default milk");
-    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[PARENT,alt])).rowCount,1);
+    assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[target,alt])).rowCount,1);
   });
   // A legacy editor updates an unrelated line in an open transaction. The
   // bulk RPC must wait for its ROW EXCLUSIVE lock, then detect the stale
