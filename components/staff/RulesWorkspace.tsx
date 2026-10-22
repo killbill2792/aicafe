@@ -39,6 +39,6 @@ export default function RulesWorkspace({initial}:{initial:Rules}){
     <p>Jurisdiction-specific requirements need a reviewed legal profile before using automated planning.</p>
    </details>
    {message&&<p role="status">{message}</p>}
-   <p className="text-muted">Defaults are a starting point, not legal advice — check your state's rules. Changes save automatically.</p>
+   <p className="text-muted">Defaults are a starting point, not legal advice — check your state’s rules. Changes save automatically.</p>
  </div>;
 }

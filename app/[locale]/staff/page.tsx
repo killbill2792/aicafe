@@ -11,5 +11,5 @@ export default async function StaffPage({params,searchParams}:{params:Promise<{l
  const result=await getWeekSchedule({weekStart:selected});
  return <PageShell className="!max-w-full">{result.ok?
   <StaffWorkspace initial={result.data} tab={tab} locale={locale}/>:
-  <div className="p-6 text-fg"><h1>Schedule</h1><p role="alert">Couldn't load the schedule ({result.error}). Confirm the staff migration is installed.</p></div>}</PageShell>;
+  <div className="p-6 text-fg"><h1>Schedule</h1><p role="alert">Could not load the schedule ({result.error}). Confirm the staff migration is installed.</p></div>}</PageShell>;
 }

@@ -13,7 +13,7 @@ export function coverageGaps(dates:string[],shifts:CostShift[],openHours:OpenHou
     const intervals=openHours[day];
     if(!intervals)continue; // Unknown trading hours are missing, not a full-day 'gap'.
     for(const [start,end] of intervals){
-      let a=minuteOfDay(start),b=minuteOfDay(end);
+      const a=minuteOfDay(start);let b=minuteOfDay(end);
       if(b<=a)b+=1440;
       const boundaries=new Set([a,b]);
       const rows=shifts.filter(s=>s.date===date).map(s=>{
