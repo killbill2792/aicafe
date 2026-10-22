@@ -19,6 +19,16 @@ type PantryResult = PantryFailure | PantrySuccess;
 type Ingredient = { id: string; name: string; base_unit: BaseUnit; starter_key: string | null; category: string | null };
 type StoredLine = { menu_item_id: string; ingredient_id: string; quantity: number; display_unit: string | null; display_quantity: number | null };
 type ReplacementLine = { ingredientId: string; quantity: number; displayUnit: RecipeDisplayUnit; displayQuantity: number };
+type SnapshotLine = { ingredientId: string; quantity: number; displayUnit: string | null; displayQuantity: number | null };
+type Change = { menuItemId: string; lines: ReplacementLine[]; expectedLines?: SnapshotLine[]; expectedSourceLines?: SnapshotLine[] };
+function snapshotLines(rows: readonly StoredLine[]): SnapshotLine[] {
+  return rows.map((row) => ({
+    ingredientId: row.ingredient_id, quantity: Number(row.quantity),
+    displayUnit: row.display_unit,
+    displayQuantity: row.display_quantity === null ? null : Number(row.display_quantity),
+  })).sort((a, b) => a.ingredientId.localeCompare(b.ingredientId, "en"));
+}
+
 
 async function activeScope(): Promise<Scope | null> {
   if (!isSupabaseConfigured()) return null;
@@ -216,7 +226,7 @@ async function conversionsFor(scope: Scope, ids: string[]) {
   }
   return map;
 }
-async function verifiedWrite(scope: Scope, productId: string, changes: { menuItemId: string; lines: ReplacementLine[] }[]): Promise<PantryResult> {
+async function verifiedWrite(scope: Scope, productId: string, changes: Change[]): Promise<PantryResult> {
   const { data, error } = await scope.db.rpc("pantry_replace_recipes", {
     p_business_id: scope.businessId, p_product_item_id: productId, p_changes: changes,
   });
@@ -283,7 +293,7 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
   if (basesError || !allBases || basesCount === null || basesCount !== allBases.length) return bad("ingredient_not_found");
   const byIngredientId = new Map(allBases.map((ingredient) => [ingredient.id, ingredient]));
   const conversions = await conversionsFor(scope, [toId]);
-  const changes: { menuItemId: string; lines: ReplacementLine[] }[] = [];
+  const changes: Change[] = [];
   for (const sibling of siblings) {
     const existing = rows.filter((row) => row.menu_item_id === sibling.id);
     if (!existing.some((row) => row.ingredient_id === fromId)) continue;
@@ -301,9 +311,11 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
       lines.push({ ingredientId: isChanged ? toId : row.ingredient_id,
         quantity, displayUnit, displayQuantity });
     }
-    changes.push({ menuItemId: sibling.id, lines });
+    changes.push({ menuItemId: sibling.id, lines, expectedLines: snapshotLines(existing) });
   }
   if (!changes.length) return bad("ingredient_not_in_product");
+  // Covers changes to the anchor between sibling discovery and atomic replacement.
+  changes[0].expectedSourceLines = snapshotLines(rows.filter((row) => row.menu_item_id === productId));
   return verifiedWrite(scope, productId, changes);
 }
 
@@ -319,11 +331,14 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const toSize = /^(\d+) oz$/.exec(to.size_label ?? "");
   if (!fromSize || !toSize) return bad("size_label_required");
   const fromOz = Number(fromSize[1]), toOz = Number(toSize[1]);
-  const iced = fromOz === 24 || toOz === 24;
-  const { data: source, error, count: sourceCount } = await scope.db.from("recipe_lines")
+  if (fromItemId === toItemId) return { ok: true, itemIds: [] };
+  const { data: pairRows, error, count: sourceCount } = await scope.db.from("recipe_lines")
     .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
-    .eq("menu_item_id", fromItemId);
-  if (error || !source || !source.length || sourceCount === null || sourceCount !== source.length) return bad("source_recipe_missing");
+    .in("menu_item_id", [fromItemId, toItemId]);
+  if (error || !pairRows || sourceCount === null || sourceCount !== pairRows.length) return bad("incomplete_recipe_source");
+  const source = pairRows.filter((row) => row.menu_item_id === fromItemId);
+  const target = pairRows.filter((row) => row.menu_item_id === toItemId);
+  if (!source.length) return bad("source_recipe_missing");
   const { data: available, error: ingredientsError, count: availableCount } = await scope.db.from("ingredients")
     .select("id, base_unit, starter_key", { count: "exact" }).eq("business_id", scope.businessId);
   if (ingredientsError || !available || availableCount === null || availableCount !== available.length) return bad("ingredients_unavailable");
@@ -338,6 +353,8 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
       displayQuantity: Number(row.display_quantity ?? row.quantity) };
   });
   if (sourceAsTemplate.some((line) => line === null)) return bad("ingredient_not_found");
+  // 16/20 oz are both valid hot and iced sizes. The source cup, not size, is authoritative.
+  const iced = sourceAsTemplate.some((line) => line?.starterKey.startsWith("cup-cold-"));
   const scaled = scaledTemplateLines(sourceAsTemplate as TemplateLine[], fromOz, toOz, iced);
   const conversions = await conversionsFor(scope, available.map((i) => i.id));
   const lines: ReplacementLine[] = [];
@@ -352,5 +369,8 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
     lines.push({ ingredientId: ingredient.id, quantity,
       displayUnit: value.displayUnit, displayQuantity: value.displayQuantity });
   }
-  return verifiedWrite(scope, fromItemId, [{ menuItemId: toItemId, lines }]);
+  return verifiedWrite(scope, fromItemId, [{
+    menuItemId: toItemId, lines, expectedLines: snapshotLines(target),
+    expectedSourceLines: snapshotLines(source),
+  }]);
 }
