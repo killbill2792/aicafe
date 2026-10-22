@@ -1267,3 +1267,27 @@ describe("Codex: expression-local operands and mixed operators",()=>{
       [metrics],"en")).toEqual([]);
   });
 });
+
+
+describe("Codex: explicit result boundary and symbolic cents",()=>{
+ const observed={source:"profitability",period:null,missing:[],
+   tenCents:1000,threeCents:300,twoCents:200,
+   sixCents:600,fiveFiftyCents:550,unrelatedCents:1200};
+ it("does not mistake an operand's minus sign for a result marker",()=>{
+   expect(checkNumbers("$10 plus $3 minus $2 = $11.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$10 plus $3 minus $2 = $7.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$7"]);
+   expect(checkNumbers("$10 minus $3 plus $2 = $9.","",[observed],"en")).toEqual([]);
+ });
+ it("verifies symbolic addition even when plus is absorbed into the currency token",()=>{
+   expect(checkNumbers("$6 + $5.50 = $11.50.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$6 + $5.50 = $12.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$12"]);
+   expect(checkNumbers("$6 +$5.50 = $11.50.","",[observed],"en")).toEqual([]);
+ });
+ it("understands symbolic subtraction without inventing negative evidence",()=>{
+   expect(checkNumbers("$6 - $5.50 = $0.50.","",[observed],"en")).toEqual([]);
+   expect(checkNumbers("$6 - $5.50 = $11.50.","",[observed],"en")
+     .map(v=>v.text)).toEqual(["$11.50"]);
+ });
+});
