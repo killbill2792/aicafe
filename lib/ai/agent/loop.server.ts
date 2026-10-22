@@ -147,7 +147,7 @@ export async function runAgentTurn(args: {
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished && usage.modelCalls < 6) {
+    if (!finished && endReason !== "provider_error" && usage.modelCalls < 6) {
       // Exactly one final no-tool request; never allow another model tool call.
       // On provider failure, already-streamed text remains intact.
       try {
@@ -159,16 +159,21 @@ export async function runAgentTurn(args: {
           const timeout = setTimeout(() => finalController.abort(), left);
           try {
             usage.modelCalls++;
+            let completed = false;
             for await (const event of provider(request(true), finalController.signal)) {
+              if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
+              if (now() >= deadline) throw new Error("deadline");
               if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
                 text += event.delta; args.onDelta?.(event.delta);
               }
               if (event.type === "response.completed") {
+                completed = true;
                 const u = (event.response as {usage?:{input_tokens?:number;output_tokens?:number;input_tokens_details?:{cached_tokens?:number}}}|undefined)?.usage;
                 usage.inputTokens += u?.input_tokens ?? 0; usage.outputTokens += u?.output_tokens ?? 0;
                 usage.cachedTokens += u?.input_tokens_details?.cached_tokens ?? 0;
               }
             }
+            if (!completed) throw new Error("provider_incomplete");
           } finally { clearTimeout(timeout); }
         }
       } catch { endReason = now() >= deadline ? "timeout" : "provider_error"; }
