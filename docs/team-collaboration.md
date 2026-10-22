@@ -1,6 +1,6 @@
 # AI CAFE — two-person development and review workflow
 
-**Read with [AGENTS.md](../AGENTS.md), [PROGRESS.md](../PROGRESS.md), and the [product roadmap #74](https://github.com/killbill2792/aicafe/issues/74).** This describes *how* the team works; it does not override the approved AI-first owner-outcome contract, authorize actions, or change any production system. For interactive onboarding and checkboxes, use [setup issue #82](https://github.com/killbill2792/aicafe/issues/82).
+**Read with [AGENTS.md](../AGENTS.md), [PROGRESS.md](../PROGRESS.md), and the [product roadmap #74](https://github.com/killbill2792/aicafe/issues/74).** This describes *how* the team works; it does not override the current single-agent architecture in AGENTS.md, authorize actions, or change any production system. For interactive onboarding and checkboxes, use [setup issue #82](https://github.com/killbill2792/aicafe/issues/82).
 
 ## 1. Initial GitHub setup — owner only
 
@@ -30,7 +30,7 @@ Each person connects *their own* GitHub identity in ChatGPT/Codex, and uses an a
 - P3 open-ended reasoning and new, safely composable owner what-if calculations: [PR #81](https://github.com/killbill2792/aicafe/pull/81) documents mandatory acceptance, with non-negotiable executable follow-up.
 - Olivia PR2 optimizer [#77](https://github.com/killbill2792/aicafe/pull/77) merged; teammate may start PR3 from **current main**, building plan versioning, authorized review/publish and related tests; no code dependency on an unmerged Supervisor PR.
 - Every task starts with a GitHub issue/assignment recording PR scope, prerequisites, file ownership, owner journey and exclusions. Assign **one primary code owner** per PR.
-- Shared `AGENTS.md`, `PROGRESS.md`, `lib/ai/` contracts, domain-facing registry, broad `lib/calc/`, SQL migrations and architecture docs: announce the change and agree who edits them. The owner of the affected central interface handles it; other domain PRs adapt later. Both PRs may append *different* PROGRESS sections but must reconcile newest main before merge.
+- Shared `AGENTS.md`, `PROGRESS.md`, `lib/ai/` contracts, domain-facing registry, broad `lib/calc/`, SQL migrations and architecture docs: announce the change and agree who edits them. The owner of the affected central interface handles it; other domain PRs adapt later. Keep PROGRESS.md limited to its Now/Next/Done sections and reconcile newest main before merge.
 - Never create different migrations with the same timestamp, run blind production `supabase db push`, or combine draft assignments and actual worked timecards.
 
 ## 4. One safe PR from start to finish

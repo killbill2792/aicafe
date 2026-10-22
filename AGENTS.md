@@ -1,96 +1,101 @@
-# Café Profit — agent instructions (same as CLAUDE.md, for Codex, Kimi and other agents)
+# Café Profit — agent instructions (single source of truth; CLAUDE.md only points here)
 
-Read this file fully before any task. Then read only the docs file(s) the task needs.
+Read this file fully before any task. If any other doc, PROGRESS entry or code comment conflicts with it, THIS FILE WINS.
+Docs marked "historical" in `docs/README.md` describe retired designs. Never implement from them.
 
-## What we are building
-A mobile-first web app (PWA) that tells independent café owners **how much money they actually kept, and why**.
-Square/Toast already show sales, voids and labor reports. We show the full owner picture: POS data **plus** rent, bills,
-supplies and payroll taxes → true owner profit, cost recovery, true cost per drink, break-even.
-
-Pitch: "Square tells you what you sold. We tell you what you actually kept."
-
-## Binding product contract — AI-first café operator (2026-10-15)
-
-**One Universal Supervisor; not a finite question-and-answer chatbot.** The owner describes open-ended café goals in their own words, by text/voice or supported reviewed documents, without selecting agent names, menu screens, spreadsheet workflows, or canned commands. The OpenAI-powered Supervisor should interpret all material parts of the goal, discover permitted registered capabilities, investigate authorized current and historical business evidence, coordinate Olivia (staff), Alex (pricing), Maya (supplies), and Leo (money), and return actionable, source-grounded options in **one** conversation. As safe domain operations become available, it should carry supported work through explicit approval where required, idempotent execution, authoritative reread, and honest outcome/follow-up status.
-
-**Design for novel requests, not a collection of example prompts.** Do not grow a centralized keyword/regex intent router, a fixed FAQ catalog, specialist-specific Supervisor branches, or separate owner-facing specialist chats for each new workflow. Register new domain-owned typed capabilities and source contracts; use AI for semantic understanding, goal decomposition, dynamic capability selection, clarification and explanation. AI must not invent business records, execute SQL, calculate canonical money/scheduling results, grant itself access, approve its own changes, or claim completion. Trusted services enforce tenant/role authorization, precise calculations, feasibility, revisions, source quality, risk limits, approval and verified effects. Understanding any reasonable question does **not** imply the capability to execute every request.
-
-**Progress must be measured by owner outcomes, not registry size or a green typecheck alone.** Every domain/platform milestone must identify at least one real owner journey and prove the supported portion end-to-end: natural request or source input → typed validated interpretation → real canonical data/calculation → grounded decision/options → authorized action if implemented → verified state/outcome. Explicitly label unsupported steps, shadow-only behavior, planned effects, unavailable inputs, and future integrations. No fake demo writes or synthetic claims of deployed automation.
-
-Canonical cross-domain acceptance journeys to preserve:
-- Five employees' spoken availability → correctly reviewed records → Olivia's seven-day feasible schedule and owner-hours-versus-cash-labor scenarios; no POS required; publishing is a distinct authorized step.
-- Whole/oat/almond milk prices and size-specific recipe quantities → Alex's variant costs, surcharge and margins; Maya's supplier evidence; Leo's period impact **only with observed option-level sales**.
-- Purchase-order PDF/CSV or image → private original storage → typed evidence-linked extraction/review → confirmed purchase-order record, never assume received inventory, invoice or payment from the order alone.
-- "Reduce labor costs without understaffing and protect drink margins" → preserve every goal, consult relevant specialists, reconcile periods/provenance, and give partial/unavailable statuses honestly.
-- Proactive coverage/price/supplier risks → deduped tasks in the existing inbox, appropriate urgency/quiet hours, notifications only when consent/provider receipt exist.
-
-Phase boundaries: merged PRs #75 and #76 are foundations, not end-to-end Supervisor automation. Supervisor **P2** implements the approved six-mode typed *shadow* registry and can include an isolated AI-to-real-reader shadow proof; **P3** connects dynamic AI capability discovery and multi-domain orchestration to live read/simulation chat; **P4** builds versioned proposal/approval/one-time verified execution; **P5/P6** connect ready domain services and proactive evaluation. Olivia PR 2 delivers deterministic scheduling, not live conversational publishing. Never use a milestone to skip safety, staged rollout, owner authorization or the appropriate later-phase gate.
-
-**Mandatory open-ended calculation ability (Supervisor P3).** The owner can ask a new business what-if that has no dedicated Olivia/Alex/Maya/Leo question, formula or UI screen. Supervisor must interpret it, discover authorized evidence and compose **registered, validated, pure computational primitives** into a bounded transient analysis; no new central intent/keyword branch per example. The LLM may propose a typed calculation *plan*, never authoritative arithmetic, SQL/JS, legal/payroll rules, grants or business writes. Trusted code enforces units, currency/cents precision, scope, temporal granularity, source versions, assumptions, missing values and budgets, using existing canonical `lib/calc/` domain engines. A new safe combination of existing operands must work without developer-written question-specific logic. **P3 is not complete** until this works through the actual default-on Supervisor read/simulation path (no rollout flag or per-business allowlist — PR #106 removed both; the conversational investigation runtime runs for every business and location on every owner turn; the previous P3/legacy runner is retained as an explicitly exported compatibility implementation, not the primary conversation router) with executable novel-case tests (or P3A/P3B both completed). P2 is shadow-only; P4 owns effectful approval/execution. See `docs/supervisor-platform-architecture.md` §6.2 and COMPOSE-01..08.
-
-
-**Supervisor complete-loop implementation (draft PR #138, not merged):** The generic typed proposal/approval/commit/manual-handoff/monitor/report machinery is implemented for an owner-approved Alex drink-price experiment. Price changes are manual, never POS API writes; actual sales require verified daily coverage; monitor output uses existing Operations tasks and Supervisor messages. Merge, live migration and release are not implied by this draft. Other domain effect implementations remain separate and unavailable until registered and reviewed.
-
-**Current conversational implementation:** `lib/ai/supervisor/investigation/` is the default `runSupervisorTurn` path. It iteratively discovers/reads authorized records, inspects nested collections, composes unit-aware dataset/expression calculations, optionally researches public sources, and produces independently reviewed natural answers. Thread memory persists only owner statements and validated read selectors; current financial values must be reread. Keep five executable operations per turn, at most eight billed model attempts, a 90-second deadline, exact server-substituted value citations, tenant/epoch checks and explicit advice/source limitations. Historical three-round planner/fallback descriptions apply to the compatibility runner. See `docs/supervisor-conversational-investigation.md`. Do not add owner-question intent branches, canned scenario routes, model SQL/code or fake sources/effects.
-
-**Durable sources:** `docs/01-product.md`, `docs/supervisor-platform-architecture.md`, `docs/scheduling-architecture.md`, [Issue #74](https://github.com/killbill2792/aicafe/issues/74), and its [owner-outcome acceptance supplement](https://github.com/killbill2792/aicafe/issues/74#issuecomment-6186706321). When any older note conflicts with completed PR merges or this approved outcome-first scope, reconcile against latest `main` and verified code; do not reopen already approved Olivia scheduling product scope.
-
-## Users (design for all of them at once)
-Owners aged 30–70, many not tech-comfortable, some more comfortable in Arabic or Spanish than English.
-Gen Z shift managers also use it. Rules: big numbers, icon + word on everything, plain language, no jargon.
-See `docs/02-design-system.md` — it is binding.
+## Product
+Mobile-first PWA that tells independent café owners how much money they actually kept, and why.
+Users: owners aged 30–70 (EN/ES/AR, RTL), many not tech-comfortable. Plain language, big numbers, no jargon.
+`docs/02-design-system.md` is binding for UI.
 
 ## Stack (do not swap without asking)
-- Next.js (App Router) + TypeScript (strict) + Tailwind CSS
-- Supabase: Postgres, Auth (email magic link + phone OTP), Storage (receipts, statements), Row Level Security on every table
-- Hosting: Vercel. Installable PWA (manifest + service worker, "Add to Home Screen")
-- i18n: next-intl with `en`, `ar` (RTL), `es`. All user-facing strings in message files, never hard-coded
-- Validation: zod. Dates: date-fns + date-fns-tz. Business timezone per location (default America/Los_Angeles)
-- Tests: Vitest for all money math in `lib/calc/`
-- AI (statement categorizing, receipt reading, voice entry): provider-agnostic wrapper in `lib/ai/` selected by env var
-  `AI_PROVIDER` = anthropic | openai | moonshot. Always use a small/cheap model and structured JSON output
+Next.js 16 App Router + TypeScript strict + Tailwind · Supabase (Postgres, Auth, Storage, RLS on every table)
+Vercel PWA · next-intl (en, es, ar) · zod · date-fns(-tz) · Vitest · OpenAI Responses API via `lib/ai/`.
+Next.js 16 differs from your training data: read `node_modules/next/dist/docs/` before using framework APIs.
 
 ## Non-negotiable rules
-1. **Money is integer cents** everywhere (`bigint`/`number` of cents). Never floats for money. Format only at display.
-2. Every expense row has `source` and `status` (`estimated` | `actual`). The UI must label estimates.
-3. All calculations live in `lib/calc/` as pure functions with tests. UI never does math.
-4. Use the fixtures in `docs/05-calculations.md` as test cases. If a test disagrees with the doc, stop and ask.
-5. POS access is **read-only**. Never ask for bank or POS passwords. OAuth or user-downloaded files only.
-6. Encrypt POS tokens at rest. Never log tokens, bank lines, or receipt images.
-7. Accessibility: WCAG AA contrast, 48px touch targets, 17px minimum body text, visible focus, reduced motion respected.
-8. Never add features from the "Don't build" list in `docs/01-product.md`.
-9. **Progressive disclosure on owner screens:** Start with the specific actionable answer and essential context. When details/actions belong to an entity already visible on the screen, select or expand that entity and manage it in place; do not create a new page or CTA by default. New routes are for genuinely independent workflows. Place diagnostics, rule history, and rarely used controls behind an intentional reveal (for example an accessible details section). Never expose internal enum, model, API, token, or cost telemetry in the owner's primary workflows. Keep existing canonical actions discoverable, task links specific, verified zero distinct from unavailable, and all labels localized across en/es/ar.
+1. Money is integer cents. Never floats. Format only at display.
+2. All business math lives in `lib/calc/` as pure, tested functions. The LLM and the UI never do arithmetic.
+3. Data access lives in `lib/data/` + RLS. The LLM never writes SQL, never sees other tenants, never writes to the POS.
+4. Estimated vs actual is always labeled. Unknown is never shown as zero.
+5. All owner-facing strings are in `messages/{en,es,ar}.json`. Never fall back to an unrelated key.
+6. Never log tokens, bank lines, receipts, prompts with PII, or API keys.
+7. Accessibility: WCAG AA, 48px targets, 17px min body text, reduced motion.
+8. Use `docs/05-calculations.md` fixtures as tests; if a test disagrees with the doc, stop and ask.
+9. Never ask for bank or POS passwords; OAuth or user-downloaded files only. Encrypt POS tokens at rest.
+10. Never build anything on the "Don't build" list in `docs/01-product.md`.
+11. Progressive disclosure on owner screens: answer first, details behind an intentional reveal; never show internal enums/model/token/cost telemetry.
+
+## AI architecture (current, binding)
+One conversational agent, like a good chat assistant. NOT a supervisor/router, NOT persona sub-agents, NOT an investigator plus reviewer.
+
+- **Loop:** `lib/ai/agent/` (to be created) runs ONE streaming tool-calling loop per owner turn (Responses API, `stream:true`).
+  The model writes normal prose and calls tools. Text streams to the client as it arrives.
+- **Tools are typed and few:** one tool per business capability, e.g. `get_profit`, `get_sales`, `get_costs`,
+  `get_menu_items`, `get_labor`, `simulate_price_change`, `propose_price_change`. Each one has:
+  a zod input schema exported as strict JSON Schema (`strict:true`), a handler that calls `lib/data` + `lib/calc`,
+  and a COMPACT result (≤ ~1.5k tokens: totals, top rows, ids, units, source + period, `missing[]`).
+  No `discover_tools`/`read_cafe` meta-tools. No "discover before read" rule.
+- **Numbers:** every number the model may state must come from a tool result or the owner's own words.
+  After the reply, `lib/ai/agent/checkNumbers.ts` (to be created) compares numbers in the prose against the turn's tool results
+  in code (money in cents, locale-aware decimals). A mismatch is logged and the figure is shown with an
+  "unverified" chip. Never delete the sentence, never swap in placeholder text, never call a second LLM to review.
+- **Status** is computed from tool results only: `complete` if every tool used returned `missing:[]`, otherwise
+  `partial` with the specific missing inputs listed. A recovered tool error does not downgrade the answer.
+- **Clarifications** are ordinary assistant messages: one specific question, in the owner's language, with optional
+  `quick_replies` (chips built from real ids returned by tools). The owner's reply is just the next user message.
+  No special `owner_question` card, no `requires_owner_input` state machine, no generic fallback question.
+- **Actions:** `propose_*` tools create an inert proposal and render an approval card (preview + Approve/Decline).
+  Only the approval endpoint, called by the owner's click, commits. POS price changes stay manual.
+- **Rich blocks:** tools may return `display` hints (`metric`, `chart`, `table`). The UI renders them with the
+  source and period chip. Labels come from the tool's own localized field map.
+- **When the loop must stop** (budget, timeout, provider error): make one final call with `tool_choice:"none"`
+  so the model answers from what it has and says plainly what is missing. Never a canned "I couldn't finish…".
+
+## Conversation state
+- `ai_threads` / `ai_messages` store every user, assistant and tool message (tool results are stored compact).
+- Context sent per turn = system prompt + tool schemas (stable, cacheable) + rolling summary + last 6–8 messages.
+- When history exceeds ~6k tokens, a small model updates `ai_threads.summary` (facts the owner stated, open goals,
+  chosen items/periods). Business figures are never cached in the summary; tools re-read them.
+
+## Token and latency budget (enforced in code, tested)
+- Stable prefix first (system prompt + tools), and `prompt_cache_key = "cafe-agent-v{N}"`. Never put dates, ids or
+  per-turn data in the prefix.
+- ≤ 6 model calls and ≤ 8 tool calls per turn. Stop after 2 consecutive tool errors. 60s turn deadline.
+- `max_output_tokens` ≤ 1200 per call. Tool result ≤ 1.5k tokens. Target ≤ 25k input tokens for a typical question.
+- Main model from `SUPERVISOR_OPENAI_MODEL`. A small model handles summaries/titles only.
+- Log per turn: calls, tool calls, input/cached/output tokens, latency, end reason.
+
+## UI
+- Chat streams over SSE (`useChat`-style). No `/progress` polling. Tool calls show as small inline status chips.
+- Personas (Alex/Olivia/Maya/Leo) are labels/avatars on tool chips only, not separate agents or prompts.
+
+## Do NOT (these designs were tried and retired, so never resurrect or extend them)
+- `lib/ai/supervisor/investigation/*` (investigator, reviewer LLM, display-token citations, duplicate/preflight gates,
+  `askWhenStuck`, `repeatedTool` copy), the P3 legacy runner, deterministic intent routers, persona sub-agents.
+- Rules that ban digits in model text, force every reply to `partial`, or replace model text with generic copy.
+- Generic `discover_tools`/`read_cafe` meta-tools, `strict:false` tool schemas, JSON-envelope final answers that
+  block streaming.
+- Never weaken a test to make it pass. If a test enforces a retired design above, delete it in the same PR and say so.
 
 ## Where things are
-- `docs/01-product.md` — features, priorities, what not to build
-- `docs/02-design-system.md` — visual rules, icons, colors, copy, accessibility, languages
-- `docs/03-screens.md` — every screen: content, states, data, interactions
-- `docs/04-data-model.md` — database schema (SQL) + RLS
-- `docs/05-calculations.md` — every formula, the cost-recovery algorithm, test fixtures
-- `docs/06-integrations.md` — Square, Toast/CSV, bank statements, receipts, AI prompts
-- `docs/07-build-plan.md` — milestones with acceptance criteria, multi-tool workflow
-- `design/mockups/*.html` — approved visual references. Open in a browser. Rebuild them as React components;
-  do not copy inline styles verbatim — extract into Tailwind tokens from the design system.
+See [docs/README.md](docs/README.md) for current docs and retired historical designs.
 
-## Multi-developer GitHub safety
+## How to work
+- One accountable implementer per PR; a separate human reviews; no AI auto-merge.
+- Small, scoped PRs: one capability or one concern, ideally < 400 changed lines. State the owner journey it enables.
+- Before coding: read this file + only the docs your task needs. Check `PROGRESS.md` "Now" section only.
+- Tests: unit tests for every tool handler and `checkNumbers`; recorded-fixture tests for the loop; one live smoke
+  script (`npm run smoke:agent` — to be created) run before merge with real credentials by the owner.
+- PROGRESS.md keeps three short sections: **Now** (≤ 5 items), **Next**, **Done (last 10)**. Older history goes to
+  `docs/history/`. Do not continue unchecked items from history.
+- No new dependencies without a one-line reason in the PR. No production migrations, deploys or merges without the
+  owner's explicit approval. No AI auto-merge.
 
-When two ChatGPT/Codex accounts work on this repository, follow `docs/team-collaboration.md` and [onboarding checklist #82](https://github.com/killbill2792/aicafe/issues/82). One accountable implementer per feature branch/PR; identify overlapping files and merged dependencies before editing. No unreviewed direct `main` writes, bot merges or production deployments; independent human review, green **AI CAFE PR baseline** and relevant domain checks on final HEAD are required. Owner-controlled production migration/flags remain separate explicit gates. GitHub policies must be configured by the repository owner; these instructions alone cannot enforce branch protection.
-
-## Working style (saves tokens, keeps quality)
-- One milestone task per session. Read only the docs it needs.
-- Before coding a milestone: write a short plan in `PROGRESS.md`, then implement, then run tests, then tick it off.
-- Keep `PROGRESS.md` updated so any agent (Claude Code, Codex, Kimi) can continue where the last one stopped.
-- Prefer small files. No new dependencies without a one-line reason in `PROGRESS.md`.
-
-## Commands (create these in milestone 0)
-- `npm run dev` · `npm run build` · `npm run test` · `npm run lint` · `npm run db:reset` (reset + seed demo café)
+## Commands
+`npm run dev` · `npm run build` · `npm test` · `npm run lint` · `npx tsc --noEmit` · `npm run db:reset`
 
 <!-- BEGIN:nextjs-agent-rules -->
-
 # This is NOT the Next.js you know
-
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
-
-This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
-
+Read the relevant guide in `node_modules/next/dist/docs/` before writing framework code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->

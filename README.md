@@ -4,12 +4,12 @@ Everything an AI coding agent needs to build the pilot web app.
 
 ## How to use
 1. Create an empty folder (or GitHub repo) and copy this whole kit into it.
-2. Open it in Claude Code (or Codex / Kimi — they read AGENTS.md, which matches CLAUDE.md).
+2. Open it in Claude Code, Codex or Kimi; read `AGENTS.md` and the `Now` section of `PROGRESS.md` first. `CLAUDE.md` only points to `AGENTS.md`.
 3. Paste the "First prompt" from `docs/07-build-plan.md`.
 4. Work one milestone at a time. When a tool hits its usage limit, commit and continue in another tool with the same start prompt. `PROGRESS.md` keeps everyone in sync.
 
 ## What's inside
-- `CLAUDE.md` / `AGENTS.md` — rules every agent follows
+- `AGENTS.md` — the only source of agent instructions; `CLAUDE.md` only points here. Sessions start with `AGENTS.md` + `PROGRESS.md` "Now".
 - `docs/01-product.md` — what to build, what not to build
 - `docs/02-design-system.md` — the look, icons, the "fill" visual, plain-language words, languages, accessibility
 - `docs/03-screens.md` — every screen in detail
@@ -90,8 +90,8 @@ git push -u origin main
 3. Before the first deploy, add every variable from `.env.local.example` under **Settings →
    Environment Variables** (Production, and Preview if you want PR previews to also work). At
    minimum for the app to do anything beyond the demo data: `NEXT_PUBLIC_SUPABASE_URL`,
-   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. See "Needs connecting" in
-   `PROGRESS.md` for the full list and exactly what each one unlocks — the app runs and is fully
+   `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. See `.env.local.example` and
+   `docs/06-integrations.md` for required connections and what they unlock — the app runs and is fully
    demoable with **zero** of them set, so it's fine to deploy first and add credentials later.
 4. For Square, once you have real app credentials, update `SQUARE_REDIRECT_URI` to your production
    URL (`https://<your-app>.vercel.app/api/pos/square/callback`) — both in Vercel's env vars and in
