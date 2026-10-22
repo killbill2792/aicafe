@@ -42,7 +42,7 @@ export function buildTemplateRecipe(key: string, sizeOz: number, iced: boolean, 
 
 /** Generic manual recipe cloning: keep countable packaging at one, scale liquid to ½ oz,
  * shots by size-specific dose rules, and other ingredient amounts by source/target ratio. */
-export function scaledScalingLines(
+export function scaledTemplateLines(
   lines: readonly ScalingLine[], fromOz: number, toOz: number, iced: boolean,
 ): ScalingLine[] {
   if (!(fromOz > 0) || !(toOz > 0)) throw new RangeError("Invalid size");
