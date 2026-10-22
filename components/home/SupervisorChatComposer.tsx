@@ -217,7 +217,11 @@ export default function SupervisorChatComposer({
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
-  const previousScrollHeight = useRef<number | null>(null);
+  const prependAnchor = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  const [prependVersion, setPrependVersion] = useState(0);
+  const appliedPrependVersion = useRef(0);
+  const paginationRequest = useRef(0);
+  const selectedThreadId = useRef<string | null>(initialThreadId ?? null);
   const pinned = useRef(true);
   const openingThread = useRef(true);
   const [showNewMessage, setShowNewMessage] = useState(false);
@@ -317,6 +321,8 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId]);
+  useLayoutEffect(() => { selectedThreadId.current = threadId; }, [threadId]);
+
   function scrollToLatest() {
     const node = transcript.current;
     if (!node) return;
@@ -334,20 +340,27 @@ export default function SupervisorChatComposer({
     const node = transcript.current;
     if (!node) return;
     if (openingThread.current && threadId && !messages.length && !sending) return;
+    // Streaming updates may render while history is loading. Only consume the
+    // saved anchor in the same commit that inserts that history page.
+    const insertedHistory = prependVersion !== appliedPrependVersion.current;
+    const anchor = insertedHistory ? prependAnchor.current : null;
     const target = transcriptScrollTarget({
-      scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
+      scrollTop: anchor?.scrollTop ?? node.scrollTop, scrollHeight: node.scrollHeight,
       clientHeight: node.clientHeight,
-      previousScrollHeight: previousScrollHeight.current,
-      pinned: openingThread.current || pinned.current,
+      previousScrollHeight: anchor?.scrollHeight ?? null,
+      pinned: !insertedHistory && (openingThread.current || pinned.current),
     });
-    previousScrollHeight.current = null;
     if (target !== null) node.scrollTop = target;
+    if (insertedHistory) {
+      appliedPrependVersion.current = prependVersion;
+      prependAnchor.current = null;
+    }
     if (openingThread.current && messages.length) {
       openingThread.current = false;
       pinned.current = true;
       setShowNewMessage(false);
     }
-  }, [messages, optimisticOwner, sending, streamedText, progressStatus, threadId]);
+  }, [messages, optimisticOwner, sending, streamedText, progressStatus, threadId, prependVersion]);
 
   useEffect(() => {
     const node = transcript.current;
@@ -373,6 +386,7 @@ export default function SupervisorChatComposer({
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ requestId: threadRequestId.current }),
     }));
+    selectedThreadId.current = created.thread.id;
     setThreadId(created.thread.id); setThreadTitle(created.thread.title);
     threadRequestId.current = null;
     return created.thread.id;
@@ -456,24 +470,39 @@ export default function SupervisorChatComposer({
   }
   async function loadOlder() {
     if (!threadId || nextOffset === null || loading) return;
-    const node = transcript.current;
-    previousScrollHeight.current = node ? node.scrollHeight : null;
-    // Preserve the reader's position even when history is prepended to a short page.
+    const requestedThread = threadId;
+    const request = ++paginationRequest.current;
+    // Older pages are loaded independently from SSE and can resolve in any
+    // order. A different conversation must never receive an old page.
     pinned.current = false;
     setLoading(true);
     try {
-      const page = await loadMessages(threadId, nextOffset);
+      const page = await loadMessages(requestedThread, nextOffset);
+      if (request !== paginationRequest.current || selectedThreadId.current !== requestedThread) return;
+      const node = transcript.current;
+      prependAnchor.current = node
+        ? { scrollTop: node.scrollTop, scrollHeight: node.scrollHeight }
+        : null;
       setMessages((current) => {
         const known = new Set(current.map((msg) => msg.id));
         return [...page.items.filter((msg) => !known.has(msg.id)), ...current];
       });
       setNextOffset(page.nextOffset);
-    } catch { setError(true); previousScrollHeight.current = null; }
-    finally { setLoading(false); }
+      // Batched with setMessages, so only this version authorizes consumption.
+      setPrependVersion((version) => version + 1);
+    } catch {
+      if (request === paginationRequest.current && selectedThreadId.current === requestedThread) setError(true);
+    } finally {
+      if (request === paginationRequest.current) setLoading(false);
+    }
   }
   function selectThread(id: string | null) {
     if (sending) return;
     cleanupRecording(); dispatchDictation({ type: "reset" });
+    paginationRequest.current++;
+    prependAnchor.current = null;
+    selectedThreadId.current = id;
+    setLoading(false);
     setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
     setOptimisticOwner(null);
     openingThread.current = Boolean(id); pinned.current = true;
