@@ -94,29 +94,26 @@ export function stepFor(unit: PlainUnit): number {
   return unit === "fl_oz" || unit === "oz_wt" ? 0.5 : 1;
 }
 
-/** No fractional decimals in the everyday recipe summary. Quarter fractions are intentional,
- * and plural categories use Intl.PluralRules (ICU), rather than a hardcoded English n!==1. */
+/** Pure number rendering only; unit labels and all ICU plural choices belong to
+ * next-intl's messages/{en,es,ar}.json and are supplied by the caller. */
+export type PantryQuantityTranslator = (
+  unit: PlainUnit, values: { quantity: string; count: number },
+) => string;
 export function plainQuantity(
-  quantity: number, unit: PlainUnit, locale = "en", cupSizeOz?: number,
+  quantity: number, unit: PlainUnit, locale: string,
+  translate: PantryQuantityTranslator, cupSizeOz?: number,
 ): string {
   if (!Number.isFinite(quantity) || quantity < 0) throw new RangeError("Invalid quantity");
   const roundedQuarters = Math.round(quantity * 4);
   const whole = Math.floor(roundedQuarters / 4);
   const remainder = roundedQuarters % 4;
   const fraction = ["", "¼", "½", "¾"][remainder];
-  const numeric = (whole ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole) : "") + fraction || "0";
-  const plural = new Intl.PluralRules(locale).select(roundedQuarters / 4);
-  const one = plural === "one";
-  const labels: Record<string, Record<PlainUnit, readonly [string, string]>> = {
-    en: { shot: ["shot", "shots"], pump: ["pump", "pumps"], fl_oz: ["oz", "oz"], oz_wt: ["oz", "oz"], g: ["g", "g"], ml: ["ml", "ml"], each: ["item", "items"], cup: ["cup", "cups"] },
-    es: { shot: ["shot", "shots"], pump: ["pulsación", "pulsaciones"], fl_oz: ["oz", "oz"], oz_wt: ["oz", "oz"], g: ["g", "g"], ml: ["ml", "ml"], each: ["unidad", "unidades"], cup: ["taza", "tazas"] },
-    ar: { shot: ["جرعة", "جرعات"], pump: ["ضغطة", "ضغطات"], fl_oz: ["أونصة", "أونصات"], oz_wt: ["أونصة", "أونصات"], g: ["غ", "غ"], ml: ["مل", "مل"], each: ["قطعة", "قطع"], cup: ["كوب", "أكواب"] },
-  };
-  const key = locale.split("-")[0];
-  const terms = labels[key] ?? labels.en;
-  const label = terms[unit][one ? 0 : 1];
+  const wholeText = whole
+    ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole) : "";
+  const numberText = wholeText + fraction || new Intl.NumberFormat(locale).format(0);
+  const main = translate(unit, { quantity: numberText, count: roundedQuarters / 4 });
   const cup = unit === "cup" && cupSizeOz !== undefined
-    ? ` (${plainQuantity(cupSizeOz, "fl_oz", locale)})`
+    ? ` (${plainQuantity(cupSizeOz, "fl_oz", locale, translate)})`
     : "";
-  return `${numeric} ${label}${cup}`;
+  return main + cup;
 }
