@@ -47,7 +47,7 @@ export function templateRecipeForSize(key: RecipeTemplateKey, sizeOz: number): T
   const oz = (base: number) => halfOunce(base * ratio);
   const shot = () => line("espresso-beans", shotsForSize(sizeOz), "shot");
   const milk = (base: number) => line(template.defaultMilkKey!, oz(base), "fl_oz");
-  let ingredients: TemplateLine[];
+  let ingredients: TemplateLine[] = [];
   switch (key) {
     case "latte": ingredients = [shot(), milk(10)]; break;
     case "cappuccino": ingredients = [shot(), milk(7)]; break;
