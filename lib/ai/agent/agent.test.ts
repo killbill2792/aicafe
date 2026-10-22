@@ -415,3 +415,44 @@ describe("Owner-reported times retain semantic context",()=>{
       .length).toBeGreaterThan(0);
   });
 });
+
+
+describe("Codex: localized time actions and qualified shift identities",()=>{
+  const hours={source:"locations.open_hours",period:null,missing:["businessHoursNotSet:tue"],
+    hours:{mon:[["08:00","17:00"]]}};
+  const ada={source:"recurring_schedule",period:{from:"2026-10-26",to:"2026-11-01"},missing:[],
+    shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",endTime:"16:00"}]};
+  it("does not exempt unsupported Spanish and Arabic opening statements",()=>{
+    expect(checkNumbers("Abrimos a las 23:59 el lunes.","",[],"es")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("نفتح الساعة 23:59 يوم الاثنين.","",[],"ar")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("Abrimos a las 8:00 el lunes.","",[hours],"es")).toEqual([]);
+    expect(checkNumbers("نفتح الساعة 8:00 يوم الاثنين.","",[hours],"ar")).toEqual([]);
+    expect(checkNumbers("Cerramos a las 8:00 el lunes.","",[hours],"es")
+      .length).toBeGreaterThan(0);
+  });
+  it("understands shift-start paraphrases instead of bypassing them",()=>{
+    expect(checkNumbers("Bob starts his shift at 23:59 on Monday.","",[],"en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("Bob starts his shift at 8:00 AM on Monday.","",[ada],"en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada starts her shift at 8:00 AM on Monday.","",[ada],"en"))
+      .toEqual([]);
+  });
+  it("retains the asserted employee across shift qualifiers and following names",()=>{
+    expect(checkNumbers("Bob’s morning shift starts at 8:00 AM on Monday.","",[ada],"en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s morning shift starts at 8:00 AM on Monday.","",[ada],"en"))
+      .toEqual([]);
+    expect(checkNumbers("The shift starts at 8:00 AM on Monday for Bob.","",[ada],"en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("The shift starts at 8:00 AM on Monday for Ada.","",[ada],"en"))
+      .toEqual([]);
+    const owner="Ada’s shift starts at 8:00 AM on Monday.";
+    expect(checkNumbers("Bob’s morning shift starts at 8:00 AM on Monday.",
+      owner,[],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("The shift starts at 8:00 AM on Monday for Bob.",
+      owner,[],"en").length).toBeGreaterThan(0);
+  });
+});
