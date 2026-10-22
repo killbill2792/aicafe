@@ -173,6 +173,38 @@ try{
    removed.sources.ownerTotalCosts.length===0,
    "owner total delete cannot leave previous cost valid under previous revision");
 
+ // Real production epoch triggers: an activation holding an existing size row
+ // must finish before a template can lock all siblings and create its new sizes.
+ // Lock ordering is checked with two concurrent PostgreSQL connections.
+ const latte12="a12a12a1-9997-4997-8997-a12a12a12a12";
+ const latte16="a12a12a1-9996-4996-8996-a12a12a12a12";
+ await admin.query("INSERT INTO public.menu_items(id,business_id,name,base_name,size_label,price_cents,category) VALUES"+
+  "($1,$3,'Pantry Test Latte 12 oz','Pantry Test Latte','12 oz',500,'ESPRESSO_DRINK'),"+
+  "($2,$3,'Pantry Test Latte 16 oz','Pantry Test Latte','16 oz',550,'ESPRESSO_DRINK')",
+  [latte12,latte16,A]);
+ const recipes=[8,12,16,20].map(n=>({sizeLabel:n+" oz",lines:[{
+   ingredientId:ingredient,quantity:100,displayUnit:"ml",displayQuantity:100,
+ }]}));
+ await a.query("BEGIN");
+ await a.query("SET LOCAL statement_timeout='5000ms'");
+ await a.query("UPDATE public.menu_items SET is_active=false WHERE id=$1",[latte16]);
+ await b.query("BEGIN");
+ await b.query("SET LOCAL ROLE authenticated");
+ await b.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ await b.query("SET LOCAL statement_timeout='5000ms'");
+ const pendingTemplate=b.query("SELECT public.pantry_apply_sized_recipes($1,$2,$3::jsonb) AS result",
+   [A,latte12,JSON.stringify(recipes)]);
+ await new Promise(resolve=>setTimeout(resolve,80));
+ await a.query("COMMIT");
+ const installed=await pendingTemplate;
+ await b.query("COMMIT");
+ check(installed.rows[0]?.result?.itemIds?.length===4,
+   "epoch-triggered activation and all-sizes template complete without deadlock");
+ check(Number((await admin.query("SELECT count(*) AS n FROM public.menu_items WHERE business_id=$1 AND base_name='Pantry Test Latte'",[A])).rows[0].n)===4,
+   "template reuses existing siblings instead of adding a duplicate");
+ check((await admin.query("SELECT is_active FROM public.menu_items WHERE id=$1",[latte16])).rows[0].is_active===false,
+   "concurrent activation state is preserved");
+
  await a.query("BEGIN");
  await a.query("DELETE FROM public.p1_business_source_epochs WHERE business_id=$1",[A]);
  await a.query("COMMIT");
