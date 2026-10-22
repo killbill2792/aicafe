@@ -1,4 +1,5 @@
 import "server-only";
+import {readSchedulingDraftInputs} from "@/lib/data/schedulingDraftInputs.server";
 import { agentSourceReaders } from "@/lib/data/agentReadSources.server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -74,6 +75,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     supervisorHistoricalReaders(client, businessId),
     agentSourceReaders(client,businessId),
     {
+      schedulingDraftInputs:async(requested)=>{assertBusiness(requested);return readSchedulingDraftInputs(client,businessId);},
       currentStaff: async (requested) => {
         assertBusiness(requested);
         const snapshot = await currentSnapshot();
