@@ -14,7 +14,7 @@ type Kind="drink"|"food"|"retail"|"combo";type Mode="template"|"quick"|"blank";
 const templates:{key:RecipeTemplateKey|null;name:string;description:string}[]=[
  {key:"latte",name:"Latte",description:"Espresso + milk"},{key:"cappuccino",name:"Cappuccino",description:"Foamy espresso"},{key:"americano",name:"Americano",description:"Espresso + water"},{key:"mocha",name:"Mocha",description:"Chocolate latte"},{key:"iced-latte",name:"Iced latte",description:"Cold espresso + milk"},{key:"cold-brew",name:"Cold brew",description:"Slow brewed coffee"},{key:"chai-latte",name:"Chai",description:"Spiced tea + milk"},{key:"matcha-latte",name:"Matcha",description:"Green tea latte"},{key:null,name:"Pastry",description:"Fresh bakery item"}];
 export default function NewMenuItemForm({menuGroupOptions,comboChoices}:{menuGroupOptions:string[];comboChoices:ComboChoice[]}) {
- const t=useTranslations("MenuBuilder"),common=useTranslations("Common"),router=useRouter();
+ const t=useTranslations("MenuBuilder"),common=useTranslations("Common"),manage=useTranslations("ManageMenu"),router=useRouter();
  const templateLabel=(value:typeof templates[number])=>t(`templates.${value.key??"pastry"}.name` as never);
  const templateDescription=(value:typeof templates[number])=>t(`templates.${value.key??"pastry"}.subtitle` as never);
  const [kind,setKind]=useState<Kind>("drink"),[mode,setMode]=useState<Mode>("template"),[template,setTemplate]=useState<(typeof templates)[number]>(templates[0]);
@@ -35,7 +35,7 @@ export default function NewMenuItemForm({menuGroupOptions,comboChoices}:{menuGro
    router.push(`/menu/${result.id}?setupRecipe=1`);
  });}
  return <div className="mx-auto w-full max-w-3xl text-ink">
- {kind==="combo"&&<MenuComboBuilder choices={comboChoices}/>} 
+ {kind==="combo"&&<MenuComboBuilder choices={comboChoices}/>}
  {kind!=="combo"&&<>
  {!editing?<><h2 className="mb-3 font-headline text-xl font-extrabold">{t("type")}</h2>
  <div className="grid grid-cols-4 gap-2">{(["drink","food","retail","combo"] as const).map((type,i)=>{const Icon=[Coffee,Utensils,ShoppingBag,Package][i];return <button type="button" key={type} aria-pressed={kind===type} onClick={()=>setKind(type)} className={`flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border p-2 text-[14px] font-bold ${kind===type?"border-accent bg-accent-soft text-accent-text":"border-line bg-card"}`}><Icon className="size-6"/>{t(type)}</button>})}</div>
@@ -49,7 +49,7 @@ export default function NewMenuItemForm({menuGroupOptions,comboChoices}:{menuGro
  <label className="font-semibold">{t("itemSize")}<input value={size} onChange={e=>setSize(e.target.value)} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
  <label className="font-semibold">{t("itemPrice")}<input type="number" inputMode="decimal" min="0.01" step="0.01" value={price} onChange={e=>setPrice(e.target.value)} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label>
  {mode==="quick"&&<label className="font-semibold">{t("itemCost")}<input type="number" inputMode="decimal" min="0.01" step="0.01" value={cost} onChange={e=>setCost(e.target.value)} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-card px-3" required/></label>}
- <label className="font-semibold">{common("next")}<input list="menu-group-options" value={group} onChange={e=>setGroup(e.target.value)} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label><datalist id="menu-group-options">{menuGroupOptions.map(g=><option key={g} value={g}/>)}</datalist>
+ <label className="font-semibold">{manage("menuGroupLabel")}<input list="menu-group-options" value={group} onChange={e=>setGroup(e.target.value)} className="mt-1 block min-h-12 w-full rounded-xl border border-line bg-card px-3"/></label><datalist id="menu-group-options">{menuGroupOptions.map(g=><option key={g} value={g}/>)}</datalist>
  </div>{error&&<p role="alert" className="my-3 text-warn">{error}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={()=>setEditing(false)} className="min-h-12 flex-1 rounded-xl border border-line font-bold">{common("back")}</button><button type="button" disabled={pending||!name.trim()||!(Number(price)>0)||(mode==="quick"&&!(Number(cost)>0))} onClick={createClick} className="min-h-14 flex-1 rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("createItem")}</button></div>
  </section>}
  {clarify&&<SizeLabelClarifyDialog value={size} onResolve={v=>{setClarify(false);setSize(v);void submit(v);}} onCancel={()=>setClarify(false)}/>}
