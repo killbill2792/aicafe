@@ -4,6 +4,6 @@
  * and accessible to the backend all-sizes recipe actions by ID. */
 export function visiblePricedMenuItems<T extends { price_cents: number | null }>(
   items: readonly T[],
-): T[] {
-  return items.filter(item => item.price_cents !== null);
+): Array<T & {price_cents: number}> {
+  return items.filter((item): item is T & {price_cents: number} => item.price_cents !== null);
 }
