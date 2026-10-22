@@ -2101,6 +2101,24 @@
     "priceCents": "Price",
     "days": "Daily sales",
     "missing": "Missing information"
+  },
+  "Initiatives": {
+    "checkinDefault": "Please share the result.",
+    "checkin": "Check-in for {title} on {date}.",
+    "evaluation": "Progress on {title} as of {date}:",
+    "status": {
+      "on_track": "On track",
+      "off_track": "Needs attention",
+      "met": "Goal met",
+      "missed": "Goal not met",
+      "insufficient_data": "Not enough reliable data"
+    },
+    "recommendation": {
+      "keep": "Keep watching",
+      "revert": "Consider reverting the change",
+      "adjust": "Review and adjust",
+      "extend": "Consider a longer window",
+      "none": "More information needed"
+    }
   }
-
 }

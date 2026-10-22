@@ -26,11 +26,11 @@ const descriptions: Record<AgentToolName, string> = {
   get_sales: "Read covered daily sales in a current calendar period.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
-export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
+export const agentToolDefinitions = [...(Object.keys(schemas) as AgentToolName[]).map(name => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name], { target: "draft-07" });
   void _schema;
   return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
-}).concat(initiativeToolDefinitions);
+}), ...initiativeToolDefinitions];
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 

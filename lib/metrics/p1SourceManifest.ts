@@ -91,6 +91,19 @@ export const SOURCE_SURFACES = {
   "lib/data/getMonthCalendar.ts": {
     getMonthCalendar:{restricted:"Owner calendar view-model contains aggregate projections; source underlying registered money readers"},
   },
+  "lib/data/initiatives.server.ts": {
+    createOwnerInitiative:{restricted:"Owner-private initiative createOwnerInitiative access; not an unrestricted P1 model tool"},
+    listOwnerInitiatives:{restricted:"Owner-private initiative listOwnerInitiatives access; not an unrestricted P1 model tool"},
+    readOwnerInitiative:{restricted:"Owner-private initiative readOwnerInitiative access; not an unrestricted P1 model tool"},
+    activateOwnerInitiative:{restricted:"Owner-private initiative activateOwnerInitiative access; not an unrestricted P1 model tool"},
+    saveOwnerCheckin:{restricted:"Owner-private initiative saveOwnerCheckin access; not an unrestricted P1 model tool"},
+    listMonitorBatch:{restricted:"Owner-private initiative listMonitorBatch access; not an unrestricted P1 model tool"},
+    readMonitorGraph:{restricted:"Owner-private initiative readMonitorGraph access; not an unrestricted P1 model tool"},
+    persistMetricObservation:{restricted:"Owner-private initiative persistMetricObservation access; not an unrestricted P1 model tool"},
+    persistInitiativeEvaluation:{restricted:"Owner-private initiative persistInitiativeEvaluation access; not an unrestricted P1 model tool"},
+    rotateInitiative:{restricted:"Owner-private initiative rotateInitiative access; not an unrestricted P1 model tool"},
+    readMetricDay:{restricted:"Owner-private initiative readMetricDay access; not an unrestricted P1 model tool"},
+  },
   "lib/data/teamUpdates.server.ts": {
     insertTeamUpdate:{restricted:"Service-role owner-inbox write; not a model-readable business metric"},
     selectTeamUpdates:{restricted:"Private owner-scoped team update inbox; not a P1 numeric source"},
