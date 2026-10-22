@@ -1172,3 +1172,19 @@ describe("review: expression and explicit-unit boundaries",()=>{
      .map(x=>x.text)).toEqual(["$35"]);
  });
 });
+
+
+describe("review: no partial Arabic teens or mixed-dollar cents",()=>{
+ it("parses the full Arabic teen expression, never an embedded five-dollar value",()=>{
+   expect(checkNumbers("$15","السعر خمسة عشر دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("$5","السعر خمسة عشر دولار",[],"ar").map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("$15","السعر خمسة عشرة دولار",[],"ar")).toEqual([]);
+ });
+ it("keeps two explicit dollar-denominated numbers separate",()=>{
+   const owner="The prices are five dollars and ten dollars.";
+   expect(checkNumbers("$5",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$10",owner,[],"en")).toEqual([]);
+   expect(checkNumbers("$5.10",owner,[],"en").map(x=>x.text)).toEqual(["$5.10"]);
+   expect(checkNumbers("$5.10","The price is five dollars and ten cents.",[],"en")).toEqual([]);
+ });
+});
