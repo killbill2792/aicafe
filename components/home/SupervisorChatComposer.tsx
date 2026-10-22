@@ -405,10 +405,13 @@ export default function SupervisorChatComposer({
             const type = frame.split(/\r?\n/).find(line => line.startsWith("event: "))?.slice(7);
             const data = frame.split(/\r?\n/).find(line => line.startsWith("data: "))?.slice(6);
             if (!data) continue;
-            const event = JSON.parse(data) as { text?: string; code?: string };
+            const event = JSON.parse(data) as { text?: string; code?: string; discardChars?: number };
             if (type === "delta" && typeof event.text === "string") {
               setStreamedText(current => current + event.text);
               setProgressStatus({ agent: "supervisor", stage: "answering" });
+            } else if (type === "reset" && Number.isSafeInteger(event.discardChars) &&
+              event.discardChars !== undefined && event.discardChars >= 0) {
+              setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
             } else if (type === "error") {
               throw new Error(event.code ?? "agent_turn_failed");
             } else if (type === "done") finished = true;
