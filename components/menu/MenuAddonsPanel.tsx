@@ -2,7 +2,7 @@
 import {useState,useTransition} from "react";
 import {useTranslations} from "next-intl";
 import {useRouter} from "@/i18n/navigation";
-import {Milk,Plus,Check} from "lucide-react";
+import {Milk,Plus} from "lucide-react";
 import {swapIngredient} from "@/lib/actions/pantry";
 import {saveMenuProductAddons,type MenuAddon} from "@/lib/actions/menuAddons";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
@@ -29,7 +29,7 @@ export default function MenuAddonsPanel({itemId,items,pantry,saved,conversions}:
  function priceToCents(value:string){const cents=Math.round(Number(value)*100);return Number.isSafeInteger(cents)&&cents>=0?cents:null;}
  function costOfMilk(id:string){if(!currentLine||!current)return null;const proposed=pantry.find(i=>i.id===id);if(!proposed)return null;return replacementDifferenceCents(currentLine.quantity,current.costPerBaseMicros,proposed.costPerBaseMicros);}
  function costOfExtra(opt:MenuAddon){const ingredient=pantry.find(i=>i.id===opt.ingredientId);if(!ingredient)return null;const base=toBaseUnitQuantity(opt.displayUnit,opt.displayQuantity,ingredient.baseUnit,conversions[ingredient.id]??[]);return base===null?null:additiveCostCents(base,ingredient.costPerBaseMicros);}
- function setDefault(){if(!nextMilk||!milkLine)return;setMessage("");start(async()=>{const changed=await swapIngredient(itemId,milkLine.ingredientId,nextMilk);if(!changed.ok){setMessage(t("error"));return;}setOptions(old=>old.filter(o=>o.kind!=="milk"||!o.isDefault).concat({ingredientId:nextMilk,kind:"milk",enabled:true,isDefault:true,upchargeCents:0,displayUnit:"ml",displayQuantity:1}));setChanging(false);router.refresh();});}
+ function setDefault(){if(!nextMilk||!milkLine)return;setMessage("");start(async()=>{const changed=await swapIngredient(itemId,milkLine.ingredientId,nextMilk);if(!changed.ok){setMessage(t("error"));return;}setOptions(old=>old.filter(o=>o.kind!=="milk"||(o.ingredientId!==nextMilk&&!o.isDefault)).concat({ingredientId:nextMilk,kind:"milk",enabled:true,isDefault:true,upchargeCents:0,displayUnit:"ml",displayQuantity:1}));setChanging(false);router.refresh();});}
  function save(){setMessage("");start(async()=>{const original=options.filter(o=>o.kind!=="milk"||o.ingredientId!==defaultMilkId);const defaultOption=defaultMilkId?{ingredientId:defaultMilkId,kind:"milk" as const,enabled:true,isDefault:true,upchargeCents:0,displayUnit:"ml" as const,displayQuantity:1}:null;const payload=defaultOption?[...original,defaultOption]:original;const out=await saveMenuProductAddons(itemId,payload);setMessage(out.ok?t("saved"):out.error);if(out.ok)router.refresh();});}
  function appendExtra(){const item=pantry.find(i=>i.id===nextExtra);const upcharge=priceToCents(extraUpcharge);if(!item||upcharge===null)return;const conversion=(conversions[item.id]??[])[0];const unit=conversion?.unit??item.baseUnit;update({ingredientId:item.id,kind:"extra",enabled:true,isDefault:false,upchargeCents:upcharge,displayUnit:unit,displayQuantity:1});setNextExtra("");}
  const tip=extras.find(o=>o.enabled);
