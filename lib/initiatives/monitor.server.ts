@@ -106,6 +106,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           const row:ObservationRow={
             metric_id:metric.id,business_date:date,value:result.value,
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
+            revision:1,
           };
           if(await persistMetricObservation(scope,row)){
             stats.sampled++;

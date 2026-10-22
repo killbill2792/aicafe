@@ -18,6 +18,7 @@ const recorded:MetricDailyInput={
     hourlyWageCents:2000,breaks:[]}],
   timezone:"America/Los_Angeles",
   cogsCoverageVerified:true,laborCoverageVerified:true,itemRevenueVerified:true,attendanceCoverageVerified:true,
+  transactionCountVerified:true,
 };
 describe("M1 typed metric catalog",()=>{
   it("uses canonical sales and margin calculators",()=>{
@@ -31,7 +32,7 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("labor_pct",{},recorded).value).toBe(2800);
     expect(computeMetric("cogs_pct",{},recorded).value).toBe(3000);
     expect(computeMetric("net_profit",{},recorded).value).toBe(7000);
-    expect(computeMetric("ingredient_unit_cost",{ingredientId},recorded).value).toBe(1);
+    expect(computeMetric("ingredient_unit_cost",{ingredientId},recorded).value).toBe(1_000_000);
   });
   it("requires real coverage and does not turn missing data into zero",()=>{
     const missingDay:MetricDailyInput={date:"2026-10-20"};
@@ -44,6 +45,11 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("item_margin",{itemId}, {...recorded,items:undefined}).value).toBeNull();
     expect(computeMetric("net_profit",{}, {...recorded,runningCostsCents:undefined}).value).toBeNull();
     expect(computeMetric("cogs_pct",{}, {...recorded,cogsCoverageVerified:false}).value).toBeNull();
+    expect(computeMetric("orders",{}, {...recorded,transactionCountVerified:false}).value).toBeNull();
+    expect(computeMetric("avg_ticket",{}, {...recorded,transactionCountVerified:false}).value).toBeNull();
+    expect(computeMetric("item_margin",{itemId},{...recorded,items:[{...recorded.items![0],hasUnverifiedModifiers:true}]}).value).toBeNull();
+    expect(computeMetric("ingredient_unit_cost",{ingredientId},{...recorded,ingredientPriceMicros:{[ingredientId]:100000}}).value).toBe(100000);
+    expect(computeMetric("ingredient_unit_cost",{ingredientId},{...recorded,ingredientPriceMicros:{[ingredientId]:150000}}).value).toBe(150000);
     expect(computeMetric("labor_cost",{}, {...recorded,laborCoverageVerified:false}).value).toBeNull();
     expect(computeMetric("labor_pct",{}, {...recorded,facts:{...recorded.facts!,staffTaxStatus:"estimated"}}).value).toBeNull();
     expect(computeMetric("item_revenue",{itemId}, {...recorded,itemRevenueVerified:false}).coverage).toBe(0);

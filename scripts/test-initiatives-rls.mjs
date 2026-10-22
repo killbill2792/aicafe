@@ -44,9 +44,9 @@ try{
   for(const [thread,owner] of [[THREAD,A],[THREAD_B,B]])
     await db.query("insert into ai_threads values($1,$2,$3)",[BIZ,thread,owner]);
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000078_owner_initiatives.sql",import.meta.url),"utf8"));
-  const insert="insert into owner_initiatives(id,business_id,owner_user_id,thread_id,request_key,kind,title,change_description,starts_on,ends_on,baseline_from,checkin_cadence,locale) values($1,$2,$3,$4,'fixture-request-key','goal','Daily sales','','2026-10-15','2026-10-22','2026-10-08','daily','en')";
-  await db.query(insert,[ID,BIZ,A,THREAD]);
-  await assert.rejects(db.query(insert,["66666666-6666-4666-8666-666666666666",BIZ,A,THREAD_B]),{code:"23503"});
+  const insert="insert into owner_initiatives(id,business_id,owner_user_id,thread_id,request_key,kind,title,change_description,starts_on,ends_on,baseline_from,checkin_cadence,locale) values($1,$2,$3,$4,$5,'goal','Daily sales','','2026-10-15','2026-10-22','2026-10-08','daily','en')";
+  await db.query(insert,[ID,BIZ,A,THREAD,'fixture-request-key']);
+  await assert.rejects(db.query(insert,["66666666-6666-4666-8666-666666666666",BIZ,A,THREAD_B,"wrong-thread-key"]),{code:"23503"});
   const payload={kind:"goal",title:"Atomic goal",changeDescription:"",changeSpec:{},
     adapterId:null,startsOn:"2026-10-15",endsOn:"2026-10-22",
     baselineFrom:"2026-10-08",baselineTo:"2026-10-14",

@@ -239,6 +239,15 @@ export async function readMetricDay(businessId:string,date:string,
     cardFeesCents:Number(day.data.card_fees_cents),voidsCents:Number(day.data.voids_cents),
   }:undefined;
   const input:MetricDailyInput={date,facts};
+  // A product/day CSV row is a synthetic order, not a transaction.
+  const transactionOrders=await db.from("orders").select("pos_order_id")
+    .eq("business_id",businessId).eq("business_date",date).limit(1001);
+  if(transactionOrders.error)throw transactionOrders.error;
+  input.transactionCountVerified=Boolean(facts&&facts.salesDataStatus==="actual"&&
+    (transactionOrders.data??[]).length<=1000&&
+    (transactionOrders.data??[]).length===facts.ordersCount&&
+    (transactionOrders.data??[]).every(o=>typeof o.pos_order_id==="string"&&
+      o.pos_order_id.length>0&&!/^csv[-:]/i.test(o.pos_order_id)));
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
@@ -271,7 +280,7 @@ export async function readMetricDay(businessId:string,date:string,
     const coverage=await readPeriodItemSales(db,businessId,{from:date,to:date});
     if(coverage.covered){
     const lines=await db.from("order_lines")
-      .select("order_id,menu_item_id,quantity,net_sales_cents,orders!inner(business_id,business_date)")
+      .select("order_id,menu_item_id,quantity,net_sales_cents,modifiers,orders!inner(business_id,business_date)")
       .eq("orders.business_id",businessId).eq("orders.business_date",date)
       .eq("voided",false).limit(1001);
     if(lines.error)throw lines.error;
@@ -304,10 +313,14 @@ export async function readMetricDay(businessId:string,date:string,
         recipesByItem.set(recipe.menu_item_id,arr);
       }
       const fallbackMap=new Map((fallback.data??[]).map(r=>[r.menu_item_id,Number(r.cost_cents)]));
+      const unverifiedItems=new Set((lines.data??[]).filter(line=>
+        !Array.isArray(line.modifiers)||line.modifiers.length>0)
+        .map(line=>line.menu_item_id));
       input.items=reconciled.items.map(({itemId,...total}):ItemEvidence=>({
         itemId,units:total.units,revenueCents:total.revenueCents,
         recipeLines:recipesByItem.get(itemId)??[],ingredientPriceMicros:{},
         ownerCostCents:fallbackMap.get(itemId)??null,
+        hasUnverifiedModifiers:unverifiedItems.has(itemId),
       }));
     }
     }

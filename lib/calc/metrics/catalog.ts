@@ -13,7 +13,7 @@ export const metricKeySchema = z.enum([
   "net_profit", "ingredient_unit_cost",
 ]);
 export type MetricKey = z.infer<typeof metricKeySchema>;
-export type MetricUnit = "cents" | "bps" | "count" | "ratio";
+export type MetricUnit = "cents" | "bps" | "count" | "ratio" | "microcents_per_base_unit";
 export type MetricParams = Record<string, unknown>;
 export type MetricResult = { value: number | null; coverage: number; missing: string[] };
 export type ItemEvidence = {
@@ -21,6 +21,8 @@ export type ItemEvidence = {
   recipeLines: RecipeLine[];
   ingredientPriceMicros: Record<string,number>;
   ownerCostCents: number | null;
+  /** Unknown modifier recipe/delta makes the FULL item cost unproven. */
+  hasUnverifiedModifiers?:boolean;
 };
 /** A daily COGS figure is usable only when every sold item has verified
  * cost and the total reconciles to the source rollup. Unknown is never zero. */
@@ -28,7 +30,7 @@ export function verifiedDailyCogs(items:ItemEvidence[],rollupCostCents:number):b
   if(!Number.isSafeInteger(rollupCostCents)||rollupCostCents<0)return false;
   let computed=0;
   for(const item of items){
-    if(!Number.isFinite(item.units)||item.units<0)return false;
+    if(!Number.isFinite(item.units)||item.units<0||item.hasUnverifiedModifiers)return false;
     const resolved=resolveProductCost(
       evaluateRecipeCost(item.recipeLines,item.ingredientPriceMicros),item.ownerCostCents);
     if(resolved.costCents===null||!Number.isFinite(resolved.costCents))return false;
@@ -50,6 +52,7 @@ export type MetricDailyInput = {
   itemRevenueVerified?:boolean;
   attendanceCoverageVerified?:boolean;
   attendanceSources?:string[];
+  transactionCountVerified?:boolean;
 };
 type Definition = {
   key: MetricKey; unit: MetricUnit;
@@ -78,6 +81,7 @@ const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" |
   if (field === "units") return known(row.units);
   if (!day.itemRevenueVerified) return missing("itemRevenueAllocationUnverified");
   if (field === "revenue") return known(row.revenueCents);
+  if (row.hasUnverifiedModifiers) return missing("modifierCostUnverified");
   const recipe = evaluateRecipeCost(row.recipeLines, row.ingredientPriceMicros);
   const resolved = resolveProductCost(recipe, row.ownerCostCents);
   if (resolved.costCents === null) return missing("itemCost");
@@ -111,8 +115,8 @@ const hourly = (day: MetricDailyInput, params: MetricParams): MetricResult => {
 };
 export const metricCatalog: Record<MetricKey, Definition> = {
   net_sales:{key:"net_sales",unit:"cents",paramsSchema:empty,compute:(d)=>sales(d)?known(netSalesCentsForPeriod([d.facts!])):missing("sales")},
-  orders:{key:"orders",unit:"count",paramsSchema:empty,compute:(d)=>sales(d)?known(d.facts!.ordersCount):missing("orders")},
-  avg_ticket:{key:"avg_ticket",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.facts!.ordersCount>0?known(averageOrderValueCents(d.facts!.netSalesCents,d.facts!.ordersCount)):missing("orders")},
+  orders:{key:"orders",unit:"count",paramsSchema:empty,compute:(d)=>sales(d)&&d.transactionCountVerified?known(d.facts!.ordersCount):missing("transactionCountProvenance")},
+  avg_ticket:{key:"avg_ticket",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.transactionCountVerified&&d.facts!.ordersCount>0?known(averageOrderValueCents(d.facts!.netSalesCents,d.facts!.ordersCount)):missing("transactionCountProvenance")},
   item_units:{key:"item_units",unit:"count",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"units")},
   item_revenue:{key:"item_revenue",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"revenue")},
   item_margin:{key:"item_margin",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"margin")},
@@ -124,9 +128,10 @@ export const metricCatalog: Record<MetricKey, Definition> = {
     ratioBps(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents),d.facts!.netSalesCents):missing("runningCostsOrSales")},
   net_profit:{key:"net_profit",unit:"cents",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"&&d.runningCostsCents!==undefined?
     known(ownerProfitCentsForPeriod([d.facts!],d.runningCostsCents)):missing("runningCostsOrSales")},
-  ingredient_unit_cost:{key:"ingredient_unit_cost",unit:"cents",paramsSchema:ingredient,compute:(d,p)=>
-    d.ingredientPriceMicros?.[String(p.ingredientId)]!==undefined?
-      known(roundHalfUpToCent(d.ingredientPriceMicros[String(p.ingredientId)]/1_000_000)):missing("ingredientPrice")},
+  ingredient_unit_cost:{key:"ingredient_unit_cost",unit:"microcents_per_base_unit",paramsSchema:ingredient,compute:(d,p)=>{
+    const raw=d.ingredientPriceMicros?.[String(p.ingredientId)];
+    return raw!==undefined&&Number.isSafeInteger(raw)&&raw>=0?known(raw):missing("ingredientPrice");
+  }},
 };
 export function computeMetric(key: MetricKey,params: MetricParams,day: MetricDailyInput): MetricResult {
   const entry=metricCatalog[key];
