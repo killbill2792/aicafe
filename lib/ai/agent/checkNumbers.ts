@@ -105,10 +105,19 @@ function isListMarker(text: string, start: number, end: number, value: number): 
   if (!Number.isInteger(value) || value < 1 || value > 30 ||
     !/^[.)][ \t]+\S/u.test(text.slice(end))) return false;
   const before = text.slice(0, start);
-  const line = before.slice(before.lastIndexOf("\n") + 1);
-  if (/^[ \t]*$/u.test(line)) return true;
+  const breakAt = before.lastIndexOf("\n");
+  const line = before.slice(breakAt + 1);
+  // Lists begin at 1; subsequent lines must continue a previous list.
+  // A standalone "9. Sales are missing" is not safely a list marker.
+  if (/^[ \t]*$/u.test(line)) {
+    if (value === 1) return true;
+    const earlier = before.slice(0, breakAt);
+    const priorLine = earlier.slice(earlier.lastIndexOf("\n") + 1);
+    const priorMarker = priorLine.match(/^[ \t]*([1-9]\d?)[.)][ \t]+\S/u);
+    return priorMarker !== null && Number(priorMarker[1]) + 1 === value;
+  }
   // Compact numbered lists such as "1. Latte 2. Mocha" continue sequentially.
-  if (!/^[ \t]*[1-9]\d?[.)][ \t]+\S/u.test(line)) return false;
+  if (!/^[ \t]*1[.)][ \t]+\S/u.test(line)) return false;
   const markers = [...line.matchAll(/(?:^|[ \t])([1-9]\d?)[.)][ \t]+\S/gu)];
   return markers.length > 0 && Number(markers[markers.length - 1][1]) + 1 === value;
 }
