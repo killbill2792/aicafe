@@ -3,8 +3,8 @@ vi.mock("server-only",()=>({}));
 const fixtures=vi.hoisted(()=>{
  const latte16="a0000000-0000-4000-8000-000000000016";
  const latte18="a0000000-0000-4000-8000-000000000018";
- const rows=[{id:latte16,name:"Latte 16 oz",priceCents:700},
-   {id:latte18,name:"Latte 18 oz",priceCents:750}];
+ const rows=[{id:latte16,name:"Latte 16 oz",sizeLabel:"16 oz",priceCents:700},
+   {id:latte18,name:"Latte 18 oz",sizeLabel:"18 oz",priceCents:750}];
  return {latte16,latte18,rows,invoke:vi.fn(),snapshotReason:"rpc_not_installed",
    sensitivity:"normal" as string};
 });
@@ -23,7 +23,7 @@ vi.mock("@/lib/scheduling/oliviaInvestigation.server",()=>({buildOliviaInvestiga
 vi.mock("./datasets.server",async original=>({...await original<object>(),buildDatasetRegistration:()=>({})}));
 vi.mock("./records.server",()=>({buildRecordsRegistration:()=>({}),recordCollections:()=>[]}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async()=>fixtures.rows.map(r=>({
- id:r.id,name:r.name,baseName:"Latte",sizeLabel:r.name.split(" ").slice(-2).join(" "),
+ id:r.id,name:r.name,baseName:"Latte",sizeLabel:r.sizeLabel,
  active:true,priceCents:r.priceCents,
 })))}));
 vi.mock("@/lib/ai/supervisor/p3/sourceRegistry.server",()=>({
@@ -63,7 +63,8 @@ function transport(...steps:unknown[]){
  return {send,bodies};
 }
 beforeEach(()=>{vi.clearAllMocks();fixtures.snapshotReason="rpc_not_installed";
- fixtures.sensitivity="normal";fixtures.invoke.mockImplementation(async()=>successful());});
+ fixtures.sensitivity="normal";fixtures.rows[0].name="Latte 16 oz";fixtures.rows[1].name="Latte 18 oz";
+ fixtures.invoke.mockImplementation(async()=>successful());});
 const discover=call("discover_tools",{query:"menu catalog prices"});
 const read=call("read_cafe",{id:"p3.menu.catalog.v1",input:{purpose:"read"}});
 describe("native owner conversation without separate review",()=>{
@@ -96,6 +97,17 @@ describe("native owner conversation without separate review",()=>{
   expect(card?.input.kind).toBe("options");
   if(card?.input.kind==="options")
     expect(card.input.options.map(o=>o.label.en)).toEqual(["Latte 16 oz","Latte 18 oz"]);
+ });
+ it("shows distinct size choices when database variant rows share the base name",async()=>{
+  fixtures.rows[0].name="Latte";
+  fixtures.rows[1].name="Latte";
+  const t=transport(discover,read,
+    answer("clarify","Would you like the 16 oz or 18 oz latte?",[],[fixtures.latte16,fixtures.latte18]));
+  const result=await runNativeConversationTurn(args("Raise my latte price by 10 cents"),t.send);
+  const card=result.reply.blocks.find(x=>x.type==="owner_question");
+  expect(card?.title.en).toBe("Would you like the 16 oz or 18 oz latte?");
+  if(card?.input.kind==="options")
+    expect(card.input.options.map(o=>o.label.en)).toEqual(["Latte · 16 oz","Latte · 18 oz"]);
  });
  it("keeps a natural fact-grounded explanation without inserting boilerplate",async()=>{
   const t=transport(discover,read,
