@@ -55,17 +55,33 @@ declare
  option_unit text;
  option_quantity numeric;
  option_cost bigint;
+ options_array jsonb;
+ recipe_changes jsonb;
 begin
  if auth.uid() is null or not public.is_member(p_business_id) then
   raise exception 'not authorized' using errcode='42501';
  end if;
- select base_name into family_name from public.menu_items where id=p_item_id and business_id=p_business_id for update;
- if family_name is null then raise exception 'product not found'; end if;
- if jsonb_typeof(p_options) <> 'array' or jsonb_array_length(p_options) > 60 then raise exception 'invalid options'; end if;
+ -- Match P1 recipe RPC lock ordering: identity read, family advisory lock,
+ -- optional verified recipe replacement, then sorted sibling row locks.
+ -- Locking the clicked size first can deadlock another editor using a sibling.
+ select base_name into family_name from public.menu_items where id=p_item_id and business_id=p_business_id;
+ if not found then raise exception 'product not found'; end if;
+ perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || family_name));
+ options_array := case when jsonb_typeof(p_options)='object' then p_options->'options' else p_options end;
+ recipe_changes := case when jsonb_typeof(p_options)='object' then p_options->'recipeChanges' else null end;
+ if jsonb_typeof(options_array) is distinct from 'array' or jsonb_array_length(options_array)>60
+   then raise exception 'invalid options'; end if;
+ if recipe_changes is not null then
+   if jsonb_typeof(recipe_changes) is distinct from 'array' or jsonb_array_length(recipe_changes)<1
+     then raise exception 'invalid recipe changes'; end if;
+   -- P1 CAS and its cross-size atomic replacement execute IN THIS transaction.
+   -- A failing price/unit/snapshot validation rolls back options and recipe together.
+   perform public.pantry_replace_recipes(p_business_id,p_item_id,recipe_changes);
+ end if;
  perform 1 from public.menu_items where business_id=p_business_id and base_name=family_name order by id for update;
  delete from public.menu_product_addons a using public.menu_items m
   where a.menu_item_id=m.id and a.business_id=p_business_id and m.business_id=p_business_id and m.base_name=family_name;
- for option_row in select value from jsonb_array_elements(p_options) loop
+ for option_row in select value from jsonb_array_elements(options_array) loop
   normalized_kind := option_row->>'kind';
   option_ingredient := (option_row->>'ingredientId')::uuid;
   option_unit := option_row->>'displayUnit';
