@@ -335,17 +335,14 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    // Snapshot and owner scope must remain authoritative at publication time.
    if(!(await sourceStillCurrent()))return {reply:staleReply(),usage};
    if(result.mode==="clarify"){
-    // Clarification prose cannot smuggle record facts or unverified numbers.
     const requestedQuestion=result.text.trim().slice(0,220);
     if(!requestedQuestion)break;
-    // A model may mention option numbers in its suggested question.
-    // Never publish those numbers as model prose; the server-rendered
-    // authorized choices show the actual sizes and labels instead.
-    const question=noDigits(requestedQuestion)?requestedQuestion:copy.ask;
     const resolved=pickIds(result.optionIds,optionRows);
-    const loc={en:input.locale==="en"?question:localeCopy.en.ask,
-      es:input.locale==="es"?question:localeCopy.es.ask,
-      ar:input.locale==="ar"?question:localeCopy.ar.ask};
+    // Preserve the model's genuine question. Numeric sizes from the verified
+    // option IDs and owner-stated prices are permitted, not blanket-rejected.
+    const question=groundedNaturalProse(requestedQuestion,
+      [...statements,...resolved.map(o=>o.label)],input.locale).text;
+    const loc={en:question,es:question,ar:question};
     // A selected menu variant must survive the owner reply as an authenticated
     // catalog identity; a generic option label is never a product ID or a money quote.
     const catalog=resolved.length>=2?await getMenuControlCenter():[];
@@ -385,9 +382,9 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       readInput:issuing?.input??{},request});
     return {reply:{...pending,investigationMemory:memoryState()},usage};
    }
-   // Only the server's fact renderers are authorized to display business figures.
-   const clean=result.text.trim();
-   return {reply:reply(noDigits(clean)?clean:copy.fallback,result.factIds),usage};
+   // Model explanations are retained. Facts themselves still come from
+   // server-controlled values, identities and calculations.
+   return {reply:reply(result.text.trim(),result.factIds),usage};
   }
   if(usage.toolCallCount>=LIMITS.operations)break;
   const c=calls[0],name=String(c.name??""),callId=String(c.call_id??"");
@@ -437,6 +434,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
        }
        result={status:"unavailable",reason:"invalid_owner_input"};
      }else{
+       if(value.status==="unavailable")hadUnavailable=true;
        const displayed=observationDisplay(value,input.locale);
        const observation:Observation={id:"r"+(observations.length+1),capabilityId:id,input:args.input,
          result:value,sourceContract:typeof value.id==="string"?value.id:undefined,
@@ -475,8 +473,11 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
          hint:"For more array rows call search_observation with this observation ID."};
      }
     }
-   }else result={status:"unavailable",reason:datesMatch===false?"owner_date_mismatch":"unknown_or_invalid_read",
-     hint:"Discover tools and follow their exact schema; never substitute a different owner period."};
+   }else {
+     hadUnavailable=true;
+     result={status:"unavailable",reason:datesMatch===false?"owner_date_mismatch":"unknown_or_invalid_read",
+       hint:"Discover tools and follow their exact schema; never substitute a different owner period."};
+   }
   }else if(name==="search_observation"){
    const obs=observations.find(o=>o.id===args.observationId);
    const query=normalize(String(args.query??""));
