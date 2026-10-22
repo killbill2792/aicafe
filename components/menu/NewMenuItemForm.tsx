@@ -18,7 +18,7 @@ export default function NewMenuItemForm({menuGroupOptions,comboChoices}:{menuGro
  const [kind,setKind]=useState<Kind>("drink"),[mode,setMode]=useState<Mode>("template"),[template,setTemplate]=useState<(typeof templates)[number]>(templates[0]);
  const [editing,setEditing]=useState(false),[name,setName]=useState(""),[size,setSize]=useState("12 oz"),[price,setPrice]=useState(""),[cost,setCost]=useState(""),[group,setGroup]=useState("");
  const [pending,start]=useTransition(),[error,setError]=useState(""),[clarify,setClarify]=useState(false);
- function selectMode(next:Mode){setMode(next);setEditing(true);if(next==="template"){setName(template.name);setSize(template.key==="iced-latte"||template.key==="cold-brew"?"16 oz":"12 oz");}else{setName("");setSize(kind==="drink"?"12 oz":"");}setError("");}
+ function selectMode(next:Mode){setMode(next);setEditing(true);if(next==="template"){setName(template.name);setSize(template.key==="iced-latte"||template.key==="cold-brew"?"16 oz":"12 oz");}else{setName(next==="blank"&&template.key===null?template.name:"");setSize(kind==="drink"?"12 oz":"");}setError("");}
  function createClick(){if(!name.trim()||!(Math.round(Number(price)*100)>0))return;if(isAmbiguousNumericSizeLabel(size)){setClarify(true);return;}void submit(size);}
  async function submit(resolvedSize:string){
    setError("");start(async()=>{
