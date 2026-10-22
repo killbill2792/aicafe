@@ -64,7 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
               (m.blocks??[]).map(b=>b&&typeof b==="object"&&"text" in b?String(b.text):"");
             return [blocks.map((value,blockIndex)=>{
               if(typeof value!=="string")return "";
-              const chars=[...value];
+              const chars=value.split(""); // spans are persisted as UTF-16 offsets, not code-point offsets
               for(const span of spans){
                 if(!span||typeof span!=="object")return "";
                 const row=span as {start?:unknown;end?:unknown;blockIndex?:unknown};
