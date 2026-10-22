@@ -85,7 +85,10 @@ describe("numbers, statuses, and strict tool contracts", () => {
       status:"partial",missing:["sales"] });
   });
   it("publishes only three strict functions", () => {
-    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_profit","get_sales","get_menu_items"]);
+    expect(agentToolDefinitions.map(t=>t.name)).toEqual(["get_profit","get_sales","get_menu_items",
+      "get_staff","get_schedule","get_labor","get_business_hours","get_expenses","get_bills",
+      "get_break_even","get_cost_summary","get_product_costs","get_ingredient_costs","get_inventory",
+      "get_item_sales","get_price_recommendation"]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
@@ -112,6 +115,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
     };
     const result = await executeAgentTool("get_menu_items",{query:"latte",limit:25},context);
     expect(result.items).toEqual([{id:"a",name:"Latte",category:"drink",priceCents:450}]);
+    expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
   });
