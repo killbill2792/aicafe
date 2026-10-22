@@ -56,7 +56,10 @@ export async function POST(request: Request, context: RouteContext) {
           });
           const previousAssistantText=priorAssistant.flatMap(m=>{
             const text=m.text??(m.blocks??[]).flatMap(b=>b&&typeof b==="object"&&"text" in b?[String(b.text)]:[]).join(" ");
-            const spans=(m.grounding?.agentMetadata as {unverified?:Array<{start:number;end:number;blockIndex:number}>}|undefined)?.unverified??[];
+            const meta=m.grounding?.agentMetadata;
+            if(!meta||typeof meta!=="object")return [];
+            const spans=(meta as {unverified?:unknown}).unverified;
+            if(!Array.isArray(spans))return [];
             return spans.length?[]:[text];
           }).join("\n");
           const history = page.items.filter(m => m.id !== owner.id &&
