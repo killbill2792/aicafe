@@ -165,7 +165,7 @@ export async function monitorInitiatives(now:Date=new Date(),
             .map(m=>String(m.params.itemId)),
           ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
             .map(m=>String(m.params.ingredientId)),
-        },itemSignal,{initiativeId:initiative.id,token,evidenceRevision:graphEvidenceRevision}));
+        },itemSignal));
         for(const metric of computed){
           assertBudget();
           if(!metric.metric_key)continue;
@@ -277,7 +277,7 @@ export async function monitorInitiatives(now:Date=new Date(),
           t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
         locale:initiative.locale,actions:[{kind:"open"}],
         dedupeKey:"initiative:"+initiative.id+":transition:"+transitionKey,
-      },itemSignal));
+      },itemSignal,{initiativeId:initiative.id,token,evidenceRevision:graphEvidenceRevision}));
       if(written.created)stats.updates++;
       // Keep a 14-day correction window for delayed POS/timecard evidence.
       const testAttempted=graph.metrics.filter(metric=>metric.source==="computed").every(metric=>

@@ -283,9 +283,14 @@ export async function readMetricDay(businessId:string,date:string,
     p_business_id:businessId,p_date:date,
   }).single();
   if(source.error||!source.data)throw new Error("sales provenance unavailable");
-  const orderCount=Number(source.data.order_count);
-  const netSourceCents=Number(source.data.net_sales_cents);
-  const syntheticCount=Number(source.data.synthetic_count);
+  const proof=z.strictObject({
+    order_count:z.coerce.number().int().nonnegative(),
+    net_sales_cents:z.coerce.number().int(),
+    synthetic_count:z.coerce.number().int().nonnegative(),
+  }).parse(source.data);
+  const orderCount=proof.order_count;
+  const netSourceCents=proof.net_sales_cents;
+  const syntheticCount=proof.synthetic_count;
   const validNumbers=[orderCount,netSourceCents,syntheticCount]
     .every(Number.isSafeInteger);
   input.salesTotalCoverageVerified=Boolean(facts&&facts.salesDataStatus==="actual"&&
