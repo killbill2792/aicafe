@@ -30,14 +30,16 @@ export function evaluateInitiative(
       .map(date=>observed.find(r=>r.date===date)??{date,value:null,coverage:0}) : observed;
     const covered=tested.filter(r=>r.value!==null&&r.coverage>=minCoverage);
     const validPairs=covered.flatMap(row=>{
-      if(metric.source==="checkin"&&metric.targetKind==="absolute")
-        return [{test:row.value!,base:row.value!}]; // explicit owner value, no inferred baseline
       const candidates=metric.baseline.filter(b=>weekday(b.date)===weekday(row.date)&&b.value!==null&&b.coverage>=minCoverage&&b.date<row.date)
         .sort((a,b)=>b.date.localeCompare(a.date));
+      // An absolute threshold needs no baseline to be judged. Relative targets
+      // MUST still have a real same-weekday baseline observation.
+      if(metric.targetKind==="absolute")return [{test:row.value!,base:candidates[0]?.value??null}];
       return candidates.length?[{test:row.value!,base:candidates[0].value!}]:[];
     });
     const coverage=tested.length?validPairs.length/tested.length:0;
-    const baseline=validPairs.length?average(validPairs.map(p=>p.base)):null;
+    const baseValues=validPairs.map(p=>p.base).filter((v):v is number=>v!==null);
+    const baseline=baseValues.length?average(baseValues):null;
     const current=validPairs.length?average(validPairs.map(p=>p.test)):null;
     const target=metric.targetKind==="absolute"?metric.target:baseline===null?null:baseline*(1+metric.target/100);
     const met=current===null||target===null?null:

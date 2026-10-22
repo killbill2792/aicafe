@@ -50,6 +50,17 @@ describe("M1 weekday-matched evaluator",()=>{
       test:series([["2026-10-15",120]])});
     expect(evaluateInitiative([goal(),breached],"2026-10-15","2026-10-22").status).toBe("off_track");
   });
+  it("supports absolute targets without fabricated weekday baselines",()=>{
+    const complete=goal({targetKind:"absolute",target:100,baseline:[],test:series([
+      ["2026-10-15",200],["2026-10-16",200],["2026-10-17",200],
+      ["2026-10-18",200],["2026-10-19",200],["2026-10-20",200],["2026-10-21",200],
+    ]),expectedTestDates:["2026-10-15","2026-10-16","2026-10-17",
+      "2026-10-18","2026-10-19","2026-10-20","2026-10-21"]});
+    const r=evaluateInitiative([complete],"2026-10-21","2026-10-21");
+    expect(r.status).toBe("met");
+    expect(r.results.primary.baseline).toBeNull();
+    expect(r.results.primary.coverage).toBe(1);
+  });
   it("requires baseline evidence on the same weekday",()=>{
     const mismatch=goal({baseline:series([["2026-10-14",100]])});
     expect(evaluateInitiative([mismatch],"2026-10-15","2026-10-22").status).toBe("insufficient_data");

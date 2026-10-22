@@ -146,7 +146,7 @@ export async function executeInitiativeTool(
       missing:graph.evaluation?.status==="insufficient_data"?
         (unresolved.length?unresolved.map(m=>m.metric_key??m.data_gap??"checkinPending"):["insufficientEvidence"]):
         (!graph.evaluation?["evaluationPending"]:[]),
-      metrics:graph.metrics.slice(0,12).map(m=>({id:m.id,role:m.role,source:m.source,
+      metrics:graph.metrics.slice(0,13).map(m=>({id:m.id,role:m.role,source:m.source,
         metricKey:m.metric_key,unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
         comparator:m.comparator,targetKind:m.target_kind,target:m.target,
         question:m.checkin_question,audience:m.checkin_audience,dataGap:m.data_gap})),

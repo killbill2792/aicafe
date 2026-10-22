@@ -87,9 +87,10 @@ describe("numbers, statuses, and strict tool contracts", () => {
   it("publishes only explicitly registered strict, closed business tools", () => {
     expect(agentToolDefinitions.map(t=>t.name)).toEqual([
       "get_profit","get_sales","get_menu_items",
-      "propose_initiative","get_initiatives","get_initiative_status","record_checkin",
+      "get_initiatives","get_initiative_status","record_checkin",
     ]);
     expect(agentToolDefinitions.every(t=>t.strict)).toBe(true);
+    expect(agentToolDefinitions.some(t=>t.name==="propose_initiative")).toBe(false);
     for (const tool of agentToolDefinitions) {
       expect(Object.hasOwn(tool.parameters,"$schema")).toBe(false);
       expect(tool.parameters).toHaveProperty("additionalProperties",false);

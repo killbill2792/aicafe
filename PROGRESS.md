@@ -4,7 +4,7 @@
 - [ ] Run a live owner agent smoke test with credentials before production release.
 
 ## Next
-- [ ] Add UI presentation for initiative approvals and status (outside backend-only M1).
+- [ ] Add an actual owner-click approval card and persistence in UI; only then enable production propose_initiative registration (backend-only M1 deliberately gates it).
 - [ ] Add staff WhatsApp check-in handling in W2; no staff messaging in M1.
 - [ ] Add rolling conversation summaries and remove unused legacy routes.
 

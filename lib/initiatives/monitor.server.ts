@@ -73,11 +73,12 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       // Match each expected test weekday to its nearest prior baseline day.
       const testDates=allDays(initiative.starts_on,asOf);
       const baseDates=allDays(first,lastBaseline);
-      const closestBaseline=[...new Set(testDates.map(test=>{
+      const requiresBaseline=graph.metrics.some(m=>m.source==="computed"&&m.target_kind==="relative_pct");
+      const closestBaseline=requiresBaseline?[...new Set(testDates.map(test=>{
         const targetWeekday=new Date(test+"T12:00:00Z").getUTCDay();
         return [...baseDates].reverse().find(base=>
           new Date(base+"T12:00:00Z").getUTCDay()===targetWeekday);
-      }).filter((date):date is string=>Boolean(date)))];
+      }).filter((date):date is string=>Boolean(date)))]:[];
       const freshTest=testDates.filter(missingFor).reverse();
       const freshBaseline=closestBaseline.filter(missingFor).reverse();
       const incomplete=days.filter(d=>graph.metrics.some(metric=>metric.source==="computed" &&

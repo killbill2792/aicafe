@@ -30,7 +30,7 @@ export const agentToolDefinitions = [...(Object.keys(schemas) as AgentToolName[]
   const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name], { target: "draft-07" });
   void _schema;
   return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
-}), ...initiativeToolDefinitions];
+}), ...initiativeToolDefinitions.filter(tool=>tool.name!=="propose_initiative")];
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -44,6 +44,9 @@ function absent(source: string, period: CafeStatePeriod | null, missing: string[
   return { source, period, missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
+  // Backend-only M1: no owner-click approval UI exists yet. Do not permit
+  // invisible, unapprovable proposals through the production agent.
+  if (name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
   if (isInitiativeTool(name)) return executeInitiativeTool(name,raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
   if (name === "get_menu_items") {
