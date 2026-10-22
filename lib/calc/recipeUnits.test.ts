@@ -1,5 +1,16 @@
+import { createTranslator } from "next-intl";
+import en from "../../messages/en.json";
+import es from "../../messages/es.json";
+import ar from "../../messages/ar.json";
 import { describe, expect, it } from "vitest";
 import { recipeDisplayUnitsFor, needsIngredientConversion, toBaseUnitQuantity, packBaseQuantity, packToCostPerBaseMicros, plainQuantity, stepFor } from "./recipeUnits";
+
+const messageCatalog = { en, es, ar };
+function formatter(locale: "en" | "es" | "ar") {
+  const translate = createTranslator({ locale, messages: messageCatalog[locale] });
+  return (unit: string, values: { quantity: string; count: number }) =>
+    translate(`Pantry.quantity.${unit}` as never, values as never);
+}
 
 describe("recipeDisplayUnitsFor", () => {
   it("lets a brand-new volume ingredient use ml, fl oz, or an exact pump conversion", () => {
@@ -110,12 +121,13 @@ describe("pack unit conversion and pack pricing", () => {
     expect(stepFor("pump")).toBe(1);
     expect(stepFor("fl_oz")).toBe(0.5);
     expect(stepFor("oz_wt")).toBe(0.5);
-    expect(plainQuantity(2, "shot")).toBe("2 shots");
-    expect(plainQuantity(0.5, "fl_oz")).toBe("½ oz");
-    expect(plainQuantity(0.25, "fl_oz")).toBe("¼ oz");
-    expect(plainQuantity(0.75, "fl_oz")).toBe("¾ oz");
-    expect(plainQuantity(1, "cup", "en", 12)).toBe("1 cup (12 oz)");
-    expect(plainQuantity(2, "cup", "es")).toBe("2 tazas");
-    expect(plainQuantity(1, "cup", "ar")).toContain("كوب");
+    expect(plainQuantity(2, "shot", "en", formatter("en"))).toBe("2 shots");
+    expect(plainQuantity(0.5, "fl_oz", "en", formatter("en"))).toBe("½ oz");
+    expect(plainQuantity(0.25, "fl_oz", "en", formatter("en"))).toBe("¼ oz");
+    expect(plainQuantity(0.75, "fl_oz", "en", formatter("en"))).toBe("¾ oz");
+    expect(plainQuantity(1, "cup", "en", formatter("en"), 12)).toBe("1 cup (12 oz)");
+    expect(plainQuantity(2, "cup", "es", formatter("es"))).toBe("2 tazas");
+    expect(plainQuantity(1, "cup", "ar", formatter("ar"))).toContain("كوب");
+    expect(plainQuantity(2, "shot", "ar", formatter("ar"))).toContain("جرعتان");
   });
 });
