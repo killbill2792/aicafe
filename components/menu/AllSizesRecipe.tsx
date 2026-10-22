@@ -10,7 +10,7 @@ import {swapIngredient} from "@/lib/actions/pantry";
 import {stepFor,recipeDisplayUnitsFor,needsIngredientConversion} from "@/lib/calc/recipeUnits";
 import type {RecipeDisplayUnit,IngredientUnitConversion} from "@/lib/calc/recipeUnits";
 import type {IngredientOption,MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
-import {recipePreviewCost,keepPreview,draftLineCostCents} from "@/lib/calc/recipePreview";
+import {keepPreview,draftRecipeCosts} from "@/lib/calc/recipePreview";
 import {formatCents} from "@/lib/calc";
 import AddSizeDialog from "./AddSizeDialog";
 import type {PricedPantry} from "./MenuAddonsPanel";
@@ -32,7 +32,20 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   return false;
  });
  const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
- const prices=Object.fromEntries(selectedItems.map(item=>{const amount=Object.fromEntries(item.recipe.map(line=>[line.ingredientId,drafts[k(item.id,line.ingredientId)]?.removed?0:drafts[k(item.id,line.ingredientId)]?.quantity??line.displayQuantity??line.quantity]));const lines=item.recipe.filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed);const preview=recipePreviewCost(lines,amount);const cost=preview.costCents??(item.costSource==="owner_total"?item.ownerTotalCostCents??null:null);return[item.id,{cost,summary:keepPreview(item.priceCents,cost),estimated:preview.estimated||item.costSource==="owner_total"||item.ownerTotalCostStatus==="estimated"}]}));
+ const prices=Object.fromEntries(selectedItems.map(item=>{
+  const preview=draftRecipeCosts(item.recipe.map(line=>{
+   const d=drafts[k(item.id,line.ingredientId)];
+   return {
+    ingredientId:line.ingredientId,originalBaseQuantity:line.quantity,baseUnit:line.baseUnit,
+    costCents:line.costCents,displayUnit:d?.unit??(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,
+    displayQuantity:d?.quantity??line.displayQuantity??line.quantity,
+    removed:d?.removed??false,conversions:conversions[line.ingredientId]??[],
+   };
+  }));
+  const cost=preview.costCents??(item.costSource==="owner_total"?item.ownerTotalCostCents??null:null);
+  return [item.id,{cost,summary:keepPreview(item.priceCents,cost),
+   lineCosts:preview.lineCosts,estimated:preview.estimated||item.costSource==="owner_total"||item.ownerTotalCostStatus==="estimated"}];
+ }));
  function adjust(item:MenuItemForEdit,id:string,delta:number){const line=item.recipe.find(l=>l.ingredientId===id);if(!line)return;const key=k(item.id,id);const cur=drafts[key]??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};const step=stepFor(cur.unit);setDrafts(prev=>({...prev,[key]:{...cur,removed:false,quantity:Math.max(0,Math.round((cur.quantity+delta*step)*100)/100)}}));setSaved(false);}
  function removeRow(id:string){setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(item=>item.recipe.some(l=>l.ingredientId===id)).map(item=>{const key=k(item.id,id);const line=item.recipe.find(l=>l.ingredientId===id)!;return[key,{...(prev[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:line.displayQuantity??line.quantity}),removed:true}]}))}));setToast(ingredientRows.find(row=>row[0]===id)?.[1]??"");}
  function undo(){const id=ingredientRows.find(row=>row[1]===toast)?.[0];if(!id)return;setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(i=>i.recipe.some(l=>l.ingredientId===id)).map(item=>[k(item.id,id),{...prev[k(item.id,id)],removed:false}]))}));setToast("");}
@@ -116,7 +129,7 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
    const line=item.recipe.find(l=>l.ingredientId===id),draft=drafts[k(item.id,id)];
    if(!line||draft?.removed)return <p key={item.id} className="p-2 text-center text-ink-muted">—</p>;
    const actual=draft??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};
-   const cost=draftLineCostCents(line.costCents,line.displayQuantity??line.quantity,actual.quantity);
+   const cost=prices[item.id]?.lineCosts?.[id]??null;
    return <div key={item.id} className="min-w-0">
     <div className="rounded-xl bg-paper p-1">
       <button type="button" onClick={()=>openAmount(item,line,actual)}
