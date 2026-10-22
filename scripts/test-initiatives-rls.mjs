@@ -120,7 +120,23 @@ try{
     "late worker cannot write evaluations");
   assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,leased+1,
     "a released job can be claimed by next worker");
-  await db.query("select release_owner_initiative_monitor($1,$2,$3)",[ID,t2,false,0]);
+  // A newer check-in invalidates the claim before terminal completion.
+  const beforeCorrection=Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision);
+  const lastCorrection=[BIZ,A,checkinId,"2026-10-15",0,"owner changed answer",2,"fourth-operation-key"];
+  assert.equal((await db.query(checkinSql,lastCorrection)).rows[0].result.corrected,true);
+  assert.equal(Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision),
+    beforeCorrection+1);
+  assert.equal((await db.query("select release_owner_initiative_monitor($1,$2,$3,$4) as released",
+    [ID,t2,true,beforeCorrection])).rows[0].released,false,
+    "owner correction must fence terminal completion");
+  assert.equal((await db.query(observationSql,
+    [...leaseObsArgs.slice(0,3),t2,...leaseObsArgs.slice(4)])).rows[0].wrote,false);
+  assert.equal((await db.query("select status from owner_initiatives where id=$1",[ID])).rows[0].status,"active");
+  const freshLease="abababab-abab-4bab-8bab-abababababab";
+  assert.equal((await db.query(leaseSql,[ID,leased+1,freshLease])).rows[0].revision,leased+2);
+  const newEvidenceRevision=Number((await db.query("select evidence_revision from owner_initiatives where id=$1",[ID])).rows[0].evidence_revision);
+  assert.equal((await db.query("select release_owner_initiative_monitor($1,$2,$3,$4) as released",
+    [ID,freshLease,false,newEvidenceRevision])).rows[0].released,true);
   await actor(A,async()=>{
     for(const table of ["owner_initiatives","initiative_metrics","initiative_observations","initiative_evaluations"])
       assert.equal((await db.query("select * from "+table)).rowCount,

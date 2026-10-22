@@ -1,6 +1,6 @@
 import "server-only";
 import {createHash,randomUUID} from "node:crypto";
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone,fromZonedTime } from "date-fns-tz";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
 import ar from "@/messages/ar.json";
@@ -96,6 +96,10 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       // been checked AFTER the 14-day source-correction window expires.
       const correctionExpiry=dayOffset(initiative.ends_on,14);
       const afterWindow=today>correctionExpiry;
+      // First valid final recheck is next café-local midnight, not the same
+      // UTC date. Earlier UTC instants can still be the prior business day.
+      const finalRecheckFrom=fromZonedTime(dayOffset(correctionExpiry,1)+
+        "T00:00:00",graph.timezone).getTime();
       const requiredDates=[...new Set([...testDates,...closestBaseline])];
       // Every attempted source sample, including a previously uncovered one,
       // needs a final successful source recheck after the correction window.
@@ -103,7 +107,8 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       const requiresFreshVerification=(date:string)=>graph.metrics.some(metric=>
         metric.source==="computed"&&(byMetric.get(metric.id)??[]).some(o=>
           o.business_date===date&&
-          (!o.verified_at||o.verified_at.slice(0,10)<=correctionExpiry)));
+          (!o.verified_at||!Number.isFinite(Date.parse(o.verified_at))||
+            Date.parse(o.verified_at)<finalRecheckFrom)));
       const eligibleCorrection=!afterWindow||requiredDates.some(requiresFreshVerification);
       // Oldest successfully verified evidence first: revisiting a day moves it
       // to the tail, so large windows cannot repeatedly starve older samples.
