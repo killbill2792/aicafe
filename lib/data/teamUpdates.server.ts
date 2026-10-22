@@ -3,14 +3,27 @@ import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import type { TeamUpdate, TeamUpdateStatus } from "@/lib/teamUpdates/contracts";
 
+export type MonitorUpdateLease={initiativeId:string;token:string;evidenceRevision:number};
 export type NewTeamUpdate = Pick<TeamUpdate,
   "business_id" | "owner_user_id" | "agent_id" | "domain" | "kind" | "severity" |
   "subject_type" | "subject_id" | "facts" | "text" | "locale" | "actions" | "dedupe_key"
 >;
 
 /** Data access boundary: service-role writes still require a real owner membership. */
-export async function insertTeamUpdate(row: NewTeamUpdate): Promise<boolean> {
-  const db = createAdminSupabaseClient();
+export async function insertTeamUpdate(row: NewTeamUpdate,
+  signal?:AbortSignal,lease?:MonitorUpdateLease): Promise<boolean> {
+  const db = createAdminSupabaseClient(signal);
+  if(lease){
+    const {data,error}=await db.rpc("insert_monitor_team_update_fenced",{
+      p_initiative_id:lease.initiativeId,p_token:lease.token,
+      p_evidence_revision:lease.evidenceRevision,p_row:row,
+    });
+    if(error)throw error;
+    if(data==="stale")throw new Error("monitor evidence lease superseded");
+    if(data!=="created"&&data!=="duplicate")
+      throw new Error("monitor notification persistence unavailable");
+    return data==="created";
+  }
   const { data: membership, error: membershipError } = await db.from("memberships")
     .select("user_id").eq("business_id", row.business_id)
     .eq("user_id", row.owner_user_id).eq("role", "owner").maybeSingle();

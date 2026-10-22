@@ -1,19 +1,17 @@
 ## Now
-- [ ] PR #150: verify pantry migration/RLS, recipe actions, all-size templates, tests and human review before merge.
-- [ ] Review PR M0: team_updates storage/writer/owner reads, including PostgreSQL RLS and full CI; migration not deployed.
-- [ ] Run one live owner agent smoke test before production deployment of #146.
+- [ ] Review M1: generic owner goals/experiments, check-ins, monitoring, approval and RLS; run CI and live smoke before merge.
+- [ ] Deploy approved M0/M1 migrations separately; neither is applied by this PR.
+- [ ] Run a live owner agent smoke test with credentials before production release.
 
 ## Next
+- [ ] Add grounded quick-reply chips and reconcile remaining AI usage ledger limits.
 - [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
-
-- [ ] Add grounded quick-reply chips and proposal/approval flows.
+- [ ] Add an actual owner-click approval card and persistence in UI; only then enable production propose_initiative registration (backend-only M1 deliberately gates it).
+- [ ] Add staff WhatsApp check-in handling in W2; no staff messaging in M1.
 - [ ] Add rolling conversation summaries and remove unused legacy routes.
-- [ ] Reconcile the AI usage ledger's per-increment limits with the agent's budget before general release.
 
 ## Done (last 10)
-- PR #146 merged: streaming agent is the default chat path; signed-currency and usage-attempt fixes included.
-- New streaming agent SSE endpoint, without /progress polling.
-- Strict three-tool schema, tool-call pairing, six-call total budget, error recovery and logical retry status.
-- Locale-aware money/percent checks, validated multi-block persistence and database-compatible grounding statuses.
-- Added recorded fixture and reply-writer tests; retired the supervisor-gap regression workflow.
-- AGENTS.md includes review blockers for retired designs and invalid tests.
+- PR #150 merged: pantry starter ingredients, recipe-size templates and pricing helpers; deployment remains separate.
+- PR #147 merged: team_updates owner-scoped storage and service-role writer.
+- PR #146 merged: streaming agent with bounded calls and verified money extraction.
+- Existing P1 source inventory and business data boundary remain enforced.
