@@ -43,7 +43,7 @@ export default function FillIcon({
         <use href={`#ic-${code}`} fill={`url(#${gradientId})`} style={hasDetail ? undefined : ({ "--sil": "rgb(var(--c-text))" } as React.CSSProperties)} />
       </svg>
       {covered && (
-        <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-card bg-good">
+        <span className="absolute -bottom-1 -end-1 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-card bg-good">
           <svg width={12} height={12} viewBox="0 0 24 24" aria-hidden="true">
             <use href="#ic-check" />
           </svg>
