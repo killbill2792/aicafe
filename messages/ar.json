@@ -2275,6 +2275,15 @@
     "boughtAt": "تم شراؤه بسعر {amount} للوحدة",
     "separateNote": "مقارنة ببيع الأصناف منفردة",
     "suggestedPrices": "أسعار مقترحة",
-    "missing": "غير متوفر"
+    "missing": "غير متوفر",
+    "priceNotSet": "السعر غير محدد",
+    "setPrice": "تحديد سعر الحجم",
+    "buyInCost": "سعر الشراء للوحدة",
+    "customerPaysMore": "يدفع العميل أكثر",
+    "decreaseQuantity": "تقليل الكمية",
+    "increaseQuantity": "زيادة الكمية",
+    "lowerPrice": "خفض سعر المجموعة",
+    "raisePrice": "رفع سعر المجموعة",
+    "savedCombo": "تم حفظ المجموعة"
   }
 }
