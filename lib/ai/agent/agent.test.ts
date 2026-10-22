@@ -1214,3 +1214,25 @@ describe("tool KPIs remain authoritative despite nearby arithmetic",()=>{
      .map(x=>x.text)).toContain("$11.50");
  });
 });
+
+
+describe("CI and Codex: closed money expressions and decimal digits",()=>{
+  it("consumes two spoken fractional digits as a single cent value",()=>{
+    expect(checkNumbers("Price is $8.25.","Price is eight point two five dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Price is $8.20.","Price is eight point two five dollars.",[],"en")
+      .map(v=>v.text)).toEqual(["$8.20"]);
+    expect(checkNumbers("Price is $8.05.","Price is eight point zero five dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Price is $8.50.","Price is eight point fifty dollars.",[],"en")).toEqual([]);
+    expect(checkNumbers("Precio $8.25.","Precio ocho coma dos cinco dólares.",[],"es")).toEqual([]);
+    expect(checkNumbers("السعر $8.25","السعر ثمانية فاصلة اثنين خمسة دولار",[],"ar")).toEqual([]);
+  });
+  it("does not inherit a previous total marker when validating a later business fact",()=>{
+    const tool={source:"profitability",period:null,missing:[],
+      netSalesCents:600,totalCostsCents:550,tipCents:100};
+    expect(checkNumbers("$6.00 and $5.50, total $11.50, tip $1.00.","",[tool],"en")).toEqual([]);
+    expect(checkNumbers("$6.00 and $5.50, total $12, tip $1.00.","",[tool],"en")
+      .map(v=>v.text)).toEqual(["$12"]);
+    expect(checkNumbers("$6.00 and $5.50, total $11.50, tip $2.00.","",[tool],"en")
+      .map(v=>v.text)).toEqual(["$2.00"]);
+  });
+});
