@@ -2,13 +2,14 @@ import "server-only";
 
 import { formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
+import { getTranslations } from "next-intl/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
 import { calculatePantryPriceImpact, type PantryImpactRow } from "@/lib/calc/pantryImpact";
 import { packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
-import { PANTRY_STARTERS_BY_KEY } from "@/lib/menu/pantryStarter";
+import { PANTRY_STARTERS_BY_KEY, displayPantryStarterName } from "@/lib/menu/pantryStarter";
 import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledTemplateLines, type TemplateLine, type RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
 type Db = Awaited<ReturnType<typeof createServerSupabaseClient>>;
@@ -91,6 +92,7 @@ export async function listPantry(): Promise<Array<{
   const { data, error, count } = await scope.db.from("ingredients")
     .select("id, name, base_unit, category, starter_key", { count: "exact" }).eq("business_id", scope.businessId).order("name");
   if (error || !data || count === null || count !== data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  const translate = await getTranslations("Pantry.starters");
   const ids = data.map((r) => r.id);
   const [prices, uses] = await Promise.all([
     currentPrices(scope, ids),
@@ -104,7 +106,8 @@ export async function listPantry(): Promise<Array<{
   return data.map((ingredient) => {
     const price = prices.get(ingredient.id);
     return {
-      id: ingredient.id, name: ingredient.name, category: ingredient.category,
+      id: ingredient.id, name: displayPantryStarterName(ingredient.name, ingredient.starter_key,
+        (key) => translate(key as never)), category: ingredient.category,
       starterKey: ingredient.starter_key, baseUnit: ingredient.base_unit as BaseUnit,
       costPerBaseMicros: price?.cost ?? null, packQuantity: price?.packQuantity ?? null,
       packUnit: price?.packUnit ?? null, packCostCents: price?.packCostCents ?? null,
