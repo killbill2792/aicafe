@@ -73,7 +73,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
               totalMonthly: tBills("totalMonthly"),
             }}
           />
-          <Link href="/onboarding?step=3" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+          <Link href="/onboarding?step=3" className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
             {t("continue")}
           </Link>
         </>
@@ -84,7 +84,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       {step === 4 && (
         <div className="flex flex-col gap-4 rounded-card-lg bg-card p-5">
           <p className="text-base leading-snug text-ink">{t("step4Body")}</p>
-          <Link href="/onboarding?step=5" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+          <Link href="/onboarding?step=5" className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
             {t("continue")}
           </Link>
         </div>

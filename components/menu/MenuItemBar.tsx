@@ -1,11 +1,11 @@
 import Money from "@/components/shared/Money";
 import type { MenuItemBreakdown } from "@/lib/viewmodels/menuViewModel";
 
-const SEGMENTS: { key: keyof MenuItemBreakdown; color: string }[] = [
-  { key: "ingredientsCents", color: "bg-ingredients" },
-  { key: "staffTimeCents", color: "bg-staff" },
-  { key: "cardFeeCents", color: "bg-fees" },
-  { key: "rentBillsShareCents", color: "bg-running" },
+const SEGMENTS: { key: keyof MenuItemBreakdown; color: string; on: string }[] = [
+  { key: "ingredientsCents", color: "bg-ingredients", on: "text-on-chart-ingredients" },
+  { key: "staffTimeCents", color: "bg-staff", on: "text-on-chart-staff" },
+  { key: "cardFeeCents", color: "bg-fees", on: "text-on-chart-fees" },
+  { key: "rentBillsShareCents", color: "bg-running", on: "text-on-chart-running" },
 ];
 
 /** The 5-segment stacked bar from docs/03-screens.md S6 (mockup shows 3; the doc adds card fee + rent share). */
@@ -21,13 +21,13 @@ export default function MenuItemBar({ breakdown, tall, yoursLabel }: { breakdown
         const pct = price === 0 ? 0 : (cents / price) * 100;
         return (
           <div key={seg.key} className={`${seg.color} flex items-center justify-center`} style={{ width: `${pct}%` }}>
-            {tall && pct > 12 && <span className="text-[13px] font-bold text-white">{Math.round(cents)}¢</span>}
+            {tall && pct > 12 && <span className={`${seg.on} text-[13px] font-bold`}>{Math.round(cents)}¢</span>}
           </div>
         );
       })}
       <div className="flex flex-1 items-center justify-center bg-good" style={{ minWidth: 0 }}>
         {tall && (
-          <span className="whitespace-nowrap text-[15px] font-bold text-white">
+          <span className="whitespace-nowrap text-[15px] font-bold text-on-pos">
             <Money cents={yours} /> {yoursLabel}
           </span>
         )}

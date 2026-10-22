@@ -17,17 +17,17 @@ export default function RecoveryOrderStep({
     <div className="flex flex-col gap-3">
       <div className="rounded-card-lg bg-card px-4">
         {order.map((code, i) => (
-          <div key={code} className="flex items-center gap-3 border-b border-[#EFE7DB] py-3 last:border-b-0">
+          <div key={code} className="flex items-center gap-3 border-b border-line py-3 last:border-b-0">
             <PlainIcon code={code} size={28} />
             <span className="flex-1 text-base font-semibold">{categoryLabels[code]}</span>
             <div className="flex flex-col">
               <form action={moveRecoveryBucket.bind(null, "up", code)}>
-                <button type="submit" disabled={i === 0} aria-label={`Move ${categoryLabels[code]} earlier`} className="flex h-6 w-9 items-center justify-center text-[#B7A994] disabled:opacity-30">
+                <button type="submit" disabled={i === 0} aria-label={`Move ${categoryLabels[code]} earlier`} className="flex h-6 w-9 items-center justify-center text-fg disabled:opacity-30">
                   <ChevronUp size={18} aria-hidden="true" />
                 </button>
               </form>
               <form action={moveRecoveryBucket.bind(null, "down", code)}>
-                <button type="submit" disabled={i === order.length - 1} aria-label={`Move ${categoryLabels[code]} later`} className="flex h-6 w-9 items-center justify-center text-[#B7A994] disabled:opacity-30">
+                <button type="submit" disabled={i === order.length - 1} aria-label={`Move ${categoryLabels[code]} later`} className="flex h-6 w-9 items-center justify-center text-fg disabled:opacity-30">
                   <ChevronDown size={18} aria-hidden="true" />
                 </button>
               </form>
@@ -35,7 +35,7 @@ export default function RecoveryOrderStep({
           </div>
         ))}
       </div>
-      <Link href="/" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+      <Link href="/" className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
         {labels.finish}
       </Link>
     </div>

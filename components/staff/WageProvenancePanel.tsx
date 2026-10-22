@@ -52,7 +52,7 @@ export default function WageProvenancePanel({ employee, records }: {
   const wageIsKnown = employee.wageAmountCents!==null || employee.defaultHourlyWageCents!==null;
   const wagePeriod=employee.wagePeriod==="hour" ? staff("wagePeriodHour")
     : employee.wagePeriod==="month" ? staff("wagePeriodMonth") : staff("wagePeriodYear");
-  return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
+  return <section className="flex flex-col gap-3 rounded-xl bg-surface p-3">
     <h4 className="text-[17px] font-bold">{t("wageProvenance")}</h4>
     <p className="text-[17px] text-ink-muted">{t("wageExplanation")}</p>
     <p className="font-semibold">{t("recordedWage")}: {

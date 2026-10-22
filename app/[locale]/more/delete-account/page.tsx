@@ -15,7 +15,7 @@ export default async function DeleteAccountPage() {
   return (
     <PageShell className="flex flex-col gap-4 px-4 py-6 pb-10">
       <BackHeader title={t("title")} backHref="/more" backLabel={tCommon("back")} />
-      <div className="rounded-card-lg bg-warn-tint p-4 text-sm leading-snug text-[#6E2A07]">{t("warning")}</div>
+      <div className="rounded-card-lg bg-warn-tint p-4 text-sm leading-snug text-warn-text">{t("warning")}</div>
       <ul className="flex flex-col gap-1.5 rounded-card-lg bg-card p-4 text-sm text-ink-muted">
         <li>{t("bullet1")}</li>
         <li>{t("bullet2")}</li>

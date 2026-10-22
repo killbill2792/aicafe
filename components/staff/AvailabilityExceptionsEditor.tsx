@@ -113,7 +113,7 @@ export default function AvailabilityExceptionsEditor({ employeeId, rows, locatio
     });
   }
   const exceptionTypes:ExceptionType[]=["unavailable","approved_leave","replace_day","add_available","hours_cap"];
-  return <section aria-label={t("dateExceptions")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
+  return <section aria-label={t("dateExceptions")} className="flex flex-col gap-3 rounded-xl bg-surface p-3">
       <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
     <h4 className="text-[17px] font-bold">{t("dateExceptions")}</h4>
     {status==="conflict" && !reapplyReady && <button type="button" className={secondary}

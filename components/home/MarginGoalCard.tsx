@@ -38,7 +38,7 @@ export default function MarginGoalCard({
         )}
       </div>
       <p className="text-sm leading-snug text-ink-muted">{labels.explanation}</p>
-      <Link href="/more/economics" className="self-start rounded-full bg-ink px-4 py-2.5 text-sm font-bold text-paper no-underline">
+      <Link href="/more/economics" className="self-start rounded-full bg-accent px-4 py-2.5 text-sm font-bold text-on-accent no-underline">
         {labels.edit}
       </Link>
     </section>

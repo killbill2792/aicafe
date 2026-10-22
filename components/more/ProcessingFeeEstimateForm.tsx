@@ -600,7 +600,7 @@ export default function ProcessingFeeEstimateForm({
           type="button"
           onClick={save}
           disabled={isPending}
-          className="min-h-14 rounded-full bg-ink px-5 text-base font-bold text-paper disabled:opacity-40"
+          className="min-h-14 rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40"
         >
           {isPending ? labels.saving : labels.save}
         </button>

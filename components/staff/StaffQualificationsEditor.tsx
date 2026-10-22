@@ -99,7 +99,7 @@ export default function StaffQualificationsEditor({ employeeId, types, assignmen
     });
   }
   const findName=(qualCode:string)=>String(types.find(r=>r.code===qualCode)?.display_name??qualCode);
-  return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
+  return <section className="flex flex-col gap-3 rounded-xl bg-surface p-3">
     <h4 className="text-[17px] font-bold">{t("qualifications")}</h4>
     <p className="text-[17px] text-ink-muted">{t("roleNotQualification")}</p>
     <fieldset disabled={pending} aria-busy={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">

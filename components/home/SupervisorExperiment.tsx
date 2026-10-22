@@ -56,7 +56,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    value==="rejected"||value==="expired"?copy.statusRejected:copy.statusMonitoring;
  const valid=Number.isSafeInteger(delta)&&delta>0&&delta<=100000;
  const actionClass="min-h-12 rounded-full border border-ink px-4 text-[17px] font-semibold disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2";
- return <section className="border-t border-[#E9DAC8] bg-white px-3 py-2">
+ return <section className="border-t border-line bg-surface px-3 py-2">
   <button type="button" aria-expanded={open} onClick={()=>setOpen(x=>!x)}
     className={actionClass+" w-full text-start"}>{open?copy.close:copy.open}</button>
   {open&&<div className="space-y-3 p-3 text-[17px] text-ink">
@@ -107,7 +107,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    {report&&<p>{copy.reportNote} {report.status==="complete"?copy.statusComplete:
      report.status==="in_progress"?copy.statusInProgress:copy.statusInsufficient}</p>}
    {busy&&<p role="status">{copy.loading}</p>}
-   {error&&<p role="alert" className="text-red-700">{copy.error}</p>}
+   {error&&<p role="alert" className="text-neg">{copy.error}</p>}
   </div>}
  </section>;
 }

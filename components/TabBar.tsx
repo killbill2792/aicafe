@@ -14,7 +14,7 @@ export default function TabBar() {
   return (
     <nav
       aria-label={t("ariaLabel")}
-      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] md:hidden"
+      className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-nav pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       <ul className="mx-auto flex max-w-app justify-between px-2">
         {NAV_TABS.map(({ href, key, Icon }) => {
@@ -25,7 +25,7 @@ export default function TabBar() {
                 href={href}
                 aria-current={isActive ? "page" : undefined}
                 className={`flex min-h-[48px] flex-col items-center justify-center gap-1 py-2 text-[13px] ${
-                  isActive ? "text-good" : "text-ink-muted"
+                  isActive ? "rounded-chip bg-accent-soft text-accent-text" : "text-muted"
                 }`}
               >
                 <Icon aria-hidden="true" size={22} />

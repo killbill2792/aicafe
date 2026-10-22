@@ -323,7 +323,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
         {coverageNote && <p className="mx-1 text-sm text-ink-muted">{coverageNote}</p>}
 
-        <section className={`flex flex-col gap-2.5 rounded-card-lg p-[22px] text-white ${profitToneBgClass(heroTone)}`}>
+        <section className={`flex flex-col gap-2.5 rounded-card-lg p-[22px] ${profitToneBgClass(heroTone)} ${heroTone === "good" ? "text-on-pos" : heroTone === "warn" ? "text-on-warn" : "text-bg"}`}>
           <div className="flex items-center justify-between">
             <span className="text-[17px] font-semibold">{t("ownerProfit")}</span>
             <div className="flex items-center gap-1.5">

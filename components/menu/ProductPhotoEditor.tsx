@@ -26,7 +26,7 @@ export default function ProductPhotoEditor({ menuItemId, businessId, photo, labe
     });
   }
   function remove() { startTransition(async () => { const result = await removeProductPhoto(menuItemId); if (result.ok) router.refresh(); else setError(result.error); }); }
-  return <div className="relative min-h-40 overflow-hidden rounded-2xl bg-[#E9DDCE]">
+  return <div className="relative min-h-40 overflow-hidden rounded-2xl bg-surface2">
     {photo ? <img src={photo.signedUrl} alt={labels.photo} className="h-48 w-full object-cover" /> : <div className="flex h-40 items-center justify-center text-ink-muted"><Camera aria-hidden="true" size={42} /></div>}
     <div className="absolute inset-x-2 bottom-2 flex gap-2">
       <label className="flex min-h-12 cursor-pointer items-center justify-center rounded-full bg-card/95 px-4 text-sm font-bold text-ink shadow-sm"><Camera aria-hidden="true" className="me-2" size={17}/>{photo ? labels.change : labels.photo}<input className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" disabled={pending} onChange={(e) => { const file = e.target.files?.[0]; if (file) void upload(file); e.currentTarget.value = ""; }} /></label>

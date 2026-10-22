@@ -28,7 +28,7 @@ function WagePeriodPicker({ value, onChange, labels }: { value: WagePeriod; onCh
           type="button"
           onClick={() => onChange(p)}
           aria-pressed={value === p}
-          className={`min-h-12 flex-1 rounded-xl border-2 text-sm font-bold ${value === p ? "border-ink bg-ink text-paper shadow-sm" : "border-transparent bg-paper text-ink-muted"}`}
+          className={`min-h-12 flex-1 rounded-xl border-2 text-sm font-bold ${value === p ? "border-ink bg-accent text-on-accent shadow-sm" : "border-transparent bg-paper text-ink-muted"}`}
         >
           {wagePeriodLabel(p, labels)}
         </button>
@@ -219,7 +219,7 @@ export default function ManageStaffPanel({
           type="button"
           onClick={handleAdd}
           disabled={isPending || !addCanSubmit}
-          className="h-12 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40"
+          className="h-12 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40"
         >
           {labels.add}
         </button>
@@ -386,7 +386,7 @@ function EmployeeRowItem({
       </button>
 
       {expanded && (
-        <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-[#FAF6F0] p-3.5">
+        <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-surface2 p-3.5">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"
@@ -395,21 +395,21 @@ function EmployeeRowItem({
                 setEditStatus("idle");
               }}
               aria-pressed={activeEditor === "details"}
-              className={`flex min-h-12 items-center justify-center gap-1 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "details" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}
+              className={`flex min-h-12 items-center justify-center gap-1 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "details" ? "border-ink bg-accent text-on-accent" : "border-line bg-card text-ink"}`}
             >
               <Pencil aria-hidden="true" size={13} />
               {labels.editDetails}
             </button>
-            <button type="button" onClick={() => setActiveEditor((current) => current === "schedule" ? null : "schedule")} aria-pressed={activeEditor === "schedule"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "schedule" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}>
+            <button type="button" onClick={() => setActiveEditor((current) => current === "schedule" ? null : "schedule")} aria-pressed={activeEditor === "schedule"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "schedule" ? "border-ink bg-accent text-on-accent" : "border-line bg-card text-ink"}`}>
               {labels.editSchedule}
             </button>
-            <button type="button" onClick={() => setActiveEditor((current) => current === "day" ? null : "day")} aria-pressed={activeEditor === "day"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "day" ? "border-ink bg-ink text-paper" : "border-line bg-card text-ink"}`}>
+            <button type="button" onClick={() => setActiveEditor((current) => current === "day" ? null : "day")} aria-pressed={activeEditor === "day"} className={`min-h-12 rounded-xl border px-2 text-sm font-semibold ${activeEditor === "day" ? "border-ink bg-accent text-on-accent" : "border-line bg-card text-ink"}`}>
               {labels.editDay}
             </button>
           </div>
 
           {activeEditor === "details" && (
-            <div className="flex flex-col gap-2 rounded-xl bg-white p-3">
+            <div className="flex flex-col gap-2 rounded-xl bg-surface p-3">
               <input
                 type="text"
                 value={editName}
@@ -450,7 +450,7 @@ function EmployeeRowItem({
                   type="button"
                   onClick={handleSaveDetails}
                   disabled={isPending || !editName.trim() || !editWage}
-                  className="min-h-12 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+                  className="min-h-12 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40"
                 >
                   {editStatus === "saved" ? labels.detailsSaved : labels.saveDetails}
                 </button>
@@ -535,7 +535,7 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-xl bg-white p-3">
+    <div className="flex flex-col gap-2.5 rounded-xl bg-surface p-3">
       <span className="flex items-center gap-1.5 text-sm font-bold">
         <CalendarDays aria-hidden="true" size={16} />
         {labels.weeklySchedule}
@@ -552,7 +552,7 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
                 type="button"
                 onClick={() => toggleDay(dow)}
                 aria-pressed={d.on}
-                className={`min-h-12 w-14 shrink-0 rounded-xl border-2 text-sm font-bold ${d.on ? "border-good bg-good text-white shadow-sm" : "border-transparent bg-paper text-ink-muted"}`}
+                className={`min-h-12 w-14 shrink-0 rounded-xl border-2 text-sm font-bold ${d.on ? "border-good bg-good text-on-pos shadow-sm" : "border-transparent bg-paper text-ink-muted"}`}
               >
                 {dayLabel(dow, labels)}
               </button>
@@ -598,7 +598,7 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
             type="button"
             onClick={() => setScopeType("ongoing")}
             aria-pressed={scopeType === "ongoing"}
-            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "ongoing" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
+            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "ongoing" ? "border-ink bg-accent text-on-accent" : "border-transparent bg-paper text-ink-muted"}`}
           >
             {labels.repeatsWeekly}
           </button>
@@ -609,7 +609,7 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
             type="button"
             onClick={() => setScopeType("month")}
             aria-pressed={scopeType === "month"}
-            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "month" ? "border-ink bg-ink text-paper" : "border-transparent bg-paper text-ink-muted"}`}
+            className={`min-h-12 rounded-xl border-2 px-2 text-sm font-bold ${scopeType === "month" ? "border-ink bg-accent text-on-accent" : "border-transparent bg-paper text-ink-muted"}`}
           >
             {labels.justForMonth}
           </button>
@@ -628,7 +628,7 @@ function WeeklyScheduleEditor({ employee, schedules, todayDateStr, labels, onSav
         type="button"
         onClick={handleSave}
         disabled={isPending || !(employee.wageAmountCents && employee.wageAmountCents > 0)}
-        className="min-h-12 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+        className="min-h-12 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40"
       >
         {status === "saved" ? labels.scheduleSaved : labels.saveSchedule}
       </button>
@@ -705,7 +705,7 @@ function DayEditor({ employee, todayDateStr, labels }: { employee: EmployeeRow; 
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-xl bg-white p-3">
+    <div className="flex flex-col gap-2.5 rounded-xl bg-surface p-3">
       <span className="text-sm font-bold">{labels.editDay}</span>
       <p className="text-xs text-ink-muted">{labels.editDayHint}</p>
       <label className="flex flex-col gap-1 text-xs font-semibold text-ink-muted">
@@ -761,7 +761,7 @@ function DayEditor({ employee, todayDateStr, labels }: { employee: EmployeeRow; 
           type="button"
           onClick={handleSave}
           disabled={isPending || !wage}
-          className="min-h-12 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+          className="min-h-12 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40"
         >
           {status === "saved" ? labels.saved : labels.save}
         </button>

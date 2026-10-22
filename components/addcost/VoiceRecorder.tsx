@@ -95,7 +95,7 @@ export default function VoiceRecorder({
     return (
       <div className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-8 text-center">
         <p className="text-base text-ink-muted">{labels.notSupported}</p>
-        <Link href="/add-cost/type" className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper">
+        <Link href="/add-cost/type" className="rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-on-accent">
           {labels.typeItInstead}
         </Link>
       </div>
@@ -110,7 +110,7 @@ export default function VoiceRecorder({
         onMouseUp={stopListening}
         onTouchStart={startListening}
         onTouchEnd={stopListening}
-        className={`flex h-28 w-28 items-center justify-center rounded-full text-white ${listening ? "bg-warn" : "bg-good"}`}
+        className={`flex h-28 w-28 items-center justify-center rounded-full ${listening ? "bg-warn-text text-on-warn" : "bg-good text-on-pos"}`}
         aria-label={labels.holdToTalk}
       >
         <Mic aria-hidden="true" size={40} />
@@ -122,7 +122,7 @@ export default function VoiceRecorder({
           <span className="text-xs font-semibold text-ink-muted">{labels.transcriptLabel}</span>
           <p className="text-base text-ink">{transcript}</p>
           {!result && !isPending && (
-            <button type="button" onClick={() => handleParse(transcript)} className="mt-3 h-11 w-full rounded-full bg-ink text-sm font-bold text-paper">
+            <button type="button" onClick={() => handleParse(transcript)} className="mt-3 h-11 w-full rounded-full bg-accent text-sm font-bold text-on-accent">
               {labels.confirm}
             </button>
           )}
@@ -142,7 +142,7 @@ export default function VoiceRecorder({
             type="button"
             onClick={handleConfirm}
             disabled={saveStatus === "saving"}
-            className="mt-3 h-14 w-full rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-40"
+            className="mt-3 h-14 w-full rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
           >
             {saveStatus === "saved" ? labels.saved : labels.confirm}
           </button>

@@ -23,7 +23,7 @@ export default function RegisterChoice({
       <a
         href={squareConfigured ? `/api/pos/square/connect?locale=${locale}` : "#"}
         aria-disabled={!squareConfigured}
-        className={`flex h-16 items-center gap-3 rounded-full px-5 font-bold text-paper ${squareConfigured ? "bg-ink" : "pointer-events-none bg-ink/40"}`}
+        className={`flex h-16 items-center gap-3 rounded-full px-5 font-bold text-on-accent ${squareConfigured ? "bg-accent" : "pointer-events-none bg-accent/40"}`}
       >
         <CreditCard aria-hidden="true" size={22} />
         {labels.connectSquare}
