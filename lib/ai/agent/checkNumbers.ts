@@ -822,7 +822,9 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
  if(index<2)return null;
  const prefix=text.slice(0,v.start);
- const sentenceStops=[...prefix.matchAll(/(?<!\d)\.(?=\s+[A-Z])/gu)].map(m=>m.index);
+ // A period ends a clause unless it is a decimal separator; capitalization
+ // is not a safe sentence boundary in Spanish or Arabic.
+ const sentenceStops=[...prefix.matchAll(/\.(?![\d٠-٩۰-۹])/gu)].map(m=>m.index);
  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
  const operands=money.slice(0,index).filter(c=>c.start>boundary);
  if(operands.length<2)return null;
@@ -835,7 +837,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
  // Arithmetic in descriptive prose cannot manufacture a business KPI.
  const targetClause=text.slice(operands[operands.length-1].end,v.start);
- if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin)\b/iu.test(targetClause))return false;
+ if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu.test(targetClause))return false;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
  const expected=sumCents(amounts,(amount,index)=>subtraction&&index>0?-amount:amount);
  return Math.abs(expected-toCents(v))<=1;
