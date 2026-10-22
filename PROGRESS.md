@@ -1,3 +1,20 @@
+## PR #143 — Owner-native clarification and explanations (follow-up)
+
+Architecture reaffirmed: **one OpenAI conversational Supervisor**; no mandatory second model reviewer. Backend preflight, RLS/tenant authorization, typed calculations, source quality, proposal approval, and durable monitoring remain enforced.
+
+- [x] Return OpenAI-authored natural explanations instead of dropping them and substituting generic source-status prose.
+- [x] Keep model-authored clarification question wording, including real menu sizes/dates and owner amounts; verified option IDs drive real buttons, not deterministic latte-specific question templates.
+- [x] Display a specific answer status: verified for fully verified source-backed facts; partial for conditional/incomplete results; unavailable for blocked/missing sources.
+- [x] Keep source-backed integer-cents figures and redact unsupported model-written numeric/URL/completion claims without calling another model; preserve answer text and specific gap explanation.
+- [x] Repair six structural findings from Codex's prior current-head review: financial snapshot fail-closed dispatch, multilingual public research privacy, period-aware chained arithmetic, inherited record dataset units, remaining-deadline limits, and the missing natural explanation channel.
+- [x] Add native controller and pure prose/privacy tests for verified numeric questions, EN/ES/AR sizes, partial financial data, missing snapshot, provider disconnect, and calculations.
+- [ ] Complete CI on final head after these changes, collect failing job output (if any), and request a single comprehensive Codex review only once final-head regressions are green.
+- [ ] End-to-end smoke test authenticated conversations, repeated selection/approval, pricing preview and seven-day monitor with a live OpenAI model and tenant Supabase environment; credentials are not available to repository-only CI.
+- [ ] Review new Codex findings, resolve verified-fixed threads, and keep PR draft until owner merge decision.
+
+*Known limitation:* deterministic formatting safety cannot prove arbitrary semantic assertions in unrestricted model prose. We retain server-authoritative figures, source-quality warnings, and effect receipts while reviewing unsupported completion wording; no second LLM reviewer is introduced.
+
+---
 ## PR #143 — Native Supervisor conversation instead of investigator/reviewer (2026-10-21)
 
 - [x] Create an isolated branch and draft PR against merged `main`.
