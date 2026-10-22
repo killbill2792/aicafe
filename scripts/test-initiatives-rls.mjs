@@ -85,11 +85,38 @@ try{
   assert.equal(Number(saved.coverage),1);
   await assert.rejects(db.query(checkinSql,[BIZ,A,checkinId,"2026-10-15",0,"stale",1,"third-operation-key"]),{code:"40001"});
   await assert.rejects(db.query(checkinSql,[BIZ,B,checkinId,"2026-10-15",1,"forged",null,"foreign-operation-key"]),{code:"42501"});
+  const t1="88888888-8888-4888-8888-888888888888";
+  const t2="99999999-9999-4999-8999-999999999999";
+  const revision=(await db.query("select revision from owner_initiatives where id=$1",[ID])).rows[0].revision;
+  const leaseSql="select claim_owner_initiative_monitor($1,$2,$3) as revision";
+  const leased=(await db.query(leaseSql,[ID,revision,t1])).rows[0].revision;
+  assert.equal(leased,revision+1,"first worker acquires lease");
+  assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,null,
+    "overlapping worker cannot acquire another lease");
+  const observationSql="select write_owner_initiative_monitor_observation($1,$2,$3,$4,$5,$6,$7,$8,$9) as wrote";
+  const args=[BIZ,A,ID,t1,MID,"2026-10-16",125,1,null];
+  assert.equal((await db.query(observationSql,args)).rows[0].wrote,true);
+  assert.equal((await db.query(observationSql,[...args.slice(0,3),t2,...args.slice(4)])).rows[0].wrote,false);
+  const resultSql="select write_owner_initiative_monitor_evaluation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as wrote";
+  const evalArgs=[BIZ,A,ID,t1,"2026-10-16","on_track","keep",
+    JSON.stringify({count:1}),JSON.stringify({baseline:[100],test:[125]}),
+    "transition-unique-1","digest-unique-1"];
+  assert.equal((await db.query(resultSql,evalArgs)).rows[0].wrote,true);
+  const released=(await db.query("select release_owner_initiative_monitor($1,$2,$3) as released",
+    [ID,t1,false])).rows[0].released;
+  assert.equal(released,true);
+  assert.equal((await db.query(observationSql,[...args.slice(0,6),200,1,null])).rows[0].wrote,false,
+    "late worker must not write after releasing its lease");
+  assert.equal((await db.query(resultSql,evalArgs)).rows[0].wrote,false,
+    "late worker cannot write evaluations");
+  assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,leased+1,
+    "a released job can be claimed by next worker");
+  await db.query("select release_owner_initiative_monitor($1,$2,$3)",[ID,t2,false]);
   await actor(A,async()=>{
     for(const table of ["owner_initiatives","initiative_metrics","initiative_observations","initiative_evaluations"])
       assert.equal((await db.query("select * from "+table)).rowCount,
         table==="owner_initiatives"?2:table==="initiative_metrics"?3:
-          table==="initiative_observations"?2:1,table);
+          table==="initiative_observations"?3:table==="initiative_evaluations"?2:1,table);
     await denied("update owner_initiatives set status='active'");
     await denied("delete from initiative_metrics");
     await denied("insert into initiative_evaluations(initiative_id,as_of,status,recommendation,digest) values ('44444444-4444-4444-8444-444444444444','2026-10-15','met','keep','forged')");
