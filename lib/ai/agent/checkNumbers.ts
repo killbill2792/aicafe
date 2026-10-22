@@ -4,7 +4,7 @@ export type UnverifiedNumber = { text: string; start: number; end: number; kind:
 type Kind = UnverifiedNumber["kind"];
 const ascii = (s: string) => s.replace(/[٠-٩]/g, c => String(c.charCodeAt(0) - 0x660))
   .replace(/[۰-۹]/g, c => String(c.charCodeAt(0) - 0x6f0))
-  .replace(/٫/g, ".").replace(/٬/g, ",").replace(/٪/g, "%");
+  .replace(/٬/g, "").replace(/٫/g, ".").replace(/٪/g, "%");
 function decimal(raw: string, locale: AgentLocale): number {
   let s = ascii(raw).replace(/[\s\u00a0\u202f]/g, "");
   const dot = s.lastIndexOf("."), comma = s.lastIndexOf(",");
