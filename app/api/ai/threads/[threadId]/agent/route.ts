@@ -56,28 +56,8 @@ export async function POST(request: Request, context: RouteContext) {
             return entries.filter((x):x is NumericEvidence=>x&&typeof x==="object"&&
               typeof x.tool==="string"&&Array.isArray(x.values)).slice(0,8);
           });
-          const previousAssistantText=priorAssistant.flatMap(m=>{
-            // A legacy supervisor message without explicit verification is never evidence.
-            const meta=m.grounding?.agentMetadata;
-            if(!meta||typeof meta!=="object")return [];
-            const spans=(meta as {unverified?:unknown}).unverified;
-            if(!Array.isArray(spans))return [];
-            const blocks=m.text!==null?[m.text]:
-              (m.blocks??[]).map(b=>b&&typeof b==="object"&&"text" in b?String(b.text):"");
-            return [blocks.map((value,blockIndex)=>{
-              if(typeof value!=="string")return "";
-              const chars=value.split(""); // spans are persisted as UTF-16 offsets, not code-point offsets
-              for(const span of spans){
-                if(!span||typeof span!=="object")return "";
-                const row=span as {start?:unknown;end?:unknown;blockIndex?:unknown};
-                if(row.blockIndex!==blockIndex)continue;
-                if(typeof row.start!=="number"||typeof row.end!=="number"||
-                    row.start<0||row.end>value.length||row.end<row.start)return "";
-                for(let at=row.start;at<row.end;at++)chars[at]=" ";
-              }
-              return chars.join("");
-            }).join(" ")];
-          }).join("\n");
+          // Previous assistant prose is conversation context, never source evidence.
+          // Retain only typed evidence from successful tool reads.
           const history = page.items.filter(m => m.id !== owner.id &&
             (m.role === "owner" || m.role === "supervisor")).slice(-8)
             .map(m => ({ role: m.role === "owner" ? "user" as const : "assistant" as const,
@@ -85,7 +65,7 @@ export async function POST(request: Request, context: RouteContext) {
                 [String(b.text)] : []).join(" ") })).filter(m => m.content);
           const result = await runAgentTurn({ ownerText: input.text, history,
             context: { tools, asOf: identity.asOf, locale: input.locale,timezone:identity.timezone },
-            previousEvidence,previousAssistantText,onTool:(name,agentId)=>emit("tool",{name,agentId}),
+            previousEvidence,onTool:(name,agentId)=>emit("tool",{name,agentId}),
             onDelta: delta => emit("delta", { text: delta }),
             onReset: discardChars => emit("reset", { discardChars }) });
           let reply: Awaited<ReturnType<typeof persistAgentReply>>;
