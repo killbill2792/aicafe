@@ -258,14 +258,25 @@ export async function readMetricDay(businessId:string,date:string,
   }:undefined;
   const input:MetricDailyInput={date,facts};
   // A product/day CSV row is a synthetic order, not a transaction.
-  const transactionOrders=await db.from("orders").select("pos_order_id")
-    .eq("business_id",businessId).eq("business_date",date).limit(1001);
-  if(transactionOrders.error)throw transactionOrders.error;
+  // Count independently in PostgreSQL: both the rollup AND a limit(1001)
+  // probe may have been truncated to PostgREST's 1000-row response cap.
+  const transactionBase=()=>db.from("orders").select("id",{count:"exact",head:true})
+    .eq("business_id",businessId).eq("business_date",date);
+  const [totalOrders,csvDash,csvColon,missingPosId]=await Promise.all([
+    transactionBase(),
+    db.from("orders").select("id",{count:"exact",head:true})
+      .eq("business_id",businessId).eq("business_date",date).like("pos_order_id","csv-%"),
+    db.from("orders").select("id",{count:"exact",head:true})
+      .eq("business_id",businessId).eq("business_date",date).like("pos_order_id","csv:%"),
+    db.from("orders").select("id",{count:"exact",head:true})
+      .eq("business_id",businessId).eq("business_date",date).is("pos_order_id",null),
+  ]);
+  const counts=[totalOrders,csvDash,csvColon,missingPosId];
+  if(counts.some(result=>result.error))throw new Error("transaction count proof unavailable");
   input.transactionCountVerified=Boolean(facts&&facts.salesDataStatus==="actual"&&
-    (transactionOrders.data??[]).length<=1000&&
-    (transactionOrders.data??[]).length===facts.ordersCount&&
-    (transactionOrders.data??[]).every(o=>typeof o.pos_order_id==="string"&&
-      o.pos_order_id.length>0&&!/^csv[-:]/i.test(o.pos_order_id)));
+    counts.every(result=>result.count!==null&&result.count!==undefined)&&
+    totalOrders.count===facts.ordersCount&&csvDash.count===0&&
+    csvColon.count===0&&missingPosId.count===0);
   if(opts.hours){
     const [orders,timecards,timezone]=await Promise.all([
       db.from("orders").select("closed_at,net_sales_cents").eq("business_id",businessId)
@@ -362,15 +373,30 @@ export async function readMetricDay(businessId:string,date:string,
             })),
           );
           input.itemRevenueVerified=ordersComplete&&reconciled.verified;
-      const [fallback,recipes]=await Promise.all([
-        ids.length?db.from("menu_item_cost_fallbacks").select("menu_item_id,cost_cents").eq("business_id",businessId).in("menu_item_id",ids)
-          .eq("status","confirmed"):Promise.resolve({data:[],error:null}),
-        ids.length?db.from("recipe_lines").select("menu_item_id,ingredient_id,quantity").in("menu_item_id",ids):
-          Promise.resolve({data:[],error:null}),
-      ]);
-      if(fallback.error||recipes.error)throw new Error("item cost sources unavailable");
+      const fallback=ids.length?await db.from("menu_item_cost_fallbacks")
+        .select("menu_item_id,cost_cents").eq("business_id",businessId)
+        .in("menu_item_id",ids).eq("status","confirmed"):
+        {data:[],error:null};
+      if(fallback.error)throw new Error("item cost fallback unavailable");
+      const recipePage=(from:number,to:number)=>db.from("recipe_lines")
+        .select("id,menu_item_id,ingredient_id,quantity")
+        .in("menu_item_id",ids).order("id",{ascending:true}).range(from,to);
+      const firstRecipes=ids.length?await recipePage(0,499):{data:[],error:null};
+      if(firstRecipes.error)throw firstRecipes.error;
+      let recipes=firstRecipes.data??[];
+      let recipesComplete=recipes.length<500;
+      for(let offset=500;!recipesComplete&&offset<5000;offset+=500){
+        const next=await recipePage(offset,offset+499);
+        if(next.error)throw next.error;
+        const rows=next.data??[];
+        recipes=[...recipes,...rows];
+        recipesComplete=rows.length<500;
+      }
+      // Unit and net-revenue evidence may remain complete even when recipe
+      // line coverage is not. Never certify the cost component from a prefix.
+      input.itemCostCoverageVerified=recipesComplete;
       const recipesByItem=new Map<string,RecipeLine[]>();
-      for(const recipe of recipes.data??[]){
+      for(const recipe of recipes){
         needed.add(recipe.ingredient_id);
         const arr=recipesByItem.get(recipe.menu_item_id)??[];
         arr.push({ingredientId:recipe.ingredient_id,quantity:Number(recipe.quantity)});
@@ -408,6 +434,7 @@ export async function readMetricDay(businessId:string,date:string,
     if(input.items)input.items=input.items.map(i=>({...i,ingredientPriceMicros:priceMap}));
   }
   if(input.items&&facts?.salesDataStatus==="actual")
-    input.cogsCoverageVerified=verifiedDailyCogs(input.items,facts.ingredientsCents);
+    input.cogsCoverageVerified=input.itemCostCoverageVerified===true&&
+      verifiedDailyCogs(input.items,facts.ingredientsCents);
   return input; // running costs intentionally not guessed: unavailable until daily source is verified
 }

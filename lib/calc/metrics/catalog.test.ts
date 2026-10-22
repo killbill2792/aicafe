@@ -18,7 +18,7 @@ const recorded:MetricDailyInput={
     hourlyWageCents:2000,breaks:[]}],
   timezone:"America/Los_Angeles",
   cogsCoverageVerified:true,laborCoverageVerified:true,itemRevenueVerified:true,attendanceCoverageVerified:true,
-  transactionCountVerified:true,
+  transactionCountVerified:true,itemCostCoverageVerified:true,
 };
 describe("M1 typed metric catalog",()=>{
   it("uses canonical sales and margin calculators",()=>{
@@ -45,6 +45,9 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("item_margin",{itemId}, {...recorded,items:undefined}).value).toBeNull();
     expect(computeMetric("net_profit",{}, {...recorded,runningCostsCents:undefined}).value).toBeNull();
     expect(computeMetric("cogs_pct",{}, {...recorded,cogsCoverageVerified:false}).value).toBeNull();
+    expect(computeMetric("item_margin",{itemId},{...recorded,itemCostCoverageVerified:false}).value).toBeNull();
+    const zeroSales={...recorded,facts:{...recorded.facts!,netSalesCents:0}};
+    expect(computeMetric("cogs_pct",{},zeroSales).invalidatesPrevious).toBe(true);
     expect(computeMetric("item_margin",{itemId},{...recorded,items:[{...recorded.items![0],hasUnverifiedModifiers:true}]}).invalidatesPrevious).toBe(true);
     expect(computeMetric("item_units",{itemId},{...recorded,items:undefined,itemCoverageInvalidated:true}).invalidatesPrevious).toBe(true);
     expect(computeMetric("item_revenue",{itemId},{...recorded,items:undefined,itemCoverageInvalidated:false}).invalidatesPrevious).toBe(false);

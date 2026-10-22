@@ -47,6 +47,7 @@ export type MetricDailyInput = {
   items?: ItemEvidence[];
   /** A complete successful source check proved that old participation is wrong. */
   itemCoverageInvalidated?:boolean;
+  itemCostCoverageVerified?:boolean;
   orders?: Array<{ closedAt: string; netSalesCents: number }>;
   timecards?: Timecard[];
   ingredientPriceMicros?: Record<string,number>;
@@ -79,7 +80,7 @@ const known = (value: number): MetricResult =>
 const sales = (day: MetricDailyInput): DailyFacts | null =>
   day.facts && day.facts.salesDataStatus === "actual" ? day.facts : null;
 const ratioBps = (part: number, total: number): MetricResult =>
-  total > 0 ? known(Math.round(part * 10000 / total)) : missing("noSalesDenominator");
+  total > 0 ? known(Math.round(part * 10000 / total)) : missing("noSalesDenominator",true);
 const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" | "revenue" | "margin"): MetricResult => {
   const id = String(params.itemId);
   if (!sales(day) || !day.items)
@@ -90,6 +91,7 @@ const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" |
   if (!day.itemRevenueVerified) return missing("itemRevenueAllocationUnverified",true);
   if (field === "revenue") return known(row.revenueCents);
   if (row.hasUnverifiedModifiers) return missing("modifierCostUnverified",true);
+  if (!day.itemCostCoverageVerified) return missing("itemRecipeCoverage",true);
   const recipe = evaluateRecipeCost(row.recipeLines, row.ingredientPriceMicros);
   const resolved = resolveProductCost(recipe, row.ownerCostCents);
   if (resolved.costCents === null) return missing("itemCost",true);
