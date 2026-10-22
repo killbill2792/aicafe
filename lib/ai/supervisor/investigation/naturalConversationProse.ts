@@ -31,23 +31,26 @@ function magnitude(span:string):string{
 function claimKey(span:string,after:string):string{
  const kind=category(span,after);
  const n=magnitude(span);
+ const negative=/^\s*[-−﹣－]/u.test(span);
+ const sign=negative?"-":"";
  // Monetary spelling is flexible but money is still exact integer cents.
  // "$7", "$7.00" and "7 dollars" are the same value; "10 cents" is
  // not the same as "$10". Avoid floating-point arithmetic here.
  if(kind==="money"){
    const minor=/(?:\bcents?\b|\bcentavos?\b|سنت)/iu.test(span+" "+after.slice(0,16));
    const [whole,fraction=""]=n.split(".");
-   if(!/^\d+$/u.test(whole)||fraction.length>2||!/^\d*$/u.test(fraction))return kind+":"+n;
+   if(!/^\d+$/u.test(whole)||fraction.length>2||!/^\d*$/u.test(fraction)||
+     minor&&fraction.replace(/0/gu,""))return kind+":"+sign+n;
    const cents=BigInt(whole)*(minor?BigInt(1):BigInt(100))+
      (minor?BigInt(0):BigInt((fraction+"00").slice(0,2)));
-   return "money:"+cents.toString();
+   return "money:"+sign+cents.toString();
  }
  if(kind==="percent"){
    const [whole,fraction=""]=n.split(".");
-   if(!/^\d+$/u.test(whole)||fraction.length>2)return kind+":"+n;
-   return "percent:"+(BigInt(whole)*BigInt(100)+BigInt((fraction+"00").slice(0,2))).toString();
+   if(!/^\d+$/u.test(whole)||fraction.length>2)return kind+":"+sign+n;
+   return "percent:"+sign+(BigInt(whole)*BigInt(100)+BigInt((fraction+"00").slice(0,2))).toString();
  }
- return kind+":"+n;
+ return kind+":"+sign+n;
 }
 function approved(span:string,after:string,known:readonly string[]):boolean{
  const claim=claimKey(span,after);
