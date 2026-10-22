@@ -165,9 +165,9 @@ export async function runAgentTurn(args: {
         if (left <= 0) { endReason = "timeout"; }
         else {
           const timeout = setTimeout(() => finalController.abort(), left);
+          const finalTextStart = text.length;
           try {
             usage.modelCalls++;
-            const finalTextStart = text.length;
             let completed = false;
             for await (const event of provider(request(true), finalController.signal)) {
               if (event.type === "response.failed" || event.type === "error") throw new Error("provider_error");
