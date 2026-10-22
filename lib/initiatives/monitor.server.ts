@@ -113,9 +113,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           const row:ObservationRow={
             metric_id:metric.id,business_date:date,value:result.value,
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
-            revision:1,
+            revision:1,verified_at:new Date().toISOString(),
           };
-          if(await persistMetricObservation(scope,initiative.id,token,row)){
+          if(await persistMetricObservation(scope,initiative.id,token,row,result.invalidatesPrevious===true)){
             stats.sampled++;
             const prior=byMetric.get(metric.id)!;
             const position=prior.findIndex(o=>o.business_date===date);

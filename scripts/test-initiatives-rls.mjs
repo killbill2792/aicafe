@@ -94,7 +94,7 @@ try{
   assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,null,
     "overlapping worker cannot acquire another lease");
   const observationSql="select write_owner_initiative_monitor_observation($1,$2,$3,$4,$5,$6,$7,$8,$9) as wrote";
-  const leaseObsArgs=[BIZ,A,ID,t1,MID,"2026-10-16",125,1,null];
+  const leaseObsArgs=[BIZ,A,ID,t1,MID,"2026-10-16",125,1,null,false];
   assert.equal((await db.query(observationSql,leaseObsArgs)).rows[0].wrote,true);
   assert.equal((await db.query(observationSql,[...leaseObsArgs.slice(0,3),t2,...leaseObsArgs.slice(4)])).rows[0].wrote,false);
   const resultSql="select write_owner_initiative_monitor_evaluation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) as wrote";
@@ -102,10 +102,19 @@ try{
     JSON.stringify({count:1}),JSON.stringify({baseline:[100],test:[125]}),
     "transition-unique-1","digest-unique-1"];
   assert.equal((await db.query(resultSql,evalArgs)).rows[0].wrote,true);
+  // An explicit new source contradiction (e.g. unknown modifier cost) must
+  // invalidate yesterday's verified economics. A transient missing fetch cannot.
+  const invalidation=[...leaseObsArgs.slice(0,6),null,0,"modifierCostUnverified",true];
+  const noProof=[...leaseObsArgs.slice(0,6),null,0,"temporarilyUnavailable",false];
+  assert.equal((await db.query(observationSql,noProof)).rows[0].wrote,false);
+  assert.equal((await db.query(observationSql,invalidation)).rows[0].wrote,true);
+  const invalidated=(await db.query("select value,coverage from initiative_observations where metric_id=$1 and business_date='2026-10-16'",[MID])).rows[0];
+  assert.equal(invalidated.value,null);
+  assert.equal(Number(invalidated.coverage),0);
   const released=(await db.query("select release_owner_initiative_monitor($1,$2,$3) as released",
     [ID,t1,false])).rows[0].released;
   assert.equal(released,true);
-  assert.equal((await db.query(observationSql,[...leaseObsArgs.slice(0,6),200,1,null])).rows[0].wrote,false,
+  assert.equal((await db.query(observationSql,[...leaseObsArgs.slice(0,6),200,1,null,false])).rows[0].wrote,false,
     "late worker must not write after releasing its lease");
   assert.equal((await db.query(resultSql,evalArgs)).rows[0].wrote,false,
     "late worker cannot write evaluations");

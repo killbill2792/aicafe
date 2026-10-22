@@ -90,7 +90,7 @@ export async function readOwnerInitiative(scope:InitiativeScope,id:string,
   const ids=rows.map(m=>m.id);
   if(observation && !ids.includes(observation.metricId))throw new Error("initiative metric scope mismatch");
   let observationQuery=db.from("initiative_observations")
-    .select("metric_id,business_date,value,coverage,source,note,revision")
+    .select("metric_id,business_date,value,coverage,source,note,revision,verified_at")
     .in("metric_id",ids).order("business_date",{ascending:false});
   if(observation)observationQuery=observationQuery.eq("metric_id",observation.metricId)
     .eq("business_date",observation.date);
@@ -213,13 +213,13 @@ export async function releaseMonitorInitiative(id:string,token:string,completed:
 }
 /** Atomic source observation and lease test. No read/update race or stale worker writes. */
 export async function persistMetricObservation(scope:InitiativeScope,initiativeId:string,
-  leaseToken:string,row:ObservationRow) {
+  leaseToken:string,row:ObservationRow,allowInvalidation=false) {
   const db=await serviceOwnerAccess(scope);
   const {data,error}=await db.rpc("write_owner_initiative_monitor_observation",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
     p_initiative_id:initiativeId,p_token:leaseToken,
     p_metric_id:row.metric_id,p_date:row.business_date,p_value:row.value,
-    p_coverage:row.coverage,p_note:row.note,
+    p_coverage:row.coverage,p_note:row.note,p_allow_invalidation:allowInvalidation,
   });
   if(error)throw error;
   return data===true;
