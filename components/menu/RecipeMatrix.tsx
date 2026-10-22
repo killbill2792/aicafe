@@ -237,7 +237,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
             })}
           </tr>)}
           {newRow && <tr className="bg-good-tint/35">
-            <th className="sticky start-0 z-10 border-b border-good/20 bg-[#f5faf7] p-2 align-top text-start">
+            <th className="sticky start-0 z-10 border-b border-good/20 bg-pos-soft p-2 align-top text-start">
               <div className="relative">
                 <label className="flex h-12 items-center rounded-xl border border-good bg-card px-3 ring-2 ring-good/10">
                   <Search size={18} aria-hidden="true" className="shrink-0 text-ink-muted" />

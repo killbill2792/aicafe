@@ -25,7 +25,7 @@ export default function PeriodSwitch({ current }: { current: Period }) {
   }
 
   return (
-    <div role="group" aria-label={t("periodSwitchLabel")} className="flex gap-1.5 rounded-3xl bg-[#EDE5D9] p-1">
+    <div role="group" aria-label={t("periodSwitchLabel")} className="flex gap-1.5 rounded-3xl bg-surface2 p-1">
       {PERIODS.map((period) => {
         const active = period === current;
         return (
@@ -35,7 +35,7 @@ export default function PeriodSwitch({ current }: { current: Period }) {
             aria-pressed={active}
             onClick={() => setPeriod(period)}
             className={`h-10 flex-1 rounded-3xl text-[15px] font-semibold transition-colors ${
-              active ? "bg-card font-bold text-ink shadow-sm" : "bg-transparent text-[#4A3A2E]"
+              active ? "bg-card font-bold text-ink shadow-sm" : "bg-transparent text-muted"
             }`}
           >
             {t(period)}

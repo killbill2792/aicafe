@@ -111,7 +111,7 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
           const photo = group.memberIds.map((id) => photos[id]).find(Boolean) ?? null;
           return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-sm transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <div className="flex gap-4 p-4">
-              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#fbf1e3] text-[#7a3f13]">
+              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface2 text-warn-text">
                 {photo ? <Image src={photo.signedUrl} alt="" fill unoptimized sizes="112px" className="object-cover transition-transform group-hover:scale-[1.02] motion-reduce:transform-none" /> : <Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}
               </div>
               <div className="min-w-0 flex-1 py-0.5">
