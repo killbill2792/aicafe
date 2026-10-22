@@ -2,7 +2,7 @@
 export type Comparison = "gte" | "lte";
 export type GoalMetric = {
   id:string; role:"primary"|"guardrail"; comparator:Comparison;
-  targetKind:"absolute"|"relative_pct"; target:number;
+  targetKind:"absolute"|"relative_pct"; target:number;source?:"computed"|"checkin";
   baseline:Array<{date:string;value:number|null;coverage:number}>;
   test:Array<{date:string;value:number|null;coverage:number}>;
 };
@@ -15,7 +15,7 @@ export type Evaluation = {
 };
 const weekday = (s:string)=>new Date(s+"T12:00:00Z").getUTCDay();
 const average = (nums:number[])=>nums.reduce((a,b)=>a+b,0)/nums.length;
-/** For each observed test day compare against the nearest recorded baseline of same weekday. */
+/** Match every test day to the closest covered baseline of the same weekday. */
 export function evaluateInitiative(
   metrics:GoalMetric[],asOf:string,endsOn:string,minCoverage=0.8,kind:"goal"|"experiment"="experiment",
 ):Evaluation {
@@ -25,6 +25,8 @@ export function evaluateInitiative(
     const tested=metric.test.filter(r=>r.date<=asOf&&r.date<=endsOn);
     const covered=tested.filter(r=>r.value!==null&&r.coverage>=minCoverage);
     const validPairs=covered.flatMap(row=>{
+      if(metric.source==="checkin"&&metric.targetKind==="absolute")
+        return [{test:row.value!,base:row.value!}]; // explicit owner value, no inferred baseline
       const candidates=metric.baseline.filter(b=>weekday(b.date)===weekday(row.date)&&b.value!==null&&b.coverage>=minCoverage&&b.date<row.date)
         .sort((a,b)=>b.date.localeCompare(a.date));
       return candidates.length?[{test:row.value!,base:candidates[0].value!}]:[];
@@ -32,11 +34,10 @@ export function evaluateInitiative(
     const coverage=tested.length?validPairs.length/tested.length:0;
     const baseline=validPairs.length?average(validPairs.map(p=>p.base)):null;
     const current=validPairs.length?average(validPairs.map(p=>p.test)):null;
-    const target=baseline===null?null:metric.targetKind==="relative_pct"?
-      baseline*(1+metric.target/100):metric.target;
+    const target=metric.targetKind==="absolute"?metric.target:baseline===null?null:baseline*(1+metric.target/100);
     const met=current===null||target===null?null:
       metric.comparator==="gte"?current>=target:current<=target;
-    results[metric.id]={baseline,current,target,coverage,met};
+    results[metric.id]={baseline:metric.source==="checkin"?null:baseline,current,target,coverage,met};
     if(coverage<minCoverage||met===null){insufficient=true;continue;}
     if(metric.role==="primary"&&!met)primaryMet=false;
     if(metric.role==="guardrail"&&!met)guardrailBreach=true;
@@ -47,7 +48,6 @@ export function evaluateInitiative(
   const positive=primaryMet&&!guardrailBreach;
   const status:EvaluationStatus=done?(positive?"met":"missed"):(positive?"on_track":"off_track");
   const recommendation:Recommendation=positive?"keep":
-    guardrailBreach?(kind==="experiment"?"revert":"adjust"):
-    done?"adjust":"adjust";
+    guardrailBreach?(kind==="experiment"?"revert":"adjust"):"adjust";
   return {status,recommendation,results};
 }

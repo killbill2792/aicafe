@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { initiativeToolDefinitions, isInitiativeTool, executeInitiativeTool } from "./initiatives";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -13,7 +14,7 @@ export type AgentToolResult = {
 };
 export type AgentToolContext = {
   tools: Pick<BusinessScopedCafeTools, "getProfitability" | "getSalesTrend" | "getMenuCatalog">;
-  asOf: string; locale: AgentLocale;
+  asOf: string; locale: AgentLocale; threadId?: string;
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
@@ -29,7 +30,7 @@ export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).ma
   const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name], { target: "draft-07" });
   void _schema;
   return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
-});
+}).concat(initiativeToolDefinitions);
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -43,6 +44,7 @@ function absent(source: string, period: CafeStatePeriod | null, missing: string[
   return { source, period, missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
+  if (isInitiativeTool(name)) return executeInitiativeTool(name,raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);
