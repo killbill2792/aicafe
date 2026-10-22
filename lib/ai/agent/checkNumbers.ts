@@ -590,7 +590,13 @@ function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
 function canonicalPricesExistInRead(previous:readonly NumericEvidence[],
   current:readonly AgentToolResult[]):boolean {
   return previous.some(e=>(e.prices?.length??0)>0)||
-    current.some(r=>r.source==="menu_items"||r.source==="product_costs");
+    current.some(r=>{
+      const items=r.source==="menu_items"&&Array.isArray(r.items)?r.items:
+        r.source==="product_costs"?[r.item]:[];
+      return items.some(item=>item&&typeof item==="object"&&
+        typeof item.id==="string"&&typeof item.name==="string"&&
+        typeof item.priceCents==="number");
+    });
 }
 
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
