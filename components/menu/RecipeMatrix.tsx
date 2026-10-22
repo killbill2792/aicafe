@@ -214,7 +214,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
           {items.map((item) => <th key={item.id} className={`min-w-[210px] border-b border-line p-3 text-center ${focusedSizeId === item.id ? "bg-warn-tint/55" : ""} ${item.active ? "" : "text-ink-muted"}`}>
             <span className="text-lg font-extrabold">{item.sizeLabel ?? item.name}</span>
             {!item.active && <span className="block text-[17px] font-medium">{labels.inactive}</span>}
-            {focusedSizeId === item.id && <span className="mx-auto mt-1 block w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[15px] font-bold text-warn">{item.costStatus === "NO_RECIPE" ? labels.noRecipe : item.costStatus === "MISSING_INGREDIENT_COST" ? labels.missingCost : labels.focused}</span>}
+            {focusedSizeId === item.id && <span className="mx-auto mt-1 block w-fit rounded-full bg-warn-soft px-2 py-0.5 text-[15px] font-bold text-warn">{item.costStatus === "NO_RECIPE" ? labels.noRecipe : item.costStatus === "MISSING_INGREDIENT_COST" ? labels.missingCost : labels.focused}</span>}
           </th>)}
         </tr></thead>
         <tbody>

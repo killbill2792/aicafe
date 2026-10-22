@@ -53,7 +53,7 @@ export default async function BreakEvenPage() {
           <span className="font-bold">{t("perDay", { amount: formatCents(vm.runningPerDayCents) })}</span>
         </div>
         <div className="flex items-center gap-3 text-[15px]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-staff text-white">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-staff text-on-chart-staff">
             <Users aria-hidden="true" size={18} />
           </span>
           <span className="flex-1">{t("plannedStaffRow")}</span>

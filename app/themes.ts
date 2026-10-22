@@ -41,7 +41,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#1C1917",
+      "onChartFees": "#1C1917"
     },
     "dark": {
       "bg": "#0E1413",
@@ -81,7 +85,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#0E1413",
       "onWarn": "#0E1413",
-      "onNeg": "#0E1413"
+      "onNeg": "#0E1413",
+      "onChartStaff": "#0E1413",
+      "onChartIngredients": "#0E1413",
+      "onChartRunning": "#0E1413",
+      "onChartFees": "#0E1413"
     }
   },
   {
@@ -125,7 +133,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#1A1411",
+      "onChartFees": "#1A1411"
     },
     "dark": {
       "bg": "#120E0C",
@@ -165,7 +177,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#120E0C",
       "onWarn": "#120E0C",
-      "onNeg": "#120E0C"
+      "onNeg": "#120E0C",
+      "onChartStaff": "#120E0C",
+      "onChartIngredients": "#120E0C",
+      "onChartRunning": "#120E0C",
+      "onChartFees": "#120E0C"
     }
   },
   {
@@ -209,7 +225,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#10221B",
+      "onChartFees": "#10221B"
     },
     "dark": {
       "bg": "#0A1511",
@@ -249,7 +269,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#0A1511",
       "onWarn": "#0A1511",
-      "onNeg": "#0A1511"
+      "onNeg": "#0A1511",
+      "onChartStaff": "#0A1511",
+      "onChartIngredients": "#0A1511",
+      "onChartRunning": "#0A1511",
+      "onChartFees": "#0A1511"
     }
   },
   {
@@ -293,7 +317,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#1E1520",
+      "onChartFees": "#1E1520"
     },
     "dark": {
       "bg": "#141015",
@@ -333,7 +361,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#141015",
       "onWarn": "#141015",
-      "onNeg": "#141015"
+      "onNeg": "#141015",
+      "onChartStaff": "#141015",
+      "onChartIngredients": "#141015",
+      "onChartRunning": "#141015",
+      "onChartFees": "#141015"
     }
   },
   {
@@ -377,7 +409,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#141A2B",
+      "onChartFees": "#141A2B"
     },
     "dark": {
       "bg": "#0D111C",
@@ -417,7 +453,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#0D111C",
       "onWarn": "#0D111C",
-      "onNeg": "#0D111C"
+      "onNeg": "#0D111C",
+      "onChartStaff": "#0D111C",
+      "onChartIngredients": "#0D111C",
+      "onChartRunning": "#0D111C",
+      "onChartFees": "#0D111C"
     }
   },
   {
@@ -461,7 +501,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#1A1F14",
+      "onChartFees": "#1A1F14"
     },
     "dark": {
       "bg": "#10130D",
@@ -501,7 +545,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#10130D",
       "onWarn": "#10130D",
-      "onNeg": "#10130D"
+      "onNeg": "#10130D",
+      "onChartStaff": "#10130D",
+      "onChartIngredients": "#10130D",
+      "onChartRunning": "#10130D",
+      "onChartFees": "#10130D"
     }
   },
   {
@@ -545,7 +593,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#111827",
+      "onChartFees": "#111827"
     },
     "dark": {
       "bg": "#0C1220",
@@ -585,7 +637,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#0C1220",
       "onWarn": "#0C1220",
-      "onNeg": "#0C1220"
+      "onNeg": "#0C1220",
+      "onChartStaff": "#0C1220",
+      "onChartIngredients": "#0C1220",
+      "onChartRunning": "#0C1220",
+      "onChartFees": "#0C1220"
     }
   },
   {
@@ -629,7 +685,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#FFFFFF",
       "onWarn": "#FFFFFF",
-      "onNeg": "#FFFFFF"
+      "onNeg": "#FFFFFF",
+      "onChartStaff": "#FFFFFF",
+      "onChartIngredients": "#FFFFFF",
+      "onChartRunning": "#1C1414",
+      "onChartFees": "#1C1414"
     },
     "dark": {
       "bg": "#121011",
@@ -669,7 +729,11 @@ export const themes = [
       "chart-fees": "#A7B0BA",
       "onPos": "#121011",
       "onWarn": "#121011",
-      "onNeg": "#121011"
+      "onNeg": "#121011",
+      "onChartStaff": "#121011",
+      "onChartIngredients": "#121011",
+      "onChartRunning": "#121011",
+      "onChartFees": "#121011"
     }
   }
 ] as const;

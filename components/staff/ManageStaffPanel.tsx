@@ -386,7 +386,7 @@ function EmployeeRowItem({
       </button>
 
       {expanded && (
-        <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-[#FAF6F0] p-3.5">
+        <div className="mt-3 flex flex-col gap-2.5 rounded-2xl bg-surface2 p-3.5">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"

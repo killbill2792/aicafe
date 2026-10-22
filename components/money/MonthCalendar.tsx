@@ -154,7 +154,7 @@ export default function MonthCalendar({
           const base = "relative flex aspect-square min-h-12 flex-col items-center justify-center rounded-[10px] text-[13px] font-bold";
           const stateClass =
             cell.state.kind === "actual"
-              ? `${profitToneBgClass(cell.state.tone)} text-white`
+              ? `${profitToneBgClass(cell.state.tone)} ${cell.state.tone === "good" ? "text-on-pos" : cell.state.tone === "warn" ? "text-on-warn" : "text-bg"}`
               : cell.state.kind === "closed"
                 ? "border border-line bg-paper text-ink-muted"
                 : cell.state.kind === "missing"

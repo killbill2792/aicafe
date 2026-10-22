@@ -44,6 +44,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 28 25 23;
+  --c-on-chart-fees: 28 25 23;
 }
 
 :root[data-theme="fresh-pour"][data-mode="dark"] {
@@ -87,6 +91,10 @@
   --c-on-pos: 14 20 19;
   --c-on-warn: 14 20 19;
   --c-on-neg: 14 20 19;
+  --c-on-chart-staff: 14 20 19;
+  --c-on-chart-ingredients: 14 20 19;
+  --c-on-chart-running: 14 20 19;
+  --c-on-chart-fees: 14 20 19;
 }
 
 :root[data-theme="night-roast"][data-mode="light"],
@@ -131,6 +139,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 26 20 17;
+  --c-on-chart-fees: 26 20 17;
 }
 
 :root[data-theme="night-roast"][data-mode="dark"] {
@@ -174,6 +186,10 @@
   --c-on-pos: 18 14 12;
   --c-on-warn: 18 14 12;
   --c-on-neg: 18 14 12;
+  --c-on-chart-staff: 18 14 12;
+  --c-on-chart-ingredients: 18 14 12;
+  --c-on-chart-running: 18 14 12;
+  --c-on-chart-fees: 18 14 12;
 }
 
 :root[data-theme="market-green"][data-mode="light"],
@@ -218,6 +234,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 16 34 27;
+  --c-on-chart-fees: 16 34 27;
 }
 
 :root[data-theme="market-green"][data-mode="dark"] {
@@ -261,6 +281,10 @@
   --c-on-pos: 10 21 17;
   --c-on-warn: 10 21 17;
   --c-on-neg: 10 21 17;
+  --c-on-chart-staff: 10 21 17;
+  --c-on-chart-ingredients: 10 21 17;
+  --c-on-chart-running: 10 21 17;
+  --c-on-chart-fees: 10 21 17;
 }
 
 :root[data-theme="berry-mocha"][data-mode="light"],
@@ -305,6 +329,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 30 21 32;
+  --c-on-chart-fees: 30 21 32;
 }
 
 :root[data-theme="berry-mocha"][data-mode="dark"] {
@@ -348,6 +376,10 @@
   --c-on-pos: 20 16 21;
   --c-on-warn: 20 16 21;
   --c-on-neg: 20 16 21;
+  --c-on-chart-staff: 20 16 21;
+  --c-on-chart-ingredients: 20 16 21;
+  --c-on-chart-running: 20 16 21;
+  --c-on-chart-fees: 20 16 21;
 }
 
 :root[data-theme="blue-hour"][data-mode="light"],
@@ -392,6 +424,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 20 26 43;
+  --c-on-chart-fees: 20 26 43;
 }
 
 :root[data-theme="blue-hour"][data-mode="dark"] {
@@ -435,6 +471,10 @@
   --c-on-pos: 13 17 28;
   --c-on-warn: 13 17 28;
   --c-on-neg: 13 17 28;
+  --c-on-chart-staff: 13 17 28;
+  --c-on-chart-ingredients: 13 17 28;
+  --c-on-chart-running: 13 17 28;
+  --c-on-chart-fees: 13 17 28;
 }
 
 :root[data-theme="matcha"][data-mode="light"],
@@ -479,6 +519,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 26 31 20;
+  --c-on-chart-fees: 26 31 20;
 }
 
 :root[data-theme="matcha"][data-mode="dark"] {
@@ -522,6 +566,10 @@
   --c-on-pos: 16 19 13;
   --c-on-warn: 16 19 13;
   --c-on-neg: 16 19 13;
+  --c-on-chart-staff: 16 19 13;
+  --c-on-chart-ingredients: 16 19 13;
+  --c-on-chart-running: 16 19 13;
+  --c-on-chart-fees: 16 19 13;
 }
 
 :root[data-theme="caramel-sky"][data-mode="light"],
@@ -566,6 +614,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 17 24 39;
+  --c-on-chart-fees: 17 24 39;
 }
 
 :root[data-theme="caramel-sky"][data-mode="dark"] {
@@ -609,6 +661,10 @@
   --c-on-pos: 12 18 32;
   --c-on-warn: 12 18 32;
   --c-on-neg: 12 18 32;
+  --c-on-chart-staff: 12 18 32;
+  --c-on-chart-ingredients: 12 18 32;
+  --c-on-chart-running: 12 18 32;
+  --c-on-chart-fees: 12 18 32;
 }
 
 :root[data-theme="cherry-cola"][data-mode="light"],
@@ -653,6 +709,10 @@
   --c-on-pos: 255 255 255;
   --c-on-warn: 255 255 255;
   --c-on-neg: 255 255 255;
+  --c-on-chart-staff: 255 255 255;
+  --c-on-chart-ingredients: 255 255 255;
+  --c-on-chart-running: 28 20 20;
+  --c-on-chart-fees: 28 20 20;
 }
 
 :root[data-theme="cherry-cola"][data-mode="dark"] {
@@ -696,6 +756,10 @@
   --c-on-pos: 18 16 17;
   --c-on-warn: 18 16 17;
   --c-on-neg: 18 16 17;
+  --c-on-chart-staff: 18 16 17;
+  --c-on-chart-ingredients: 18 16 17;
+  --c-on-chart-running: 18 16 17;
+  --c-on-chart-fees: 18 16 17;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -743,6 +807,10 @@
   --c-on-pos: 14 20 19;
   --c-on-warn: 14 20 19;
   --c-on-neg: 14 20 19;
+  --c-on-chart-staff: 14 20 19;
+  --c-on-chart-ingredients: 14 20 19;
+  --c-on-chart-running: 14 20 19;
+  --c-on-chart-fees: 14 20 19;
 }
 
 :root[data-theme="night-roast"][data-mode="system"] {
@@ -786,6 +854,10 @@
   --c-on-pos: 18 14 12;
   --c-on-warn: 18 14 12;
   --c-on-neg: 18 14 12;
+  --c-on-chart-staff: 18 14 12;
+  --c-on-chart-ingredients: 18 14 12;
+  --c-on-chart-running: 18 14 12;
+  --c-on-chart-fees: 18 14 12;
 }
 
 :root[data-theme="market-green"][data-mode="system"] {
@@ -829,6 +901,10 @@
   --c-on-pos: 10 21 17;
   --c-on-warn: 10 21 17;
   --c-on-neg: 10 21 17;
+  --c-on-chart-staff: 10 21 17;
+  --c-on-chart-ingredients: 10 21 17;
+  --c-on-chart-running: 10 21 17;
+  --c-on-chart-fees: 10 21 17;
 }
 
 :root[data-theme="berry-mocha"][data-mode="system"] {
@@ -872,6 +948,10 @@
   --c-on-pos: 20 16 21;
   --c-on-warn: 20 16 21;
   --c-on-neg: 20 16 21;
+  --c-on-chart-staff: 20 16 21;
+  --c-on-chart-ingredients: 20 16 21;
+  --c-on-chart-running: 20 16 21;
+  --c-on-chart-fees: 20 16 21;
 }
 
 :root[data-theme="blue-hour"][data-mode="system"] {
@@ -915,6 +995,10 @@
   --c-on-pos: 13 17 28;
   --c-on-warn: 13 17 28;
   --c-on-neg: 13 17 28;
+  --c-on-chart-staff: 13 17 28;
+  --c-on-chart-ingredients: 13 17 28;
+  --c-on-chart-running: 13 17 28;
+  --c-on-chart-fees: 13 17 28;
 }
 
 :root[data-theme="matcha"][data-mode="system"] {
@@ -958,6 +1042,10 @@
   --c-on-pos: 16 19 13;
   --c-on-warn: 16 19 13;
   --c-on-neg: 16 19 13;
+  --c-on-chart-staff: 16 19 13;
+  --c-on-chart-ingredients: 16 19 13;
+  --c-on-chart-running: 16 19 13;
+  --c-on-chart-fees: 16 19 13;
 }
 
 :root[data-theme="caramel-sky"][data-mode="system"] {
@@ -1001,6 +1089,10 @@
   --c-on-pos: 12 18 32;
   --c-on-warn: 12 18 32;
   --c-on-neg: 12 18 32;
+  --c-on-chart-staff: 12 18 32;
+  --c-on-chart-ingredients: 12 18 32;
+  --c-on-chart-running: 12 18 32;
+  --c-on-chart-fees: 12 18 32;
 }
 
 :root[data-theme="cherry-cola"][data-mode="system"] {
@@ -1044,6 +1136,10 @@
   --c-on-pos: 18 16 17;
   --c-on-warn: 18 16 17;
   --c-on-neg: 18 16 17;
+  --c-on-chart-staff: 18 16 17;
+  --c-on-chart-ingredients: 18 16 17;
+  --c-on-chart-running: 18 16 17;
+  --c-on-chart-fees: 18 16 17;
 }
 
 }
