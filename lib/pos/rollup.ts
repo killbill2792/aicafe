@@ -83,7 +83,7 @@ export async function recomputeDailyRollup(
           .select("ingredient_id, effective_from, cost_per_base_unit_micros")
           .in("ingredient_id", ingredientIds)
           .lte("effective_from", businessDate)
-          .order("effective_from", { ascending: true })
+          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
       : { data: [] };
     const priceMicros: Record<string, number> = {};
     for (const row of priceRows ?? []) priceMicros[row.ingredient_id] = row.cost_per_base_unit_micros;
