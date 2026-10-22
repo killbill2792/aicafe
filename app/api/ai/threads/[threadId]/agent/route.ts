@@ -5,8 +5,8 @@ import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.s
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import { runAgentTurn } from "@/lib/ai/agent/loop.server";
-import { persistAgentReply } from "@/lib/ai/agent/persist.server";
-import { labelSupervisorThread } from "@/lib/ai/conversations/usage.server";
+import { persistAgentReply, AgentReplyTooLongError, AgentReplyStorageError } from "@/lib/ai/agent/persist.server";
+import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +39,7 @@ export async function POST(request: Request, context: RouteContext) {
             emit("done", { reply: prior, replayed: true });
             return;
           }
+          await assertOwnerAgentTurnAvailable(scope);
           const [tools, identity, page] = await Promise.all([
             createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), service.listMessages(id, 0),
           ]);
@@ -55,8 +56,8 @@ export async function POST(request: Request, context: RouteContext) {
             unverified: result.unverified, usage: result.usage });
         } catch (error) {
           const code = error instanceof ConversationApiError ? error.code :
-            error instanceof Error && error.message === "agent_reply_too_long" ? "reply_too_long" :
-            error instanceof Error && /storage|insert|database|writer/.test(error.message) ? "reply_storage_failed" :
+            error instanceof AgentReplyTooLongError ? "reply_too_long" :
+            error instanceof AgentReplyStorageError ? "reply_storage_failed" :
             "agent_turn_failed";
           emit("error", { code });
         } finally { controller.close(); }
