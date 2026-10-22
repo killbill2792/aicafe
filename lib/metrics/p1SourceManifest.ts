@@ -73,7 +73,10 @@ export const SOURCE_SURFACES = {
   "lib/data/getUnpricedProductSizes.ts": {
     getUnpricedProductSizes:{restricted:"Owner-authenticated product size drafts; excludes prices and is not model-exposed evidence"},
   },
-  "lib/data/comboCosts.server.ts": {\n    readMenuComboCostComponents:{restricted:"Internal tenant scoped combo composition, not a canonical model exposed read"},\n  },\n  "lib/data/getMenuItemsForEdit.ts": {
+  "lib/data/comboCosts.server.ts": {
+    readMenuComboCostComponents:{restricted:"Internal tenant scoped combo composition, not a canonical model exposed read"},
+  },
+  "lib/data/getMenuItemsForEdit.ts": {
     getMenuItemsForEdit:{capabilities:["menu.recipe","menu.ingredients"]},
   },
   "lib/data/getMenuControlCenter.ts": {
