@@ -17,6 +17,25 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(checkNumbers("١٢٣٫٩٩ د.إ", "", [base], "ar")).toHaveLength(1);
     expect(checkNumbers("We agreed on 5", "5", [], "en")).toEqual([]);
   });
+  it("uses whole-percent tolerance without allowing misleading decimal percents", () => {
+    expect(checkNumbers("13% margin", "", [base], "en")).toEqual([]); // 12.5% rounded to a whole percent
+    expect(checkNumbers("13.1% margin", "", [base], "en")).toHaveLength(1);
+    expect(checkNumbers("12.6% margin", "", [base], "en")).toEqual([]);
+  });
+  it("ignores year and month/day dates while still checking ordinary quantities", () => {
+    const text = "October 21, 2026: 9 orders; 22 de octubre and ٢١ أكتوبر.";
+    const flagged = checkNumbers(text, "", [], "es");
+    expect(flagged.map(number => number.text)).toEqual(["9"]);
+    expect(checkNumbers("2026-10-21", "", [], "en")).toEqual([]);
+    expect(checkNumbers("21 October", "", [], "en")).toEqual([]);
+    expect(checkNumbers("٢٠٢٦ and ٢١ أكتوبر", "", [], "ar")).toEqual([]);
+  });
+  it("does not silently join ASCII space-separated numbers", () => {
+    const record = { source:"counts",period:null,missing:[],count:1234 };
+    expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["1","234"]);
+    expect(checkNumbers("1\u202f234", "", [record], "es")).toEqual([]);
+    expect(checkNumbers("1\u00a0234", "", [record], "ar")).toEqual([]);
+  });
   it("uses successful retries and actual missing evidence", () => {
     expect(statusFromResults([{callId:"a",name:"get_profit",arguments:'{"period":"month"}',result:{...base, missing:["first"]}},
       {callId:"new-retry-id",name:"get_profit",arguments:'{"period":"month"}',result:base}]).status).toBe("complete");
