@@ -75,7 +75,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
   it("does not silently join ASCII space-separated numbers", () => {
     const record = { source:"counts",period:null,missing:[],count:1234 };
     expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["1","234"]);
-    expect(checkNumbers("1", "", [], "en")).toEqual([]);
+    expect(checkNumbers("1", "", [], "en").map(n => n.text)).toEqual(["1"]); // unsupported quantities are never inferred
     expect(checkNumbers("1\u202f234", "", [record], "es")).toEqual([]);
     expect(checkNumbers("1\u00a0234", "", [record], "ar")).toEqual([]);
   });
@@ -135,9 +135,9 @@ describe("realistic multi-turn numeric claims",()=>{
   it("allows menu lists, time claims, and counts evidenced by array lengths",()=>{
     expect(checkNumbers("1. Latte 2. Mocha","",[],"en")).toEqual([]);
     expect(checkNumbers("2 drinks","",[menu],"en")).toEqual([]);
-    expect(checkNumbers("We open at 7:00 AM","",[],"en")).toEqual([]);
-    expect(checkNumbers("We open at 3 PM","",[],"en")).toEqual([]);
-    expect(checkNumbers("We open at 15h","",[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 7:00 AM","We open at 7:00 AM",[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 3 PM","We open at 3 PM",[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 15h","We open at 15h",[],"en")).toEqual([]);
   });
   it("keeps prior cents evidence across turns and validates supported differences",()=>{
     const saved=[{tool:"menu_items",values:[
@@ -198,5 +198,58 @@ describe("fresh reads replace saved numeric evidence",()=>{
   });
   it("still permits saved evidence in a no-tool follow-up",()=>{
     expect(checkNumbers("Latte costs $6.","",[],"en",previous)).toEqual([]);
+  });
+});
+
+describe("Codex: list markers cannot hide unsupported facts", () => {
+  it("flags sentence-ending business quantities rather than reading them as list numbers", () => {
+    expect(checkNumbers("The order count is 999. Sales are unavailable.", "", [], "en")
+      .map(v => v.text)).toEqual(["999"]);
+    expect(checkNumbers("The order count is 9. Sales are unavailable.", "", [], "en")
+      .map(v => v.text)).toEqual(["9"]);
+    expect(checkNumbers("We sold 5. No order records were found.", "", [], "en")
+      .map(v => v.text)).toEqual(["5"]);
+    expect(checkNumbers("We sold 999) drinks.", "", [], "en")
+      .map(v => v.text)).toEqual(["999"]);
+  });
+  it("preserves real line-based and compact sequential numbered lists", () => {
+    expect(checkNumbers("1. Latte\n2. Mocha\n3) Tea", "", [], "en")).toEqual([]);
+    expect(checkNumbers("1. Latte 2. Mocha", "", [], "en")).toEqual([]);
+    expect(checkNumbers("Our order count is 9. Revenue unknown.", "", [], "en")
+      .map(v => v.text)).toEqual(["9"]);
+    expect(checkNumbers("1 234", "", [], "en").map(v => v.text)).toEqual(["1","234"]);
+  });
+});
+
+describe("Codex: typed money evidence cannot prove unrelated quantities", () => {
+  const profit = {source:"profitability",period:null,missing:[],
+    ownerProfitCents:8500, totalCostsCents:100};
+  it("keeps money in cents rather than making it a generic count", () => {
+    expect(checkNumbers("You sold 85 drinks.", "", [profit], "en")
+      .map(v => v.text)).toEqual(["85"]);
+    expect(checkNumbers("There were 85 staff members.", "", [profit], "en")
+      .map(v => v.text)).toEqual(["85"]);
+    expect(checkNumbers("You sold 85 drinks.", "", [], "en", [
+      {tool:"profitability",values:[{key:"ownerProfitCents",value:8500,unit:"cents"}]},
+    ]).map(v => v.text)).toEqual(["85"]);
+    // The two money amounts have a numeric ratio of 85, but that ratio
+    // is not evidence of 85 sold drinks.
+    expect(checkNumbers("85 drinks sold", "", [profit], "en")
+      .map(v => v.text)).toEqual(["85"]);
+  });
+  it("still allows currency-less amounts in their actual monetary context", () => {
+    expect(checkNumbers("The profit was 85.", "", [profit], "en")).toEqual([]);
+    expect(checkNumbers("The profit was $85.", "", [profit], "en")).toEqual([]);
+    expect(checkNumbers("Profit 85, but you sold 85 drinks.", "", [profit], "en")
+      .map(v => v.text)).toEqual(["85"]);
+    expect(checkNumbers("La ganancia fue 85.", "", [profit], "es")).toEqual([]);
+    expect(checkNumbers("Profit is 86.", "", [profit], "en")
+      .map(v => v.text)).toEqual(["86"]);
+  });
+  it("keeps menu price wording valid without laundering product quantities", () => {
+    const menu={source:"menu_items",period:null,missing:[],items:[{id:"latte",priceCents:850}]};
+    expect(checkNumbers("Latte is 8.50.", "", [menu], "en")).toEqual([]);
+    expect(checkNumbers("We sold 8.5 lattes.", "", [menu], "en")
+      .map(v => v.text)).toEqual(["8.5"]);
   });
 });
