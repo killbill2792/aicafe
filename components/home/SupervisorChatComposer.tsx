@@ -109,7 +109,7 @@ function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; 
     block.href.startsWith("/operations") && !block.href.startsWith("//")) {
     const statusText = block.status === "handled" ? copy.handled :
       block.status === "watching" ? copy.watching : copy.needsYou;
-    return <Link href={block.href} className="block rounded-2xl border border-line bg-white p-4 no-underline shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
+    return <Link href={block.href} className="block rounded-2xl border border-line bg-surface p-4 no-underline shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <span className="text-[13px] font-extrabold uppercase tracking-wide text-ink-muted">{block.agent}</span>
@@ -166,7 +166,7 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
       <h3 className="mb-2 text-xs font-extrabold uppercase tracking-wider text-ink-muted">{snapshot.title}</h3>
       <div className="grid grid-cols-2 gap-2">
         {snapshot.stats.map((stat) => <div key={stat.label}
-          className="rounded-2xl border border-line bg-white p-3 shadow-sm">
+          className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
           <p className="text-[13px] font-semibold text-ink-muted">{stat.label}</p>
           <p className="mt-1 break-words text-xl font-extrabold text-ink">{stat.value}</p>
         </div>)}
@@ -182,7 +182,7 @@ function HomeSnapshot({ snapshot }: { snapshot: SupervisorHomeSnapshot }) {
       </div>
       {section.items.length ? <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {section.items.map((task) => <Link key={task.id} href={task.href}
-          className="flex min-h-16 items-center gap-2 rounded-2xl border border-line bg-white p-3 text-ink no-underline hover:bg-surface2">
+          className="flex min-h-16 items-center gap-2 rounded-2xl border border-line bg-surface p-3 text-ink no-underline hover:bg-surface2">
           <AgentAvatar agentId={task.agentId} size="task" />
           <span className="min-w-0 flex-1">
             <span className={`block text-sm font-bold ${agentVisuals[task.agentId].accent}`}>{task.agentName}</span>
@@ -606,7 +606,7 @@ export default function SupervisorChatComposer({
 
   return <section className="relative flex h-[calc(100dvh-11.5rem)] min-h-[360px] flex-col overflow-hidden rounded-[22px] border border-line bg-surface2 shadow-sm md:h-[calc(100dvh-8rem)]"
     aria-label={copy.composerLabel}>
-    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-white/85 px-4 py-3 md:px-5">
+    <header className="flex shrink-0 items-center justify-between gap-3 border-b border-line bg-surface/85 px-4 py-3 md:px-5">
       <button type="button" onClick={() => setHistoryOpen(true)} disabled={!enabled}
         aria-label={copy.historyTitle} title={copy.historyTitle}
         className="inline-flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
@@ -654,7 +654,7 @@ export default function SupervisorChatComposer({
           {copy.suggestions.map((suggestion) =>
             <button key={suggestion} type="button" disabled={!enabled || sending}
               onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }}
-              className="min-h-12 rounded-2xl border border-line bg-white px-4 py-3 text-start text-[15px] font-semibold text-ink shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
+              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-start text-[15px] font-semibold text-ink shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
               {suggestion}
             </button>)}
         </div>
@@ -694,7 +694,7 @@ export default function SupervisorChatComposer({
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
           <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
-            className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
+            className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent">{copy.retryAnswer}</button>
         </div>}
       </div>)}
       {sending && streamedText && <ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/>}
@@ -711,12 +711,12 @@ export default function SupervisorChatComposer({
         {attachments.map((file) => <a key={file.id}
           href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}
           target="_blank" rel="noopener noreferrer"
-          className="inline-flex max-w-full min-h-10 items-center gap-2 rounded-xl bg-white px-3 text-[14px] font-semibold text-ink underline">
+          className="inline-flex max-w-full min-h-10 items-center gap-2 rounded-xl bg-surface px-3 text-[14px] font-semibold text-ink underline">
           <Paperclip size={17} aria-hidden="true" /><span className="truncate">{file.originalName}</span>
         </a>)}
       </div>}
       <form onSubmit={(event) => { event.preventDefault(); void sendText(draft); }}
-        className="flex items-end gap-1 rounded-[22px] border border-line bg-white p-1.5 shadow-sm">
+        className="flex items-end gap-1 rounded-[22px] border border-line bg-surface p-1.5 shadow-sm">
         <input ref={filePicker} type="file" className="sr-only"
           accept=".txt,.pdf,.jpg,.jpeg,.png,.webp,text/plain,application/pdf,image/jpeg,image/png,image/webp"
           onChange={(event) => void attach(event)} />
@@ -747,7 +747,7 @@ export default function SupervisorChatComposer({
           className="min-w-0 max-h-40 min-h-12 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-3 text-[17px] leading-6 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50" />
         <button type="submit" aria-label={copy.sendMessage}
           disabled={!enabled || sending || !draft.trim() || dictation === "listening" || dictation === "recognizing"}
-          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent shadow-sm hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
+          className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent shadow-sm hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-40">
           <Send size={21} aria-hidden="true" />
         </button>
       </form>

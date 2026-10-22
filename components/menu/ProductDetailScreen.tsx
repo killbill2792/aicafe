@@ -48,7 +48,7 @@ function SizeCard({size,t,chip,editing,onPrice,onPriceClose,saveLabel,cancelLabe
    <div className="mt-3 grid grid-cols-2 gap-2"><StatusBox label={t("priceStatus")} value={chip.label} good={chip.good}/><StatusBox label={t("recipeStatus")} value={recipeReady?t("recipeReady"):t("needsReview")} good={recipeReady}/></div>
    <MenuPricePreview item={size}/>
    <PriceEvidencePanel size={size} t={t} format={format}/>
-   <button type="button" onClick={onRecipe} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-good px-2 font-bold text-white hover:bg-good/90"><FilePenLine size={18}/>{recipeReady?t("editRecipe"):t("reviewRecipe")}</button>
+   <button type="button" onClick={onRecipe} className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-good px-2 font-bold text-on-pos hover:bg-good/90"><FilePenLine size={18}/>{recipeReady?t("editRecipe"):t("reviewRecipe")}</button>
   </div><button type="button" onClick={onToggle} className={`flex min-h-12 w-full items-center justify-center gap-2 border-t px-3 font-bold ${size.active?"border-warn/20 bg-warn-tint/35 text-warn":"border-good/20 bg-good-tint text-good"}`}><Power size={18}/>{size.active?t("noLongerServing"):t("serveAgain")}</button>
  </article>;
 }

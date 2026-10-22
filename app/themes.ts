@@ -38,7 +38,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#0E1413",
@@ -75,7 +78,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#0E1413",
+      "onWarn": "#0E1413",
+      "onNeg": "#0E1413"
     }
   },
   {
@@ -95,7 +101,7 @@ export const themes = [
       "neg": "#B91C1C",
       "warn": "#B45309",
       "onAccent": "#FFFFFF",
-      "accentText": "#C2410C",
+      "accentText": "#B13D0D",
       "warnText": "#B45309",
       "focus": "#1A1411",
       "posSoft": "#F1F7F3",
@@ -116,7 +122,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#120E0C",
@@ -153,7 +162,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#120E0C",
+      "onWarn": "#120E0C",
+      "onNeg": "#120E0C"
     }
   },
   {
@@ -173,7 +185,7 @@ export const themes = [
       "neg": "#E11D48",
       "warn": "#EAB308",
       "onAccent": "#0A1511",
-      "accentText": "#BE573D",
+      "accentText": "#9D4D37",
       "warnText": "#B45309",
       "focus": "#10221B",
       "posSoft": "#FFFFFF",
@@ -194,7 +206,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#0A1511",
@@ -231,7 +246,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#0A1511",
+      "onWarn": "#0A1511",
+      "onNeg": "#0A1511"
     }
   },
   {
@@ -272,7 +290,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#141015",
@@ -309,7 +330,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#141015",
+      "onWarn": "#141015",
+      "onNeg": "#141015"
     }
   },
   {
@@ -350,7 +374,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#0D111C",
@@ -387,7 +414,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#0D111C",
+      "onWarn": "#0D111C",
+      "onNeg": "#0D111C"
     }
   },
   {
@@ -407,7 +437,7 @@ export const themes = [
       "neg": "#DC2626",
       "warn": "#B45309",
       "onAccent": "#FFFFFF",
-      "accentText": "#4D7C0F",
+      "accentText": "#487310",
       "warnText": "#B45309",
       "focus": "#1A1F14",
       "posSoft": "#F1F7F3",
@@ -428,7 +458,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#10130D",
@@ -465,7 +498,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#10130D",
+      "onWarn": "#10130D",
+      "onNeg": "#10130D"
     }
   },
   {
@@ -506,7 +542,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#0C1220",
@@ -543,7 +582,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#0C1220",
+      "onWarn": "#0C1220",
+      "onNeg": "#0C1220"
     }
   },
   {
@@ -584,7 +626,10 @@ export const themes = [
       "chart-staff": "#2F5D8A",
       "chart-ingredients": "#8B5A2B",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#FFFFFF",
+      "onWarn": "#FFFFFF",
+      "onNeg": "#FFFFFF"
     },
     "dark": {
       "bg": "#121011",
@@ -621,7 +666,10 @@ export const themes = [
       "chart-staff": "#7DB3E8",
       "chart-ingredients": "#D4A373",
       "chart-running": "#E0AE4E",
-      "chart-fees": "#A7B0BA"
+      "chart-fees": "#A7B0BA",
+      "onPos": "#121011",
+      "onWarn": "#121011",
+      "onNeg": "#121011"
     }
   }
 ] as const;

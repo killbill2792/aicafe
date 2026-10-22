@@ -44,9 +44,9 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
           {Math.round(pct)}% · {bandLabel}
         </span>
       </div>
-      <div className="relative h-3 rounded-md bg-surface">
+      <div className="relative h-3 rounded-md bg-surface2">
         <div
-          className="absolute top-0 h-3 rounded-md bg-surface"
+          className="absolute top-0 h-3 rounded-md bg-pos/35"
           style={{ insetInlineStart: `${band === "high" ? 0 : 50}%`, width: `${band === "high" ? 60 : 20}%` }}
         />
         <div
@@ -243,7 +243,7 @@ function Row({
       <span className={`flex-1 text-[15px] ${cents === null ? "font-semibold text-warn" : ""}`}>{name}</span>
       {estimate && <EstimatePill label={estimateLabel ?? "Estimate"} />}
       {cents === null ? (
-        <Link href="/add-cost" className="flex h-[34px] items-center rounded-2xl bg-warn px-3 text-[13px] font-bold text-white">
+        <Link href="/add-cost" className="flex h-[34px] items-center rounded-2xl bg-warn-text px-3 text-[13px] font-bold text-on-warn">
           {addLabel ?? "Add"}
         </Link>
       ) : (
