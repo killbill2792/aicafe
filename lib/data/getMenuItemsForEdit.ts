@@ -9,6 +9,8 @@ import { getActiveBusinessId } from "./getActiveBusinessId";
 import { evaluateRecipeCost, resolveProductCost, type ProductCostSource, type RecipeCostStatus } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE } from "./queryError";
+import {readMenuComboCostComponents} from "./comboCosts.server";
+import {resolveComboCosts} from "@/lib/calc/comboCostResolution";
 
 export type RecipeLineForEdit = {
   ingredientId: string;
@@ -53,6 +55,7 @@ export type MenuItemForEdit = {
   ownerTotalCostStatus?: "confirmed" | "estimated" | null;
   ownerTotalCostSource?: "owner_manual" | "imported" | null;
   costDifferenceCents?: number | null;
+  comboCostEstimated?: boolean;
   missingCostIngredientNames: string[];
 };
 
@@ -206,5 +209,20 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
     };
   });
 
-  return { items: menuItems, ingredients: ingredientOptions };
+
+  const comboParts=await readMenuComboCostComponents(supabase,businessId,menuItems.map(item=>item.id));
+  const baseCostById=new Map(menuItems.map(item=>[item.id,{
+    costCents:item.ingredientsCostCents,status:item.costStatus,
+    estimated:item.costSource==="owner_total"&&item.ownerTotalCostStatus==="estimated",
+  }]));
+  const combos=resolveComboCosts(comboParts,baseCostById);
+  // Membership is authoritative for a combo: never blend its cost with a stale
+  // aggregate fallback or present component costs as a recipe ingredient cost.
+  const withComboCosts=menuItems.map(item=>{
+    const combo=combos.get(item.id);
+    return combo?{...item,ingredientsCostCents:combo.costCents,costStatus:combo.status,
+      costSource:"combo" as const,comboCostEstimated:combo.estimated,
+      recipeCostCents:null,recipeCostStatus:combo.status}:item;
+  });
+  return { items: withComboCosts, ingredients: ingredientOptions };
 }
