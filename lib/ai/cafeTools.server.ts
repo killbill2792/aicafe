@@ -75,7 +75,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     {
       hours:async requested=>{
         assertBusiness(requested);
-        const {data,error}=await client.from("locations").select("open_hours").eq("business_id",businessId).limit(1);
+        const {data,error}=await client.from("locations").select("open_hours").eq("business_id",businessId).order("name",{ascending:true}).limit(1);
         if(error)throw error;
         const value=normalizeOpenHours(data?.[0]?.open_hours);
         return value?{available:true as const,value,quality:{level:"high" as const,missingInputs:[],estimatedInputs:[],staleInputs:[]}}:
