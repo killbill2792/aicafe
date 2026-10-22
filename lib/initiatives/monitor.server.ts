@@ -1,0 +1,129 @@
+import "server-only";
+import { formatInTimeZone } from "date-fns-tz";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
+import { computeMetric, type MetricKey } from "@/lib/calc/metrics/catalog";
+import { evaluateInitiative, type GoalMetric } from "@/lib/calc/initiatives/evaluate";
+import { writeTeamUpdate } from "@/lib/teamUpdates/write.server";
+import { listMonitorBatch,readMonitorGraph,readMetricDay,persistMetricObservation,
+  persistInitiativeEvaluation,rotateInitiative } from "@/lib/data/initiatives.server";
+import type { InitiativeRow,MetricRow,ObservationRow,InitiativeScope } from "./contracts";
+const translations = {en:en.Initiatives,es:es.Initiatives,ar:ar.Initiatives};
+const dayOffset = (day:string,days:number) =>
+  new Date(Date.parse(day+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
+const allDays = (from:string,to:string) => {
+  const dates:string[]=[];
+  for(let d=from;d<=to&&dates.length<100;d=dayOffset(d,1))dates.push(d);
+  return dates;
+};
+const due = (from:string,date:string,cadence:InitiativeRow["checkin_cadence"],end:string) => {
+  const elapsed=Math.round((Date.parse(date+"T12:00:00Z")-Date.parse(from+"T12:00:00Z"))/86400000);
+  return cadence==="daily"||(cadence==="every_3_days"&&elapsed%3===0)||
+    (cadence==="weekly"&&elapsed%7===0)||(cadence==="end_only"&&date===end);
+};
+const interpolate = (s:string,title:string,date:string) =>
+  s.replaceAll("{title}",title).replaceAll("{date}",date);
+export type MonitorStats={checked:number;sampled:number;updates:number;failed:number};
+
+export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorStats> {
+  const queue=await listMonitorBatch();
+  const stats:MonitorStats={checked:queue.length,sampled:0,updates:0,failed:0};
+  for(const initiative of queue){
+    let completed=false;
+    try{
+      const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
+      const graph=await readMonitorGraph(initiative);
+      const today=formatInTimeZone(now,graph.timezone,"yyyy-MM-dd");
+      const yesterday=dayOffset(today,-1);
+      if(yesterday<initiative.starts_on)continue;
+      const asOf=yesterday<initiative.ends_on?yesterday:initiative.ends_on;
+      const first=initiative.baseline_from;
+      const lastBaseline=initiative.baseline_to??dayOffset(initiative.starts_on,-1);
+      const days=[...allDays(first,lastBaseline),...allDays(initiative.starts_on,asOf)];
+      const byMetric=new Map<string,ObservationRow[]>();
+      for(const metric of graph.metrics)
+        byMetric.set(metric.id,graph.observations.filter(o=>o.metric_id===metric.id));
+      // Process up to seven previously unsampled dates per run to bound the cron.
+      // Rotation means long outages catch up over successive runs without starving tenants.
+      const pending=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
+        !byMetric.get(m.id)?.some(o=>o.business_date===d))).slice(0,7);
+      for(const date of pending){
+        const computed=graph.metrics.filter(m=>m.source==="computed" &&
+          !byMetric.get(m.id)?.some(o=>o.business_date===date));
+        if(!computed.length)continue;
+        const input=await readMetricDay(initiative.business_id,date,{
+          items:computed.some(m=>m.metric_key?.startsWith("item_")),
+          hours:computed.some(m=>m.metric_key==="sales_per_labor_hour"),
+          ingredientIds:computed.filter(m=>m.metric_key==="ingredient_unit_cost")
+            .map(m=>String(m.params.ingredientId)),
+        });
+        for(const metric of computed){
+          if(!metric.metric_key)continue;
+          const result=computeMetric(metric.metric_key as MetricKey,metric.params,input);
+          const row:ObservationRow={
+            metric_id:metric.id,business_date:date,value:result.value,
+            coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
+          };
+          if(await persistMetricObservation(scope,row))stats.sampled++;
+          byMetric.get(metric.id)!.push(row);
+        }
+      }
+      for(const metric of graph.metrics.filter(m=>m.source==="checkin")){
+        const already=byMetric.get(metric.id)??[];
+        for(const date of allDays(initiative.starts_on,asOf)){
+          if(!due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on))continue;
+          if(already.some(o=>o.business_date===date))continue;
+          const t=translations[initiative.locale];
+          const question=metric.checkin_question??t.checkinDefault;
+          const result=await writeTeamUpdate({
+            businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
+            domain:"money",kind:"initiative_checkin",severity:"action",
+            subjectType:"owner_initiative",subjectId:initiative.id,
+            facts:{initiativeId:initiative.id,metricId:metric.id,date},
+            text:interpolate(t.checkin,initiative.title,date)+" "+question,
+            locale:initiative.locale,
+            actions:[{kind:"checkin",metricId:metric.id,question}],
+            dedupeKey:"initiative:"+initiative.id+":checkin:"+metric.id+":"+date,
+          });
+          if(result.created)stats.updates++;
+        }
+      }
+      const goalMetrics:GoalMetric[]=graph.metrics
+        .filter(m=>m.source==="computed"||m.source==="checkin")
+        .map(m=>({
+          id:m.id,role:m.role,comparator:m.comparator,targetKind:m.target_kind,target:Number(m.target),
+          baseline:(byMetric.get(m.id)??[]).filter(o=>o.business_date>=first&&o.business_date<=lastBaseline)
+            .map(o=>({date:o.business_date,value:o.value,coverage:Number(o.coverage)})),
+          test:(byMetric.get(m.id)??[]).filter(o=>o.business_date>=initiative.starts_on&&o.business_date<=asOf)
+            .map(o=>({date:o.business_date,value:o.value,coverage:Number(o.coverage)})),
+          source:m.source,
+        }));
+      const completeComputed=graph.metrics.filter(m=>m.source==="computed").every(m=>
+        days.every(date=>(byMetric.get(m.id)??[]).some(o=>o.business_date===date)));
+      const evaluation=evaluateInitiative(goalMetrics,asOf,initiative.ends_on,0.8,initiative.kind);
+      if(graph.latest?.status!==evaluation.status||graph.latest.recommendation!==evaluation.recommendation){
+        const saved=await persistInitiativeEvaluation(scope,initiative.id,asOf,
+          evaluation.status,evaluation.recommendation,evaluation.results);
+        if(saved){
+          const t=translations[initiative.locale];
+          const written=await writeTeamUpdate({
+            businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
+            domain:"money",kind:"initiative_evaluation",severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
+            subjectType:"owner_initiative",subjectId:initiative.id,
+            facts:{initiativeId:initiative.id,status:evaluation.status,recommendation:evaluation.recommendation,asOf},
+            text:interpolate(t.evaluation,initiative.title,asOf)+" "+t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
+            locale:initiative.locale,actions:[{kind:"open"}],
+            dedupeKey:"initiative:"+initiative.id+":"+evaluation.status+":"+evaluation.recommendation,
+          });
+          if(written.created)stats.updates++;
+        }
+      }
+      completed=asOf>=initiative.ends_on&&completeComputed;
+    }catch{stats.failed++;}
+    finally{
+      try{await rotateInitiative(initiative,completed);}catch{stats.failed++;}
+    }
+  }
+  return stats;
+}
