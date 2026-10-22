@@ -185,6 +185,35 @@ try {
       [A,PARENT,JSON.stringify([{...completeCAS[0],expectedSiblingIds:[PARENT]}])],"40001");
 
   });
+  // A legacy editor updates an unrelated line in an open transaction. The
+  // bulk RPC must wait for its ROW EXCLUSIVE lock, then detect the stale
+  // source snapshot instead of losing that committed owner edit.
+  const snapshot = await asOwner(db, async c => (await c.query(
+    "select ingredient_id, quantity, display_unit, display_quantity from recipe_lines where menu_item_id=$1 order by ingredient_id",
+    [PARENT])).rows.map(r => ({ingredientId:r.ingredient_id,quantity:Number(r.quantity),
+      displayUnit:r.display_unit,displayQuantity:Number(r.display_quantity)})));
+  const writer = new pg.Client({host:process.env.PGHOST||"127.0.0.1",
+    port:Number(process.env.PGPORT||5432), user:"postgres",password:"postgres",database:"postgres"});
+  await writer.connect();
+  try {
+    await writer.query("begin");
+    await writer.query("set local role authenticated");
+    await writer.query("select set_config('request.jwt.claim.sub',$1,true)",[OWNER]);
+    await writer.query("update recipe_lines set quantity=quantity+1 where menu_item_id=$1 and ingredient_id=$2",
+      [PARENT,owned["milk-whole"]]);
+    const blockedBulk=asOwner(db,async c => rejectStatement(c,
+      rpc("pantry_replace_recipes",[],3), [A,PARENT,JSON.stringify([{
+        menuItemId:PARENT,expectedLines:snapshot,lines:[],
+      }])],"40001"));
+    // Give the bulk operation an opportunity to reach its table lock while
+    // the legacy edit still holds its transaction open.
+    await new Promise(resolve=>setTimeout(resolve,100));
+    await writer.query("commit");
+    await blockedBulk;
+    const updated=await db.query("select quantity from recipe_lines where menu_item_id=$1 and ingredient_id=$2",
+      [PARENT,owned["milk-whole"]]);
+    assert.equal(Number(updated.rows[0].quantity),Number(snapshot.find(r=>r.ingredientId===owned["milk-whole"]).quantity)+1);
+  } finally { await writer.end(); }
   console.log("P1 PostgreSQL: migration parses; RLS, idempotency, size identity, draft safety, rollback and recipe CAS passed");
 } finally {
   await db.end();
