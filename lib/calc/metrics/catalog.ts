@@ -45,6 +45,8 @@ export type MetricDailyInput = {
   date: string;
   facts?: DailyFacts;
   items?: ItemEvidence[];
+  /** A complete successful source check proved that old participation is wrong. */
+  itemCoverageInvalidated?:boolean;
   orders?: Array<{ closedAt: string; netSalesCents: number }>;
   timecards?: Timecard[];
   ingredientPriceMicros?: Record<string,number>;
@@ -80,7 +82,8 @@ const ratioBps = (part: number, total: number): MetricResult =>
   total > 0 ? known(Math.round(part * 10000 / total)) : missing("noSalesDenominator");
 const itemValue = (day: MetricDailyInput, params: MetricParams, field: "units" | "revenue" | "margin"): MetricResult => {
   const id = String(params.itemId);
-  if (!sales(day) || !day.items) return missing("itemSalesCoverage");
+  if (!sales(day) || !day.items)
+    return missing("itemSalesCoverage",day.itemCoverageInvalidated===true);
   const row = day.items.find(i => i.itemId === id);
   if (!row) return known(0); // covered item sales; no lines for this item is a real zero
   if (field === "units") return known(row.units);
@@ -125,7 +128,7 @@ export const metricCatalog: Record<MetricKey, Definition> = {
   item_units:{key:"item_units",unit:"count",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"units")},
   item_revenue:{key:"item_revenue",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"revenue")},
   item_margin:{key:"item_margin",unit:"cents",paramsSchema:item,compute:(d,p)=>itemValue(d,p,"margin")},
-  cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("cogsCompleteness",Boolean(d.items))},
+  cogs_pct:{key:"cogs_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.cogsCoverageVerified?ratioBps(d.facts!.ingredientsCents,d.facts!.netSalesCents):missing("cogsCompleteness",Boolean(d.items)||d.itemCoverageInvalidated===true)},
   labor_cost:{key:"labor_cost",unit:"cents",paramsSchema:empty,compute:d=>d.facts&&d.laborCoverageVerified&&d.facts.staffTaxStatus==="actual"?known(staffCostCentsForPeriod([d.facts])):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
   labor_pct:{key:"labor_pct",unit:"bps",paramsSchema:empty,compute:d=>sales(d)&&d.laborCoverageVerified&&d.facts!.staffTaxStatus==="actual"?ratioBps(staffCostCentsForPeriod([d.facts!]),d.facts!.netSalesCents):missing("laborProvenance",Boolean(d.facts&&d.facts.staffTaxStatus!=="actual"))},
   sales_per_labor_hour:{key:"sales_per_labor_hour",unit:"cents",paramsSchema:hours,compute:hourly},

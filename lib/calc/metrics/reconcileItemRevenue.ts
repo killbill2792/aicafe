@@ -23,3 +23,25 @@ export function reconcileAttributedItemRevenue(
       byOrder.get(order.id)===order.netSalesCents);
   return {verified,items:[...byItem].map(([itemId,totals])=>({itemId,...totals}))};
 }
+
+
+/** Canonical SQL quantities are an independent completeness witness.
+ * Missing/truncated detailed rows must never be reinterpreted as verified zero.
+ */
+export function reconcileItemUnitsToCanonical(
+  items:readonly {itemId:string;units:number}[],
+  canonical:readonly {id:string;units:number}[],
+):boolean {
+  if(items.length!==canonical.length)return false;
+  const totals=new Map<string,number>();
+  for(const row of items){
+    if(!row.itemId||!Number.isFinite(row.units)||row.units<0||
+      totals.has(row.itemId))return false;
+    totals.set(row.itemId,row.units);
+  }
+  for(const row of canonical){
+    if(!Number.isFinite(row.units)||row.units<0||
+      !totals.has(row.id)||totals.get(row.id)!==row.units)return false;
+  }
+  return true;
+}

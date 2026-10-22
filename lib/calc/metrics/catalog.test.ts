@@ -46,6 +46,8 @@ describe("M1 typed metric catalog",()=>{
     expect(computeMetric("net_profit",{}, {...recorded,runningCostsCents:undefined}).value).toBeNull();
     expect(computeMetric("cogs_pct",{}, {...recorded,cogsCoverageVerified:false}).value).toBeNull();
     expect(computeMetric("item_margin",{itemId},{...recorded,items:[{...recorded.items![0],hasUnverifiedModifiers:true}]}).invalidatesPrevious).toBe(true);
+    expect(computeMetric("item_units",{itemId},{...recorded,items:undefined,itemCoverageInvalidated:true}).invalidatesPrevious).toBe(true);
+    expect(computeMetric("item_revenue",{itemId},{...recorded,items:undefined,itemCoverageInvalidated:false}).invalidatesPrevious).toBe(false);
     expect(computeMetric("orders",{}, {...recorded,transactionCountVerified:false}).value).toBeNull();
     expect(computeMetric("avg_ticket",{}, {...recorded,transactionCountVerified:false}).value).toBeNull();
     expect(computeMetric("item_margin",{itemId},{...recorded,items:[{...recorded.items![0],hasUnverifiedModifiers:true}]}).value).toBeNull();

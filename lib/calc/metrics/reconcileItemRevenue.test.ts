@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {reconcileAttributedItemRevenue} from "./reconcileItemRevenue";
+import {reconcileAttributedItemRevenue,reconcileItemUnitsToCanonical} from "./reconcileItemRevenue";
 describe("provider-neutral net item attribution",()=>{
   it("accepts line amounts only after every order net amount reconciles",()=>{
     const result=reconcileAttributedItemRevenue([
@@ -31,5 +31,21 @@ describe("provider-neutral net item attribution",()=>{
     expect(reconcileAttributedItemRevenue([{id:"one",netSalesCents:10}],[
       {orderId:"one",itemId:"x",quantity:1,revenueCents:1e30},
     ]).verified).toBe(false);
+  });
+});
+
+
+describe("canonical item quantity proof",()=>{
+  it("detects a PostgREST-capped detail where canonical SQL counted all 1200",()=>{
+    expect(reconcileItemUnitsToCanonical([{itemId:"coffee",units:1000}],
+      [{id:"coffee",units:1200}])).toBe(false);
+  });
+  it("cannot turn an item only beyond the fetched page into zero",()=>{
+    expect(reconcileItemUnitsToCanonical([{itemId:"coffee",units:1000}],
+      [{id:"coffee",units:1000},{id:"latte",units:1}])).toBe(false);
+  });
+  it("accepts exactly reconciled complete quantities",()=>{
+    expect(reconcileItemUnitsToCanonical([{itemId:"coffee",units:1200}],
+      [{id:"coffee",units:1200}])).toBe(true);
   });
 });
