@@ -16,6 +16,7 @@ import {projectP1Evidence} from "@/lib/ai/supervisor/p3/operandProjection.server
 import {EXPRESSION_ID,planSchema} from "@/lib/ai/supervisor/p3/expression";
 import {simulationOutputSchema} from "@/lib/ai/supervisor/p3/simulateRegistration.server";
 import {formatScenarioValue} from "@/lib/ai/supervisor/p3/formatScenario";
+import {groundedNaturalProse} from "./naturalConversationProse";
 import {investigationReadDatesMatch,investigationCalendarScope,rememberInvestigationReads,rememberCalendarScopes,authenticatedReadCalendarText} from "./readDates";
 import {INVESTIGATION_LIMITS} from "./protocol";
 import {presentInvestigatedTasks} from "./taskPresentation";
@@ -67,7 +68,6 @@ type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;
 const LIMITS={rounds:INVESTIGATION_LIMITS.modelCalls,
  operations:INVESTIGATION_LIMITS.operations,elapsedMs:INVESTIGATION_LIMITS.elapsedMs,
  previewRows:8,maxFacts:500};
-const noDigits=(s:string)=>!/[\p{Nd}$€£¥%٪]|https?:\/\//iu.test(s);
 const localeCopy={
  en:{fallback:"I couldn't finish that request. Here's what I could verify.",gap:"I couldn't verify the requested records.",source:"Verified",ask:"Please clarify one detail.",hint:"Your answer",estimate:"Estimated or incomplete source",conditional:"Conditional calculation using numbers supplied by the owner; not verified café records."},
  es:{fallback:"No pude terminar la solicitud. Esto es lo que pude verificar.",gap:"No pude verificar los datos solicitados.",source:"Verificado",ask:"Aclara un detalle, por favor.",hint:"Tu respuesta",estimate:"Fuente estimada o incompleta",conditional:"Cálculo condicional con cifras del propietario; no son datos verificados del negocio."},
@@ -163,6 +163,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const simulations=registry.discoverSimulations?.(scope)??[];
  const discovered=new Set<string>();
  const facts=new Map<string,Fact>(),optionRows=new Map<string,{id:string;label:string}>();
+ let hadUnavailable=false;
  const messages:unknown[]=[{role:"user",content:JSON.stringify({
    ownerRequest:input.text,locale:input.locale,calendarDay:input.asOf,timezone:input.timezone,
    priorTurns:input.history.slice(-6),savedSelectorContext:memory?.reads?.slice(-3)??[],
@@ -178,32 +179,48 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    calendarScopeOrigins:[...(memory?.calendarScopeOrigins??[]),
      ...scopes.map(x=>({domain:x.domain,kind:x.kind,requestKey,
        capabilityId:remembered.find(r=>r.capabilityId.startsWith("p3."+x.domain))?.capabilityId??"platform.read.v1"}))].slice(-5)});
- const reply=(_modelText:string,ids:string[],status:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
+ const reply=(modelText:string,ids:string[],requestedStatus:"partial"|"verified"|"unavailable"="partial"):GroundedSupervisorReply=>{
    const selected=pickIds(ids,facts),structured=factBlocks(selected);
-   const conditional=selected.filter(f=>f.conditional||!f.source&&f.raw!==null);
    const cited=observations.filter(o=>selected.some(f=>f.observationIds?.includes(o.id)));
+   const conditional=selected.filter(f=>f.conditional||!f.source&&f.raw!==null);
    const cards=cited.flatMap(o=>o.reference?
       presentInvestigatedTasks(o.sourceContract,o.result.value,o.reference,input.locale):[])
      .filter((b,i,all)=>b.type!=="task_card"||
        all.findIndex(c=>c.type==="task_card"&&c.taskId===b.taskId)===i).slice(0,3);
    for(const card of cards)if(card.type==="task_card"&&!structured.evidence.some(r=>r.identifier===card.source.identifier))
-     structured.evidence.push(card.source);
+      structured.evidence.push(card.source);
+   // OpenAI owns wording; the server checks numeric spans using selected
+   // authorized facts and authentic owner statements, without citation syntax.
+   const known=[...statements,...selected.flatMap(f=>[f.value,f.label])];
+   const prose=groundedNaturalProse(modelText,known,input.locale);
+   const citedComplete=cited.length>0&&cited.every(o=>{
+     const quality=isRecord(o.result.quality)?o.result.quality:null;
+     return o.result.status==="verified"&&
+       (!quality||["missingInputs","estimatedInputs","staleInputs"].every(k=>
+         !Array.isArray(quality[k])||quality[k].length===0));
+   });
+   const complete=selected.length>0&&ids.every(id=>facts.has(id))&&
+     selected.every(f=>!f.conditional&&!f.estimated)&&
+     citedComplete&&!hadUnavailable&&!prose.redacted;
    const warnings:SupervisorReplyBlock[]=[
      ...(conditional.length?[{type:"warning" as const,code:"P3_CONDITIONAL",text:copy.conditional}]:[]),
      ...citationCautionWarnings(cited,input.locale),
    ];
-   // Model narrative is deliberately not a business assertion channel.
-   // Every owner-visible business claim below comes from a validated reader,
-   // typed calculator or registered task card. No second model reviewer needed.
-   const explanation=structured.evidence.length?
-     {en,es,ar}[input.locale].SupervisorInvestigation.partial:copy.gap;
-   const blocks:SupervisorReplyBlock[]=[...warnings,{type:"text",text:explanation},
-     ...structured.blocks,...cards];
+   if(prose.redacted)warnings.push({type:"warning",code:"UNVERIFIED_CLAIM",
+     text:{en,es,ar}[input.locale].SupervisorInvestigation.unverifiedWarning});
+   if(!selected.length&&prose.text&&cited.length===0)warnings.push({
+     type:"warning",code:"SUPERVISOR_ADVICE",
+     text:{en,es,ar}[input.locale].SupervisorInvestigation.advice});
+   const blocks:SupervisorReplyBlock[]=[...warnings];
+   if(prose.text)blocks.push({type:"text",text:prose.text});
+   blocks.push(...structured.blocks,...cards);
    for(const fact of conditional.filter(f=>!f.source))
      blocks.push({type:"text",text:(fact.label+": "+fact.value).slice(0,1200)});
-   if(!structured.evidence.length&&conditional.length)return {intent:"profitability",status:"partial",
-     evidence:[],blocks:blocks.slice(0,30),investigationMemory:memoryState()};
-   return {intent:"unknown",status:structured.evidence.length?status:"unavailable",
+   if(!blocks.length)blocks.push({type:"text",text:copy.gap});
+   const status=complete?"verified":
+     structured.evidence.length||conditional.length||prose.text?"partial":"unavailable";
+   return {intent:"unknown",status:requestedStatus==="unavailable"&&
+     !structured.evidence.length&&!prose.text?"unavailable":status,
      evidence:structured.evidence,blocks:blocks.slice(0,30),investigationMemory:memoryState()};
  };
  const addFacts=(observation:Observation)=>{
