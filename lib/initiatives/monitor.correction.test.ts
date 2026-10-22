@@ -59,6 +59,21 @@ beforeEach(()=>{
   }
 });
 describe("post-end correction completeness",()=>{
+  it("rechecks a 92-day backlog of uncovered rows before terminal closure",async()=>{
+    for(const row of state.rows){row.value=null;row.coverage=0;}
+    const at=new Date("2027-01-16T12:00:00Z");
+    for(let i=0;i<11;i++){
+      const result=await monitorInitiatives(at);
+      expect(result.failed).toBe(0);
+      expect(state.active).toBe(true);
+      expect(state.completed).toBe(0);
+    }
+    expect(state.rows.filter(row=>row.coverage===1).length).toBe(88);
+    const final=await monitorInitiatives(at);
+    expect(final.failed).toBe(0);
+    expect(state.rows.every(row=>row.coverage===1)).toBe(true);
+    expect(state.completed).toBe(1);
+  });
   it("cannot complete a 92-day initiative before all covered dates are rechecked",async()=>{
     const at=new Date("2027-01-16T12:00:00Z");
     for(let i=0;i<11;i++){
