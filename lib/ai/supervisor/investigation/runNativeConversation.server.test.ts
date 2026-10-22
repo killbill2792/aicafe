@@ -19,7 +19,7 @@ vi.mock("@/lib/scheduling/oliviaP3Capabilities.server",()=>({buildOliviaP3Regist
 vi.mock("@/lib/pricing/alexCapabilities.server",()=>({buildAlexPricingRegistrations:()=>[{}]}));
 vi.mock("@/lib/scheduling/oliviaInvestigation.server",()=>({buildOliviaInvestigationRegistration:()=>({})}));
 vi.mock("./datasets.server",()=>({buildDatasetRegistration:()=>({}),datasetFor:()=>null}));
-vi.mock("./records.server",()=>({buildRecordsRegistration:()=>({})}));
+vi.mock("./records.server",()=>({buildRecordsRegistration:()=>({}),recordCollections:()=>[]}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async()=>fixtures.rows.map(r=>({
  id:r.id,name:r.name,baseName:"Latte",sizeLabel:r.name.split(" ").slice(-2).join(" "),
  active:true,priceCents:r.priceCents,
