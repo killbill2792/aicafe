@@ -178,19 +178,35 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       slot.times.push(...times);
     }else if(entry.timeScope?.kind==="schedule"){
       const {from,to}=entry.timeScope;
+      const exhaustive=entry.timeScope.exhaustive!==false;
       if(from<=to){
         const retained:VerifiedTime[]=[];
         for(const t of slot.times){
-          if(!["shiftStart","shiftEnd"].includes(t.role)||
-            (t.validTo??"9999-12-31")<from||(t.validFrom??"0000-01-01")>to){
+          if(!["shiftStart","shiftEnd"].includes(t.role)){
             retained.push(t);continue;
           }
-          // Read windows may overlap partially. Subtract only the observed
-          // window, leaving accurately sourced adjacent periods intact.
-          if(t.validFrom&&t.validFrom<from)
-            retained.push({...t,validTo:offsetDate(from,-1)});
-          if(t.validTo&&t.validTo>to)
-            retained.push({...t,validFrom:offsetDate(to,1)});
+          // A truncated read can only replace an employee/day/role it actually
+          // saw. Absence from a truncated list is not evidence of deletion.
+          const scopes=exhaustive?[{from,to}]:times.filter(incoming=>
+            incoming.day===t.day&&incoming.person===t.person&&incoming.role===t.role)
+            .map(incoming=>({from:incoming.validFrom??from,to:incoming.validTo??to}));
+          let segments=[t];
+          for(const scope of scopes){
+            const cutStart=scope.from>from?scope.from:from;
+            const cutEnd=scope.to<to?scope.to:to;
+            if(cutStart>cutEnd)continue;
+            const next:VerifiedTime[]=[];
+            for(const segment of segments){
+              if((segment.validTo??"9999-12-31")<cutStart||
+                 (segment.validFrom??"0000-01-01")>cutEnd){next.push(segment);continue;}
+              if((segment.validFrom??"0000-01-01")<cutStart)
+                next.push({...segment,validTo:offsetDate(cutStart,-1)});
+              if((segment.validTo??"9999-12-31")>cutEnd)
+                next.push({...segment,validFrom:offsetDate(cutEnd,1)});
+            }
+            segments=next;
+          }
+          retained.push(...segments);
         }
         slot.times=[...retained,...times];
       }
@@ -648,6 +664,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     for(const price of entry.prices??[])
       if(typeof price.id==="string"&&typeof price.name==="string"&&
         Number.isSafeInteger(price.priceCents))canonicalPrices.set(price.id,price);
+    for(const update of entry.priceUpdates??[]){
+      const previous=canonicalPrices.get(update.id);
+      if(previous&&Number.isSafeInteger(update.priceCents))
+        canonicalPrices.set(update.id,{...previous,priceCents:update.priceCents});
+    }
   }
   const itemPrices=[...canonicalPrices.values()];
   // Unnamed money statements may refer to a current menu price, but never
