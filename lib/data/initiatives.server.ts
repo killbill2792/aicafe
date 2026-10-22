@@ -179,7 +179,7 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
   if(metrics.length){
     for(let offset=0;offset<2500;offset+=500){
       const page=await db.from("initiative_observations")
-        .select("metric_id,business_date,value,coverage,source,note,revision")
+        .select("metric_id,business_date,value,coverage,source,note,revision,verified_at")
         .in("metric_id",metrics.map(m=>m.id))
         .gte("business_date",initiative.baseline_from)
         .lte("business_date",initiative.ends_on)
