@@ -9,10 +9,11 @@ import { recipeSizesFor, templateRecipeForSize } from "@/lib/menu/recipeTemplate
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
 import SizeLabelClarifyDialog from "./SizeLabelClarifyDialog";
+import MenuComboBuilder, {type ComboChoice} from "./MenuComboBuilder";
 type Kind="drink"|"food"|"retail"|"combo";type Mode="template"|"quick"|"blank";
 const templates:{key:RecipeTemplateKey|null;name:string;description:string}[]=[
  {key:"latte",name:"Latte",description:"Espresso + milk"},{key:"cappuccino",name:"Cappuccino",description:"Foamy espresso"},{key:"americano",name:"Americano",description:"Espresso + water"},{key:"mocha",name:"Mocha",description:"Chocolate latte"},{key:"iced-latte",name:"Iced latte",description:"Cold espresso + milk"},{key:"cold-brew",name:"Cold brew",description:"Slow brewed coffee"},{key:"chai-latte",name:"Chai",description:"Spiced tea + milk"},{key:"matcha-latte",name:"Matcha",description:"Green tea latte"},{key:null,name:"Pastry",description:"Fresh bakery item"}];
-export default function NewMenuItemForm({menuGroupOptions}:{menuGroupOptions:string[]}) {
+export default function NewMenuItemForm({menuGroupOptions,comboChoices}:{menuGroupOptions:string[];comboChoices:ComboChoice[]}) {
  const t=useTranslations("MenuBuilder"),common=useTranslations("Common"),router=useRouter();
  const [kind,setKind]=useState<Kind>("drink"),[mode,setMode]=useState<Mode>("template"),[template,setTemplate]=useState<(typeof templates)[number]>(templates[0]);
  const [editing,setEditing]=useState(false),[name,setName]=useState(""),[size,setSize]=useState("12 oz"),[price,setPrice]=useState(""),[cost,setCost]=useState(""),[group,setGroup]=useState("");
@@ -32,6 +33,8 @@ export default function NewMenuItemForm({menuGroupOptions}:{menuGroupOptions:str
    router.push(`/menu/${result.id}?setupRecipe=1`);
  });}
  return <div className="mx-auto w-full max-w-3xl text-ink">
+ {kind==="combo"&&<MenuComboBuilder choices={comboChoices}/>} 
+ {kind!=="combo"&&<>
  {!editing?<><h2 className="mb-3 font-headline text-xl font-extrabold">{t("type")}</h2>
  <div className="grid grid-cols-4 gap-2">{(["drink","food","retail","combo"] as const).map((type,i)=>{const Icon=[Coffee,Utensils,ShoppingBag,Package][i];return <button type="button" key={type} aria-pressed={kind===type} onClick={()=>setKind(type)} className={`flex min-h-24 flex-col items-center justify-center gap-2 rounded-2xl border p-2 text-[14px] font-bold ${kind===type?"border-accent bg-accent-soft text-accent-text":"border-line bg-card"}`}><Icon className="size-6"/>{t(type)}</button>})}</div>
  {kind==="drink"&&<><h2 className="mb-3 mt-6 font-headline text-xl font-extrabold">{t("startTemplate")}</h2><div className="grid grid-cols-3 gap-2">{templates.map(item=><button type="button" key={item.name} onClick={()=>setTemplate(item)} aria-pressed={template.name===item.name} className={`min-h-28 rounded-2xl border p-3 text-start ${template.name===item.name?"border-accent bg-accent-soft":"border-line bg-card"}`}><span className="mb-2 block text-xl">{item.key==="matcha-latte"?"🍵":item.key===null?"🥐":"☕"}</span><span className="block text-[15px] font-bold">{item.name}</span><span className="block text-[13px] text-ink-muted">{item.description}</span></button>)}</div><button type="button" onClick={()=>selectMode(template.key?"template":"blank")} className="mt-4 min-h-14 w-full rounded-2xl bg-accent font-bold text-on-accent">{t("continueWith",{name:template.name})}</button></>}
@@ -48,5 +51,6 @@ export default function NewMenuItemForm({menuGroupOptions}:{menuGroupOptions:str
  </div>{error&&<p role="alert" className="my-3 text-warn">{error}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={()=>setEditing(false)} className="min-h-12 flex-1 rounded-xl border border-line font-bold">{common("back")}</button><button type="button" disabled={pending||!name.trim()||!(Number(price)>0)||(mode==="quick"&&!(Number(cost)>0))} onClick={createClick} className="min-h-14 flex-1 rounded-xl bg-accent font-bold text-on-accent disabled:opacity-50">{t("createItem")}</button></div>
  </section>}
  {clarify&&<SizeLabelClarifyDialog value={size} onResolve={v=>{setClarify(false);setSize(v);void submit(v);}} onCancel={()=>setClarify(false)}/>}
+ </>}
  </div>;
 }
