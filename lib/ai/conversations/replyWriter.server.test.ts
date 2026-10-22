@@ -113,11 +113,12 @@ it("round-trips unverified external evidence without relabeling it as cafe recor
 it("re-reads a validated multi-block agent reply with database-compatible status", async () => {
   data.stored.clear();
   const blocks = [{type:"text" as const,text:"x".repeat(1200)},
-    {type:"text" as const,text:"y".repeat(73)}];
+    {type:"text" as const,text:" y".repeat(36) + "y"}];
   const saved = await persistGroundedSupervisorReply(scope, msg,
     {intent:"unknown",status:"verified",evidence:[],blocks},
     {unverified:[{blockIndex:1,start:0,end:2,text:"yy",kind:"number"}]});
   expect(saved.blocks).toEqual(blocks);
+  expect((saved.blocks ?? []).map(b => (b as {text:string}).text).join("")).toContain(" y");
   expect(saved.grounding?.status).toBe("verified");
   expect((saved.grounding?.agentMetadata as {unverified:unknown[]}).unverified).toHaveLength(1);
   expect(await getExistingSupervisorReply(scope,msg)).toEqual(saved);
