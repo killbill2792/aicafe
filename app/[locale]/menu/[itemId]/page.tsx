@@ -14,6 +14,8 @@ import { getProductPhoto } from "@/lib/data/getProductPhoto";
 import {listPantry} from "@/lib/actions/pantry";
 import {getMenuProductAddons} from "@/lib/actions/menuAddons";
 import {getUnpricedProductSizes} from "@/lib/data/getUnpricedProductSizes";
+import {getMenuComboComponents} from "@/lib/actions/getMenuComboComponents";
+import SavedComboDetail from "@/components/menu/SavedComboDetail";
 
 export const dynamic = "force-dynamic";
 
@@ -40,14 +42,14 @@ export default async function MenuItemPage({
   if (!item || !editItem) notFound();
   const siblingSizes = stableSortSizes(controlItems.filter((candidate) => candidate.baseName === editItem.baseName && candidate.id !== editItem.id));
   const productEditItems = stableSortSizes(editItems.filter((candidate) => candidate.baseName === editItem.baseName));
-  const [pantry,savedAddons,draftSizes] = await Promise.all([listPantry(),getMenuProductAddons(productEditItems.map(product=>product.id)),getUnpricedProductSizes(itemId)]);
+  const [pantry,savedAddons,draftSizes,comboParts] = await Promise.all([listPantry(),getMenuProductAddons(productEditItems.map(product=>product.id)),getUnpricedProductSizes(itemId),getMenuComboComponents(itemId)]);
   const initialTab = setupRecipe === "1" ? "recipe" : parseMenuDetailTab(tab);
   const initialPriceItemId = initialTab === "overview" && productEditItems.some((candidate) => candidate.id === editPrice) ? editPrice : undefined;
 
   return (
     <PageShell className="flex flex-col gap-3.5 px-4 pb-4 pt-6" wide>
       <BackHeader title={editItem.baseName} backHref="/menu" backLabel={common("back")} />
-      <ProductDetailScreen
+      {comboParts.length>0?<SavedComboDetail name={editItem.baseName} priceCents={editItem.priceCents} parts={comboParts} items={editItems}/>:<ProductDetailScreen
         item={item}
         pantry={pantry.map(({id,name,category,baseUnit,costPerBaseMicros})=>({id,name,category,baseUnit,costPerBaseMicros}))}
         savedAddons={savedAddons}
@@ -64,7 +66,7 @@ export default async function MenuItemPage({
         initialTab={initialTab}
         initialPriceItemId={initialPriceItemId}
         copiedFrom={copiedFrom}
-      />
+      />}
     </PageShell>
   );
 }
