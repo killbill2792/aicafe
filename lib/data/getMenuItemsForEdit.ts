@@ -144,7 +144,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
           .select("ingredient_id, effective_from, cost_per_base_unit_micros, source")
           .in("ingredient_id", recipeIngredientIds)
           .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true })
+          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
       : { data: [] as never[], error: null };
   if (priceRowsResult.error) {
     logQueryError("getMenuItemsForEdit:ingredient_prices", priceRowsResult.error);
