@@ -11,6 +11,6 @@ export default async function PantryPage() {
   const [items, t] = await Promise.all([listPantry(), getTranslations("MenuBuilder")]);
   return <PageShell className="px-4 pb-24 pt-6" wide>
     <PantryWorkspace items={items} starters={PANTRY_STARTERS.map(({key,name,category,baseUnit,packQuantity,packUnit})=>({key,name,category,baseUnit,packQuantity,packUnit}))}
-      labels={Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other","reviewNow","confirmed","add","packSize","packPrice","category","baseUnit","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error"].map(key=>[key,t.raw(key) as string]))} />
+      labels={Object.fromEntries(["title","search","all","coffee","milk","syrups","packaging","bakery","other","reviewNow","confirmed","add","packSize","packPrice","category","baseUnit","name","create","save","cancel","edit","estimate","confirm","usedIn","perUnit","priceUnknown","starterPack","chooseStarter","newIngredient","noItems","priceTitle","purchaseUnit","error"].map(key=>[key,t.raw(key as never) as string]))} />
   </PageShell>;
 }
