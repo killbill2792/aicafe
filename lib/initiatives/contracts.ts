@@ -81,7 +81,7 @@ export type MetricRow={
 };
 export type ObservationRow={
   metric_id:string;business_date:string;value:number|null;coverage:number;
-  source:"computed"|"owner_checkin"|"staff_checkin";note:string|null;
+  source:"computed"|"owner_checkin"|"staff_checkin";note:string|null;revision:number;
 };
 export type EvaluationRow={
   id:string;initiative_id:string;as_of:string;

@@ -60,6 +60,7 @@ create table initiative_observations (
   value numeric,
   coverage numeric not null check (coverage between 0 and 1),
   source text not null check (source in ('computed','owner_checkin','staff_checkin')),
+  revision int not null default 1 check(revision>0),
   note text,
   unique(metric_id,business_date),
   check (value is not null or coverage < 1),
@@ -165,3 +166,92 @@ end;
 $$;
 revoke all on function create_owner_initiative_atomic(uuid,uuid,uuid,text,jsonb,jsonb) from public,anon,authenticated;
 grant execute on function create_owner_initiative_atomic(uuid,uuid,uuid,text,jsonb,jsonb) to service_role;
+
+
+-- A logical delivery is immutable and separately deduplicated from corrections.
+create table initiative_checkin_operations(
+  metric_id uuid not null references initiative_metrics(id) on delete cascade,
+  operation_key text not null,
+  business_date date not null,
+  revision int not null,
+  created boolean not null,
+  corrected boolean not null,
+  created_at timestamptz not null default now(),
+  primary key(metric_id,operation_key)
+);
+alter table initiative_checkin_operations enable row level security;
+revoke all on initiative_checkin_operations from public,anon,authenticated;
+grant all on initiative_checkin_operations to service_role;
+
+-- Locks one metric/day across concurrent requests, but only allows a correction
+-- that carries the currently visible revision. Older deliveries replay their own
+-- original outcome instead of reverting a newer answer.
+create or replace function record_owner_initiative_checkin_atomic(
+  p_business_id uuid,p_owner_user_id uuid,p_metric_id uuid,p_date date,
+  p_value numeric,p_note text,p_expected_revision int,p_operation_key text
+) returns jsonb language plpgsql security definer set search_path=public
+as $$
+declare
+  start_day date; end_day date; current_revision int;
+  old_value numeric; old_note text; old_source text;
+  old_operation initiative_checkin_operations%rowtype;
+  is_new boolean := false; is_correction boolean := false;
+begin
+  if char_length(p_operation_key)<12 then
+    raise exception 'check-in operation identity required' using errcode='23514';
+  end if;
+  if not exists(select 1 from memberships where business_id=p_business_id
+    and user_id=p_owner_user_id and role='owner') then
+    raise exception 'owner membership required' using errcode='42501';
+  end if;
+  select i.starts_on,i.ends_on into start_day,end_day
+    from initiative_metrics m join owner_initiatives i on i.id=m.initiative_id
+    where m.id=p_metric_id and m.source='checkin'
+      and m.checkin_audience='owner' and i.business_id=p_business_id
+      and i.owner_user_id=p_owner_user_id and i.status='active';
+  if not found or p_date<start_day or p_date>end_day then
+    raise exception 'check-in not authorized' using errcode='42501';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_metric_id::text||':'||p_date::text,0));
+  select * into old_operation from initiative_checkin_operations
+    where metric_id=p_metric_id and operation_key=p_operation_key;
+  if found then
+    return jsonb_build_object('created',old_operation.created,
+      'corrected',old_operation.corrected,'revision',old_operation.revision);
+  end if;
+  select revision,value,note,source into current_revision,old_value,old_note,old_source
+    from initiative_observations
+    where metric_id=p_metric_id and business_date=p_date for update;
+  if not found then
+    if p_expected_revision is not null then
+      raise exception 'stale check-in revision' using errcode='40001';
+    end if;
+    insert into initiative_observations(metric_id,business_date,value,coverage,source,note,revision)
+      values(p_metric_id,p_date,p_value,case when p_value is null then 0 else 1 end,
+        'owner_checkin',p_note,1);
+    current_revision:=1;
+    is_new:=true;
+  else
+    if p_expected_revision is distinct from current_revision or old_source<>'owner_checkin' then
+      raise exception 'stale check-in revision' using errcode='40001';
+    end if;
+    if old_value is distinct from p_value or old_note is distinct from p_note then
+      update initiative_observations set value=p_value,
+        coverage=case when p_value is null then 0 else 1 end,
+        note=p_note,revision=current_revision+1
+        where metric_id=p_metric_id and business_date=p_date;
+      current_revision:=current_revision+1;
+      is_correction:=true;
+    end if;
+  end if;
+  insert into initiative_checkin_operations(metric_id,operation_key,business_date,
+    revision,created,corrected)
+    values(p_metric_id,p_operation_key,p_date,current_revision,is_new,is_correction);
+  return jsonb_build_object('created',is_new,'corrected',is_correction,
+    'revision',current_revision);
+end;
+$$;
+revoke all on function record_owner_initiative_checkin_atomic(
+  uuid,uuid,uuid,date,numeric,text,int,text) from public,anon,authenticated;
+grant execute on function record_owner_initiative_checkin_atomic(
+  uuid,uuid,uuid,date,numeric,text,int,text) to service_role;

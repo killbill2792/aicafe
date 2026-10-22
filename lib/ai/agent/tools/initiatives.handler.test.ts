@@ -26,7 +26,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   saveOwnerCheckin:async(scope:{ownerUserId:string},id:string,date:string,value:number|null)=>{
     if(scope.ownerUserId!==state.owner||id!=="44444444-4444-4444-8444-444444444444"||
         date!=="2026-10-22"||(value!==1&&value!==null))throw Error("wrong check-in scope");
-    state.checkins++;return {created:true,corrected:false};
+    state.checkins++;return {created:true,corrected:false,revision:1};
   },
 }));
 const context:AgentToolContext={
@@ -70,7 +70,7 @@ describe("owner-scoped initiative agent handlers",()=>{
   });
   it("records only referenced check-ins and rejects unknown arguments",async()=>{
     const result=await executeInitiativeTool("record_checkin",{
-      metricId,date:"2026-10-22",value:1,note:null,
+      metricId,date:"2026-10-22",expectedRevision:null,value:1,note:null,
     },context);
     expect(result.created).toBe(true);
     expect(state.checkins).toBe(1);
@@ -81,7 +81,7 @@ describe("owner-scoped initiative agent handlers",()=>{
   });
   it("preserves missing evidence for a note-only check-in",async()=>{
     const note=await executeInitiativeTool("record_checkin",{
-      metricId,date:"2026-10-22",value:null,note:"The delivery was late",
+      metricId,date:"2026-10-22",expectedRevision:null,value:null,note:"The delivery was late",
     },context);
     expect(note.missing).toContain("checkinNumericValueMissing");
   });

@@ -45,7 +45,8 @@ const proposalArgs=z.strictObject({
 const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
 const statusArgs=z.strictObject({id:z.uuid()});
 const checkinArgs=z.strictObject({
-  metricId:z.uuid(),date:z.iso.date(),value:z.number().finite().nullable(),
+  metricId:z.uuid(),date:z.iso.date(),expectedRevision:z.number().int().positive().nullable(),
+  value:z.number().finite().nullable(),
   note:z.string().trim().min(1).max(1000).nullable(),
 }).refine(v=>v.value!==null||v.note!==null,"A value or note is required");
 export const initiativeToolSchemas={
@@ -154,12 +155,15 @@ export async function executeInitiativeTool(
         recommendation:graph.evaluation.recommendation,asOf:graph.evaluation.as_of,
         results:graph.evaluation.results}:null,
       observations:graph.observations.slice(0,20).map(o=>({
-        metricId:o.metric_id,date:o.business_date,value:o.value,coverage:o.coverage,source:o.source,
+        metricId:o.metric_id,date:o.business_date,value:o.value,coverage:o.coverage,source:o.source,revision:o.revision,
       }))};
   }
   const args=checkinArgs.parse(raw);
-  const saved=await saveOwnerCheckin(scope,args.metricId,args.date,args.value,args.note);
+  if(!ctx.ownerMessageId)throw new Error("owner check-in message context unavailable");
+  const operationKey=createHash("sha256").update(ctx.ownerMessageId+":"+canonicalJson(args)).digest("hex");
+  const saved=await saveOwnerCheckin(scope,args.metricId,args.date,args.value,args.note,
+    args.expectedRevision,operationKey);
   return {source:"owner_checkin",period:null,
     missing:args.value===null?["checkinNumericValueMissing"]:[],
-    created:saved.created,corrected:saved.corrected};
+    created:saved.created,corrected:saved.corrected,revision:saved.revision};
 }

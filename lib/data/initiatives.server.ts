@@ -1,5 +1,6 @@
 import "server-only";
 import {createHash} from "node:crypto";
+import {z} from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
@@ -86,7 +87,7 @@ export async function readOwnerInitiative(scope:InitiativeScope,id:string) {
   const rows=(metrics.data??[]) as MetricRow[];
   const ids=rows.map(m=>m.id);
   const observations=ids.length?await db.from("initiative_observations")
-    .select("metric_id,business_date,value,coverage,source,note")
+    .select("metric_id,business_date,value,coverage,source,note,revision")
     .in("metric_id",ids).order("business_date",{ascending:false}).limit(150):null;
   if(observations?.error)throw observations.error;
   const evals=await db.from("initiative_evaluations").select("*")
@@ -111,7 +112,7 @@ export async function activateOwnerInitiative(scope:InitiativeScope,id:string,re
   return data; // null means stale revision, wrong owner, or no longer proposed
 }
 export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,
-  date:string,value:number|null,note:string|null) {
+  date:string,value:number|null,note:string|null,expectedRevision:number|null,operationKey:string) {
   await ownerAccess(scope);
   const db=await serviceOwnerAccess(scope);
   const metric=await db.from("initiative_metrics")
@@ -136,20 +137,15 @@ export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,
     (parent.checkin_cadence==="end_only"&&date===parent.ends_on);
   if(!Number.isInteger(delta)||!eligible||date<parent.starts_on||date>parent.ends_on||date>today)
     throw new Error("check-in date outside approved schedule");
-  const next={metric_id:metricId,business_date:date,value,coverage:value===null?0:1,
-    source:"owner_checkin",note};
-  const prior=await db.from("initiative_observations")
-    .select("value,note,source").eq("metric_id",metricId).eq("business_date",date).maybeSingle();
-  if(prior.error)throw prior.error;
-  if(prior.data?.source==="staff_checkin")throw new Error("owner cannot replace staff evidence");
-  if(prior.data?.value===value&&prior.data?.note===note)return {created:false,corrected:false};
-  // Unique metric/day constraint prevents duplicate inserts. Authorized changed
-  // answers can be corrected, including note-only -> numeric completion.
-  const {error}=await db.from("initiative_observations").upsert(next,{
-    onConflict:"metric_id,business_date",
+  const {data,error}=await db.rpc("record_owner_initiative_checkin_atomic",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_metric_id:metricId,p_date:date,p_value:value,p_note:note,
+    p_expected_revision:expectedRevision,p_operation_key:operationKey,
   });
   if(error)throw error;
-  return {created:!prior.data,corrected:!!prior.data};
+  return z.strictObject({
+    created:z.boolean(),corrected:z.boolean(),revision:z.number().int().positive(),
+  }).parse(data);
 }
 export async function listMonitorBatch() {
   const db=createAdminSupabaseClient();
@@ -184,14 +180,16 @@ export async function persistMetricObservation(scope:InitiativeScope,row:Observa
   const db=await serviceOwnerAccess(scope);
   // A completed check-in is never overwritten by a computed sample.
   const {data:existing,error:readError}=await db.from("initiative_observations")
-    .select("coverage,source,value,note").eq("metric_id",row.metric_id)
+    .select("coverage,source,value,note,revision").eq("metric_id",row.metric_id)
     .eq("business_date",row.business_date).maybeSingle();
   if(readError)throw readError;
   if(existing?.source!=="computed" && existing) return false;
   if(existing&&existing.coverage>row.coverage)return false;
   if(existing&&existing.coverage===row.coverage&&existing.value===row.value&&existing.note===row.note)
     return false;
-  const {error}=await db.from("initiative_observations").upsert(row,{onConflict:"metric_id,business_date"});
+  const {error}=await db.from("initiative_observations").upsert({
+    ...row,revision:(existing?.revision??0)+1,
+  },{onConflict:"metric_id,business_date"});
   if(error)throw error;
   return true;
 }
