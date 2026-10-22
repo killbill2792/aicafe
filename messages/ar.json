@@ -1978,6 +1978,8 @@
     "field_laborCostEstimated": "تكاليف العمل تتضمن تقديرات"
   },
   "SupervisorInvestigation": {
+    "naturalUnverifiedValue": "قيمة لم أتمكن من التحقق منها",
+    "naturalUnverifiedAction": "لم أتحقق من اكتمال الإجراء المطلوب.",
     "unansweredGoal": "لا يزال جزء من طلبك دون إجابة: ",
     "yes": "نعم",
     "no": "لا",
