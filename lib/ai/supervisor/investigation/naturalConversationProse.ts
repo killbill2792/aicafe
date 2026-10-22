@@ -62,7 +62,9 @@ export function groundedNaturalProse(text:string,known:readonly string[],locale:
  opts:{allowActionCompletion?:boolean}={}):{text:string;redacted:boolean}{
  const raw=text.replace(/[\p{Cc}\p{Cf}]/gu," ").trim().slice(0,1200);
  let redacted=false;
- const checked=raw.replace(token,(span:string,offset:number,whole:string)=>{
+ const checked=raw.replace(/https?:\/\/[^\s)\]}]+/giu,()=>{
+   redacted=true;return words[locale].unknown;
+ }).replace(token,(span:string,offset:number,whole:string)=>{
    if(approved(span,whole.slice(offset+span.length),known))return span;
    redacted=true;return words[locale].unknown;
  });
@@ -72,6 +74,7 @@ export function groundedNaturalProse(text:string,known:readonly string[],locale:
  const claims=[
    /\b(?:I|we|the system|supervisor)\s+(?:have\s+)?(?:published|sent|changed|updated|approved|committed|completed|scheduled|executed|submitted|deleted|paid|placed the order)\b/iu,
    /\b(?:he|hemos|ya)\s+(?:publicado|enviado|cambiado|actualizado|aprobado|completado|pagado|programado)\b/iu,
+   /\b(?:schedule|price|message|order|payment)\s+(?:has been|was|is)\s+(?:published|sent|changed|updated|approved|completed|paid|placed)\b/iu,
    /(?:لقد|تم|قمنا)\s*(?:نشر|إرسال|تغيير|تحديث|اعتماد|دفع|تنفيذ|جدولة)/u,
  ];
  const sentences=checked.split(/(?<=[.!?؟])\s+/u);
