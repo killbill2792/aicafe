@@ -147,11 +147,10 @@ export async function runAgentTurn(args: {
       if (round === 4 || usage.toolCalls >= 8) { endReason = "budget"; break; }
     }
     if (!finished && endReason === "complete") endReason = "budget";
-    if (!finished && endReason !== "provider_error" && usage.modelCalls < 6) {
+    if (!finished && usage.modelCalls < 6 && now() < deadline) {
       // Exactly one final no-tool request; never allow another model tool call.
-      // On provider failure, already-streamed text remains intact.
+      // Recovery is bounded even after provider disconnect/incomplete response.
       try {
-        controller.abort(); // clear any previous operation
         const finalController = new AbortController();
         const left = deadline - now();
         if (left <= 0) { endReason = "timeout"; }

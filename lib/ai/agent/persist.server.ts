@@ -7,12 +7,15 @@ import type { AgentTurn } from "./loop.server";
 
 export class AgentReplyTooLongError extends Error { constructor() { super("agent_reply_too_long"); } }
 export class AgentReplyStorageError extends Error { constructor() { super("agent_reply_storage_failed"); } }
+export class AgentEmptyReplyError extends Error { constructor() { super("agent_turn_failed"); } }
 type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
-  if (turn.usage.toolCalls === 0 && turn.endReason === "complete") return "verified";
-  if (turn.usage.toolCalls === 0 || !turn.results.length ||
-    turn.results.every(result => typeof result.error === "string"))
-    return "unavailable";
+  // A completed greeting/clarification does not require a business read.
+  if (turn.endReason === "complete" && turn.usage.toolCalls === 0) return "verified";
+  const hasSuccessfulRead = turn.results.some(result =>
+    result.missing.length === 0 && typeof result.error !== "string");
+  if (!hasSuccessfulRead) return "unavailable";
+  if (turn.endReason !== "complete") return "partial";
   return turn.status.status === "complete" ? "verified" : "partial";
 }
 type Span = { start: number; end: number };
@@ -55,6 +58,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
   return blocks;
 }
 export function agentReplyPayload(turn: AgentTurn) {
+  if (!turn.text.trim()) throw new AgentEmptyReplyError();
   const blocks = splitAgentText(turn.text, turn.unverified);
   const status = persistedAgentStatus(turn);
   const reply: GroundedSupervisorReply = { intent: "unknown", status, evidence: [], blocks };

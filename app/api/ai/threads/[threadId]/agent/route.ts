@@ -5,7 +5,7 @@ import { getExistingSupervisorReply } from "@/lib/ai/conversations/replyWriter.s
 import { createAuthenticatedCafeTools, readSupervisorCafeIdentity } from "@/lib/ai/cafeTools.server";
 import { isSupervisorChatConfigured, getSupervisorChatReadiness } from "@/lib/ai/conversations/enabled.server";
 import { runAgentTurn } from "@/lib/ai/agent/loop.server";
-import { persistAgentReply, AgentReplyTooLongError, AgentReplyStorageError } from "@/lib/ai/agent/persist.server";
+import { persistAgentReply, AgentReplyTooLongError, AgentReplyStorageError, AgentEmptyReplyError } from "@/lib/ai/agent/persist.server";
 import { labelSupervisorThread, assertOwnerAgentTurnAvailable } from "@/lib/ai/conversations/usage.server";
 
 export const runtime = "nodejs";
@@ -23,6 +23,7 @@ export async function POST(request: Request, context: RouteContext) {
     const readiness = await getSupervisorChatReadiness(true);
     if (!readiness.enabled) throw new ConversationApiError(503, readiness.reason);
     const thread = await service.getThread(id);
+    await assertOwnerAgentTurnAvailable(scope);
     const owner = await service.addOwnerMessage(id, input.clientMessageId, input.text);
     const prior = await getExistingSupervisorReply(scope, owner);
     if (thread.title === null) {
@@ -39,7 +40,6 @@ export async function POST(request: Request, context: RouteContext) {
             emit("done", { reply: prior, replayed: true });
             return;
           }
-          await assertOwnerAgentTurnAvailable(scope);
           const [tools, identity, page] = await Promise.all([
             createAuthenticatedCafeTools(), readSupervisorCafeIdentity(scope.businessId), service.listMessages(id, 0),
           ]);
@@ -51,6 +51,10 @@ export async function POST(request: Request, context: RouteContext) {
           const result = await runAgentTurn({ ownerText: input.text, history,
             context: { tools, asOf: identity.asOf, locale: input.locale },
             onDelta: delta => emit("delta", { text: delta }) });
+          if (!result.text.trim()) {
+            emit("error", { code: "agent_turn_failed", retryable: true });
+            return;
+          }
           const reply = await persistAgentReply(scope, owner, result);
           emit("done", { reply, status: result.status, endReason: result.endReason,
             unverified: result.unverified, usage: result.usage });
@@ -58,8 +62,9 @@ export async function POST(request: Request, context: RouteContext) {
           const code = error instanceof ConversationApiError ? error.code :
             error instanceof AgentReplyTooLongError ? "reply_too_long" :
             error instanceof AgentReplyStorageError ? "reply_storage_failed" :
+            error instanceof AgentEmptyReplyError ? "agent_turn_failed" :
             "agent_turn_failed";
-          emit("error", { code });
+          emit("error", { code, ...(error instanceof AgentEmptyReplyError ? { retryable: true } : {}) });
         } finally { controller.close(); }
       },
     });

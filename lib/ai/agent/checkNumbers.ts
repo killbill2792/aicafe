@@ -32,17 +32,21 @@ function numberPattern(locale: AgentLocale): RegExp {
 const months = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
 const monthBefore = new RegExp(months + "[\\s,]*$", "iu");
 const monthAfter = new RegExp("^\\s*(?:de\\s+)?" + months + "(?!\\p{L})", "iu");
+const yearBefore = /(?:^|[\s(])(?:in|en|del|año|year|fy|q[1-4]|عام|سنة)\s*$/iu;
 const isoDate = /[٠-٩۰-۹\d]{4}[-/][٠-٩۰-۹\d]{1,2}[-/][٠-٩۰-۹\d]{1,2}/gu;
 function isCalendarNumber(text: string, start: number, end: number, value: number, kind: Kind): boolean {
   if (kind !== "number" || !Number.isInteger(value)) return false;
-  if (value >= 2000 && value <= 2100) return true;
-  if (value >= 1 && value <= 31) {
-    const before = text.slice(Math.max(0, start - 28), start);
-    const after = text.slice(end, end + 28);
-    if (monthBefore.test(before) || monthAfter.test(after)) return true;
+  // An ISO/slash date contains several numeric tokens; exempt all of them.
+  if ([...text.matchAll(isoDate)].some(match =>
+    start < match.index + match[0].length && end > match.index)) return true;
+  const before = text.slice(Math.max(0, start - 28), start);
+  const after = text.slice(end, end + 28);
+  if (value >= 2000 && value <= 2100) {
+    return monthBefore.test(before) || monthAfter.test(after) || yearBefore.test(before);
   }
-  return [...text.matchAll(isoDate)].some(match =>
-    start < match.index + match[0].length && end > match.index);
+  if (value >= 1 && value <= 31)
+    return monthBefore.test(before) || monthAfter.test(after);
+  return false;
 }
 function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number; wholePercent: boolean }> {
   const found: Array<UnverifiedNumber & { value: number; wholePercent: boolean }> = [];
