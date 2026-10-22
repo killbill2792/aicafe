@@ -352,7 +352,17 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       v.start < clockEnd(m) && v.end > m.index) : undefined;
     if(clock){
       const role=timeRole(text,clock);
-      if(!role)return true; // Unknown time meaning is not proof of a business fact.
+      if(!role){
+        // Sales prose may include incidental timestamps (e.g. "999 (8:00)");
+        // do not mistake the clock for the adjacent sale count. But any
+        // recognizably business-time assertion must fail closed on an
+        // unrecognized action, in every supported language.
+        const prior=text.slice(0,clock.index);
+        const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
+          prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
+        const sentence=text.slice(sentenceStart);
+        return /\b(?:open|opening|opens|close|closing|closes|hours|shift|starts?|ends?|begins?|finishes?|abrimos|abrir|abre|abren|apertura|cerramos|cerrar|cierra|cierre|turno)\b|(?:نفتح|نغلق|يفتح|يغلق|وردية|مناوبة|الافتتاح|الإغلاق)/iu.test(sentence);
+      }
       const canonical=canonicalClock(clock);
       if(canonical){
         const days=mentionedWeekdays(text,clock,clocks);
