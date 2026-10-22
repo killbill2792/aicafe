@@ -32,6 +32,7 @@ try{
     "create table auth.users(id uuid primary key);create table businesses(id uuid primary key);",
     "create table memberships(business_id uuid,user_id uuid,role text,primary key(business_id,user_id));",
     "create table ai_threads(business_id uuid,id uuid,owner_user_id uuid,unique(business_id,id,owner_user_id));",
+    "create table orders(id uuid primary key default gen_random_uuid(),business_id uuid not null,business_date date not null,net_sales_cents bigint not null,pos_order_id text);",
     "create function auth.uid() returns uuid language sql stable as $$",
     "select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;",
     "grant usage on schema public,auth to authenticated;",
@@ -43,7 +44,14 @@ try{
     await db.query("insert into memberships values($1,$2,$3)",[BIZ,id,role]);
   for(const [thread,owner] of [[THREAD,A],[THREAD_B,B]])
     await db.query("insert into ai_threads values($1,$2,$3)",[BIZ,thread,owner]);
+  // M1's fenced outbox writer composes with the real M0 team_updates schema.
+  await db.query(readFileSync(new URL("../supabase/migrations/20261022000077_team_updates.sql",import.meta.url),"utf8"));
   await db.query(readFileSync(new URL("../supabase/migrations/20261022000078_owner_initiatives.sql",import.meta.url),"utf8"));
+  await db.query("insert into orders(business_id,business_date,net_sales_cents,pos_order_id) select $1,'2026-10-15',1,'pos:'||x from generate_series(1,1200) as x",[BIZ]);
+  const totals=(await db.query("select * from initiative_daily_order_sales_proof($1,$2)",[BIZ,"2026-10-15"])).rows[0];
+  assert.equal(Number(totals.order_count),1200);
+  assert.equal(Number(totals.net_sales_cents),1200);
+  assert.equal(Number(totals.synthetic_count),0);
   const insert="insert into owner_initiatives(id,business_id,owner_user_id,thread_id,request_key,kind,title,change_description,starts_on,ends_on,baseline_from,checkin_cadence,locale) values($1,$2,$3,$4,$5,'goal','Daily sales','','2026-10-15','2026-10-22','2026-10-08','daily','en')";
   await db.query(insert,[ID,BIZ,A,THREAD,'fixture-request-key']);
   await assert.rejects(db.query(insert,["66666666-6666-4666-8666-666666666666",BIZ,A,THREAD_B,"wrong-thread-key"]),{code:"23503"});
