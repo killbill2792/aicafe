@@ -46,7 +46,7 @@ export default async function BreakEvenPage() {
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("whereFrom")}</h2>
         <div className="flex items-center gap-3 text-[15px]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-running text-ink">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-running text-on-chart-running">
             <Coins aria-hidden="true" size={18} />
           </span>
           <span className="flex-1">{t("rentBillsRow")}</span>
