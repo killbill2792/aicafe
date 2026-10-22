@@ -357,8 +357,15 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
       context});
     const checked=await authorizedOwnerP1();
     if(checked.identity.businessId!==identity.businessId)throw new Error("Owner scope changed");
+    // A clarification after one authenticated source read belongs to that
+    // source's calendar domain. Retain the issued reader identity so an
+    // owner-supplied date correction cannot be applied to a different domain.
+    const sourced=observations.filter(o=>o.reference&&descriptions.some(d=>d.id===o.capabilityId));
+    const issuing=sourced.length&&sourced.every(o=>o.capabilityId===sourced[0].capabilityId)?
+      sourced[0]:null;
     const pending=buildOwnerQuestionReply({businessId:identity.businessId,originalText:input.text,
-      readCapabilityId:"platform.owner_input.resolve.v1",readInput:{},request});
+      readCapabilityId:issuing?.capabilityId??"platform.owner_input.resolve.v1",
+      readInput:issuing?.input??{},request});
     return {reply:{...pending,investigationMemory:memoryState()},usage};
    }
    // Only the server's fact renderers are authorized to display business figures.
