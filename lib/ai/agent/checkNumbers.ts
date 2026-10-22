@@ -259,6 +259,28 @@ function isCurrencylessMoneyClaim(text: string, start: number, end: number): boo
 
 /** Known configured hours remain evidence for their own weekday even when
  * other weekdays are missing. An unknown weekday is never silently closed. */
+/** A second product's numeric price cannot establish a named item's price. */
+function directItemPriceClaim(text:string,start:number,end:number,prices:readonly MenuPrice[]):number|null {
+  const before=text.slice(0,start);
+  const sentenceStart=Math.max(before.lastIndexOf("."),before.lastIndexOf("!"),
+    before.lastIndexOf("?"),before.lastIndexOf("\n"))+1;
+  const phrase=before.slice(sentenceStart).trim().toLocaleLowerCase();
+  const after=text.slice(end);
+  if(/^\s*(?:more|less|cheaper|pricier)\s+than\b/iu.test(after))return null;
+  const matches=prices.filter(p=>{
+    const name=p.name.trim().toLocaleLowerCase();
+    if(!name)return false;
+    const at=phrase.lastIndexOf(name);
+    if(at<0)return false;
+    const previous=phrase[at-1]??" ";
+    if(/[\p{L}\p{M}\p{N}]/u.test(previous))return false;
+    const suffix=phrase.slice(at+name.length).trim();
+    return /^(?:is|costs?|priced\s+at|sells?\s+for|price\s+is)$/iu.test(suffix);
+  });
+  if(matches.length!==1)return null;
+  return matches[0].priceCents;
+}
+
 /** A computed price difference is valid only for both named menu items and
  * the asserted direction, never for any arbitrary pair in the price list. */
 function verifiedMenuDifference(text:string,start:number,end:number,cents:number,
@@ -543,6 +565,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     }
   }
   const menuPrices=evidence.filter(e=>e.tool==="menu_items").flatMap(e=>e.prices??[]);
+  const itemPrices=evidence.flatMap(e=>e.prices??[]);
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
@@ -616,6 +639,10 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         return !(verified||ownerGrounded);
       }
       return true;
+    }
+    if(v.kind==="money"){
+      const itemPrice=directItemPriceClaim(text,v.start,v.end,itemPrices);
+      if(itemPrice!==null)return Math.abs(itemPrice-v.value)>1;
     }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
