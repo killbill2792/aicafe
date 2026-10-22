@@ -1,12 +1,11 @@
 "use client";
 import { useState,useTransition } from "react";
 import { useTranslations } from "next-intl";
-import { Coffee,Utensils,ShoppingBag,Package,Check } from "lucide-react";
+import { Coffee,Utensils,ShoppingBag,Package } from "lucide-react";
 import { useRouter } from "@/i18n/navigation";
 import { addMenuItem,saveMenuItemAggregateCost } from "@/lib/actions/menuItems";
 import { applyTemplate } from "@/lib/actions/pantry";
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
-import { RECIPE_TEMPLATES } from "@/lib/menu/recipeTemplates";
 import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
 import SizeLabelClarifyDialog from "./SizeLabelClarifyDialog";
 type Kind="drink"|"food"|"retail"|"combo";type Mode="template"|"quick"|"blank";
