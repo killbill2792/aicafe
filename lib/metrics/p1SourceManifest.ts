@@ -12,6 +12,9 @@ import type { SupportedId } from "./p1Catalog";
 type Surface = {capabilities:readonly SupportedId[]} |
   {restricted:string};
 export const SOURCE_SURFACES = {
+  "lib/data/agentReadSources.server.ts":{
+    agentSourceReaders:{restricted:"Owner-authenticated, business-scoped agent-only hours and ingredient history reader; not a P1 generic selector"},
+  },
   "lib/data/fixtureSnapshot.ts":{
     getFixtureSnapshot:{restricted:"Demo/testing fixture is not authenticated real café evidence"},
   },
