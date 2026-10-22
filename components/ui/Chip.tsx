@@ -1,3 +1,3 @@
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ReactNode } from "react";
 export function Chip({ children, className = "" }: {children: ReactNode; className?: string}) { return <span className={`inline-flex items-center rounded-chip bg-surface2 px-3 py-1.5 text-sm font-medium text-fg ${className}`}>{children}</span>; }
 export function QuickReplies({ replies, onSelect }: {replies: readonly {id: string; label: string}[]; onSelect: (id: string) => void}) { return <div className="flex flex-wrap gap-2">{replies.map(reply => <button key={reply.id} type="button" className="min-h-12 rounded-chip border border-line bg-surface px-4 text-sm font-semibold text-accent-text focus-visible:outline-focus" onClick={() => onSelect(reply.id)}>{reply.label}</button>)}</div>; }

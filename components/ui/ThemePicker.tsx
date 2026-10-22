@@ -11,8 +11,8 @@ export function ThemePicker({initialTheme, initialMode}: {initialTheme: ThemeId;
   const t = useTranslations("Ui");
   const [theme,setTheme] = useState(initialTheme);
   const [mode,setMode] = useState<ThemeMode>(initialMode);
-  const pickTheme = (id: ThemeId) => { document.documentElement.dataset.theme=id; setTheme(id); persist("cp_theme",id); };
-  const pickMode = (id: ThemeMode) => { document.documentElement.dataset.mode=id; setMode(id); persist("cp_mode",id); };
+  const pickTheme = (id: ThemeId) => { document.documentElement.setAttribute('data-theme', id); setTheme(id); persist("cp_theme",id); };
+  const pickMode = (id: ThemeMode) => { document.documentElement.setAttribute('data-mode', id); setMode(id); persist("cp_mode",id); };
   return <section aria-labelledby="theme-heading" className="rounded-card-lg border border-line bg-surface p-4">
     <h2 id="theme-heading" className="font-headline text-xl font-bold text-fg">{t("theme")}</h2>
     <p className="mt-1 text-sm text-muted">{t("themeDescription")}</p>
