@@ -663,7 +663,9 @@
     "sizeUnitG": "g",
     "sizeUnitEach": "each",
     "editRecipe": "Edit recipe",
-    "done": "Save recipe"
+    "done": "Save recipe",
+    "newSizeNeedsRecipe": "Size was created, but its scaled recipe could not be saved. Open the new size to finish it.",
+    "finishNewSize": "Open new size"
   },
   "Staff": {
     "title": "Staff",
@@ -2329,6 +2331,10 @@
     "savesYou": "Saves you {amount}",
     "aboutSame": "Costs about the same",
     "costBasisForSize": "Cost difference shown for {size}",
-    "priceEstimate": "Estimate"
+    "priceEstimate": "Estimate",
+    "quantity": "Quantity",
+    "unit": "Unit",
+    "editQuantityForSize": "Edit {ingredient} in {size}",
+    "invalidQuantity": "Enter an amount greater than zero in a valid unit."
   }
 }
