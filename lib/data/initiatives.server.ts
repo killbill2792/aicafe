@@ -260,7 +260,7 @@ export async function persistInitiativeEvaluation(scope:InitiativeScope,initiati
   return data===true;
 }
 export async function readMetricDay(businessId:string,date:string,
-  opts:{items:boolean;hours:boolean;ingredientIds:string[];itemIds?:string[]},
+  opts:{items:boolean;hours:boolean;ingredientIds:string[];itemIds?:string[];costs?:boolean},
   signal?:AbortSignal):Promise<MetricDailyInput> {
   const db=createAdminSupabaseClient(signal);
   const day=await db.from("daily_rollups").select(
@@ -401,15 +401,21 @@ export async function readMetricDay(businessId:string,date:string,
             })),
           );
           input.itemRevenueVerified=ordersComplete&&reconciled.verified;
-      const fallback=ids.length?await db.from("menu_item_cost_fallbacks")
+      const fallback=opts.costs&&ids.length?await db.from("menu_item_cost_fallbacks")
         .select("menu_item_id,cost_cents").eq("business_id",businessId)
         .in("menu_item_id",ids).eq("status","confirmed"):
         {data:[],error:null};
       if(fallback.error)throw new Error("item cost fallback unavailable");
+      // recipe_lines has a COMPOSITE PK, not an id column. Paged reads must
+      // use the real stable (menu_item_id,ingredient_id) sort order.
+      // Unit/revenue metrics do not depend on recipes: do not let recipe
+      // availability block valid POS participation or revenue evidence.
       const recipePage=(from:number,to:number)=>db.from("recipe_lines")
-        .select("id,menu_item_id,ingredient_id,quantity")
-        .in("menu_item_id",ids).order("id",{ascending:true}).range(from,to);
-      const firstRecipes=ids.length?await recipePage(0,499):{data:[],error:null};
+        .select("menu_item_id,ingredient_id,quantity")
+        .in("menu_item_id",ids)
+        .order("menu_item_id",{ascending:true})
+        .order("ingredient_id",{ascending:true}).range(from,to);
+      const firstRecipes=opts.costs&&ids.length?await recipePage(0,499):{data:[],error:null};
       if(firstRecipes.error)throw firstRecipes.error;
       let recipes=firstRecipes.data??[];
       let recipesComplete=recipes.length<500;
@@ -422,7 +428,7 @@ export async function readMetricDay(businessId:string,date:string,
       }
       // Unit and net-revenue evidence may remain complete even when recipe
       // line coverage is not. Never certify the cost component from a prefix.
-      input.itemCostCoverageVerified=recipesComplete;
+      input.itemCostCoverageVerified=opts.costs===true&&recipesComplete;
       const recipesByItem=new Map<string,RecipeLine[]>();
       for(const recipe of recipes){
         needed.add(recipe.ingredient_id);
