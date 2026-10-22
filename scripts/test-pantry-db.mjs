@@ -193,22 +193,23 @@ try {
   await asOwner(db,async c=>{
     const alt=(await c.query("insert into ingredients(business_id,name,base_unit) values($1,'Oat Milk','ml') returning id",[A])).rows[0].id;
     const family=(await c.query("select id from menu_items where business_id=$1 and base_name='Latte' order by id",[A])).rows.map(x=>x.id);
-    const original=(await c.query("select ingredient_id,quantity,display_unit,display_quantity from recipe_lines where menu_item_id=$1 order by ingredient_id",[PARENT])).rows.map(row=>({
+    const target=family.find(id=>id!==PARENT);assert.ok(target);
+    const original=(await c.query("select ingredient_id,quantity,display_unit,display_quantity from recipe_lines where menu_item_id=$1 order by ingredient_id",[target])).rows.map(row=>({
       ingredientId:row.ingredient_id,quantity:Number(row.quantity),displayUnit:row.display_unit,
       displayQuantity:row.display_quantity===null?null:Number(row.display_quantity),
     }));
     const updated=original.map(line=>line.ingredientId===owned["milk-whole"]?{...line,ingredientId:alt}:line);
-    const changes=[{menuItemId:PARENT,expectedLines:original,expectedSourceLines:original,
+    const changes=[{menuItemId:target,expectedLines:original,expectedSourceLines:original,
       expectedSiblingIds:family,lines:updated}];
     const option=ingredientId=>({ingredientId,kind:"milk",enabled:true,isDefault:true,
       upchargeCents:0,displayUnit:"ml",displayQuantity:1});
-    await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,PARENT,
+    await c.query("select public.save_menu_product_addons($1,$2,$3)",[A,target,
       JSON.stringify({options:[option(alt)],recipeChanges:changes})]);
     assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[PARENT,alt])).rowCount,1);
-    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[PARENT])).rows[0].ingredient_id,alt);
-    await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,PARENT,
+    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt);
+    await rejectStatement(c,"select public.save_menu_product_addons($1,$2,$3)",[A,target,
       JSON.stringify({options:[option(owned["milk-whole"])],recipeChanges:changes})],"40001");
-    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[PARENT])).rows[0].ingredient_id,alt,
+    assert.equal((await c.query("select ingredient_id from menu_product_addons where menu_item_id=$1 and is_default=true",[target])).rows[0].ingredient_id,alt,
       "failed concurrent recipe change must never change saved default milk");
     assert.equal((await c.query("select ingredient_id from recipe_lines where menu_item_id=$1 and ingredient_id=$2",[PARENT,alt])).rowCount,1);
   });
