@@ -117,7 +117,7 @@ export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,val
   await ownerAccess(scope);
   const db=await serviceOwnerAccess(scope);
   const metric=await db.from("initiative_metrics")
-    .select("id,source,initiative_id,owner_initiatives!inner(business_id,owner_user_id,status)")
+    .select("id,source,initiative_id,params,owner_initiatives!inner(business_id,owner_user_id,status,starts_on)")
     .eq("id",metricId).eq("source","checkin")
     .eq("owner_initiatives.business_id",scope.businessId)
     .eq("owner_initiatives.owner_user_id",scope.ownerUserId)
@@ -127,8 +127,10 @@ export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,val
   const business=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
   if(business.error||!business.data)throw new Error("initiative business timezone unavailable");
   const today=formatInTimeZone(new Date(),business.data.timezone||"America/Los_Angeles","yyyy-MM-dd");
+  const parent=metric.data.owner_initiatives as unknown as {starts_on:string};
+  const date=metric.data.params?.changeConfirmation===true?parent.starts_on:today;
   const {data,error}=await db.from("initiative_observations").upsert({
-    metric_id:metricId,business_date:today,value,coverage:value===null?0:1,
+    metric_id:metricId,business_date:date,value,coverage:value===null?0:1,
     source:"owner_checkin",note,
   },{onConflict:"metric_id,business_date",ignoreDuplicates:true}).select("metric_id").maybeSingle();
   if(error)throw error;

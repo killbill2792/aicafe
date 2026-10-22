@@ -103,8 +103,15 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           id:m.id,role:m.role,comparator:m.comparator,targetKind:m.target_kind,target:Number(m.target),
           baseline:(byMetric.get(m.id)??[]).filter(o=>o.business_date>=first&&o.business_date<=lastBaseline)
             .map(o=>({date:o.business_date,value:o.value,coverage:Number(o.coverage)})),
-          test:(byMetric.get(m.id)??[]).filter(o=>o.business_date>=initiative.starts_on&&o.business_date<=asOf)
-            .map(o=>({date:o.business_date,value:o.value,coverage:Number(o.coverage)})),
+          test:(m.source==="checkin"?
+            m.params.changeConfirmation===true?[initiative.starts_on]:
+              allDays(initiative.starts_on,asOf).filter(date=>
+                due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on)):
+            allDays(initiative.starts_on,asOf))
+            .map(date=>{
+              const obs=(byMetric.get(m.id)??[]).find(o=>o.business_date===date);
+              return {date,value:obs?.value??null,coverage:Number(obs?.coverage??0)};
+            }),
           source:m.source,
           expectedTestDates:m.source==="computed" ? allDays(initiative.starts_on,asOf) :
             allDays(initiative.starts_on,asOf).filter(date=>

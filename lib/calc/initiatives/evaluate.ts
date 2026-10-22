@@ -47,6 +47,9 @@ export function evaluateInitiative(
     if(metric.role==="primary"&&!met)primaryMet=false;
     if(metric.role==="guardrail"&&!met)guardrailBreach=true;
   }
+  // A proven guardrail violation is actionable even when another series is incomplete.
+  if(guardrailBreach) return {status:asOf>=endsOn?"missed":"off_track",
+    recommendation:kind==="experiment"?"revert":"adjust",results};
   if(metrics.length===0||!metrics.some(m=>m.role==="primary")||insufficient)
     return {status:"insufficient_data",recommendation:"none",results};
   const done=asOf>=endsOn;
