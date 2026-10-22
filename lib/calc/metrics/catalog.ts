@@ -74,7 +74,7 @@ const hourly = (day: MetricDailyInput, params: MetricParams): MetricResult => {
   const revenue = day.orders.filter(o => {
     const ms=Date.parse(o.closedAt);
     return Number.isFinite(ms) && ms >= start.getTime() && ms < end.getTime() &&
-      formatInTimeZone(o.closedAt,day.timezone!) .slice(0,10) === day.date;
+      formatInTimeZone(o.closedAt,day.timezone!,"yyyy-MM-dd") === day.date;
   }).reduce((n,o)=>n+o.netSalesCents,0);
   let paid=0;
   for(const tc of day.timecards){
