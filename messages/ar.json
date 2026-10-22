@@ -579,7 +579,8 @@
     "aggregateCostImportedActive": "يُستخدم الإجمالي المستورد",
     "aggregateCostImportedEstimateActive": "يُستخدم التقدير المستورد",
     "costSourceImported": "مستورد",
-    "costSourceEstimate": "تقدير"
+    "costSourceEstimate": "تقدير",
+    "costSourceCombo": "مكونات المجموعة"
   },
   "ManageMenu": {
     "title": "إدارة القائمة",
