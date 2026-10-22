@@ -2101,6 +2101,17 @@
     "priceCents": "Precio",
     "days": "Ventas diarias",
     "missing": "Datos faltantes"
+  },
+  "Pantry": {
+    "quantity": {
+      "shot": "{quantity} {count, plural, one {shot} other {shots}}",
+      "pump": "{quantity} {count, plural, one {pulsación} other {pulsaciones}}",
+      "fl_oz": "{quantity} oz",
+      "oz_wt": "{quantity} oz",
+      "g": "{quantity} g",
+      "ml": "{quantity} ml",
+      "each": "{quantity} {count, plural, one {unidad} other {unidades}}",
+      "cup": "{quantity} {count, plural, one {taza} other {tazas}}"
+    }
   }
-
 }
