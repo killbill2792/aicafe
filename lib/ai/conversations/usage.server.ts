@@ -1,8 +1,10 @@
 import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { ConversationApiError } from "./auth.server";
 import type { ConversationScope } from "./contracts";
-import type { SupervisorUsage } from "./runSupervisorTurn.server";
+export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
  * A missing rate is NULL, not a fabricated "$0" estimate. No financial business math is touched.
@@ -71,6 +73,33 @@ export async function recordSupervisorUsage(params: {
 /** Read via the owner's cookie-authenticated, RLS-enforced client, not service role.
  * The caller is authenticatedConversationContext() with exact owner/café checks.
  */
+/** Owner-scoped ledger gate before launching a billable agent turn.
+ * Uses existing RLS-protected usage records; no migration is needed.
+ * The beta cap counts model calls per owner and UTC attempt day, including retries.
+ */
+export const MAX_OWNER_MODEL_CALLS_PER_DAY = 600;
+export function ownerModelCallsLimit(value = process.env.AI_OWNER_MAX_MODEL_CALLS_PER_DAY): number {
+  if (value === undefined || value.trim() === "") return MAX_OWNER_MODEL_CALLS_PER_DAY;
+  const limit = Number(value);
+  return /^\d+$/.test(value) && Number.isSafeInteger(limit) && limit > 0
+    ? limit : MAX_OWNER_MODEL_CALLS_PER_DAY;
+}
+export async function assertOwnerAgentTurnAvailable(scope: ConversationScope): Promise<void> {
+  const session = await createServerSupabaseClient();
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const { data, error } = await session.from("ai_usage_events")
+    .select("model_call_count")
+    .eq("business_id", scope.businessId)
+    .eq("owner_user_id", scope.ownerUserId)
+    .eq("attempt_day", todayUtc);
+  if (error || !data) throw new ConversationApiError(503, "usage_unavailable");
+  // The ledger upserts repeated attempts under a single owner-message ID;
+  // model-call totals still include every retry (including failed answers).
+  const calls = data.reduce((total, entry) => total + entry.model_call_count, 0);
+  if (calls >= ownerModelCallsLimit())
+    throw new ConversationApiError(429, "owner_usage_limit_reached");
+}
+
 export function summarizeSupervisorUsage(rows: Array<{
   input_tokens: number; output_tokens: number; estimated_cost_micros: number | null;
 }>) {

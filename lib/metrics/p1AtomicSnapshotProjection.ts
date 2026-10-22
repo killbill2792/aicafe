@@ -1,18 +1,18 @@
 import type { AtomicP1SourceSnapshot } from "@/lib/metrics/p1AtomicSourceSnapshot.server";
 import type { SupportedId } from "@/lib/metrics/p1Catalog";
-import type { Operand } from "./expression";
+export type AtomicProjectionUnit = "USD_cents" | "USD_cents_per_item" | "USD_cents_per_US_gallon" | "USD_cents_per_hour" | "ratio_bps";
 import { evaluateRecipeCost,ingredientUsdUsGallonCents } from "@/lib/calc/ingredients";
 import { roundHalfUpToCent } from "@/lib/calc/money";
 import {totalMonthlyRecurringCostsCents} from "@/lib/expenses/recurringMonthlyTotal";
 import { staffCostLoadedCents } from "@/lib/calc/staff";
 
 /**
- * Allowlisted projections exclusively from the ONE SQL/MVCC snapshot.
- * The earlier P1 shadow reads supply audited selectors, NEVER numbers or
+ * Allowlisted projections exclusively from one authoritative SQL/MVCC snapshot.
+ * P1 reads supply audited selectors, NEVER numbers or
  * revisions in this path. Adding a source requires an explicit adapter.
  */
 export type SnapshotLeaf = {key:string;name:string;field:string;
-  value:number;unit:Operand["unit"]};
+  value:number;unit:AtomicProjectionUnit};
 export type SnapshotExtraction = {leaves:SnapshotLeaf[];
   missingInputs:string[];staleInputs:string[]};
 const safe=(n:unknown):n is number=>typeof n==="number"&&

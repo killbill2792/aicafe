@@ -12,6 +12,7 @@ on:
       - "lib/actions/menuItems.ts"
       - "scripts/test-supervisor-investigation-usage.mjs"
       - "supabase/migrations/20261017000072_supervisor_investigation_usage.sql"
+      - "supabase/migrations/20261022000076_ai_usage_attempt_day.sql"
       - "lib/metrics/p1AtomicSourceSnapshot.server.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.server.test.ts"
       - "lib/metrics/p1AtomicSourceSnapshot.db.test.ts"

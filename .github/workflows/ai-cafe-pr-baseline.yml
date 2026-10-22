@@ -33,6 +33,8 @@ jobs:
         run: npm ci
       - name: Strict TypeScript
         run: npx tsc --noEmit
+      - name: Full repository ESLint
+        run: npm run lint
       - name: Complete Vitest regression suite
         run: npm test
       - name: ESLint changed JS/TS sources

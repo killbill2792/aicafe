@@ -229,6 +229,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             retry: tChat("chatRetry"),
             answerFailed: tChat("answerFailed"), retryAnswer: tChat("retryAnswer"),
             todaySummary: tChat("todaySummary"),
+            unverified: tChat("unverified"),
             ownerInputDismiss:tChat("ownerInputDismiss"),
             ownerInputConfirm:tChat("ownerInputConfirm"),
             ownerInputOther:tChat("ownerInputOther"),

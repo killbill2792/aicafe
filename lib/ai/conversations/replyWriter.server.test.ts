@@ -74,9 +74,9 @@ describe("Phase 4 audited privileged reply writer", () => {
     expect(await getExistingSupervisorReply(scope, msg)).toEqual(first);
   });
 
-  it("never inserts a Supervisor reply on missing evidence or forged client roles", async () => {
+  it("validates schema and rejects forged client roles", async () => {
     await expect(persistGroundedSupervisorReply(scope, msg, {
-      ...answer, evidence: [],
+      ...answer, blocks: [{type:"metric",label:"Invalid",valueCents:1.5,source}],
     })).rejects.toThrow();
     await expect(persistGroundedSupervisorReply(scope, {
       ...msg, role: "supervisor", contentType: "blocks",
@@ -108,4 +108,18 @@ it("round-trips unverified external evidence without relabeling it as cafe recor
     blocks:[{type:"text",text:"This public search lead needs current-price verification."}]});
   expect(stored.grounding?.evidence).toEqual([external]);
   expect((await getExistingSupervisorReply(scope,msg))?.grounding?.evidence).toEqual([external]);
+});
+
+it("re-reads a validated multi-block agent reply with database-compatible status", async () => {
+  data.stored.clear();
+  const blocks = [{type:"text" as const,text:"x".repeat(1200)},
+    {type:"text" as const,text:" y".repeat(36) + "y"}];
+  const saved = await persistGroundedSupervisorReply(scope, msg,
+    {intent:"unknown",status:"verified",evidence:[],blocks},
+    {unverified:[{blockIndex:1,start:0,end:2,text:"yy",kind:"number"}]});
+  expect(saved.blocks).toEqual(blocks);
+  expect((saved.blocks ?? []).map(b => (b as {text:string}).text).join("")).toContain(" y");
+  expect(saved.grounding?.status).toBe("verified");
+  expect((saved.grounding?.agentMetadata as {unverified:unknown[]}).unverified).toHaveLength(1);
+  expect(await getExistingSupervisorReply(scope,msg)).toEqual(saved);
 });

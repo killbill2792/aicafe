@@ -42,6 +42,7 @@ export async function persistGroundedSupervisorReply(
   scope: ConversationScope,
   ownerMessage: ConversationMessage,
   reply: GroundedSupervisorReply,
+  agentMetadata?: Record<string, unknown>,
 ): Promise<ConversationMessage> {
   if (ownerMessage.role !== "owner" || ownerMessage.contentType !== "text" ||
       !ownerMessage.clientMessageId) throw new Error("Cannot respond without an owner message");
@@ -60,6 +61,7 @@ export async function persistGroundedSupervisorReply(
     responder: "bounded-grounded-responses-supervisor-v2",
     ...(safe.investigationMemory?{investigationMemory:safe.investigationMemory}:{}),
     ...(safe.ownerInput?{ownerInput:safe.ownerInput}:{}),
+    ...(agentMetadata ? { agentMetadata } : {}),
   };
   const { data, error } = await admin.from("ai_messages").insert({
     id, business_id: scope.businessId, owner_user_id: scope.ownerUserId,

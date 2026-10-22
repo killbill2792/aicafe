@@ -1321,6 +1321,7 @@
     "dateClarification": "¿Qué fechas debo utilizar para esta parte de tu solicitud?"
   },
   "SupervisorChat": {
+    "unverified": "Sin verificar",
     "ownerInputDismiss": "Ahora no",
     "ownerInputConfirm": "Continuar",
     "ownerInputOther": "Responder de otra forma",
@@ -2088,5 +2089,18 @@
     "statusInProgress": "Seguimiento en curso",
     "statusComplete": "Informe de siete días completo",
     "statusInsufficient": "Faltan datos diarios de ventas verificados"
+  },
+  "AgentFields": {
+    "netSalesCents": "Ventas netas",
+    "totalCostsCents": "Costos totales",
+    "ownerProfitCents": "Ganancia del dueño",
+    "operatingMargin": "Margen operativo",
+    "coveredSalesDays": "Días con datos",
+    "expectedSalesDays": "Días esperados",
+    "items": "Artículos del menú",
+    "priceCents": "Precio",
+    "days": "Ventas diarias",
+    "missing": "Datos faltantes"
   }
+
 }

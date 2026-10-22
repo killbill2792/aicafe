@@ -28,22 +28,15 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npx tsc --noEmit
-      - name: ESLint changed TypeScript
+      - name: Lint changed JavaScript and TypeScript
+        shell: bash
         run: |
-          npx eslint 'lib/ai/supervisorFacts.server.ts' 'lib/ai/supervisorFacts.server.test.ts' \
-            'lib/ai/tools.ts' 'lib/ai/tools.test.ts' \
-            'lib/ai/conversations/runSupervisorTurn.server.ts' 'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/conversations/supervisorRequest.mjs' 'lib/ai/conversations/supervisorRequest.test.ts' \
-            'lib/ai/conversations/usage.server.ts' 'scripts/supervisor-provider-smoke.mjs' \
-            'lib/ai/conversations/diagnostics.server.ts' 'lib/ai/conversations/diagnostics.server.test.ts' \
-            'lib/ai/conversations/dictationState.ts' 'lib/ai/conversations/dictationState.test.ts' \
-            'lib/ai/conversations/contracts.ts' 'lib/ai/conversations/replyValidation.ts' \
-            'lib/ai/conversations/dateRange.ts' 'lib/ai/conversations/context.ts' \
-            'lib/ai/conversations/domainProjections.ts' 'lib/ai/conversations/domainProjections.test.ts' \
-            'lib/ai/conversations/periodComparison.ts' 'lib/ai/conversations/periodComparison.test.ts' \
-            'lib/ai/conversations/semanticEval.ts' 'lib/ai/conversations/semantic-eval.test.ts' \
-            'lib/ai/conversations/toolRegistry.server.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
-            'lib/ai/cafeTools.server.ts' 'app/api/ai/threads/[threadId]/messages/route.ts' 'app/api/ai/threads/[threadId]/messages/route.test.ts' \
-            'app/[locale]/page.tsx' 'components/shared/AddCostFab.tsx' 'components/home/SupervisorFabOverlap.test.ts' 'components/home/SupervisorChatComposer.tsx'
+          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
+          if (( ${#changed[@]} > 0 )); then
+            npx eslint "${changed[@]}"
+          else
+            echo "No changed JS/TS sources."
+          fi
       - name: All unit and regression tests
         run: npm test
       - name: Production build

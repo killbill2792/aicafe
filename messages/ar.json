@@ -1321,6 +1321,7 @@
     "dateClarification": "ما التواريخ التي يجب أن أستخدمها لهذا الجزء من طلبك؟"
   },
   "SupervisorChat": {
+    "unverified": "غير مؤكد",
     "ownerInputDismiss": "ليس الآن",
     "ownerInputConfirm": "متابعة",
     "ownerInputOther": "الإجابة بطريقة أخرى",
@@ -2088,5 +2089,18 @@
     "statusInProgress": "المراقبة مستمرة",
     "statusComplete": "اكتمل تقرير الأيام السبعة",
     "statusInsufficient": "نحتاج إلى بيانات مبيعات يومية موثقة إضافية"
+  },
+  "AgentFields": {
+    "netSalesCents": "صافي المبيعات",
+    "totalCostsCents": "إجمالي التكاليف",
+    "ownerProfitCents": "ربح المالك",
+    "operatingMargin": "هامش التشغيل",
+    "coveredSalesDays": "أيام البيانات",
+    "expectedSalesDays": "الأيام المتوقعة",
+    "items": "عناصر القائمة",
+    "priceCents": "السعر",
+    "days": "المبيعات اليومية",
+    "missing": "بيانات ناقصة"
   }
+
 }

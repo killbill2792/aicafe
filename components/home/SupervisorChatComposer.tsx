@@ -18,8 +18,7 @@ import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleCon
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
-import SupervisorOwnerQuestionCard from "./SupervisorOwnerQuestionCard";
-import {ownerQuestionSchema,pendingOwnerInputSchema,type OwnerInputResponse}
+import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type SupervisorChatCopy = {
@@ -38,7 +37,7 @@ export type SupervisorChatCopy = {
   emptyHeading: string; emptyIntro: string; historyTitle: string; closeHistory: string;
   startNewChat: string; reviewHint: string; taskOpen: string;
   needsYou: string; handled: string; watching: string;
-  answerFailed: string; retryAnswer: string; todaySummary: string;
+  answerFailed: string; retryAnswer: string; todaySummary: string; unverified: string;
   ownerInputDismiss:string;ownerInputConfirm:string;ownerInputOther:string;ownerInputAnswer:string;
   snapshotExpand: string; snapshotCollapse: string; recording: string; transcribing: string;
 };
@@ -50,7 +49,6 @@ export type SupervisorHomeSnapshot = {
     items: HomeTaskPreviewItem[]; count: number }[];
   seeAll: string;
 };
-type MessageResponse = { message: ConversationMessage; reply: ConversationMessage; replyStatus: "complete" };
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -62,21 +60,6 @@ async function loadMessages(id: string, offset = 0): Promise<ConversationPage<Co
   ));
 }
 type SupervisorProgress = { agent: string; stage: string } | null;
-async function loadProgress(threadIdValue: string, clientMessageId: string, signal: AbortSignal):
-  Promise<SupervisorProgress> {
-  try {
-    const response = await fetch(
-      "/api/ai/threads/" + encodeURIComponent(threadIdValue) + "/progress?clientMessageId=" +
-        encodeURIComponent(clientMessageId),
-      { credentials: "same-origin", cache: "no-store", signal },
-    );
-    if (!response.ok) return null;
-    const data = (await response.json()) as SupervisorProgress;
-    return data && typeof data.agent === "string" && typeof data.stage === "string" ? data : null;
-  } catch {
-    return null; // Live status is best-effort; a failed poll just keeps the last known text.
-  }
-}
 /** "Alex is checking your pricing…" etc. Only "reading"/"answering" ever render;
  * "done"/"limited" arrive right as the real reply does, so the composer's own
  * final message takes over before either would be shown. */
@@ -95,14 +78,31 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function ReplyBlock({ block, copy, locale }: { block: unknown; copy: SupervisorChatCopy; locale: Locale }) {
+function verifiedTextPieces(text: string, spans: readonly { start: number; end: number }[], label: string) {
+  const parts: React.ReactNode[] = [];
+  let offset = 0;
+  for (const span of [...spans].sort((a,b) => a.start - b.start)) {
+    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) ||
+      span.start < offset || span.end > text.length || span.end <= span.start) continue;
+    if (offset < span.start) parts.push(text.slice(offset, span.start));
+    parts.push(<span key={span.start} className="inline">
+      <span className="underline decoration-dotted">{text.slice(span.start, span.end)}</span>
+      <span role="note" className="ms-1 rounded-full border border-current px-1 text-xs">{label}</span>
+    </span>);
+    offset = span.end;
+  }
+  parts.push(text.slice(offset));
+  return parts;
+}
+
+function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; unverified?: { start: number; end: number }[] }) {
   if (!record(block)) return null;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
     return block.type === "warning"
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{block.text}</p>;
+      : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{verifiedTextPieces(block.text,unverified,copy.unverified)}</p>;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -147,15 +147,14 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
-        if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
-          locale={locale} disabled={disabled}
-          allowOther={!isOwnerConfirmation(message)}
-          locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
-          copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
-            other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
-          onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
-          onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
-        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale}/>;
+        if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
+        const possibleMetadata = message.grounding?.agentMetadata;
+        const metadata = record(possibleMetadata) ? possibleMetadata : null;
+        const rawSpans = Array.isArray(metadata?.unverified) ? metadata.unverified : [];
+        const spans = rawSpans.filter(record)
+          .filter(v => v.blockIndex === i && typeof v.start === "number" && typeof v.end === "number")
+          .map(v => ({ start: Number(v.start), end: Number(v.end) }));
+        return <ReplyBlock key={i} block={group.block} copy={copy} locale={locale} unverified={spans}/>;
       })}
     </div>
   </article>;
@@ -216,6 +215,7 @@ export default function SupervisorChatComposer({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
+  const [streamedText, setStreamedText] = useState("");
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -368,7 +368,7 @@ export default function SupervisorChatComposer({
     threadRequestId.current = null;
     return created.thread.id;
   }
-  async function sendText(value: string, existingKey?: string,ownerInputResponse?:OwnerInputResponse) {
+  async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
@@ -380,32 +380,51 @@ export default function SupervisorChatComposer({
       openAtTop.current = false;
       setDraft("");
     }
-    setSending(true); setError(false); setProgressStatus(null);
+    setSending(true); setError(false); setProgressStatus(null); setStreamedText("");
     let attemptedThreadId: string | null = null;
-    const progressAbort = new AbortController();
-    let progressTimer: ReturnType<typeof setInterval> | null = null;
     try {
       const id = await ensureThread();
       attemptedThreadId = id;
-      // Polls a separate, lightweight endpoint while the single POST below is
-      // still in flight -- the POST itself only resolves once the whole
-      // investigation finishes, so this is the only way to show live status.
-      progressTimer = setInterval(() => {
-        void loadProgress(id, clientMessageId, progressAbort.signal).then((status) => {
-          if (status) setProgressStatus(status);
-        });
-      }, 1200);
-      const posted = await jsonFrom<MessageResponse>(await fetch(
-        "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clientMessageId, text, locale, ...(ownerInputResponse?{ownerInputResponse}:{}) }),
-        }));
+      const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientMessageId, text, locale }),
+      });
+      if (!response.ok || !response.body) throw new Error("agent_request_failed");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "", finished = false;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let boundary: RegExpExecArray | null;
+          while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
+            const frame = buffer.slice(0, boundary.index);
+            buffer = buffer.slice(boundary.index + boundary[0].length);
+            const type = frame.split(/\r?\n/).find(line => line.startsWith("event: "))?.slice(7);
+            const data = frame.split(/\r?\n/).find(line => line.startsWith("data: "))?.slice(6);
+            if (!data) continue;
+            const event = JSON.parse(data) as { text?: string; code?: string; discardChars?: number };
+            if (type === "delta" && typeof event.text === "string") {
+              setStreamedText(current => current + event.text);
+              setProgressStatus({ agent: "supervisor", stage: "answering" });
+            } else if (type === "reset" && Number.isSafeInteger(event.discardChars) &&
+              event.discardChars !== undefined && event.discardChars >= 0) {
+              setStreamedText(current => current.slice(0, Math.max(0, current.length - event.discardChars!)));
+            } else if (type === "error") {
+              throw new Error(event.code ?? "agent_turn_failed");
+            } else if (type === "done") finished = true;
+          }
+        }
+      } finally { reader.releaseLock(); }
+      if (!finished) throw new Error("agent_stream_incomplete");
       const page = await loadMessages(id);
-      setMessages(page.items.length ? page.items : [posted.message, posted.reply]);
+      setMessages(page.items);
       setNextOffset(page.nextOffset);
       setOptimisticOwner(null);
       await refreshThreads();
-      retryId.current = null;
+      retryId.current = null; setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice("");
     } catch {
       if (existingKey) retryId.current = null;
@@ -422,9 +441,7 @@ export default function SupervisorChatComposer({
       }
       setError(true);
     } finally {
-      if (progressTimer) clearInterval(progressTimer);
-      progressAbort.abort();
-      setSending(false); setProgressStatus(null);
+      setSending(false); setProgressStatus(null); setStreamedText("");
     }
   }
   async function loadOlder() {
@@ -666,9 +683,7 @@ export default function SupervisorChatComposer({
               const displayValue=isOption&&question.data.input.kind==="options"?
                 question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value;
               void sendText(action==="dismiss"?copy.ownerInputDismiss:
-                action==="confirm"?copy.ownerInputConfirm:displayValue,undefined,{
-                questionId:question.data.questionId,action,
-                ...(action==="supply"?{value}:{})});
+                action==="confirm"?copy.ownerInputConfirm:displayValue);
               return;
             }
             // Existing known-record clarification remains a normal owner statement.
@@ -678,10 +693,11 @@ export default function SupervisorChatComposer({
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
-          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined, message.ownerInputResponse)}
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
             className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
         </div>}
       </div>)}
+      {sending && streamedText && <ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
           <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :

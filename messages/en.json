@@ -1321,6 +1321,7 @@
     "dateClarification": "Which dates should I use for this part of your request?"
   },
   "SupervisorChat": {
+    "unverified": "Unverified",
     "ownerInputDismiss": "Not now",
     "ownerInputConfirm": "Continue",
     "ownerInputOther": "Answer another way",
@@ -2088,5 +2089,18 @@
     "statusInProgress": "Monitoring in progress",
     "statusComplete": "Seven-day report complete",
     "statusInsufficient": "More verified daily sales data is needed"
+  },
+  "AgentFields": {
+    "netSalesCents": "Net sales",
+    "totalCostsCents": "Total costs",
+    "ownerProfitCents": "Owner profit",
+    "operatingMargin": "Operating margin",
+    "coveredSalesDays": "Covered days",
+    "expectedSalesDays": "Expected days",
+    "items": "Menu items",
+    "priceCents": "Price",
+    "days": "Daily sales",
+    "missing": "Missing information"
   }
+
 }
