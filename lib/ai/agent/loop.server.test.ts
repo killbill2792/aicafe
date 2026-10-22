@@ -99,25 +99,29 @@ describe("recorded Responses streaming fixtures", () => {
     expect(requests[1].tools).toEqual(requests[0].tools);
     expect(requests[1].tool_choice).toBe("none");
   });
-  it("recovers after a tool read and provider disconnect using one bounded final call", async () => {
-    const requests: Record<string, unknown>[] = [];
+
+  it("recovers after a tool read and discards only the failed call's text", async () => {
+    const requests: Record<string, unknown>[] = [], streamed: string[] = [], resets: number[] = [];
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
       if (requests.length === 1) {
-        yield call("get_menu_items",'{"query":null,"limit":null}',"read-1");
+        yield call("get_menu_items", '{"query":null,"limit":null}', "read-1");
         yield completed;
       } else if (requests.length === 2) {
         yield text("Interrupted ");
         throw new Error("connection lost");
       } else { yield text("not confirmed."); yield completed; }
     };
-    const result = await runAgentTurn({ownerText:"Menu?",context,provider});
+    const result = await runAgentTurn({ownerText:"Menu?",context,provider,
+      onDelta:d=>streamed.push(d),onReset:n=>resets.push(n)});
     expect(requests).toHaveLength(3);
     expect(requests[2].tool_choice).toBe("none");
     expect(requests[2].tools).toEqual(requests[1].tools);
     expect(result.usage.modelCalls).toBe(3);
     expect(result.usage.toolCalls).toBe(1);
-    expect(result.text).toBe("Interrupted not confirmed.");
+    expect(result.text).toBe("not confirmed.");
+    expect(streamed).toEqual(["Interrupted ","not confirmed."]);
+    expect(resets).toEqual(["Interrupted ".length]);
     expect(result.endReason).toBe("provider_error");
   });
   it("retries an incomplete first response once with no tools", async () => {
@@ -159,10 +163,12 @@ describe("recorded Responses streaming fixtures", () => {
           if (failure !== "no_completion") yield { type: failure };
         }
       };
-      const result = await runAgentTurn({ownerText:"Menu?",context,provider});
+      const resets: number[] = [];
+      const result = await runAgentTurn({ownerText:"Menu?",context,provider,onReset:n=>resets.push(n)});
       expect(requests).toHaveLength(3);
       expect(requests[2].tool_choice).toBe("none");
-      expect(result.text).toBe("Partial final answer.");
+      expect(result.text).toBe("");
+      expect(resets).toEqual(["Partial final answer.".length]);
       expect(result.endReason).toBe("provider_error");
     });
   it("stops after six regular model calls and only one final call", async () => {
