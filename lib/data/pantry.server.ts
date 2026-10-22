@@ -49,13 +49,13 @@ const packInput = z.object({
 
 async function currentPrices(scope: Scope, ids: string[]) {
   if (!ids.length) return new Map<string, { cost: number; packQuantity: number | null; packUnit: string | null; packCostCents: number | null }>();
-  const { data, error } = await scope.db.from("ingredient_prices")
-    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents")
+  const { data, error, count } = await scope.db.from("ingredient_prices")
+    .select("ingredient_id, cost_per_base_unit_micros, pack_quantity, pack_unit, pack_cost_cents", { count: "exact" })
     .in("ingredient_id", ids).lte("effective_from", scope.today)
     .order("effective_from", { ascending: true })
     .order("recorded_at", { ascending: true })
     .order("id", { ascending: true });
-  if (error || !data || data.length >= 1000) {
+  if (error || !data || count === null || count !== data.length) {
     logQueryError("pantry:currentPrices", error);
     throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   }
@@ -76,17 +76,17 @@ export async function listPantry(): Promise<Array<{
 }>> {
   const scope = await activeScope();
   if (!scope) return [];
-  const { data, error } = await scope.db.from("ingredients")
-    .select("id, name, base_unit, category, starter_key").eq("business_id", scope.businessId).order("name");
-  if (error || !data || data.length >= 1000) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  const { data, error, count } = await scope.db.from("ingredients")
+    .select("id, name, base_unit, category, starter_key", { count: "exact" }).eq("business_id", scope.businessId).order("name");
+  if (error || !data || count === null || count !== data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   const ids = data.map((r) => r.id);
   const [prices, uses] = await Promise.all([
     currentPrices(scope, ids),
     ids.length ? scope.db.from("recipe_lines")
-      .select("ingredient_id, menu_items!inner(business_id)")
-      .in("ingredient_id", ids).eq("menu_items.business_id", scope.businessId) : Promise.resolve({ data: [], error: null }),
+      .select("ingredient_id, menu_items!inner(business_id)", { count: "exact" })
+      .in("ingredient_id", ids).eq("menu_items.business_id", scope.businessId) : Promise.resolve({ data: [], error: null, count: 0 }),
   ]);
-  if (uses.error || !uses.data || uses.data.length >= 1000) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  if (uses.error || !uses.data || uses.count === null || uses.count !== uses.data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   const counts = new Map<string, number>();
   for (const row of uses.data) counts.set(row.ingredient_id, (counts.get(row.ingredient_id) ?? 0) + 1);
   return data.map((ingredient) => {
@@ -158,18 +158,22 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
   const proposed = packToCostPerBaseMicros(parsed.data.packQuantity, parsed.data.packUnit,
     parsed.data.packCostCents, ingredient.base_unit as BaseUnit);
   if (proposed === null) return bad("pack_unit_mismatch");
-  const { data: usage, error: usageError } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, menu_items!inner(business_id)")
+  const { data: usage, error: usageError, count: usageCount } = await scope.db.from("recipe_lines")
+    .select("menu_item_id, menu_items!inner(business_id)", { count: "exact" })
     .eq("ingredient_id", ingredient.id).eq("menu_items.business_id", scope.businessId);
-  if (usageError || !usage) return queryFailed("pantry:preview:usage", usageError);
+  if (usageError || !usage || usageCount === null || usageCount !== usage.length) return bad("preview_unavailable");
   const itemIds = [...new Set(usage.map((row) => row.menu_item_id))];
   if (!itemIds.length) return { ok: true, costPerBaseMicros: proposed, affectedItems: [] };
   const [itemsResult, linesResult, fallbackResult] = await Promise.all([
-    scope.db.from("menu_items").select("id, name, price_cents").eq("business_id", scope.businessId).in("id", itemIds),
-    scope.db.from("recipe_lines").select("menu_item_id, ingredient_id, quantity").in("menu_item_id", itemIds),
-    scope.db.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents").eq("business_id", scope.businessId).in("menu_item_id", itemIds),
+    scope.db.from("menu_items").select("id, name, price_cents", { count: "exact" }).eq("business_id", scope.businessId).in("id", itemIds),
+    scope.db.from("recipe_lines").select("menu_item_id, ingredient_id, quantity", { count: "exact" }).in("menu_item_id", itemIds),
+    scope.db.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents", { count: "exact" }).eq("business_id", scope.businessId).in("menu_item_id", itemIds),
   ]);
-  if (itemsResult.error || linesResult.error || fallbackResult.error || !itemsResult.data || !linesResult.data || !fallbackResult.data)
+  if (itemsResult.error || linesResult.error || fallbackResult.error
+      || !itemsResult.data || !linesResult.data || !fallbackResult.data
+      || itemsResult.count === null || itemsResult.count !== itemsResult.data.length
+      || linesResult.count === null || linesResult.count !== linesResult.data.length
+      || fallbackResult.count === null || fallbackResult.count !== fallbackResult.data.length)
     return bad("preview_unavailable");
   const lines = linesResult.data as StoredLine[];
   const prices = await currentPrices(scope, [...new Set(lines.map((line) => line.ingredient_id))]);
@@ -194,16 +198,16 @@ async function productSiblings(scope: Scope, productId: string) {
   const { data: selected } = await scope.db.from("menu_items")
     .select("id, base_name, size_label").eq("business_id", scope.businessId).eq("id", productId).single();
   if (!selected) return null;
-  const { data: siblings, error } = await scope.db.from("menu_items")
-    .select("id, base_name, size_label").eq("business_id", scope.businessId).eq("base_name", selected.base_name);
-  if (error || !siblings) return null;
+  const { data: siblings, error, count } = await scope.db.from("menu_items")
+    .select("id, base_name, size_label", { count: "exact" }).eq("business_id", scope.businessId).eq("base_name", selected.base_name);
+  if (error || !siblings || count === null || count !== siblings.length) return null;
   return siblings;
 }
 async function conversionsFor(scope: Scope, ids: string[]) {
   if (!ids.length) return new Map<string, IngredientUnitConversion[]>();
-  const { data, error } = await scope.db.from("ingredient_unit_conversions")
-    .select("ingredient_id, unit, base_units_per_unit").in("ingredient_id", ids);
-  if (error || !data) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
+  const { data, error, count } = await scope.db.from("ingredient_unit_conversions")
+    .select("ingredient_id, unit, base_units_per_unit", { count: "exact" }).in("ingredient_id", ids);
+  if (error || !data || count === null || count !== data.length) throw new Error(MENU_LOAD_FAILURE_MESSAGE);
   const map = new Map<string, IngredientUnitConversion[]>();
   for (const row of data) {
     const entries = map.get(row.ingredient_id) ?? [];
@@ -230,9 +234,9 @@ export async function applyTemplate(productId: string, templateKey: RecipeTempla
   const sizes = recipeSizesFor(templateKey);
   const recipes = sizes.map((sizeOz) => ({ sizeLabel: `${sizeOz} oz`, lines: templateRecipeForSize(templateKey, sizeOz)! }));
   const needed = [...new Set(recipes.flatMap((size) => size.lines.map((line) => line.starterKey)))];
-  const { data: ingredients, error } = await scope.db.from("ingredients")
-    .select("id, base_unit, starter_key").eq("business_id", scope.businessId).in("starter_key", needed);
-  if (error) return queryFailed("pantry:applyTemplate:ingredients", error);
+  const { data: ingredients, error, count } = await scope.db.from("ingredients")
+    .select("id, base_unit, starter_key", { count: "exact" }).eq("business_id", scope.businessId).in("starter_key", needed);
+  if (error || count === null || count !== ingredients?.length) return bad("ingredients_unavailable");
   const map = new Map((ingredients ?? []).map((row) => [row.starter_key, row]));
   const missingPantry = needed.filter((key) => !map.has(key));
   if (missingPantry.length) return { ok: false, error: "missing_pantry", missingPantry };
@@ -269,14 +273,14 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
   if (ingredientsError || !ingredients || ingredients.length !== (fromId === toId ? 1 : 2)) return bad("ingredient_not_found");
   const to = ingredients.find((ingredient) => ingredient.id === toId)!;
   if (fromId === toId) return { ok: true, itemIds: [] };
-  const { data: rows, error } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity")
+  const { data: rows, error, count } = await scope.db.from("recipe_lines")
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
     .in("menu_item_id", siblings.map((s) => s.id));
-  if (error || !rows) return queryFailed("pantry:swap:lines", error);
-  const { data: allBases, error: basesError } = await scope.db.from("ingredients")
-    .select("id, base_unit").eq("business_id", scope.businessId)
+  if (error || !rows || count === null || count !== rows.length) return bad("incomplete_recipe_source");
+  const { data: allBases, error: basesError, count: basesCount } = await scope.db.from("ingredients")
+    .select("id, base_unit", { count: "exact" }).eq("business_id", scope.businessId)
     .in("id", [...new Set(rows.map((row) => row.ingredient_id))]);
-  if (basesError || !allBases) return bad("ingredient_not_found");
+  if (basesError || !allBases || basesCount === null || basesCount !== allBases.length) return bad("ingredient_not_found");
   const byIngredientId = new Map(allBases.map((ingredient) => [ingredient.id, ingredient]));
   const conversions = await conversionsFor(scope, [toId]);
   const changes: { menuItemId: string; lines: ReplacementLine[] }[] = [];
@@ -316,13 +320,13 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   if (!fromSize || !toSize) return bad("size_label_required");
   const fromOz = Number(fromSize[1]), toOz = Number(toSize[1]);
   const iced = fromOz === 24 || toOz === 24;
-  const { data: source, error } = await scope.db.from("recipe_lines")
-    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity")
+  const { data: source, error, count: sourceCount } = await scope.db.from("recipe_lines")
+    .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
     .eq("menu_item_id", fromItemId);
-  if (error || !source || !source.length) return bad("source_recipe_missing");
-  const { data: available, error: ingredientsError } = await scope.db.from("ingredients")
-    .select("id, base_unit, starter_key").eq("business_id", scope.businessId);
-  if (ingredientsError || !available) return bad("ingredients_unavailable");
+  if (error || !source || !source.length || sourceCount === null || sourceCount !== source.length) return bad("source_recipe_missing");
+  const { data: available, error: ingredientsError, count: availableCount } = await scope.db.from("ingredients")
+    .select("id, base_unit, starter_key", { count: "exact" }).eq("business_id", scope.businessId);
+  if (ingredientsError || !available || availableCount === null || availableCount !== available.length) return bad("ingredients_unavailable");
   const byId = new Map(available.map((ingredient) => [ingredient.id, ingredient]));
   const byKey = new Map(available.filter((ingredient) => ingredient.starter_key)
     .map((ingredient) => [ingredient.starter_key, ingredient]));
