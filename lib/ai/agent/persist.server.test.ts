@@ -65,6 +65,13 @@ describe("database-safe agent persistence payload", () => {
     expect(firstBoundary <= 1194).toBe(true);
     expect(blocks.some(b => b.includes("123,45 €"))).toBe(true);
   });
+  it("never cuts inside a verified number after an oversized unbroken word", () => {
+    const content = "x".repeat(1198) + "123.45" + " more words ".repeat(25);
+    const blocks = splitAgentText(content);
+    expect(blocks.join("")).toBe(content);
+    expect(blocks[0].length).toBe(1198);
+    expect(blocks[1].startsWith("123.45")).toBe(true);
+  });
   it("rejects answers beyond the 30-block storage capacity instead of truncating silently", () => {
     expect(() => agentReplyPayload(turn("x".repeat(36001)))).toThrow("agent_reply_too_long");
   });
