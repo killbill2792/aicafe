@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentReplyPayload, persistedAgentStatus, splitAgentText } from "./persist.server";
+import { agentReplyPayload, persistedAgentStatus, splitAgentText, agentUsageIncrements } from "./persist.server";
 import type { AgentTurn } from "./loop.server";
 
 function turn(text: string): AgentTurn {
@@ -27,6 +27,18 @@ describe("database-safe agent persistence payload", () => {
     expect(persistedAgentStatus({ ...greeting, endReason:"provider_error" })).toBe("unavailable");
     expect(persistedAgentStatus({ ...turn("Interrupted"), endReason:"provider_error" })).toBe("partial");
     expect(persistedAgentStatus({ ...turn("Budget"), endReason:"budget" })).toBe("partial");
+  });
+  it("splits eight tool calls across bounded usage writes without duplicate model tokens", () => {
+    const full = { ...turn("Hello"), usage: { ...turn("Hello").usage, modelCalls: 6,
+      toolCalls: 8, inputTokens: 124, outputTokens: 99 } };
+    expect(agentUsageIncrements(full).map(u => ({
+      modelCalls:u.modelCallCount,toolCalls:u.toolCallCount,
+      input:u.inputTokens,output:u.outputTokens,
+    }))).toEqual([
+      {modelCalls:6,toolCalls:5,input:124,output:99},
+      {modelCalls:0,toolCalls:3,input:0,output:0},
+    ]);
+    expect(agentUsageIncrements({ ...full,usage:{...full.usage,toolCalls:0} })).toHaveLength(1);
   });
   it("rejects blank or whitespace-only assistant text instead of storing a replayable placeholder", () => {
     expect(() => agentReplyPayload(turn(""))).toThrow("agent_turn_failed");
