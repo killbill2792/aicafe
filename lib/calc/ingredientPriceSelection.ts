@@ -14,7 +14,7 @@ export type EffectivePriceChoice<T> =
 /** UTC microsecond ordering. Date.parse drops digits after milliseconds; that would
  * make distinct PostgreSQL recorded_at values look tied and select the wrong row. */
 function microsecondEpoch(iso: string): bigint | null {
-  const match = /^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d{1,6}))?(Z|[+-]\\d{2}:\\d{2})$/.exec(iso);
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$/.exec(iso);
   if (!match) return null;
   const seconds = Date.parse(match[1] + match[3]);
   if (!Number.isFinite(seconds)) return null;
