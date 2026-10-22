@@ -7,7 +7,7 @@ import {saveMenuProductAddons,type MenuAddon} from "@/lib/actions/menuAddons";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
 import type {IngredientUnitConversion,BaseUnit} from "@/lib/calc/recipeUnits";
 import type {MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
-import {replacementDifferenceCents,additiveCostCents,keepFromAddon} from "@/lib/calc/menuAddons";
+import {swapPortionDifferenceCents,additiveCostCents,keepFromAddon} from "@/lib/calc/menuAddons";
 import {formatCents} from "@/lib/calc";
 export type PricedPantry={id:string;name:string;category:string|null;baseUnit:BaseUnit;costPerBaseMicros:number|null};
 export default function MenuAddonsPanel({itemId,items,pantry,saved,conversions}:{
@@ -26,7 +26,16 @@ export default function MenuAddonsPanel({itemId,items,pantry,saved,conversions}:
  function milkOption(id:string):MenuAddon{return options.find(o=>o.kind==="milk"&&o.ingredientId===id)??{ingredientId:id,kind:"milk",enabled:false,isDefault:false,upchargeCents:0,displayUnit:"ml",displayQuantity:1};}
  function update(option:MenuAddon){setOptions(old=>[...old.filter(o=>!(o.kind===option.kind&&o.ingredientId===option.ingredientId)),option]);}
  function priceToCents(value:string){const cents=Math.round(Number(value)*100);return Number.isSafeInteger(cents)&&cents>=0?cents:null;}
- function costOfMilk(id:string){if(!currentLine||!current)return null;const proposed=pantry.find(i=>i.id===id);if(!proposed)return null;return replacementDifferenceCents(currentLine.quantity,current.costPerBaseMicros,proposed.costPerBaseMicros);}
+ function costOfMilk(id:string){
+  if(!currentLine||!current)return null;
+  const proposed=pantry.find(i=>i.id===id);if(!proposed)return null;
+  const unit=(currentLine.displayUnit??currentLine.baseUnit) as MenuAddon["displayUnit"];
+  const amount=currentLine.displayQuantity??currentLine.quantity;
+  const source=toBaseUnitQuantity(unit,amount,current.baseUnit,conversions[current.id]??[]);
+  const target=toBaseUnitQuantity(unit,amount,proposed.baseUnit,conversions[proposed.id]??[]);
+  if(source===null||target===null)return null;
+  return swapPortionDifferenceCents(source,current.costPerBaseMicros,target,proposed.costPerBaseMicros);
+ }
  function costOfExtra(opt:MenuAddon){const ingredient=pantry.find(i=>i.id===opt.ingredientId);if(!ingredient)return null;const base=toBaseUnitQuantity(opt.displayUnit,opt.displayQuantity,ingredient.baseUnit,conversions[ingredient.id]??[]);return base===null?null:additiveCostCents(base,ingredient.costPerBaseMicros);}
  function setDefault(){
   if(!milkLine){setMessage(t("addMilkFirst"));return;}
