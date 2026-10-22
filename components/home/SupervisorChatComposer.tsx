@@ -425,7 +425,7 @@ export default function SupervisorChatComposer({
       } finally { reader.releaseLock(); }
       if (!finished) throw new Error("agent_stream_incomplete");
       const page = await loadMessages(id);
-      setMessages(page.items.length ? page.items : [posted.message, posted.reply]);
+      setMessages(page.items);
       setNextOffset(page.nextOffset);
       setOptimisticOwner(null);
       await refreshThreads();

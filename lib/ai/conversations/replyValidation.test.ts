@@ -31,7 +31,7 @@ describe("shared reply writer shape and storage limits", () => {
     expect(() => validateGroundedReply({...valid,blocks: Array.from({length:31}, () =>
       ({type:"text" as const,text:"Valid individual block"}))})).toThrow();
     expect(() => validateGroundedReply({...valid,blocks:[]})).toThrow();
-    expect(() => validateGroundedReply({...valid,role:"owner"})).toThrow();
+    expect(() => validateGroundedReply(Object.assign({},valid,{role:"owner"}))).toThrow();
   });
   it("keeps fallback within the same safe schema in every locale", () => {
     for (const locale of ["en","es","ar"] as const) {
