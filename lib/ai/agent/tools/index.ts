@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { initiativeToolDefinitions, isInitiativeTool, executeInitiativeTool } from "./initiatives";
+import { initiativeToolDefinitions,isInitiativeTool,executeInitiativeTool } from "./initiatives";
+import { staffTools } from "./staff";
+import { hoursTools } from "./hours";
+import { moneyTools } from "./money";
+import { suppliesTools } from "./supplies";
+import { salesTools } from "./sales";
 import { netSalesCentsForPeriod } from "@/lib/calc/profit";
 import type { BusinessScopedCafeTools } from "@/lib/ai/tools";
 import type { CafeStatePeriod } from "@/lib/operating/types";
@@ -9,28 +14,39 @@ import ar from "@/messages/ar.json";
 
 export type AgentLocale = "en" | "es" | "ar";
 export type AgentToolResult = {
-  source: string; period: CafeStatePeriod | null; missing: string[];
+  source: string; period: CafeStatePeriod | null; missing: string[]; agentId?: "alex"|"olivia"|"maya"|"leo";
   [field: string]: unknown;
 };
 export type AgentToolContext = {
-  tools: Pick<BusinessScopedCafeTools, "getProfitability" | "getSalesTrend" | "getMenuCatalog">;
-  asOf: string; locale: AgentLocale; threadId?: string; ownerMessageId?:string;
+  tools: Partial<BusinessScopedCafeTools> & Pick<BusinessScopedCafeTools,"getProfitability"|"getSalesTrend"|"getMenuCatalog">;
+  timezone?:string;
+  asOf: string; locale: AgentLocale;
+  threadId?:string;ownerMessageId?:string;
 };
 const periodSchema = z.strictObject({ period: z.enum(["today", "week", "month"]) });
 // Nullable values are semantically optional while retaining the all-required OpenAI strict schema.
 const menuSchema = z.strictObject({ query: z.string().max(120).nullable(), limit: z.number().int().min(1).max(25).nullable() });
-const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema } as const;
+const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_items: menuSchema,
+  ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools } as const;
 export type AgentToolName = keyof typeof schemas;
-const descriptions: Record<AgentToolName, string> = {
+export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in hoursTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
+const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
 };
-export const agentToolDefinitions = [...(Object.keys(schemas) as AgentToolName[]).map(name => {
-  const { $schema: _schema, ...parameters } = z.toJSONSchema(schemas[name], { target: "draft-07" });
+const baseToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
+  const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
-  return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
-}), ...initiativeToolDefinitions.filter(tool=>tool.name!=="propose_initiative")];
+  // Empty strict Zod objects omit required in JSON Schema; OpenAI needs it explicitly.
+  const properties=parameters.properties;
+  const required=properties && typeof properties==="object" ? Object.keys(properties) : [];
+  return { type: "function" as const, name,
+    description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
+    strict: true as const, parameters:{...parameters,required} };
+});
+export const agentToolDefinitions=[...baseToolDefinitions,
+  ...initiativeToolDefinitions.filter(tool=>tool.name!=="propose_initiative")];
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
 
@@ -41,14 +57,27 @@ export function requestedPeriod(choice: "today" | "week" | "month", asOf: string
   return { from: start, to: asOf };
 }
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
-  return { source, period, missing: missing.length ? missing : ["sourceUnavailable"] };
+  return { source, period, agentId:source==="profitability"?"leo":"alex",
+    missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
-  // Backend-only M1: no owner-click approval UI exists yet. Do not permit
-  // invisible, unapprovable proposals through the production agent.
-  if (name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
-  if (isInitiativeTool(name)) return executeInitiativeTool(name,raw,ctx);
+  // M1 remains backend-only until the owner approval card exists.
+  if(name==="propose_initiative")throw new Error("initiative_approval_surface_not_available");
+  if(isInitiativeTool(name))return executeInitiativeTool(name,raw,ctx);
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
+  if(name==="get_staff")return staffTools.get_staff.execute(raw,ctx);
+  if(name==="get_schedule")return staffTools.get_schedule.execute(raw,ctx);
+  if(name==="get_labor")return staffTools.get_labor.execute(raw,ctx);
+  if(name==="get_business_hours")return hoursTools.get_business_hours.execute(raw,ctx);
+  if(name==="get_expenses")return moneyTools.get_expenses.execute(raw,ctx);
+  if(name==="get_bills")return moneyTools.get_bills.execute(raw,ctx);
+  if(name==="get_break_even")return moneyTools.get_break_even.execute(raw,ctx);
+  if(name==="get_cost_summary")return moneyTools.get_cost_summary.execute(raw,ctx);
+  if(name==="get_product_costs")return suppliesTools.get_product_costs.execute(raw,ctx);
+  if(name==="get_ingredient_costs")return suppliesTools.get_ingredient_costs.execute(raw,ctx);
+  if(name==="get_inventory")return suppliesTools.get_inventory.execute(raw);
+  if(name==="get_item_sales")return salesTools.get_item_sales.execute(raw,ctx);
+  if(name==="get_price_recommendation")return salesTools.get_price_recommendation.execute(raw,ctx);
   if (name === "get_menu_items") {
     const input = menuSchema.parse(raw);
     const slice = await ctx.tools.getMenuCatalog();
@@ -56,7 +85,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
     const filtered = slice.value.filter(item => item.active &&
       (!input.query || item.name.toLocaleLowerCase(ctx.locale).includes(input.query.toLocaleLowerCase(ctx.locale))));
     const limit = input.limit ?? 8;
-    return { source: "menu_items", period: null,
+    return { source: "menu_items", period: null, agentId:"alex",
       missing: [...slice.quality.missingInputs, ...(filtered.length > limit ? ["moreMenuItems"] : [])],
       items: filtered.slice(0, limit).map(item => ({
         id: item.id, name: item.name, category: item.category, priceCents: item.priceCents,
@@ -67,7 +96,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if (name === "get_profit") {
     const slice = await ctx.tools.getProfitability(period);
     if (!slice.available) return absent("profitability", period, slice.quality.missingInputs);
-    return { source: "profitability", period, missing: slice.quality.missingInputs,
+    return { source: "profitability", period, agentId:"leo", missing: slice.quality.missingInputs,
       estimated: slice.quality.estimatedInputs,
       netSalesCents: slice.value.netSalesCents, totalCostsCents: slice.value.totalCostsCents,
       ownerProfitCents: slice.value.ownerProfitCents, operatingMargin: slice.value.operatingMargin,
@@ -76,7 +105,7 @@ export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToo
   if (name !== "get_sales") throw new Error("unknown_tool");
   const slice = await ctx.tools.getSalesTrend(period);
   if (!slice.available) return absent("daily_rollups", period, slice.quality.missingInputs);
-  return { source: "daily_rollups", period, missing: slice.quality.missingInputs,
+  return { source: "daily_rollups", period, agentId:"alex", missing: slice.quality.missingInputs,
     netSalesCents: netSalesCentsForPeriod(slice.value),
     days: slice.value.slice(-7).map(day => ({ date: day.date, netSalesCents: day.netSalesCents })) };
 }

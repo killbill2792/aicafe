@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ConversationMessage } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 
 const owner: ConversationMessage = {
   id: "stored-owner", threadId: "thread", role: "owner", contentType: "text",
@@ -26,28 +26,55 @@ describe("Supervisor chat turn and scroll behavior", () => {
     expect(after.filter(m => m.clientMessageId === "new-key")).toHaveLength(1);
     expect(after.at(-1)?.role).toBe("supervisor");
   });
-  it("opens an existing conversation at top and follows new sends to latest",()=>{
+  it("bottom-anchors opening history, optimistic sends and streamed growth", () => {
     expect(transcriptScrollTarget({
-      scrollTop: 100, scrollHeight: 2400, previousScrollHeight: null,
-      openAtTop: true, followLatest: false,
+      scrollTop: 0, scrollHeight: 2400, clientHeight: 500,
+      previousScrollHeight: null, pinned: true,
+    })).toBe(1900);
+    expect(transcriptScrollTarget({
+      scrollTop: 1900, scrollHeight: 2520, clientHeight: 500,
+      previousScrollHeight: null, pinned: true,
+    })).toBe(2020);
+    expect(transcriptScrollTarget({
+      scrollTop: 0, scrollHeight: 400, clientHeight: 500,
+      previousScrollHeight: null, pinned: true,
     })).toBe(0);
+  });
+  it("does not hijack the reader when scrolled up, but detects return to the bottom", () => {
+    expect(isTranscriptNearBottom({ scrollTop: 1450, scrollHeight: 2000, clientHeight: 500 })).toBe(true);
+    expect(isTranscriptNearBottom({ scrollTop: 1350, scrollHeight: 2000, clientHeight: 500 })).toBe(false);
     expect(transcriptScrollTarget({
-      scrollTop: 100, scrollHeight: 2400, previousScrollHeight: null,
-      openAtTop: false, followLatest: true,
-    })).toBe(2400);
-    expect(transcriptScrollTarget({
-      scrollTop: 400, scrollHeight: 2600, previousScrollHeight: null,
-      openAtTop: false, followLatest: false,
+      scrollTop: 350, scrollHeight: 2500, clientHeight: 500,
+      previousScrollHeight: null, pinned: false,
     })).toBeNull();
   });
-  it("preserves offset when older messages are prepended, without jumping to bottom",()=>{
+  it("does not spend the history anchor on intermediate streaming updates", () => {
+    let committed = 0;
+    let applied = 0;
+    const streamed = { scrollTop: 165, scrollHeight: 1100, clientHeight: 500 };
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
     expect(transcriptScrollTarget({
-      scrollTop: 165, scrollHeight: 1450, previousScrollHeight: 1000,
-      openAtTop: false, followLatest: false,
+      ...streamed, previousScrollHeight: null, pinned: false,
+    })).toBeNull();
+
+    // Only the history page commit advances this version. Stream deltas do not.
+    committed++;
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(true);
+    expect(transcriptScrollTarget({
+      scrollTop: streamed.scrollTop, scrollHeight: 1550,
+      clientHeight: 500, previousScrollHeight: streamed.scrollHeight, pinned: false,
+    })).toBe(615);
+    applied = committed;
+    expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
+  });
+  it("preserves viewport when older messages are prepended without snapping to latest", () => {
+    expect(transcriptScrollTarget({
+      scrollTop: 165, scrollHeight: 1450, clientHeight: 500,
+      previousScrollHeight: 1000, pinned: false,
     })).toBe(615);
     expect(transcriptScrollTarget({
-      scrollTop: 165, scrollHeight: 1450, previousScrollHeight: 1000,
-      openAtTop: true, followLatest: false,
+      scrollTop: 165, scrollHeight: 1450, clientHeight: 500,
+      previousScrollHeight: 1000, pinned: true,
     })).toBe(615);
   });
   it("only the latest pending card remains interactive after a new reply, cancel or newer owner message",()=>{

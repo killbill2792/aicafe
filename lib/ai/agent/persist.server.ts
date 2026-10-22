@@ -77,7 +77,7 @@ export function agentReplyPayload(turn: AgentTurn) {
     return rows;
   });
   return { reply, metadata: {
-    unverified, endReason: turn.endReason,
+    unverified, endReason: turn.endReason, evidence:turn.evidence??[],agentIds:turn.agentIds??[],
     sources: turn.results.map(r => ({ source:r.source, period:r.period, missing:r.missing })),
     usage: { ...turn.usage },
   } };

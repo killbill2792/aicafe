@@ -214,6 +214,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             ],
           }}
           chatCopy={{
+            newMessage: tChat("newMessage"),
             live: tChat("chatLive"),
             threads: tChat("chatThreads"),
             newThread: tChat("chatNew"),

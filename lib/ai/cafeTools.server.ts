@@ -1,4 +1,5 @@
 import "server-only";
+import { agentSourceReaders } from "@/lib/data/agentReadSources.server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -71,6 +72,7 @@ export async function createAuthenticatedCafeTools(): Promise<BusinessScopedCafe
     },
     supervisorFactReaders(client, businessId),
     supervisorHistoricalReaders(client, businessId),
+    agentSourceReaders(client,businessId),
     {
       currentStaff: async (requested) => {
         assertBusiness(requested);
