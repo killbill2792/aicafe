@@ -32,6 +32,13 @@ describe("M1 weekday-matched evaluator",()=>{
     expect(result.status).toBe("on_track");
     expect(result.results.primary.baseline).toBeNull();
   });
+  it("does not convert absent persisted sample days into full coverage",()=>{
+    const onlyOne=goal({test:series([["2026-10-15",120]]),
+      expectedTestDates:["2026-10-15","2026-10-16","2026-10-17","2026-10-18"]});
+    const result=evaluateInitiative([onlyOne],"2026-10-18","2026-10-22");
+    expect(result.status).toBe("insufficient_data");
+    expect(result.results.primary.coverage).toBe(0.25);
+  });
   it("keeps missing data insufficient rather than passing",()=>{
     const incomplete=goal({test:series([["2026-10-15",null,0]])});
     expect(evaluateInitiative([incomplete],"2026-10-15","2026-10-22").status).toBe("insufficient_data");

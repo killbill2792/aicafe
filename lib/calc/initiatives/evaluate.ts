@@ -5,6 +5,8 @@ export type GoalMetric = {
   targetKind:"absolute"|"relative_pct"; target:number;source?:"computed"|"checkin";
   baseline:Array<{date:string;value:number|null;coverage:number}>;
   test:Array<{date:string;value:number|null;coverage:number}>;
+  /** Required sampling dates, including those with no row in storage. */
+  expectedTestDates?:string[];
 };
 export type EvaluationStatus = "on_track"|"off_track"|"met"|"missed"|"insufficient_data";
 export type Recommendation = "keep"|"revert"|"adjust"|"extend"|"none";
@@ -22,7 +24,10 @@ export function evaluateInitiative(
   const results:Evaluation["results"]={};
   let insufficient=false,primaryMet=true,guardrailBreach=false;
   for(const metric of metrics){
-    const tested=metric.test.filter(r=>r.date<=asOf&&r.date<=endsOn);
+    const observed=metric.test.filter(r=>r.date<=asOf&&r.date<=endsOn);
+    const tested=metric.expectedTestDates?.length ? metric.expectedTestDates
+      .filter(date=>date<=asOf&&date<=endsOn)
+      .map(date=>observed.find(r=>r.date===date)??{date,value:null,coverage:0}) : observed;
     const covered=tested.filter(r=>r.value!==null&&r.coverage>=minCoverage);
     const validPairs=covered.flatMap(row=>{
       if(metric.source==="checkin"&&metric.targetKind==="absolute")

@@ -14,7 +14,7 @@ const dayOffset = (day:string,days:number) =>
   new Date(Date.parse(day+"T12:00:00Z")+days*86400000).toISOString().slice(0,10);
 const allDays = (from:string,to:string) => {
   const dates:string[]=[];
-  for(let d=from;d<=to&&dates.length<100;d=dayOffset(d,1))dates.push(d);
+  for(let d=from;d<=to&&dates.length<200;d=dayOffset(d,1))dates.push(d);
   return dates;
 };
 const due = (from:string,date:string,cadence:InitiativeRow["checkin_cadence"],end:string) => {
@@ -78,9 +78,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       for(const metric of graph.metrics.filter(m=>m.source==="checkin")){
         const already=byMetric.get(metric.id)??[];
         const dueDates=allDays(initiative.starts_on,asOf)
-          .filter(date=>due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on));
+          .filter(date=>metric.params.changeConfirmation===true ? date===initiative.starts_on :
+            due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on));
         for(const date of dueDates.slice(-1)){
-          if(!due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on))continue;
           if(already.some(o=>o.business_date===date))continue;
           const t=translations[initiative.locale];
           const question=metric.checkin_question??t.checkinDefault;
@@ -106,6 +106,10 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           test:(byMetric.get(m.id)??[]).filter(o=>o.business_date>=initiative.starts_on&&o.business_date<=asOf)
             .map(o=>({date:o.business_date,value:o.value,coverage:Number(o.coverage)})),
           source:m.source,
+          expectedTestDates:m.source==="computed" ? allDays(initiative.starts_on,asOf) :
+            allDays(initiative.starts_on,asOf).filter(date=>
+              m.params.changeConfirmation===true ? date===initiative.starts_on :
+              due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on)),
         }));
       const completeComputed=graph.metrics.filter(m=>m.source==="computed").every(m=>
         days.every(date=>(byMetric.get(m.id)??[]).some(o=>o.business_date===date)));
