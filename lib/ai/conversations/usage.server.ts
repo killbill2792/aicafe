@@ -2,7 +2,7 @@ import {configuredSupervisorModel} from "@/lib/ai/conversations/modelConfig";
 import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import type { ConversationScope } from "./contracts";
-import type { SupervisorUsage } from "./runSupervisorTurn.server";
+export type SupervisorUsage = {model:string;inputTokens:number;outputTokens:number;modelCallCount:number;toolCallCount:number};
 
 /** A dollar rate is configured per million tokens; cost is stored in millionths of a USD.
  * A missing rate is NULL, not a fabricated "$0" estimate. No financial business math is touched.
