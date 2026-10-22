@@ -154,6 +154,14 @@ type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd";
 type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
+const clockPattern = /(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu;
+function canonicalClock(clock:ClockSpan):string|null {
+  const matched=clock[0].match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
+  if(!matched)return null;
+  let hour=Number(matched[1]);
+  if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
+  return String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
+}
 
 function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const prefix=text.slice(0,clock.index);
@@ -316,7 +324,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const observed=[...observedHours(results),...observedShifts(results)];
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
-  const clocks = [...text.matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu)] as ClockSpan[];
+  const clocks = [...text.matchAll(clockPattern)] as ClockSpan[];
+  const ownerClocks = [...ownerText.matchAll(clockPattern)] as ClockSpan[];
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     const clock = v.kind==="number" ? clocks.find(m =>
@@ -324,17 +333,24 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(clock){
       const role=timeRole(text,clock);
       if(!role)return false; // Pure time formatting is not a business fact.
-      const matched=clock[0].match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
-      if(matched){
-        let hour=Number(matched[1]);
-        if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
-        const canonical=String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
+      const canonical=canonicalClock(clock);
+      if(canonical){
         const days=mentionedWeekdays(text,clock,clocks);
         const person=role.startsWith("shift")?assertedShiftPerson(text,clock):null;
         const verified=(days.length?days:[null]).every(day=>observed.some(h=>
           h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
           (person===null||h.person===person)));
-        return !(verified||ownerText.includes(clock[0])||ownerText.includes(canonical));
+        // Owner words also need the same asserted time *role*, weekday and
+        // named employee. Matching a bare "8:00" cannot prove opening hours
+        // when the owner only described an employee shift.
+        const ownerGrounded=ownerClocks.some(ownerClock=>{
+          if(timeRole(ownerText,ownerClock)!==role||canonicalClock(ownerClock)!==canonical)return false;
+          const ownerDays=mentionedWeekdays(ownerText,ownerClock,ownerClocks);
+          if(days.length&&!days.every(day=>ownerDays.includes(day)))return false;
+          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):null;
+          return person===null||ownerPerson===person;
+        });
+        return !(verified||ownerGrounded);
       }
       return true;
     }
