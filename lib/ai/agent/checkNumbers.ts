@@ -523,8 +523,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(v.kind==="money"){
       const before=text.slice(0,v.start),after=text.slice(v.end);
       const sentence=text.slice(Math.max(before.lastIndexOf("."),before.lastIndexOf("!"),
-        before.lastIndexOf("?"),before.lastIndexOf("\\n"))+1,
-        v.end+(after.search(/[.!?\\n]/u)<0?after.length:after.search(/[.!?\\n]/u)));
+        before.lastIndexOf("?"),before.lastIndexOf("\n"))+1,
+        v.end+(after.search(/[.!?\n]/u)<0?after.length:after.search(/[.!?\n]/u)));
       if(/\b(?:more than|less than|cheaper than|pricier than)\b/iu.test(sentence)&&
         priceDifferences.has(Math.abs(v.value)))return false;
     }
