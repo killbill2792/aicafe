@@ -99,7 +99,7 @@ describe("recorded Responses streaming fixtures", () => {
     expect(requests[1].tools).toEqual(requests[0].tools);
     expect(requests[1].tool_choice).toBe("none");
   });
-  it("keeps streamed text after provider error and makes no-tool fallback", async () => {
+  it("keeps streamed text after provider error without making another provider call", async () => {
     const requests: Record<string, unknown>[] = [];
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
@@ -110,10 +110,29 @@ describe("recorded Responses streaming fixtures", () => {
       yield text("not confirmed.");yield completed;
     };
     const result = await runAgentTurn({ownerText:"Sales?",context,provider});
-    expect(result.text).toBe("Sales are not confirmed.");
+    expect(result.text).toBe("Sales are ");
     expect(result.endReason).toBe("provider_error");
-    expect(requests[1].tool_choice).toBe("none");
+    expect(requests).toHaveLength(1);
   });
+  it.each(["response.failed", "error", "no_completion"])(
+    "rejects a %s event on the final no-tool request", async (failure) => {
+      const requests: Record<string, unknown>[] = [];
+      const provider: AgentProvider = async function* (params) {
+        requests.push(params);
+        if (requests.length <= 2) {
+          yield call("get_menu_items",'{"wrong":1}',"bad-"+requests.length);
+          yield completed;
+        } else {
+          yield text("Partial final answer.");
+          if (failure !== "no_completion") yield { type: failure };
+        }
+      };
+      const result = await runAgentTurn({ownerText:"Menu?",context,provider});
+      expect(requests).toHaveLength(3);
+      expect(requests[2].tool_choice).toBe("none");
+      expect(result.text).toBe("Partial final answer.");
+      expect(result.endReason).toBe("provider_error");
+    });
   it("stops after six regular model calls and only one final call", async () => {
     let count = 0;
     const provider: AgentProvider = async function* () {
