@@ -908,3 +908,110 @@ describe("Codex: scoped invalidations, item identity and Arabic clocks",()=>{
     expect(checkNumbers(claim,"",[evening],"ar")).toEqual([]);
   });
 });
+
+
+describe("Codex: product identity, dated facts and partial schedule trust boundaries",()=>{
+  it("reconciles an observed pricing-engine current price without inventing a name",()=>{
+    const old=compactEvidence([{source:"menu_items",period:null,missing:[],
+      items:[{id:"latte",name:"Latte",priceCents:600}]}]);
+    const refreshed=compactEvidence([{source:"pricing_engine",period:null,missing:[],
+      itemId:"latte",currentPriceCents:850,recommendedPriceCents:1000}]);
+    expect(checkNumbers("Latte costs $6.","",[],"en",[...old,...refreshed])
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[],"en",[...old,...refreshed])).toEqual([]);
+    expect(checkNumbers("Latte costs $10.","",[],"en",[...old,...refreshed])
+      .map(v=>v.text)).toEqual(["$10"]);
+  });
+  it("selects the longest complete product name in direct-price and comparison claims",()=>{
+    const menu={source:"menu_items",period:null,missing:[],items:[
+      {id:"latte",name:"Latte",priceCents:600},
+      {id:"iced-latte",name:"Iced Latte",priceCents:850},
+      {id:"mocha",name:"Mocha",priceCents:350}]};
+    expect(checkNumbers("Iced Latte costs $6.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Iced Latte costs $8.50.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Iced Latte is $5 more than Mocha.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Iced Latte is $2.50 more than Mocha.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+  });
+  it("retains collection-length invalidations independently of stored numbers",()=>{
+    const before=compactEvidence([{source:"menu_items",period:null,missing:[],
+      items:Array.from({length:5},(_,i)=>({id:"old-"+i,name:"Old "+i,priceCents:300+i}))}]);
+    const current=compactEvidence([
+      {source:"menu_items",period:null,missing:[],
+        items:[{id:"latte",name:"Latte",priceCents:850},
+          {id:"mocha",name:"Mocha",priceCents:600}]},
+      {source:"labor_and_attendance",period:null,missing:[],
+        laborDays:Array.from({length:31},(_,i)=>({
+          date:"2026-10-"+String(i+1).padStart(2,"0"),
+          wagesCents:900+i,staffTaxCents:150,loadedStaffCostCents:1050+i}))},
+      {source:"product_costs",period:null,missing:[],
+        item:{id:"latte",name:"Latte",priceCents:850,recipeCostCents:120}},
+      {source:"recurring_bills",period:null,missing:[],monthlyEquivalentCents:9000}
+    ]);
+    expect(current[0].invalidatedKeys).toContain("itemsLength");
+    expect(checkNumbers("There are 5 menu items.","",[],"en",
+      [...before,...current]).map(v=>v.text)).toEqual(["5"]);
+    expect(checkNumbers("There are 2 menu items.","",[],"en",
+      [...before,...current])).toEqual([]);
+  });
+  it("never applies one day's sales amount to another date",()=>{
+    const yesterday={source:"daily_rollups",
+      period:{from:"2026-10-21",to:"2026-10-21"},missing:[],
+      netSalesCents:10000,days:[{date:"2026-10-21",netSalesCents:10000}]};
+    const today={source:"daily_rollups",
+      period:{from:"2026-10-22",to:"2026-10-22"},missing:[],
+      netSalesCents:20000,days:[{date:"2026-10-22",netSalesCents:20000}]};
+    const prior=compactEvidence([yesterday]);
+    expect(checkNumbers("Sales on 2026-10-22 were $100.","",[today],"en",prior)
+      .map(v=>v.text)).toEqual(["$100"]);
+    expect(checkNumbers("Sales on 2026-10-22 were $200.","",[today],"en",prior)).toEqual([]);
+    expect(checkNumbers("Sales on 2026-10-21 were $100.","",[today],"en",prior)).toEqual([]);
+    expect(checkNumbers("Sales on 2026-10-22 were $100.","",[],"en",
+      [...prior,...compactEvidence([today])]).map(v=>v.text)).toEqual(["$100"]);
+  });
+  it("binds every localized staff name to its corresponding clock",()=>{
+    const schedule={source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]};
+    const spanish="El turno de Ada empieza a las 8:00 y el turno de Bob termina a las 16:00 el lunes.";
+    expect(checkNumbers(spanish,"",[schedule],"es").length).toBeGreaterThan(0);
+    expect(checkNumbers("El turno de Ada empieza a las 8:00 el lunes.",
+      "",[schedule],"es")).toEqual([]);
+  });
+  it("shares a trailing weekday with both endpoints of the same staff shift",()=>{
+    const schedule={source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]};
+    const wrong="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Tuesday.";
+    expect(checkNumbers(wrong,"",[schedule],"en").map(v=>v.text))
+      .toEqual(["8","00","4","00"]);
+    const good="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday.";
+    expect(checkNumbers(good,"",[schedule],"en")).toEqual([]);
+  });
+  it("retains omitted shift facts across truncated, non-exhaustive refreshed reads",()=>{
+    const old=compactEvidence([{source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]}]);
+    const partial=compactEvidence([{source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},
+      missing:["scheduleResultTruncated"],
+      shifts:[{displayName:"Bob",dayOfWeek:1,startTime:"09:00",
+        endTime:"17:00",effectiveFrom:"2026-11-02",effectiveTo:null}]}]);
+    expect(partial[0].timeScope).toEqual({
+      kind:"schedule",from:"2026-11-02",to:"2026-11-08",exhaustive:false});
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday.",
+      "",[],"en",[...old,...partial])).toEqual([]);
+    expect(checkNumbers("Bob’s shift starts at 9:00 AM on Monday.",
+      "",[],"en",[...old,...partial])).toEqual([]);
+    const complete=compactEvidence([{source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Bob",dayOfWeek:1,startTime:"09:00",
+        endTime:"17:00",effectiveFrom:"2026-11-02",effectiveTo:null}]}]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday.",
+      "",[],"en",[...old,...complete]).length).toBeGreaterThan(0);
+  });
+});
