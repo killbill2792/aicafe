@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import { runAgentTurn, type AgentProvider } from "./loop.server";
 import type { AgentToolContext } from "./tools";
 
-const context = {
+const context: AgentToolContext = {
   locale: "en", asOf: "2026-10-21",
-  tools: { getMenuCatalog: async () => ({ available: true as const,
-    quality: { level: "high" as const, missingInputs: [], estimatedInputs: [], staleInputs: [] },
-    value: [{id:"item-1",name:"Latte",category:"drink" as const,active:true,priceCents:450}] }) },
-} as AgentToolContext;
+  tools: {
+    getMenuCatalog: async () => ({ available: true,
+      quality: { level: "high", missingInputs: [], estimatedInputs: [], staleInputs: [] },
+      value: [{ id: "item-1", name: "Latte", category: "drink", active: true, priceCents: 450 }] }),
+    getProfitability: async () => ({ available: false, value: null,
+      quality: { level: "low", missingInputs: ["profitNotAvailable"], estimatedInputs: [], staleInputs: [] } }),
+    getSalesTrend: async () => ({ available: false, value: null,
+      quality: { level: "low", missingInputs: ["salesNotAvailable"], estimatedInputs: [], staleInputs: [] } }),
+  },
+};
 const completed = { type: "response.completed", response: { usage: {
   input_tokens: 40, output_tokens: 8, input_tokens_details: { cached_tokens: 10 } } } };
 const text = (value: string) => ({ type: "response.output_text.delta", delta: value });
@@ -16,7 +22,7 @@ const call = (name: string, args: string, id: string) => ({ type: "response.outp
 function fixture(rounds: Array<Array<Record<string, unknown>>>): AgentProvider {
   let index = 0;
   return async function* () {
-    for (const event of rounds[index++] ?? []) yield event as {type:string};
+    for (const event of rounds[index++] ?? []) yield { ...event, type: String(event.type) };
   };
 }
 describe("recorded Responses streaming fixtures", () => {
@@ -56,7 +62,13 @@ describe("recorded Responses streaming fixtures", () => {
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
     expect(requests).toHaveLength(3);
     expect(requests[2].tool_choice).toBe("none");
-    expect(result.endReason).toBe("budget");
+    const input = requests[2].input;
+    expect(Array.isArray(input)).toBe(true);
+    if (!Array.isArray(input)) throw new Error("expected message array");
+    const recordIds = (type: string) => input.filter(v => v && typeof v === "object" && v.type === type)
+      .map(v => v.call_id).sort();
+    expect(recordIds("function_call")).toEqual(recordIds("function_call_output"));
+    expect(result.endReason).toBe("tool_errors");
     expect(result.status).toMatchObject({status:"partial"});
   });
   it("keeps streamed text after provider error and makes no-tool fallback", async () => {
@@ -78,12 +90,12 @@ describe("recorded Responses streaming fixtures", () => {
     let count = 0;
     const provider: AgentProvider = async function* () {
       count++;
-      yield call("get_menu_items","{}", "call-"+count);
+      yield call("get_menu_items",'{"query":null,"limit":null}', "call-"+count);
       yield completed;
     };
     const result = await runAgentTurn({ownerText:"Menu?",context,provider});
     expect(result.endReason).toBe("budget");
-    expect(result.usage.modelCalls).toBe(7); // six regular calls, one final tool-free attempt
-    expect(result.usage.toolCalls).toBe(6);
+    expect(result.usage.modelCalls).toBe(6); // five regular calls, one final tool-free attempt
+    expect(result.usage.toolCalls).toBe(5);
   });
 });
