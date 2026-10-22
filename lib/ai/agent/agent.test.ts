@@ -1204,3 +1204,13 @@ describe("derived-value scoping is language-agnostic",()=>{
      "",[numbers],"ar").map(x=>x.text)).toContain("$11.50");
  });
 });
+
+describe("tool KPIs remain authoritative despite nearby arithmetic",()=>{
+ const result={source:"profitability",period:null,missing:[],
+   netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+ it("allows explicit verified profit and refuses unsupported profits",()=>{
+   expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $0.50.","",[result],"en")).toEqual([]);
+   expect(checkNumbers("$6.00 sales minus $5.50 costs, profit $11.50.","",[result],"en")
+     .map(x=>x.text)).toContain("$11.50");
+ });
+});
