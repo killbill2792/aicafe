@@ -171,7 +171,7 @@ export default function TypeExpenseForm({
         type="button"
         onClick={handleSave}
         disabled={amountCents === 0 || !category || isPending}
-        className="h-14 rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-40"
+        className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {status === "saved" ? labels.saved : labels.save}
       </button>

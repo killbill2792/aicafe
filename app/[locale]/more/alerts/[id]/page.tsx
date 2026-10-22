@@ -39,7 +39,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
 
       <section className="flex flex-col items-center gap-3 rounded-card-lg bg-card p-6 text-center">
         <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-warn-tint text-warn">
-          <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="#B4460E" />
+          <PlainIcon code={content.icon as ExpenseIconCode} size={26} color="rgb(var(--c-warn-text))" />
         </span>
         {alert.impactCents !== null && (
           <><span className="text-sm font-bold text-warn">{t("potentialImpact")}</span><span className="font-headline text-[44px] font-bold leading-none text-warn"><Money cents={alert.impactCents} /></span></>
@@ -54,13 +54,13 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <Detail label={t("clockIn")} value={formatShiftTime(alert.payload.clockIn, snapshot.business.timezone, locale)} />
         <Detail label={alert.payload.clockOut ? t("clockOut") : t("currentElapsed")} value={alert.payload.clockOut ? formatShiftTime(alert.payload.clockOut, snapshot.business.timezone, locale) : t("hoursElapsed", { hours: Number(alert.payload.shiftHours ?? 0).toFixed(1) })} />
         <Detail label={t("recordedBreak")} value={qualifyingBreakText(alert.payload.breaks, t("noQualifyingBreak"), snapshot.business.timezone, locale)} />
-        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-[#6E2A07]">{t("mealBreakExactReason")}</p>
+        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-warn-text">{t("mealBreakExactReason")}</p>
         <p className="text-sm text-ink-muted">{t("mealBreakImpactBasis")}</p>
       </section>}
 
-      <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-[#6E2A07]">{t("neverAccusatoryNote")}</div>
+      <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-warn-text">{t("neverAccusatoryNote")}</div>
 
-      <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+      <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
         {content.actionLabel}
       </a>
 

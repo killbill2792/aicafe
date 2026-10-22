@@ -44,9 +44,9 @@ function HealthRow({ label, pct, band, note, bandLabel }: { label: string; pct: 
           {Math.round(pct)}% · {bandLabel}
         </span>
       </div>
-      <div className="relative h-3 rounded-md bg-[#F1EAE0]">
+      <div className="relative h-3 rounded-md bg-surface2">
         <div
-          className="absolute top-0 h-3 rounded-md bg-[#CFE3D6]"
+          className="absolute top-0 h-3 rounded-md bg-pos/35"
           style={{ insetInlineStart: `${band === "high" ? 0 : 50}%`, width: `${band === "high" ? 60 : 20}%` }}
         />
         <div
@@ -160,8 +160,8 @@ export default async function ProfitCostsView({ snapshot, period }: { snapshot: 
           </span>
         </div>
         {costLimitation && <p className="mb-3 text-sm text-ink-muted">{costLimitation}</p>}
-        <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-[#F1EAE0]"}`}>
-          <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-[#1E4D37]" : profitToneTextClass(tone)}`}>
+        <div className={`mx-[-6px] mb-1.5 flex items-center justify-between rounded-2xl px-3.5 py-3 ${tone === "good" ? "bg-good-tint" : tone === "warn" ? "bg-warn-tint" : "bg-surface"}`}>
+          <span className={`flex items-center gap-1.5 text-[17px] font-extrabold ${tone === "good" ? "text-fg" : profitToneTextClass(tone)}`}>
             {t("ownerProfit")}
             {vm.ownerProfitDisplay.kind === "partial" && <EstimatePill label={t("partialPill")} />}
           </span>
@@ -239,11 +239,11 @@ function Row({
   last?: boolean;
 }) {
   return (
-    <div className={`flex items-center gap-2 py-2 ${last ? "border-b border-[#EFE7DB] pb-3" : ""}`}>
+    <div className={`flex items-center gap-2 py-2 ${last ? "border-b border-line pb-3" : ""}`}>
       <span className={`flex-1 text-[15px] ${cents === null ? "font-semibold text-warn" : ""}`}>{name}</span>
       {estimate && <EstimatePill label={estimateLabel ?? "Estimate"} />}
       {cents === null ? (
-        <Link href="/add-cost" className="flex h-[34px] items-center rounded-2xl bg-warn px-3 text-[13px] font-bold text-white">
+        <Link href="/add-cost" className="flex h-[34px] items-center rounded-2xl bg-warn-text px-3 text-[13px] font-bold text-on-warn">
           {addLabel ?? "Add"}
         </Link>
       ) : (

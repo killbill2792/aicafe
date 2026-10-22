@@ -48,7 +48,7 @@ export default function DeleteAccountForm({
         type="button"
         onClick={handleDelete}
         disabled={!canDelete || isPending}
-        className="h-14 rounded-full bg-warn text-lg font-bold text-white disabled:opacity-40"
+        className="h-14 rounded-full bg-warn-text text-lg font-bold text-on-warn disabled:opacity-40"
       >
         {isPending ? labels.deleting : labels.delete}
       </button>

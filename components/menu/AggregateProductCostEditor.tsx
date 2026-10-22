@@ -131,7 +131,7 @@ export default function AggregateProductCostEditor({ items, labels }: { items: M
                     />
                   </span>
                 </label>
-                <button type="button" disabled={pending} onClick={() => save(item)} className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-40">
+                <button type="button" disabled={pending} onClick={() => save(item)} className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-40">
                   {labels.save}
                 </button>
                 {item.ownerTotalCostCents != null && (

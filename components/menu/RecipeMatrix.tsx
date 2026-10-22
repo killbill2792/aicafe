@@ -214,7 +214,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
           {items.map((item) => <th key={item.id} className={`min-w-[210px] border-b border-line p-3 text-center ${focusedSizeId === item.id ? "bg-warn-tint/55" : ""} ${item.active ? "" : "text-ink-muted"}`}>
             <span className="text-lg font-extrabold">{item.sizeLabel ?? item.name}</span>
             {!item.active && <span className="block text-[17px] font-medium">{labels.inactive}</span>}
-            {focusedSizeId === item.id && <span className="mx-auto mt-1 block w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[15px] font-bold text-warn">{item.costStatus === "NO_RECIPE" ? labels.noRecipe : item.costStatus === "MISSING_INGREDIENT_COST" ? labels.missingCost : labels.focused}</span>}
+            {focusedSizeId === item.id && <span className="mx-auto mt-1 block w-fit rounded-full bg-warn-soft px-2 py-0.5 text-[15px] font-bold text-warn">{item.costStatus === "NO_RECIPE" ? labels.noRecipe : item.costStatus === "MISSING_INGREDIENT_COST" ? labels.missingCost : labels.focused}</span>}
           </th>)}
         </tr></thead>
         <tbody>
@@ -237,7 +237,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
             })}
           </tr>)}
           {newRow && <tr className="bg-good-tint/35">
-            <th className="sticky start-0 z-10 border-b border-good/20 bg-[#f5faf7] p-2 align-top text-start">
+            <th className="sticky start-0 z-10 border-b border-good/20 bg-pos-soft p-2 align-top text-start">
               <div className="relative">
                 <label className="flex h-12 items-center rounded-xl border border-good bg-card px-3 ring-2 ring-good/10">
                   <Search size={18} aria-hidden="true" className="shrink-0 text-ink-muted" />
@@ -250,7 +250,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
                   {suggestions.length === 0 && !exactIngredient && <button type="button" onClick={() => setIngredientOpen(false)} className="min-h-12 w-full rounded-lg px-3 text-start font-bold text-good"><Plus className="me-2 inline" size={17} />{labels.createNamed.replace("{name}", newRow.name.trim())}</button>}
                 </div>}
                 {!newRow.ingredient && <div className="mt-2 grid grid-cols-3 gap-1" aria-label={labels.type}>
-                  {(["g", "ml", "each"] as const).map((baseUnit) => <button type="button" key={baseUnit} onClick={() => setBaseUnit(baseUnit)} className={`min-h-12 rounded-xl px-1 text-sm font-bold ${newRow.baseUnit === baseUnit ? "bg-ink text-paper" : "border border-line bg-card text-ink-muted"}`}>{labels[baseUnit]}</button>)}
+                  {(["g", "ml", "each"] as const).map((baseUnit) => <button type="button" key={baseUnit} onClick={() => setBaseUnit(baseUnit)} className={`min-h-12 rounded-xl px-1 text-sm font-bold ${newRow.baseUnit === baseUnit ? "bg-accent text-on-accent" : "border border-line bg-card text-ink-muted"}`}>{labels[baseUnit]}</button>)}
                 </div>}
                 {!newRow.ingredient && !exactIngredient && <div className="mt-2 rounded-xl border border-line bg-card p-2">
                   <span className="text-sm font-bold text-ink-muted">{labels.purchaseCost}</span>
@@ -276,7 +276,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
     {saved && <p className="mt-3 flex items-center gap-2 font-semibold text-good"><Check size={18} />{labels.saved}</p>}
     <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
       <button type="button" disabled={pending} onClick={reset} className="min-h-12 rounded-full border border-line px-7 font-bold">{labels.cancel}</button>
-      <button type="button" disabled={pending} onClick={save} className="min-h-12 rounded-full bg-ink px-7 font-bold text-paper disabled:opacity-40">{labels.saveRecipe}</button>
+      <button type="button" disabled={pending} onClick={save} className="min-h-12 rounded-full bg-accent px-7 font-bold text-on-accent disabled:opacity-40">{labels.saveRecipe}</button>
     </div>
   </section>;
 }

@@ -93,7 +93,7 @@ export default function SignupForm() {
       <label htmlFor="signup-confirm" className="text-sm font-semibold text-ink">{t("confirmPassword")}</label>
       <input id="signup-confirm" type="password" className={inputClass} autoComplete="new-password" minLength={8} required value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
       {error && <p className="text-sm text-warn" role="alert">{error}</p>}
-      <button type="submit" disabled={status === "submitting"} className="mt-2 h-[60px] rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-60">
+      <button type="submit" disabled={status === "submitting"} className="mt-2 h-[60px] rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-60">
         {status === "submitting" ? t("creating") : t("createAccount")}
       </button>
       <p className="text-center text-sm text-ink-muted">

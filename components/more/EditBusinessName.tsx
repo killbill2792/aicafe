@@ -60,7 +60,7 @@ export default function EditBusinessName({ businessId, name, labels }: { busines
           type="button"
           onClick={handleSave}
           disabled={isPending || !value.trim()}
-          className="h-11 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40"
+          className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40"
         >
           {labels.save}
         </button>

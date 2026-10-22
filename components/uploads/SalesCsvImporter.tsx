@@ -142,7 +142,7 @@ export default function SalesCsvImporter({
     return (
       <label className="flex flex-col items-center gap-3 rounded-card-lg border-2 border-dashed border-line bg-card p-8 text-center">
         <span className="text-base font-semibold text-ink">{labels.uploadPrompt}</span>
-        <span className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper">{labels.chooseFile}</span>
+        <span className="rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-on-accent">{labels.chooseFile}</span>
         <input
           type="file"
           accept={UPLOAD_FILE_ACCEPT}
@@ -187,7 +187,7 @@ export default function SalesCsvImporter({
             <div className="mt-1 flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
               {parsed.rejected.map((r) => (
-                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                <span key={r.reason} className="text-[17px] text-fg">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}
@@ -210,7 +210,7 @@ export default function SalesCsvImporter({
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
               {summary.rejectedRows.map((r) => (
-                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                <span key={r.reason} className="text-[17px] text-fg">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}
@@ -219,14 +219,14 @@ export default function SalesCsvImporter({
           {summary.skippedToastConflictDates.length > 0 && (
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[17px] font-bold text-warn">{labels.skippedToastTitle}</span>
-              <p className="text-[17px] text-[#6E2A07]">{labels.skippedToastHint}</p>
-              <span className="text-[17px] text-[#6E2A07]">{summary.skippedToastConflictDates.join(", ")}</span>
+              <p className="text-[17px] text-fg">{labels.skippedToastHint}</p>
+              <span className="text-[17px] text-fg">{summary.skippedToastConflictDates.join(", ")}</span>
             </div>
           )}
           {summary.unmatchedItems.length > 0 && (
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-sm font-bold text-warn">{labels.unmatchedWarningTitle}</span>
-              <p className="text-xs text-[#6E2A07]">{labels.unmatchedWarningHint}</p>
+              <p className="text-xs text-fg">{labels.unmatchedWarningHint}</p>
               {summary.unmatchedItems.map((u) => (
                 <div key={u.name} className="flex items-center justify-between gap-2 text-sm">
                   <span className="min-w-0 flex-1 truncate">{u.name}</span>
@@ -253,7 +253,7 @@ export default function SalesCsvImporter({
         type="button"
         onClick={handleImport}
         disabled={!complete || parsed.valid.length === 0 || isPending || stage === "working"}
-        className="h-14 rounded-full bg-ink text-lg font-bold text-paper disabled:opacity-40"
+        className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent disabled:opacity-40"
       >
         {stage === "done" ? `${labels.imported} (${summary?.imported ?? 0})` : stage === "error" ? labels.tryAgain : labels.import}
       </button>

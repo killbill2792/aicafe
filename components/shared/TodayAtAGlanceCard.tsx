@@ -23,7 +23,7 @@ export default function TodayAtAGlanceCard({
       <h2 className="text-lg font-bold text-ink">{title}</h2>
       <div className="grid grid-cols-2 gap-2">
         {stats.map((s) => (
-          <div key={s.label} className="flex flex-col gap-0.5 rounded-2xl bg-[#F7F1E8] p-3">
+          <div key={s.label} className="flex flex-col gap-0.5 rounded-2xl bg-surface2 p-3">
             <span className="text-[13px] font-semibold text-ink-muted">{s.label}</span>
             <span className="break-words text-lg font-extrabold text-ink">{s.value}</span>
           </div>

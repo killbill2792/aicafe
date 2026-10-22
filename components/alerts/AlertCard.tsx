@@ -20,7 +20,7 @@ export default function AlertCard({
   return (
     <Link href={href} className="flex items-center gap-3 rounded-[20px] bg-card p-4 text-ink no-underline">
       <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-warn-tint text-warn">
-        <PlainIcon code={icon as ExpenseIconCode} size={22} color="#B4460E" />
+        <PlainIcon code={icon as ExpenseIconCode} size={22} color="currentColor" />
       </span>
       <span className="flex flex-1 flex-col gap-0.5">
         <span className="text-[17px] font-bold">{title}</span>

@@ -1,9 +1,11 @@
 ## Now
-- [ ] Draft PR #150: verify pantry migration/RLS, recipe actions, all-size templates, tests and human review before merge.
+- [ ] PR #150: verify pantry migration/RLS, recipe actions, all-size templates, tests and human review before merge.
 - [ ] Review PR M0: team_updates storage/writer/owner reads, including PostgreSQL RLS and full CI; migration not deployed.
 - [ ] Run one live owner agent smoke test before production deployment of #146.
 
 ## Next
+- [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
+
 - [ ] Add grounded quick-reply chips and proposal/approval flows.
 - [ ] Add rolling conversation summaries and remove unused legacy routes.
 - [ ] Reconcile the AI usage ledger's per-increment limits with the agent's budget before general release.

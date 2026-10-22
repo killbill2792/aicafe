@@ -28,7 +28,7 @@ export default function GettingStartedCard({
       </div>
       <div className="flex flex-col rounded-2xl bg-paper px-1">
         {links.map(({ href, Icon, label }) => (
-          <Link key={href} href={href} className="flex items-center gap-3 border-b border-[#EFE7DB] px-2.5 py-3.5 text-ink no-underline last:border-b-0">
+          <Link key={href} href={href} className="flex items-center gap-3 border-b border-line px-2.5 py-3.5 text-ink no-underline last:border-b-0">
             <Icon aria-hidden="true" size={20} className="shrink-0 text-ink-muted" />
             <span className="flex-1 text-[15px] font-semibold">{label}</span>
             <ChevronRight aria-hidden="true" size={18} className="shrink-0 text-ink-muted rtl:rotate-180" />

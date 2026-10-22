@@ -7,7 +7,7 @@ export default async function AddCostFab({ hideOnMobile = false }: { hideOnMobil
   return (
     <Link
       href="/add-cost"
-      className={`fixed bottom-[104px] end-4 z-10 h-14 items-center gap-2 rounded-full bg-ink px-5 font-bold text-paper shadow-lg md:bottom-6 ${hideOnMobile ? "hidden md:flex" : "flex"}`}
+      className={`fixed bottom-[104px] end-4 z-10 h-14 items-center gap-2 rounded-full bg-accent px-5 font-bold text-on-accent shadow-lg md:bottom-6 ${hideOnMobile ? "hidden md:flex" : "flex"}`}
     >
       <Plus aria-hidden="true" size={22} />
       {t("addCost")}

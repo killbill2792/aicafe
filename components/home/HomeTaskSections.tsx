@@ -33,7 +33,7 @@ export default function HomeTaskSections({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2">
               <h2 className="text-lg font-extrabold text-ink">{section.title}</h2>
-              <span className="flex min-h-7 min-w-7 items-center justify-center rounded-full bg-[#F1E9DE] px-2 text-sm font-extrabold text-ink">
+              <span className="flex min-h-7 min-w-7 items-center justify-center rounded-full bg-surface2 px-2 text-sm font-extrabold text-ink">
                 {section.count}
               </span>
             </div>

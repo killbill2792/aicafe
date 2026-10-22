@@ -158,7 +158,7 @@ export default function RecipeEditor({
         <ul className="flex flex-col gap-2">
           {item.recipe.filter((line) => !removed.has(line.ingredientId)).map((line) => (
             <li key={line.ingredientId} className="flex flex-wrap items-center gap-3">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#FAF6F0] text-ink-muted">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface text-ink-muted">
                 <Package aria-hidden="true" size={16} />
               </span>
               <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-ink">{line.ingredientName}</span>
@@ -175,7 +175,7 @@ export default function RecipeEditor({
       )}
 
       {!editing && <button type="button" onClick={() => setEditing(true)} className="min-h-12 w-fit rounded-full border border-line px-4 font-bold text-ink">{t("editRecipe")}</button>}
-      {editing && <div className="flex flex-col gap-2 border-t border-[#EFE7DB] pt-3">
+      {editing && <div className="flex flex-col gap-2 border-t border-line pt-3">
         <span className="text-sm font-bold">{t("addIngredient")}</span>
 
         {mode === "search" && (
@@ -247,13 +247,13 @@ export default function RecipeEditor({
               </select>
             </div>
             {needsConversionInput && (
-              <div className="flex min-w-0 items-center gap-2 rounded-lg bg-[#FAF6F0] p-2 text-sm">
+              <div className="flex min-w-0 items-center gap-2 rounded-lg bg-surface p-2 text-sm">
                 <span className="min-w-0 flex-1">{t("defineUnitConversion", { unit: unitLabel(displayUnit), baseUnit: effectiveBaseUnit })}</span>
                 <input type="number" inputMode="decimal" min="0" step="0.01" value={conversionValue} onChange={(e) => setConversionValue(e.target.value)} className="h-10 w-20 shrink-0 rounded-lg border border-line px-2 text-ink" />
               </div>
             )}
             <div className="flex min-w-0 items-center gap-2">
-              <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-ink px-4 text-sm font-bold text-paper disabled:opacity-40">
+              <button type="button" onClick={handleAddLine} disabled={isPending || !quantity || (needsConversionInput && !conversionValue)} className="h-11 shrink-0 rounded-full bg-accent px-4 text-sm font-bold text-on-accent disabled:opacity-40">
                 {t("addIngredient")}
               </button>
             </div>
@@ -262,7 +262,7 @@ export default function RecipeEditor({
 
         {error && <p className="text-sm text-warn">{error}</p>}
         {justAdded && !error && <p className="text-sm font-semibold text-good">{t("ingredientAdded")}</p>}
-        <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={cancelEditing} className="min-h-12 rounded-full border border-line font-semibold text-ink-muted">{t("cancel")}</button><button type="button" onClick={saveRecipe} disabled={isPending} className="min-h-12 rounded-full bg-ink font-bold text-paper disabled:opacity-40">{t("done")}</button></div>
+        <div className="mt-2 grid grid-cols-2 gap-2"><button type="button" onClick={cancelEditing} className="min-h-12 rounded-full border border-line font-semibold text-ink-muted">{t("cancel")}</button><button type="button" onClick={saveRecipe} disabled={isPending} className="min-h-12 rounded-full bg-accent font-bold text-on-accent disabled:opacity-40">{t("done")}</button></div>
       </div>}
     </div>
   );

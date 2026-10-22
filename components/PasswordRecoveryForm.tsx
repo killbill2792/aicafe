@@ -55,7 +55,7 @@ export default function PasswordRecoveryForm({ mode }: { mode: "request" | "upda
       <input id="confirm-new-password" className={cls} type="password" minLength={8} autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} required />
     </>}
     {error && <p role="alert" className="text-sm text-warn">{error}</p>}
-    <button type="submit" disabled={pending} className="h-14 rounded-full bg-ink font-bold text-paper disabled:opacity-60">{pending ? t("working") : mode === "request" ? t("sendResetLink") : t("updatePassword")}</button>
+    <button type="submit" disabled={pending} className="h-14 rounded-full bg-accent font-bold text-on-accent disabled:opacity-60">{pending ? t("working") : mode === "request" ? t("sendResetLink") : t("updatePassword")}</button>
     <Link href="/login" className="text-center text-sm font-semibold underline">{t("backToSignIn")}</Link>
   </form>;
 }

@@ -1,5 +1,8 @@
 import { AlertTriangle, ChevronRight, CreditCard, FileText, FlaskConical, Percent, Receipt, Shield, Store, Target, Trash2, TrendingUp, Users } from "lucide-react";
 import { getTranslations } from "next-intl/server";
+import { cookies } from "next/headers";
+import { parseThemeCookie, parseModeCookie } from "@/app/themes";
+import { ThemePicker } from "@/components/ui/ThemePicker";
 import { requireUser } from "@/lib/auth/requireUser";
 import { Link } from "@/i18n/navigation";
 import LanguageSwitch from "@/components/shared/LanguageSwitch";
@@ -10,6 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default async function MorePage() {
   const user = await requireUser();
+  const cookieStore = await cookies();
   const [t, tProfile] = await Promise.all([getTranslations("More"), getTranslations("CafeProfile")]);
 
   const links = [
@@ -41,7 +45,7 @@ export default async function MorePage() {
       {user && (
         <section aria-label={t("signOut")} className="rounded-card-lg border border-line bg-card px-2">
           {user.email && (
-            <p className="border-b border-[#EFE7DB] px-2.5 py-3 text-sm text-ink-muted">
+            <p className="border-b border-line px-2.5 py-3 text-sm text-ink-muted">
               {tProfile("signedInAs", { email: user.email })}
             </p>
           )}
@@ -51,7 +55,7 @@ export default async function MorePage() {
 
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {links.map(({ href, Icon, label }) => (
-          <Link key={href} href={href} className="flex items-center gap-3 border-b border-[#EFE7DB] px-2.5 py-4 text-ink no-underline last:border-b-0">
+          <Link key={href} href={href} className="flex items-center gap-3 border-b border-line px-2.5 py-4 text-ink no-underline last:border-b-0">
             <Icon aria-hidden="true" size={20} className="text-ink-muted" />
             <span className="flex-1 text-base font-semibold">{label}</span>
             <ChevronRight aria-hidden="true" size={18} className="text-ink-muted rtl:rotate-180" />
@@ -59,12 +63,14 @@ export default async function MorePage() {
         ))}
       </div>
 
+      <ThemePicker initialTheme={parseThemeCookie(cookieStore.get("cp_theme")?.value)} initialMode={parseModeCookie(cookieStore.get("cp_mode")?.value)} />
+
       <div className="flex flex-col rounded-card-lg bg-card px-2">
         {accountLinks.map(({ href, Icon, label, warn }) => (
           <Link
             key={href}
             href={href}
-            className={`flex items-center gap-3 border-b border-[#EFE7DB] px-2.5 py-4 no-underline last:border-b-0 ${warn ? "text-warn" : "text-ink"}`}
+            className={`flex items-center gap-3 border-b border-line px-2.5 py-4 no-underline last:border-b-0 ${warn ? "text-warn" : "text-ink"}`}
           >
             <Icon aria-hidden="true" size={20} className={warn ? "text-warn" : "text-ink-muted"} />
             <span className="flex-1 text-base font-semibold">{label}</span>

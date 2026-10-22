@@ -97,7 +97,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
  const entries=locations.map(location=>(
    <label key={location.id} className="flex flex-col gap-1.5 text-base font-semibold text-ink">
      <span>{location.name} — {labels.restaurantGuid}</span>
-     <input className="min-h-12 rounded-xl border border-line bg-white px-3 text-base"
+     <input className="min-h-12 rounded-xl border border-line bg-surface px-3 text-base"
        value={mapping[location.id]??""}
        onChange={e=>setMapping(current=>({...current,[location.id]:e.target.value}))}
        autoComplete="off" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/>
@@ -130,7 +130,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
    {enabled&&<>
      {approvedOrigins.length>1&&<label className="flex flex-col gap-1 text-base font-semibold text-ink">
        <span>{labels.url}</span>
-       <select className="min-h-12 rounded-xl border border-line bg-white px-3"
+       <select className="min-h-12 rounded-xl border border-line bg-surface px-3"
          value={apiUrl} onChange={e=>setApiUrl(e.target.value)}>
          <option value="">{labels.url}</option>
          {approvedOrigins.map(origin=><option key={origin} value={origin}>{origin}</option>)}
@@ -138,19 +138,19 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
      </label>}
      <label className="flex flex-col gap-1 text-base font-semibold text-ink">
        <span>{labels.clientId}</span>
-       <input className="min-h-12 rounded-xl border border-line bg-white px-3"
+       <input className="min-h-12 rounded-xl border border-line bg-surface px-3"
          value={clientId} onChange={e=>setClientId(e.target.value)} autoComplete="off"/>
      </label>
      <label className="flex flex-col gap-1 text-base font-semibold text-ink">
        <span>{labels.clientSecret}</span>
-       <input type="password" className="min-h-12 rounded-xl border border-line bg-white px-3"
+       <input type="password" className="min-h-12 rounded-xl border border-line bg-surface px-3"
          value={secret} onChange={e=>setSecret(e.target.value)} autoComplete="new-password"/>
      </label>
      <h2 className="text-lg font-bold text-ink">{labels.locations}</h2>
      {entries.length?entries:<p>{labels.noLocations}</p>}
      <button disabled={pending||!secret||!approvedOrigins.includes(apiUrl)||!clientId||!Object.values(mapping).some(Boolean)}
        onClick={()=>void perform("save")} type="button"
-       className="min-h-12 rounded-full bg-ink p-3 font-semibold text-paper disabled:opacity-40">
+       className="min-h-12 rounded-full bg-accent p-3 font-semibold text-on-accent disabled:opacity-40">
        {pending?labels.pending:labels.save}
      </button>
      <button disabled={pending||!connection||connection.state==="not_connected"}

@@ -22,8 +22,8 @@ export default function FactSummary({blocks,locale,sourceText}:{blocks:FactBlock
   const many=blocks.length>1;
   // Transparent background by design: the box exists to emphasize a verified
   // number inside the surrounding answer, not to look like a separate card.
-  return <div className={many?"w-full max-w-[900px] rounded-2xl border border-[#DDE7DC] bg-transparent p-3 sm:p-4":
-      "inline-block max-w-full rounded-xl border border-[#DDE7DC] bg-transparent px-4 py-3"}>
+  return <div className={many?"w-full max-w-[900px] rounded-2xl border border-line bg-transparent p-3 sm:p-4":
+      "inline-block max-w-full rounded-xl border border-line bg-transparent px-4 py-3"}>
     <div data-testid={many?"supervisor-fact-grid":"supervisor-fact-single"}
       className={many?"grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2":"block"}>
       {blocks.map((block,i)=> <div key={i} className="min-w-0">
@@ -31,13 +31,13 @@ export default function FactSummary({blocks,locale,sourceText}:{blocks:FactBlock
         <p className={"mt-1 break-words font-headline text-[24px] font-extrabold leading-tight tracking-tight "+factValueColor(block)}>
           {factValueText(block,locale)}
         </p>
-        {block.type==="percent" && <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#E4EDE2]" role="presentation">
+        {block.type==="percent" && <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface" role="presentation">
           <div className={"h-full rounded-full transition-[width] "+(block.valueBps<0?"bg-warn":"bg-good")}
             style={{width:Math.max(0,Math.min(100,Math.abs(block.valueBps)/100))+"%"}} />
         </div>}
       </div>)}
     </div>
-    <p className="mt-3 border-t border-[#DFE8DC] pt-2 text-[12px] leading-relaxed text-ink-muted">
+    <p className="mt-3 border-t border-line pt-2 text-[12px] leading-relaxed text-ink-muted">
       {sourceText}: {uniqueSources(blocks).map(s=>sourceLabel(s.source,locale)+" · "+s.asOf).join(" · ")}
     </p>
   </div>;

@@ -1,7 +1,7 @@
 /** Skeleton cards in the same layout as real content — never a blank screen or bare spinner
  * (docs/03-screens.md "Global states"). `prefers-reduced-motion` disables the shimmer. */
 export function SkeletonBlock({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-2xl bg-[#EDE5D9] motion-reduce:animate-none ${className}`} />;
+  return <div className={`animate-pulse rounded-2xl bg-surface2 motion-reduce:animate-none ${className}`} />;
 }
 
 export function SkeletonCard({ lines = 2, className = "" }: { lines?: number; className?: string }) {

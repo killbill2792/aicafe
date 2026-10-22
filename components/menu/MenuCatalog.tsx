@@ -13,7 +13,7 @@ import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 
 function StatusLine({ good, label }: { good: boolean; label: string }) {
   return (
-    <span className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-sm font-bold ${good ? "bg-good-tint text-good" : "bg-amber-50 text-warn"}`}>
+    <span className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-sm font-bold ${good ? "bg-good-tint text-good" : "bg-warn-soft text-warn"}`}>
       {good ? <Check className="mt-0.5 shrink-0" size={17} aria-hidden="true" /> : <TriangleAlert className="mt-0.5 shrink-0" size={17} aria-hidden="true" />}{label}
     </span>
   );
@@ -101,7 +101,7 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
       </label>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label={t("all")}>
         {tabs.map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${filter === value ? "bg-ink text-paper" : "bg-card text-ink"}`}>
+          <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${filter === value ? "bg-accent text-on-accent" : "bg-card text-ink"}`}>
             {label}
           </button>
         ))}
@@ -111,7 +111,7 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
           const photo = group.memberIds.map((id) => photos[id]).find(Boolean) ?? null;
           return <Link key={group.key} href={`/menu/${group.representativeItem.id}`} className="group overflow-hidden rounded-card-lg border border-line/70 bg-card text-ink no-underline shadow-sm transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
             <div className="flex gap-4 p-4">
-              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#fbf1e3] text-[#7a3f13]">
+              <div className="relative flex h-28 w-28 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-surface2 text-warn-text">
                 {photo ? <Image src={photo.signedUrl} alt="" fill unoptimized sizes="112px" className="object-cover transition-transform group-hover:scale-[1.02] motion-reduce:transform-none" /> : <Coffee size={42} strokeWidth={1.8} aria-hidden="true" />}
               </div>
               <div className="min-w-0 flex-1 py-0.5">

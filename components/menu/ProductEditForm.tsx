@@ -122,7 +122,7 @@ export default function ProductEditForm({
       <p className="text-[11px] font-normal normal-case text-ink-muted">{labels.itemTypeHelp}</p>
       {selectedExample && <p className="text-[11px] font-normal normal-case text-ink-muted">{selectedExample}</p>}
       {error && <p className="text-sm text-warn">{error}</p>}
-      <button type="button" disabled={pending} onClick={handleSaveClick} className="min-h-12 rounded-full bg-ink px-4 font-bold text-paper disabled:opacity-40">
+      <button type="button" disabled={pending} onClick={handleSaveClick} className="min-h-12 rounded-full bg-accent px-4 font-bold text-on-accent disabled:opacity-40">
         {labels.saveChanges}
       </button>
 

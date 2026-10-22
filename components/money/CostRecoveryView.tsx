@@ -37,7 +37,7 @@ function BucketRow({
 }) {
   const covered = bucket.pctCovered >= 100;
   return (
-    <div className="flex items-center gap-3.5 border-b border-[#EFE7DB] py-3.5 last:border-b-0">
+    <div className="flex items-center gap-3.5 border-b border-line py-3.5 last:border-b-0">
       <FillIcon code={bucket.code as ExpenseIconCode} pctCovered={bucket.pctCovered} covered={covered} size={52} />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         <div className="flex flex-wrap items-center justify-between gap-x-2">
@@ -52,7 +52,7 @@ function BucketRow({
           </span>
         ) : bucket.pctCovered > 0 ? (
           <div className="flex flex-col gap-1">
-            <div className="h-2.5 rounded-full bg-[#E7DFD3]">
+            <div className="h-2.5 rounded-full bg-line">
               <div className="h-2.5 rounded-full bg-good" style={{ width: `${bucket.pctCovered}%` }} />
             </div>
             <span className="text-[13px] font-semibold text-ink">
@@ -72,7 +72,7 @@ function BucketRow({
             type="submit"
             disabled={isFirst}
             aria-label={t("moveEarlier", { label })}
-            className="flex h-6 w-9 items-center justify-center text-[#B7A994] disabled:opacity-30"
+            className="flex h-6 w-9 items-center justify-center text-fg disabled:opacity-30"
           >
             <ChevronUp size={18} aria-hidden="true" />
           </button>
@@ -82,7 +82,7 @@ function BucketRow({
             type="submit"
             disabled={isLast}
             aria-label={t("moveLater", { label })}
-            className="flex h-6 w-9 items-center justify-center text-[#B7A994] disabled:opacity-30"
+            className="flex h-6 w-9 items-center justify-center text-fg disabled:opacity-30"
           >
             <ChevronDown size={18} aria-hidden="true" />
           </button>

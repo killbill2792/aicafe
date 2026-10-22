@@ -97,7 +97,7 @@ export default function AddSizeDialog({
         {error && <p className="text-sm text-warn">{error}</p>}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="h-12 flex-1 rounded-full border border-line text-base font-semibold text-ink-muted">{t("cancel")}</button>
-          <button type="button" onClick={handleSubmitClick} disabled={isPending || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">{t("addSize")}</button>
+          <button type="button" onClick={handleSubmitClick} disabled={isPending || !sizeLabel.trim() || !price} className="h-12 flex-1 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40">{t("addSize")}</button>
         </div>
       </div>
 

@@ -38,7 +38,7 @@ export default function PayrollTaxForm({
         </div>
       </label>
       <p className="text-sm text-ink-muted">{labels.hint}</p>
-      <button type="button" onClick={handleContinue} disabled={isPending} className="h-14 rounded-full bg-ink text-lg font-bold text-paper">
+      <button type="button" onClick={handleContinue} disabled={isPending} className="h-14 rounded-full bg-accent text-lg font-bold text-on-accent">
         {labels.continueLabel}
       </button>
     </div>
