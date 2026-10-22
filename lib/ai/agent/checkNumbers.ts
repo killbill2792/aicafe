@@ -1,7 +1,8 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferencesCents } from "@/lib/calc/agentPriceDifferences";
 
-export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>};
+export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>;
+  times?:VerifiedTime[]};
 // Only business collections, not diagnostics or metadata, establish counts.
 // This same contract applies to current-turn and persisted numeric evidence.
 const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
@@ -48,40 +49,49 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
       const value=/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v;
       values.push({key:periodKey+scope+key,value,unit});remaining--;
     };
-    if(r.missing.length===0)walk(r,"",0);
-    return {tool:r.source,values};
-  }).filter(x=>x.values.length>0);
+    // Partial tool reads still contain genuine observed values. "missing" is
+    // a limitation on unknown fields, not permission to resurrect old ones.
+    walk(r,"",0);
+    const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
+    return {tool:r.source,values,times};
+  }).filter(x=>x.values.length>0||x.times.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
  * Legacy unscoped keys cannot overrule newer scoped values. */
 function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvidence[]{
   type Value=NumericEvidence["values"][number];
-  // Each entry describes one read. Repeated legacy keys *within* a read may
-  // represent distinct items; the same key in a *later* read supersedes it.
-  const bySource=new Map<string,Map<string,Value[]>>();
+  // Different menu items may legitimately share a legacy key *within* one
+  // read; a later read supersedes only matching keyed evidence.
+  const bySource=new Map<string,{values:Map<string,Value[]>;times:VerifiedTime[]}>();
   for(const entry of entries){
-    let values=bySource.get(entry.tool);
-    if(!values){values=new Map();bySource.set(entry.tool,values);}
+    let slot=bySource.get(entry.tool);
+    if(!slot){slot={values:new Map(),times:[]};bySource.set(entry.tool,slot);}
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
       if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
       const group=grouped.get(v.key)??[];
-      group.push(v);
-      grouped.set(v.key,group);
+      group.push(v);grouped.set(v.key,group);
     }
     for(const [key,group] of grouped){
       if(key.includes("/")){
-        const leaf=key.split("/").at(-1)??"";
-        // Scoped evidence invalidates legacy unscoped values of that metric.
-        values.delete(leaf);
+        // Typed item/period evidence invalidates older unscoped values.
+        slot.values.delete(key.split("/").at(-1)??"");
       }
-      values.set(key,group);
+      slot.values.set(key,group);
+    }
+    if(Array.isArray(entry.times)&&entry.times.length){
+      // A new observed schedule/hours read replaces that source's old
+      // temporal snapshot; do not union contradictory old clock claims.
+      slot.times=entry.times.slice(0,60).filter(t=>
+        t&&typeof t.time==="string"&&/^(?:[01]\\d|2[0-3]):[0-5]\\d$/u.test(t.time)&&
+        typeof t.day==="string"&&typeof t.role==="string"&&
+        typeof t.complete==="boolean");
     }
   }
-  return [...bySource].map(([tool,values])=>({
-    tool,values:[...values.values()].flat()
-  })).filter(e=>e.values.length>0);
+  return [...bySource].map(([tool,slot])=>({
+    tool,values:[...slot.values.values()].flat(),times:slot.times
+  })).filter(e=>e.values.length>0||e.times.length>0);
 }
 
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
@@ -199,9 +209,9 @@ type ClockSpan = RegExpMatchArray & {index:number};
 type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null;
   validFrom?:string;validTo?:string};
 const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
-const clockPattern = /(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu;
+const clockPattern = /(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}:[٠-٩۰-۹\d]{2}(?:\s*(?:AM|PM))?(?![٠-٩۰-۹\d])|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}\s*(?:AM|PM)\b|(?<![٠-٩۰-۹\d])[٠-٩۰-۹\d]{1,2}h(?:[٠-٩۰-۹\d]{2})?\b/giu;
 function canonicalClock(clock:ClockSpan):string|null {
-  const matched=clock[0].match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
+  const matched=ascii(clock[0]).match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
   if(!matched)return null;
   let hour=Number(matched[1]);
   if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
@@ -416,14 +426,12 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
-  results.forEach(r => allowFromData(r, allowed));
-  // A successful read of a source supersedes every older claim from that
-  // source. Fail closed for legacy saved evidence lacking item/period keys.
-  const freshSources=new Set(results.filter(r=>r.missing.length===0).map(r=>r.source));
-  const saved=reconcileSavedEvidence(previousEvidence);
-  for(const e of saved){
-    if(freshSources.has(e.tool))continue;
-    for(const v of e.values.slice(0,100)){
+  // Merge prior and current tool observations *before* authorizing values.
+  // A partial refresh of Latte's 850-cent price supersedes 600 cents even
+  // when other menu items were truncated or remain unknown.
+  const evidence=reconcileSavedEvidence([...previousEvidence,...compactEvidence(results)]);
+  for(const entry of evidence){
+    for(const v of entry.values.slice(0,100)){
       if(!Number.isFinite(v.value))continue;
       if(v.unit==="cents")allowed.money.add(v.value);
       if(v.unit==="bps")allowed.percent.add(v.value);
@@ -431,21 +439,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       if(v.unit==="count"&&trustedCountKey(v.key))allowed.number.add(v.value);
     }
   }
-  // Price deltas are *not* general arithmetic evidence. Only comparable menu
-  // prices from the same source support an explicit local price comparison.
   const menuPrices:number[]=[];
-  for(const r of results){
-    if(r.source!=="menu_items"||r.missing.length!==0||!Array.isArray(r.items))continue;
-    for(const item of r.items){
-      if(item&&typeof item==="object"&&"priceCents" in item&&
-        typeof item.priceCents==="number")menuPrices.push(item.priceCents);
-    }
-  }
-  for(const e of saved){
-    if(e.tool!=="menu_items"||freshSources.has(e.tool))continue;
-    for(const v of e.values){
+  for(const entry of evidence){
+    if(entry.tool!=="menu_items")continue;
+    for(const v of entry.values)
       if(v.unit==="cents"&&v.key.endsWith("priceCents"))menuPrices.push(v.value);
-    }
   }
   const priceDifferences=menuPriceDifferencesCents(menuPrices);
   const ownerNumbers=candidates(ownerText,locale);
@@ -468,7 +466,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
 
   // No reply-wide arithmetic closure. Any new business calculation belongs
   // in lib/calc and must be tied to the claim's specific metric/source.
-  const observed=[...observedHours(results),...observedShifts(results)];
+  const observed=evidence.flatMap(entry=>entry.times??[]);
   // Only this clock's offsets, action, day(s), and named employee may match a
   // real source interval. Never flatten schedule timestamps into global proof.
   const clocks = [...text.matchAll(clockPattern)] as ClockSpan[];
