@@ -8,6 +8,7 @@ export default async function SavedComboDetail({name,priceCents,parts,items}:{na
  const lookup=new Map(items.map(i=>[i.id,i]));
  const rows=parts.map(p=>({part:p,item:lookup.get(p.componentItemId)}));
  const unknown=rows.some(r=>!r.item);
+ const estimated=rows.some(({part,item})=>part.buyInCostCents===null&&(item?.ownerTotalCostStatus==="estimated"||item?.costStatus!=="READY"));
  const totals=!unknown?calculateComboTotals(rows.map(({part,item})=>({
   quantity:part.quantity,priceCents:item!.priceCents,costCents:part.buyInCostCents??item!.ingredientsCostCents
  })),priceCents):null;
@@ -21,6 +22,7 @@ export default async function SavedComboDetail({name,priceCents,parts,items}:{na
  <div className="flex justify-between text-accent-text"><b>{totals.savesCustomerCents>=0?t("savesCustomer"):t("customerPaysMore")}</b><b>{formatCents(Math.abs(totals.savesCustomerCents))}</b></div></div>
  <div className="rounded-2xl border border-line bg-card p-4">
  <div className="flex justify-between"><span>{t("yourCost")}</span><b>{totals.costCents===null?t("unknown"):formatCents(totals.costCents)}</b></div>
+ {estimated&&<p className="mt-1 text-sm font-semibold text-warn">{t("priceEstimate")}</p>}
  <div className="mt-2 flex justify-between text-xl font-extrabold text-good"><span>{t("whatYouKeep")}</span><span>{totals.keepCents===null?t("unknown"):`${formatCents(totals.keepCents)} (${totals.keepPercent}%)`}</span></div>
  <p className="mt-3 text-sm text-ink-muted">{t("separateNote")}: {totals.separateKeepCents===null?t("unknown"):`${formatCents(totals.separateKeepCents)} (${totals.separateKeepPercent}%)`}</p>
  </div></>}
