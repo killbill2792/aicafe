@@ -1098,3 +1098,42 @@ describe("review: cents and compound amounts preserve owner intent",()=>{
    expect(checkNumbers("$30","El precio es treinta y cinco dólares.",[],"es").map(x=>x.text)).toEqual(["$30"]);
  });
 });
+
+
+describe("systemic review: signed typed speech and locally bound totals",()=>{
+ it("treats positive and negative owner monetary speech as different evidence",()=>{
+   expect(checkNumbers("Profit is -$50.","Our profit is minus fifty dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is $50.","Our profit is minus fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("Profit is -$5.50.","Profit is minus five fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is -$5.50.","Ganancia menos cinco con cincuenta dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("Profit is $50.","Ganancia menos cincuenta dólares.",[],"es")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("الربح -$50","الربح سالب خمسون دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("الربح $50","الربح سالب خمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("does not extract fictitious smaller values from unsupported hundreds",()=>{
+   expect(checkNumbers("Price is $50.","Price is one hundred and fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("Price is $1.","Price is one hundred and fifty dollars.",[],"en")
+     .map(x=>x.text)).toEqual(["$1"]);
+ });
+ it("keeps percentage, number and money words in separate units",()=>{
+   expect(checkNumbers("Margin 8.5%","Margin eight point five percent",[],"en")).toEqual([]);
+   expect(checkNumbers("Margin 8.5%","Margin eight point five",[],"en")
+     .map(x=>x.text)).toEqual(["8.5%"]);
+   expect(checkNumbers("We sold 8 drinks.","We sold eight drinks.",[],"en")).toEqual([]);
+   expect(checkNumbers("Profit is $8.","We sold eight drinks. What is our profit?",[],"en")
+     .map(x=>x.text)).toEqual(["$8"]);
+ });
+ it("rejects wrong arithmetic even when the wrong result is another observed value",()=>{
+   const prices={source:"menu_items",period:null,missing:[],
+     items:[{id:"a",name:"Latte",priceCents:550},
+       {id:"b",name:"Mocha",priceCents:600},
+       {id:"c",name:"Tea",priceCents:1200}]};
+   expect(checkNumbers("$5.50 and $6.00, together $11.50.","",[prices],"en")).toEqual([]);
+   expect(checkNumbers("$5.50 and $6.00, together $12.","",[prices],"en")
+     .map(x=>x.text)).toEqual(["$12"]);
+ });
+});
