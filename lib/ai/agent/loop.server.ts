@@ -46,6 +46,7 @@ export async function runAgentTurn(args: {
   now?: () => number;
 }): Promise<AgentTurn> {
   const now = args.now ?? Date.now, started = now(), deadline = started + 60000;
+  const workDeadline = deadline - 12000; // reserve time for the final no-tool answer
   const controller = new AbortController();
   const provider = args.provider ?? openAIProvider;
   const input: unknown[] = [...(args.history ?? []), { role: "user", content: args.ownerText }];
@@ -62,13 +63,13 @@ export async function runAgentTurn(args: {
     const calls: ToolCall[] = [], output: unknown[] = [];
     const callTextStart = text.length;
     let completed = false;
-    const remaining = deadline - now();
+    const remaining = (final ? deadline : workDeadline) - now();
     if (remaining <= 0) throw new Error("deadline");
     const timeout = setTimeout(() => controller.abort(), remaining);
     try {
       usage.modelCalls++;
       for await (const event of provider(request(final), controller.signal)) {
-        if (now() >= deadline) throw new Error("deadline");
+        if (now() >= (final ? deadline : workDeadline)) throw new Error("deadline");
         if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
           text += event.delta;
           args.onDelta?.(event.delta);
@@ -102,15 +103,15 @@ export async function runAgentTurn(args: {
   };
   try {
     for (let round = 0; round < 5; round++) {
-      if (now() >= deadline) { endReason = "timeout"; break; }
+      if (now() >= workDeadline) { endReason = "timeout"; break; }
       let calls: ToolCall[];
       try { calls = await call(false); }
-      catch { endReason = now() >= deadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
+      catch { endReason = now() >= workDeadline || controller.signal.aborted ? "timeout" : "provider_error"; break; }
       if (!calls.length) { finished = true; break; }
       for (let index = 0; index < calls.length; index++) {
         const tool = calls[index];
-        if (usage.toolCalls >= 8 || now() >= deadline || failures >= 2) {
-          endReason = now() >= deadline ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
+        if (usage.toolCalls >= 8 || now() >= workDeadline || failures >= 2) {
+          endReason = now() >= workDeadline ? "timeout" : failures >= 2 ? "tool_errors" : "budget";
           for (const skipped of calls.slice(index)) {
             const error = endReason === "timeout" ? "deadline_exceeded" : endReason === "tool_errors" ? "tool_errors" : "budget_exceeded";
             input.push({ type: "function_call_output", call_id: skipped.call_id, output: JSON.stringify({ error }) });
@@ -125,7 +126,7 @@ export async function runAgentTurn(args: {
         try {
           result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
             new Promise<never>((_, reject) => {
-              const left = deadline - now();
+              const left = workDeadline - now();
               if (left <= 0) reject(new Error("deadline"));
               else toolTimer = setTimeout(() => reject(new Error("deadline")), left);
             })]);
@@ -135,19 +136,19 @@ export async function runAgentTurn(args: {
           const detail = error instanceof ZodError ? {
             error: "invalid_arguments", issues: error.issues.map(issue => ({ path: issue.path, code: issue.code }))
           } : error instanceof SyntaxError ? { error: "invalid_json" }
-            : { error: now() >= deadline ? "deadline_exceeded" : "tool_unavailable" };
+            : { error: now() >= workDeadline ? "deadline_exceeded" : "tool_unavailable" };
           result = { source: tool.name, period: null, missing: [String(detail.error)], ...detail };
         } finally { clearTimeout(toolTimer); }
         results.push({ callId: tool.call_id, name: tool.name, arguments: tool.arguments, result });
         input.push({ type: "function_call_output", call_id: tool.call_id, output: JSON.stringify(result) });
-        if (failures >= 2) {
-          endReason = "tool_errors";
+        if (now() >= workDeadline || failures >= 2) {
+          endReason = now() >= workDeadline ? "timeout" : "tool_errors";
           // Respond to all calls already returned in this response before the next request.
           for (const skipped of calls.slice(index + 1)) {
             input.push({ type: "function_call_output", call_id: skipped.call_id,
-              output: JSON.stringify({ error: "tool_errors" }) });
+              output: JSON.stringify({ error: endReason === "timeout" ? "deadline_exceeded" : "tool_errors" }) });
             results.push({ callId: skipped.call_id, name: skipped.name, arguments: skipped.arguments,
-              result: { source: skipped.name, period: null, missing: ["tool_errors"] } });
+              result: { source: skipped.name, period: null, missing: [endReason === "timeout" ? "deadline_exceeded" : "tool_errors"] } });
           }
           break;
         }
