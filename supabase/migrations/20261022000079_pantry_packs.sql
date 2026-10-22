@@ -170,6 +170,9 @@ begin
   if not found then raise exception 'product not found'; end if;
   original_base := parent_row.base_name;
   perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || original_base));
+  -- Must precede parent-row FOR UPDATE: legacy recipe INSERTs may already
+  -- hold ROW EXCLUSIVE and need an FK KEY SHARE lock on this parent.
+  LOCK TABLE public.recipe_lines IN SHARE ROW EXCLUSIVE MODE;
   select * into parent_row from public.menu_items
     where id=p_product_item_id and business_id=p_business_id for update;
   if not found or parent_row.base_name is distinct from original_base
