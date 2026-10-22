@@ -67,7 +67,7 @@ describe("database-safe agent persistence payload", () => {
   });
   it("never cuts inside a verified number after an oversized unbroken word", () => {
     const content = "x".repeat(1198) + "123.45" + " more words ".repeat(25);
-    const blocks = splitAgentText(content);
+    const blocks = splitAgentText(content).map(block => block.text);
     expect(blocks.join("")).toBe(content);
     expect(blocks[0].length).toBe(1198);
     expect(blocks[1].startsWith("123.45")).toBe(true);
