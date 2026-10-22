@@ -65,4 +65,3 @@ export function checkShiftLength(start:string,end:string,breakMinutes:number,
  return {tooLong:rules.max_shift_enabled&&minutes>rules.max_shift_minutes,
    tooShort:rules.min_shift_enabled&&minutes<rules.min_shift_minutes,paid};
 }
-
