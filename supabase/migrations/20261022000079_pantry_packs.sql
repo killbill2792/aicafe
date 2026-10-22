@@ -297,3 +297,54 @@ revoke all on function public.pantry_replace_recipes(uuid,uuid,jsonb) from publi
 revoke all on function public.pantry_apply_sized_recipes(uuid,uuid,jsonb) from public;
 grant execute on function public.pantry_replace_recipes(uuid,uuid,jsonb) to authenticated;
 grant execute on function public.pantry_apply_sized_recipes(uuid,uuid,jsonb) to authenticated;
+
+-- One transactional, idempotent install of starter rows AND ingredient-specific conversions.
+-- The partial unique starter index is used directly by the ON CONFLICT predicate.
+create or replace function public.pantry_add_starters(
+  p_business_id uuid, p_items jsonb
+) returns jsonb
+language plpgsql security invoker set search_path=public
+as $$
+declare
+  item jsonb;
+  found_id uuid;
+  added text[] := '{}';
+  key text;
+  operational text;
+begin
+  if auth.uid() is null or not public.is_member(p_business_id) then
+    raise exception 'not authorized' using errcode='42501';
+  end if;
+  if jsonb_typeof(p_items) is distinct from 'array'
+    or jsonb_array_length(p_items) not between 1 and 80
+    then raise exception 'invalid starters'; end if;
+  for item in select value from jsonb_array_elements(p_items) loop
+    key := item->>'starterKey';
+    operational := item->>'operationalUnit';
+    if key is null or length(key)>100
+      or (item->>'baseUnit') not in ('g','ml','each')
+      or (item->>'category') not in ('coffee','milk','syrup','sauce','powder','tea','packaging','bakery','food','other')
+      or nullif(btrim(item->>'name'),'') is null
+      or (operational is not null and operational not in ('shot','pump'))
+      then raise exception 'invalid starter'; end if;
+    insert into public.ingredients(business_id,starter_key,name,base_unit,category)
+      values(p_business_id,key,item->>'name',item->>'baseUnit',item->>'category')
+      on conflict (business_id,starter_key) where starter_key is not null do nothing
+      returning id into found_id;
+    if found_id is not null then added := array_append(added,key); end if;
+    select id into found_id from public.ingredients
+      where business_id=p_business_id and starter_key=key;
+    if found_id is null then raise exception 'could not find starter'; end if;
+    if operational is not null then
+      if coalesce((item->>'baseUnitsPerOperationalUnit')::numeric,0) <= 0
+        then raise exception 'invalid conversion'; end if;
+      insert into public.ingredient_unit_conversions(ingredient_id,unit,base_units_per_unit)
+      values(found_id,operational,(item->>'baseUnitsPerOperationalUnit')::numeric)
+      on conflict (ingredient_id,unit) do nothing;
+    end if;
+  end loop;
+  return jsonb_build_object('addedKeys',to_jsonb(added));
+end;
+$$;
+revoke all on function public.pantry_add_starters(uuid,jsonb) from public;
+grant execute on function public.pantry_add_starters(uuid,jsonb) to authenticated;
