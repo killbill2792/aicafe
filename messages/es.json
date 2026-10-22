@@ -2284,6 +2284,44 @@
     "increaseQuantity": "Aumentar cantidad",
     "lowerPrice": "Bajar precio del combo",
     "raisePrice": "Subir precio del combo",
-    "savedCombo": "Combo guardado"
+    "savedCombo": "Combo guardado",
+    "templates": {
+      "latte": {
+        "name": "Latte",
+        "subtitle": "Espresso con leche"
+      },
+      "cappuccino": {
+        "name": "Capuchino",
+        "subtitle": "Más espuma"
+      },
+      "americano": {
+        "name": "Americano",
+        "subtitle": "Espresso con agua"
+      },
+      "mocha": {
+        "name": "Moca",
+        "subtitle": "Latte de chocolate"
+      },
+      "iced-latte": {
+        "name": "Latte helado",
+        "subtitle": "Espresso frío con leche"
+      },
+      "cold-brew": {
+        "name": "Café frío",
+        "subtitle": "Concentrado con hielo"
+      },
+      "chai-latte": {
+        "name": "Chai",
+        "subtitle": "Chai especiado con leche"
+      },
+      "matcha-latte": {
+        "name": "Matcha",
+        "subtitle": "Té verde con leche"
+      },
+      "pastry": {
+        "name": "Pastelería",
+        "subtitle": "Comprado o horneado"
+      }
+    }
   }
 }
