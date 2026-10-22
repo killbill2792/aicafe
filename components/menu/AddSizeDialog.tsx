@@ -48,7 +48,7 @@ export default function AddSizeDialog({
   function submit(resolvedSizeLabel: string) {
     const priceCents = Math.round((Number(price) || 0) * 100);
     const source=siblingSizes.find(sibling=>sibling.id===copyFrom);
-    const canScale=Boolean(copyFrom&&source&&/^\\d+ oz$/.test(source.sizeLabel??"")&&/^\\d+ oz$/.test(resolvedSizeLabel.trim()));
+    const canScale=Boolean(copyFrom&&source&&/^\d+ oz$/.test(source.sizeLabel??"")&&/^\d+ oz$/.test(resolvedSizeLabel.trim()));
     setError(null);
     startTransition(async () => {
       const result = await addMenuItem({
