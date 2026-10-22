@@ -8,6 +8,8 @@ const state=vi.hoisted(()=>({
   sqlNetCents:1200,sqlOrderCount:1,sqlSyntheticCount:0,
   priceRows:[] as Array<{id:string;ingredient_id:string;effective_from:string;recorded_at:string;cost_per_base_unit_micros:number}>,
   ingredientIds:[] as string[],
+  recipeRows:[] as Array<{menu_item_id:string;ingredient_id:string;quantity:number}>,
+  recipeReads:0,
   canonical:[] as Array<{id:string;units:number}>,
   lines:[] as Array<{id:string;order_id:string;menu_item_id:string|null;
     quantity:number;net_sales_cents:number;modifiers:unknown[]}>,
@@ -35,6 +37,7 @@ vi.mock("@/lib/supabase/admin",()=>({
         if(table==="orders")return [{id:"order-1",pos_order_id:"square:order-1",
           net_sales_cents:1200}];
         if(table==="order_lines")return state.lines;
+        if(table==="recipe_lines")return state.recipeRows;
         if(table==="menu_items")return [{id:itemA},{id:itemB}];
         if(table==="ingredients")return state.ingredientIds.map(id=>({id}));
         if(table==="ingredient_prices")return state.priceRows;
@@ -45,12 +48,24 @@ vi.mock("@/lib/supabase/admin",()=>({
       };
       const result=()=>({data:head?null:get(),count:head?(table==="orders"?queryKind==="all"?get().length:0:state.unlinkedCount):null,error:null});
       const q:Record<string,unknown>={
-        select:(_columns:string,opts?:{head?:boolean})=>{head=opts?.head===true;return q;},
+        select:(_columns:string,opts?:{head?:boolean})=>{
+          if(table==="recipe_lines"&&_columns.split(",").includes("id"))
+            throw Error("recipe_lines has no id column");
+          head=opts?.head===true;return q;
+        },
         eq:()=>q,is:(column:string)=>{if(column==="pos_order_id")queryKind="missing";return q;},
-        like:()=>{queryKind="csv";return q;},gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,
+        like:()=>{queryKind="csv";return q;},gte:()=>q,lte:()=>q,
+        order:(key:string)=>{
+          if(table==="recipe_lines"&&key!=="menu_item_id"&&key!=="ingredient_id")
+            throw Error("recipe pagination requires composite PK");
+          return q;
+        },in:()=>q,
         limit:(n:number)=>Promise.resolve({...result(),data:get().slice(0,n)}),
-        range:(from:number,to:number)=>Promise.resolve({...result(),
-          data:get().slice(from,to+1)}),
+        range:(from:number,to:number)=>{
+          if(table==="recipe_lines")state.recipeReads++;
+          return Promise.resolve({...result(),
+          data:get().slice(from,to+1)});
+        },
         maybeSingle:()=>Promise.resolve({data:get()[0]??null,error:null}),
         then:(ok:(value:ReturnType<typeof result>)=>unknown,
           fail?:(err:unknown)=>unknown)=>Promise.resolve(result()).then(ok,fail),
@@ -64,6 +79,7 @@ beforeEach(()=>{
   state.sqlNetCents=1200;state.sqlOrderCount=1;state.sqlSyntheticCount=0;
   state.canonical.length=0;state.lines.length=0;
   state.priceRows.length=0;state.ingredientIds.length=0;
+  state.recipeRows.length=0;state.recipeReads=0;
   for(let i=0;i<1200;i++)state.lines.push({
     id:String(i).padStart(8,"0"),order_id:"order-1",menu_item_id:i<1000?itemA:itemB,
     quantity:1,net_sales_cents:1,modifiers:[],
@@ -145,5 +161,24 @@ describe("M1 canonical item evidence reader",()=>{
     const result=computeMetric("item_units",{itemId:missingId},day);
     expect(result.value).toBeNull();
     expect(result.invalidatesPrevious).toBe(true);
+  });
+  it("loads recipe costs only when required and paginates by composite PK",async()=>{
+    const units=await readMetricDay("business","2026-10-05",{
+      items:true,costs:false,hours:false,ingredientIds:[],itemIds:[itemA],
+    });
+    expect(computeMetric("item_units",{itemId:itemA},units).value).toBe(1000);
+    expect(state.recipeReads).toBe(0);
+    for(let i=0;i<1200;i++)
+      state.recipeRows.push({
+        menu_item_id:itemA,
+        ingredient_id:"00000000-0000-4000-8000-"+String(i).padStart(12,"0"),
+        quantity:1,
+      });
+    const costDay=await readMetricDay("business","2026-10-05",{
+      items:true,costs:true,hours:false,ingredientIds:[],itemIds:[itemA],
+    });
+    expect(state.recipeReads).toBe(3);
+    expect(costDay.itemCostCoverageVerified).toBe(true);
+    expect(costDay.items?.find(row=>row.itemId===itemA)?.recipeLines).toHaveLength(1200);
   });
 });
