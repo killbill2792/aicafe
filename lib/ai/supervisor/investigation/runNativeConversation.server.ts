@@ -157,6 +157,15 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const descriptions=manifest.filter(d=>visibleIds.has(d.id));
  const simulations=registry.discoverSimulations?.(scope)??[];
  const discovered=new Set<string>();
+ const sourceContractFor=(result:Data,capabilityId:string):string=>{
+   if(result.id==="platform.records.inspect"&&typeof result.sourceReadId==="string"){
+     const parent=datasets.get(result.sourceReadId)?.sourceId??
+       observations.find(o=>o.id===result.sourceReadId)?.result.id;
+     if(typeof parent==="string")return parent;
+   }
+   return typeof result.id==="string"?result.id:
+     capabilityId.replace(/^p3\./u,"").replace(/\.v1$/u,"");
+ };
  const facts=new Map<string,Fact>(),optionRows=new Map<string,{id:string;label:string}>();
  let hadUnavailable=false;
  const messages:unknown[]=[{role:"user",content:JSON.stringify({
@@ -229,8 +238,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      const label=String(row.name??row.productName??row.displayName??row.employeeName??row.base_name??"").slice(0,140);
      if(id&&label)optionRows.set(id,{id,label});
    }
-   const resultId=typeof output.id==="string"?output.id:
-     observation.capabilityId.replace(/^p3\./u,"").replace(/\.v1$/u,"");
+   const resultId=sourceContractFor(output,observation.capabilityId);
    const quality=isRecord(output.quality)?output.quality:null;
    const allowedQuality=quality&&Array.isArray(quality.missingInputs)&&
      Array.isArray(quality.estimatedInputs)&&Array.isArray(quality.staleInputs)?
@@ -448,7 +456,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
        const q=isRecord(value.quality)?value.quality:null;
        const completeQuality=q&&Array.isArray(q.missingInputs)&&
          Array.isArray(q.estimatedInputs)&&Array.isArray(q.staleInputs);
-       const sourceId=typeof value.id==="string"?value.id:id;
+       const sourceId=sourceContractFor(value,id);
        const dataset=completeQuality?datasetFor(sourceId,value.value,q as {
          missingInputs:string[];estimatedInputs:string[];staleInputs:string[]}):null;
        if(dataset)datasets.set(observation.id,{sourceId,dataset,revision:null});
@@ -538,6 +546,10 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
          }));
          const refs=[...new Map(sourceObservations.flatMap(o=>o.reference?[o.reference]:[])
            .map(r=>[r.identifier,r])).values()];
+         const periods=new Set(selected.flatMap(o=>o.period?
+           [JSON.stringify({from:o.period.from,to:o.period.to})]:[]));
+         const period=periods.size===1?[...periods][0]:
+           periods.size>1?"incompatible_source_periods":undefined;
          const calculatedId="f"+(facts.size+1);
          const currency=computed.unit==="USD_cents"&&typeof computed.value==="number";
          const formatted=typeof computed.value==="number"?
@@ -549,6 +561,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
            value:formatted,raw:currency?{value:computed.value as number,unit:"USD_cents"}:null,
            source:refs[0]??null,sources:refs,
            observationIds:sourceObservations.map(o=>o.id),conditional:true,estimated:true,
+           period,
          });
          result={status:computed.status,factId:calculatedId,unit:computed.unit,
            value:formatted,sourceHandles:computed.sourceHandles,assumptions:computed.assumptions,
