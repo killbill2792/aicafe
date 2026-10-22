@@ -143,9 +143,11 @@ export async function executeInitiativeTool(
       return typeof result.coverage!=="number"||result.coverage<0.8;
     });
     return {source:"owner_initiatives",period:null,
-      missing:graph.evaluation?.status==="insufficient_data"?
-        (unresolved.length?unresolved.map(m=>m.metric_key??m.data_gap??"checkinPending"):["insufficientEvidence"]):
-        (!graph.evaluation?["evaluationPending"]:[]),
+      missing:[
+        ...(!graph.evaluation?["evaluationPending"]:[]),
+        ...unresolved.map(m=>m.metric_key??m.data_gap??"checkinPending"),
+        ...(graph.evaluation?.status==="insufficient_data"&&!unresolved.length?["insufficientEvidence"]:[]),
+      ],
       metrics:graph.metrics.slice(0,13).map(m=>({id:m.id,role:m.role,source:m.source,
         metricKey:m.metric_key,unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
         comparator:m.comparator,targetKind:m.target_kind,target:m.target,

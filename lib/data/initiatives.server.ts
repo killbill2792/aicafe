@@ -173,13 +173,26 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
   if(metricResult.error||businessResult.error||evaluationResult.error||!businessResult.data)
     throw new Error("initiative monitor source unavailable");
   const metrics=(metricResult.data??[]) as MetricRow[];
-  const observations=metrics.length?await db.from("initiative_observations")
-    .select("metric_id,business_date,value,coverage,source,note,revision")
-    .in("metric_id",metrics.map(m=>m.id))
-    .gte("business_date",initiative.baseline_from)
-    .lte("business_date",initiative.ends_on).limit(2500):null;
-  if(observations?.error)throw observations.error;
-  return {metrics,observations:(observations?.data??[]) as ObservationRow[],
+  const observations:ObservationRow[]=[];
+  // PostgREST production max_rows is 1,000. Limit(2500) is NOT pagination.
+  // Stable metric/day ordering and bounded pages avoid silent evidence loss.
+  if(metrics.length){
+    for(let offset=0;offset<2500;offset+=500){
+      const page=await db.from("initiative_observations")
+        .select("metric_id,business_date,value,coverage,source,note,revision")
+        .in("metric_id",metrics.map(m=>m.id))
+        .gte("business_date",initiative.baseline_from)
+        .lte("business_date",initiative.ends_on)
+        .order("business_date",{ascending:true}).order("metric_id",{ascending:true})
+        .range(offset,offset+499);
+      if(page.error)throw page.error;
+      const rows=(page.data??[]) as ObservationRow[];
+      observations.push(...rows);
+      if(rows.length<500)break;
+      if(offset===2000)throw new Error("initiative observation coverage exceeds cap");
+    }
+  }
+  return {metrics,observations,
     timezone:businessResult.data.timezone||"America/Los_Angeles",
     latest:((evaluationResult.data??[])[0]??null) as EvaluationRow|null};
 }
@@ -217,7 +230,7 @@ export async function persistInitiativeEvaluation(scope:InitiativeScope,initiati
   const db=await serviceOwnerAccess(scope);
   const canonical=Object.entries(results).sort(([a],[b])=>a.localeCompare(b));
   const digest=createHash("sha256").update(JSON.stringify({
-    asOf,status,recommendation,results:canonical,inputs,
+    asOf,status,recommendation,results:canonical,inputs,transitionKey,
   })).digest("hex");
   const {data,error}=await db.rpc("write_owner_initiative_monitor_evaluation",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,

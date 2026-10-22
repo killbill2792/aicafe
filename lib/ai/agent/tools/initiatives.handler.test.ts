@@ -70,7 +70,7 @@ describe("owner-scoped initiative agent handlers",()=>{
     expect(list.items).toEqual([expect.objectContaining({id:initiativeId,status:"active"})]);
     const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId,metricId:null,date:null},context);
     expect(detail.metrics).toEqual([expect.objectContaining({id:metricId,question:"Was everything ready?"})]);
-    expect(detail.missing).toEqual(["evaluationPending"]);
+    expect(detail.missing).toEqual(["evaluationPending","Needs owner answer"]);
   });
   it("returns every proposed metric plus the thirteenth confirmation guardrail",async()=>{
     state.metricCount=13;
