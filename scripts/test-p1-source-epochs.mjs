@@ -205,6 +205,76 @@ try{
  check((await admin.query("SELECT is_active FROM public.menu_items WHERE id=$1",[latte16])).rows[0].is_active===false,
    "concurrent activation state is preserved");
 
+ // Two overlapping starter requests with keys in opposite order must
+ // serialize before the first ingredient INSERT/epoch trigger. No 40P01.
+ const almond={starterKey:"milk-almond",name:"Almond milk",baseUnit:"ml",category:"milk",
+   operationalUnit:null,baseUnitsPerOperationalUnit:null};
+ const oat={...almond,starterKey:"milk-oat",name:"Oat milk"};
+ await a.query("BEGIN");
+ await a.query("SET LOCAL ROLE authenticated");
+ await a.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ await a.query("SET LOCAL statement_timeout='5000ms'");
+ const firstStarter=await a.query("SELECT public.pantry_add_starters($1,$2::jsonb) AS result",
+   [A,JSON.stringify([almond,oat])]);
+ check(firstStarter.rows[0].result.addedKeys.length===2,
+   "first starter install commits both missing pantry items atomically");
+ await b.query("BEGIN");
+ await b.query("SET LOCAL ROLE authenticated");
+ await b.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ await b.query("SET LOCAL statement_timeout='5000ms'");
+ const overlapping=b.query("SELECT public.pantry_add_starters($1,$2::jsonb) AS result",
+   [A,JSON.stringify([oat,almond])]);
+ await new Promise(resolve=>setTimeout(resolve,80));
+ await a.query("COMMIT");
+ const secondStarter=await overlapping;
+ await b.query("COMMIT");
+ check(secondStarter.rows[0].result.addedKeys.length===0,
+   "opposite-order concurrent starter installs are idempotent without deadlocks");
+ check(Number((await admin.query("SELECT count(*) AS n FROM public.ingredients "+
+   "WHERE business_id=$1 AND starter_key IN ('milk-almond','milk-oat')",[A])).rows[0].n)===2,
+   "starter concurrency never duplicates a pantry ingredient");
+
+ // Re-use existing product identity. Group rename and size-template apply
+ // must share the family lock, rather than lock menu rows in conflicting order.
+ await a.query("BEGIN");
+ await a.query("SET LOCAL ROLE authenticated");
+ await a.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ await a.query("SET LOCAL statement_timeout='5000ms'");
+ const renamed=await a.query("SELECT public.rename_menu_product($1,$2,$3) AS renamed",
+   [A,latte16,"Pantry Renamed Latte"]);
+ check(renamed.rows[0].renamed===true,"existing product rename returns success");
+ await b.query("BEGIN");
+ await b.query("SET LOCAL ROLE authenticated");
+ await b.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ await b.query("SET LOCAL statement_timeout='5000ms'");
+ const duringRename=b.query("SELECT public.pantry_apply_sized_recipes($1,$2,$3::jsonb) AS result",
+   [A,latte12,JSON.stringify(recipes)]);
+ await new Promise(resolve=>setTimeout(resolve,80));
+ await a.query("COMMIT");
+ let staleRename=false;
+ try{
+   const output=await duringRename;
+   check(output.rows[0].result.itemIds.length===4,
+     "template succeeds if its identity was read after grouped rename");
+   await b.query("COMMIT");
+ }catch(error){
+   staleRename=String(error.message).includes("product changed");
+   await b.query("ROLLBACK");
+   check(staleRename,"concurrent rename conflicts safely instead of deadlocking");
+ }
+ // Retry after any expected old-base conflict: the renamed product remains usable.
+ await b.query("BEGIN");
+ await b.query("SET LOCAL ROLE authenticated");
+ await b.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[ownerA]);
+ const afterRename=await b.query("SELECT public.pantry_apply_sized_recipes($1,$2,$3::jsonb) AS result",
+   [A,latte12,JSON.stringify(recipes)]);
+ await b.query("COMMIT");
+ check(afterRename.rows[0].result.itemIds.length===4,
+   "renamed size family can be reused after any concurrency conflict");
+ check(Number((await admin.query("SELECT count(*) AS n FROM public.menu_items WHERE business_id=$1 "+
+   "AND base_name='Pantry Renamed Latte'",[A])).rows[0].n)===4,
+   "overlapping rename does not duplicate or split a size family");
+
  await a.query("BEGIN");
  await a.query("DELETE FROM public.p1_business_source_epochs WHERE business_id=$1",[A]);
  await a.query("COMMIT");
