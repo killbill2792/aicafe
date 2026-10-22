@@ -28,8 +28,8 @@ async function ownerAccess(scope:InitiativeScope){
   if(member.error||member.data?.role!=="owner")throw new Error("owner membership required");
   return db;
 }
-async function serviceOwnerAccess(scope:InitiativeScope) {
-  const db=createAdminSupabaseClient();
+async function serviceOwnerAccess(scope:InitiativeScope,signal?:AbortSignal) {
+  const db=createAdminSupabaseClient(signal);
   const {data,error}=await db.from("memberships").select("role")
     .eq("business_id",scope.businessId).eq("user_id",scope.ownerUserId).maybeSingle();
   if(error||data?.role!=="owner")throw new Error("initiative owner membership required");
@@ -154,8 +154,8 @@ export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,
     created:z.boolean(),corrected:z.boolean(),revision:z.number().int().positive(),
   }).parse(data);
 }
-export async function listMonitorBatch() {
-  const db=createAdminSupabaseClient();
+export async function listMonitorBatch(signal?:AbortSignal) {
+  const db=createAdminSupabaseClient(signal);
   const {data,error}=await db.from("owner_initiatives").select(columns)
     .eq("status","active").or("monitor_lease_until.is.null,monitor_lease_until.lt."+new Date().toISOString())
     .order("monitor_checked_at",{ascending:true,nullsFirst:true})
@@ -163,8 +163,8 @@ export async function listMonitorBatch() {
   if(error)throw error;
   return (data??[]) as InitiativeRow[];
 }
-export async function readMonitorGraph(initiative:InitiativeRow) {
-  const db=await serviceOwnerAccess({businessId:initiative.business_id,ownerUserId:initiative.owner_user_id});
+export async function readMonitorGraph(initiative:InitiativeRow,signal?:AbortSignal) {
+  const db=await serviceOwnerAccess({businessId:initiative.business_id,ownerUserId:initiative.owner_user_id},signal);
   const [metricResult,businessResult,evaluationResult,revisionResult]=await Promise.all([
     db.from("initiative_metrics").select(metricColumns).eq("initiative_id",initiative.id),
     db.from("businesses").select("timezone").eq("id",initiative.business_id).single(),
@@ -200,8 +200,9 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
     timezone:businessResult.data.timezone||"America/Los_Angeles",
     latest:((evaluationResult.data??[])[0]??null) as EvaluationRow|null};
 }
-export async function claimMonitorInitiative(initiative:InitiativeRow,token:string):Promise<InitiativeRow|null> {
-  const db=createAdminSupabaseClient();
+export async function claimMonitorInitiative(initiative:InitiativeRow,token:string,
+  signal?:AbortSignal):Promise<InitiativeRow|null> {
+  const db=createAdminSupabaseClient(signal);
   const {data,error}=await db.rpc("claim_owner_initiative_monitor",{
     p_id:initiative.id,p_revision:initiative.revision,p_token:token,
   });
@@ -209,8 +210,8 @@ export async function claimMonitorInitiative(initiative:InitiativeRow,token:stri
   return typeof data==="number"?{...initiative,revision:data}:null;
 }
 export async function releaseMonitorInitiative(id:string,token:string,completed:boolean,
-  evidenceRevision:number) {
-  const db=createAdminSupabaseClient();
+  evidenceRevision:number,signal?:AbortSignal) {
+  const db=createAdminSupabaseClient(signal);
   const {error}=await db.rpc("release_owner_initiative_monitor",{
     p_id:id,p_token:token,p_completed:completed,
     p_expected_evidence_revision:evidenceRevision,
@@ -219,8 +220,8 @@ export async function releaseMonitorInitiative(id:string,token:string,completed:
 }
 /** Atomic source observation and lease test. No read/update race or stale worker writes. */
 export async function persistMetricObservation(scope:InitiativeScope,initiativeId:string,
-  leaseToken:string,row:ObservationRow,allowInvalidation=false) {
-  const db=await serviceOwnerAccess(scope);
+  leaseToken:string,row:ObservationRow,allowInvalidation=false,signal?:AbortSignal) {
+  const db=await serviceOwnerAccess(scope,signal);
   const {data,error}=await db.rpc("write_owner_initiative_monitor_observation",{
     p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
     p_initiative_id:initiativeId,p_token:leaseToken,
@@ -232,8 +233,9 @@ export async function persistMetricObservation(scope:InitiativeScope,initiativeI
 }
 export async function persistInitiativeEvaluation(scope:InitiativeScope,initiativeId:string,
   asOf:string,status:string,recommendation:string,results:Record<string,unknown>,
-  inputs:Record<string,unknown>,transitionKey:string,leaseToken:string) {
-  const db=await serviceOwnerAccess(scope);
+  inputs:Record<string,unknown>,transitionKey:string,leaseToken:string,
+  signal?:AbortSignal) {
+  const db=await serviceOwnerAccess(scope,signal);
   const canonical=Object.entries(results).sort(([a],[b])=>a.localeCompare(b));
   const digest=createHash("sha256").update(JSON.stringify({
     asOf,status,recommendation,results:canonical,inputs,transitionKey,
@@ -248,8 +250,9 @@ export async function persistInitiativeEvaluation(scope:InitiativeScope,initiati
   return data===true;
 }
 export async function readMetricDay(businessId:string,date:string,
-  opts:{items:boolean;hours:boolean;ingredientIds:string[]}):Promise<MetricDailyInput> {
-  const db=createAdminSupabaseClient();
+  opts:{items:boolean;hours:boolean;ingredientIds:string[]},
+  signal?:AbortSignal):Promise<MetricDailyInput> {
+  const db=createAdminSupabaseClient(signal);
   const day=await db.from("daily_rollups").select(
     "business_date,net_sales_cents,orders_count,drinks_count,ingredients_cents,staff_wages_cents,staff_tax_cents,staff_tax_status,sales_data_status,card_fees_cents,voids_cents"
   ).eq("business_id",businessId).eq("business_date",date).maybeSingle();

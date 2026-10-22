@@ -9,8 +9,9 @@ export type NewTeamUpdate = Pick<TeamUpdate,
 >;
 
 /** Data access boundary: service-role writes still require a real owner membership. */
-export async function insertTeamUpdate(row: NewTeamUpdate): Promise<boolean> {
-  const db = createAdminSupabaseClient();
+export async function insertTeamUpdate(row: NewTeamUpdate,
+  signal?:AbortSignal): Promise<boolean> {
+  const db = createAdminSupabaseClient(signal);
   const { data: membership, error: membershipError } = await db.from("memberships")
     .select("user_id").eq("business_id", row.business_id)
     .eq("user_id", row.owner_user_id).eq("role", "owner").maybeSingle();

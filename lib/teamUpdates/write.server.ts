@@ -28,7 +28,8 @@ const domainTaskKind: Record<z.infer<typeof teamUpdateDomainSchema>, OperatingTa
 };
 
 /** Validate and map owner-facing messages; persistence lives exclusively in lib/data. */
-export async function writeTeamUpdate(input: WriteTeamUpdateInput): Promise<{ created: boolean }> {
+export async function writeTeamUpdate(input: WriteTeamUpdateInput,
+  signal?:AbortSignal): Promise<{ created: boolean }> {
   const value = writeTeamUpdateSchema.parse(input);
   const created = await insertTeamUpdate({
     business_id: value.businessId,
@@ -44,6 +45,6 @@ export async function writeTeamUpdate(input: WriteTeamUpdateInput): Promise<{ cr
     locale: value.locale,
     actions: value.actions,
     dedupe_key: value.dedupeKey,
-  });
+  },signal);
   return { created };
 }
