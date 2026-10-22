@@ -50,6 +50,7 @@ declare
   ingredient uuid;
   actual jsonb;
   source_expected jsonb;
+  sibling_ids jsonb;
   seen_items uuid[] := '{}';
   seen_ingredients uuid[];
   updated_ids uuid[] := '{}';
@@ -69,6 +70,13 @@ begin
   if jsonb_typeof(p_changes) is distinct from 'array'
      or jsonb_array_length(p_changes) not between 1 and 64
     then raise exception 'invalid recipe changes'; end if;
+  if p_changes->0 ? 'expectedSiblingIds' then
+    select coalesce(jsonb_agg(id::text order by id), '[]'::jsonb) into sibling_ids
+      from public.menu_items
+      where business_id=p_business_id and base_name=parent_base;
+    if sibling_ids is distinct from p_changes->0->'expectedSiblingIds' then
+      raise exception 'recipe_family_changed' using errcode='40001'; end if;
+  end if;
   -- If the source recipe was read before this transaction, detect any intervening
   -- edits, including legacy single-line writes, before applying derived changes.
   source_expected := p_changes->0->'expectedSourceLines';
@@ -116,6 +124,7 @@ begin
     end loop;
   end loop;
   for c in select value from jsonb_array_elements(p_changes) loop
+    if c->>'checkOnly' = 'true' then continue; end if;
     item := (c->>'menuItemId')::uuid;
     delete from public.recipe_lines where menu_item_id=item;
     insert into public.recipe_lines
