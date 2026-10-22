@@ -769,3 +769,28 @@ describe("named-price isolation from unrelated menu values",()=>{
     expect(checkNumbers("Mocha is $8.50.","",[menu],"en").map(v=>v.text)).toEqual(["$8.50"]);
   });
 });
+
+
+describe("failed read versus explicitly absent temporal data",()=>{
+  it("clears old hours after the source explicitly reports no configuration",()=>{
+    const old=compactEvidence([{source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["08:00","17:00"]]}}]);
+    const cleared=compactEvidence([{source:"locations.open_hours",period:null,
+      missing:["businessHoursNotSet"],hours:null}]);
+    expect(cleared[0].timeScope?.kind).toBe("hours");
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[],"en",
+      [...old,...cleared]).length).toBeGreaterThan(0);
+  });
+  it("does not erase a verified schedule on an unsuccessful later read",()=>{
+    const old=compactEvidence([{source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]}]);
+    const failed=compactEvidence([{source:"recurring_schedule",
+      period:{from:"2026-11-02",to:"2026-11-08"},
+      missing:["scheduleReaderUnavailable"]}]);
+    expect(failed).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026-11-02.",
+      "",[],"en",[...old,...failed])).toEqual([]);
+  });
+});
