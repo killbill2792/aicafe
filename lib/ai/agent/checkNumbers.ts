@@ -678,6 +678,64 @@ function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   });
 }
 
+
+const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
+ en:{zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,twenty:20,thirty:30,forty:40,fifty:50,sixty:60},
+ es:{cero:0,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,veinte:20,treinta:30,cuarenta:40,cincuenta:50},
+ ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"ثلاثة":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"تسعة":9,"عشرة":10,"عشرون":20,"خمسون":50}
+};
+const MONEY_WORDS=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|latte|mocha|wages?|precio|cuesta|costo|coste|dólares?|centavos?|alquiler)\b|(?:سعر|ثمن|تكلفة|دولارات?|سنتات?|ربح)/iu;
+function spokenOwnerMoney(text:string,locale:AgentLocale):number[]{
+ const dict=WORD_NUMBERS[locale];
+ const terms=Object.keys(dict).sort((a,b)=>b.length-a.length).join("|");
+ const decimalSep=locale==="en"?"point":locale==="es"?"(?:coma|punto|con)":"(?:فاصلة|فاصل)";
+ const cash=locale==="en"?"dollars?":locale==="es"?"dólares?":"دولارات?";
+ const coins=locale==="en"?"cents?":locale==="es"?"centavos?":"سنتات?|سنتا";
+ const re=new RegExp("(?<!\\p{L})("+terms+")(?:\\s+("+decimalSep+")\\s+("+terms+")(?:\\s+("+terms+"))?|\\s+("+cash+")(?:\\s+(?:and|y|و)?\\s*("+terms+")(?:\\s+("+terms+"))?\\s*(?:"+coins+")?)?|\\s+("+terms+"))?(?!\\p{L})","giu");
+ const out:number[]=[];
+ for(const m of text.matchAll(re)){
+   const context=text.slice(Math.max(0,m.index-70),m.index)+" "+m[0]+" "+text.slice(m.index+m[0].length,m.index+m[0].length+35);
+   if(!MONEY_WORDS.test(context))continue;
+   const integer=dict[m[1].toLowerCase()];
+   const fractional=m[3]?dict[m[3].toLowerCase()]:undefined;
+   const fractionTail=m[4]?dict[m[4].toLowerCase()]:undefined;
+   const cents=m[6]?dict[m[6].toLowerCase()]:undefined;
+   const centsTail=m[7]?dict[m[7].toLowerCase()]:undefined;
+   const colloquial=m[8]?dict[m[8].toLowerCase()]:undefined;
+   let value=integer*100;
+   if(fractional!==undefined)value+=fractionTail===undefined?fractional*10:fractional*10+fractionTail;
+   else if(cents!==undefined)value+=cents+(centsTail??0);
+   else if(colloquial!==undefined&&colloquial>=10)value+=colloquial;
+   out.push(value);
+ }
+ return out;
+}
+function proposedDuration(text:string,start:number,end:number):boolean{
+ const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
+ return /^\s*(?:days?|weeks?|días?|semanas?|أيام|ايام|أسابيع|اسابيع)(?!\p{L})/iu.test(after)&&
+  /(?:\b(?:for|during|try|test|run|plan|over|por|durante|probar)\b|(?:لمدة|خلال|نجرب))\s*$/iu.test(before);
+}
+function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
+ locale:AgentLocale,allowed:ReadonlySet<number>):boolean{
+ const money=candidates(text,locale).filter(c=>c.kind==="money"||
+   (c.kind==="number"&&isCurrencylessMoneyClaim(text,c.start,c.end)));
+ const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
+ if(index<2)return false;
+ const prefix=text.slice(0,v.start);
+ const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"));
+ const operands=money.slice(0,index).filter(c=>c.start>boundary);
+ if(operands.length<2||operands.length>3)return false;
+ const toCents=(c:{kind:Kind;value:number})=>c.kind==="money"?c.value:Math.round(c.value*100);
+ const amounts=operands.map(toCents);
+ if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
+ const phrase=text.slice(operands[0].end,v.start);
+ const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
+ if(!marker.test(phrase))return false;
+ const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
+ const expected=subtraction?amounts.slice(1).reduce((a,b)=>a-b,amounts[0]):amounts.reduce((a,b)=>a+b,0);
+ return Math.abs(expected-toCents(v))<=1;
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -723,6 +781,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
+  for(const cents of spokenOwnerMoney(ownerText,locale))allowed.money.add(cents);
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
   // chips. Clock formatting and list markers can pass without a source.
   // Only owner statements and typed tool evidence can authorize a claim.
@@ -748,6 +807,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const ownerClocks = [...ownerText.matchAll(clockPattern)] as ClockSpan[];
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
+    if(v.kind==="number"&&proposedDuration(text,v.start,v.end))return false;
     const clock = v.kind==="number" ? clocks.find(m =>
       v.start < clockEnd(m) && v.end > m.index) : undefined;
     if(clock){
@@ -818,6 +878,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
+    if((v.kind==="money"||(v.kind==="number"&&isCurrencylessMoneyClaim(text,v.start,v.end)))&&
+      explicitLocalArithmetic(text,v,locale,allowed.money))return false;
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
