@@ -165,14 +165,20 @@ function canonicalClock(clock:ClockSpan):string|null {
 
 function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   const prefix=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),
-    prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),
+    prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
   const phrase=text.slice(sentenceStart,clock.index);
-  const actions=[...phrase.matchAll(/\b(?:shift\s+(?:starts?|ends?)|(?:open|opens|opening|close|closes|closing))\b/giu)];
+  // EN/ES/AR owner prose is free-form. Recognize common shift paraphrases
+  // and localized hours, but never exempt an unrecognized business clock.
+  const actions=[...phrase.matchAll(
+    /\b(?:shift\s+(?:starts?|begins?|ends?|finishes?)|(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their|the|a)\s+(?:[\p{L}]+\s+){0,3}shift|(?:open|opens|opening|close|closes|closing|abrimos|abre|abren|abrir|apertura|cerramos|cierra|cierran|cerrar|cierre))\b|\bturno\b[^.!?;\n]{0,30}\b(?:empieza|comienza|inicia|termina|finaliza)\b|(?:نفتح|يفتح|تفتح|نغلق|يغلق|تغلق|الإغلاق|إغلاق|الافتتاح|وردية[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي)|مناوبة[^.!?;\n]{0,30}(?:تبدأ|تنتهي|يبدأ|ينتهي))/giu
+  )];
   const last=actions.at(-1)?.[0]?.toLowerCase()??"";
-  if(last.startsWith("shift"))return /\bend/i.test(last)?"shiftEnd":"shiftStart";
-  if(last.startsWith("open"))return "open";
-  if(last.startsWith("clos"))return "close";
+  if(!last)return null;
+  if(/\b(?:shift|turno)\b|(?:وردية|مناوبة)/iu.test(last))
+    return /\b(?:ends?|finishes?|termina|finaliza)\b|(?:تنتهي|ينتهي)/iu.test(last)?"shiftEnd":"shiftStart";
+  if(/^(?:open|abr|apertura)|(?:نفتح|يفتح|تفتح|الافتتاح)/iu.test(last))return "open";
+  if(/^(?:clos|cerr|cierre)|(?:نغلق|يغلق|تغلق|الإغلاق|إغلاق)/iu.test(last))return "close";
   return null;
 }
 function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):string[] {
@@ -203,11 +209,25 @@ function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):strin
   const selected=nearestAfter<=nearestBefore?after:before;
   return [...new Set(selected.map(m=>m.day))];
 }
-function assertedShiftPerson(text:string,clock:ClockSpan):string|null {
+type ShiftPersonClaim = {kind:"general"}|{kind:"named";name:string}|{kind:"unresolved"};
+function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   const prefix=text.slice(0,clock.index);
   const start=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf(";"))+1;
-  const matches=[...text.slice(start,clock.index).matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+shift\s+(?:starts?|ends?)/giu)];
-  return matches.at(-1)?.[1]?.trim().toLocaleLowerCase()??null;
+  const suffix=text.slice(clockEnd(clock));
+  const endOffset=suffix.search(/[.!?;\n]/u);
+  const sentenceEnd=endOffset<0?text.length:clockEnd(clock)+endOffset;
+  const before=text.slice(start,clock.index), after=text.slice(clockEnd(clock),sentenceEnd);
+  // Preserve the named person across qualifiers such as "Bob's morning
+  // shift" and after-the-clock "shift ... for Bob" constructions.
+  const possessive=[...before.matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}\d-]+\s+){0,5}shift\b/giu)].at(-1);
+  if(possessive)return {kind:"named",name:possessive[1].trim().toLocaleLowerCase()};
+  const forPerson=(before+" "+after).match(/\bfor\s+([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)/iu);
+  if(forPerson)return {kind:"named",name:forPerson[1].trim().toLocaleLowerCase()};
+  // If this is explicitly someone's shift but the name could not be parsed,
+  // fail closed instead of silently treating the claim as any employee.
+  if(/['’]s[^.!?;\n]{0,90}\bshift\b|\bfor\s+\S+/iu.test(before+" "+after))
+    return {kind:"unresolved"};
+  return {kind:"general"};
 }
 function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
   const known:VerifiedTime[]=[];
@@ -332,14 +352,14 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       v.start < clockEnd(m) && v.end > m.index) : undefined;
     if(clock){
       const role=timeRole(text,clock);
-      if(!role)return false; // Pure time formatting is not a business fact.
+      if(!role)return true; // Unknown time meaning is not proof of a business fact.
       const canonical=canonicalClock(clock);
       if(canonical){
         const days=mentionedWeekdays(text,clock,clocks);
-        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):null;
-        const verified=(days.length?days:[null]).every(day=>observed.some(h=>
+        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):{kind:"general" as const};
+        const verified=person.kind!=="unresolved"&&(days.length?days:[null]).every(day=>observed.some(h=>
           h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
-          (person===null||h.person===person)));
+          (person.kind==="general"||(person.kind==="named"&&h.person===person.name))));
         // Owner words also need the same asserted time *role*, weekday and
         // named employee. Matching a bare "8:00" cannot prove opening hours
         // when the owner only described an employee shift.
@@ -347,8 +367,10 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
           if(timeRole(ownerText,ownerClock)!==role||canonicalClock(ownerClock)!==canonical)return false;
           const ownerDays=mentionedWeekdays(ownerText,ownerClock,ownerClocks);
           if(days.length&&!days.every(day=>ownerDays.includes(day)))return false;
-          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):null;
-          return person===null||ownerPerson===person;
+          const ownerPerson=role.startsWith("shift")?assertedShiftPerson(ownerText,ownerClock):{kind:"general" as const};
+          if(person.kind==="unresolved"||ownerPerson.kind==="unresolved")return false;
+          return person.kind==="general"||
+            (person.kind==="named"&&ownerPerson.kind==="named"&&ownerPerson.name===person.name);
         });
         return !(verified||ownerGrounded);
       }
