@@ -3,7 +3,7 @@ import {useState,useTransition} from "react";
 import {useLocale,useTranslations} from "next-intl";
 import {Plus,Minus,X,ArrowLeftRight,ChevronDown} from "lucide-react";
 import {useRouter} from "@/i18n/navigation";
-import {addRecipeLine,updateRecipeLine,deleteRecipeLine} from "@/lib/actions/menuItems";
+import {saveProductRecipes} from "@/lib/actions/pantry";
 import {swapIngredient} from "@/lib/actions/pantry";
 import {stepFor} from "@/lib/calc/recipeUnits";
 import type {RecipeDisplayUnit,IngredientUnitConversion} from "@/lib/calc/recipeUnits";
@@ -12,7 +12,6 @@ import {recipePreviewCost,keepPreview} from "@/lib/calc/recipePreview";
 import {formatCents} from "@/lib/calc";
 import AddSizeDialog from "./AddSizeDialog";
 import type {PricedPantry} from "./MenuAddonsPanel";
-import {replacementDifferenceCents} from "@/lib/calc/menuAddons";
 import {toBaseUnitQuantity} from "@/lib/calc/recipeUnits";
 type Draft={unit:RecipeDisplayUnit;quantity:number;removed:boolean};
 function k(item:string,ingredient:string){return item+":"+ingredient;}
@@ -26,8 +25,35 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry}:{i
  function adjust(item:MenuItemForEdit,id:string,delta:number){const line=item.recipe.find(l=>l.ingredientId===id);if(!line)return;const key=k(item.id,id);const cur=drafts[key]??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};const step=stepFor(cur.unit);setDrafts(prev=>({...prev,[key]:{...cur,removed:false,quantity:Math.max(0,Math.round((cur.quantity+delta*step)*100)/100)}}));setSaved(false);}
  function removeRow(id:string){setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(item=>item.recipe.some(l=>l.ingredientId===id)).map(item=>{const key=k(item.id,id);const line=item.recipe.find(l=>l.ingredientId===id)!;return[key,{...(prev[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:line.displayQuantity??line.quantity}),removed:true}]}))}));setToast(ingredientRows.find(row=>row[0]===id)?.[1]??"");}
  function undo(){const id=ingredientRows.find(row=>row[1]===toast)?.[0];if(!id)return;setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(i=>i.recipe.some(l=>l.ingredientId===id)).map(item=>[k(item.id,id),{...prev[k(item.id,id)],removed:false}]))}));setToast("");}
- function save(){setError("");start(async()=>{let completed=false;for(const item of items){for(const line of item.recipe){const d=drafts[k(item.id,line.ingredientId)];if(!d)continue;const r=d.removed||d.quantity===0?await deleteRecipeLine(item.id,line.ingredientId):await updateRecipeLine({menuItemId:item.id,ingredientId:line.ingredientId,displayQuantity:d.quantity,displayUnit:d.unit});if(!r.ok){setError(completed?t("error"):r.error);return;}completed=true;}}setSaved(true);setToast("");router.refresh();});}
- function append(){if(!add)return;start(async()=>{for(const item of selectedItems){const ingredient=ingredients.find(i=>i.id===add);if(!ingredient)continue;const result=await addRecipeLine({menuItemId:item.id,ingredientId:add,displayUnit:ingredient.baseUnit,displayQuantity:1});if(!result.ok){setError(result.error);return;}}setAdd(null);router.refresh();});}
+ function recipeChanges(newIngredientId?:string){
+  return items.map(item=>({
+   itemId:item.id,
+   expected:item.recipe.map(line=>({ingredientId:line.ingredientId,quantity:line.quantity,displayUnit:line.displayUnit,displayQuantity:line.displayQuantity})),
+   lines:[
+    ...item.recipe.flatMap(line=>{
+      const d=drafts[k(item.id,line.ingredientId)];
+      if(d?.removed||d?.quantity===0)return [];
+      return [{ingredientId:line.ingredientId,displayUnit:(d?.unit??line.displayUnit??line.baseUnit) as RecipeDisplayUnit,displayQuantity:d?.quantity??line.displayQuantity??line.quantity}];
+    }),
+    ...(newIngredientId&&active.includes(item.id)?(()=>{
+      const ingredient=ingredients.find(i=>i.id===newIngredientId);
+      return ingredient?[{ingredientId:ingredient.id,displayUnit:ingredient.baseUnit,displayQuantity:1}]:[];
+    })():[])
+   ],
+  }));
+ }
+ function save(){if(!items[0])return;setError("");start(async()=>{
+  const result=await saveProductRecipes({productId:items[0].id,sizes:recipeChanges()});
+  if(!result.ok){setError(t("error"));return;}
+  setSaved(true);setToast("");router.refresh();
+ });}
+ function append(){if(!add||!items[0]||selectedItems.length===0)return;
+  setError("");start(async()=>{
+   const result=await saveProductRecipes({productId:items[0].id,sizes:recipeChanges(add)});
+   if(!result.ok){setError(t("error"));return;}
+   setAdd(null);router.refresh();
+  });
+ }
  function performSwap(){if(!swap||!choice)return;start(async()=>{const result=await swapIngredient(items[0].id,swap,choice);if(!result.ok)setError(t("error"));else{setSwap(null);router.refresh();}});}
  const source=pantry.find(p=>p.id===swap);
  const representative=selectedItems.find(item=>item.recipe.some(line=>line.ingredientId===swap));
