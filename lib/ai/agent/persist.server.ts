@@ -17,7 +17,7 @@ export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
 }
 type Span = { start: number; end: number };
 // Protect recorded claims and even *verified* currency tokens from block boundaries.
-const moneyToken = /(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*|[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))/gu;
+const moneyToken = /(?:(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)\s*)?[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\u00a0\u202f][٠-٩۰-۹\d]+)*(?:[ \u00a0\u202f]*(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|[%٪]))?/gu;
 
 /** Preserve every character, preferring paragraphs, lines then whitespace. */
 export function splitAgentText(text: string, unverified: readonly Span[] = []) {
