@@ -100,6 +100,30 @@ function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber &
   }
   return found;
 }
+/** Only actual list positions are exempt, not sentence-ending business counts. */
+function isListMarker(text: string, start: number, end: number, value: number): boolean {
+  if (!Number.isInteger(value) || value < 1 || value > 30 ||
+    !/^[.)][ \t]+\S/u.test(text.slice(end))) return false;
+  const before = text.slice(0, start);
+  const line = before.slice(before.lastIndexOf("\n") + 1);
+  if (/^[ \t]*$/u.test(line)) return true;
+  // Compact numbered lists such as "1. Latte 2. Mocha" continue sequentially.
+  if (!/^[ \t]*[1-9]\d?[.)][ \t]+\S/u.test(line)) return false;
+  const markers = [...line.matchAll(/(?:^|[ \t])([1-9]\d?)[.)][ \t]+\S/gu)];
+  return markers.length > 0 && Number(markers[markers.length - 1][1]) + 1 === value;
+}
+
+/** Plain monetary wording can use dollar values without a currency symbol;
+ * cents must not be promoted to evidence for arbitrary item or staff counts. */
+function isCurrencylessMoneyClaim(text: string, start: number, end: number): boolean {
+  const before = text.slice(Math.max(0, start - 100), start).split(/[.!?;,\n]/u).pop() ?? "";
+  const after = (text.slice(end).split(/[.!?;,\n]/u)[0] ?? "").slice(0, 40);
+  if (/^\s*(?:(?:more|fewer)\s+)?(?:drinks?|orders?|people|staff|employees?|items?|cups?|units?|hours?|days?|coffees?|customers?|shifts?|servings?|tickets?|ounces?|oz|grams?|kg|liters?|litres?|lattes?|mochas?)\b/iu.test(after) ||
+    /\b(?:sold|served|ordered|count|quantity|number of|staff|employees?|customers?|shifts?)\b[^.!?;,\n]*$/iu.test(before)) return false;
+  const moneyWords = /\b(?:profit|loss|revenues?|sales|prices?|costs?|charges?|rents?|bills?|fees?|salar(?:y|ies)|wages?|payroll|expenses?|income|cash|budget|amount|balance|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie|beneficio|ganancia|ingresos|precio|costo|coste|alquiler|gastos?)\b|(?:الربح|الإيرادات|الايرادات|السعر|التكلفة|الإيجار)/iu;
+  return moneyWords.test(before) || /^\s*(?:in\s+)?(?:profit|revenue|sales|costs?|expenses?|income|cash|rent|wages?|payroll|ganancia|beneficio|ingresos)\b/iu.test(after);
+}
+
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
   if (Array.isArray(data)) { if(/^(?:items|people|shifts|laborDays|days|categories|attendanceRecords)$/u.test(key))allowed.number.add(data.length); data.forEach(v => allowFromData(v, allowed, key)); return; }
   if (data && typeof data === "object") {
@@ -151,8 +175,8 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
       allowed.money.add(Math.round(v.value*100));
   }
-  // One monetary amount can be expressed as dollars without a currency symbol; owner numbers can be monetary.
-  for(const cents of [...allowed.money])allowed.number.add(cents/100);
+  // Monetary evidence stays in cents. Check currency-less monetary wording
+  // at each candidate, rather than authorizing the value as a generic count.
 
   // Derived amounts are supported only by same-unit pairs, never by arbitrary cross-unit arithmetic.
   for(const kind of ["money","percent","number"] as const){
@@ -163,21 +187,14 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       if(/\b(?:more than|less than|difference|increase|decrease|higher|lower|change|extra|combined|total of)\b/i.test(text)){
         allowed[kind].add(a+b);allowed[kind].add(a-b);
       }
-      if(kind==="money"){
-        if(b!==0)allowed.number.add(a/b);
-        if(a!==0)allowed.percent.add(Math.round(((b-a)/Math.abs(a))*10000));
-      }else if(kind==="number"){
-        allowed.number.add(a*b);
-        if(b!==0)allowed.number.add(a/b);
-      }
+
     }
   }
   const knownTimes = results.filter(r=>r.missing.length===0&&/hours|schedule/.test(r.source))
     .map(r=>JSON.stringify(r)).join(" ");
   return candidates(text, locale).filter(v => {
     const before=text.slice(0,v.start), after=text.slice(v.end);
-    if(v.kind==="number" && /(?:^|\s)$/u.test(before) && /^\d+[.)]\s/u.test(text.slice(v.start)))return false;
-    if(v.kind==="number" && /^[.)]\s/u.test(after) && /(?:^|\s)$/u.test(before))return false;
+    if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
     if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
       /\b\d{1,2}h(?:\d{2})?\b/iu.test(local))) {
@@ -190,13 +207,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         if(knownTimes.includes(canonical)||ownerText.includes(matched[0])||ownerText.includes(canonical))return false;
       }
     }
-    // Adjacent separate numeric tokens are not a standalone casual small number.
-    // "1 234" must retain both unverified spans (not a silently joined 1,234).
-    const adjacentNumber=/^\s+\d/u.test(after)||/\d\s+$/u.test(before);
-    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&
-      !adjacentNumber&&!/^\s*(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?|coffees?)/iu.test(after))return false;
-    return ![...allowed[v.kind]].some(x =>
-    Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
+    const supported = [...allowed[v.kind]].some(x =>
+      Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
+    if (supported) return false;
+    // Never promote a money amount into count evidence, even for saved reads.
+    if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
+      return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
+    return true;
   })
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
 }
