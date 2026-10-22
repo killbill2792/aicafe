@@ -58,7 +58,7 @@ export const initiativeToolSchemas={
 const descriptions={
   propose_initiative:"Create an INERT goal/experiment proposal. Write an object as changeSpecJson. Use checkin with a question and gap for noncatalog measurements. Owner approves separately.",
   get_initiatives:"Read this owner's recent goals and experiments.",
-  get_initiative_status:"Read a goal/experiment. Send metricId and date together to fetch any older check-in value and revision; otherwise both null.",
+  get_initiative_status:"Get a compact initiative status with ALL metric IDs. For a detailed question, target or historical check-in revision, send metricId and date together; otherwise both null.",
   record_checkin:"Record an owner's check-in for a check-in metric. This never applies a change.",
 };
 export const initiativeToolDefinitions=Object.entries(initiativeToolSchemas).map(([name,schema])=>{
@@ -142,24 +142,53 @@ export async function executeInitiativeTool(
       if(!result||typeof result!=="object"||!("coverage" in result))return true;
       return typeof result.coverage!=="number"||result.coverage<0.8;
     });
-    return {source:"owner_initiatives",period:null,
-      missing:[
-        ...(!graph.evaluation?["evaluationPending"]:[]),
-        ...unresolved.map(m=>m.metric_key??m.data_gap??"checkinPending"),
-        ...(graph.evaluation?.status==="insufficient_data"&&!unresolved.length?["insufficientEvidence"]:[]),
-      ],
-      metrics:graph.metrics.slice(0,13).map(m=>({id:m.id,role:m.role,source:m.source,
-        metricKey:m.metric_key,unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
-        comparator:m.comparator,targetKind:m.target_kind,target:m.target,
-        question:m.checkin_question,audience:m.checkin_audience,dataGap:m.data_gap})),
-      initiative:{id:graph.initiative.id,title:graph.initiative.title,status:graph.initiative.status,
-        revision:graph.initiative.revision,startsOn:graph.initiative.starts_on,endsOn:graph.initiative.ends_on},
-      evaluation:graph.evaluation?{status:graph.evaluation.status,
-        recommendation:graph.evaluation.recommendation,asOf:graph.evaluation.as_of,
-        results:graph.evaluation.results}:null,
-      observations:graph.observations.slice(0,20).map(o=>({
-        metricId:o.metric_id,date:o.business_date,value:o.value,coverage:o.coverage,source:o.source,revision:o.revision,
-      }))};
+    const missing=[...new Set([
+      ...(!graph.evaluation?["evaluationPending"]:[]),
+      ...unresolved.map(m=>m.metric_key??"checkinPending"),
+      ...(graph.evaluation?.status==="insufficient_data"&&!unresolved.length?
+        ["insufficientEvidence"]:[]),
+    ])].slice(0,8);
+    const selected=metricId?graph.metrics.find(m=>m.id===metricId):undefined;
+    // The tool result is read back into every model round. Keep all 13
+    // actionable IDs, not all thirteen 300-character questions / data gaps,
+    // and never echo an unbounded evaluation.results object by default.
+    const result:AgentToolResult={
+      source:"owner_initiatives",period:null,missing,
+      initiative:{id:graph.initiative.id,title:graph.initiative.title.slice(0,100),
+        status:graph.initiative.status,revision:graph.initiative.revision,
+        startsOn:graph.initiative.starts_on,endsOn:graph.initiative.ends_on},
+      metrics:graph.metrics.slice(0,13).map(m=>({
+        id:m.id,role:m.role,source:m.source,metricKey:m.metric_key,
+      })),
+      unresolvedMetricIds:unresolved.map(m=>m.id),
+      evaluation:graph.evaluation?{
+        status:graph.evaluation.status,recommendation:graph.evaluation.recommendation,
+        asOf:graph.evaluation.as_of,
+      }:null,
+      observationCount:graph.observations.length,
+    };
+    if(metricId&&date){
+      if(!selected)throw new Error("initiative metric unavailable");
+      const observation=graph.observations.find(o=>
+        o.metric_id===metricId&&o.business_date===date);
+      return {...result,
+        metricDetail:{
+          id:selected.id,role:selected.role,source:selected.source,
+          metricKey:selected.metric_key,
+          unit:selected.metric_key?metricCatalog[selected.metric_key].unit:null,
+          comparator:selected.comparator,targetKind:selected.target_kind,target:selected.target,
+          question:selected.checkin_question,audience:selected.checkin_audience,
+          dataGap:selected.data_gap,
+        },
+        observation:observation?{
+          metricId:observation.metric_id,date:observation.business_date,
+          value:observation.value,coverage:observation.coverage,
+          source:observation.source,revision:observation.revision,
+        }:null,
+        metricEvaluation:graph.evaluation?.results?.[metricId]??null,
+      };
+    }
+    return result;
   }
   const args=checkinArgs.parse(raw);
   if(!ctx.ownerMessageId)throw new Error("owner check-in message context unavailable");
