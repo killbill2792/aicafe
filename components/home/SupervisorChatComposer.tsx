@@ -50,7 +50,6 @@ export type SupervisorHomeSnapshot = {
     items: HomeTaskPreviewItem[]; count: number }[];
   seeAll: string;
 };
-type MessageResponse = { message: ConversationMessage; reply: ConversationMessage; replyStatus: "complete" };
 async function jsonFrom<T>(response: Response): Promise<T> {
   if (!response.ok) throw new Error("conversation_request_failed");
   return response.json() as Promise<T>;
@@ -62,21 +61,6 @@ async function loadMessages(id: string, offset = 0): Promise<ConversationPage<Co
   ));
 }
 type SupervisorProgress = { agent: string; stage: string } | null;
-async function loadProgress(threadIdValue: string, clientMessageId: string, signal: AbortSignal):
-  Promise<SupervisorProgress> {
-  try {
-    const response = await fetch(
-      "/api/ai/threads/" + encodeURIComponent(threadIdValue) + "/progress?clientMessageId=" +
-        encodeURIComponent(clientMessageId),
-      { credentials: "same-origin", cache: "no-store", signal },
-    );
-    if (!response.ok) return null;
-    const data = (await response.json()) as SupervisorProgress;
-    return data && typeof data.agent === "string" && typeof data.stage === "string" ? data : null;
-  } catch {
-    return null; // Live status is best-effort; a failed poll just keeps the last known text.
-  }
-}
 /** "Alex is checking your pricing…" etc. Only "reading"/"answering" ever render;
  * "done"/"limited" arrive right as the real reply does, so the composer's own
  * final message takes over before either would be shown. */
@@ -216,6 +200,7 @@ export default function SupervisorChatComposer({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [progressStatus, setProgressStatus] = useState<SupervisorProgress>(null);
+  const [streamedText, setStreamedText] = useState("");
   const [threadTitle, setThreadTitle] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -380,32 +365,48 @@ export default function SupervisorChatComposer({
       openAtTop.current = false;
       setDraft("");
     }
-    setSending(true); setError(false); setProgressStatus(null);
+    setSending(true); setError(false); setProgressStatus(null); setStreamedText("");
     let attemptedThreadId: string | null = null;
-    const progressAbort = new AbortController();
-    let progressTimer: ReturnType<typeof setInterval> | null = null;
     try {
       const id = await ensureThread();
       attemptedThreadId = id;
-      // Polls a separate, lightweight endpoint while the single POST below is
-      // still in flight -- the POST itself only resolves once the whole
-      // investigation finishes, so this is the only way to show live status.
-      progressTimer = setInterval(() => {
-        void loadProgress(id, clientMessageId, progressAbort.signal).then((status) => {
-          if (status) setProgressStatus(status);
-        });
-      }, 1200);
-      const posted = await jsonFrom<MessageResponse>(await fetch(
-        "/api/ai/threads/" + encodeURIComponent(id) + "/messages", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ clientMessageId, text, locale, ...(ownerInputResponse?{ownerInputResponse}:{}) }),
-        }));
+      const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ clientMessageId, text, locale, ...(ownerInputResponse ? { ownerInputResponse } : {}) }),
+      });
+      if (!response.ok || !response.body) throw new Error("agent_request_failed");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "", finished = false;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          let separator: number;
+          while ((separator = buffer.indexOf("\n\n")) >= 0) {
+            const frame = buffer.slice(0, separator);
+            buffer = buffer.slice(separator + 2);
+            const type = frame.split("\n").find(line => line.startsWith("event: "))?.slice(7);
+            const data = frame.split("\n").find(line => line.startsWith("data: "))?.slice(6);
+            if (!data) continue;
+            const event = JSON.parse(data) as { text?: string; code?: string };
+            if (type === "delta" && typeof event.text === "string") {
+              setStreamedText(current => current + event.text);
+              setProgressStatus({ agent: "supervisor", stage: "answering" });
+            } else if (type === "error") {
+              throw new Error(event.code ?? "agent_turn_failed");
+            } else if (type === "done") finished = true;
+          }
+        }
+      } finally { reader.releaseLock(); }
+      if (!finished) throw new Error("agent_stream_incomplete");
       const page = await loadMessages(id);
       setMessages(page.items.length ? page.items : [posted.message, posted.reply]);
       setNextOffset(page.nextOffset);
       setOptimisticOwner(null);
       await refreshThreads();
-      retryId.current = null;
+      retryId.current = null; setStreamedText("");
       dispatchDictation({ type: "reset" }); setMediaNotice("");
     } catch {
       if (existingKey) retryId.current = null;
@@ -422,9 +423,7 @@ export default function SupervisorChatComposer({
       }
       setError(true);
     } finally {
-      if (progressTimer) clearInterval(progressTimer);
-      progressAbort.abort();
-      setSending(false); setProgressStatus(null);
+      setSending(false); setProgressStatus(null); setStreamedText("");
     }
   }
   async function loadOlder() {
@@ -682,6 +681,7 @@ export default function SupervisorChatComposer({
             className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
         </div>}
       </div>)}
+      {sending && streamedText && <ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
           <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
