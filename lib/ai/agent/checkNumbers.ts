@@ -688,18 +688,22 @@ const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
   es:{cero:0,uno:1,una:1,un:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,dieciséis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiuno:21,veintidós:22,veintidos:22,veintitrés:23,veintitres:23,veinticuatro:24,veinticinco:25,veintiséis:26,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29,treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90},
   ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
 };
-type SpokenWord={word:string;start:number;end:number};
+type SpokenWord={word:string;start:number;end:number;group:number};
 type SpokenValue={value:number;kind:Kind};
 function ownerWordTokens(text:string,locale:AgentLocale):SpokenWord[]{
   const words:SpokenWord[]=[];
+  let group=0,lastEnd=0;
   for(const match of text.matchAll(/[\p{L}\p{M}]+/gu)){
+    // Only whitespace or hyphens can join one number expression.
+    if(/[^\s-]/u.test(text.slice(lastEnd,match.index)))group++;
+    lastEnd=match.index+match[0].length;
     const word=match[0].replace(/[\u064b-\u065f]/gu,"").toLocaleLowerCase();
     if(locale==="ar"&&word.startsWith("و")&&
       !Object.hasOwn(WORD_NUMBERS.ar,word)&&
       Object.hasOwn(WORD_NUMBERS.ar,word.slice(1))){
-      words.push({word:"و",start:match.index,end:match.index+1});
-      words.push({word:word.slice(1),start:match.index+1,end:match.index+match[0].length});
-    }else words.push({word,start:match.index,end:match.index+match[0].length});
+      words.push({word:"و",start:match.index,end:match.index+1,group});
+      words.push({word:word.slice(1),start:match.index+1,end:match.index+match[0].length,group});
+    }else words.push({word,start:match.index,end:match.index+match[0].length,group});
   }
   return words;
 }
@@ -718,13 +722,15 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
   const monetaryContext=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|loss|salary|wages?|fee|bill|latte|mocha|espresso|precio|cuesta|costo|coste|dólares?|centavos?|alquiler|ganancia)\b|(?:سعر|ثمن|تكلفة|دولار|سنت|ربح|خسارة)/iu;
   const quantities=/^(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|lattes?|mochas?|items?|units?|servings?|tickets?|shifts?|workers?|bebidas?|personas?|días?|semanas?|artículos?|clientes?|موظفين|أشخاص|اشخاص|أيام|ايام|أسابيع|أكواب|مشروبات|طلبات)(?!\p{L})/iu;
   const result:SpokenValue[]=[];
-  const is=(i:number,list:readonly string[])=>i<words.length&&list.includes(words[i].word);
+  const is=(i:number,list:readonly string[],group?:number)=>i<words.length&&
+    (group===undefined||words[i].group===group)&&list.includes(words[i].word);
   const number=(at:number):{value:number;next:number}|null=>{
     const major=words[at]&&dict[words[at].word];
     if(major===undefined)return null;
     let next=at+1,value=major;
-    const connector=is(next,joiners)?1:0;
-    const minor=words[next+connector]&&dict[words[next+connector].word];
+    const connector=is(next,joiners,words[at].group)?1:0;
+    const minor=words[next+connector]?.group===words[at].group?
+      dict[words[next+connector].word]:undefined;
     if(major>=20&&major%10===0&&minor!==undefined&&minor>0&&minor<10){
       value+=minor;next+=connector+1;
     }else if(locale==="ar"&&major>0&&major<10&&connector===1&&
@@ -737,45 +743,49 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
   for(let i=0;i<words.length;){
     const initial=i,negative=is(i,signs);
     if(negative)i++;
+    if(negative&&words[i]?.group!==words[initial].group){i=initial+1;continue;}
     const whole=number(i);
     if(!whole){i=initial+1;continue;}
     let next=whole.next,value=whole.value*100;
+    const currentGroup=words[i].group;
     let attachedMoney=false,attachedPercent=false;
-    if(is(next,decimalWords)){
-      const fractional=number(next+1);
+    if(is(next,decimalWords,currentGroup)){
+      const fractional=words[next+1]?.group===currentGroup?number(next+1):null;
       if(!fractional){i=next+1;continue;}
       const component= fractional.value<10 ? fractional.value*10 : fractional.value;
       value+=component;
       next=fractional.next;
       // "point zero five" is five cents, not fifty cents.
       if(fractional.value===0){
-        const second=number(next);
+        const second=words[next]?.group===currentGroup?number(next):null;
         if(second&&second.value<10){value+=second.value;next=second.next;}
       }
-    } else if(is(next,dollars)){
+    } else if(is(next,dollars,currentGroup)){
       attachedMoney=true;next++;
-      const conjunct=is(next,joiners)?1:0;
-      const fractional=number(next+conjunct);
+      const conjunct=is(next,joiners,currentGroup)?1:0;
+      const fractional=words[next+conjunct]?.group===currentGroup?number(next+conjunct):null;
       if(fractional&&fractional.value<=99){
-        value+=fractional.value<10?fractional.value*10:fractional.value;
         next=fractional.next;
-        if(is(next,centsUnits))next++;
+        const explicitCents=is(next,centsUnits,currentGroup);
+        value+=explicitCents?fractional.value:
+          fractional.value<10?fractional.value*10:fractional.value;
+        if(explicitCents)next++;
       }
-    } else if(is(next,centsUnits)){
+    } else if(is(next,centsUnits,currentGroup)){
       attachedMoney=true;value=whole.value;next++;
     } else {
-      const colloquial=number(next);
+      const colloquial=words[next]?.group===currentGroup?number(next):null;
       if(colloquial&&whole.value<=19&&colloquial.value>=10&&colloquial.value<=99){
         value+=colloquial.value;next=colloquial.next;
         attachedMoney=true;
       }
     }
-    if(is(next,dollars)){attachedMoney=true;next++;}
-    if(is(next,percents)){attachedPercent=true;next++;}
-    else if(locale==="es"&&is(next,["por"])&&is(next+1,["ciento"])){
+    if(is(next,dollars,currentGroup)){attachedMoney=true;next++;}
+    if(is(next,percents,currentGroup)){attachedPercent=true;next++;}
+    else if(locale==="es"&&is(next,["por"],currentGroup)&&is(next+1,["ciento"],currentGroup)){
       attachedPercent=true;next+=2;
     }
-    if(is(next,centsUnits)&&!attachedMoney){attachedMoney=true;value=Math.round(value/100);next++;}
+    if(is(next,centsUnits,currentGroup)&&!attachedMoney){attachedMoney=true;value=Math.round(value/100);next++;}
     const prefix=text.slice(Math.max(0,words[initial].start-100),words[initial].start);
     const before=prefix.split(/[.!?;\n]/u).pop()??"";
     const after=text.slice(words[next-1].end).split(/[.!?;\n]/u)[0]??"";
