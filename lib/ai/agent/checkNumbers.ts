@@ -150,33 +150,97 @@ const DAY_MENTIONS = [
   {key:"fri", pattern:/\b(?:friday|fri|viernes)\b|الجمعة/iu},
   {key:"sat", pattern:/\b(?:saturday|sat|sábado|sabado)\b|السبت/iu},
 ];
-function mentionedWeekdays(text: string, start: number, end: number): string[] {
-  const prefix = text.slice(0,start);
-  const sentenceStart = Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
-  const suffix = text.slice(end);
-  const sentenceEnd = suffix.search(/[.!?;\n]/u);
-  const clause = text.slice(sentenceStart,sentenceEnd<0?text.length:end+sentenceEnd);
-  return DAY_MENTIONS.filter(d=>d.pattern.test(clause)).map(d=>d.key);
+type TimeRole = "open"|"close"|"shiftStart"|"shiftEnd";
+type ClockSpan = RegExpMatchArray & {index:number};
+type VerifiedTime = {day:string;time:string;role:TimeRole;complete:boolean;person:string|null};
+const clockEnd = (clock:ClockSpan) => clock.index+clock[0].length;
+
+function timeRole(text:string, clock:ClockSpan):TimeRole|null {
+  const prefix=text.slice(0,clock.index);
+  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),
+    prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const phrase=text.slice(sentenceStart,clock.index);
+  const actions=[...phrase.matchAll(/\b(?:shift\s+(?:starts?|ends?)|(?:open|opens|opening|close|closes|closing))\b/giu)];
+  const last=actions.at(-1)?.[0]?.toLowerCase()??"";
+  if(last.startsWith("shift"))return /\bend/i.test(last)?"shiftEnd":"shiftStart";
+  if(last.startsWith("open"))return "open";
+  if(last.startsWith("clos"))return "close";
+  return null;
 }
-function observedHours(results: readonly AgentToolResult[]): Array<{day:string;time:string;complete:boolean}> {
-  const observed: Array<{day:string;time:string;complete:boolean}> = [];
-  for(const r of results) {
+function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):string[] {
+  const prefix=text.slice(0,clock.index);
+  const sentenceStart=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),
+    prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const suffix=text.slice(clockEnd(clock));
+  const nextStop=suffix.search(/[.!?;\n]/u);
+  const sentenceEnd=nextStop<0?text.length:clockEnd(clock)+nextStop;
+  const prev=clocks.filter(m=>m.index<clock.index&&m.index>=sentenceStart).at(-1);
+  const next=clocks.find(m=>m.index>clock.index&&m.index<sentenceEnd);
+  const beforeStart=prev?clockEnd(prev):sentenceStart;
+  const afterEnd=next?next.index:sentenceEnd;
+  const mentions=(part:string,offset:number)=>{
+    const found:Array<{day:string;start:number;end:number}>=[];
+    for(const d of DAY_MENTIONS){
+      for(const m of part.matchAll(new RegExp(d.pattern.source,"giu")))
+        found.push({day:d.key,start:offset+m.index,end:offset+m.index+m[0].length});
+    }
+    return found.sort((a,b)=>a.start-b.start);
+  };
+  const before=mentions(text.slice(beforeStart,clock.index),beforeStart);
+  const after=mentions(text.slice(clockEnd(clock),afterEnd),clockEnd(clock));
+  const nearestBefore=before.length?clock.index-before[before.length-1].end:Infinity;
+  const nearestAfter=after.length?after[0].start-clockEnd(clock):Infinity;
+  // Names following one clock belong to that clock, not to the next clock.
+  // Prefer a closer preceding weekday for "Monday at 8 and Tuesday at 9".
+  const selected=nearestAfter<=nearestBefore?after:before;
+  return [...new Set(selected.map(m=>m.day))];
+}
+function assertedShiftPerson(text:string,clock:ClockSpan):string|null {
+  const prefix=text.slice(0,clock.index);
+  const start=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf(";"))+1;
+  const matches=[...text.slice(start,clock.index).matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+shift\s+(?:starts?|ends?)/giu)];
+  return matches.at(-1)?.[1]?.trim().toLocaleLowerCase()??null;
+}
+function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
+  const known:VerifiedTime[]=[];
+  for(const r of results){
     if(!/hours/.test(r.source))continue;
     const raw=r.hours??r.weekly;
     if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
     for(const day of DAY_MENTIONS.map(d=>d.key)){
       const intervals=(raw as Record<string,unknown>)[day];
       if(!Array.isArray(intervals))continue;
-      for(const interval of intervals) {
+      for(const interval of intervals){
         if(!Array.isArray(interval)||interval.length!==2)continue;
-        for(const time of interval){
+        for(const [i,role] of (["open","close"] as const).entries()){
+          const time:unknown=interval[i];
           if(typeof time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time))
-            observed.push({day,time,complete:r.missing.length===0});
+            known.push({day,time,role,complete:r.missing.length===0,person:null});
         }
       }
     }
   }
-  return observed;
+  return known;
+}
+function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
+  const known:VerifiedTime[]=[];
+  for(const r of results){
+    if(r.source!=="recurring_schedule"||!Array.isArray(r.shifts))continue;
+    for(const shift of r.shifts){
+      if(!shift||typeof shift!=="object")continue;
+      const s=shift as Record<string,unknown>;
+      if(typeof s.dayOfWeek!=="number"||!Number.isInteger(s.dayOfWeek))continue;
+      const day=DAY_MENTIONS[s.dayOfWeek]?.key;
+      if(!day)continue;
+      const person=typeof s.displayName==="string"?s.displayName.trim().toLocaleLowerCase():null;
+      for(const [field,role] of [["startTime","shiftStart"],["endTime","shiftEnd"]] as const){
+        const time=s[field];
+        if(typeof time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time))
+          known.push({day,time,role,complete:r.missing.length===0,person});
+      }
+    }
+  }
+  return known;
 }
 
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
@@ -249,32 +313,30 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
 
     }
   }
-  const knownScheduleTimes = results.filter(r=>r.missing.length===0&&/schedule/.test(r.source))
-    .map(r=>JSON.stringify(r)).join(" ");
-  const configuredHours = observedHours(results);
-  // Clock tokens are formatting only for their *own* numeric spans. A nearby
-  // time must never exempt an unrelated sale, staffing, or monetary number.
-  const clocks = [...text.matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu)];
-  const businessTimeClaim = /\b(?:we\s+open|we\s+close|open\s+at|close\s+at|shift\s+(?:starts|ends)|business\s+hours)\b/iu.test(text);
+  const observed=[...observedHours(results),...observedShifts(results)];
+  // Only this clock's offsets, action, day(s), and named employee may match a
+  // real source interval. Never flatten schedule timestamps into global proof.
+  const clocks = [...text.matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu)] as ClockSpan[];
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
     const clock = v.kind==="number" ? clocks.find(m =>
-      v.start < m.index + m[0].length && v.end > m.index) : undefined;
+      v.start < clockEnd(m) && v.end > m.index) : undefined;
     if(clock){
-      if(!businessTimeClaim)return false;
+      const role=timeRole(text,clock);
+      if(!role)return false; // Pure time formatting is not a business fact.
       const matched=clock[0].match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
       if(matched){
         let hour=Number(matched[1]);
         if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
         const canonical=String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
-        const claimedDays=mentionedWeekdays(text,clock.index,clock.index+clock[0].length);
-        const configured=claimedDays.length>0
-          ? claimedDays.every(day=>configuredHours.some(h=>h.day===day&&h.time===canonical))
-          : configuredHours.some(h=>h.complete&&h.time===canonical);
-        return !(configured||knownScheduleTimes.includes(canonical)||
-          ownerText.includes(clock[0])||ownerText.includes(canonical));
+        const days=mentionedWeekdays(text,clock,clocks);
+        const person=role.startsWith("shift")?assertedShiftPerson(text,clock):null;
+        const verified=(days.length?days:[null]).every(day=>observed.some(h=>
+          h.time===canonical&&h.role===role&&(day===null?h.complete:h.day===day)&&
+          (person===null||h.person===person)));
+        return !(verified||ownerText.includes(clock[0])||ownerText.includes(canonical));
       }
-      return true; // Unparseable business-hour claims remain unverified.
+      return true;
     }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
