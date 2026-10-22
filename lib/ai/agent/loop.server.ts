@@ -52,6 +52,7 @@ export async function runAgentTurn(args: {
   const provider = args.provider ?? openAIProvider;
   const input: unknown[] = [...(args.history ?? []), { role: "user", content: args.ownerText }];
   const results: Array<{callId: string; name: string; arguments: string; result: AgentToolResult}> = [];
+  const startedTools: string[] = [];
   const usage = { modelCalls: 0, toolCalls: 0, inputTokens: 0, cachedTokens: 0, outputTokens: 0, latencyMs: 0 };
   let text = "", endReason: EndReason = "complete", failures = 0, finished = false;
   const model = configuredSupervisorModel();
@@ -122,6 +123,7 @@ export async function runAgentTurn(args: {
           break;
         }
         usage.toolCalls++;
+        startedTools.push(tool.name);
         args.onTool?.(tool.name,agentForTool(tool.name));
         let result: AgentToolResult;
         let toolTimer: ReturnType<typeof setTimeout> | undefined;
@@ -205,6 +207,6 @@ export async function runAgentTurn(args: {
       args.ownerText ].join("\n"), results.map(r=>r.result), args.context.locale,args.previousEvidence,
       args.previousAssistantText),
     evidence:compactEvidence(results.map(r=>r.result)),
-    tools:[...new Set(results.map(r=>r.name))],agentIds:[...new Set(results.map(r=>agentForTool(r.name)))],
+    tools:[...new Set(startedTools)],agentIds:[...new Set(startedTools.map(name=>agentForTool(name)))],
     results: results.map(r => r.result), usage };
 }
