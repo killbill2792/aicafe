@@ -2,7 +2,7 @@
 import {z} from "zod";
 import {revalidatePath} from "next/cache";
 import {requireSchedulingOwner} from "@/lib/scheduling/foundation.server";
-export const DEFAULT_TEAM_RULES={
+const DEFAULT_TEAM_RULES={
  meal_break_enabled:true,meal_break_minutes:30,meal_break_after_minutes:300,
  rest_break_enabled:true,rest_break_minutes:10,rest_break_every_minutes:240,
  weekly_ot_enabled:true,weekly_ot_after_minutes:2400,ot_multiplier_bp:15000,
@@ -23,7 +23,7 @@ const shape={
  min_rest_enabled:z.boolean(),min_rest_minutes:z.number().int().min(0).max(1440),
  coverage_enabled:z.boolean(),min_headcount:z.number().int().min(1).max(30),
 };
-export const teamRulePatch=z.strictObject(Object.fromEntries(Object.entries(shape).map(([k,v])=>[k,v.optional()])) as {[K in keyof typeof shape]:z.ZodOptional<(typeof shape)[K]>});
+const teamRulePatch=z.strictObject(Object.fromEntries(Object.entries(shape).map(([k,v])=>[k,v.optional()])) as {[K in keyof typeof shape]:z.ZodOptional<(typeof shape)[K]>});
 const ruleKeys=Object.keys(shape) as (keyof typeof shape)[];
 export async function getTeamRules(){
  const owner=await requireSchedulingOwner();
