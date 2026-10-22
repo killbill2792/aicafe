@@ -2325,6 +2325,10 @@
     },
     "saveBeforeSwap": "احفظ تغييرات الوصفة قبل استبدال المكونات.",
     "saveBeforeSizeChange": "احفظ تغييرات الوصفة قبل تغيير الأحجام المعروضة.",
-    "addMilkFirst": "أضف الحليب إلى الوصفة أولاً."
+    "addMilkFirst": "أضف الحليب إلى الوصفة أولاً.",
+    "savesYou": "توفر {amount}",
+    "aboutSame": "تكلفتها متقاربة",
+    "costBasisForSize": "فرق التكلفة لحجم {size}",
+    "priceEstimate": "تقديري"
   }
 }
