@@ -101,7 +101,8 @@ export const SOURCE_SURFACES = {
     readMonitorGraph:{restricted:"Owner-private initiative readMonitorGraph access; not an unrestricted P1 model tool"},
     persistMetricObservation:{restricted:"Owner-private initiative persistMetricObservation access; not an unrestricted P1 model tool"},
     persistInitiativeEvaluation:{restricted:"Owner-private initiative persistInitiativeEvaluation access; not an unrestricted P1 model tool"},
-    rotateInitiative:{restricted:"Owner-private initiative rotateInitiative access; not an unrestricted P1 model tool"},
+    claimMonitorInitiative:{restricted:"Service-role exclusive monitor lease claim; not a model business read"},
+    releaseMonitorInitiative:{restricted:"Service-role fenced monitor lease release; not a model business read"},
     readMetricDay:{restricted:"Owner-private initiative readMetricDay access; not an unrestricted P1 model tool"},
   },
   "lib/data/teamUpdates.server.ts": {
