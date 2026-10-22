@@ -1015,3 +1015,44 @@ describe("Codex: product identity, dated facts and partial schedule trust bounda
       "",[],"en",[...old,...complete]).length).toBeGreaterThan(0);
   });
 });
+
+
+describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
+ const menu={source:"menu_items",period:null,missing:[],items:[
+   {id:"a",name:"Latte",priceCents:550},{id:"b",name:"Mocha",priceCents:600}]};
+ it("accepts owner-provided English monetary words",()=>{
+   expect(checkNumbers("The owner price is $8.50.","Our price is eight point five dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $5.50.","Set price to five fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $8.50.","Price is eight dollars fifty.",[],"en")).toEqual([]);
+   expect(checkNumbers("The owner price is $9.50.","Price is eight dollars fifty.",[],"en").map(x=>x.text)).toEqual(["$9.50"]);
+ });
+ it("accepts owner monetary words in Spanish and Arabic",()=>{
+   expect(checkNumbers("El precio es $8.50.","El precio es ocho coma cinco dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("El precio es $5.50.","El precio es cinco con cincuenta.",[],"es")).toEqual([]);
+   expect(checkNumbers("السعر $8.50","السعر ثمانية فاصلة خمسة دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("السعر $5.50","السعر خمسة دولارات وخمسون سنتا",[],"ar")).toEqual([]);
+ });
+ it("never turns spoken quantities into arbitrary money",()=>{
+   expect(checkNumbers("Your profit is $8.","We sold eight drinks.",[],"en").map(x=>x.text)).toEqual(["$8"]);
+ });
+ it("accepts explicit two and three operand money totals but not wrong totals",()=>{
+   expect(checkNumbers("$5.50 and $6.00, together $11.50.","",[menu],"en")).toEqual([]);
+   expect(checkNumbers("$5.50 and $6.00, together $12.","",[menu],"en").map(x=>x.text)).toEqual(["$12"]);
+   const three={source:"expenses",period:null,missing:[],aCents:250,bCents:300,cCents:400};
+   expect(checkNumbers("$2.50, $3.00 and $4.00, total $9.50.","",[three],"en")).toEqual([]);
+   expect(checkNumbers("$2.50, $3.00 and $4.00, total $10.","",[three],"en").map(x=>x.text)).toEqual(["$10"]);
+ });
+ it("checks explicit money differences without unbounded arithmetic closure",()=>{
+   expect(checkNumbers("$8.50 owner price vs $5.50 menu = $3 more.",
+     "Owner price is $8.50.",[menu],"en")).toEqual([]);
+   expect(checkNumbers("$8.50 owner price vs $5.50 menu = $4 more.",
+     "Owner price is $8.50.",[menu],"en").map(x=>x.text)).toEqual(["$4"]);
+   expect(checkNumbers("Profit is $11.50.", "",[menu],"en").map(x=>x.text)).toEqual(["$11.50"]);
+ });
+ it("ignores proposed durations, not business-duration assertions",()=>{
+   expect(checkNumbers("Try this for 7 days, then test for 2 weeks.","",[],"en")).toEqual([]);
+   expect(checkNumbers("Prueba esto por 7 días.","",[],"es")).toEqual([]);
+   expect(checkNumbers("نجرب لمدة 7 أيام.","",[],"ar")).toEqual([]);
+   expect(checkNumbers("Staff worked 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
+ });
+});
