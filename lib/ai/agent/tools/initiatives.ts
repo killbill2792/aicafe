@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
 import { proposeInitiativeSchema,initiativeStatusSchema } from "@/lib/initiatives/contracts";
-import { metricKeySchema } from "@/lib/calc/metrics/catalog";
+import { metricKeySchema,metricCatalog } from "@/lib/calc/metrics/catalog";
 import { createOwnerInitiative,listOwnerInitiatives,readOwnerInitiative,saveOwnerCheckin }
   from "@/lib/data/initiatives.server";
 import type { AgentToolContext,AgentToolResult } from "./index";
@@ -44,7 +44,8 @@ const proposalArgs=z.strictObject({
 const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
 const statusArgs=z.strictObject({id:z.uuid()});
 const checkinArgs=z.strictObject({
-  metricId:z.uuid(),value:z.number().finite().nullable(),note:z.string().trim().min(1).max(1000).nullable(),
+  metricId:z.uuid(),date:z.iso.date(),value:z.number().finite().nullable(),
+  note:z.string().trim().min(1).max(1000).nullable(),
 }).refine(v=>v.value!==null||v.note!==null,"A value or note is required");
 export const initiativeToolSchemas={
   propose_initiative:proposalArgs,
@@ -105,6 +106,10 @@ export async function executeInitiativeTool(
     const created=await createOwnerInitiative(scope,input,ctx.locale);
     return {source:"owner_initiatives",period:null,missing:[],
       id:created.id,status:"proposed",kind:created.kind,title:created.title,
+      metrics:(await readOwnerInitiative(scope,created.id))?.metrics.map(m=>({id:m.id,
+        source:m.source,role:m.role,metricKey:m.metric_key,
+        unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
+        question:m.checkin_question,target:m.target})),
       display:{type:"approval_card",id:created.id,revision:created.revision,
         endpoint:"/api/ai/initiatives/"+created.id+"/approve",
         title:created.title,summary:created.change_description,requiresOwnerApproval:true}};
@@ -120,8 +125,15 @@ export async function executeInitiativeTool(
     const {id}=statusArgs.parse(raw);
     const graph=await readOwnerInitiative(scope,id);
     if(!graph)return {source:"owner_initiatives",period:null,missing:["initiativeUnavailable"]};
+    const unresolved=graph.metrics.filter(m=>!(graph.observations.some(o=>
+      o.metric_id===m.id&&o.coverage>=0.8&&o.value!==null)));
     return {source:"owner_initiatives",period:null,
-      missing:graph.metrics.filter(m=>m.data_gap).map(m=>m.data_gap!),
+      missing:graph.evaluation?.status==="insufficient_data"||!graph.evaluation?
+        (unresolved.map(m=>m.data_gap??(m.metric_key??"missingObservation"))):[],
+      metrics:graph.metrics.slice(0,12).map(m=>({id:m.id,role:m.role,source:m.source,
+        metricKey:m.metric_key,unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
+        comparator:m.comparator,targetKind:m.target_kind,target:m.target,
+        question:m.checkin_question,audience:m.checkin_audience,dataGap:m.data_gap})),
       initiative:{id:graph.initiative.id,title:graph.initiative.title,status:graph.initiative.status,
         revision:graph.initiative.revision,startsOn:graph.initiative.starts_on,endsOn:graph.initiative.ends_on},
       evaluation:graph.evaluation?{status:graph.evaluation.status,
@@ -132,6 +144,6 @@ export async function executeInitiativeTool(
       }))};
   }
   const args=checkinArgs.parse(raw);
-  const saved=await saveOwnerCheckin(scope,args.metricId,args.value,args.note);
-  return {source:"owner_checkin",period:null,missing:[],created:saved.created};
+  const saved=await saveOwnerCheckin(scope,args.metricId,args.date,args.value,args.note);
+  return {source:"owner_checkin",period:null,missing:[],created:saved.created,corrected:saved.corrected};
 }

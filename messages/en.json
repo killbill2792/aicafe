@@ -2119,6 +2119,7 @@
       "adjust": "Review and adjust",
       "extend": "Consider a longer window",
       "none": "More information needed"
-    }
+    },
+    "confirmChange": "Did you make the change on {date}?"
   }
 }

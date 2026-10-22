@@ -2119,6 +2119,7 @@
       "adjust": "Revisar y ajustar",
       "extend": "Considera ampliar el plazo",
       "none": "Se necesitan más datos"
-    }
+    },
+    "confirmChange": "¿Hiciste el cambio el {date}?"
   }
 }

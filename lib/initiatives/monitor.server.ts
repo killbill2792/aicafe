@@ -84,13 +84,13 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           else prior.push(row);
         }
       }
-      for(const metric of graph.metrics.filter(m=>m.source==="checkin")){
+      for(const metric of graph.metrics.filter(m=>m.source==="checkin"&&m.checkin_audience==="owner")){
         const already=byMetric.get(metric.id)??[];
         const dueDates=allDays(initiative.starts_on,asOf)
           .filter(date=>metric.params.changeConfirmation===true ? date===initiative.starts_on :
             due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on));
         for(const date of dueDates.slice(-1)){
-          if(already.some(o=>o.business_date===date))continue;
+          if(already.some(o=>o.business_date===date&&o.coverage>=1))continue;
           const t=translations[initiative.locale];
           const question=metric.checkin_question??t.checkinDefault;
           const result=await writeTeamUpdate({
@@ -100,7 +100,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             facts:{initiativeId:initiative.id,metricId:metric.id,date},
             text:interpolate(t.checkin,initiative.title,date)+" "+question,
             locale:initiative.locale,
-            actions:[{kind:"checkin",metricId:metric.id,question}],
+            actions:[{kind:"checkin",metricId:metric.id,question,date}],
             dedupeKey:"initiative:"+initiative.id+":checkin:"+metric.id+":"+date,
           });
           if(result.created)stats.updates++;

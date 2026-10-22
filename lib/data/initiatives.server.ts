@@ -2,6 +2,10 @@ import "server-only";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
+import { initiativeAdapters } from "@/lib/initiatives/adapters";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 import { readPeriodItemSales } from "./periodItemSales.server";
 import type { MetricDailyInput, ItemEvidence } from "@/lib/calc/metrics/catalog";
 import type { Timecard, RecipeLine } from "@/lib/calc/types";
@@ -29,6 +33,8 @@ async function serviceOwnerAccess(scope:InitiativeScope) {
 }
 export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeInitiative,locale:"en"|"es"|"ar") {
   await ownerAccess(scope);
+  if(input.adapterId!==null && !Object.hasOwn(initiativeAdapters,input.adapterId))
+    throw new Error("unknown initiative adapter");
   const db=await serviceOwnerAccess(scope);
   const thread=await db.from("ai_threads").select("id").eq("id",input.threadId)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).maybeSingle();
@@ -46,12 +52,11 @@ export async function createOwnerInitiative(scope:InitiativeScope,input:ProposeI
     params:m.params,comparator:m.comparator,target_kind:m.targetKind,target:m.target,
     checkin_question:m.checkinQuestion,checkin_audience:m.checkinAudience,data_gap:m.dataGap,
   }));
-  if(input.kind==="experiment"&&input.adapterId===null){
-    const question={
-      en:"Did you make the change on {date}?",
-      es:"¿Hiciste el cambio el {date}?",
-      ar:"هل أجريت التغيير في {date}؟",
-    }[locale].replace("{date}",input.startsOn);
+  if(input.kind==="experiment"){
+    // The metric-only price adapter does NOT apply a change. All experiments
+    // require the owner to confirm that the intervention actually occurred.
+    const question={en:en.Initiatives,es:es.Initiatives,ar:ar.Initiatives}[locale]
+      .confirmChange.replace("{date}",input.startsOn);
     rows.push({
       initiative_id:data.id,role:"guardrail",source:"checkin",metric_key:null,
       params:{changeConfirmation:true},comparator:"gte",target_kind:"absolute",
@@ -113,28 +118,46 @@ export async function activateOwnerInitiative(scope:InitiativeScope,id:string,re
   if(error)throw error;
   return data; // null means stale revision, wrong owner, or no longer proposed
 }
-export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,value:number|null,note:string|null) {
+export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,
+  date:string,value:number|null,note:string|null) {
   await ownerAccess(scope);
   const db=await serviceOwnerAccess(scope);
   const metric=await db.from("initiative_metrics")
-    .select("id,source,initiative_id,params,owner_initiatives!inner(business_id,owner_user_id,status,starts_on)")
-    .eq("id",metricId).eq("source","checkin")
+    .select("id,params,source,checkin_audience,owner_initiatives!inner(business_id,owner_user_id,status,starts_on,ends_on,checkin_cadence)")
+    .eq("id",metricId).eq("source","checkin").eq("checkin_audience","owner")
     .eq("owner_initiatives.business_id",scope.businessId)
     .eq("owner_initiatives.owner_user_id",scope.ownerUserId)
     .eq("owner_initiatives.status","active").maybeSingle();
   if(metric.error)throw metric.error;
-  if(!metric.data)throw new Error("initiative check-in not found");
+  if(!metric.data)throw new Error("owner check-in not available");
   const business=await db.from("businesses").select("timezone").eq("id",scope.businessId).single();
-  if(business.error||!business.data)throw new Error("initiative business timezone unavailable");
+  if(business.error||!business.data)throw new Error("initiative timezone unavailable");
   const today=formatInTimeZone(new Date(),business.data.timezone||"America/Los_Angeles","yyyy-MM-dd");
-  const parent=metric.data.owner_initiatives as unknown as {starts_on:string};
-  const date=metric.data.params?.changeConfirmation===true?parent.starts_on:today;
-  const {data,error}=await db.from("initiative_observations").upsert({
-    metric_id:metricId,business_date:date,value,coverage:value===null?0:1,
-    source:"owner_checkin",note,
-  },{onConflict:"metric_id,business_date",ignoreDuplicates:true}).select("metric_id").maybeSingle();
+  const parent=metric.data.owner_initiatives as unknown as {
+    starts_on:string;ends_on:string;checkin_cadence:"daily"|"every_3_days"|"weekly"|"end_only";
+  };
+  const delta=Math.round((Date.parse(date+"T12:00:00Z")-Date.parse(parent.starts_on+"T12:00:00Z"))/86400000);
+  const eligible=metric.data.params?.changeConfirmation===true ? date===parent.starts_on :
+    parent.checkin_cadence==="daily"||
+    (parent.checkin_cadence==="every_3_days"&&delta%3===0)||
+    (parent.checkin_cadence==="weekly"&&delta%7===0)||
+    (parent.checkin_cadence==="end_only"&&date===parent.ends_on);
+  if(!Number.isInteger(delta)||!eligible||date<parent.starts_on||date>parent.ends_on||date>today)
+    throw new Error("check-in date outside approved schedule");
+  const next={metric_id:metricId,business_date:date,value,coverage:value===null?0:1,
+    source:"owner_checkin",note};
+  const prior=await db.from("initiative_observations")
+    .select("value,note,source").eq("metric_id",metricId).eq("business_date",date).maybeSingle();
+  if(prior.error)throw prior.error;
+  if(prior.data?.source==="staff_checkin")throw new Error("owner cannot replace staff evidence");
+  if(prior.data?.value===value&&prior.data?.note===note)return {created:false,corrected:false};
+  // Unique metric/day constraint prevents duplicate inserts. Authorized changed
+  // answers can be corrected, including note-only -> numeric completion.
+  const {error}=await db.from("initiative_observations").upsert(next,{
+    onConflict:"metric_id,business_date",
+  });
   if(error)throw error;
-  return {created:data!==null};
+  return {created:!prior.data,corrected:!!prior.data};
 }
 export async function listMonitorBatch() {
   const db=createAdminSupabaseClient();
