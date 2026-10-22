@@ -37,6 +37,8 @@ export async function POST(request: Request, context: RouteContext) {
         const emit = (type: string, data: unknown) => {
           controller.enqueue(encoder.encode("event: " + type + "\ndata: " + JSON.stringify(data) + "\n\n"));
         };
+        let logged=false;
+        const startedAt=Date.now();
         try {
           if (prior) {
             emit("done", { reply: prior, replayed: true });
@@ -94,14 +96,18 @@ export async function POST(request: Request, context: RouteContext) {
             // Billable usage must be counted even for blank, oversized or failed writes.
             try { await recordAgentTurnUsage(scope, owner, result); }
             catch { console.error("agent_usage_write_failed"); } // no owner data logged
+            console.info("agent_turn",{turn:"agent",endReason:result.endReason,status:result.status.status,
+              modelCalls:result.usage.modelCalls,toolCalls:result.usage.toolCalls,
+              tools:result.tools??[],latencyMs:result.usage.latencyMs,
+              unverifiedCount:result.unverified.length});
+            logged=true;
           }
-          console.info("agent_turn", {turn:"agent",endReason:result.endReason,
-            status:result.status.status,modelCalls:result.usage.modelCalls,
-            toolCalls:result.usage.toolCalls,tools:result.tools??[],
-            latencyMs:result.usage.latencyMs,unverifiedCount:result.unverified.length});
+
           emit("done", { reply, status: result.status, endReason: result.endReason,
             unverified: result.unverified, usage: result.usage });
         } catch (error) {
+          if(!logged)console.info("agent_turn",{turn:"agent",endReason:"error",status:"unavailable",
+            modelCalls:0,toolCalls:0,tools:[],latencyMs:Date.now()-startedAt,unverifiedCount:0});
           const code = error instanceof ConversationApiError ? error.code :
             error instanceof AgentReplyTooLongError ? "reply_too_long" :
             error instanceof AgentReplyStorageError ? "reply_storage_failed" :
