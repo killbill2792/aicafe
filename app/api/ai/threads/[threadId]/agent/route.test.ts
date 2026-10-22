@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const fake = vi.hoisted(() => ({
   reply: { id: "reply-1", grounding: { status: "verified" }, blocks: [{ type:"text",text:"Here is the answer." }] },
-  writes: 0,
+  writes: 0, usageChecks: 0, quotaExhausted: false,
 }));
 vi.mock("@/lib/ai/conversations/auth.server", () => ({
   ConversationApiError: class extends Error {
@@ -33,6 +33,13 @@ vi.mock("@/lib/ai/cafeTools.server", () => ({
 }));
 vi.mock("@/lib/ai/conversations/usage.server", () => ({
   labelSupervisorThread: async () => {},
+  assertOwnerAgentTurnAvailable: async () => {
+    fake.usageChecks++;
+    if (fake.quotaExhausted) {
+      const { ConversationApiError } = await import("@/lib/ai/conversations/auth.server");
+      throw new ConversationApiError(429, "owner_usage_limit_reached");
+    }
+  },
 }));
 vi.mock("@/lib/ai/agent/loop.server", () => ({
   runAgentTurn: async (args: {onDelta?: (delta:string)=>void}) => {
@@ -43,13 +50,15 @@ vi.mock("@/lib/ai/agent/loop.server", () => ({
   },
 }));
 vi.mock("@/lib/ai/agent/persist.server", () => ({
+  AgentReplyTooLongError: class extends Error {},
+  AgentReplyStorageError: class extends Error {},
   persistAgentReply: async () => { fake.writes++; return fake.reply; },
 }));
 import { POST } from "./route";
 
 describe("default authenticated streaming agent route", () => {
   it("streams a complete turn and emits done after successful persistence", async () => {
-    fake.writes = 0;
+    fake.writes = 0; fake.usageChecks = 0; fake.quotaExhausted = false;
     const url = "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent";
     const request = new Request(url, {method:"POST",
       headers:{"origin":"http://localhost:3000","content-type":"application/json"},
@@ -65,5 +74,24 @@ describe("default authenticated streaming agent route", () => {
     expect(output).toContain('"status":"verified"');
     expect(output).not.toContain("event: error");
     expect(fake.writes).toBe(1);
+    expect(fake.usageChecks).toBe(1);
   });
+  it("returns a typed owner quota error before running the agent", async () => {
+    fake.writes = 0; fake.usageChecks = 0; fake.quotaExhausted = true;
+    try {
+      const response = await POST(new Request(
+        "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent",{
+        method:"POST",headers:{"origin":"http://localhost:3000","content-type":"application/json"},
+        body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",
+          text:"Menu?",locale:"en"})}), {params:Promise.resolve({
+            threadId:"11111111-1111-4111-8111-111111111111"})});
+      const output = await response.text();
+      expect(output).toContain('event: error');
+      expect(output).toContain('"code":"owner_usage_limit_reached"');
+      expect(output).not.toContain("event: done");
+      expect(fake.writes).toBe(0);
+      expect(fake.usageChecks).toBe(1);
+    } finally { fake.quotaExhausted = false; }
+  });
+
 });
