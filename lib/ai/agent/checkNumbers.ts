@@ -1,8 +1,10 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferencesCents } from "@/lib/calc/agentPriceDifferences";
 
+export type MenuPrice = {id:string;name:string;priceCents:number};
+export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>;
-  times?:VerifiedTime[]};
+  times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[]};
 // Only business collections, not diagnostics or metadata, establish counts.
 // This same contract applies to current-turn and persisted numeric evidence.
 const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
@@ -19,19 +21,20 @@ const COUNTABLE_FIELDS = new Set(["count","itemCount","quantity","units","totalU
 const trustedCountKey=(key:string)=>COUNTABLE_FIELDS.has(key.split("/").at(-1)??"")||
   COUNTABLE_COLLECTIONS.has((key.split("/").at(-1)??"").replace(/Length$/u,""));
 
-export function compactEvidence(results:readonly AgentToolResult[]):NumericEvidence[]{
-  let remaining=100;
-  return results.map(r=>{
+/** Collect the complete current observations first. Apply the persistence cap
+ * only after collection, prioritizing recent reads and high-value prices. */
+export function compactEvidence(results:readonly AgentToolResult[],limit=100):NumericEvidence[]{
+  const gathered=results.map(r=>{
     const values:NumericEvidence["values"]=[];
     const periodKey=r.period?r.period.from+"/"+r.period.to+"/":"";
+    const rootId=typeof r.itemId==="string"?r.itemId:null;
+    const rootScope=rootId?"item:"+rootId+"/":"";
     const walk=(v:unknown,key:string,depth:number,scope="")=>{
-      if(remaining<=0||depth>6||NON_EVIDENCE_FIELDS.has(key))return;
+      if(depth>6||NON_EVIDENCE_FIELDS.has(key))return;
       if(Array.isArray(v)){
-        if(COUNTABLE_COLLECTIONS.has(key)&&remaining>0){
-          values.push({key:periodKey+scope+key+"Length",value:v.length,unit:"count"});remaining--;
-        }
+        if(COUNTABLE_COLLECTIONS.has(key))
+          values.push({key:periodKey+scope+key+"Length",value:v.length,unit:"count"});
         for(const item of v){
-          if(remaining<=0)break;
           const scoped=item&&typeof item==="object"&&!Array.isArray(item)&&"id" in item&&
             typeof item.id==="string"?scope+key+":"+item.id+"/":scope;
           walk(item,key,depth+1,scoped);
@@ -39,22 +42,54 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
         return;
       }
       if(v&&typeof v==="object"){
-        for(const [k,item] of Object.entries(v))walk(item,k,depth+1,scope);
+        for(const [k,item] of Object.entries(v)){
+          const scoped=k==="item"&&item&&typeof item==="object"&&!Array.isArray(item)&&
+            "id" in item&&typeof item.id==="string"?scope+"item:"+item.id+"/":scope;
+          walk(item,k,depth+1,scoped);
+        }
         return;
       }
       if(typeof v!=="number"||!Number.isFinite(v))return;
       const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
         /Margin$|Ratio$/.test(key)?"ratio":COUNTABLE_FIELDS.has(key)?"count":null;
       if(!unit)return;
-      const value=/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v;
-      values.push({key:periodKey+scope+key,value,unit});remaining--;
+      values.push({key:periodKey+scope+key,value:/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v,unit});
     };
-    // Partial tool reads still contain genuine observed values. "missing" is
-    // a limitation on unknown fields, not permission to resurrect old ones.
-    walk(r,"",0);
+    walk(r,"",0,rootScope);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
-    return {tool:r.source,values,times};
-  }).filter(x=>x.values.length>0||x.times.length>0);
+    let timeScope:TimeScope|undefined;
+    if(r.source==="locations.open_hours"&&r.hours&&typeof r.hours==="object"&&!Array.isArray(r.hours))
+      timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key).filter(d=>Object.hasOwn(r.hours as object,d))};
+    if(r.source==="recurring_schedule"&&r.period?.from&&r.period?.to)
+      timeScope={kind:"schedule",from:r.period.from,to:r.period.to};
+    const prices:MenuPrice[]=[];
+    const record=(item:unknown)=>{
+      if(!item||typeof item!=="object"||Array.isArray(item))return;
+      const row=item as Record<string,unknown>;
+      if(typeof row.id==="string"&&typeof row.name==="string"&&
+        typeof row.priceCents==="number"&&Number.isSafeInteger(row.priceCents))
+        prices.push({id:row.id,name:row.name,priceCents:row.priceCents});
+    };
+    if(r.source==="menu_items"&&Array.isArray(r.items))r.items.forEach(record);
+    if(r.source==="product_costs")record(r.item);
+    // Pricing recommendations can report a singleton itemId, but its
+    // display name is not available: retain scoped cents, not invented names.
+    return {tool:r.source,values,times,timeScope,prices:prices.slice(0,25)};
+  });
+  if(Number.isFinite(limit)){
+    // Latest reads and item prices are the most valuable persisted evidence.
+    let remaining=Math.max(0,Math.floor(limit));
+    for(const entry of [...gathered].reverse()){
+      const prioritized=[...entry.values].sort((a,b)=>
+        Number(b.key.endsWith("priceCents"))-Number(a.key.endsWith("priceCents")));
+      const keep=prioritized.slice(0,remaining);
+      remaining-=keep.length;
+      entry.values=keep;
+    }
+  }
+  return gathered.filter(e=>e.values.length>0||e.times.length>0||
+    (e.timeScope?.kind==="hours"&&e.timeScope.days.length>0)||
+    e.timeScope?.kind==="schedule"||e.prices.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
