@@ -7,7 +7,7 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "@/lib/data/getActiveBusinessId";
 import { logQueryError, MENU_LOAD_FAILURE_MESSAGE, MENU_SAVE_FAILURE_MESSAGE } from "@/lib/data/queryError";
-import { evaluateRecipeCost, resolveProductCost } from "@/lib/calc/ingredients";
+import { calculatePantryPriceImpact, type PantryImpactRow } from "@/lib/calc/pantryImpact";
 import { packToCostPerBaseMicros, toBaseUnitQuantity, type BaseUnit, type RecipeDisplayUnit, type IngredientUnitConversion } from "@/lib/calc/recipeUnits";
 import { PANTRY_STARTERS_BY_KEY } from "@/lib/menu/pantryStarter";
 import { RECIPE_TEMPLATES_BY_KEY, recipeSizesFor, templateRecipeForSize, scaledTemplateLines, type TemplateLine, type RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
@@ -171,12 +171,8 @@ export async function savePackPrice(input: z.infer<typeof packInput>): Promise<P
   return { ok: true };
 }
 
-type RecipeCostPreview = { menuItemId: string; name: string; priceCents: number | null;
-  beforeCostCents: number | null; afterCostCents: number | null;
-  marginBeforeCents: number | null; marginAfterCents: number | null;
-  marginChangeCents: number | null; };
 export async function previewPriceImpact(input: z.infer<typeof packInput>): Promise<
-  | { ok: true; affectedItems: RecipeCostPreview[]; costPerBaseMicros: number }
+  | { ok: true; affectedItems: PantryImpactRow[]; costPerBaseMicros: number }
   | PantryFailure
 > {
   const parsed = packInput.safeParse(input);
@@ -207,23 +203,17 @@ export async function previewPriceImpact(input: z.infer<typeof packInput>): Prom
   const beforePrices = Object.fromEntries([...prices].map(([id, value]) => [id, value.cost]));
   const afterPrices = { ...beforePrices, [ingredient.id]: proposed };
   const fallbacks = new Map(fallbackResult.data.map((row) => [row.menu_item_id, Number(row.cost_cents)]));
-  const affectedItems = itemsResult.data.map((item): RecipeCostPreview => {
-    const recipe = lines.filter((line) => line.menu_item_id === item.id)
-      .map((line) => ({ ingredientId: line.ingredient_id, quantity: Number(line.quantity) }));
-    const fallback = fallbacks.get(item.id) ?? null;
-    const before = resolveProductCost(evaluateRecipeCost(recipe, beforePrices), fallback);
-    const after = resolveProductCost(evaluateRecipeCost(recipe, afterPrices), fallback);
-    const beforeCents = before.costCents === null ? null : Math.round(before.costCents);
-    const afterCents = after.costCents === null ? null : Math.round(after.costCents);
-    const priceCents = item.price_cents === null ? null : Number(item.price_cents);
-    const marginBeforeCents = priceCents === null || beforeCents === null ? null : priceCents - beforeCents;
-    const marginAfterCents = priceCents === null || afterCents === null ? null : priceCents - afterCents;
-    return { menuItemId: item.id, name: item.name, priceCents,
-      beforeCostCents: beforeCents, afterCostCents: afterCents,
-      marginBeforeCents, marginAfterCents,
-      marginChangeCents: marginBeforeCents === null || marginAfterCents === null ? null
-        : marginAfterCents - marginBeforeCents };
-  });
+  const affectedItems = calculatePantryPriceImpact(
+    itemsResult.data.map((item) => ({
+      id: item.id, name: item.name,
+      priceCents: item.price_cents === null ? null : Number(item.price_cents),
+    })),
+    lines.map((line) => ({
+      menuItemId: line.menu_item_id, ingredientId: line.ingredient_id,
+      quantity: Number(line.quantity),
+    })),
+    beforePrices, ingredient.id, proposed, Object.fromEntries(fallbacks),
+  );
   return { ok: true, costPerBaseMicros: proposed, affectedItems };
 }
 
