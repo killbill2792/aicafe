@@ -1,3 +1,5 @@
+> RETIRED — historical design. Do not implement. Current architecture: /AGENTS.md.
+
 # Conversational Supervisor: default iterative investigation
 
 Owner-authorized implementation after PR #108, based on main `ec1c214`. This supersedes the old preselect-all-reads P3 flow as the default owner conversation path. It implements cross-domain read/reason/simulate/advice conversation; effectful proposals, approval and execution remain separate services/phases.

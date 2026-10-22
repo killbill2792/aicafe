@@ -1,3 +1,5 @@
+> RETIRED — historical design. Do not implement. Current architecture: /AGENTS.md.
+
 # Supervisor Phase 3 — private conversation persistence
 
 This is the durable **conversation foundation**, not a functional generic chatbot.

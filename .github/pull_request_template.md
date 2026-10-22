@@ -10,7 +10,7 @@
 
 ## Implementation evidence
 - [ ] Implements actual production-capable domain code or clearly states when it is a docs-only PR
-- [ ] Preserves the **one Universal Supervisor / open-ended AI outcome** product contract in `AGENTS.md`
+- [ ] Follows the single streaming agent architecture in AGENTS.md; no investigation/reviewer/router code added or resurrected
 - [ ] No new central hardcoded owner-question routing, unauthorized LLM SQL, or fabricated business calculations
 - [ ] Source provenance, actual vs assumed vs planned, unknown vs verified zero and money in integer cents remain correct
 - [ ] Tenant/user/role scope, sensitive employee/payroll information and permissions validated

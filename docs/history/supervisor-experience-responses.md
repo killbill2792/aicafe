@@ -1,3 +1,5 @@
+> RETIRED — historical design. Do not implement. Current architecture: /AGENTS.md.
+
 # AI CAFE Supervisor Experience — Responses function planner
 
 ## Safe architecture

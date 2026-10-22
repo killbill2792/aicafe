@@ -1,3 +1,5 @@
+> RETIRED — historical design. Do not implement. Current architecture: /AGENTS.md.
+
 # Phase 4 — verified Supervisor text chat
 
 Phase 4 makes the Phase 1 Ask anything control a **real, persisted read-only conversation** using the Phase 3 thread/message API and Phase 2 `BusinessScopedCafeTools`. It is an intentionally **finite deterministic intent router**, not a general-purpose natural-language model or an independently acting team of chatbots.

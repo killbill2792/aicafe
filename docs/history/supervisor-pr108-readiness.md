@@ -1,3 +1,5 @@
+> RETIRED — historical design. Do not implement. Current architecture: /AGENTS.md.
+
 # Supervisor PR #108: completion and verified limits
 
 This PR connects Olivia's existing what-if service to the default-on Supervisor read/simulation path and completes the pending review fixes. The follow-up also exposes all five existing Alex recipe-change types through owner-usable ingredient names. It does not complete the separate proposal/approval/execution or proactive roadmap phases.

@@ -1,11 +1,11 @@
 # 07 — Build plan
 
-Milestones are ordered so each one leaves a working app. Any agent can pick up the next unticked milestone from `PROGRESS.md`.
+Milestones are ordered so each one leaves a working app. Each session starts with `AGENTS.md` and the `Now` section of `PROGRESS.md`.
 
 ## Milestones and acceptance criteria
 
 **M0. Skeleton**
-Next.js + TS + Tailwind + Supabase + next-intl (en/es/ar with RTL) + PWA manifest. Design tokens from `02-design-system.md` in `tailwind.config`. Fonts loaded. Bottom tab bar with 5 tabs and empty screens. Commands from CLAUDE.md work.
+Next.js + TS + Tailwind + Supabase + next-intl (en/es/ar with RTL) + PWA manifest. Design tokens from `02-design-system.md` in `tailwind.config`. Fonts loaded. Bottom tab bar with 5 tabs and empty screens. Commands from AGENTS.md work; CLAUDE.md only points to AGENTS.md.
 ✅ Runs locally and on Vercel. Switching to Arabic flips layout to RTL. Lighthouse accessibility ≥ 95 on an empty screen.
 
 **M1. Database + demo seed**
@@ -43,8 +43,8 @@ Error states, loading skeletons, reconnect flow, delete account, privacy page, b
 v1.5 after the pilot starts: Staff screen live, "Why today was different", weekly text, native-speaker translation review.
 
 ## Using several AI tools on one repo
-- The repo is the shared brain: `CLAUDE.md` (Claude Code) and `AGENTS.md` (Codex, Kimi and others) hold the same instructions; `docs/` holds the spec; `PROGRESS.md` holds state.
-- Every session starts with: "Read CLAUDE.md (or AGENTS.md) and PROGRESS.md. Do the next unticked task in milestone Mx only."
+- `AGENTS.md` is the only source of agent instructions; `CLAUDE.md` only points to it. `docs/README.md` indexes current and retired docs; `PROGRESS.md` holds current work.
+- Every session starts with: "Read AGENTS.md and the PROGRESS.md Now section, then the relevant current docs in docs/README.md. Work only on the scoped task."
 - Every session ends with: tests pass, `PROGRESS.md` updated with what was done and what's next, commit with a clear message.
 - Suggested split:
   - **Hard logic** (M2 calculations, M5 Square sync, M4 statement parsing): your strongest coding agent.
@@ -60,7 +60,6 @@ v1.5 after the pilot starts: Staff screen live, "Why today was different", weekl
 
 ## First prompt to paste into Claude Code
 ```
-Read CLAUDE.md, then docs/01-product.md and docs/07-build-plan.md.
-Create PROGRESS.md with all milestones M0–M8 as checklists.
-Then do milestone M0 only. Before coding, show me a short plan. After coding, run the app and tests, update PROGRESS.md, and commit.
+Read AGENTS.md and the Now section of PROGRESS.md, then the relevant current docs indexed in docs/README.md.
+Work on the scoped Now task only. Before coding, show a short plan. After coding, run relevant tests, update only the Now/Next/Done sections of PROGRESS.md, and commit.
 ```
