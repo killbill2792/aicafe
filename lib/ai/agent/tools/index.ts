@@ -53,7 +53,8 @@ export function requestedPeriod(choice: "today" | "week" | "month", asOf: string
   return { from: start, to: asOf };
 }
 function absent(source: string, period: CafeStatePeriod | null, missing: string[]): AgentToolResult {
-  return { source, period, missing: missing.length ? missing : ["sourceUnavailable"] };
+  return { source, period, agentId:source==="profitability"?"leo":"alex",
+    missing: missing.length ? missing : ["sourceUnavailable"] };
 }
 export async function executeAgentTool(name: string, raw: unknown, ctx: AgentToolContext): Promise<AgentToolResult> {
   if (!Object.hasOwn(schemas, name)) throw new Error("unknown_tool");
