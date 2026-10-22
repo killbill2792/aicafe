@@ -7,7 +7,7 @@ import {saveProductRecipes} from "@/lib/actions/pantry";
 import {updateMenuItemPrice,setMenuItemActive} from "@/lib/actions/menuItems";
 import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import {swapIngredient} from "@/lib/actions/pantry";
-import {stepFor} from "@/lib/calc/recipeUnits";
+import {stepFor,recipeDisplayUnitsFor,needsIngredientConversion} from "@/lib/calc/recipeUnits";
 import type {RecipeDisplayUnit,IngredientUnitConversion} from "@/lib/calc/recipeUnits";
 import type {IngredientOption,MenuItemForEdit} from "@/lib/data/getMenuItemsForEdit";
 import {recipePreviewCost,keepPreview,draftLineCostCents} from "@/lib/calc/recipePreview";
@@ -25,11 +25,13 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
  const [priceDraft,setPriceDraft]=useState<string|null>(null),[draftPrice,setDraftPrice]=useState("");
  const [sizeDialog,setSizeDialog]=useState(false);const [add,setAdd]=useState<string|null>(null),[swap,setSwap]=useState<string|null>(null),[choice,setChoice]=useState(""),[toast,setToast]=useState("");
  const [swapSizeId,setSwapSizeId]=useState<string|null>(null);
+ const [editingCell,setEditingCell]=useState<string|null>(null),[quantityText,setQuantityText]=useState(""),[unitChoice,setUnitChoice]=useState<RecipeDisplayUnit>("g");
  const selectedItems=items.filter(i=>active.includes(i.id)), ingredientRows=[...new Map(items.filter(item=>active.includes(item.id)).flatMap(item=>item.recipe.map(line=>[line.ingredientId,line.ingredientName] as const))).entries()];
  const hasUnsavedChanges=Object.entries(drafts).some(([key,d])=>{
   for(const item of items){for(const line of item.recipe){if(key===k(item.id,line.ingredientId))return d.removed||d.quantity!==(line.displayQuantity??line.quantity)||d.unit!==(line.displayUnit??line.baseUnit);}}
   return false;
  });
+ const mobileColumns={gridTemplateColumns:`repeat(${Math.max(1,Math.min(3,selectedItems.length))},minmax(0,1fr))`};
  const prices=Object.fromEntries(selectedItems.map(item=>{const amount=Object.fromEntries(item.recipe.map(line=>[line.ingredientId,drafts[k(item.id,line.ingredientId)]?.removed?0:drafts[k(item.id,line.ingredientId)]?.quantity??line.displayQuantity??line.quantity]));const lines=item.recipe.filter(line=>!drafts[k(item.id,line.ingredientId)]?.removed);const preview=recipePreviewCost(lines,amount);const cost=preview.costCents??(item.costSource==="owner_total"?item.ownerTotalCostCents??null:null);return[item.id,{cost,summary:keepPreview(item.priceCents,cost),estimated:preview.estimated||item.costSource==="owner_total"||item.ownerTotalCostStatus==="estimated"}]}));
  function adjust(item:MenuItemForEdit,id:string,delta:number){const line=item.recipe.find(l=>l.ingredientId===id);if(!line)return;const key=k(item.id,id);const cur=drafts[key]??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};const step=stepFor(cur.unit);setDrafts(prev=>({...prev,[key]:{...cur,removed:false,quantity:Math.max(0,Math.round((cur.quantity+delta*step)*100)/100)}}));setSaved(false);}
  function removeRow(id:string){setDrafts(prev=>({...prev,...Object.fromEntries(items.filter(item=>item.recipe.some(l=>l.ingredientId===id)).map(item=>{const key=k(item.id,id);const line=item.recipe.find(l=>l.ingredientId===id)!;return[key,{...(prev[key]??{unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,quantity:line.displayQuantity??line.quantity}),removed:true}]}))}));setToast(ingredientRows.find(row=>row[0]===id)?.[1]??"");}
@@ -92,12 +94,64 @@ export default function AllSizesRecipe({items,ingredients,conversions,pantry,dra
   const base=toBaseUnitQuantity(unit,selectedLine.displayQuantity??selectedLine.quantity,candidate.baseUnit,conversions[candidate.id]??[]);
   return base===null?null:additiveCostCents(base,candidate.costPerBaseMicros);
  }
- function cells(id:string,only?:MenuItemForEdit){return <div className="grid grid-cols-3 gap-1.5 lg:block">{(only?[only]:selectedItems).map(item=>{const line=item.recipe.find(l=>l.ingredientId===id);const d=drafts[k(item.id,id)];if(!line||d?.removed)return <p key={item.id} className="p-2 text-center text-ink-muted">—</p>;const actual=d??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit};const cost=draftLineCostCents(line.costCents,line.displayQuantity??line.quantity,actual.quantity);return <div key={item.id} className="min-w-0 lg:flex-1"><div className="flex min-h-12 min-w-0 items-center justify-between gap-0.5 rounded-xl bg-paper px-0.5"><button type="button" onClick={()=>adjust(item,id,-1)} aria-label={`− ${line.ingredientName} ${item.sizeLabel}`} className="flex size-12 shrink-0 items-center justify-center rounded-lg text-accent-text"><Minus size={17}/></button><span className="min-w-0 break-words text-center text-[13px] font-bold">{new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(actual.quantity)} {({shot:units("recipeUnitShot"),pump:units("recipeUnitPump"),g:units("recipeUnitG"),ml:units("recipeUnitMl"),fl_oz:units("recipeUnitFlOz"),each:units("recipeUnitEach")} as Record<RecipeDisplayUnit,string>)[actual.unit]}</span><button type="button" onClick={()=>adjust(item,id,1)} aria-label={`+ ${line.ingredientName} ${item.sizeLabel}`} className="flex size-10 shrink-0 items-center justify-center rounded-lg text-accent-text"><Plus size={17}/></button></div><p className="mt-1 text-center text-[13px] text-ink-muted">{cost===null?"—":formatCents(cost)}</p>{math&&<p className="text-center text-[13px] text-ink-muted">{toBaseUnitQuantity(actual.unit,actual.quantity,line.baseUnit,conversions[id]??[])?.toFixed(2)??"—"} {line.baseUnit}</p>}</div>})}</div>}
+ function openAmount(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number],draft:Draft){
+  setEditingCell(k(item.id,line.ingredientId));
+  setQuantityText(String(draft.quantity));setUnitChoice(draft.unit);setError("");
+ }
+ function availableUnits(line:MenuItemForEdit["recipe"][number]):RecipeDisplayUnit[]{
+  return recipeDisplayUnitsFor(line.baseUnit,conversions[line.ingredientId]??[]).filter(unit=>
+    !needsIngredientConversion(unit)||(conversions[line.ingredientId]??[]).some(c=>c.unit===unit)||unit===(line.displayUnit??line.baseUnit));
+ }
+ function applyAmount(item:MenuItemForEdit,line:MenuItemForEdit["recipe"][number]){
+  const quantity=Number(quantityText);
+  if(!Number.isFinite(quantity)||quantity<=0||quantity>100000||!availableUnits(line).includes(unitChoice)){setError(t("invalidQuantity"));return;}
+  setDrafts(prev=>({...prev,[k(item.id,line.ingredientId)]:{unit:unitChoice,quantity,removed:false}}));
+  setEditingCell(null);setSaved(false);setError("");
+ }
+ function unitLabel(unit:RecipeDisplayUnit){
+  return ({shot:units("recipeUnitShot"),pump:units("recipeUnitPump"),g:units("recipeUnitG"),ml:units("recipeUnitMl"),fl_oz:units("recipeUnitFlOz"),each:units("recipeUnitEach")} as Record<RecipeDisplayUnit,string>)[unit];
+ }
+ function cells(id:string,only?:MenuItemForEdit){
+  return <div className="grid gap-1.5 lg:block" style={mobileColumns}>{(only?[only]:selectedItems).map(item=>{
+   const line=item.recipe.find(l=>l.ingredientId===id),draft=drafts[k(item.id,id)];
+   if(!line||draft?.removed)return <p key={item.id} className="p-2 text-center text-ink-muted">—</p>;
+   const actual=draft??{quantity:line.displayQuantity??line.quantity,unit:(line.displayUnit??line.baseUnit) as RecipeDisplayUnit,removed:false};
+   const cost=draftLineCostCents(line.costCents,line.displayQuantity??line.quantity,actual.quantity);
+   return <div key={item.id} className="min-w-0">
+    <div className="rounded-xl bg-paper p-1">
+      <button type="button" onClick={()=>openAmount(item,line,actual)}
+        aria-label={t("editQuantityForSize",{ingredient:line.ingredientName,size:item.sizeLabel??item.name})}
+        className="min-h-12 w-full break-words text-center text-[14px] font-bold text-accent-text">
+        {new Intl.NumberFormat(locale,{maximumFractionDigits:2}).format(actual.quantity)} {unitLabel(actual.unit)}
+      </button>
+      <div className="grid grid-cols-2 gap-1">
+       <button type="button" onClick={()=>adjust(item,id,-1)} aria-label={`− ${line.ingredientName} ${item.sizeLabel??item.name}`}
+         className="flex min-h-12 items-center justify-center rounded-lg bg-card text-accent-text"><Minus size={17}/></button>
+       <button type="button" onClick={()=>adjust(item,id,1)} aria-label={`+ ${line.ingredientName} ${item.sizeLabel??item.name}`}
+         className="flex min-h-12 items-center justify-center rounded-lg bg-card text-accent-text"><Plus size={17}/></button>
+      </div>
+    </div>
+    {editingCell===k(item.id,id)&&<div className="mt-2 flex flex-col gap-2 rounded-xl border border-line bg-card p-2">
+      <label className="text-[13px] font-semibold">{t("quantity")}
+       <input autoFocus inputMode="decimal" type="number" min=".01" step="any" value={quantityText}
+        onChange={e=>setQuantityText(e.target.value)} className="mt-1 min-h-12 w-full rounded-lg border border-line bg-card px-2 text-[17px]"/>
+      </label>
+      <label className="text-[13px] font-semibold">{t("unit")}
+       <select value={unitChoice} onChange={e=>setUnitChoice(e.target.value as RecipeDisplayUnit)}
+        className="mt-1 min-h-12 w-full rounded-lg border border-line bg-card px-1">{availableUnits(line).map(u=><option key={u} value={u}>{unitLabel(u)}</option>)}</select>
+      </label><div className="flex flex-wrap gap-1"><button type="button" onClick={()=>setEditingCell(null)} className="min-h-12 flex-1 text-[13px]">{t("cancel")}</button>
+       <button type="button" onClick={()=>applyAmount(item,line)} className="min-h-12 flex-1 rounded-lg bg-accent px-2 text-[13px] font-bold text-on-accent">{t("save")}</button></div>
+     </div>}
+    <p className="mt-1 text-center text-[13px] text-ink-muted">{cost===null?"—":formatCents(cost)}</p>
+    {math&&<p className="text-center text-[13px] text-ink-muted">{toBaseUnitQuantity(actual.unit,actual.quantity,line.baseUnit,conversions[id]??[])?.toFixed(2)??"—"} {line.baseUnit}</p>}
+   </div>;
+  })}</div>;
+ }
  return <div className="relative pb-48 text-ink lg:pe-[310px] lg:pb-8"><p className="mb-2 font-semibold text-ink-muted">{t("sizesSell")}</p><div className="mb-3 flex flex-wrap gap-2">{items.map(item=><button key={item.id} type="button" aria-pressed={active.includes(item.id)} onClick={()=>toggleSize(item)} disabled={pending} className={`min-h-12 rounded-full border px-3 font-bold ${active.includes(item.id)?"border-accent bg-accent text-on-accent":"border-line bg-card"}`}>{active.includes(item.id)?"✓ ":""}{item.sizeLabel??item.name}</button>)} {draftSizes.map(draft=><button type="button" key={draft.id} onClick={()=>{setPriceDraft(draft.id);setDraftPrice("");}} className="min-h-12 rounded-full border border-dashed border-warn px-3 text-warn">{draft.sizeLabel??draft.name} · {t("priceNotSet")}</button>)}<button type="button" onClick={()=>setSizeDialog(true)} className="min-h-12 rounded-full border border-dashed border-accent px-3 text-accent-text">{t("addSize")}</button></div>
  <div className="mb-3 rounded-2xl bg-pos-soft p-3 text-[15px] text-good">✨ {t("industryNote")}</div>
- <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:hidden">{selectedItems.map(item=><div key={item.id} className="rounded-xl bg-paper p-2 text-center font-bold">{item.sizeLabel??item.name}</div>)}</div>
+ <div className="mb-2 grid gap-1.5 lg:hidden" style={mobileColumns}>{selectedItems.map(item=><div key={item.id} className="rounded-xl bg-paper p-2 text-center font-bold">{item.sizeLabel??item.name}</div>)}</div>
  <div className="space-y-2 lg:hidden">{ingredientRows.map(([id,name])=><div key={id} className="rounded-2xl border border-line bg-card p-3"><div className="mb-2 flex min-h-10 items-center gap-2"><span className="text-xl">🥛</span><strong className="min-w-0 flex-1 break-words">{name}</strong><button type="button" onClick={()=>openSwap(id)} className="min-h-10 rounded-xl bg-accent-soft px-2 text-[13px] font-bold text-accent-text"><ArrowLeftRight size={15} className="me-1 inline"/>{t("swap")}</button><button type="button" aria-label={t("remove")} onClick={()=>removeRow(id)} className="flex size-10 items-center justify-center rounded-full bg-paper"><X size={17}/></button></div>{cells(id)}</div>)}</div>
- <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><tr key={id} className="border-b border-line"><th className="p-3 text-start"><span>{name}</span><div><button type="button" className="min-h-10 text-sm text-accent-text" onClick={()=>{setSwap(id);setChoice(id)}}>{t("swap")}</button><button type="button" className="ms-2 min-h-10 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>)}</tbody></table></div>
+ <div className="hidden overflow-x-auto rounded-2xl border border-line bg-card lg:block"><table className="w-full table-fixed"><thead><tr className="border-b border-line bg-paper"><th className="w-[28%] p-3 text-start">{t("name")}</th>{selectedItems.map(item=><th key={item.id} className="p-3">{item.sizeLabel??item.name}</th>)}</tr></thead><tbody>{ingredientRows.map(([id,name])=><tr key={id} className="border-b border-line"><th className="p-3 text-start"><span>{name}</span><div><button type="button" className="min-h-10 text-sm text-accent-text" onClick={()=>openSwap(id)}>{t("swap")}</button><button type="button" className="ms-2 min-h-10 text-sm text-warn" onClick={()=>removeRow(id)}>{t("remove")}</button></div></th>{selectedItems.map(item=><td key={item.id} className="p-2">{cells(id,item)}</td>)}</tr>)}</tbody></table></div>
  {add!==null?<div className="mt-3 flex flex-wrap gap-2 rounded-2xl border border-line bg-card p-3"><select className="min-h-12 min-w-0 flex-1 bg-card" aria-label={t("addToRecipe")} value={add} onChange={e=>setAdd(e.target.value)}><option value="">{t("addToRecipe")}</option>{ingredients.filter(i=>selectedItems.some(item=>!item.recipe.some(line=>line.ingredientId===i.id))).map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select><button disabled={pending||!add} onClick={append} className="min-h-12 rounded-xl bg-accent px-4 font-bold text-on-accent">{t("add")}</button><button onClick={()=>setAdd(null)} className="min-h-12 px-3">{t("cancel")}</button></div>:<button type="button" onClick={()=>setAdd("")} className="mt-3 min-h-14 w-full rounded-2xl border-2 border-dashed border-line font-bold text-accent-text">＋ {t("addToRecipe")}</button>}
  <button type="button" onClick={()=>setMath(v=>!v)} className="mt-3 min-h-12 w-full text-sm font-bold text-accent-text">{math?t("hideUnitMath"):t("showUnitMath")} <ChevronDown className="inline size-4"/></button>
  {error&&<p role="alert" className="mt-2 text-warn">{error}</p>}{saved&&<p role="status" className="mt-2 text-good">{t("saved")}</p>}
