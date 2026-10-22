@@ -5,18 +5,30 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
   let remaining=100;
   return results.map(r=>{
     const values:NumericEvidence["values"]=[];
-    const walk=(v:unknown,key:string,depth:number)=>{
+    const periodKey=r.period?r.period.from+"/"+r.period.to+"/":"";
+    const walk=(v:unknown,key:string,depth:number,scope="")=>{
       if(remaining<=0||depth>6)return;
-      if(Array.isArray(v)){for(const item of v){if(remaining<=0)break;walk(item,key,depth+1);}return;}
+      if(Array.isArray(v)){
+        if(key!=="missing"&&remaining>0){
+          values.push({key:periodKey+scope+key+"Length",value:v.length,unit:"count"});remaining--;
+        }
+        for(const item of v){
+          if(remaining<=0)break;
+          const scoped=item&&typeof item==="object"&&!Array.isArray(item)&&"id" in item&&
+            typeof item.id==="string"?scope+key+":"+item.id+"/":scope;
+          walk(item,key,depth+1,scoped);
+        }
+        return;
+      }
       if(v&&typeof v==="object"){
-        for(const [k,item] of Object.entries(v))walk(item,k,depth+1);
+        for(const [k,item] of Object.entries(v))walk(item,k,depth+1,scope);
         return;
       }
       if(typeof v!=="number"||!Number.isFinite(v))return;
       const unit=/Cents$|Micros$/.test(key)?"cents":/Bps$|Percent$/.test(key)?"bps":
         /Margin$|Ratio$/.test(key)?"ratio":"count";
       const value=/Micros$/.test(key)?v/1000000:/Percent$/.test(key)?v*100:v;
-      values.push({key,value,unit});remaining--;
+      values.push({key:periodKey+scope+key,value,unit});remaining--;
     };
     if(r.missing.length===0)walk(r,"",0);
     return {tool:r.source,values};
@@ -110,16 +122,25 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   previousEvidence:readonly NumericEvidence[] = [], previousAssistantText = ""): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
   results.forEach(r => allowFromData(r, allowed));
-  for(const e of previousEvidence)for(const v of e.values.slice(0,100)){
-    if(!Number.isFinite(v.value))continue;
-    if(v.unit==="cents")allowed.money.add(v.value);
-    if(v.unit==="bps")allowed.percent.add(v.value);
-    if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
-    if(v.unit==="count")allowed.number.add(v.value);
+  // A successful read of a source supersedes every older claim from that
+  // source. Fail closed for legacy saved evidence lacking item/period keys.
+  const freshSources=new Set(results.filter(r=>r.missing.length===0).map(r=>r.source));
+  for(const e of previousEvidence){
+    if(freshSources.has(e.tool))continue;
+    for(const v of e.values.slice(0,100)){
+      if(!Number.isFinite(v.value))continue;
+      if(v.unit==="cents")allowed.money.add(v.value);
+      if(v.unit==="bps")allowed.percent.add(v.value);
+      if(v.unit==="ratio")allowed.percent.add(Math.round(v.value*10000));
+      if(v.unit==="count")allowed.number.add(v.value);
+    }
   }
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
-  candidates(previousAssistantText,locale).forEach(v=>allowed[v.kind].add(v.value));
+  // Earlier assistant text has no item-level source map. Never use it to
+  // override new evidence; retained typed evidence remains valid across no-read turns.
+  if(freshSources.size===0)
+    candidates(previousAssistantText,locale).forEach(v=>allowed[v.kind].add(v.value));
   // Explicit owner-provided quantities are not prices. Infer dollars only from
   // a nearby monetary / menu-price statement, never from "sold 9 drinks".
   for(const v of ownerNumbers){
