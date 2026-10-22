@@ -69,6 +69,13 @@ export const initiativeToolDefinitions=Object.entries(initiativeToolSchemas).map
 export function isInitiativeTool(name:string):name is keyof typeof initiativeToolSchemas {
   return Object.hasOwn(initiativeToolSchemas,name);
 }
+function canonicalJson(value:unknown):string {
+  if(Array.isArray(value))return "["+value.map(canonicalJson).join(",")+"]";
+  if(value!==null&&typeof value==="object")
+    return "{"+Object.entries(value).sort(([a],[b])=>a.localeCompare(b))
+      .map(([key,item])=>JSON.stringify(key)+":"+canonicalJson(item)).join(",")+"}";
+  return JSON.stringify(value);
+}
 function parseChangeSpec(json:string):Record<string,unknown> {
   try{
     const result:unknown=JSON.parse(json);
@@ -105,7 +112,7 @@ export async function executeInitiativeTool(
       }),
     });
     if(!ctx.ownerMessageId)throw new Error("initiative owner message context unavailable");
-    const requestKey=createHash("sha256").update(ctx.ownerMessageId+":"+JSON.stringify(input)).digest("hex");
+    const requestKey=createHash("sha256").update(ctx.ownerMessageId+":"+canonicalJson(input)).digest("hex");
     const created=await createOwnerInitiative(scope,input,ctx.locale,requestKey);
     return {source:"owner_initiatives",period:null,missing:[],
       id:created.id,status:"proposed",kind:created.kind,title:created.title,
