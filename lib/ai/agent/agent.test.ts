@@ -549,7 +549,7 @@ describe("Codex: chronological evidence and claim-local calculations",()=>{
     expect(checkNumbers("Your sales are $400, which is an increase.",
       "",[profit],"en").map(v=>v.text)).toEqual(["$400"]);
     const menu={source:"menu_items",period:null,missing:[],items:[
-      {id:"latte",priceCents:850},{id:"mocha",priceCents:600}]};
+      {id:"latte",name:"Latte",priceCents:850},{id:"mocha",name:"Mocha",priceCents:600}]};
     expect(checkNumbers("Latte is $2.50 more than Mocha.","",[menu],"en")).toEqual([]);
     expect(checkNumbers("Profit is $2.50 more than yesterday.","",[menu],"en")
       .map(v=>v.text)).toEqual(["$2.50"]);
@@ -677,6 +677,7 @@ describe("Codex: observation scopes, source identities and comparison operands",
     expect(checkNumbers("Latte costs $6.","",[],"en",earlier.concat(persisted))
       .map(v=>v.text)).toEqual(["$6"]);
     expect(checkNumbers("Latte costs $8.50.","",[],"en",earlier.concat(persisted))).toEqual([]);
+    expect(checkNumbers("B costs $6.","",[],"en",earlier.concat(persisted))).toEqual([]);
   });
   it("shares a trailing weekday across both ends of a true hours range",()=>{
     const hours={source:"locations.open_hours",period:null,missing:[],
@@ -753,5 +754,18 @@ describe("Codex: observation scopes, source identities and comparison operands",
     expect(checkNumbers("Tea is $1.50 less than Mocha.","",[menu],"en")).toEqual([]);
     expect(checkNumbers("Profit is $2.50 more than yesterday.","",[menu],"en")
       .map(v=>v.text)).toEqual(["$2.50"]);
+  });
+});
+
+
+describe("named-price isolation from unrelated menu values",()=>{
+  const menu={source:"menu_items",period:null,missing:[],items:[
+    {id:"latte",name:"Latte",priceCents:850},
+    {id:"mocha",name:"Mocha",priceCents:600}]};
+  it("does not use Mocha's $6 to verify Latte at $6",()=>{
+    expect(checkNumbers("Latte costs $6.","",[menu],"en").map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Mocha is $6.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Mocha is $8.50.","",[menu],"en").map(v=>v.text)).toEqual(["$8.50"]);
   });
 });
