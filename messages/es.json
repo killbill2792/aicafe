@@ -2325,6 +2325,10 @@
     },
     "saveBeforeSwap": "Guarda los cambios de receta antes de sustituir ingredientes.",
     "saveBeforeSizeChange": "Guarda la receta antes de cambiar los tamaños a la venta.",
-    "addMilkFirst": "Primero añade leche a la receta."
+    "addMilkFirst": "Primero añade leche a la receta.",
+    "savesYou": "Ahorras {amount}",
+    "aboutSame": "Cuesta aproximadamente lo mismo",
+    "costBasisForSize": "Diferencia calculada para {size}",
+    "priceEstimate": "Estimación"
   }
 }
