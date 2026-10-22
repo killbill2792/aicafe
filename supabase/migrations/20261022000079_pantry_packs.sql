@@ -327,6 +327,7 @@ begin
       or nullif(btrim(item->>'name'),'') is null
       or (operational is not null and operational not in ('shot','pump'))
       then raise exception 'invalid starter'; end if;
+    found_id := null;
     insert into public.ingredients(business_id,starter_key,name,base_unit,category)
       values(p_business_id,key,item->>'name',item->>'baseUnit',item->>'category')
       on conflict (business_id,starter_key) where starter_key is not null do nothing
