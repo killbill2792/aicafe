@@ -161,6 +161,29 @@ try {
     await c.query(rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify(changed)]);
     const stale = [{...changed[0],expectedLines:[...oldLines,{ingredientId:FOREIGN_ING,quantity:1,displayUnit:"ml",displayQuantity:1}]}];
     await rejectStatement(c,rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify(stale)],"40001");
+    const untouched = family.rows.find(row => row.size_label === "20 oz");
+    const rowsFor = async id => (await c.query(
+      "select ingredient_id,quantity,display_unit,display_quantity from recipe_lines where menu_item_id=$1 order by ingredient_id",[id]
+    )).rows.map(row=>({ingredientId:row.ingredient_id,quantity:Number(row.quantity),
+      displayUnit:row.display_unit,displayQuantity:Number(row.display_quantity)}));
+    const beforeUntouched = await rowsFor(untouched.id);
+    const allSiblingIds = family.rows.map(row=>row.id).sort();
+    const completeCAS = [
+      {menuItemId:PARENT,lines:sizes[1].lines,expectedLines:oldLines,expectedSourceLines:oldLines,expectedSiblingIds:allSiblingIds},
+      {menuItemId:untouched.id,lines:[],expectedLines:beforeUntouched,checkOnly:true},
+    ];
+    await c.query(rpc("pantry_replace_recipes",[],3),[A,PARENT,JSON.stringify(completeCAS)]);
+    assert.deepEqual(await rowsFor(untouched.id),beforeUntouched,
+      "the check-only sibling must never be rewritten");
+    // Simulate a concurrent scaling operation adding/changing an ingredient in a
+    // previously unmodified size: the stale swap now must fail closed.
+    await c.query("update recipe_lines set quantity=quantity+1 where menu_item_id=$1 and ingredient_id=$2",
+      [untouched.id,owned["milk-whole"]]);
+    await rejectStatement(c,rpc("pantry_replace_recipes",[],3),
+      [A,PARENT,JSON.stringify(completeCAS)],"40001");
+    await rejectStatement(c,rpc("pantry_replace_recipes",[],3),
+      [A,PARENT,JSON.stringify([{...completeCAS[0],expectedSiblingIds:[PARENT]}])],"40001");
+
   });
   console.log("P1 PostgreSQL: migration parses; RLS, idempotency, size identity, draft safety, rollback and recipe CAS passed");
 } finally {
