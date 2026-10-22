@@ -174,9 +174,9 @@ describe("Codex adversarial numbers and source units",()=>{
 describe("owner quantity versus money evidence isolation",()=>{
   it("does not turn explicitly stated drink quantities into financial amounts",()=>{
     expect(checkNumbers("Your profit is $9.","We sold 9 drinks.",[],"en")
-      .map(v=>v.text)).toEqual(["$9."]);
+      .map(v=>v.text)).toEqual(["$9"]);
     expect(checkNumbers("The wage is $9.","We have 9 employees.",[],"en")
-      .map(v=>v.text)).toEqual(["$9."]);
+      .map(v=>v.text)).toEqual(["$9"]);
   });
   it("does treat an owner's stated menu price as money",()=>{
     expect(checkNumbers("Latte is $6.","latte is 6",[],"en")).toEqual([]);
