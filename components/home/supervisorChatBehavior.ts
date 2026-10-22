@@ -30,6 +30,12 @@ export function isTranscriptNearBottom({
   return scrollHeight - clientHeight - scrollTop <= threshold;
 }
 
+/** An SSE delta must not consume the pending history anchor. Only the version
+ * advanced alongside the committed history messages authorizes adjustment. */
+export function hasInsertedHistoryPage(renderedVersion: number, appliedVersion: number): boolean {
+  return renderedVersion !== appliedVersion;
+}
+
 /** Scroll to the actual bottom when pinned; prepend is a separate operation that
  * must preserve the reader's viewport even if the previous state was pinned. */
 export function transcriptScrollTarget({
