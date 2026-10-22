@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
@@ -192,10 +193,12 @@ export async function persistMetricObservation(scope:InitiativeScope,row:Observa
   const db=await serviceOwnerAccess(scope);
   // A completed check-in is never overwritten by a computed sample.
   const {data:existing,error:readError}=await db.from("initiative_observations")
-    .select("coverage,source,value").eq("metric_id",row.metric_id)
+    .select("coverage,source,value,note").eq("metric_id",row.metric_id)
     .eq("business_date",row.business_date).maybeSingle();
   if(readError)throw readError;
-  if(existing&&(existing.source!=="computed"||existing.coverage>=row.coverage))return false;
+  if(existing?.source!=="computed" && existing) return false;
+  if(existing&&existing.coverage===row.coverage&&existing.value===row.value&&existing.note===row.note)
+    return false;
   const {error}=await db.from("initiative_observations").upsert(row,{onConflict:"metric_id,business_date"});
   if(error)throw error;
   return true;
@@ -203,7 +206,12 @@ export async function persistMetricObservation(scope:InitiativeScope,row:Observa
 export async function persistInitiativeEvaluation(scope:InitiativeScope,initiativeId:string,
   asOf:string,status:string,recommendation:string,results:Record<string,unknown>) {
   const db=await serviceOwnerAccess(scope);
-  const digest=[status,recommendation].join(":");
+  // Semantic idempotency of a snapshot is independent of notification dedupe.
+  // Same status on a later day, or corrected evidence on the same date, is new.
+  const canonical=Object.entries(results).sort(([a],[b])=>a.localeCompare(b));
+  const digest=createHash("sha256").update(JSON.stringify({
+    asOf,status,recommendation,results:canonical,
+  })).digest("hex");
   const {data,error}=await db.from("initiative_evaluations").upsert({
     initiative_id:initiativeId,as_of:asOf,status,recommendation,results,digest,
   },{onConflict:"initiative_id,digest",ignoreDuplicates:true}).select("id").maybeSingle();

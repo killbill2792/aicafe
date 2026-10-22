@@ -37,7 +37,9 @@ export type MonitorStats={checked:number;sampled:number;updates:number;failed:nu
 export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorStats> {
   const queue=await listMonitorBatch();
   const stats:MonitorStats={checked:queue.length,sampled:0,updates:0,failed:0};
+  const deadline=Date.now()+100_000; // leave 20s for Vercel finalization
   for(const initiative of queue){
+    if(Date.now()>=deadline)break;
     let completed=false;
     try{
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
@@ -57,12 +59,23 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       // Rotation means long outages catch up over successive runs without starving tenants.
       const fresh=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
         !byMetric.get(m.id)?.some(o=>o.business_date===d)));
-      const retry=days.filter(d=>d>=dayOffset(asOf,-14)&&graph.metrics.some(m=>m.source==="computed" &&
-        byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage<1))).slice(-7);
-      const pending=[...fresh,...retry].slice(0,7);
+      const incomplete=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
+        byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage<1)));
+      // Shift retry selection on every rotation, including older baseline dates.
+      const rotated=(items:string[],max:number)=>{
+        if(!items.length)return [];
+        const start=initiative.revision%items.length;
+        return [...items.slice(start),...items.slice(0,start)].slice(0,max);
+      };
+      const eligibleCorrection=today<=dayOffset(initiative.ends_on,14);
+      const covered=eligibleCorrection?days.filter(d=>d>=initiative.baseline_from &&
+        graph.metrics.some(m=>m.source==="computed" &&
+          byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage>=1))):[];
+      const pending=[...fresh.slice(0,3),...rotated(incomplete,2),
+        ...rotated(covered,2)].filter((day,index,array)=>array.indexOf(day)===index).slice(0,7);
       for(const date of pending){
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
-          !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1));
+          (eligibleCorrection || !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1)));
         if(!computed.length)continue;
         const input=await readMetricDay(initiative.business_id,date,{
           items:computed.some(m=>m.metric_key?.startsWith("item_")),
@@ -130,26 +143,27 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       const completeComputed=graph.metrics.filter(m=>m.source==="computed").every(m=>
         days.every(date=>(byMetric.get(m.id)??[]).some(o=>o.business_date===date)));
       const evaluation=evaluateInitiative(goalMetrics,asOf,initiative.ends_on,0.8,initiative.kind);
-      if(graph.latest?.status!==evaluation.status||graph.latest.recommendation!==evaluation.recommendation){
-        const saved=await persistInitiativeEvaluation(scope,initiative.id,asOf,
-          evaluation.status,evaluation.recommendation,evaluation.results);
-        if(saved){
-          const t=translations[initiative.locale];
-          const written=await writeTeamUpdate({
-            businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
-            domain,kind:"initiative_evaluation",severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
-            subjectType:"owner_initiative",subjectId:initiative.id,
-            facts:{initiativeId:initiative.id,status:evaluation.status,recommendation:evaluation.recommendation,asOf},
-            text:interpolate(t.evaluation,initiative.title,asOf)+" "+t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
-            locale:initiative.locale,actions:[{kind:"open"}],
-            dedupeKey:"initiative:"+initiative.id+":"+evaluation.status+":"+evaluation.recommendation,
-          });
-          if(written.created)stats.updates++;
-        }
-      }
+      // Save each changed daily evidence snapshot, even without a status transition.
+      await persistInitiativeEvaluation(scope,initiative.id,asOf,
+        evaluation.status,evaluation.recommendation,evaluation.results);
+      // Retry an undelivered status notification independently. The M0 unique
+      // dedupe key avoids a duplicate owner update if the first attempt succeeded.
+      const t=translations[initiative.locale];
+      const written=await writeTeamUpdate({
+        businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
+        domain,kind:"initiative_evaluation",
+        severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
+        subjectType:"owner_initiative",subjectId:initiative.id,
+        facts:{initiativeId:initiative.id,status:evaluation.status,
+          recommendation:evaluation.recommendation,asOf},
+        text:interpolate(t.evaluation,initiative.title,asOf)+" "+
+          t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
+        locale:initiative.locale,actions:[{kind:"open"}],
+        dedupeKey:"initiative:"+initiative.id+":"+evaluation.status+":"+evaluation.recommendation,
+      });
+      if(written.created)stats.updates++;
       // Keep a 14-day correction window for delayed POS/timecard evidence.
-      completed=asOf>=initiative.ends_on&&completeComputed&&
-        (evaluation.status!=="insufficient_data"||today>dayOffset(initiative.ends_on,14));
+      completed=asOf>=initiative.ends_on&&today>dayOffset(initiative.ends_on,14);
     }catch{stats.failed++;}
     finally{
       try{await rotateInitiative(initiative,completed);}catch{stats.failed++;}
