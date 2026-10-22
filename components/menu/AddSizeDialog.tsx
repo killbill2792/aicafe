@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useTranslations } from "next-intl";
 import { addMenuItem } from "@/lib/actions/menuItems";
+import { scaleRecipeToSize } from "@/lib/actions/pantry";
 import { formatCents } from "@/lib/calc";
 import type { MenuItemCategoryCode } from "@/lib/constants";
 import { isAmbiguousNumericSizeLabel } from "@/lib/menu/sizeLabel";
@@ -53,9 +54,14 @@ export default function AddSizeDialog({
         priceCents,
         category,
         menuGroup: menuGroup ?? undefined,
-        copyRecipeFromItemId: copyFrom || undefined,
       });
-      if (result.ok) onDone(result.id, siblingSizes.find((sibling) => sibling.id === copyFrom)?.sizeLabel ?? null);
+      if (result.ok) {
+        if (copyFrom) {
+          const scaled = await scaleRecipeToSize(copyFrom, result.id);
+          if (!scaled.ok) { setError("Size created, but recipe scaling needs attention. Open the new size to finish it."); onDone(result.id, null); return; }
+        }
+        onDone(result.id, siblingSizes.find((sibling) => sibling.id === copyFrom)?.sizeLabel ?? null);
+      }
       else setError(result.error);
     });
   }
