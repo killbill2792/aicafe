@@ -26,11 +26,12 @@ export async function* openAIProvider(params: Record<string, unknown>, signal: A
     while (true) {
       const chunk = await reader.read();
       if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true }).replace(/\r\n/g, "\n");
-      let split: number;
-      while ((split = buffer.indexOf("\n\n")) >= 0) {
-        const frame = buffer.slice(0, split); buffer = buffer.slice(split + 2);
-        const line = frame.split("\n").find(part => part.startsWith("data: "));
+      buffer += decoder.decode(chunk.value, { stream: true });
+      let boundary: RegExpExecArray | null;
+      while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
+        const frame = buffer.slice(0, boundary.index);
+        buffer = buffer.slice(boundary.index + boundary[0].length);
+        const line = frame.split(/\r?\n/).find(part => part.startsWith("data: "));
         if (!line || line === "data: [DONE]") continue;
         try { yield JSON.parse(line.slice(6)) as Event; } catch { /* malformed event does not discard turn */ }
       }
