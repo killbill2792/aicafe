@@ -1,4 +1,5 @@
 import "server-only";
+import {createHash} from "node:crypto";
 import { formatInTimeZone } from "date-fns-tz";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -160,8 +161,19 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         }));
       const evaluation=evaluateInitiative(goalMetrics,asOf,initiative.ends_on,0.8,initiative.kind);
       // Save each changed daily evidence snapshot, even without a status transition.
+      const sameTransition=graph.latest?.status===evaluation.status&&
+        graph.latest?.recommendation===evaluation.recommendation;
+      const transitionKey=sameTransition&&graph.latest?.transition_key?
+        graph.latest.transition_key:
+        createHash("sha256").update([
+          initiative.id,graph.latest?.transition_key??"initial",asOf,
+          evaluation.status,evaluation.recommendation,
+        ].join(":")).digest("hex");
+      // Replayable immutable snapshot: definitions, baseline and test day inputs.
+      const inputs={asOf,endsOn:initiative.ends_on,kind:initiative.kind,
+        minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id))};
       await persistInitiativeEvaluation(scope,initiative.id,asOf,
-        evaluation.status,evaluation.recommendation,evaluation.results);
+        evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey);
       // Retry an undelivered status notification independently. The M0 unique
       // dedupe key avoids a duplicate owner update if the first attempt succeeded.
       const t=translations[initiative.locale];
@@ -171,11 +183,11 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         severity:evaluation.status==="off_track"||evaluation.status==="missed"?"attention":"info",
         subjectType:"owner_initiative",subjectId:initiative.id,
         facts:{initiativeId:initiative.id,status:evaluation.status,
-          recommendation:evaluation.recommendation,asOf},
+          recommendation:evaluation.recommendation,asOf,transitionKey},
         text:interpolate(t.evaluation,initiative.title,asOf)+" "+
           t.status[evaluation.status]+" — "+t.recommendation[evaluation.recommendation],
         locale:initiative.locale,actions:[{kind:"open"}],
-        dedupeKey:"initiative:"+initiative.id+":"+evaluation.status+":"+evaluation.recommendation,
+        dedupeKey:"initiative:"+initiative.id+":transition:"+transitionKey,
       });
       if(written.created)stats.updates++;
       // Keep a 14-day correction window for delayed POS/timecard evidence.

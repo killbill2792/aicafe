@@ -72,6 +72,8 @@ create table initiative_evaluations (
   as_of date not null,
   status text not null check (status in ('on_track','off_track','met','missed','insufficient_data')),
   results jsonb not null default '{}'::jsonb check (jsonb_typeof(results)='object'),
+  inputs jsonb not null default '{}'::jsonb check (jsonb_typeof(inputs)='object'),
+  transition_key text not null check (char_length(transition_key) between 12 and 160),
   recommendation text not null check (recommendation in ('keep','revert','adjust','extend','none')),
   digest text not null,
   created_at timestamptz not null default now(),

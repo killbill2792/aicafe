@@ -87,5 +87,5 @@ export type EvaluationRow={
   id:string;initiative_id:string;as_of:string;
   status:z.infer<typeof evaluationStatusSchema>;
   results:Record<string,unknown>;recommendation:z.infer<typeof recommendationSchema>;
-  digest:string;created_at:string;
+  digest:string;transition_key:string;inputs:Record<string,unknown>;created_at:string;
 };

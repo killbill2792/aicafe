@@ -196,16 +196,18 @@ export async function persistMetricObservation(scope:InitiativeScope,row:Observa
   return true;
 }
 export async function persistInitiativeEvaluation(scope:InitiativeScope,initiativeId:string,
-  asOf:string,status:string,recommendation:string,results:Record<string,unknown>) {
+  asOf:string,status:string,recommendation:string,results:Record<string,unknown>,
+  inputs:Record<string,unknown>,transitionKey:string) {
   const db=await serviceOwnerAccess(scope);
-  // Semantic idempotency of a snapshot is independent of notification dedupe.
-  // Same status on a later day, or corrected evidence on the same date, is new.
+  // A unique input snapshot includes immutable observation values and definitions,
+  // not merely aggregate results. A corrected POS/check-in day gets a new digest.
   const canonical=Object.entries(results).sort(([a],[b])=>a.localeCompare(b));
   const digest=createHash("sha256").update(JSON.stringify({
-    asOf,status,recommendation,results:canonical,
+    asOf,status,recommendation,results:canonical,inputs,
   })).digest("hex");
   const {data,error}=await db.from("initiative_evaluations").upsert({
-    initiative_id:initiativeId,as_of:asOf,status,recommendation,results,digest,
+    initiative_id:initiativeId,as_of:asOf,status,recommendation,results,
+    inputs,transition_key:transitionKey,digest,
   },{onConflict:"initiative_id,digest",ignoreDuplicates:true}).select("id").maybeSingle();
   if(error)throw error;
   return data!==null;
