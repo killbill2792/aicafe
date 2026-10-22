@@ -24,7 +24,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
     const digest=_status+":"+_recommendation;
     const fresh=!state.digest.has(digest);state.digest.add(digest);return fresh;
   },
-  rotateInitiative:async()=>{state.rotated++;},
+  rotateInitiative:async(i:{revision:number})=>{state.rotated++;return {...i,revision:i.revision+1};},
 }));
 vi.mock("@/lib/teamUpdates/write.server",()=>({
   writeTeamUpdate:async(input:{dedupeKey:string})=>{
@@ -45,6 +45,6 @@ describe("M1 monitor semantic idempotency",()=>{
     expect(again.failed).toBe(0);
     expect(state.keys.size).toBe(2);
     expect(state.sampled).toBe(0);
-    expect(state.rotated).toBe(2); // queue cursor rotates, semantic records do not
+    expect(state.rotated).toBe(4); // claim + terminal transition per run
   });
 });

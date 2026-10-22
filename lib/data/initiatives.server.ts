@@ -188,6 +188,7 @@ export async function persistMetricObservation(scope:InitiativeScope,row:Observa
     .eq("business_date",row.business_date).maybeSingle();
   if(readError)throw readError;
   if(existing?.source!=="computed" && existing) return false;
+  if(existing&&existing.coverage>row.coverage)return false;
   if(existing&&existing.coverage===row.coverage&&existing.value===row.value&&existing.note===row.note)
     return false;
   const {error}=await db.from("initiative_observations").upsert(row,{onConflict:"metric_id,business_date"});
@@ -209,16 +210,17 @@ export async function persistInitiativeEvaluation(scope:InitiativeScope,initiati
   if(error)throw error;
   return data!==null;
 }
-export async function rotateInitiative(initiative:InitiativeRow,completed:boolean) {
+export async function rotateInitiative(initiative:InitiativeRow,completed:boolean):Promise<InitiativeRow|null> {
   const db=createAdminSupabaseClient();
-  const {error}=await db.from("owner_initiatives")
+  const {data,error}=await db.from("owner_initiatives")
     .update({monitor_checked_at:new Date().toISOString(),
       ...(completed?{status:"completed"}:{}),
       updated_at:new Date().toISOString(),revision:initiative.revision+1})
     .eq("id",initiative.id).eq("business_id",initiative.business_id)
     .eq("owner_user_id",initiative.owner_user_id).eq("revision",initiative.revision)
-    .eq("status","active");
+    .eq("status","active").select("revision").maybeSingle();
   if(error)throw error;
+  return data?{...initiative,revision:data.revision}:null;
 }
 export async function readMetricDay(businessId:string,date:string,
   opts:{items:boolean;hours:boolean;ingredientIds:string[]}):Promise<MetricDailyInput> {

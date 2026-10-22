@@ -41,7 +41,12 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
   for(const initiative of queue){
     if(Date.now()>=deadline)break;
     let completed=false;
+    let claim:InitiativeRow|null=null;
     try{
+      // Rotate FIRST: a killed or slow execution cannot monopolize the oldest batch.
+      // Compare-and-swap prevents concurrent cron runs processing the same revision.
+      claim=await rotateInitiative(initiative,false);
+      if(!claim)continue;
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
       const graph=await readMonitorGraph(initiative);
       const domain=initiativeDomain(initiative,graph.metrics);
@@ -90,11 +95,13 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             metric_id:metric.id,business_date:date,value:result.value,
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
           };
-          if(await persistMetricObservation(scope,row))stats.sampled++;
-          const prior=byMetric.get(metric.id)!;
-          const position=prior.findIndex(o=>o.business_date===date);
-          if(position>=0)prior[position]=row;
-          else prior.push(row);
+          if(await persistMetricObservation(scope,row)){
+            stats.sampled++;
+            const prior=byMetric.get(metric.id)!;
+            const position=prior.findIndex(o=>o.business_date===date);
+            if(position>=0)prior[position]=row;
+            else prior.push(row);
+          }
         }
       }
       for(const metric of graph.metrics.filter(m=>m.source==="checkin"&&m.checkin_audience==="owner")){
@@ -140,8 +147,6 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
               m.params.changeConfirmation===true ? date===initiative.starts_on :
               due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on)),
         }));
-      const completeComputed=graph.metrics.filter(m=>m.source==="computed").every(m=>
-        days.every(date=>(byMetric.get(m.id)??[]).some(o=>o.business_date===date)));
       const evaluation=evaluateInitiative(goalMetrics,asOf,initiative.ends_on,0.8,initiative.kind);
       // Save each changed daily evidence snapshot, even without a status transition.
       await persistInitiativeEvaluation(scope,initiative.id,asOf,
@@ -166,7 +171,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       completed=asOf>=initiative.ends_on&&today>dayOffset(initiative.ends_on,14);
     }catch{stats.failed++;}
     finally{
-      try{await rotateInitiative(initiative,completed);}catch{stats.failed++;}
+      if(completed&&claim){
+        try{await rotateInitiative(claim,true);}catch{stats.failed++;}
+      }
     }
   }
   return stats;
