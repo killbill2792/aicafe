@@ -818,37 +818,62 @@ function proposedDuration(text:string,start:number,end:number):boolean{
   /(?:\b(?:for|over|por|durante)\b|(?:لمدة|خلال))\s*$/iu.test(before)&&
   /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
+type MathOp="add"|"subtract";
+/** A join belongs to an arithmetic expression, not arbitrary neighboring
+ * money mentions ("Budget $10, prices are $6 and $5.50"). */
+function arithmeticConnector(text:string):MathOp|null {
+  if(/^\s*,\s*$/u.test(text))return "add";
+  if(/^\s*(?:\+|and|plus|y|más|زائد|و)\s*$/iu.test(text))return "add";
+  if(/^\s*(?:-|minus|less|menos|ناقص)\s*$/iu.test(text))return "subtract";
+  // Labels are allowed around a comparison, but only an explicit operator
+  // permits it. This is the owner-price vs menu-price form.
+  if(text.length<=65&&/\b(?:vs\.?|versus)\b/iu.test(text))return "subtract";
+  return null;
+}
 function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
- locale:AgentLocale,allowed:ReadonlySet<number>):boolean|null{
- const money=candidates(text,locale).filter(c=>c.kind==="money"||
-   (c.kind==="number"&&isCurrencylessMoneyClaim(text,c.start,c.end)));
- const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
- if(index<2)return null;
- const prefix=text.slice(0,v.start);
- // A period ends a clause unless it is a decimal separator; capitalization
- // is not a safe sentence boundary in Spanish or Arabic.
- const sentenceStops=[...prefix.matchAll(/\.(?![\d٠-٩۰-۹])/gu)].map(m=>m.index);
- const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
- const operands=money.slice(0,index).filter(c=>c.start>boundary);
- if(operands.length<2)return null;
- // A total marker must introduce THIS result after the final operand.
- // Looking anywhere to the left wrongly treats subsequent facts ("tip $1")
- // as arithmetic results of an earlier "total $11.50".
- const immediate=text.slice(operands[operands.length-1].end,v.start);
- const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
- if(!resultMarker.test(immediate))return null;
- if(operands.length>3)return false;
- const phrase=text.slice(operands[0].end,v.start);
- const toCents=(c:{kind:Kind;value:number})=>c.kind==="money"?c.value:Math.round(c.value*100);
- const amounts=operands.map(toCents);
- if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
- // Arithmetic in descriptive prose cannot manufacture a business KPI.
- const targetClause=text.slice(operands[operands.length-1].end,v.start);
- if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu.test(targetClause))return null;
- const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
- const signedAmounts=amounts.map((amount,index)=>subtraction&&index>0?-amount:amount);
- const expected=sumCents(signedAmounts,amount=>amount);
- return Math.abs(expected-toCents(v))<=1;
+ locale:AgentLocale,allowed:ReadonlySet<number>):boolean|null {
+  const money=candidates(text,locale).filter(c=>c.kind==="money"||
+    (c.kind==="number"&&isCurrencylessMoneyClaim(text,c.start,c.end)));
+  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
+  if(index<2)return null;
+  const prefix=text.slice(0,v.start);
+  // Sentence boundaries apply in every supported locale, not just EN.
+  const sentenceStops=[...prefix.matchAll(/\.(?![\d٠-٩۰-۹])/gu)].map(m=>m.index);
+  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),
+    prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
+  const prior=money.slice(0,index).filter(c=>c.start>boundary);
+  if(prior.length<2)return null;
+  // Require the marker immediately before the proposed result. An earlier
+  // "total" cannot mark a later, independently reported tip as arithmetic.
+  const immediate=text.slice(prior[prior.length-1].end,v.start);
+  const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
+  if(!resultMarker.test(immediate))return null;
+  // A KPI is valid only when backed by a tool or an owner statement, never
+  // by generic arithmetic of other business observations.
+  const kpi=/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin|beneficio|ganancia|ingresos|ventas|gastos|costes|costos|salarios)\b|(?:الربح|ربح|المبيعات|الإيرادات|التكاليف|المصاريف)/iu;
+  if(kpi.test(immediate))return null;
+  const operands=[prior[prior.length-1]];
+  const operators:MathOp[]=[];
+  for(let pos=prior.length-2;pos>=0;pos--){
+    const following=operands[0];
+    const join=arithmeticConnector(text.slice(prior[pos].end,following.start));
+    if(!join)break; // unrelated preceding money belongs to another claim
+    operands.unshift(prior[pos]);
+    operators.unshift(join);
+    if(operands.length>3)return false; // only 2-3 operands supported
+  }
+  if(operands.length<2)return null;
+  const toCents=(c:{kind:Kind;value:number})=>
+    c.kind==="money"?c.value:Math.round(c.value*100);
+  const cents=operands.map(toCents);
+  if(!cents.every(amount=>[...allowed].some(a=>Math.abs(a-amount)<=1)))return false;
+  // A sum of two unrelated business KPIs is not tool-backed merely because
+  // its operands are individually observed.
+  const expression=text.slice(operands[0].start,v.start);
+  if(kpi.test(expression))return null;
+  const signed=cents.map((amount,i)=>i===0||operators[i-1]==="add"?amount:-amount);
+  const expected=sumCents(signed,amount=>amount);
+  return Math.abs(expected-toCents(v))<=1;
 }
 
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
