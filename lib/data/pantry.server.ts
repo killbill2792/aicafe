@@ -447,10 +447,10 @@ export async function saveProductRecipes(input:OwnerRecipeChanges):Promise<Pantr
    if(quantity===null)return bad("ingredient_unit_mismatch");
    lines.push({...line,quantity});
   }
-  changes.push({menuItemId:id,lines,expectedLines:edit.expected});
+  changes.push({menuItemId:id,lines,expectedLines:[...edit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId))});
  }
  changes[0].expectedSiblingIds=siblingIds;
  const anchorEdit=edited.get(parsed.data.productId);
- changes[0].expectedSourceLines=anchorEdit?.expected??snapshotLines(rows.filter(row=>row.menu_item_id===parsed.data.productId));
+ changes[0].expectedSourceLines=anchorEdit?[...anchorEdit.expected].sort((a,b)=>a.ingredientId.localeCompare(b.ingredientId)):snapshotLines(rows.filter(row=>row.menu_item_id===parsed.data.productId));
  return verifiedWrite(scope,parsed.data.productId,changes);
 }
