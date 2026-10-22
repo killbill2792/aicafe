@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Check } from "lucide-react";
+import { themeArrowDelta } from "./themePickerKeyboard";
 import { useTranslations } from "next-intl";
 import { themes, type ThemeId, type ThemeMode } from "@/app/themes";
 
@@ -21,7 +22,9 @@ export function ThemePicker({initialTheme, initialMode}: {initialTheme: ThemeId;
         const selected=theme===item.id;
         return <button key={item.id} type="button" role="radio" aria-checked={selected} tabIndex={selected?0:-1}
           onKeyDown={(event) => {if (!["ArrowDown","ArrowUp","ArrowRight","ArrowLeft"].includes(event.key)) return;
-            event.preventDefault(); const delta=event.key==="ArrowRight"||event.key==="ArrowDown"?1:-1;
+            const delta=themeArrowDelta(event.key, document.documentElement.dir === "rtl" ? "rtl" : "ltr");
+            if (delta === null) return;
+            event.preventDefault();
             const next=themes[(themes.findIndex(t=>t.id===theme)+delta+themes.length)%themes.length];pickTheme(next.id);(event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')[themes.findIndex(t=>t.id===next.id)] as HTMLButtonElement)?.focus();}}
           onClick={() => pickTheme(item.id)} className={`relative min-h-24 rounded-card border p-3 text-start focus-visible:outline-focus ${selected?"border-accent-text ring-2 ring-accent-text ring-offset-2 ring-offset-surface":"border-line"}`}>
           <span className="mb-2 flex gap-1.5" aria-hidden="true">{(["bg","surface","accent","accentSoft"] as const).map(key => <span key={key} className="relative h-5 w-5 overflow-hidden rounded-full border border-line"><span className="theme-preview-light absolute inset-0" style={{backgroundColor:item.light[key]}} /><span className="theme-preview-dark absolute inset-0" style={{backgroundColor:item.dark[key]}} /></span>)}</span>
