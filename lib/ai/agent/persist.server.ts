@@ -5,6 +5,8 @@ import { configuredSupervisorModel } from "@/lib/ai/conversations/modelConfig";
 import type { ConversationMessage, ConversationScope, GroundedSupervisorReply } from "@/lib/ai/conversations/contracts";
 import type { AgentTurn } from "./loop.server";
 
+export class AgentReplyTooLongError extends Error { constructor() { super("agent_reply_too_long"); } }
+export class AgentReplyStorageError extends Error { constructor() { super("agent_reply_storage_failed"); } }
 type GroundingStatus = GroundedSupervisorReply["status"];
 export function persistedAgentStatus(turn: AgentTurn): GroundingStatus {
   if (turn.usage.toolCalls === 0 && turn.endReason === "complete") return "verified";
@@ -27,7 +29,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
   const blocks: Array<{ type: "text"; text: string }> = [];
   let start = 0;
   while (start < value.length) {
-    if (blocks.length >= 30) throw new Error("agent_reply_too_long");
+    if (blocks.length >= 30) throw new AgentReplyTooLongError();
     const limit = Math.min(start + 1200, value.length);
     let end = limit;
     if (limit < value.length) {
@@ -44,7 +46,7 @@ export function splitAgentText(text: string, unverified: readonly Span[] = []) {
         // A >1200-character token may be hard-split, but never through a
         // currency/number claim, even when the adjacent word is oversized.
         while (end > start && !safe(end)) end--;
-        if (end === start) throw new Error("agent_reply_too_long");
+        if (end === start) throw new AgentReplyTooLongError();
       }
     }
     blocks.push({ type: "text", text: value.slice(start, end) });
@@ -78,7 +80,9 @@ export function agentReplyPayload(turn: AgentTurn) {
 }
 export async function persistAgentReply(scope: ConversationScope, owner: ConversationMessage, turn: AgentTurn) {
   const { reply, metadata } = agentReplyPayload(turn);
-  const saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata);
+  let saved: ConversationMessage;
+  try { saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata); }
+  catch { throw new AgentReplyStorageError(); }
   try {
     // The existing owner-scoped ledger RPC allows up to five tool calls per
     // increment. Split the eight-tool turn without requiring a migration.
