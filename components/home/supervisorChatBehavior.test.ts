@@ -51,7 +51,6 @@ describe("Supervisor chat turn and scroll behavior", () => {
   it("does not spend the history anchor on intermediate streaming updates", () => {
     let committed = 0;
     let applied = 0;
-    const pendingHeight = 1000;
     const streamed = { scrollTop: 165, scrollHeight: 1100, clientHeight: 500 };
     expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
     expect(transcriptScrollTarget({
@@ -63,8 +62,8 @@ describe("Supervisor chat turn and scroll behavior", () => {
     expect(hasInsertedHistoryPage(committed, applied)).toBe(true);
     expect(transcriptScrollTarget({
       scrollTop: streamed.scrollTop, scrollHeight: 1550,
-      clientHeight: 500, previousScrollHeight: pendingHeight, pinned: false,
-    })).toBe(715);
+      clientHeight: 500, previousScrollHeight: streamed.scrollHeight, pinned: false,
+    })).toBe(615);
     applied = committed;
     expect(hasInsertedHistoryPage(committed, applied)).toBe(false);
   });
