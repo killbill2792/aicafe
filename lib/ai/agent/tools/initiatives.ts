@@ -1,13 +1,46 @@
 import "server-only";
 import { z } from "zod";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
-import { proposeInitiativeSchema, initiativeProposalBaseSchema,initiativeStatusSchema }
-  from "@/lib/initiatives/contracts";
+import { proposeInitiativeSchema,initiativeStatusSchema } from "@/lib/initiatives/contracts";
+import { metricKeySchema } from "@/lib/calc/metrics/catalog";
 import { createOwnerInitiative,listOwnerInitiatives,readOwnerInitiative,saveOwnerCheckin }
   from "@/lib/data/initiatives.server";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
-const proposalArgs=initiativeProposalBaseSchema.omit({threadId:true});
+// All model-facing objects are CLOSED with all keys required, including nested
+// metric params. Flexible change_spec is a JSON string validated after decoding.
+// Never weaken strict:true or expose the service-role database to the model.
+const toolParams=z.strictObject({
+  itemId:z.uuid().nullable(),
+  ingredientId:z.uuid().nullable(),
+  fromHour:z.number().int().min(0).max(23).nullable(),
+  toHour:z.number().int().min(1).max(24).nullable(),
+});
+const toolMetric=z.strictObject({
+  role:z.enum(["primary","guardrail"]),
+  source:z.enum(["computed","checkin"]),
+  metricKey:metricKeySchema.nullable(),
+  params:toolParams,
+  comparator:z.enum(["gte","lte"]),
+  targetKind:z.enum(["absolute","relative_pct"]),
+  target:z.number().finite(),
+  checkinQuestion:z.string().min(1).max(300).nullable(),
+  checkinAudience:z.enum(["owner","staff"]).nullable(),
+  dataGap:z.string().max(300).nullable(),
+});
+const proposalArgs=z.strictObject({
+  kind:z.enum(["goal","experiment"]),
+  title:z.string().trim().min(1).max(160),
+  changeDescription:z.string().max(1000),
+  changeSpecJson:z.string().max(4000),
+  adapterId:z.string().max(80).nullable(),
+  startsOn:z.iso.date(),
+  endsOn:z.iso.date(),
+  baselineFrom:z.iso.date(),
+  baselineTo:z.iso.date().nullable(),
+  checkinCadence:z.enum(["daily","every_3_days","weekly","end_only"]),
+  metrics:z.array(toolMetric).min(1).max(12),
+});
 const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
 const statusArgs=z.strictObject({id:z.uuid()});
 const checkinArgs=z.strictObject({
@@ -20,7 +53,7 @@ export const initiativeToolSchemas={
   record_checkin:checkinArgs,
 } as const;
 const descriptions={
-  propose_initiative:"Create an INERT goal/experiment proposal. Owner must approve it separately; no café changes happen.",
+  propose_initiative:"Create an INERT goal/experiment proposal. Write an object as changeSpecJson. Use checkin with a question and gap for noncatalog measurements. Owner approves separately.",
   get_initiatives:"Read this owner's recent goals and experiments.",
   get_initiative_status:"Read a goal/experiment and its latest evidence, gaps and evaluation.",
   record_checkin:"Record an owner's check-in for a check-in metric. This never applies a change.",
@@ -34,15 +67,41 @@ export const initiativeToolDefinitions=Object.entries(initiativeToolSchemas).map
 export function isInitiativeTool(name:string):name is keyof typeof initiativeToolSchemas {
   return Object.hasOwn(initiativeToolSchemas,name);
 }
+function parseChangeSpec(json:string):Record<string,unknown> {
+  try{
+    const result:unknown=JSON.parse(json);
+    if(result!==null&&typeof result==="object"&&!Array.isArray(result))
+      return result as Record<string,unknown>;
+  }catch {/* no private model input in logs */}
+  throw new Error("initiative change spec must be a JSON object");
+}
 export async function executeInitiativeTool(
   name:keyof typeof initiativeToolSchemas,raw:unknown,ctx:AgentToolContext,
 ):Promise<AgentToolResult>{
   const {scope}=await authenticatedConversationContext();
   if(name==="propose_initiative"){
     if(!ctx.threadId)throw new Error("initiative thread context unavailable");
-    const parsed=proposalArgs.parse(raw);
-    // Validate against the complete canonical schema, including windows and provenance.
-    const input=proposeInitiativeSchema.parse({...parsed,threadId:ctx.threadId});
+    const args=proposalArgs.parse(raw);
+    const input=proposeInitiativeSchema.parse({
+      threadId:ctx.threadId,kind:args.kind,title:args.title,
+      changeDescription:args.changeDescription,
+      changeSpec:parseChangeSpec(args.changeSpecJson),
+      adapterId:args.adapterId,startsOn:args.startsOn,endsOn:args.endsOn,
+      baselineFrom:args.baselineFrom,baselineTo:args.baselineTo,
+      checkinCadence:args.checkinCadence,
+      metrics:args.metrics.map(m=>{
+        let params:Record<string,unknown>={};
+        if(m.source==="computed"){
+          if(m.metricKey==="item_units"||m.metricKey==="item_revenue"||m.metricKey==="item_margin")
+            params={itemId:m.params.itemId};
+          else if(m.metricKey==="ingredient_unit_cost")
+            params={ingredientId:m.params.ingredientId};
+          else if(m.metricKey==="sales_per_labor_hour")
+            params={fromHour:m.params.fromHour,toHour:m.params.toHour};
+        }
+        return {...m,params};
+      }),
+    });
     const created=await createOwnerInitiative(scope,input,ctx.locale);
     return {source:"owner_initiatives",period:null,missing:[],
       id:created.id,status:"proposed",kind:created.kind,title:created.title,
