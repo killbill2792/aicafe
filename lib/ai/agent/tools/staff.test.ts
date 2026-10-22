@@ -13,7 +13,7 @@ describe("Olivia bounded reads",()=>{
     const data=await staffTools.get_staff.execute({},ctx({getCurrentStaff:async()=>({
       available:true,value:{count:1,asOf:"2026-10-22T14:00:00Z",
         people:[{name:"Ada",role:"Barista",sourceType:"owner_schedule",sourceProvider:null,
-          start:"2026-10-22T13:00:00Z",breakStatus:"none",isSchedulePrediction:true}]},quality:q,
+          start:"2026-10-22T13:00:00Z",breakStatus:"ok",isSchedulePrediction:true}]},quality:q,
     })}));
     expect(data.count).toBe(1);
     expect(data.agentId).toBe("olivia");
