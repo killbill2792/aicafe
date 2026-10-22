@@ -4,6 +4,7 @@ import {z} from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
+import {reconcileAttributedItemRevenue} from "@/lib/calc/metrics/reconcileItemRevenue";
 import { initiativeAdapters } from "@/lib/initiatives/adapters";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -275,18 +276,14 @@ export async function readMetricDay(businessId:string,date:string,
       const orders=await db.from("orders").select("id,net_sales_cents")
         .eq("business_id",businessId).eq("business_date",date).limit(1001);
       if(orders.error)throw orders.error;
-      const attributed=new Map<string,number>();
-      for(const line of lines.data??[])
-        attributed.set(line.order_id,(attributed.get(line.order_id)??0)+Number(line.net_sales_cents));
-      input.itemRevenueVerified=(orders.data??[]).length<=1000&&
-        (orders.data??[]).length===attributed.size&&
-        (orders.data??[]).every(o=>attributed.get(o.id)===Number(o.net_sales_cents));
-      const totals=new Map<string,{units:number;revenueCents:number}>();
-      for(const line of lines.data??[]){
-        const current=totals.get(line.menu_item_id!)??{units:0,revenueCents:0};
-        current.units+=Number(line.quantity);current.revenueCents+=Number(line.net_sales_cents);
-        totals.set(line.menu_item_id!,current);
-      }
+      const reconciled=reconcileAttributedItemRevenue(
+        (orders.data??[]).map(o=>({id:o.id,netSalesCents:Number(o.net_sales_cents)})),
+        (lines.data??[]).map(line=>({
+          orderId:line.order_id,itemId:line.menu_item_id!,
+          quantity:Number(line.quantity),revenueCents:Number(line.net_sales_cents),
+        })),
+      );
+      input.itemRevenueVerified=(orders.data??[]).length<=1000&&reconciled.verified;
       const [fallback,recipes]=await Promise.all([
         ids.length?db.from("menu_item_cost_fallbacks").select("menu_item_id,cost_cents").eq("business_id",businessId).in("menu_item_id",ids)
           .eq("status","confirmed"):Promise.resolve({data:[],error:null}),
@@ -302,7 +299,7 @@ export async function readMetricDay(businessId:string,date:string,
         recipesByItem.set(recipe.menu_item_id,arr);
       }
       const fallbackMap=new Map((fallback.data??[]).map(r=>[r.menu_item_id,Number(r.cost_cents)]));
-      input.items=[...totals].map(([itemId,total]):ItemEvidence=>({
+      input.items=reconciled.items.map(({itemId,...total}):ItemEvidence=>({
         itemId,units:total.units,revenueCents:total.revenueCents,
         recipeLines:recipesByItem.get(itemId)??[],ingredientPriceMicros:{},
         ownerCostCents:fallbackMap.get(itemId)??null,
