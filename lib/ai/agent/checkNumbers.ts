@@ -19,20 +19,43 @@ function decimal(raw: string, locale: AgentLocale): number {
   }
   return Number(s);
 }
-const curr = String.raw`(?:[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار)`;
-const number = String.raw`[-+−]?[٠-٩۰-۹\d]+(?:[.,٬٫\s\u00a0\u202f][٠-٩۰-۹\d]+)*`;
-const numeric = new RegExp(String.raw`(?<![\p{L}\p{N}_])(?:${curr}\s*)?${number}(?:\s*(?:[%٪]|${curr}))?(?![\p{L}\p{N}_])`, "gu");
-function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number }> {
-  const found: Array<UnverifiedNumber & { value: number }> = [];
-  for (const m of text.matchAll(numeric)) {
-    const token = m[0].trim();
-    const money = new RegExp(curr, "u").test(token);
+const currency = "(?:[$€£]|USD|EUR|GBP|ر\\.س|د\\.إ|دولار)";
+const digits = "[-+−]?[٠-٩۰-۹\\d]+";
+function numberPattern(locale: AgentLocale): RegExp {
+  // Ordinary spaces separate words (and numbers); localized nonbreaking
+  // grouping spaces are allowed between digits only in ES/AR.
+  const separators = locale === "en" ? "[.,٬٫]" : "[.,٬٫\\u00a0\\u202f]";
+  const number = digits + "(?:" + separators + "[٠-٩۰-۹\\d]+)*";
+  return new RegExp("(?<![\\p{L}\\p{N}_])(?:" + currency + "\\s*)?" + number +
+    "(?:\\s*(?:[%٪]|" + currency + "))?(?![\\p{L}\\p{N}_])", "gu");
+}
+const months = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
+const monthBefore = new RegExp(months + "[\\s,]*$", "iu");
+const monthAfter = new RegExp("^\\s*(?:de\\s+)?" + months + "(?!\\p{L})", "iu");
+const isoDate = /[٠-٩۰-۹\d]{4}[-/][٠-٩۰-۹\d]{1,2}[-/][٠-٩۰-۹\d]{1,2}/gu;
+function isCalendarNumber(text: string, start: number, end: number, value: number, kind: Kind): boolean {
+  if (kind !== "number" || !Number.isInteger(value)) return false;
+  if (value >= 2000 && value <= 2100) return true;
+  if (value >= 1 && value <= 31) {
+    const before = text.slice(Math.max(0, start - 28), start);
+    const after = text.slice(end, end + 28);
+    if (monthBefore.test(before) || monthAfter.test(after)) return true;
+  }
+  return [...text.matchAll(isoDate)].some(match =>
+    start < match.index + match[0].length && end > match.index);
+}
+function candidates(text: string, locale: AgentLocale): Array<UnverifiedNumber & { value: number; wholePercent: boolean }> {
+  const found: Array<UnverifiedNumber & { value: number; wholePercent: boolean }> = [];
+  for (const m of text.matchAll(numberPattern(locale))) {
+    const token = m[0].trim(), money = new RegExp(currency, "u").test(token);
     const percent = /[%٪]$/.test(token);
-    const raw = token.replace(new RegExp(curr, "gu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
+    const raw = token.replace(new RegExp(currency, "gu"), "").replace(/[%٪]/g, "").trim().replace("−", "-");
     const value = decimal(raw, locale);
     if (!Number.isFinite(value)) continue;
     const kind: Kind = money ? "money" : percent ? "percent" : "number";
+    if (isCalendarNumber(text, m.index, m.index + m[0].length, value, kind)) continue;
     found.push({ text: token, start: m.index, end: m.index + m[0].length, kind,
+      wholePercent: percent && !/[.,٫٬]/.test(raw),
       value: kind === "money" || kind === "percent" ? Math.round(value * 100) : value });
   }
   return found;
@@ -52,12 +75,12 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
   else if (/Margin$|Ratio$/.test(key)) allowed.percent.add(Math.round(data * 10000));
   else allowed.number.add(data);
 }
-/** Return offsets into the original prose, without deleting or altering the sentence. */
+/** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
   results.forEach(r => allowFromData(r, allowed));
   candidates(ownerText, locale).forEach(v => allowed[v.kind].add(v.value));
   return candidates(text, locale).filter(v => ![...allowed[v.kind]].some(x =>
-    Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? 10 : 0)))
+    Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0)))
     .map(({ text: token, start, end, kind }) => ({ text: token, start, end, kind }));
 }
