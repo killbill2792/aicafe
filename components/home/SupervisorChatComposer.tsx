@@ -156,7 +156,8 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
             other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
           onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
           onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
-        const metadata = record(message.grounding?.agentMetadata) ? message.grounding.agentMetadata : null;
+        const possibleMetadata = message.grounding?.agentMetadata;
+        const metadata = record(possibleMetadata) ? possibleMetadata : null;
         const rawSpans = Array.isArray(metadata?.unverified) ? metadata.unverified : [];
         const spans = rawSpans.filter(record)
           .filter(v => v.blockIndex === i && typeof v.start === "number" && typeof v.end === "number")
