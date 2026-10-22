@@ -52,7 +52,7 @@ function BucketRow({
           </span>
         ) : bucket.pctCovered > 0 ? (
           <div className="flex flex-col gap-1">
-            <div className="h-2.5 rounded-full bg-surface">
+            <div className="h-2.5 rounded-full bg-line">
               <div className="h-2.5 rounded-full bg-good" style={{ width: `${bucket.pctCovered}%` }} />
             </div>
             <span className="text-[13px] font-semibold text-ink">
