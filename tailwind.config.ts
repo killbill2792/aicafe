@@ -1,58 +1,68 @@
 import type { Config } from "tailwindcss";
-
-// Tokens copied from docs/02-design-system.md — keep this file in sync with that doc.
+const rgb = (token: string) => `rgb(var(--c-${token}) / <alpha-value>)`;
+/** Includes deprecated compatibility aliases for existing screens. */
+const colors = {
+  "bg": rgb("bg"),
+  "surface": rgb("surface"),
+  "surface2": rgb("surface2"),
+  "line": rgb("line"),
+  "text": rgb("text"),
+  "muted": rgb("muted"),
+  "accent": rgb("accent"),
+  "accent-soft": rgb("accent-soft"),
+  "accent2": rgb("accent2"),
+  "pos": rgb("pos"),
+  "neg": rgb("neg"),
+  "warn": rgb("warn-text"),
+  "on-accent": rgb("on-accent"),
+  "accent-text": rgb("accent-text"),
+  "warn-text": rgb("warn-text"),
+  "focus": rgb("focus"),
+  "pos-soft": rgb("pos-soft"),
+  "neg-soft": rgb("neg-soft"),
+  "warn-soft": rgb("warn-soft"),
+  "persona-alex": rgb("persona-alex"),
+  "persona-alex-soft": rgb("persona-alex-soft"),
+  "persona-alex-border": rgb("persona-alex-border"),
+  "persona-olivia": rgb("persona-olivia"),
+  "persona-olivia-soft": rgb("persona-olivia-soft"),
+  "persona-olivia-border": rgb("persona-olivia-border"),
+  "persona-maya": rgb("persona-maya"),
+  "persona-maya-soft": rgb("persona-maya-soft"),
+  "persona-maya-border": rgb("persona-maya-border"),
+  "persona-leo": rgb("persona-leo"),
+  "persona-leo-soft": rgb("persona-leo-soft"),
+  "persona-leo-border": rgb("persona-leo-border"),
+  "chart-staff": rgb("chart-staff"),
+  "chart-ingredients": rgb("chart-ingredients"),
+  "chart-running": rgb("chart-running"),
+  "chart-fees": rgb("chart-fees"),
+  "fg": rgb("text"),
+  "nav": rgb("surface"),
+  "paper": rgb("bg"),
+  "card": rgb("surface"),
+  "ink": rgb("text"),
+  "ink-muted": rgb("muted"),
+  "good": rgb("pos"),
+  "good-tint": rgb("pos-soft"),
+  "warn-tint": rgb("warn-soft"),
+  "staff": rgb("chart-staff"),
+  "ingredients": rgb("chart-ingredients"),
+  "running": rgb("chart-running"),
+  "fees": rgb("chart-fees"),
+};
 const config: Config = {
-  content: [
-    "./app/**/*.{ts,tsx}",
-    "./components/**/*.{ts,tsx}",
-    "./lib/**/*.{ts,tsx}",
-  ],
-  theme: {
-    extend: {
-      colors: {
-        ink: "#2A1D14",
-        "ink-muted": "#6B5B4E",
-        paper: "#F6F1E9",
-        card: "#FFFFFF",
-        line: "#E6DCCD",
-        good: "#1E6B4B",
-        "good-tint": "#E3F0E8",
-        warn: "#B4460E",
-        "warn-tint": "#FBE9DC",
-        staff: "#2F5D8A",
-        ingredients: "#8B5A2B",
-        running: "#E0AE4E",
-        fees: "#A7B0BA",
-      },
-      fontFamily: {
-        headline: ["var(--font-fraunces)", "Georgia", "serif"],
-        body: ["var(--font-figtree)", "system-ui", "sans-serif"],
-        arabic: ["var(--font-ibm-plex-arabic)", "system-ui", "sans-serif"],
-      },
-      fontSize: {
-        "money-lg": ["80px", { lineHeight: "1.1" }],
-        "money-md": ["56px", { lineHeight: "1.1" }],
-        "money-sm": ["44px", { lineHeight: "1.15" }],
-      },
-      borderRadius: {
-        card: "20px",
-        "card-lg": "24px",
-      },
-      maxWidth: {
-        app: "480px",
-        // Desktop/tablet reading column for ordinary single-column screens (Home, Money, Staff,
-        // More, every form) — wider than mobile, but not stretched edge-to-edge.
-        "app-content": "840px",
-        // Desktop/tablet width for screens asked to actually use the horizontal space (the Menu
-        // list and product detail screens).
-        "app-wide": "1280px",
-      },
-      width: {
-        sidenav: "240px",
-      },
-    },
-  },
+  content: ["./app/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./lib/**/*.{ts,tsx}"],
+  darkMode: ["class", '[data-mode="dark"]'],
+  theme: { extend: {
+    colors,
+    fontFamily: { headline: ["var(--font-jakarta)", "system-ui", "sans-serif"], body: ["var(--font-inter)", "system-ui", "sans-serif"], arabic: ["var(--font-ibm-plex-arabic)", "system-ui", "sans-serif"] },
+    fontSize: { "money-lg": ["80px", { lineHeight: "1.1" }], "money-md": ["56px", { lineHeight: "1.1" }], "money-sm": ["44px", { lineHeight: "1.15" }] },
+    borderRadius: { card: "20px", "card-lg": "24px", chip: "999px" },
+    boxShadow: { card: "var(--shadow-card)" },
+    maxWidth: { app: "480px", "app-content": "840px", "app-wide": "1280px" },
+    width: { sidenav: "240px" },
+  } },
   plugins: [],
 };
-
 export default config;

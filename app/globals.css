@@ -1,3 +1,5 @@
+@import "./themes.generated.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -18,7 +20,7 @@
   }
 
   :focus-visible {
-    @apply outline outline-2 outline-offset-2 outline-ink;
+    @apply outline outline-2 outline-offset-2 outline-fg;
   }
 }
 
@@ -31,3 +33,5 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--font-ibm-plex-arabic), sans-serif; }
