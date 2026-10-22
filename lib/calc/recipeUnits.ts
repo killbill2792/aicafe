@@ -50,3 +50,73 @@ export function toBaseUnitQuantity(
   if (unit === "each") return baseUnit === "each" ? quantity : null;
   return null;
 }
+
+
+/** Purchase packs are defined against an ingredient's canonical g/ml/each unit. The same
+ * bottle label "oz" means *fluid* ounces only for liquids and *weight* ounces for solids. */
+export type PackUnit = "gal" | "qt" | "l" | "ml" | "fl_oz" | "lb" | "kg" | "oz_wt" | "g" | "each" | "dozen" | `case(${number})` | "oz";
+const PACK_TO_BASE: Record<Exclude<PackUnit, `case(${number})` | "oz">, readonly [BaseUnit, number]> = {
+  gal: ["ml", 3785.411784], qt: ["ml", 946.352946], l: ["ml", 1000],
+  ml: ["ml", 1], fl_oz: ["ml", 29.5735295625],
+  lb: ["g", 453.59237], kg: ["g", 1000], oz_wt: ["g", 28.349523125],
+  g: ["g", 1], each: ["each", 1], dozen: ["each", 12],
+};
+
+/** Returns null rather than silently treating a weight pack as a liquid pack, or vice versa. */
+export function packBaseQuantity(packQuantity: number, packUnit: string, baseUnit: BaseUnit): number | null {
+  if (!Number.isFinite(packQuantity) || packQuantity <= 0) return null;
+  const unit = packUnit === "oz" ? (baseUnit === "ml" ? "fl_oz" : "oz_wt") : packUnit;
+  const matchedCase = /^case\(([1-9]\d*)\)$/.exec(unit);
+  const definition: readonly [BaseUnit, number] | undefined = matchedCase
+    ? ["each", Number(matchedCase[1])]
+    : Object.hasOwn(PACK_TO_BASE, unit)
+      ? PACK_TO_BASE[unit as keyof typeof PACK_TO_BASE]
+      : undefined;
+  if (!definition || definition[0] !== baseUnit || !Number.isSafeInteger(definition[1]) && matchedCase) return null;
+  const baseQuantity = packQuantity * definition[1];
+  return Number.isFinite(baseQuantity) && baseQuantity > 0 ? baseQuantity : null;
+}
+
+/** Price is integer cents; stored price is integer MICRO-CENTS per canonical unit.
+ * Round once at the final step, consistent with existing ingredient_prices rows. */
+export function packToCostPerBaseMicros(
+  packQuantity: number, packUnit: string, packCostCents: number, baseUnit: BaseUnit,
+): number | null {
+  if (!Number.isSafeInteger(packCostCents) || packCostCents <= 0) return null;
+  const baseQuantity = packBaseQuantity(packQuantity, packUnit, baseUnit);
+  if (baseQuantity === null) return null;
+  const result = Math.round(packCostCents * 1_000_000 / baseQuantity);
+  return Number.isSafeInteger(result) && result > 0 ? result : null;
+}
+
+export type PlainUnit = RecipeDisplayUnit | "oz_wt" | "cup";
+export function stepFor(unit: PlainUnit): number {
+  return unit === "fl_oz" || unit === "oz_wt" ? 0.5 : 1;
+}
+
+/** No fractional decimals in the everyday recipe summary. Quarter fractions are intentional,
+ * and plural categories use Intl.PluralRules (ICU), rather than a hardcoded English n!==1. */
+export function plainQuantity(
+  quantity: number, unit: PlainUnit, locale = "en", cupSizeOz?: number,
+): string {
+  if (!Number.isFinite(quantity) || quantity < 0) throw new RangeError("Invalid quantity");
+  const roundedQuarters = Math.round(quantity * 4);
+  const whole = Math.floor(roundedQuarters / 4);
+  const remainder = roundedQuarters % 4;
+  const fraction = ["", "¼", "½", "¾"][remainder];
+  const numeric = (whole ? new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(whole) : "") + fraction || "0";
+  const plural = new Intl.PluralRules(locale).select(roundedQuarters / 4);
+  const one = plural === "one";
+  const labels: Record<string, Record<PlainUnit, readonly [string, string]>> = {
+    en: { shot: ["shot", "shots"], pump: ["pump", "pumps"], fl_oz: ["oz", "oz"], oz_wt: ["oz", "oz"], g: ["g", "g"], ml: ["ml", "ml"], each: ["item", "items"], cup: ["cup", "cups"] },
+    es: { shot: ["shot", "shots"], pump: ["pulsación", "pulsaciones"], fl_oz: ["oz", "oz"], oz_wt: ["oz", "oz"], g: ["g", "g"], ml: ["ml", "ml"], each: ["unidad", "unidades"], cup: ["taza", "tazas"] },
+    ar: { shot: ["جرعة", "جرعات"], pump: ["ضغطة", "ضغطات"], fl_oz: ["أونصة", "أونصات"], oz_wt: ["أونصة", "أونصات"], g: ["غ", "غ"], ml: ["مل", "مل"], each: ["قطعة", "قطع"], cup: ["كوب", "أكواب"] },
+  };
+  const key = locale.split("-")[0];
+  const terms = labels[key] ?? labels.en;
+  const label = terms[unit][one ? 0 : 1];
+  const cup = unit === "cup" && cupSizeOz !== undefined
+    ? ` (${plainQuantity(cupSizeOz, "fl_oz", locale)})`
+    : "";
+  return `${numeric} ${label}${cup}`;
+}
