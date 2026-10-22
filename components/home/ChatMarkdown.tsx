@@ -103,7 +103,6 @@ export function ChatMarkdown({ text, unverified = [], label }: {
       const ordered = first.ordered;
       const firstNumber = first.number;
       const entries: ReactNode[] = [];
-      let lastNumber = firstNumber - 1;
       const listStart = index;
       while (index < lines.length) {
         const marker = listMarker(lines[index]);
@@ -122,7 +121,6 @@ export function ChatMarkdown({ text, unverified = [], label }: {
         entries.push(ordered
           ? <li key={index} value={marker.number} className="ps-1">{item}</li>
           : <li key={index} className="ps-1">{item}</li>);
-        lastNumber = marker.number;
         index++;
       }
       blocks.push(ordered
