@@ -192,8 +192,8 @@ describe("fresh reads replace saved numeric evidence",()=>{
     id:"latte",name:"Latte",priceCents:850,
   }]};
   it("rejects a superseded price even when it was verified on an earlier turn",()=>{
-    expect(checkNumbers("Latte costs $6.","",[fresh],"en",previous,
-      "The latte costs $6.").map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $6.","",[fresh],"en",previous)
+      .map(v=>v.text)).toEqual(["$6"]);
     expect(checkNumbers("Latte costs $8.50.","",[fresh],"en",previous)).toEqual([]);
   });
   it("still permits saved evidence in a no-tool follow-up",()=>{
@@ -313,5 +313,43 @@ describe("Codex: semantic evidence and lexical formatting boundaries", () => {
       .map(v=>v.text)).toEqual(["9"]);
     expect(checkNumbers("The order count is 999. Sales are unavailable.", "", [], "en")
       .map(v=>v.text)).toEqual(["999"]);
+  });
+});
+
+
+describe("Codex: assistant formatting never becomes cross-turn evidence", () => {
+  it("does not trust previous assistant list markers or unsupported time digits", () => {
+    // Only owner statements and typed evidence can be passed to checkNumbers;
+    // there is deliberately no previousAssistantText input to launder markers.
+    expect(checkNumbers("You sold 2 drinks.", "", [], "en")
+      .map(v=>v.text)).toEqual(["2"]);
+    expect(checkNumbers("We served 8 drinks.", "", [], "en")
+      .map(v=>v.text)).toEqual(["8"]);
+    expect(checkNumbers("You sold 2 drinks.", "We sold 2 drinks.", [], "en"))
+      .toEqual([]);
+  });
+});
+
+describe("Codex: partial hours preserve weekday-specific verified times", () => {
+  const partial={source:"locations.open_hours",period:null,
+    missing:["businessHoursNotSet:tue","businessHoursNotSet:wed"],
+    hours:{mon:[["08:00","17:00"]],tue:[]}};
+  it("verifies a configured Monday time even when other weekdays are unknown", () => {
+    expect(checkNumbers("We open at 8:00 AM on Monday.", "", [partial], "en")).toEqual([]);
+    expect(checkNumbers("We close at 5:00 PM on Monday.", "", [partial], "en")).toEqual([]);
+  });
+  it("does not transfer Monday evidence to unknown Tuesday or unlabeled weekdays", () => {
+    expect(checkNumbers("We open at 8:00 AM on Tuesday.", "", [partial], "en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM.", "", [partial], "en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 10:00 AM on Monday.", "", [partial], "en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Monday and Tuesday.", "", [partial], "en")
+      .length).toBeGreaterThan(0);
+  });
+  it("retains multilingual weekday-specific grounding", () => {
+    expect(checkNumbers("We open at 8:00 AM on lunes.", "", [partial], "es")).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on الاثنين.", "", [partial], "ar")).toEqual([]);
   });
 });
