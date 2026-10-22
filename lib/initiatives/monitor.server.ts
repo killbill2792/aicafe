@@ -1,5 +1,5 @@
 import "server-only";
-import {createHash} from "node:crypto";
+import {createHash,randomUUID} from "node:crypto";
 import { formatInTimeZone } from "date-fns-tz";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -8,7 +8,7 @@ import { computeMetric, type MetricKey } from "@/lib/calc/metrics/catalog";
 import { evaluateInitiative, type GoalMetric } from "@/lib/calc/initiatives/evaluate";
 import { writeTeamUpdate } from "@/lib/teamUpdates/write.server";
 import { listMonitorBatch,readMonitorGraph,readMetricDay,persistMetricObservation,
-  persistInitiativeEvaluation,rotateInitiative } from "@/lib/data/initiatives.server";
+  persistInitiativeEvaluation,claimMonitorInitiative,releaseMonitorInitiative } from "@/lib/data/initiatives.server";
 import type { InitiativeRow,MetricRow,ObservationRow,InitiativeScope } from "./contracts";
 const translations = {en:en.Initiatives,es:es.Initiatives,ar:ar.Initiatives};
 const dayOffset = (day:string,days:number) =>
@@ -43,10 +43,14 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
     if(Date.now()>=deadline)break;
     let completed=false;
     let claim:InitiativeRow|null=null;
+    const token=randomUUID();
+    const started=Date.now();
+    const assertBudget=()=>{if(Date.now()>deadline-8_000 || Date.now()-started>10_000)
+      throw new Error("monitor work time budget exhausted");};
     try{
       // Rotate FIRST: a killed or slow execution cannot monopolize the oldest batch.
       // Compare-and-swap prevents concurrent cron runs processing the same revision.
-      claim=await rotateInitiative(initiative,false);
+      claim=await claimMonitorInitiative(initiative,token);
       if(!claim)continue;
       const scope:InitiativeScope={businessId:initiative.business_id,ownerUserId:initiative.owner_user_id};
       const graph=await readMonitorGraph(initiative);
@@ -91,6 +95,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         ...rotated(incomplete,1),...rotated(covered,1)]
         .filter((day,index,array)=>array.indexOf(day)===index).slice(0,7);
       for(const date of pending){
+        assertBudget();
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
           (eligibleCorrection || !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1)));
         if(!computed.length)continue;
@@ -101,6 +106,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             .map(m=>String(m.params.ingredientId)),
         });
         for(const metric of computed){
+          assertBudget();
           if(!metric.metric_key)continue;
           const result=computeMetric(metric.metric_key as MetricKey,metric.params,input);
           const row:ObservationRow={
@@ -108,7 +114,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
             revision:1,
           };
-          if(await persistMetricObservation(scope,row)){
+          if(await persistMetricObservation(scope,initiative.id,token,row)){
             stats.sampled++;
             const prior=byMetric.get(metric.id)!;
             const position=prior.findIndex(o=>o.business_date===date);
@@ -127,6 +133,7 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         const outstanding=dueDates.filter(date=>!already.some(o=>o.business_date===date&&o.coverage>=1));
         const start=outstanding.length?initiative.revision%outstanding.length:0;
         for(const date of [...outstanding.slice(start),...outstanding.slice(0,start)].slice(0,3)){
+          assertBudget();
           const t=translations[initiative.locale];
           const question=metric.checkin_question??t.checkinDefault;
           const result=await writeTeamUpdate({
@@ -177,10 +184,11 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       const inputs={asOf,endsOn:initiative.ends_on,kind:initiative.kind,
         minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id))};
       await persistInitiativeEvaluation(scope,initiative.id,asOf,
-        evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey);
+        evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey,token);
       // Retry an undelivered status notification independently. The M0 unique
       // dedupe key avoids a duplicate owner update if the first attempt succeeded.
       const t=translations[initiative.locale];
+      assertBudget();
       const written=await writeTeamUpdate({
         businessId:initiative.business_id,ownerUserId:initiative.owner_user_id,
         domain,kind:"initiative_evaluation",
@@ -203,8 +211,8 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         testAttempted&&baselineAttempted;
     }catch{stats.failed++;}
     finally{
-      if(completed&&claim){
-        try{await rotateInitiative(claim,true);}catch{stats.failed++;}
+      if(claim){
+        try{await releaseMonitorInitiative(initiative.id,token,completed);}catch{stats.failed++;}
       }
     }
   }

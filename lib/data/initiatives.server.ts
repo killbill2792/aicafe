@@ -156,7 +156,8 @@ export async function saveOwnerCheckin(scope:InitiativeScope,metricId:string,
 export async function listMonitorBatch() {
   const db=createAdminSupabaseClient();
   const {data,error}=await db.from("owner_initiatives").select(columns)
-    .eq("status","active").order("monitor_checked_at",{ascending:true,nullsFirst:true})
+    .eq("status","active").or("monitor_lease_until.is.null,monitor_lease_until.lt."+new Date().toISOString())
+    .order("monitor_checked_at",{ascending:true,nullsFirst:true})
     .order("id",{ascending:true}).limit(100);
   if(error)throw error;
   return (data??[]) as InitiativeRow[];
@@ -173,7 +174,7 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
     throw new Error("initiative monitor source unavailable");
   const metrics=(metricResult.data??[]) as MetricRow[];
   const observations=metrics.length?await db.from("initiative_observations")
-    .select("metric_id,business_date,value,coverage,source,note")
+    .select("metric_id,business_date,value,coverage,source,note,revision")
     .in("metric_id",metrics.map(m=>m.id))
     .gte("business_date",initiative.baseline_from)
     .lte("business_date",initiative.ends_on).limit(2500):null;
@@ -182,51 +183,50 @@ export async function readMonitorGraph(initiative:InitiativeRow) {
     timezone:businessResult.data.timezone||"America/Los_Angeles",
     latest:((evaluationResult.data??[])[0]??null) as EvaluationRow|null};
 }
-export async function persistMetricObservation(scope:InitiativeScope,row:ObservationRow) {
-  const db=await serviceOwnerAccess(scope);
-  // A completed check-in is never overwritten by a computed sample.
-  const {data:existing,error:readError}=await db.from("initiative_observations")
-    .select("coverage,source,value,note,revision").eq("metric_id",row.metric_id)
-    .eq("business_date",row.business_date).maybeSingle();
-  if(readError)throw readError;
-  if(existing?.source!=="computed" && existing) return false;
-  if(existing&&existing.coverage>row.coverage)return false;
-  if(existing&&existing.coverage===row.coverage&&existing.value===row.value&&existing.note===row.note)
-    return false;
-  const {error}=await db.from("initiative_observations").upsert({
-    ...row,revision:(existing?.revision??0)+1,
-  },{onConflict:"metric_id,business_date"});
+export async function claimMonitorInitiative(initiative:InitiativeRow,token:string):Promise<InitiativeRow|null> {
+  const db=createAdminSupabaseClient();
+  const {data,error}=await db.rpc("claim_owner_initiative_monitor",{
+    p_id:initiative.id,p_revision:initiative.revision,p_token:token,
+  });
   if(error)throw error;
-  return true;
+  return typeof data==="number"?{...initiative,revision:data}:null;
+}
+export async function releaseMonitorInitiative(id:string,token:string,completed:boolean) {
+  const db=createAdminSupabaseClient();
+  const {error}=await db.rpc("release_owner_initiative_monitor",{
+    p_id:id,p_token:token,p_completed:completed,
+  });
+  if(error)throw error;
+}
+/** Atomic source observation and lease test. No read/update race or stale worker writes. */
+export async function persistMetricObservation(scope:InitiativeScope,initiativeId:string,
+  leaseToken:string,row:ObservationRow) {
+  const db=await serviceOwnerAccess(scope);
+  const {data,error}=await db.rpc("write_owner_initiative_monitor_observation",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_initiative_id:initiativeId,p_token:leaseToken,
+    p_metric_id:row.metric_id,p_date:row.business_date,p_value:row.value,
+    p_coverage:row.coverage,p_note:row.note,
+  });
+  if(error)throw error;
+  return data===true;
 }
 export async function persistInitiativeEvaluation(scope:InitiativeScope,initiativeId:string,
   asOf:string,status:string,recommendation:string,results:Record<string,unknown>,
-  inputs:Record<string,unknown>,transitionKey:string) {
+  inputs:Record<string,unknown>,transitionKey:string,leaseToken:string) {
   const db=await serviceOwnerAccess(scope);
-  // A unique input snapshot includes immutable observation values and definitions,
-  // not merely aggregate results. A corrected POS/check-in day gets a new digest.
   const canonical=Object.entries(results).sort(([a],[b])=>a.localeCompare(b));
   const digest=createHash("sha256").update(JSON.stringify({
     asOf,status,recommendation,results:canonical,inputs,
   })).digest("hex");
-  const {data,error}=await db.from("initiative_evaluations").upsert({
-    initiative_id:initiativeId,as_of:asOf,status,recommendation,results,
-    inputs,transition_key:transitionKey,digest,
-  },{onConflict:"initiative_id,digest",ignoreDuplicates:true}).select("id").maybeSingle();
+  const {data,error}=await db.rpc("write_owner_initiative_monitor_evaluation",{
+    p_business_id:scope.businessId,p_owner_user_id:scope.ownerUserId,
+    p_initiative_id:initiativeId,p_token:leaseToken,
+    p_as_of:asOf,p_status:status,p_recommendation:recommendation,
+    p_results:results,p_inputs:inputs,p_transition_key:transitionKey,p_digest:digest,
+  });
   if(error)throw error;
-  return data!==null;
-}
-export async function rotateInitiative(initiative:InitiativeRow,completed:boolean):Promise<InitiativeRow|null> {
-  const db=createAdminSupabaseClient();
-  const {data,error}=await db.from("owner_initiatives")
-    .update({monitor_checked_at:new Date().toISOString(),
-      ...(completed?{status:"completed"}:{}),
-      updated_at:new Date().toISOString(),revision:initiative.revision+1})
-    .eq("id",initiative.id).eq("business_id",initiative.business_id)
-    .eq("owner_user_id",initiative.owner_user_id).eq("revision",initiative.revision)
-    .eq("status","active").select("revision").maybeSingle();
-  if(error)throw error;
-  return data?{...initiative,revision:data.revision}:null;
+  return data===true;
 }
 export async function readMetricDay(businessId:string,date:string,
   opts:{items:boolean;hours:boolean;ingredientIds:string[]}):Promise<MetricDailyInput> {

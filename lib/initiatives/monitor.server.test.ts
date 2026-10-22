@@ -24,7 +24,8 @@ vi.mock("@/lib/data/initiatives.server",()=>({
     const digest=_status+":"+_recommendation;
     const fresh=!state.digest.has(digest);state.digest.add(digest);return fresh;
   },
-  rotateInitiative:async(i:{revision:number})=>{state.rotated++;return {...i,revision:i.revision+1};},
+  claimMonitorInitiative:async(i:{revision:number})=>{state.rotated++;return {...i,revision:i.revision+1};},
+  releaseMonitorInitiative:async()=>{},
 }));
 vi.mock("@/lib/teamUpdates/write.server",()=>({
   writeTeamUpdate:async(input:{dedupeKey:string})=>{
