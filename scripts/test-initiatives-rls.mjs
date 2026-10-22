@@ -93,7 +93,7 @@ try{
   assert.equal(leased,revision+1,"first worker acquires lease");
   assert.equal((await db.query(leaseSql,[ID,leased,t2])).rows[0].revision,null,
     "overlapping worker cannot acquire another lease");
-  const observationSql="select write_owner_initiative_monitor_observation($1,$2,$3,$4,$5,$6,$7,$8,$9) as wrote";
+  const observationSql="select write_owner_initiative_monitor_observation($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) as wrote";
   const leaseObsArgs=[BIZ,A,ID,t1,MID,"2026-10-16",125,1,null,false];
   assert.equal((await db.query(observationSql,leaseObsArgs)).rows[0].wrote,true);
   assert.equal((await db.query(observationSql,[...leaseObsArgs.slice(0,3),t2,...leaseObsArgs.slice(4)])).rows[0].wrote,false);
