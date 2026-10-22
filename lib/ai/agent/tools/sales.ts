@@ -26,7 +26,10 @@ export const salesTools={
       const s=await ctx.tools.getPricingRecommendation(itemId);
       if(!s.available)return {source:"pricing_engine",period:null,agentId:"alex",missing:s.quality.missingInputs};
       const v=s.value;
-      return {source:"pricing_engine",period:null,agentId:"alex",missing:s.quality.missingInputs,
+      return {source:"pricing_engine",period:null,agentId:"alex",
+        missing:[...new Set([...s.quality.missingInputs,...v.dataQuality.missingInputs])],
+        estimated:[...new Set([...s.quality.estimatedInputs,...v.dataQuality.estimatedInputs])],
+        stale:[...new Set([...s.quality.staleInputs,...v.dataQuality.staleInputs])],
         itemId,status:v.status,confidence:v.confidence,mode:v.calculationMode,
         currentPriceCents:v.currentPriceCents,recommendedPriceCents:v.recommendedPriceCents,
         productCostCents:v.productCostCents,warnings:v.warnings};
