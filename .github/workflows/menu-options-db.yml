@@ -1,0 +1,30 @@
+name: P1 Menu Options Database Verification
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20261022000080_menu_options_combos.sql"
+      - "scripts/test-menu-options-db.mjs"
+      - ".github/workflows/menu-options-db.yml"
+permissions:
+  contents: read
+jobs:
+  postgres:
+    name: Scoped add-ons and combo PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/test-menu-options-db.mjs
