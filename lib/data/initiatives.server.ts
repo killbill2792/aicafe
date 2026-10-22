@@ -76,7 +76,8 @@ export async function listOwnerInitiatives(scope:InitiativeScope,status?:string)
   if(error)throw error;
   return (data??[]) as InitiativeRow[];
 }
-export async function readOwnerInitiative(scope:InitiativeScope,id:string) {
+export async function readOwnerInitiative(scope:InitiativeScope,id:string,
+  observation?:{metricId:string;date:string}) {
   const db=await ownerAccess(scope);
   const initiative=await db.from("owner_initiatives").select(columns).eq("id",id)
     .eq("business_id",scope.businessId).eq("owner_user_id",scope.ownerUserId).maybeSingle();
@@ -87,9 +88,13 @@ export async function readOwnerInitiative(scope:InitiativeScope,id:string) {
   if(metrics.error)throw metrics.error;
   const rows=(metrics.data??[]) as MetricRow[];
   const ids=rows.map(m=>m.id);
-  const observations=ids.length?await db.from("initiative_observations")
+  if(observation && !ids.includes(observation.metricId))throw new Error("initiative metric scope mismatch");
+  let observationQuery=db.from("initiative_observations")
     .select("metric_id,business_date,value,coverage,source,note,revision")
-    .in("metric_id",ids).order("business_date",{ascending:false}).limit(150):null;
+    .in("metric_id",ids).order("business_date",{ascending:false});
+  if(observation)observationQuery=observationQuery.eq("metric_id",observation.metricId)
+    .eq("business_date",observation.date);
+  const observations=ids.length?await observationQuery.limit(observation?1:150):null;
   if(observations?.error)throw observations.error;
   const evals=await db.from("initiative_evaluations").select("*")
     .eq("initiative_id",id).order("as_of",{ascending:false}).order("created_at",{ascending:false}).limit(1);

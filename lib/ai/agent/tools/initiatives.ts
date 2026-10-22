@@ -43,7 +43,7 @@ const proposalArgs=z.strictObject({
   metrics:z.array(toolMetric).min(1).max(12),
 });
 const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
-const statusArgs=z.strictObject({id:z.uuid()});
+const statusArgs=z.strictObject({id:z.uuid(),metricId:z.uuid().nullable(),date:z.iso.date().nullable()});
 const checkinArgs=z.strictObject({
   metricId:z.uuid(),date:z.iso.date(),expectedRevision:z.number().int().positive().nullable(),
   value:z.number().finite().nullable(),
@@ -58,7 +58,7 @@ export const initiativeToolSchemas={
 const descriptions={
   propose_initiative:"Create an INERT goal/experiment proposal. Write an object as changeSpecJson. Use checkin with a question and gap for noncatalog measurements. Owner approves separately.",
   get_initiatives:"Read this owner's recent goals and experiments.",
-  get_initiative_status:"Read a goal/experiment and its latest evidence, gaps and evaluation.",
+  get_initiative_status:"Read a goal/experiment. Send metricId and date together to fetch any older check-in value and revision; otherwise both null.",
   record_checkin:"Record an owner's check-in for a check-in metric. This never applies a change.",
 };
 export const initiativeToolDefinitions=Object.entries(initiativeToolSchemas).map(([name,schema])=>{
@@ -133,8 +133,9 @@ export async function executeInitiativeTool(
         startsOn:i.starts_on,endsOn:i.ends_on}))};
   }
   if(name==="get_initiative_status"){
-    const {id}=statusArgs.parse(raw);
-    const graph=await readOwnerInitiative(scope,id);
+    const {id,metricId,date}=statusArgs.parse(raw);
+    if((metricId===null)!==(date===null))throw new Error("metricId and date must be supplied together");
+    const graph=await readOwnerInitiative(scope,id,metricId&&date?{metricId,date}:undefined);
     if(!graph)return {source:"owner_initiatives",period:null,missing:["initiativeUnavailable"]};
     const unresolved=graph.metrics.filter(m=>{
       const result=graph.evaluation?.results[m.id];

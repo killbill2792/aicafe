@@ -64,7 +64,7 @@ describe("owner-scoped initiative agent handlers",()=>{
   it("lists owner-only IDs and reads metric questions and dates",async()=>{
     const list=await executeInitiativeTool("get_initiatives",{status:null},context);
     expect(list.items).toEqual([expect.objectContaining({id:initiativeId,status:"active"})]);
-    const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId},context);
+    const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId,metricId:null,date:null},context);
     expect(detail.metrics).toEqual([expect.objectContaining({id:metricId,question:"Was everything ready?"})]);
     expect(detail.missing).toEqual(["evaluationPending"]);
   });

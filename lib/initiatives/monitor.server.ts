@@ -122,8 +122,11 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         const dueDates=allDays(initiative.starts_on,asOf)
           .filter(date=>metric.params.changeConfirmation===true ? date===initiative.starts_on :
             due(initiative.starts_on,date,initiative.checkin_cadence,initiative.ends_on));
-        for(const date of dueDates.slice(-1)){
-          if(already.some(o=>o.business_date===date&&o.coverage>=1))continue;
+        // Rotate outstanding dates rather than permanently skipping missed
+        // cadence check-ins after outages or failed notification attempts.
+        const outstanding=dueDates.filter(date=>!already.some(o=>o.business_date===date&&o.coverage>=1));
+        const start=outstanding.length?initiative.revision%outstanding.length:0;
+        for(const date of [...outstanding.slice(start),...outstanding.slice(0,start)].slice(0,3)){
           const t=translations[initiative.locale];
           const question=metric.checkin_question??t.checkinDefault;
           const result=await writeTeamUpdate({
