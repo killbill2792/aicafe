@@ -80,7 +80,7 @@ describe("owner-scoped initiative agent handlers",()=>{
       id:initiativeId,metricId,date:"2026-10-22",
     },context);
     expect(selected.metricDetail).toMatchObject({id:metricId,question:"Was everything ready?"});
-    expect(detail.missing).toEqual(["evaluationPending","Needs owner answer"]);
+    expect(detail.missing).toEqual(["evaluationPending","checkinPending"]);
   });
   it("returns every proposed metric plus the thirteenth confirmation guardrail",async()=>{
     state.metricCount=13;
