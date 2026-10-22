@@ -1978,6 +1978,8 @@
     "field_laborCostEstimated": "Labor costs include estimates"
   },
   "SupervisorInvestigation": {
+    "naturalUnverifiedValue": "a value I couldn't verify",
+    "naturalUnverifiedAction": "I haven't verified that the requested action was completed.",
     "unansweredGoal": "Part of your request remains unanswered: ",
     "yes": "yes",
     "no": "no",
