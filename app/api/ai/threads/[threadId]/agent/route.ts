@@ -55,12 +55,26 @@ export async function POST(request: Request, context: RouteContext) {
               typeof x.tool==="string"&&Array.isArray(x.values)).slice(0,8);
           });
           const previousAssistantText=priorAssistant.flatMap(m=>{
-            const text=m.text??(m.blocks??[]).flatMap(b=>b&&typeof b==="object"&&"text" in b?[String(b.text)]:[]).join(" ");
+            // A legacy supervisor message without explicit verification is never evidence.
             const meta=m.grounding?.agentMetadata;
             if(!meta||typeof meta!=="object")return [];
             const spans=(meta as {unverified?:unknown}).unverified;
             if(!Array.isArray(spans))return [];
-            return spans.length?[]:[text];
+            const blocks=m.text!==null?[m.text]:
+              (m.blocks??[]).map(b=>b&&typeof b==="object"&&"text" in b?String(b.text):"");
+            return [blocks.map((value,blockIndex)=>{
+              if(typeof value!=="string")return "";
+              const chars=[...value];
+              for(const span of spans){
+                if(!span||typeof span!=="object")return "";
+                const row=span as {start?:unknown;end?:unknown;blockIndex?:unknown};
+                if(row.blockIndex!==blockIndex)continue;
+                if(typeof row.start!=="number"||typeof row.end!=="number"||
+                    row.start<0||row.end>value.length||row.end<row.start)return "";
+                for(let at=row.start;at<row.end;at++)chars[at]=" ";
+              }
+              return chars.join("");
+            }).join(" ")];
           }).join("\n");
           const history = page.items.filter(m => m.id !== owner.id &&
             (m.role === "owner" || m.role === "supervisor")).slice(-8)
