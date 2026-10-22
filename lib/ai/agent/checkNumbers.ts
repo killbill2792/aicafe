@@ -712,7 +712,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;k
      else if(colloquial>=10)value+=colloquial;
    }
    const unitAfter=text.slice(m.index+m[0].length).trimStart();
-   if(m[3]===undefined&&m[5]===undefined&&/^(?:cents?\\b|centavos?\\b|céntimos?\\b|سنتا|سنتات|سنت\\b)/iu.test(unitAfter))value/=100;
+   if(m[3]===undefined&&m[5]===undefined&&/^(?:cents?\b|centavos?\b|céntimos?\b|سنتا|سنتات|سنت\b)/iu.test(unitAfter))value/=100;
    out.push({value:monetary?value:value/100,kind:monetary?"money":"number"});
  }
  return out;
