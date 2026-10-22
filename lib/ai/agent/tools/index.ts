@@ -32,16 +32,11 @@ const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
-  ...Object.fromEntries(Object.entries(staffTools).map(([k,v])=>[k,v.description])),
-  ...Object.fromEntries(Object.entries(hoursTools).map(([k,v])=>[k,v.description])),
-  ...Object.fromEntries(Object.entries(moneyTools).map(([k,v])=>[k,v.description])),
-  ...Object.fromEntries(Object.entries(suppliesTools).map(([k,v])=>[k,v.description])),
-  ...Object.fromEntries(Object.entries(salesTools).map(([k,v])=>[k,v.description])),
 };
 export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
-  return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
+  return { type: "function" as const, name, description: "description" in schemas[name] ? schemas[name].description : descriptions[name], strict: true as const, parameters };
 });
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
