@@ -24,7 +24,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
     metrics:state.kind==="computed"?[{
       id:"dddddddd-dddd-4ddd-8ddd-dddddddddddd",source:"computed",
       metric_key:"net_sales",params:{},role:"primary",
-      comparator:"gte",target_kind:"absolute",target:1000,
+      comparator:"gte",target_kind:"relative_pct",target:5,
     }]:[{
       id:"eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",source:"checkin",
       metric_key:null,params:{},role:"primary",checkin_audience:"owner",
