@@ -725,7 +725,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
  if(index<2)return false;
  const prefix=text.slice(0,v.start);
- const sentenceStops=[...prefix.matchAll(/(?<!\\d)\\.(?=\\s+[A-Z])/gu)].map(m=>m.index);
+ const sentenceStops=[...prefix.matchAll(/(?<!\d)\.(?=\s+[A-Z])/gu)].map(m=>m.index);
  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
  const operands=money.slice(0,index).filter(c=>c.start>boundary);
  if(operands.length<2||operands.length>3)return false;
@@ -735,7 +735,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const phrase=text.slice(operands[0].end,v.start);
  // Arithmetic in descriptive prose cannot manufacture a business KPI.
  const targetClause=text.slice(operands[operands.length-1].end,v.start);
- if(/\\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin)\\b/iu.test(targetClause))return false;
+ if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin)\b/iu.test(targetClause))return false;
  const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
  if(!marker.test(phrase))return false;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
