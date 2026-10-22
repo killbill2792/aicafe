@@ -48,6 +48,8 @@ describe("M1 typed metric catalog",()=>{
     const result=computeMetric("sales_per_labor_hour",{fromHour:9,toHour:10},recorded);
     expect(result.value).toBeNull();
     expect(result.coverage).toBe(0);
+    const covered=computeMetric("sales_per_labor_hour",{fromHour:10,toHour:12},recorded);
+    expect(covered).toEqual({value:8000,coverage:1,missing:[]});
   });
   it("has the requested catalog and validated metric parameters",()=>{
     expect(Object.keys(metricCatalog)).toHaveLength(13);
