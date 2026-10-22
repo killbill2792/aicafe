@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 const fake = vi.hoisted(() => ({
   reply: { id: "reply-1", grounding: { status: "verified" }, blocks: [{ type:"text",text:"Here is the answer." }] },
   writes: 0, usageChecks: 0, quotaExhausted: false, ownerWrites: 0,
-  loopCalls: 0, stored: false,
+  loopCalls: 0, stored: false, storageFails: false,
+  usageRecorded: [] as Array<{modelCalls:number; toolCalls:number}>,
   queued: [] as Array<{text:string;endReason:string;results?: Array<Record<string,unknown>>}>,
 }));
 vi.mock("@/lib/ai/conversations/auth.server", () => ({
@@ -57,17 +58,31 @@ vi.mock("@/lib/ai/agent/loop.server", () => ({
       usage:{modelCalls:1,toolCalls:1,inputTokens:12,cachedTokens:4,outputTokens:8,latencyMs:15} };
   },
 }));
-vi.mock("@/lib/ai/agent/persist.server", () => ({
-  AgentReplyTooLongError: class extends Error {},
-  AgentReplyStorageError: class extends Error {},
-  persistAgentReply: async () => { fake.writes++; fake.stored = true; return fake.reply; },
-}));
+vi.mock("@/lib/ai/agent/persist.server", () => {
+  class AgentReplyStorageError extends Error {}
+  return {
+    AgentReplyTooLongError: class extends Error {},
+    AgentReplyStorageError,
+    AgentEmptyReplyError: class extends Error {},
+    persistAgentReply: async () => {
+      fake.writes++;
+      if (fake.storageFails) throw new AgentReplyStorageError();
+      fake.stored = true; return fake.reply;
+    },
+    recordAgentTurnUsage: async (_scope:unknown,_owner:unknown,turn:{
+      usage:{modelCalls:number;toolCalls:number}
+    }) => { fake.usageRecorded.push({
+      modelCalls:turn.usage.modelCalls,toolCalls:turn.usage.toolCalls,
+    }); },
+  };
+});
 import { POST } from "./route";
 
 describe("default authenticated streaming agent route", () => {
   it("streams a complete turn and emits done after successful persistence", async () => {
     fake.writes = 0; fake.usageChecks = 0; fake.quotaExhausted = false;
     fake.ownerWrites=0; fake.loopCalls=0; fake.stored=false; fake.queued=[];
+    fake.usageRecorded=[];fake.storageFails=false;
     const url = "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent";
     const request = new Request(url, {method:"POST",
       headers:{"origin":"http://localhost:3000","content-type":"application/json"},
@@ -84,6 +99,7 @@ describe("default authenticated streaming agent route", () => {
     expect(output).not.toContain("event: error");
     expect(fake.writes).toBe(1);
     expect(fake.usageChecks).toBe(1);
+    expect(fake.usageRecorded).toEqual([{modelCalls:1,toolCalls:1}]);
   });
   it("rejects quota before saving the owner message", async () => {
     fake.writes=0; fake.ownerWrites=0; fake.usageChecks=0; fake.loopCalls=0;
@@ -101,11 +117,13 @@ describe("default authenticated streaming agent route", () => {
       expect(fake.loopCalls).toBe(0);
       expect(fake.writes).toBe(0);
       expect(fake.usageChecks).toBe(1);
+      expect(fake.usageRecorded).toEqual([]);
     } finally { fake.quotaExhausted=false; }
   });
   it("does not save a blank interrupted turn and retries the same clientMessageId", async () => {
     fake.writes=0; fake.ownerWrites=0; fake.usageChecks=0; fake.loopCalls=0;
     fake.quotaExhausted=false; fake.stored=false;
+    fake.storageFails=false;fake.usageRecorded=[];
     fake.queued=[
       {text:"  ",endReason:"provider_error",results:[]},
       {text:"Recovered answer.",endReason:"complete"},
@@ -124,18 +142,21 @@ describe("default authenticated streaming agent route", () => {
     expect(first).not.toContain('event: done');
     expect(fake.writes).toBe(0);
     expect(fake.stored).toBe(false);
+    expect(fake.usageRecorded).toEqual([{modelCalls:1,toolCalls:1}]);
     const second = await (await POST(request(),context)).text();
     expect(second).toContain("event: done");
     expect(second).not.toContain('"replayed":true');
     expect(fake.loopCalls).toBe(2);
     expect(fake.ownerWrites).toBe(2);
     expect(fake.writes).toBe(1);
+    expect(fake.usageRecorded).toHaveLength(2);
   });
   it("persists interrupted nonempty prose as non-verified", async () => {
     // End-to-end persistence status is covered by agent/persist.server.test.ts;
     // route ensures a nonempty interrupted reply still completes its stream.
     fake.writes=0; fake.ownerWrites=0; fake.usageChecks=0; fake.loopCalls=0;
     fake.quotaExhausted=false; fake.stored=false;
+    fake.storageFails=false;fake.usageRecorded=[];
     fake.queued=[{text:"Partial text.",endReason:"provider_error"}];
     const response = await POST(new Request(
       "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent",{
@@ -147,6 +168,24 @@ describe("default authenticated streaming agent route", () => {
     expect(output).toContain("event: done");
     expect(output).not.toContain("event: error");
     expect(fake.writes).toBe(1);
+  });
+
+  it("records one usage increment for a failed assistant storage write", async () => {
+    fake.writes=0;fake.ownerWrites=0;fake.loopCalls=0;fake.stored=false;
+    fake.quotaExhausted=false;fake.storageFails=true;fake.usageRecorded=[];
+    fake.queued=[{text:"Persist this.",endReason:"complete"}];
+    const response=await POST(new Request(
+      "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent",{
+        method:"POST",headers:{"origin":"http://localhost:3000","content-type":"application/json"},
+        body:JSON.stringify({clientMessageId:"22222222-2222-4222-8222-222222222222",
+          text:"Menu?",locale:"en"}),
+      }),{params:Promise.resolve({threadId:"11111111-1111-4111-8111-111111111111"})});
+    const stream=await response.text();
+    expect(stream).toContain('"code":"reply_storage_failed"');
+    expect(stream).not.toContain("event: done");
+    expect(fake.stored).toBe(false);
+    expect(fake.usageRecorded).toEqual([{modelCalls:1,toolCalls:1}]);
+    fake.storageFails=false;
   });
 
 });
