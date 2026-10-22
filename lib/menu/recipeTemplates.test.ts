@@ -50,5 +50,10 @@ describe("all-size café recipes", () => {
     expect(cloned.find((line) => line.starterKey.startsWith("cup-"))?.starterKey).toBe("cup-hot-20");
     expect(cloned.find((line) => line.starterKey === "espresso-beans")?.displayQuantity).toBe(3);
     expect(templateRecipeForSize("iced-latte",12)).toBeNull();
+    const iced16 = templateRecipeForSize("iced-latte", 16)!;
+    const iced20 = scaledTemplateLines(iced16, 16, 20, true);
+    expect(iced20.find((line) => line.starterKey.startsWith("cup-"))?.starterKey).toBe("cup-cold-20");
+    expect(iced20).toContainEqual({ starterKey: "lid-cold", displayUnit: "each", displayQuantity: 1 });
+    expect(iced20).toContainEqual({ starterKey: "straw", displayUnit: "each", displayQuantity: 1 });
   });
 });
