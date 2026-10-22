@@ -78,6 +78,14 @@ One conversational agent, like a good chat assistant. NOT a supervisor/router, N
   block streaming.
 - Never weaken a test to make it pass. If a test enforces a retired design above, delete it in the same PR and say so.
 
+## Code Review Rules
+Block any PR that introduces a reviewer LLM, persona agents, `discover_tools`/`read_cafe` routing,
+`strict:false` tool definitions, JSON-envelope assistant answers, `owner_question` cards,
+or `/progress` polling. Block tests that fake retries by reusing a call ID instead of
+a new call ID for the same logical tool arguments, or tests with vacuous assertions
+(e.g. length >= 0). Verify the tool-call/output pairing, all budget boundaries,
+database-compatible status values, and honest missing-data behavior before review.
+
 ## Where things are
 See [docs/README.md](docs/README.md) for current docs and retired historical designs.
 
