@@ -12,3 +12,9 @@ export function keepFromAddon(upchargeCents:number,addedCostCents:number|null):n
  if(!Number.isSafeInteger(upchargeCents)||upchargeCents<0)throw new RangeError("Invalid upcharge");
  return addedCostCents===null?null:Math.round(upchargeCents-addedCostCents);
 }
+
+/** Compare physical portions that may have different shot/pump conversions. */
+export function swapPortionDifferenceCents(sourceBaseQuantity:number,sourceMicros:number|null,targetBaseQuantity:number,targetMicros:number|null):number|null{
+ const source=additiveCostCents(sourceBaseQuantity,sourceMicros),target=additiveCostCents(targetBaseQuantity,targetMicros);
+ return source===null||target===null?null:target-source;
+}
