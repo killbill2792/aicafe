@@ -830,6 +830,12 @@ function arithmeticConnector(text:string):MathOp|null {
   if(text.length<=65&&/\b(?:vs\.?|versus)\b/iu.test(text))return "subtract";
   return null;
 }
+/** numberPattern consumes a sign before currency as part of its token.
+ * In an expression between two amounts, that leading sign is the operator. */
+function symbolicMoneyOperator(token:string):MathOp|null {
+  const sign=token.trimStart().match(/^([+\-−])\s*(?=[$€£]|USD|EUR|GBP|ر\.س|د\.إ|دولار|ريال|درهم)/iu)?.[1];
+  return sign==="+"?"add":sign==="-"||sign==="−"?"subtract":null;
+}
 function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
  locale:AgentLocale,allowed:ReadonlySet<number>):boolean|null {
   const money=candidates(text,locale).filter(c=>c.kind==="money"||
@@ -846,7 +852,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   // Require the marker immediately before the proposed result. An earlier
   // "total" cannot mark a later, independently reported tip as arithmetic.
   const immediate=text.slice(prior[prior.length-1].end,v.start);
-  const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
+  const resultMarker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|diferencia)\b|(?:المجموع|الإجمالي|الفرق|معا|معًا)|=/iu;
   if(!resultMarker.test(immediate))return null;
   // A KPI is valid only when backed by a tool or an owner statement, never
   // by generic arithmetic of other business observations.
@@ -856,7 +862,9 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   const operators:MathOp[]=[];
   for(let pos=prior.length-2;pos>=0;pos--){
     const following=operands[0];
-    const join=arithmeticConnector(text.slice(prior[pos].end,following.start));
+    const between=text.slice(prior[pos].end,following.start);
+    const join=arithmeticConnector(between)||
+      (between.trim()===""?symbolicMoneyOperator(following.text):null);
     if(!join)break; // unrelated preceding money belongs to another claim
     operands.unshift(prior[pos]);
     operators.unshift(join);
@@ -865,7 +873,12 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
   if(operands.length<2)return null;
   const toCents=(c:{kind:Kind;value:number})=>
     c.kind==="money"?c.value:Math.round(c.value*100);
-  const cents=operands.map(toCents);
+  const cents=operands.map((operand,i)=>{
+    const raw=toCents(operand);
+    // An operator incorporated into a following money token is not the
+    // amount's sign: "$6 -$5.50" must read 600 - 550, not 600 - (-550).
+    return i>0&&symbolicMoneyOperator(operand.text) ? Math.abs(raw) : raw;
+  });
   if(!cents.every(amount=>[...allowed].some(a=>Math.abs(a-amount)<=1)))return false;
   // A sum of two unrelated business KPIs is not tool-backed merely because
   // its operands are individually observed.
@@ -1020,6 +1033,13 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
     if(moneyLike){
       const derived=explicitLocalArithmetic(text,v,locale,allowed.money);
       if(derived!==null)return !derived;
+    }
+    // A signed currency operand in an explicit symbolic expression is an
+    // operation on an observed positive amount, not a new negative KPI.
+    if(v.kind==="money"&&symbolicMoneyOperator(v.text)&&v.value<0){
+      const earlier=candidates(text,locale).filter(c=>c.kind==="money"&&c.end<=v.start).at(-1);
+      if(earlier&&text.slice(earlier.end,v.start).trim()===""&&
+        [...allowed.money].some(a=>Math.abs(a-Math.abs(v.value))<=1))return false;
     }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
