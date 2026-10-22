@@ -9,6 +9,7 @@ import {
   applyTemplate as applySizedRecipe,
   swapIngredient as replaceIngredient,
   scaleRecipeToSize as rescaleItemRecipe,
+  saveProductRecipes as persistProductRecipes,
 } from "@/lib/data/pantry.server";
 import type { RecipeTemplateKey } from "@/lib/menu/recipeTemplates";
 
@@ -49,4 +50,8 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const result = await rescaleItemRecipe(fromItemId, toItemId);
   if (result.ok) invalidatePantry();
   return result;
+}
+
+export async function saveProductRecipes(input: Parameters<typeof persistProductRecipes>[0]):Promise<Awaited<ReturnType<typeof persistProductRecipes>>>{
+ const result=await persistProductRecipes(input);if(result.ok)invalidatePantry();return result;
 }
