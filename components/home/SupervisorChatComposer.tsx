@@ -14,7 +14,7 @@ import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
 import { ChatMarkdown } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
@@ -342,7 +342,7 @@ export default function SupervisorChatComposer({
     if (openingThread.current && threadId && !messages.length && !sending) return;
     // Streaming updates may render while history is loading. Only consume the
     // saved anchor in the same commit that inserts that history page.
-    const insertedHistory = prependVersion !== appliedPrependVersion.current;
+    const insertedHistory = hasInsertedHistoryPage(prependVersion, appliedPrependVersion.current);
     const anchor = insertedHistory ? prependAnchor.current : null;
     const target = transcriptScrollTarget({
       scrollTop: anchor?.scrollTop ?? node.scrollTop, scrollHeight: node.scrollHeight,
