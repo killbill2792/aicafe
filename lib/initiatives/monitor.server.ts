@@ -69,7 +69,10 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
             coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
           };
           if(await persistMetricObservation(scope,row))stats.sampled++;
-          byMetric.get(metric.id)!.push(row);
+          const prior=byMetric.get(metric.id)!;
+          const position=prior.findIndex(o=>o.business_date===date);
+          if(position>=0)prior[position]=row;
+          else prior.push(row);
         }
       }
       for(const metric of graph.metrics.filter(m=>m.source==="checkin")){
@@ -124,7 +127,9 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           if(written.created)stats.updates++;
         }
       }
-      completed=asOf>=initiative.ends_on&&completeComputed;
+      // Keep a 14-day correction window for delayed POS/timecard evidence.
+      completed=asOf>=initiative.ends_on&&completeComputed&&
+        (evaluation.status!=="insufficient_data"||today>dayOffset(initiative.ends_on,14));
     }catch{stats.failed++;}
     finally{
       try{await rotateInitiative(initiative,completed);}catch{stats.failed++;}
