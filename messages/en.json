@@ -579,7 +579,8 @@
     "aggregateCostImportedActive": "Using imported total",
     "aggregateCostImportedEstimateActive": "Using imported estimate",
     "costSourceImported": "Imported",
-    "costSourceEstimate": "Estimate"
+    "costSourceEstimate": "Estimate",
+    "costSourceCombo": "Combo ingredients"
   },
   "ManageMenu": {
     "title": "Manage menu",
