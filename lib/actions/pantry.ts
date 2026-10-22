@@ -48,7 +48,7 @@ const packInput = z.object({
   ingredientId: uuid,
   packQuantity: z.number().finite().positive().max(1_000_000),
   packUnit: z.string().regex(/^(gal|qt|l|ml|fl_oz|lb|kg|oz_wt|g|oz|each|dozen|case\([1-9][0-9]*\))$/),
-  packCostCents: z.number().int().positive().safe().max(1_000_000_000),
+  packCostCents: z.number().int().positive().max(1_000_000_000),
 }).strict();
 
 async function currentPrices(scope: Scope, ids: string[]) {
