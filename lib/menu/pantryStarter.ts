@@ -62,3 +62,15 @@ export const PANTRY_STARTERS: readonly StarterIngredient[] = [
 ];
 
 export const PANTRY_STARTERS_BY_KEY = new Map(PANTRY_STARTERS.map((item) => [item.key, item]));
+
+
+/** Stored names are canonical defaults. Translate only an unchanged starter name;
+ * an owner's rename always wins, in every locale. No UI components need changing. */
+export function displayPantryStarterName(
+  name: string, starterKey: string | null | undefined,
+  translate: (key: string) => string,
+): string {
+  if (!starterKey) return name;
+  const starter = PANTRY_STARTERS_BY_KEY.get(starterKey);
+  return starter && name === starter.name ? translate(starterKey) : name;
+}
