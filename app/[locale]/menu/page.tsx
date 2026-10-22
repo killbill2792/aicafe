@@ -1,4 +1,4 @@
-import { Plus } from "lucide-react";
+import { Plus, Package } from "lucide-react";
 import { getTranslations } from "next-intl/server";
 import { requireOwnBusiness } from "@/lib/auth/requireUser";
 import { getMenuControlCenter } from "@/lib/data/getMenuControlCenter";
@@ -23,6 +23,7 @@ export default async function MenuPage() {
           <p className="text-[15px] text-ink-muted">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
+          <Link href="/menu/pantry" aria-label="Pantry" className="flex min-h-12 items-center gap-2 rounded-full border border-line bg-card px-4 text-sm font-bold text-accent-text"><Package aria-hidden="true" size={19}/> Pantry</Link>
           <Link href="/menu/new" className="flex min-h-12 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-on-accent no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addItem")}
           </Link>
