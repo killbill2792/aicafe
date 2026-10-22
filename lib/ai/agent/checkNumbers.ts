@@ -691,7 +691,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;k
  const decimalSep=locale==="en"?"point":locale==="es"?"(?:coma|punto|con)":"(?:فاصلة|فاصل)";
  const cash=locale==="en"?"dollars?":locale==="es"?"dólares?":"دولارات?";
  const coins=locale==="en"?"cents?":locale==="es"?"centavos?":"سنتات?|سنتا";
- const re=new RegExp("(?<!\\p{L})("+terms+")(?:\\s+("+decimalSep+")\\s+("+terms+")(?:\\s+("+terms+"))?|\\s+("+cash+")(?:\\s+(?:and|y|و)?\\s*("+terms+")(?:\\s+("+terms+"))?\\s*(?:"+coins+")?)?|\\s+("+terms+"))?(?!\\p{L})","giu");
+ const re=new RegExp("(?<!\\p{L})("+terms+")(?:\\s+("+decimalSep+")\\s+("+terms+")(?:\\s+("+terms+"))?|\\s+("+cash+")(?:\\s+(?:and|y|و)?\\s*("+terms+")(?:\\s+("+terms+"))?\\s*(?:"+coins+")?)?|\\s+(?:y\\s+|و)?("+terms+"))?(?!\\p{L})","giu");
  const out:Array<{value:number;kind:"money"|"number"}>=[];
  for(const m of text.matchAll(re)){
    const before=text.slice(0,m.index).split(/[.!?;\n]/u).pop()??"";
@@ -707,7 +707,12 @@ function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;k
    let value=integer*100;
    if(fractional!==undefined)value+=fractionTail===undefined?(fractional<10?fractional*10:fractional):fractional*10+fractionTail;
    else if(cents!==undefined)value+=cents+(centsTail??0);
-   else if(colloquial!==undefined&&colloquial>=10)value+=colloquial;
+   else if(colloquial!==undefined){
+     if(integer>=20&&integer%10===0&&colloquial<10)value+=colloquial*100;
+     else if(colloquial>=10)value+=colloquial;
+   }
+   const unitAfter=text.slice(m.index+m[0].length).trimStart();
+   if(m[3]===undefined&&m[5]===undefined&&/^(?:cents?\\b|centavos?\\b|céntimos?\\b|سنتا|سنتات|سنت\\b)/iu.test(unitAfter))value/=100;
    out.push({value:monetary?value:value/100,kind:monetary?"money":"number"});
  }
  return out;
