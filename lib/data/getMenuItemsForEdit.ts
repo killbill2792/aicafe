@@ -2,6 +2,7 @@ import "server-only";
 import { formatInTimeZone } from "date-fns-tz";
 import { getTranslations } from "next-intl/server";
 import { displayPantryStarterName } from "@/lib/menu/pantryStarter";
+import { visiblePricedMenuItems } from "@/lib/menu/pricedMenuVisibility";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -88,7 +89,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   // The business's timezone has a safe, documented fallback below, so a failure here degrades
   // gracefully rather than blocking the whole menu — still logged, never silently unnoticed.
   if (businessResult.error) logQueryError("getMenuItemsForEdit:businesses", businessResult.error);
-  const items = itemsResult.data;
+  const items = visiblePricedMenuItems(itemsResult.data ?? []);
   const ingredients = ingredientsResult.data;
   const business = businessResult.data;
   const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
