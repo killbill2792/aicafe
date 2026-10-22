@@ -107,7 +107,7 @@ describe("default authenticated streaming agent route", () => {
   });
   it("rejects quota before saving the owner message", async () => {
     fake.writes=0; fake.ownerWrites=0; fake.usageChecks=0; fake.loopCalls=0;
-    fake.quotaExhausted=true; fake.stored=false; fake.queued=[];
+    fake.quotaExhausted=true; fake.stored=false; fake.queued=[];fake.usageRecorded=[];
     try {
       const response = await POST(new Request(
         "http://localhost:3000/api/ai/threads/11111111-1111-4111-8111-111111111111/agent", {
