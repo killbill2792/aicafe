@@ -95,7 +95,7 @@ describe("pack unit conversion and pack pricing", () => {
     expect(packBaseQuantity(5, "lb", "g")).toBeCloseTo(2267.96185);
     expect(packBaseQuantity(1, "oz", "g")).toBeCloseTo(28.349523125);
     expect(packBaseQuantity(1, "case(1000)", "each")).toBe(1000);
-    expect(packToCostPerBaseMicros(1, "case(1000)", 5000, "each")).toBe(5000);
+    expect(packToCostPerBaseMicros(1, "case(1000)", 5000, "each")).toBe(5_000_000);
   });
   it("blocks mismatched physical dimensions and malformed or unsafe packs", () => {
     expect(packBaseQuantity(1, "lb", "ml")).toBeNull();
