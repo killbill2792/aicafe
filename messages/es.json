@@ -2322,6 +2322,9 @@
         "name": "Pastelería",
         "subtitle": "Comprado o horneado"
       }
-    }
+    },
+    "saveBeforeSwap": "Guarda los cambios de receta antes de sustituir ingredientes.",
+    "saveBeforeSizeChange": "Guarda la receta antes de cambiar los tamaños a la venta.",
+    "addMilkFirst": "Primero añade leche a la receta."
   }
 }
