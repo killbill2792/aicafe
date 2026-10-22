@@ -344,7 +344,12 @@ function directItemPriceClaim(text:string,start:number,end:number,prices:readonl
     const suffix=phrase.slice(at+name.length).trim();
     return /^(?:is|costs?|priced\s+at|sells?\s+for|price\s+is)$/iu.test(suffix);
   });
-  if(matches.length!==1)return null;
+  // "Iced Latte" contains "Latte": the longer complete product name
+  // wins; only genuinely ambiguous equal-length identities fail closed.
+  matches.sort((a,b)=>b.name.trim().length-a.name.trim().length);
+  if(matches.length===0)return null;
+  if(matches.length>1&&matches[1].name.trim().length===matches[0].name.trim().length)
+    return -1;
   return matches[0].priceCents;
 }
 
@@ -371,7 +376,9 @@ function verifiedMenuDifference(text:string,start:number,end:number,cents:number
   const leftMatches=named.map(p=>{
     const at=lhs.toLocaleLowerCase().lastIndexOf(p.name.toLocaleLowerCase());
     return {price:p,at:at>=0&&matchName(p.name,lhs,at)?at:-1};
-  }).filter(x=>x.at>=0).sort((a,b)=>b.at-a.at);
+  }).filter(x=>x.at>=0).sort((a,b)=>
+    (b.at+b.price.name.length)-(a.at+a.price.name.length)||
+    b.price.name.length-a.price.name.length);
   const rightPart=rhs.slice(comparison[0].length);
   const rightMatches=named.filter(p=>matchName(p.name,rightPart,0))
     .sort((a,b)=>b.name.length-a.name.length);
@@ -473,7 +480,8 @@ function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):strin
   if(selected.length>0)return [...new Set(selected.map(m=>m.day))];
   // A single trailing weekday can govern *both* endpoints of a genuine
   // "open from 8:00 to 17:00 on Tuesday" interval.
-  if(next&&timeRole(text,clock)==="open"&&timeRole(text,next)==="close"){
+  if(next&&((timeRole(text,clock)==="open"&&timeRole(text,next)==="close")||
+    (timeRole(text,clock)==="shiftStart"&&timeRole(text,next)==="shiftEnd"))){
     const tail=mentions(text.slice(clockEnd(next),sentenceEnd),clockEnd(next));
     return [...new Set(tail.map(m=>m.day))];
   }
@@ -505,9 +513,9 @@ function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   // shift" and after-the-clock "shift ... for Bob" constructions.
   // Localized constructions must retain the employee identity. Never
   // degrade "El turno de Bob..." to an anonymous shift backed by Ada.
-  const spanish=before.match(/\b(?:turno|jornada)\s+(?:de|del)\s+([\p{L}\p{M}]+)/iu);
+  const spanish=[...before.matchAll(/\b(?:turno|jornada)\s+(?:de|del)\s+([\p{L}\p{M}]+)/giu)].at(-1);
   if(spanish)return {kind:"named",name:normalizedEmployeeName(spanish[1])};
-  const arabic=before.match(/(?:وردية|مناوبة)\s+(?:لـ?\s*)?([\p{L}\p{M}]+)/u);
+  const arabic=[...before.matchAll(/(?:وردية|مناوبة)\s+(?:لـ?\s*)?([\p{L}\p{M}]+)/gu)].at(-1);
   if(arabic)return {kind:"named",name:normalizedEmployeeName(arabic[1])};
   if(/\b(?:turno|jornada)\s+(?:de|del)\s+\S+|(?:وردية|مناوبة)\s+\S+/iu.test(before))
     return {kind:"unresolved"};
