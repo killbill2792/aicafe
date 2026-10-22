@@ -1059,3 +1059,26 @@ describe("follow-up: owner speech, bounded totals and proposed durations",()=>{
    expect(checkNumbers("Staff worked 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
  });
 });
+
+
+describe("review: no arithmetic or owner-speech laundering",()=>{
+ it("rejects a fictional profit computed by adding costs and sales",()=>{
+   const observed={source:"profitability",period:null,missing:[],
+     netSalesCents:600,totalCostsCents:550,ownerProfitCents:50};
+   expect(checkNumbers("$5.50 total costs and $6.00 sales. Profit is $11.50.",
+     "",[observed],"en").map(x=>x.text)).toContain("$11.50");
+ });
+ it("treats spoken fifty as fifty cents, not five dollars",()=>{
+   expect(checkNumbers("Price $5.50.","Price cinco con cincuenta.",[],"es")).toEqual([]);
+   expect(checkNumbers("Price $8.50.","Price eight point fifty dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("Price $10.","Price cinco con cincuenta.",[],"es").map(x=>x.text)).toEqual(["$10"]);
+ });
+ it("never reclassifies owner counts because a later sentence asks about profit",()=>{
+   expect(checkNumbers("Profit is $8.","We sold eight drinks. What is our profit?",
+     [],"en").map(x=>x.text)).toEqual(["$8"]);
+ });
+ it("only exempts proposals, not historical durations",()=>{
+   expect(checkNumbers("Staff worked for 7 days.","",[],"en").map(x=>x.text)).toEqual(["7"]);
+   expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2"]);
+ });
+});
