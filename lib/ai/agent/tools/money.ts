@@ -49,7 +49,14 @@ export const moneyTools={
       const s=await ctx.tools.getBusinessCostSummary(p);
       return {source:"business_costs",period:p,agentId:"leo",missing:s.missingInputs,
         completeness:s.completeness,knownTotalCents:s.completeness==="unavailable"?null:s.knownTotalCents,
-        components:s.components,observed:s.observed,estimated:s.estimatedInputs,
+        // The deterministic cost engine uses zero sentinels for unknown components.
+        // Never allow those sentinels to masquerade as observed zero-cost amounts.
+        components:{
+          ingredientsCents:s.observed.ingredients?s.components.ingredientsCents:null,
+          loadedStaffCents:s.observed.loadedStaff?s.components.loadedStaffCents:null,
+          cardFeesCents:s.observed.cardFees?s.components.cardFeesCents:null,
+          runningCostsCents:s.observed.runningCosts?s.components.runningCostsCents:null,
+        },observed:s.observed,estimated:s.estimatedInputs,
         coverage:{salesDays:s.coverage.salesDays,laborDays:s.coverage.laborDays,
           expectedDays:s.coverage.expectedDays,missingProductCostCount:s.coverage.missingProductCostCount,
           itemSalesCovered:s.coverage.itemSalesCovered}};
