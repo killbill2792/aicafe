@@ -27,6 +27,25 @@ describe("Leo scoped money reads",()=>{
     const r=await moneyTools.get_break_even.execute({},ctx({getBreakEven:async()=>unavailable}));
     expect(r.estimate).toBeNull();
   });
+  it("reports unobserved cost components as null instead of confirmed zero",async()=>{
+    const result=await moneyTools.get_cost_summary.execute({period:"month"},ctx({
+      getBusinessCostSummary:async p=>({
+        period:p,knownTotalCents:10000,completeness:"partial",
+        components:{ingredientsCents:10000,loadedStaffCents:0,cardFeesCents:0,runningCostsCents:0},
+        observed:{ingredients:true,loadedStaff:false,cardFees:false,runningCosts:false},
+        missingInputs:["staffCostsUnobserved"],estimatedInputs:[],
+        coverage:{salesDays:2,laborDays:0,expectedDays:22,missingProductCostCount:0,
+          itemSalesCovered:false,soldProductCount:null,estimatedProductCostCount:0,
+          historicalIngredientCostsProven:false,soldProductIds:[],
+          missingProductCostIds:[],estimatedProductCostIds:[],missingFeeDays:2,
+          missingOperatingCategories:[]},
+      }),
+    }));
+    expect(result.components).toEqual({
+      ingredientsCents:10000,loadedStaffCents:null,cardFeesCents:null,runningCostsCents:null,
+    });
+    expect(result.missing).toContain("staffCostsUnobserved");
+  });
   it("rejects input containing a business id",async()=>{
     await expect(moneyTools.get_bills.execute({businessId:"other"},ctx({}))).rejects.toThrow();
   });
