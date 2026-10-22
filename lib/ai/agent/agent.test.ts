@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkNumbers } from "./checkNumbers";
+import { checkNumbers, compactEvidence } from "./checkNumbers";
 import { statusFromResults } from "./status";
 import { executeAgentTool, agentToolDefinitions, type AgentToolContext, requestedPeriod } from "./tools";
 
@@ -255,5 +255,63 @@ describe("Codex: typed money evidence cannot prove unrelated quantities", () => 
     expect(checkNumbers("Latte is 8.50.", "", [menu], "en")).toEqual([]);
     expect(checkNumbers("We sold 8.5 lattes.", "", [menu], "en")
       .map(v => v.text)).toEqual(["8.5"]);
+  });
+});
+
+
+describe("Codex: semantic evidence and lexical formatting boundaries", () => {
+  it("never retains counts derived from diagnostic and metadata arrays", () => {
+    const profit={source:"profitability",period:null,missing:[],estimated:[],
+      warnings:[],stale:[],ownerProfitCents:8500};
+    const retained=compactEvidence([profit]);
+    expect(retained.flatMap(r=>r.values).map(v=>v.key))
+      .not.toEqual(expect.arrayContaining(["estimatedLength","warningsLength","staleLength"]));
+    expect(checkNumbers("You sold 0 drinks.", "", [], "en", retained)
+      .map(v=>v.text)).toEqual(["0"]);
+    expect(checkNumbers("You sold 0 drinks.", "", [profit], "en")
+      .map(v=>v.text)).toEqual(["0"]);
+    const diagnostics={...profit,estimated:["taxes"],warnings:[{count:3}],stale:[1,2,3]};
+    const saved=compactEvidence([diagnostics]);
+    expect(checkNumbers("We sold 3 drinks.", "", [], "en", saved)
+      .map(v=>v.text)).toEqual(["3"]);
+    expect(checkNumbers("We sold 3 drinks.", "", [diagnostics], "en")
+      .map(v=>v.text)).toEqual(["3"]);
+  });
+  it("retains actual business collection lengths across turns", () => {
+    const menu={source:"menu_items",period:null,missing:[],
+      items:[{id:"a",priceCents:450},{id:"b",priceCents:600}],estimated:[]};
+    const saved=compactEvidence([menu]);
+    expect(saved[0].values.some(v=>v.key==="itemsLength"&&v.value===2&&v.unit==="count"))
+      .toBe(true);
+    expect(checkNumbers("There are 2 menu items.", "", [], "en", saved)).toEqual([]);
+    expect(checkNumbers("There are 3 menu items.", "", [], "en", saved)
+      .map(v=>v.text)).toEqual(["3"]);
+  });
+  it("never mistakes a nearby clock for the sales figure itself", () => {
+    expect(checkNumbers("We sold 999 (8:00).", "", [], "en")
+      .map(v=>v.text)).toEqual(["999"]);
+    expect(checkNumbers("Orders: 999, 8:00 AM.", "", [], "en")
+      .map(v=>v.text)).toEqual(["999"]);
+    expect(checkNumbers("We sold 9 at 3 PM.", "", [], "en")
+      .map(v=>v.text)).toEqual(["9"]);
+    expect(checkNumbers("We sold 15 at 15h.", "", [], "en")
+      .map(v=>v.text)).toEqual(["15"]);
+    expect(checkNumbers("We sold 999 (8:00).", "We sold 999", [], "en")).toEqual([]);
+  });
+  it("validates an actual business clock against owner words or tool evidence", () => {
+    expect(checkNumbers("We open at 8:00 AM.", "", [], "en").length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM.", "We open at 8:00 AM.", [], "en")).toEqual([]);
+    const hours={source:"business_hours",period:null,missing:[],
+      weekly:{mon:[["08:00","17:00"]]}};
+    expect(checkNumbers("We open at 8:00 AM.", "", [hours], "en")).toEqual([]);
+    expect(checkNumbers("We open at 9:00 AM.", "", [hours], "en").length).toBeGreaterThan(0);
+  });
+  it("honors blank lines in a verified sequential list, but not unrelated claims", () => {
+    expect(checkNumbers("1. Latte\n\n2. Mocha\n\n3. Tea", "", [], "en")).toEqual([]);
+    expect(checkNumbers("1) Latte\n \n 2) Mocha\n\n  3) Tea", "", [], "en")).toEqual([]);
+    expect(checkNumbers("1. Latte\n\n9. No sales recorded", "", [], "en")
+      .map(v=>v.text)).toEqual(["9"]);
+    expect(checkNumbers("The order count is 999. Sales are unavailable.", "", [], "en")
+      .map(v=>v.text)).toEqual(["999"]);
   });
 });
