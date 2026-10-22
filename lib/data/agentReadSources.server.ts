@@ -8,7 +8,7 @@ export function agentSourceReaders(client:SupabaseClient,authorizedBusinessId:st
     if(!authorizedBusinessId||requested!==authorizedBusinessId)throw new Error("Café access scope mismatch");
   };
   return {
-      hours:async requested=>{
+      hours:async (requested:string)=>{
         assertScope(requested);
         const {data,error}=await client.from("locations").select("open_hours").eq("business_id",authorizedBusinessId).order("name",{ascending:true}).limit(1);
         if(error)throw error;
@@ -17,8 +17,8 @@ export function agentSourceReaders(client:SupabaseClient,authorizedBusinessId:st
         return value?{available:true as const,value,quality:{level:missing.length?"medium" as const:"high" as const,missingInputs:missing,estimatedInputs:[],staleInputs:[]}}:
           {available:false as const,value:null,quality:{level:"low" as const,missingInputs:["businessHoursNotSet"],estimatedInputs:[],staleInputs:[]}};
       },
-      ingredientCosts:async(requested,asOf,query,limit)=>{
-        assertBusiness(requested);
+      ingredientCosts:async(requested:string,asOf:string,query:string|null,limit:number)=>{
+        assertScope(requested);
         const {data,error}=await client.from("ingredients").select("id,name,base_unit").eq("business_id",authorizedBusinessId).order("name").limit(501);
         if(error)throw error;
         const filtered=(data??[]).filter(row=>!query||row.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()));
