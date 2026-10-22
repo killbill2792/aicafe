@@ -101,7 +101,12 @@ export async function runAgentTurn(args: {
         usage.toolCalls++;
         let result: AgentToolResult;
         try {
-          result = await executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context);
+          result = await Promise.race([executeAgentTool(tool.name, JSON.parse(tool.arguments), args.context),
+            new Promise<never>((_, reject) => { const left = deadline - now();
+              if (left <= 0) reject(new Error("deadline"));
+              else { const timer = setTimeout(() => reject(new Error("deadline")), left);
+                controller.signal.addEventListener("abort", () => clearTimeout(timer), { once: true }); }
+            })]);
           failures = 0;
         } catch {
           failures++;
