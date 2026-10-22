@@ -1,5 +1,6 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
+import { sumCents } from "@/lib/calc/money";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
 export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
@@ -744,7 +745,7 @@ function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kin
  const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
  if(!marker.test(phrase))return false;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
- const expected=subtraction?amounts.slice(1).reduce((a,b)=>a-b,amounts[0]):amounts.reduce((a,b)=>a+b,0);
+ const expected=sumCents(amounts,(amount,index)=>subtraction&&index>0?-amount:amount);
  return Math.abs(expected-toCents(v))<=1;
 }
 
