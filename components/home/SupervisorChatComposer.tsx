@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useReducer, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
-import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound } from "lucide-react";
+import { Clock3, History, Mic, Plus, Send, Coffee, Sparkles, Square, X, AlertCircle, Paperclip, LoaderCircle, ChevronDown, UsersRound, ArrowDown } from "lucide-react";
 import { AgentAvatar, agentVisuals } from "@/components/operations/AITeamCard";
 import { parseAgentId } from "@/lib/operating/tasks";
 import type { HomeTaskPreviewItem } from "@/components/home/HomeTaskSections";
@@ -14,7 +14,8 @@ import type { StoredAttachment } from "@/lib/ai/conversations/attachments";
 import type { SupervisorChatUnavailableReason } from "@/lib/ai/conversations/readiness";
 import type { ConversationMessage, ConversationPage, ConversationThread } from "@/lib/ai/conversations/contracts";
 import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleConversationMessages,
-  transcriptScrollTarget } from "./supervisorChatBehavior";
+  hasInsertedHistoryPage, isTranscriptNearBottom, transcriptScrollTarget } from "./supervisorChatBehavior";
+import { ChatMarkdown } from "./ChatMarkdown";
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
@@ -22,7 +23,7 @@ import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type SupervisorChatCopy = {
-  askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
+  askAnything: string; newMessage: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
   comingSoon: string; suggestions: string[];
   live: string; threads: string; newThread: string; empty: string; loading: string; sending: string;
   statusAlexReading: string; statusLeoReading: string; statusOliviaReading: string;
@@ -78,23 +79,6 @@ function progressStatusText(copy: SupervisorChatCopy, status: SupervisorProgress
 const record = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-function verifiedTextPieces(text: string, spans: readonly { start: number; end: number }[], label: string) {
-  const parts: React.ReactNode[] = [];
-  let offset = 0;
-  for (const span of [...spans].sort((a,b) => a.start - b.start)) {
-    if (!Number.isSafeInteger(span.start) || !Number.isSafeInteger(span.end) ||
-      span.start < offset || span.end > text.length || span.end <= span.start) continue;
-    if (offset < span.start) parts.push(text.slice(offset, span.start));
-    parts.push(<span key={span.start} className="inline">
-      <span className="underline decoration-dotted">{text.slice(span.start, span.end)}</span>
-      <span role="note" className="ms-1 rounded-full border border-current px-1 text-xs">{label}</span>
-    </span>);
-    offset = span.end;
-  }
-  parts.push(text.slice(offset));
-  return parts;
-}
-
 function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; copy: SupervisorChatCopy; locale: Locale; unverified?: { start: number; end: number }[] }) {
   if (!record(block)) return null;
   if ((block.type === "text" || block.type === "warning") && typeof block.text === "string") {
@@ -102,7 +86,7 @@ function ReplyBlock({ block, copy, locale, unverified = [] }: { block: unknown; 
       ? <p className="flex items-start gap-2 text-[17px] leading-relaxed text-ink-muted" role="note">
           <AlertCircle aria-hidden="true" size={18} className="mt-1 shrink-0" />{block.text}
         </p>
-      : <p className="whitespace-pre-wrap break-words text-[17px] leading-relaxed text-ink">{verifiedTextPieces(block.text,unverified,copy.unverified)}</p>;
+      : <ChatMarkdown text={block.text} unverified={unverified} label={copy.unverified} />;
   }
   if (block.type === "task_card" && typeof block.title === "string" && typeof block.agent === "string" &&
     typeof block.status === "string" && typeof block.href === "string" &&
@@ -132,10 +116,10 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
   disabled:boolean;
   onOwnerResponse:(message:ConversationMessage,value:string,isOption:boolean,dismiss?:boolean)=>void;
 }) {
-  if (message.role === "owner") return <article className="ms-auto max-w-[88%] rounded-[22px] rounded-ee-md bg-surface2 px-4 py-3 text-[17px] text-ink shadow-sm">
+  if (message.role === "owner") return <article className="ms-auto w-fit max-w-[80%] rounded-[22px] rounded-ee-md bg-accent-soft px-4 py-3 text-[17px] text-ink shadow-sm">
     <p className="whitespace-pre-wrap break-words">{message.text}</p>
   </article>;
-  return <article className="w-full max-w-[96%] space-y-3">
+  return <article className="w-full space-y-3">
     <div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted">
       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good">
         <Sparkles size={17} aria-hidden="true" />
@@ -233,9 +217,15 @@ export default function SupervisorChatComposer({
   const filePicker = useRef<HTMLInputElement | null>(null);
   const composer = useRef<HTMLTextAreaElement | null>(null);
   const transcript = useRef<HTMLDivElement | null>(null);
-  const previousScrollHeight = useRef<number | null>(null);
-  const openAtTop = useRef(true);
-  const followLatestSend = useRef(false);
+  const prependAnchor = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
+  const [prependVersion, setPrependVersion] = useState(0);
+  const appliedPrependVersion = useRef(0);
+  const paginationRequest = useRef(0);
+  const selectedThreadId = useRef<string | null>(initialThreadId ?? null);
+  const pinned = useRef(true);
+  const openingThread = useRef(true);
+  const [showNewMessage, setShowNewMessage] = useState(false);
+  const messageContent = useRef<HTMLDivElement | null>(null);
   const retryId = useRef<string | null>(null);
   const threadRequestId = useRef<string | null>(null);
 
@@ -331,25 +321,57 @@ export default function SupervisorChatComposer({
       .catch(() => { if (!controller.signal.aborted) setError(true); });
     return () => controller.abort();
   }, [enabled, threadId]);
-  // Existing conversations open from the top; a newly sent turn follows the
-  // latest messages. Prepending older history preserves the reading position.
+  useLayoutEffect(() => { selectedThreadId.current = threadId; }, [threadId]);
+
+  function scrollToLatest() {
+    const node = transcript.current;
+    if (!node) return;
+    pinned.current = true;
+    setShowNewMessage(false);
+    node.scrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+  }
+  function onTranscriptScroll() {
+    const node = transcript.current;
+    if (!node) return;
+    pinned.current = isTranscriptNearBottom(node);
+    setShowNewMessage(!pinned.current);
+  }
   useLayoutEffect(() => {
     const node = transcript.current;
     if (!node) return;
-    if (!messages.length && !optimisticOwner && !sending) return;
+    if (openingThread.current && threadId && !messages.length && !sending) return;
+    // Streaming updates may render while history is loading. Only consume the
+    // saved anchor in the same commit that inserts that history page.
+    const insertedHistory = hasInsertedHistoryPage(prependVersion, appliedPrependVersion.current);
+    const anchor = insertedHistory ? prependAnchor.current : null;
     const target = transcriptScrollTarget({
-      scrollTop: node.scrollTop, scrollHeight: node.scrollHeight,
-      previousScrollHeight: previousScrollHeight.current,
-      openAtTop: openAtTop.current && !followLatestSend.current,
-      followLatest: followLatestSend.current,
+      scrollTop: anchor?.scrollTop ?? node.scrollTop, scrollHeight: node.scrollHeight,
+      clientHeight: node.clientHeight,
+      previousScrollHeight: anchor?.scrollHeight ?? null,
+      pinned: !insertedHistory && (openingThread.current || pinned.current),
     });
-    previousScrollHeight.current = null;
     if (target !== null) node.scrollTop = target;
-    if (messages.length) openAtTop.current = false;
-    if (followLatestSend.current && !sending && !optimisticOwner) {
-      followLatestSend.current = false;
+    if (insertedHistory) {
+      appliedPrependVersion.current = prependVersion;
+      prependAnchor.current = null;
     }
-  }, [messages, optimisticOwner, sending]);
+    if (openingThread.current && messages.length) {
+      openingThread.current = false;
+      pinned.current = true;
+      setShowNewMessage(false);
+    }
+  }, [messages, optimisticOwner, sending, streamedText, progressStatus, threadId, prependVersion]);
+
+  useEffect(() => {
+    const node = transcript.current;
+    const content = messageContent.current;
+    if (!node || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (pinned.current) scrollToLatest();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   async function refreshThreads() {
     const page = await jsonFrom<ConversationPage<ConversationThread>>(
@@ -364,6 +386,7 @@ export default function SupervisorChatComposer({
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ requestId: threadRequestId.current }),
     }));
+    selectedThreadId.current = created.thread.id;
     setThreadId(created.thread.id); setThreadTitle(created.thread.title);
     threadRequestId.current = null;
     return created.thread.id;
@@ -376,8 +399,9 @@ export default function SupervisorChatComposer({
     if (!existingKey) {
       // Optimistic view only: the server owns persistence and idempotency.
       setOptimisticOwner(beginOptimisticOwner(text, clientMessageId));
-      followLatestSend.current = true;
-      openAtTop.current = false;
+      pinned.current = true;
+      openingThread.current = false;
+      setShowNewMessage(false);
       setDraft("");
     }
     setSending(true); setError(false); setProgressStatus(null); setStreamedText("");
@@ -446,26 +470,43 @@ export default function SupervisorChatComposer({
   }
   async function loadOlder() {
     if (!threadId || nextOffset === null || loading) return;
-    const node = transcript.current;
-    previousScrollHeight.current = node ? node.scrollHeight : null;
+    const requestedThread = threadId;
+    const request = ++paginationRequest.current;
+    // Older pages are loaded independently from SSE and can resolve in any
+    // order. A different conversation must never receive an old page.
+    pinned.current = false;
     setLoading(true);
     try {
-      const page = await loadMessages(threadId, nextOffset);
+      const page = await loadMessages(requestedThread, nextOffset);
+      if (request !== paginationRequest.current || selectedThreadId.current !== requestedThread) return;
+      const node = transcript.current;
+      prependAnchor.current = node
+        ? { scrollTop: node.scrollTop, scrollHeight: node.scrollHeight }
+        : null;
       setMessages((current) => {
         const known = new Set(current.map((msg) => msg.id));
         return [...page.items.filter((msg) => !known.has(msg.id)), ...current];
       });
       setNextOffset(page.nextOffset);
-    } catch { setError(true); previousScrollHeight.current = null; }
-    finally { setLoading(false); }
+      // Batched with setMessages, so only this version authorizes consumption.
+      setPrependVersion((version) => version + 1);
+    } catch {
+      if (request === paginationRequest.current && selectedThreadId.current === requestedThread) setError(true);
+    } finally {
+      if (request === paginationRequest.current) setLoading(false);
+    }
   }
   function selectThread(id: string | null) {
     if (sending) return;
     cleanupRecording(); dispatchDictation({ type: "reset" });
+    paginationRequest.current++;
+    prependAnchor.current = null;
+    selectedThreadId.current = id;
+    setLoading(false);
     setThreadId(id); setMessages([]); setNextOffset(null); setAttachments([]);
     setOptimisticOwner(null);
-    openAtTop.current = true; followLatestSend.current = false;
-    if (transcript.current) transcript.current.scrollTop = 0;
+    openingThread.current = Boolean(id); pinned.current = true;
+    setShowNewMessage(false);
     setThreadTitle(threads.find((thread) => thread.id === id)?.title ?? null);
     setSnapshotExpanded(false);
     setDraft(""); setMediaNotice(""); setError(false); setHistoryOpen(false);
@@ -625,8 +666,9 @@ export default function SupervisorChatComposer({
         <Plus size={22} aria-hidden="true" />
       </button>
     </header>
-    <div ref={transcript} className="flex min-h-0 flex-1 flex-col items-stretch justify-start gap-4 overflow-y-auto overscroll-contain px-3 py-4 md:px-6 md:py-5"
-      role="log" aria-live="polite" aria-label={copy.threads}>
+    <div ref={transcript} className="min-h-0 flex-1 overflow-y-auto overscroll-contain [overflow-anchor:none] px-3 py-4 md:px-6 md:py-5"
+      onScroll={onTranscriptScroll} role="log" aria-live="polite" aria-label={copy.threads}>
+      <div ref={messageContent} className="flex min-h-full flex-col items-stretch justify-end gap-4">
       {displayedMessages.length === 0 && <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-2 py-3 text-center">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-pos-soft text-good">
           <Coffee aria-hidden="true" size={27} strokeWidth={2.2} />
@@ -650,14 +692,6 @@ export default function SupervisorChatComposer({
           </button>
           {snapshotExpanded && <HomeSnapshot snapshot={snapshot} />}
         </section>}
-        <div className="mt-2 flex max-w-[640px] flex-wrap justify-center gap-2">
-          {copy.suggestions.map((suggestion) =>
-            <button key={suggestion} type="button" disabled={!enabled || sending}
-              onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }}
-              className="min-h-12 rounded-2xl border border-line bg-surface px-4 py-3 text-start text-[15px] font-semibold text-ink shadow-sm transition-colors hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">
-              {suggestion}
-            </button>)}
-        </div>
         {!enabled && <p className="text-[16px] text-ink-muted">{copy.unavailable}</p>}
       </div>}
       {nextOffset !== null && <button type="button" onClick={() => void loadOlder()} disabled={loading}
@@ -697,16 +731,19 @@ export default function SupervisorChatComposer({
             className="min-h-10 rounded-xl bg-accent px-3 font-bold text-on-accent">{copy.retryAnswer}</button>
         </div>}
       </div>)}
-      {sending && streamedText && <ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/>}
+      {sending && streamedText && <article className="w-full space-y-3"><div className="flex items-center gap-2 text-[15px] font-bold text-ink-muted"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-pos-soft text-good"><Sparkles size={17} aria-hidden="true"/></span>{copy.supervisor}</div><ReplyBlock block={{type:"text",text:streamedText}} copy={copy} locale={locale}/></article>}
       {sending && <div className="flex items-center gap-3 text-[16px] text-ink-muted" role="status">
         {parseAgentId(progressStatus?.agent) ?
           <span className="shrink-0"><AgentAvatar agentId={parseAgentId(progressStatus?.agent)!} size="task" /></span> :
           <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-good motion-reduce:animate-none" />}
         {progressStatusText(copy, progressStatus) ?? copy.sending}
       </div>}
+      </div>
     </div>
+    {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
     {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
+      {displayedMessages.length === 0 && copy.suggestions.length > 0 && <div className="mb-2 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label={copy.askAnything} >{copy.suggestions.slice(0,3).map(suggestion => <button key={suggestion} type="button" disabled={!enabled || sending} onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }} className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{suggestion}</button>)}</div>}
       {attachments.length > 0 && <div className="mb-2 flex flex-wrap gap-2" aria-label={copy.addAttachment}>
         {attachments.map((file) => <a key={file.id}
           href={"/api/ai/threads/" + encodeURIComponent(threadId ?? "") + "/attachments/" + encodeURIComponent(file.id)}

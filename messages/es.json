@@ -1337,6 +1337,7 @@
     "answerFailed": "No pude terminar esa respuesta.",
     "retryAnswer": "Reintentar",
     "todaySummary": "Hoy",
+    "newMessage": "Mensaje nuevo",
     "snapshotExpand": "Mostrar el resumen de hoy",
     "snapshotCollapse": "Ocultar el resumen de hoy",
     "recording": "Grabando",
