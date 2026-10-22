@@ -716,7 +716,7 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
   const unsupported=locale==="en"?["hundred","thousand","million"]:
     locale==="es"?["cien","ciento","cientos","mil","millón","millon"]:["مئة","مائة","ألف","الف"];
   const monetaryContext=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|loss|salary|wages?|fee|bill|latte|mocha|espresso|precio|cuesta|costo|coste|dólares?|centavos?|alquiler|ganancia)\b|(?:سعر|ثمن|تكلفة|دولار|سنت|ربح|خسارة)/iu;
-  const quantities=/^(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|bebidas?|personas?|días?|semanas?|أيام|ايام|أسابيع|موظفين|أشخاص|اشخاص)(?!\p{L})/iu;
+  const quantities=/^(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|lattes?|mochas?|items?|units?|servings?|tickets?|shifts?|workers?|bebidas?|personas?|días?|semanas?|artículos?|clientes?|موظفين|أشخاص|اشخاص|أيام|ايام|أسابيع|أكواب|مشروبات|طلبات)(?!\p{L})/iu;
   const result:SpokenValue[]=[];
   const is=(i:number,list:readonly string[])=>i<words.length&&list.includes(words[i].word);
   const number=(at:number):{value:number;next:number}|null=>{
@@ -727,6 +727,10 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
     const minor=words[next+connector]&&dict[words[next+connector].word];
     if(major>=20&&major%10===0&&minor!==undefined&&minor>0&&minor<10){
       value+=minor;next+=connector+1;
+    }else if(locale==="ar"&&major>0&&major<10&&connector===1&&
+      minor!==undefined&&minor>=20&&minor%10===0){
+      // In Arabic, "خمسة وخمسون" is 55, with the units first.
+      value+=minor;next+=2;
     }
     return {value,next};
   };
