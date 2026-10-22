@@ -520,3 +520,59 @@ describe("Codex: immutable evidence semantics for dates, counts, names and range
       "",[hours],"en").length).toBeGreaterThan(0);
   });
 });
+
+
+describe("Codex: chronological evidence and claim-local calculations",()=>{
+  const before={tool:"menu_items",values:[{
+    key:"items:latte/priceCents",value:600,unit:"cents" as const}]};
+  const after={tool:"menu_items",values:[{
+    key:"items:latte/priceCents",value:850,unit:"cents" as const}]};
+  it("supersedes saved prices on a subsequent no-read turn, rather than resurrecting them",()=>{
+    expect(checkNumbers("The latte costs $6.","",[],"en",[before,after])
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("The latte costs $8.50.","",[],"en",[before,after])).toEqual([]);
+    expect(checkNumbers("The latte costs $8.50.","",[],"en",[after,before])
+      .map(v=>v.text)).toEqual(["$8.50"]);
+    const legacy={tool:"menu_items",values:[{
+      key:"priceCents",value:600,unit:"cents" as const}]};
+    expect(checkNumbers("The latte costs $6.","",[],"en",[legacy,after])
+      .map(v=>v.text)).toEqual(["$6"]);
+  });
+  it("does not turn unrelated comparison prose into arithmetic evidence",()=>{
+    const profit={source:"profitability",period:null,missing:[],
+      netSalesCents:20000,totalCostsCents:10000,ownerProfitCents:10000};
+    expect(checkNumbers("Your profit is -$100. This is an increase.",
+      "",[profit],"en").map(v=>v.text)).toEqual(["-$100"]);
+    expect(checkNumbers("Your profit is -$100 more than costs.",
+      "",[profit],"en").map(v=>v.text)).toEqual(["-$100"]);
+    expect(checkNumbers("Your sales are $400, which is an increase.",
+      "",[profit],"en").map(v=>v.text)).toEqual(["$400"]);
+    const menu={source:"menu_items",period:null,missing:[],items:[
+      {id:"latte",priceCents:850},{id:"mocha",priceCents:600}]};
+    expect(checkNumbers("Latte is $2.50 more than Mocha.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Profit is $2.50 more than yesterday.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+  });
+  it("keeps slash and hyphen dates equally bounded by the shift's active period",()=>{
+    const schedule={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},
+      missing:[],shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"}]};
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026/10/26.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026/11/02.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026-11-02.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 10/26/2026.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+  });
+  it("recognizes attendance reader counts in live and retained results",()=>{
+    const attendance={source:"labor_and_attendance",period:null,missing:[],
+      attendance:{timecardCount:7,onClockCount:3}};
+    const claim="There are 7 timecards and 3 people on the clock.";
+    expect(checkNumbers(claim,"",[attendance],"en")).toEqual([]);
+    expect(checkNumbers(claim,"",[],"en",compactEvidence([attendance]))).toEqual([]);
+    expect(checkNumbers("There are 8 timecards.","",[attendance],"en")
+      .map(v=>v.text)).toEqual(["8"]);
+  });
+});
