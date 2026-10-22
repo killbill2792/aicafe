@@ -121,7 +121,7 @@ describe("native owner conversation without separate review",()=>{
  it("uses exact server-calculated cents for ten percent, not a model-written number",async()=>{
   const calculate=call("calculate_verified",{operation:"percent_increase",leftFactId:"f2",
     leftOwnerQuote:null,rightFactId:null,rightOwnerQuote:"10%"});
-  const t=transport(discover,read,calculate,answer("answer","Here is the proposed new price.",["f5"]));
+  const t=transport(discover,read,calculate,answer("answer","Here is the proposed new price.",["f4"]));
   const result=await runNativeConversationTurn(args("Raise the latte by 10%"),t.send);
   expect(result.reply.blocks).toEqual(expect.arrayContaining([
     expect.objectContaining({type:"metric",valueCents:770})]));
