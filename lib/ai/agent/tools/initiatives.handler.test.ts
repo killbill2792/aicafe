@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { executeInitiativeTool, initiativeToolDefinitions } from "./initiatives";
 import type { AgentToolContext } from "./index";
 
-const state=vi.hoisted(()=>({owner:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",proposals:0,checkins:0}));
+const state=vi.hoisted(()=>({owner:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",proposals:0,checkins:0,metricCount:1}));
 const businessId="11111111-1111-4111-8111-111111111111";
 const threadId="22222222-2222-4222-8222-222222222222";
 const initiativeId="33333333-3333-4333-8333-333333333333";
@@ -18,9 +18,13 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   readOwnerInitiative:async()=>({
     initiative:{id:"33333333-3333-4333-8333-333333333333",status:"active",title:"Keep coffee revenue",revision:2,
       starts_on:"2026-10-22",ends_on:"2026-10-29"},
-    metrics:[{id:"44444444-4444-4444-8444-444444444444",role:"primary",source:"checkin",metric_key:null,
+    metrics:Array.from({length:state.metricCount},(_,i)=>({
+      id:i===0?"44444444-4444-4444-8444-444444444444":
+        String(i).padStart(8,"0")+"-4444-4444-8444-444444444444",
+      role:i===0?"primary":"guardrail",source:"checkin",metric_key:null,
       params:{},comparator:"gte",target_kind:"absolute",target:1,
-      checkin_question:"Was everything ready?",checkin_audience:"owner",data_gap:"Needs owner answer"}],
+      checkin_question:"Was everything ready?",checkin_audience:"owner",data_gap:"Needs owner answer",
+    })),
     observations:[],evaluation:null,
   }),
   saveOwnerCheckin:async(scope:{ownerUserId:string},id:string,date:string,value:number|null)=>{
@@ -49,7 +53,7 @@ const proposal={
     comparator:"gte",targetKind:"absolute",target:1,checkinQuestion:"Was everything ready?",
     checkinAudience:"owner",dataGap:"Needs owner answer"}],
 };
-beforeEach(()=>{state.proposals=0;state.checkins=0;});
+beforeEach(()=>{state.proposals=0;state.checkins=0;state.metricCount=1;});
 describe("owner-scoped initiative agent handlers",()=>{
   it("proposes only with server-origin thread and returns actionable metric IDs",async()=>{
     const result=await executeInitiativeTool("propose_initiative",proposal,context);
@@ -67,6 +71,14 @@ describe("owner-scoped initiative agent handlers",()=>{
     const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId,metricId:null,date:null},context);
     expect(detail.metrics).toEqual([expect.objectContaining({id:metricId,question:"Was everything ready?"})]);
     expect(detail.missing).toEqual(["evaluationPending"]);
+  });
+  it("returns every proposed metric plus the thirteenth confirmation guardrail",async()=>{
+    state.metricCount=13;
+    const result=await executeInitiativeTool("get_initiative_status",{
+      id:initiativeId,metricId:null,date:null,
+    },context);
+    expect((result.metrics as unknown[])).toHaveLength(13);
+    expect((result.metrics as Array<{id:string}>)[12].id).toBe("00000012-4444-4444-8444-444444444444");
   });
   it("records only referenced check-ins and rejects unknown arguments",async()=>{
     const result=await executeInitiativeTool("record_checkin",{
