@@ -278,7 +278,7 @@ export async function applyTemplate(productId: string, templateKey: RecipeTempla
   return { ok: true, itemIds: (data as { itemIds?: string[] } | null)?.itemIds ?? [] };
 }
 
-export async function swapIngredient(productId: string, fromId: string, toId: string): Promise<PantryResult> {
+export async function prepareIngredientSwap(productId: string, fromId: string, toId: string): Promise<PantryFailure | {ok:true;changes:Change[]}> {
   if (![productId, fromId, toId].every((id) => uuid.safeParse(id).success)) return bad("invalid_ingredient");
   const scope = await activeScope();
   if (!scope) return bad("sign_in_required");
@@ -288,7 +288,7 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
     .select("id, base_unit").eq("business_id", scope.businessId).in("id", [fromId, toId]);
   if (ingredientsError || !ingredients || ingredients.length !== (fromId === toId ? 1 : 2)) return bad("ingredient_not_found");
   const to = ingredients.find((ingredient) => ingredient.id === toId)!;
-  if (fromId === toId) return { ok: true, itemIds: [] };
+  if (fromId === toId) return { ok: true, changes: [] };
   const { data: rows, error, count } = await scope.db.from("recipe_lines")
     .select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity", { count: "exact" })
     .in("menu_item_id", siblings.map((s) => s.id));
@@ -329,7 +329,17 @@ export async function swapIngredient(productId: string, fromId: string, toId: st
   // Covers changes to the anchor between sibling discovery and atomic replacement.
   changes[0].expectedSourceLines = snapshotLines(rows.filter((row) => row.menu_item_id === productId));
   changes[0].expectedSiblingIds = siblings.map((sibling) => sibling.id).sort();
-  return verifiedWrite(scope, productId, changes);
+  return {ok:true,changes};
+}
+
+/** Normal pantry swaps also use exactly the same verified recipe plan as add-on swaps. */
+export async function swapIngredient(productId: string, fromId: string, toId: string): Promise<PantryResult> {
+  const plan=await prepareIngredientSwap(productId,fromId,toId);
+  if(!plan.ok)return plan;
+  if(!plan.changes.length)return {ok:true,itemIds:[]};
+  const scope=await activeScope();
+  if(!scope)return bad("sign_in_required");
+  return verifiedWrite(scope,productId,plan.changes);
 }
 
 export async function scaleRecipeToSize(fromItemId: string, toItemId: string): Promise<PantryResult> {
