@@ -13,7 +13,7 @@ import type { ProductPhoto } from "@/lib/data/getProductPhoto";
 
 function StatusLine({ good, label }: { good: boolean; label: string }) {
   return (
-    <span className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-sm font-bold ${good ? "bg-good-tint text-good" : "bg-amber-50 text-warn"}`}>
+    <span className={`mt-3 flex items-start gap-2 rounded-xl px-3 py-2 text-sm font-bold ${good ? "bg-good-tint text-good" : "bg-warn-soft text-warn"}`}>
       {good ? <Check className="mt-0.5 shrink-0" size={17} aria-hidden="true" /> : <TriangleAlert className="mt-0.5 shrink-0" size={17} aria-hidden="true" />}{label}
     </span>
   );

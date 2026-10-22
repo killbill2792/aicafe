@@ -24,7 +24,7 @@ export function ThemePicker({initialTheme, initialMode}: {initialTheme: ThemeId;
             event.preventDefault(); const delta=event.key==="ArrowRight"||event.key==="ArrowDown"?1:-1;
             const next=themes[(themes.findIndex(t=>t.id===theme)+delta+themes.length)%themes.length];pickTheme(next.id);(event.currentTarget.parentElement?.querySelectorAll('[role="radio"]')[themes.findIndex(t=>t.id===next.id)] as HTMLButtonElement)?.focus();}}
           onClick={() => pickTheme(item.id)} className={`relative min-h-24 rounded-card border p-3 text-start focus-visible:outline-focus ${selected?"border-accent-text ring-2 ring-accent-text ring-offset-2 ring-offset-surface":"border-line"}`}>
-          <span className="mb-2 flex gap-1.5" aria-hidden="true">{(["bg","surface","accent","accentSoft"] as const).map(key => <span key={key} className="h-5 w-5 rounded-full border border-line" style={{backgroundColor:item[mode==="dark"?"dark":"light"][key]}} />)}</span>
+          <span className="mb-2 flex gap-1.5" aria-hidden="true">{(["bg","surface","accent","accentSoft"] as const).map(key => <span key={key} className="relative h-5 w-5 overflow-hidden rounded-full border border-line"><span className="theme-preview-light absolute inset-0" style={{backgroundColor:item.light[key]}} /><span className="theme-preview-dark absolute inset-0" style={{backgroundColor:item.dark[key]}} /></span>)}</span>
           <span className="block pe-5 text-sm font-semibold text-fg">{t(`themes.${item.nameKey}`)}</span>
           {selected && <Check aria-hidden="true" size={18} className="absolute end-2 top-2 text-accent-text"/>}
         </button>;

@@ -107,7 +107,7 @@ export default function SupervisorExperiment({threadId,locale,copy,initialPropos
    {report&&<p>{copy.reportNote} {report.status==="complete"?copy.statusComplete:
      report.status==="in_progress"?copy.statusInProgress:copy.statusInsufficient}</p>}
    {busy&&<p role="status">{copy.loading}</p>}
-   {error&&<p role="alert" className="text-red-700">{copy.error}</p>}
+   {error&&<p role="alert" className="text-neg">{copy.error}</p>}
   </div>}
  </section>;
 }

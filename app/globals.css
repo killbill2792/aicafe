@@ -35,3 +35,12 @@
 }
 
 html[lang="ar"] h1, html[lang="ar"] h2, html[lang="ar"] h3 { font-family: var(--font-ibm-plex-arabic), sans-serif; }
+
+/* Theme swatches follow System appearance, including changes while the picker is open. */
+.theme-preview-dark { display: none; }
+:root[data-mode="dark"] .theme-preview-light { display: none; }
+:root[data-mode="dark"] .theme-preview-dark { display: block; }
+@media (prefers-color-scheme: dark) {
+  :root[data-mode="system"] .theme-preview-light { display: none; }
+  :root[data-mode="system"] .theme-preview-dark { display: block; }
+}

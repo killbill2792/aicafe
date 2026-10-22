@@ -115,7 +115,7 @@ function PriceEvidencePanel({
      : market.position==="below"
        ? t("marketBelow",{percent:pct(market.differencePercent),count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)})
        : t("marketNear",{count:market.verifiedNearbyCount,median:formatCents(market.medianPriceCents)});
- return <section className="mt-3 rounded-2xl border border-line bg-[#FBF7F1] p-4">
+ return <section className="mt-3 rounded-2xl border border-line bg-surface2 p-4">
    <h4 className="text-lg font-extrabold text-ink">{t("priceAnalysisTitle")}</h4>
    <div className="mt-3 space-y-3">
      <div><p className="font-bold text-ink">{t("costBenchmarkTitle")}</p><p className="mt-1 text-[17px] leading-snug text-ink-muted">{costText}</p><p className="mt-1 text-sm text-ink-muted">{t("costBenchmarkNotMarket")}</p></div>
@@ -125,4 +125,4 @@ function PriceEvidencePanel({
  </section>;
 }
 function SalesBars({days}:{days:{date:string;quantity:number}[]}){const peak=Math.max(...days.map(day=>day.quantity),1);return <div className="flex h-14 w-28 items-end justify-end gap-px border-b border-line" aria-hidden="true">{days.map(day=><span key={day.date} className="min-w-[2px] flex-1 rounded-t-sm bg-good/75" style={{height:day.quantity?`${Math.max((day.quantity/peak)*100,4)}%`:0}}/>)}</div>}
-function StatusBox({label,value,good}:{label:string;value:string;good:boolean}){return <div className={`rounded-xl p-3 ${good?"bg-good-tint":"bg-amber-50"}`}><p className="text-sm text-ink-muted">{label}</p><p className={`mt-1 flex items-start gap-1.5 font-bold ${good?"text-good":"text-warn"}`}>{good?<Check className="mt-0.5 shrink-0" size={17}/>:<TriangleAlert className="mt-0.5 shrink-0" size={17}/>}<span>{value}</span></p></div>}
+function StatusBox({label,value,good}:{label:string;value:string;good:boolean}){return <div className={`rounded-xl p-3 ${good?"bg-good-tint":"bg-warn-soft"}`}><p className="text-sm text-ink-muted">{label}</p><p className={`mt-1 flex items-start gap-1.5 font-bold ${good?"text-good":"text-warn"}`}>{good?<Check className="mt-0.5 shrink-0" size={17}/>:<TriangleAlert className="mt-0.5 shrink-0" size={17}/>}<span>{value}</span></p></div>}

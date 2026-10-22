@@ -165,13 +165,13 @@ export default function MenuPricePreview({item}:{item:MenuControlItem}){
       {input("fee",t("priceBasisFees"),sourceLabel("fee",basis.feeStatus),"percent")}
     </div>
     {basis.missingRunningCategories.length>0&&values.monthlyRunningCents!==null&&
-      <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
+      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[17px] text-warn">
         {t("priceBasisSavedCostsIncomplete",{
           count:basis.missingRunningCategories.length,
         })}
       </p>}
     {basis.missingRunningCategories.length>0&&values.monthlyRunningCents===null&&
-      <p className="mt-3 rounded-lg bg-amber-50 p-3 text-[17px] text-warn">
+      <p className="mt-3 rounded-lg bg-warn-soft p-3 text-[17px] text-warn">
         {t("priceBasisMissingExpected",{
           count:basis.missingRunningCategories.length,
           subtotal:formatCents(basis.runningKnownCents),

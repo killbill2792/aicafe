@@ -751,7 +751,7 @@ export default function SupervisorChatComposer({
           <Send size={21} aria-hidden="true" />
         </button>
       </form>
-      {dictation === "listening" && <p className="mt-1 text-sm font-bold text-red-700" role="status">
+      {dictation === "listening" && <p className="mt-1 text-sm font-bold text-neg" role="status">
         {copy.recording} {durationLabel} · {copy.voiceStop}
       </p>}
       {dictation === "recognizing" && <p className="mt-1 text-sm font-semibold text-ink-muted" role="status">
