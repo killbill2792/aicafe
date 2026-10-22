@@ -47,10 +47,17 @@ export async function persistAgentReply(scope: ConversationScope, owner: Convers
   const { reply, metadata } = agentReplyPayload(turn);
   const saved = await persistGroundedSupervisorReply(scope, owner, reply, metadata);
   try {
-    await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id,
-      usage: { model: configuredSupervisorModel(), modelCallCount: turn.usage.modelCalls,
-        toolCallCount: turn.usage.toolCalls, inputTokens: turn.usage.inputTokens,
-        outputTokens: turn.usage.outputTokens } });
-  } catch { /* telemetry must not corrupt a durable reply */ }
+    // The existing owner-scoped ledger RPC allows up to five tool calls per
+    // increment. Split the eight-tool turn without requiring a migration.
+    const total = turn.usage.toolCalls;
+    for (let part = 0; part < Math.max(1, Math.ceil(total / 5)); part++) {
+      await recordSupervisorUsage({ scope, threadId: owner.threadId, ownerMessageId: owner.id,
+        usage: { model: configuredSupervisorModel(),
+          modelCallCount: part === 0 ? turn.usage.modelCalls : 0,
+          toolCallCount: Math.min(5, total - part * 5),
+          inputTokens: part === 0 ? turn.usage.inputTokens : 0,
+          outputTokens: part === 0 ? turn.usage.outputTokens : 0 } });
+    }
+  } catch { /* telemetry failure must not corrupt a persisted reply */ }
   return saved;
 }
