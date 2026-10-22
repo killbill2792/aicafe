@@ -17,6 +17,7 @@ import {EXPRESSION_ID,planSchema} from "@/lib/ai/supervisor/p3/expression";
 import {simulationOutputSchema} from "@/lib/ai/supervisor/p3/simulateRegistration.server";
 import {formatScenarioValue} from "@/lib/ai/supervisor/p3/formatScenario";
 import {groundedNaturalProse} from "./naturalConversationProse";
+import {publicResearchOnly} from "./publicResearchBoundary";
 import {investigationReadDatesMatch,investigationCalendarScope,rememberInvestigationReads,rememberCalendarScopes,authenticatedReadCalendarText} from "./readDates";
 import {INVESTIGATION_LIMITS} from "./protocol";
 import {presentInvestigatedTasks} from "./taskPresentation";
@@ -149,14 +150,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const registry=createP3ReadRegistry([...buildAlexP3Registrations(),...buildOliviaP3Registrations(),
    buildAlexPricingRegistrations()[0],buildOliviaInvestigationRegistration(),
    buildDatasetRegistration(datasets,identity.businessId),buildRecordsRegistration(()=>observations,identity.businessId),
-   buildResearchRegistration(()=>"",async(clause,query,publicLocationContext)=>{
-     // No second AI reviewer: conservative outbound privacy gate, in addition
-     // to the registered clause/word allowlists. Do not transmit mixed
-     // private staff, financial or personally identifying owner clauses.
-     if(!input.text.includes(clause)||publicLocationContext!=="")return false;
-     if(/\b(?:employee|payroll|salary|wages|bank|profit|rent|ssn|email|phone|customer|account|revenue|sales)\b/iu.test(clause))return false;
-     return clause.length>=3&&query.trim().length>0;
-   })]);
+   buildResearchRegistration(()=>"",async(clause,query,context)=>
+     publicResearchOnly(input.text,clause,query,context))]);
  const manifest=registry.discover(scope).filter(d=>!isRedundantModelRead(d.id));
  const visibleIds=new Set(modelVisibleIds(manifest.map(x=>x.id)));
  const descriptions=manifest.filter(d=>visibleIds.has(d.id));
@@ -411,7 +406,12 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      capabilityId=>descriptions.find(r=>r.id===capabilityId)?.owner);
    const datesMatch=d&&investigationReadDatesMatch(args.input,ownerText,
      identity.asOf,memory,statements,d.owner,id=>descriptions.find(r=>r.id===id)?.owner);
-   if(d&&discovered.has(id)&&isRecord(args.input)&&datesMatch&&
+   // P1 may report that the authoritative snapshot is invalid or revoked.
+   // A schema-valid read is never enough to override an integrity failure.
+   const financialBlocked=!financialReadsAvailable&&Boolean(d)&&
+     (d!.sensitivity==="financial"||
+       /^p3\.(?:money|sales|labor|alex|pricing)\./u.test(id));
+   if(d&&discovered.has(id)&&isRecord(args.input)&&datesMatch&&!financialBlocked&&
      registry.preflightRead({...scope,ownerClause:ownerText},id,args.input)){
     const value=await registry.invoke({...scope,ownerClause:ownerText},id,args.input,
       ()=>{usage.toolCallCount++;input.onUsage?.({...usage});});
@@ -475,7 +475,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     }
    }else {
      hadUnavailable=true;
-     result={status:"unavailable",reason:datesMatch===false?"owner_date_mismatch":"unknown_or_invalid_read",
+     result={status:"unavailable",reason:financialBlocked?"invalid_financial_snapshot":datesMatch===false?"owner_date_mismatch":"unknown_or_invalid_read",
        hint:"Discover tools and follow their exact schema; never substitute a different owner period."};
    }
   }else if(name==="search_observation"){
