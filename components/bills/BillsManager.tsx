@@ -102,7 +102,7 @@ function BillForm({
         />
       </label>
       <div className="flex gap-2">
-        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-ink text-sm font-bold text-paper disabled:opacity-40">
+        <button type="button" onClick={handleSave} disabled={isPending || !canSave} className="h-11 flex-1 rounded-full bg-accent text-sm font-bold text-on-accent disabled:opacity-40">
           {labels.save}
         </button>
         {existing && (
@@ -150,7 +150,7 @@ export default function BillsManager({
         return (
           <div key={category} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(category)} className="flex items-center gap-3">
-              <PlainIcon code={category} size={32} color="#2A1D14" />
+              <PlainIcon code={category} size={32} color="currentColor" />
               <span className="flex-1 text-start text-base font-bold">{categoryLabels[category]}</span>
               {existing ? (
                 <span className="text-base font-bold">
@@ -183,7 +183,7 @@ export default function BillsManager({
         return (
           <div key={bill.id} className="flex flex-col gap-2.5 rounded-card-lg bg-card p-4">
             <button type="button" onClick={() => toggle(bill.id)} className="flex items-center gap-3">
-              <PlainIcon code={OTHER_CATEGORY} size={32} color="#2A1D14" />
+              <PlainIcon code={OTHER_CATEGORY} size={32} color="currentColor" />
               <span className="min-w-0 flex-1 truncate text-start text-base font-bold">{bill.label}</span>
               <span className="text-base font-bold">
                 <Money cents={bill.amountCents} />

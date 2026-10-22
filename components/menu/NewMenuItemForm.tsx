@@ -50,8 +50,8 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-4 rounded-card-lg bg-card p-5">
       <div className="flex items-center gap-1.5" aria-hidden="true">
-        <span className={`h-1.5 flex-1 rounded-full ${step === 1 ? "bg-ink" : "bg-good"}`} />
-        <span className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-ink" : "bg-line"}`} />
+        <span className={`h-1.5 flex-1 rounded-full ${step === 1 ? "bg-accent" : "bg-good"}`} />
+        <span className={`h-1.5 flex-1 rounded-full ${step === 2 ? "bg-accent" : "bg-line"}`} />
       </div>
 
       {step === 1 ? (
@@ -67,7 +67,7 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
           <datalist id="menu-group-options">
             {menuGroupOptions.map((group) => <option key={group} value={group} />)}
           </datalist>
-          <button type="button" onClick={() => setStep(2)} disabled={!name.trim()} className="h-12 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">
+          <button type="button" onClick={() => setStep(2)} disabled={!name.trim()} className="h-12 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40">
             {common("next")}
           </button>
         </>
@@ -89,7 +89,7 @@ export default function NewMenuItemForm({ menuGroupOptions }: { menuGroupOptions
             <button type="button" onClick={() => setStep(1)} className="h-12 flex-1 rounded-full border border-line text-base font-semibold text-ink-muted">
               {common("back")}
             </button>
-            <button type="button" onClick={handleCreateClick} disabled={isPending || !price || priceCents <= 0} className="h-12 flex-1 rounded-full bg-ink text-base font-bold text-paper disabled:opacity-40">
+            <button type="button" onClick={handleCreateClick} disabled={isPending || !price || priceCents <= 0} className="h-12 flex-1 rounded-full bg-accent text-base font-bold text-on-accent disabled:opacity-40">
               {t("createItem")}
             </button>
           </div>

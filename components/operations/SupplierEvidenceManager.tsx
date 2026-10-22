@@ -12,7 +12,7 @@ export type SupplierCopy={
  saved:string;error:string;history:string;empty:string;notVerified:string;
  search:string;searchButton:string;searchUnavailable:string;webNotice:string;comparison:string;
 };
-const field="min-h-12 w-full rounded-xl border border-[#B9A995] bg-white p-3 text-[17px] text-ink";
+const field="min-h-12 w-full rounded-xl border border-line bg-surface p-3 text-[17px] text-ink";
 async function read<T>(resp:Response):Promise<T>{if(!resp.ok)throw new Error();return resp.json() as Promise<T>;}
 export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
  const [supplier,setSupplier]=useState("");
@@ -69,7 +69,7 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
  const comparison=quotes.length>1&&quotes[0].itemName.toLocaleLowerCase()===quotes[1].itemName.toLocaleLowerCase()
   ?compareSupplierQuotePrices(quotes[1],quotes[0]):null;
  return <div className="flex flex-col gap-4">
-  <p className="rounded-2xl border border-[#D8C8B5] bg-[#FFF4E0] p-4 text-[17px] text-ink">
+  <p className="rounded-2xl border border-line bg-warn-soft p-4 text-[17px] text-ink">
    {copy.description}</p>
   <form onSubmit={(e)=>void submit(e)} className="rounded-2xl bg-card p-4">
    <div className="grid gap-3 md:grid-cols-2">
@@ -103,7 +103,7 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
    {comparison?.comparable&&<p className="mt-3 text-[17px] text-ink">
     {copy.comparison}: {formatCents(comparison.differenceCents)} ({copy.notVerified})</p>}
    <ul className="mt-3 space-y-3">{quotes.map(q=><li key={q.id}
-    className="rounded-xl border border-[#D8C8B5] p-3 text-[17px] text-ink">
+    className="rounded-xl border border-line p-3 text-[17px] text-ink">
     <strong>{q.itemName} · {formatCents(q.priceCents)}</strong>
     <p>{q.supplierName} · {q.packageCount} {q.packageUnit} · {q.quotedOn}</p>
     <p className="text-ink-muted">{copy.notVerified} · {q.sourceKind}</p>
@@ -121,7 +121,7 @@ export default function SupplierEvidenceManager({copy}:{copy:SupplierCopy}){
      className="min-h-12 rounded-full bg-ink px-5 text-[17px] font-bold text-paper disabled:opacity-50">{copy.searchButton}</button>
    </div>
    <ul className="mt-3 space-y-2">{sources.map((source)=><li key={source.url}
-    className="rounded-xl border border-[#D8C8B5] p-3">
+    className="rounded-xl border border-line p-3">
     <a href={source.url} target="_blank" rel="noopener noreferrer"
      className="break-all text-[17px] font-semibold text-ink underline">{source.title}</a>
     <p className="text-[17px] text-ink-muted">{source.snippet}</p>

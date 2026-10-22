@@ -13,7 +13,7 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
 
   return (
     <html lang="en">
-      <body style={{ margin: 0, background: "#F6F1E9", fontFamily: "system-ui, sans-serif", color: "#2A1D14" }}>
+      <body style={{ margin: 0, background: "rgb(var(--c-bg, 244 246 245))", fontFamily: "system-ui, sans-serif", color: "rgb(var(--c-text, 28 25 23))" }}>
         <main
           style={{
             minHeight: "100vh",
@@ -27,11 +27,11 @@ export default function GlobalError({ error, reset }: { error: Error & { digest?
           }}
         >
           <h1 style={{ fontSize: 20, fontWeight: 700 }}>Something went wrong</h1>
-          <p style={{ maxWidth: 320, color: "#6B5B4E" }}>Please try again. If this keeps happening, close and reopen the app.</p>
+          <p style={{ maxWidth: 320, color: "rgb(var(--c-muted, 95 107 104))" }}>Please try again. If this keeps happening, close and reopen the app.</p>
           <button
             type="button"
             onClick={reset}
-            style={{ height: 56, borderRadius: 28, background: "#2A1D14", color: "#F6F1E9", border: "none", padding: "0 32px", fontSize: 16, fontWeight: 700 }}
+            style={{ height: 56, borderRadius: 28, background: "rgb(var(--c-accent, 15 118 110))", color: "rgb(var(--c-on-accent, 255 255 255))", border: "none", padding: "0 32px", fontSize: 16, fontWeight: 700 }}
           >
             Try again
           </button>

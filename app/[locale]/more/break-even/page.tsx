@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const WHATIF_ICONS: Record<string, { Icon: typeof TrendingUp; bg: string; fg: string }> = {
   price: { Icon: TrendingUp, bg: "bg-good-tint", fg: "text-good" },
-  staffing: { Icon: Users, bg: "bg-[#E8EEF5]", fg: "text-staff" },
+  staffing: { Icon: Users, bg: "bg-surface", fg: "text-staff" },
   milk: { Icon: Milk, bg: "bg-warn-tint", fg: "text-warn" },
 };
 
@@ -32,7 +32,7 @@ export default async function BreakEvenPage() {
       {vm.unavailableReason ? <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[22px]">
         <h2 className="text-xl font-bold text-ink">{t("notEnoughData")}</h2>
         <p className="text-[17px] text-ink-muted">{vm.unavailableReason === "missing_costs" ? t("missingCostsReason", { categories: vm.missingCostLabels.join(", ") }) : vm.unavailableReason === "missing_product_costs" ? t("missingProductCostsReason") : t("missingSalesReason")}</p>
-        <a href={vm.unavailableReason === "missing_costs" && vm.missingCosts[0] ? missingCostDestination(vm.missingCosts[0].categoryCode) : vm.unavailableReason === "missing_product_costs" ? "/menu" : "/more/uploads/sales"} className="flex min-h-12 items-center justify-center rounded-full bg-ink px-4 font-bold text-paper">{vm.unavailableReason === "missing_costs" ? t("addMissingCosts") : vm.unavailableReason === "missing_product_costs" ? t("addProductCosts") : t("addSalesData")}</a>
+        <a href={vm.unavailableReason === "missing_costs" && vm.missingCosts[0] ? missingCostDestination(vm.missingCosts[0].categoryCode) : vm.unavailableReason === "missing_product_costs" ? "/menu" : "/more/uploads/sales"} className="flex min-h-12 items-center justify-center rounded-full bg-accent px-4 font-bold text-on-accent">{vm.unavailableReason === "missing_costs" ? t("addMissingCosts") : vm.unavailableReason === "missing_product_costs" ? t("addProductCosts") : t("addSalesData")}</a>
       </section> : <>
       <section className="flex flex-col items-center gap-2 rounded-card-lg bg-card p-[22px] text-center">
         <span className="text-base font-semibold text-ink-muted">{t("everyDay")}</span>
@@ -46,27 +46,27 @@ export default async function BreakEvenPage() {
       <section className="flex flex-col gap-3 rounded-card-lg bg-card p-[18px]">
         <h2 className="text-[17px] font-bold">{t("whereFrom")}</h2>
         <div className="flex items-center gap-3 text-[15px]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-running text-ink">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-running text-on-chart-running">
             <Coins aria-hidden="true" size={18} />
           </span>
           <span className="flex-1">{t("rentBillsRow")}</span>
           <span className="font-bold">{t("perDay", { amount: formatCents(vm.runningPerDayCents) })}</span>
         </div>
         <div className="flex items-center gap-3 text-[15px]">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-staff text-white">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-staff text-on-chart-staff">
             <Users aria-hidden="true" size={18} />
           </span>
           <span className="flex-1">{t("plannedStaffRow")}</span>
           <span className="font-bold">{t("perDay", { amount: formatCents(vm.avgDailyStaffCostCents) })}</span>
         </div>
-        <div className="h-px bg-[#EFE7DB]" />
+        <div className="h-px bg-surface" />
         <div className="flex items-center gap-3 text-[15px]">
           <span className="flex-1 font-semibold">{t("eachDrinkLeaves")}</span>
           <span className="font-bold text-good">
             <Money cents={vm.avgMoneyLeftPerDrinkCents} />
           </span>
         </div>
-        <div className="rounded-[10px] bg-[#FAF6F0] px-3 py-2.5 text-sm text-ink-muted">
+        <div className="rounded-[10px] bg-surface px-3 py-2.5 text-sm text-ink-muted">
           {formatCents(vm.dailyCostsToCoverCents)} ÷ {formatCents(vm.avgMoneyLeftPerDrinkCents)} ={" "}
           {Number.isFinite(vm.drinksNeededPerDay) ? t("drinksCount", { count: vm.drinksNeededPerDay }) : "—"}
         </div>
@@ -80,7 +80,7 @@ export default async function BreakEvenPage() {
           const Icon = icon.Icon;
           const better = w.needed < vm.drinksNeededPerDay;
           return (
-            <div key={w.key} className="flex items-center gap-3 rounded-2xl bg-[#FAF6F0] p-3">
+            <div key={w.key} className="flex items-center gap-3 rounded-2xl bg-surface p-3">
               <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${icon.bg} ${icon.fg}`}>
                 <Icon aria-hidden="true" size={20} />
               </span>

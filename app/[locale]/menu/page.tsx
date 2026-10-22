@@ -23,7 +23,7 @@ export default async function MenuPage() {
           <p className="text-[15px] text-ink-muted">{t("subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/menu/new" className="flex min-h-12 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
+          <Link href="/menu/new" className="flex min-h-12 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-on-accent no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addItem")}
           </Link>
           <LanguageSwitch href="/menu" />

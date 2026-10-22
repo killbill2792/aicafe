@@ -22,7 +22,7 @@ export default function MissingPriceForm({ line, labels }: { line: RecipeLineFor
         type="button"
         disabled={pending || !cost || !quantity}
         onClick={() => startTransition(async () => { await addManualIngredientPrice({ ingredientId: line.ingredientId, packageCostCents: Math.round(Number(cost) * 100), packageQuantity: Number(quantity) }); })}
-        className="min-h-10 rounded-full bg-ink px-3 font-bold text-paper disabled:opacity-40"
+        className="min-h-10 rounded-full bg-accent px-3 font-bold text-on-accent disabled:opacity-40"
       >
         {labels.add}
       </button>

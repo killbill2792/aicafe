@@ -24,21 +24,21 @@ export default function SupervisorOwnerQuestionCard({
   const options=card.input.kind==="options"?card.input.options:[];
   const typing=card.input.kind==="free_text"||showOther;
   return <section dir={locale==="ar"?"rtl":"ltr"}
-    className="w-full max-w-2xl rounded-[22px] border border-[#D8C8B5] bg-white p-4 text-ink shadow-sm"
+    className="w-full max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm"
     aria-label={card.title[locale]}>
     <div className="flex items-start gap-3">
       <h3 className="min-w-0 flex-1 font-headline text-xl font-bold leading-snug">{card.title[locale]}</h3>
       <button type="button" aria-label={copy.dismiss} title={copy.dismiss}
         disabled={disabled}
-        className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink-muted hover:bg-[#F3ECE3] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        className="flex min-h-12 min-w-12 items-center justify-center rounded-xl text-ink-muted hover:bg-surface2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         onClick={()=>dismissOwnerQuestion(locallyDismissible,()=>setLocallyClosed(true),onDismiss)}><X size={21} aria-hidden="true"/></button>
     </div>
     {card.input.kind==="options"&&<div role="group" aria-label={card.title[locale]}
       className={`mt-3 flex flex-col gap-2 ${options.length>5?"max-h-72 overflow-y-auto pe-1":""}`}>
       {options.map((option,index)=><button key={option.id} type="button" disabled={disabled}
         onClick={()=>onAnswer(option.id,true)}
-        className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-[#E9DAC8] bg-[#FFF9F1] p-2 text-start text-[17px] hover:bg-[#F2E9DA] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white font-bold text-ink-muted">{String.fromCharCode(65+index)}</span>
+        className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-line bg-surface2 p-2 text-start text-[17px] hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
+        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface font-bold text-ink-muted">{String.fromCharCode(65+index)}</span>
         <span className="min-w-0 flex-1">{option.label[locale]}</span>
       </button>)}
     </div>}
@@ -54,9 +54,9 @@ export default function SupervisorOwnerQuestionCard({
       <input id={"owner-input-"+card.questionId} type="text" value={answer}
         maxLength={200} disabled={disabled} onChange={e=>setAnswer(e.target.value)}
         placeholder={card.input.kind==="free_text"?card.input.hint[locale]:copy.other}
-        className="min-h-12 w-full rounded-xl border border-[#BCA996] bg-white px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"/>
+        className="min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"/>
       <button type="submit" disabled={disabled||!answer.trim()}
-        className="min-h-12 self-start rounded-xl bg-ink px-5 text-[17px] font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
+        className="min-h-12 self-start rounded-xl bg-accent px-5 text-[17px] font-semibold text-on-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
         {copy.confirm}
       </button>
     </form>}

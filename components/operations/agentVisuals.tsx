@@ -5,42 +5,42 @@ import type { AgentId } from "@/lib/operating/tasks";
 export const agentVisuals = {
   alex: {
     avatar: "/ai-team/alex.png",
-    accent: "text-[#276A9E]",
-    border: "border-[#65A6D5]",
-    softSurface: "bg-[#EAF5FC]",
-    strongSurface: "bg-[#D9EEFA]",
-    backdrop: "bg-[#BDE1F6]",
-    glow: "shadow-[0_16px_42px_rgba(39,106,158,0.28)]",
+    accent: "text-persona-alex",
+    border: "border-persona-alex-border",
+    softSurface: "bg-persona-alex-soft",
+    strongSurface: "bg-persona-alex-soft",
+    backdrop: "bg-persona-alex-soft",
+    glow: "shadow-card",
     icon: ChartNoAxesCombined,
   },
   olivia: {
     avatar: "/ai-team/olivia.png",
-    accent: "text-[#74488A]",
-    border: "border-[#A982BA]",
-    softSurface: "bg-[#F5EDF8]",
-    strongSurface: "bg-[#EEDDF4]",
-    backdrop: "bg-[#DEC5EA]",
-    glow: "shadow-[0_16px_42px_rgba(116,72,138,0.27)]",
+    accent: "text-persona-olivia",
+    border: "border-persona-olivia-border",
+    softSurface: "bg-persona-olivia-soft",
+    strongSurface: "bg-persona-olivia-soft",
+    backdrop: "bg-persona-olivia-soft",
+    glow: "shadow-card",
     icon: CalendarCheck2,
   },
   maya: {
     avatar: "/ai-team/maya.png",
-    accent: "text-[#287852]",
-    border: "border-[#75AD8B]",
-    softSurface: "bg-[#ECF6EF]",
-    strongSurface: "bg-[#DDF0E3]",
-    backdrop: "bg-[#C6E8D0]",
-    glow: "shadow-[0_16px_42px_rgba(40,120,82,0.27)]",
+    accent: "text-persona-maya",
+    border: "border-persona-maya-border",
+    softSurface: "bg-persona-maya-soft",
+    strongSurface: "bg-persona-maya-soft",
+    backdrop: "bg-persona-maya-soft",
+    glow: "shadow-card",
     icon: Leaf,
   },
   leo: {
     avatar: "/ai-team/leo.png",
-    accent: "text-[#8A5C00]",
-    border: "border-[#D6A43D]",
-    softSurface: "bg-[#FFF6DF]",
-    strongSurface: "bg-[#FBEBC2]",
-    backdrop: "bg-[#F8D98A]",
-    glow: "shadow-[0_16px_42px_rgba(173,116,0,0.27)]",
+    accent: "text-persona-leo",
+    border: "border-persona-leo-border",
+    softSurface: "bg-persona-leo-soft",
+    strongSurface: "bg-persona-leo-soft",
+    backdrop: "bg-persona-leo-soft",
+    glow: "shadow-card",
     icon: CircleDollarSign,
   },
 } satisfies Record<AgentId, {
@@ -65,6 +65,6 @@ export function AgentAvatar({ agentId, size = "hero", selected = false }: { agen
 
   return <span className="relative block h-52 w-full" aria-hidden="true">
     <span className={`absolute inset-x-[9%] bottom-2 top-4 rounded-[48%_52%_44%_56%/54%_42%_58%_46%] transition-all duration-200 motion-reduce:transition-none ${visual.backdrop} ${selected ? `${visual.glow} scale-[1.04]` : "group-hover:scale-[1.02] group-hover:brightness-[1.03] group-hover:shadow-lg group-focus-visible:scale-[1.02] group-focus-visible:brightness-[1.03] group-focus-visible:shadow-lg"}`} />
-    <Image src={visual.avatar} alt="" fill sizes="(min-width: 768px) 190px, 72vw" className={`z-10 object-contain object-bottom drop-shadow-[0_12px_12px_rgba(42,29,20,0.18)] transition-transform duration-200 motion-reduce:transition-none ${selected ? "scale-[1.05]" : "group-hover:scale-[1.02] group-focus-visible:scale-[1.02]"}`} />
+    <Image src={visual.avatar} alt="" fill sizes="(min-width: 768px) 190px, 72vw" className={`z-10 object-contain object-bottom drop-shadow-md transition-transform duration-200 motion-reduce:transition-none ${selected ? "scale-[1.05]" : "group-hover:scale-[1.02] group-focus-visible:scale-[1.02]"}`} />
   </span>;
 }

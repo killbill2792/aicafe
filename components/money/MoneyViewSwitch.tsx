@@ -23,7 +23,7 @@ export default function MoneyViewSwitch({
   }
 
   return (
-    <div role="group" aria-label="Money view" className="flex gap-1 rounded-3xl bg-[#EDE5D9] p-1">
+    <div role="group" aria-label="Money view" className="flex gap-1 rounded-3xl bg-surface2 p-1">
       {(["recovery", "profit"] as const).map((view) => (
         <button
           key={view}
@@ -31,7 +31,7 @@ export default function MoneyViewSwitch({
           aria-pressed={current === view}
           onClick={() => setView(view)}
           className={`h-11 flex-1 rounded-3xl text-[16px] font-semibold ${
-            current === view ? "bg-card font-extrabold text-ink shadow-sm" : "bg-transparent text-[#4A3A2E]"
+            current === view ? "bg-card font-extrabold text-ink shadow-sm" : "bg-transparent text-muted"
           }`}
         >
           {view === "recovery" ? recoveryLabel : profitLabel}

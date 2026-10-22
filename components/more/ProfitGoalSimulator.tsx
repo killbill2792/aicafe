@@ -126,7 +126,7 @@ export default function ProfitGoalSimulator({
           <button
             type="button"
             onClick={run}
-            className="mt-3 min-h-12 rounded-full bg-ink px-5 text-sm font-bold text-paper"
+            className="mt-3 min-h-12 rounded-full bg-accent px-5 text-sm font-bold text-on-accent"
           >
             {labels.run}
           </button>

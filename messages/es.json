@@ -2121,5 +2121,27 @@
       "none": "Se necesitan más datos"
     },
     "confirmChange": "¿Hiciste el cambio el {date}?"
+  },
+  "Ui": {
+    "theme": "Tema",
+    "themeDescription": "Elige cómo se ve tu cafetería.",
+    "chooseTheme": "Colores del tema",
+    "appearance": "Apariencia",
+    "light": "Claro",
+    "dark": "Oscuro",
+    "system": "Sistema",
+    "emptyTitle": "Todavía no hay nada",
+    "emptyDescription": "La actividad nueva aparecerá aquí.",
+    "unverified": "Sin verificar",
+    "themes": {
+      "freshPour": "Café fresco",
+      "nightRoast": "Tueste nocturno",
+      "marketGreen": "Verde mercado",
+      "berryMocha": "Moca de frutos rojos",
+      "blueHour": "Hora azul",
+      "matcha": "Matcha",
+      "caramelSky": "Cielo caramelo",
+      "cherryCola": "Cereza cola"
+    }
   }
 }

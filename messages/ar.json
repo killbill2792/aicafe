@@ -2121,5 +2121,27 @@
       "none": "نحتاج إلى مزيد من المعلومات"
     },
     "confirmChange": "هل أجريت التغيير في {date}؟"
+  },
+  "Ui": {
+    "theme": "المظهر",
+    "themeDescription": "اختر ألوان مقهاك.",
+    "chooseTheme": "ألوان المظهر",
+    "appearance": "وضع العرض",
+    "light": "فاتح",
+    "dark": "داكن",
+    "system": "النظام",
+    "emptyTitle": "لا يوجد شيء لعرضه بعد",
+    "emptyDescription": "سيظهر النشاط الجديد هنا.",
+    "unverified": "غير مؤكد",
+    "themes": {
+      "freshPour": "قهوة طازجة",
+      "nightRoast": "تحميص ليلي",
+      "marketGreen": "أخضر السوق",
+      "berryMocha": "موكا التوت",
+      "blueHour": "الساعة الزرقاء",
+      "matcha": "ماتشا",
+      "caramelSky": "سماء الكراميل",
+      "cherryCola": "كرز وكولا"
+    }
   }
 }

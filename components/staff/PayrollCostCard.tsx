@@ -121,7 +121,7 @@ export default function PayrollCostCard({
         type="button"
         onClick={save}
         disabled={isPending || !valid}
-        className="min-h-12 self-start rounded-full bg-ink px-5 text-sm font-bold text-paper disabled:opacity-40"
+        className="min-h-12 self-start rounded-full bg-accent px-5 text-sm font-bold text-on-accent disabled:opacity-40"
       >
         {isPending ? labels.saving : labels.save}
       </button>

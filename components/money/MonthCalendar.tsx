@@ -154,11 +154,11 @@ export default function MonthCalendar({
           const base = "relative flex aspect-square min-h-12 flex-col items-center justify-center rounded-[10px] text-[13px] font-bold";
           const stateClass =
             cell.state.kind === "actual"
-              ? `${profitToneBgClass(cell.state.tone)} text-white`
+              ? `${profitToneBgClass(cell.state.tone)} ${cell.state.tone === "good" ? "text-on-pos" : cell.state.tone === "warn" ? "text-on-warn" : "text-bg"}`
               : cell.state.kind === "closed"
                 ? "border border-line bg-paper text-ink-muted"
                 : cell.state.kind === "missing"
-                  ? "border-2 border-dotted border-[#C9BBA6] text-ink-muted"
+                  ? "border-2 border-dotted border-line text-ink-muted"
                   : "border-2 border-dashed border-line text-ink-muted opacity-70";
           return (
             <button
@@ -171,8 +171,8 @@ export default function MonthCalendar({
             >
               {cell.day}
               {milestoneCode && (
-                <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-good">
-                  <PlainIcon code={milestoneCode as ExpenseIconCode} size={12} color="#fff" />
+                <span className="absolute -bottom-1 -end-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-card bg-good">
+                  <PlainIcon code={milestoneCode as ExpenseIconCode} size={12} color="rgb(var(--c-on-pos))" />
                 </span>
               )}
             </button>
@@ -190,7 +190,7 @@ export default function MonthCalendar({
           {labels.legendLoss}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3.5 w-3.5 rounded-[4px] border-2 border-dotted border-[#C9BBA6]" />
+          <span className="h-3.5 w-3.5 rounded-[4px] border-2 border-dotted border-line" />
           {labels.legendMissing}
         </span>
         <span className="flex items-center gap-1.5">
@@ -204,7 +204,7 @@ export default function MonthCalendar({
       </div>
 
       {selectedDetail && (
-        <div className="mx-4 flex flex-col gap-2 rounded-2xl bg-[#F7F1E8] p-3.5">
+        <div className="mx-4 flex flex-col gap-2 rounded-2xl bg-surface p-3.5">
           <span className="text-base font-bold text-ink">
             {new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${selectedDetail.date}T00:00:00`))}
           </span>

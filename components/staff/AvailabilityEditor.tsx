@@ -20,10 +20,10 @@ type DraftWindow = {
 };
 
 const week = [1, 2, 3, 4, 5, 6, 0];
-const field = "min-h-12 min-w-0 w-full rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+const field = "min-h-12 min-w-0 w-full rounded-xl border border-line bg-surface px-3 text-[17px] text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 export const schedulingFieldClass = field;
 export const schedulingButtonClass = "min-h-12 rounded-xl border border-line bg-card px-3 text-[17px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
-export const schedulingPrimaryClass = "min-h-12 rounded-xl bg-ink px-4 text-[17px] font-semibold text-paper disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
+export const schedulingPrimaryClass = "min-h-12 rounded-xl bg-accent px-4 text-[17px] font-semibold text-on-accent disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink";
 
 function windowFromRecord(row: SchedulingRow): DraftWindow {
   return {
@@ -153,7 +153,7 @@ export default function AvailabilityEditor({ employeeId, rows, preferences, loca
   const dayNames = [t("sun"), t("mon"), t("tue"), t("wed"), t("thu"), t("fri"), t("sat")];
 
   return (
-    <section aria-label={t("weeklyAvailability")} className="flex flex-col gap-3 rounded-xl bg-white p-3">
+    <section aria-label={t("weeklyAvailability")} className="flex flex-col gap-3 rounded-xl bg-surface p-3">
       <fieldset disabled={pending} className="flex min-w-0 flex-col gap-3 border-0 p-0">
       <h4 className="text-[17px] font-bold">{t("weeklyAvailability")}</h4>
       <p className="text-[17px] text-ink-muted">{t("availabilityExplainer")}</p>

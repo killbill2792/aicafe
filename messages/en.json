@@ -2121,5 +2121,27 @@
       "none": "More information needed"
     },
     "confirmChange": "Did you make the change on {date}?"
+  },
+  "Ui": {
+    "theme": "Theme",
+    "themeDescription": "Choose how your café looks.",
+    "chooseTheme": "Theme colors",
+    "appearance": "Appearance",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
+    "emptyTitle": "Nothing to show yet",
+    "emptyDescription": "New activity will appear here.",
+    "unverified": "Unverified",
+    "themes": {
+      "freshPour": "Fresh Pour",
+      "nightRoast": "Night Roast",
+      "marketGreen": "Market Green",
+      "berryMocha": "Berry Mocha",
+      "blueHour": "Blue Hour",
+      "matcha": "Matcha",
+      "caramelSky": "Caramel Sky",
+      "cherryCola": "Cherry Cola"
+    }
   }
 }

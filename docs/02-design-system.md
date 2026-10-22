@@ -48,31 +48,35 @@ Use the same icons everywhere an expense appears (Overview, Profit, Cost recover
 
 Draw icons as simple, rounded, filled silhouettes (not thin line art). They must read at 40px. Use one consistent SVG set in `components/icons/`. Custom SVGs are fine; lucide-react can fill gaps.
 
-## Color tokens
-| Token | Hex | Use |
-|---|---|---|
-| `ink` | #2A1D14 | Main text, primary buttons |
-| `ink-muted` | #6B5B4E | Secondary text (passes AA on `paper` and white) |
-| `paper` | #F6F1E9 | App background |
-| `card` | #FFFFFF | Cards |
-| `line` | #E6DCCD | Dividers, borders |
-| `good` | #1E6B4B | Profit, covered, positive change |
-| `good-tint` | #E3F0E8 | Background behind good states |
-| `warn` | #B4460E | Missing costs, leaks, negative change |
-| `warn-tint` | #FBE9DC | Background behind warnings |
-| `staff` | #2F5D8A | Staff cost color in charts |
-| `ingredients` | #8B5A2B | Ingredient cost color in charts |
-| `running` | #E0AE4E | Rent & bills color in charts |
-| `fees` | #A7B0BA | Card fees color in charts |
+## Semantic color system
 
-Dark mode: not in v1. Café screens are used in bright light.
+Eight owner-selectable palettes: **Fresh Pour** (default), Night Roast, Market Green,
+Berry Mocha, Blue Hour, Matcha, Caramel Sky and Cherry Cola. Light, Dark and System modes
+are supported; System follows the OS preference. The default is Fresh Pour + System.
+Theme tokens come from `app/themes.ts`; run `node scripts/build-themes.mjs` to regenerate
+`app/themes.generated.css`. Colors are stored as space-separated RGB channels.
+
+Semantic tokens: `bg`, `surface`, `surface2`, `line`, `fg`, `muted`,
+`accent`, `accent-text`, `accent-soft`, `accent-2` (decorative),
+`on-accent`, `pos`, `neg`, `warn-text`, `pos-soft`, `neg-soft`,
+`warn-soft`, `nav`, `chart-*`, and `persona-*`.
+Use `accent-text` for text links and selected labels; keep `accent` for fills.
+Warnings are never color-only. Focus, body, and status text must pass AA contrast.
+
+Deprecated aliases retained: `paper→bg`, `card→surface`, `ink→fg`,
+`ink-muted→muted`, `good→pos`, `good-tint→pos-soft`,
+`warn→warn-text`, `warn-tint→warn-soft`, and chart `staff`,
+`ingredients`, `running`, `fees` → `chart-*`.
+
+Shared UI building blocks in `components/ui/`: Card, Button/buttonClasses, Chip,
+QuickReplies, Badge (including labelled unverified status), SectionHeader,
+EmptyState and PersonaAvatar.
 
 ## Typography
-- **Numbers and headlines:** Fraunces (600/700), fallback Georgia. Big money numbers are 44–80px.
-- **Body and labels:** Figtree (400–800), fallback system sans.
-- **Arabic:** IBM Plex Sans Arabic. Keep money in Western digits with `$` unless the owner switches in Settings.
-- Minimum body size 17px. Secondary labels no smaller than 13px. Line height 1.4 for body.
-- Sentence case everywhere. No ALL-CAPS labels in new screens (older mockups have a few; replace them with sentence case).
+- Headings/numbers: Plus Jakarta Sans (500–800).
+- Body: Inter (400–700). Body minimum 17px.
+- Arabic headings and body: IBM Plex Sans Arabic.
+- Secondary labels at least 13px; no all-caps new labels.
 
 ## Layout
 - Mobile first, 360–430px wide. Single column, max content width 480px (`max-w-app`).
@@ -96,7 +100,7 @@ Dark mode: not in v1. Café screens are used in bright light.
 
 ## Supervisor AI caveats (low emphasis)
 
-A caveat about AI-sourced information in the Supervisor chat is **inline supporting text**, not a high-stakes alert. Use `text-ink-muted` (#6B5B4E) on the chat's light surface, at **17px minimum** with body line-height at least 1.4; it passes WCAG AA contrast. A small decorative alert/info icon may precede the text, but do not add a border, filled tint, card, or boxed warning. Preserve the text itself and readable focus/RTL behavior. This is **not** the `warn-tint` missing-expense-category banner, which retains its own higher-emphasis pattern below.
+A caveat about AI-sourced information in the Supervisor chat is **inline supporting text**, not a high-stakes alert. Use semantic `text-muted` on the current theme's chat surface, at **17px minimum** with body line-height at least 1.4; its theme-specific colors pass WCAG AA contrast. A small decorative alert/info icon may precede the text, but do not add a border, filled tint, card, or boxed warning. Preserve the text itself and readable focus/RTL behavior. This is **not** the `warn-tint` missing-expense-category banner, which retains its own higher-emphasis pattern below.
 
 ## Words (plain language glossary)
 Never show the left column to users. Use the right column.

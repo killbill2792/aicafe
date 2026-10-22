@@ -44,14 +44,14 @@ export default async function StaffPage() {
         <LanguageSwitch href="/staff" />
       </header>
 
-      <section className={`flex flex-col gap-3.5 rounded-card-lg p-5 ${vm.onShift.length > 0 ? "bg-good text-white" : "border border-line bg-[#EDE5D9] text-ink"}`}>
+      <section className={`flex flex-col gap-3.5 rounded-card-lg p-5 ${vm.onShift.length > 0 ? "bg-good text-on-pos" : "border border-line bg-surface2 text-ink"}`}>
         <div className="flex items-center gap-3">
-          <span className={`flex h-12 w-12 items-center justify-center rounded-full ${vm.onShift.length > 0 ? "bg-white/15" : "bg-card"}`}>
+          <span className={`flex h-12 w-12 items-center justify-center rounded-full ${vm.onShift.length > 0 ? "bg-on-pos/15" : "bg-card"}`}>
             {vm.onShift.length > 0 ? <UserRoundCheck aria-hidden="true" /> : <UsersRound aria-hidden="true" />}
           </span>
           <div>
             <strong className="block text-xl">{vm.onShift.length > 0 ? t("activeShiftHero", { count: vm.onShift.length }) : t("noOneOnShiftHero")}</strong>
-            {vm.onShift.length > 0 && <span className="text-sm text-white/85">{vm.onShift.map((shift) => shift.name).join(", ")}</span>}
+            {vm.onShift.length > 0 && <span className="text-sm text-on-pos/90">{vm.onShift.map((shift) => shift.name).join(", ")}</span>}
           </div>
         </div>
         {vm.onShift.length > 0 ? (
@@ -59,7 +59,7 @@ export default async function StaffPage() {
             <div className="col-span-2 rounded-2xl bg-black/10 p-3">
               <strong className="font-headline text-4xl"><Money cents={vm.costPerHourCents} /></strong>
               <span className="ms-2 text-sm font-semibold">{t("perHourRightNow")}</span>
-              <span className="mt-1 block text-sm text-white/85">{t("perMinuteSecondary", { amount: formatCents(vm.costPerMinuteCents) })}</span>
+              <span className="mt-1 block text-sm text-on-pos/90">{t("perMinuteSecondary", { amount: formatCents(vm.costPerMinuteCents) })}</span>
             </div>
             <div className="col-span-2 flex items-center justify-between rounded-2xl bg-black/10 p-3">
               <span className="text-sm font-semibold">{t("staffCostToday")}</span>
@@ -118,7 +118,7 @@ export default async function StaffPage() {
             <h2 className="text-[17px] font-bold text-ink">{t("teamToday")}</h2>
             <p className="text-sm text-ink-muted">{t("teamTodayHint")}</p>
           </div>
-          <Link href="/more/manage-staff" className="flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-ink px-4 text-sm font-bold text-paper no-underline">
+          <Link href="/more/manage-staff" className="flex min-h-12 shrink-0 items-center gap-2 rounded-full bg-accent px-4 text-sm font-bold text-on-accent no-underline">
             <Plus aria-hidden="true" size={19} /> {t("addStaff")}
           </Link>
         </div>
@@ -180,7 +180,7 @@ export default async function StaffPage() {
           <span className="text-[13px] text-ink-muted">{t("healthyLine", { cents: vm.healthyCostPerSalesDollarCents })}</span>
         </div>
         <StaffCostBars days={vm.dailyCostPerSalesDollarCents} healthyCents={vm.healthyCostPerSalesDollarCents} locale={locale} todayLabel={t("today")} />
-        <p className="rounded-xl bg-warn-tint p-3 text-sm font-medium leading-snug text-[#6E2A07]">
+        <p className="rounded-xl bg-warn-tint p-3 text-sm font-medium leading-snug text-warn-text">
           {vm.worstDay ? t("worstDayInsight", { date: shortWeekday(vm.worstDay.date, locale), cents: Math.round(vm.worstDay.cents) }) : t("allHealthyInsight")}
         </p>
       </section>

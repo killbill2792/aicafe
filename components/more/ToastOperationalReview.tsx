@@ -103,7 +103,7 @@ export default function ToastOperationalReview({
        source.kind==="item"?labels.ownerProduct:labels.ownerModifier}
      <select value={chosen[key]??""} disabled={!enabled||working||source.archived}
       onChange={e=>setChosen(old=>({...old,[key]:e.target.value}))}
-      className="min-h-11 rounded-xl border border-line bg-white p-2">
+      className="min-h-11 rounded-xl border border-line bg-surface p-2">
       <option value="">{labels.emptyChoice}</option>
       {choices.map(c=><option key={c.id} value={c.id}>{c.name}{c.description?" — "+c.description:""}</option>)}
      </select>

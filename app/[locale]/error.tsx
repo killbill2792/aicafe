@@ -23,7 +23,7 @@ export default function LocaleError({ error, reset }: { error: Error & { digest?
       <h1 className="text-xl font-bold text-ink">{t("title")}</h1>
       <p className="max-w-xs text-base text-ink-muted">{t("body")}</p>
       <div className="mt-2 flex flex-col gap-2.5">
-        <button type="button" onClick={reset} className="h-14 rounded-full bg-ink px-8 text-base font-bold text-paper">
+        <button type="button" onClick={reset} className="h-14 rounded-full bg-accent px-8 text-base font-bold text-on-accent">
           {t("tryAgain")}
         </button>
         <Link href="/" className="h-11 text-sm font-semibold text-ink-muted">

@@ -5,17 +5,17 @@ import { formatCents } from "@/lib/calc";
 
 function CardShell({ href, step, title, children }: { href: string; step: number; title: string; children: React.ReactNode }) {
   const surfaces: Record<number, string> = {
-    1: "border border-[#D7C8B5] bg-[#EFE5D7]",
-    2: "border border-[#B9CBDB] bg-[#E8EFF5]",
-    3: "border border-[#D9C2A9] bg-[#F3E9DD]",
+    1: "border border-line bg-surface",
+    2: "border border-line bg-surface",
+    3: "border border-line bg-surface",
     4: "border border-line bg-card",
-    5: "border border-[#E6BEA7] bg-warn-tint",
+    5: "border border-line bg-warn-tint",
   };
   return (
     <Link href={href} className={`flex min-h-12 flex-col gap-3.5 rounded-card-lg p-[18px] text-ink no-underline ${surfaces[step] ?? "bg-card"}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-ink text-xs font-extrabold text-paper">{step}</span>
+          <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-accent text-xs font-extrabold text-on-accent">{step}</span>
           <span className="text-lg font-bold">{title}</span>
         </div>
         <ChevronRight aria-hidden="true" size={20} className="text-ink-muted rtl:rotate-180" />
@@ -92,20 +92,20 @@ export function MenuTeaserCard({
     <CardShell href="/menu" step={step} title={title}>
       <div className="grid grid-cols-2 gap-2">
         <div className="flex flex-col gap-0.5 rounded-2xl bg-good-tint p-3">
-          <span className="text-xs font-bold text-[#1E4D37]">{bestLabel}</span>
+          <span className="text-xs font-bold text-fg">{bestLabel}</span>
           {best && (
             <>
               <span className="text-base font-bold">{best.name}</span>
-              <span className="text-sm text-[#1E4D37]">{best.description}</span>
+              <span className="text-sm text-fg">{best.description}</span>
             </>
           )}
         </div>
         <div className="flex flex-col gap-0.5 rounded-2xl bg-warn-tint p-3">
-          <span className="text-xs font-bold text-[#6E2A07]">{worstLabel}</span>
+          <span className="text-xs font-bold text-fg">{worstLabel}</span>
           {worst && (
             <>
               <span className="text-base font-bold">{worst.name}</span>
-              <span className="text-sm text-[#6E2A07]">{worst.description}</span>
+              <span className="text-sm text-fg">{worst.description}</span>
             </>
           )}
         </div>

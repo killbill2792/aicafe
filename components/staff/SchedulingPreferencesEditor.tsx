@@ -116,7 +116,7 @@ export default function SchedulingPreferencesEditor({ employeeId, preferences, w
     });
   }
   const days=[t("sun"),t("mon"),t("tue"),t("wed"),t("thu"),t("fri"),t("sat")];
-  return <section className="flex flex-col gap-3 rounded-xl bg-white p-3">
+  return <section className="flex flex-col gap-3 rounded-xl bg-surface p-3">
     <h4 className="text-[17px] font-bold">{t("hourLimitsAndPreferences")}</h4>
     {conflicted && <button type="button" className={secondary} disabled={pending} onClick={()=>run(async()=>{
       // A sibling panel may refresh while this draft stays mounted. Pin

@@ -81,7 +81,7 @@ export default function TryScenario({ items, avgDailyContributionCents }: { item
           <button
             type="button"
             onClick={() => setPriceInput("0.00")}
-            className="h-12 rounded-xl bg-[#FAF6F0] px-3 text-sm font-semibold text-ink-muted"
+            className="h-12 rounded-xl bg-surface px-3 text-sm font-semibold text-ink-muted"
           >
             {t("makeFree")}
           </button>
@@ -105,11 +105,11 @@ export default function TryScenario({ items, avgDailyContributionCents }: { item
         // extraCostCents is always 0 with no sales history to multiply a per-drink delta by —
         // showing that as "no change" would look identical to the calculator being broken no
         // matter what's typed. Say why instead of a silently-misleading $0.00.
-        <div className="flex flex-col gap-2 rounded-2xl bg-[#FAF6F0] p-4">
+        <div className="flex flex-col gap-2 rounded-2xl bg-surface p-4">
           <p className="text-[15px] leading-snug text-ink-muted">{t("noSalesDataForItem", { name: item.name })}</p>
         </div>
       ) : (
-        <div className={`flex flex-col gap-2 rounded-2xl p-4 ${costs ? "bg-warn-tint" : saves ? "bg-good-tint" : "bg-[#FAF6F0]"}`}>
+        <div className={`flex flex-col gap-2 rounded-2xl p-4 ${costs ? "bg-warn-tint" : saves ? "bg-good-tint" : "bg-surface"}`}>
           <div className="flex items-center justify-between">
             <span className="text-[15px] font-semibold">{t("totalImpact", { days })}</span>
             <span className={`text-xl font-bold ${costs ? "text-warn" : saves ? "text-good" : "text-ink"}`}>
