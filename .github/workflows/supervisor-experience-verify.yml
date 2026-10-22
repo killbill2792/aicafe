@@ -27,22 +27,15 @@ jobs:
         run: npm ci
       - name: TypeScript
         run: npx tsc --noEmit
-      - name: Changed-file ESLint
+      - name: Lint changed JavaScript and TypeScript
+        shell: bash
         run: |
-          npx eslint 'lib/ai/conversations/runSupervisorTurn.server.ts' 'lib/ai/conversations/toolRegistry.server.ts' \
-            'lib/ai/conversations/usage.server.ts' 'lib/ai/conversations/contracts.ts' \
-            'lib/ai/conversations/dateRange.ts' 'lib/ai/conversations/context.ts' \
-            'lib/ai/conversations/domainProjections.ts' 'lib/ai/conversations/domainProjections.test.ts' \
-            'lib/ai/conversations/periodComparison.ts' 'lib/ai/conversations/periodComparison.test.ts' \
-            'lib/ai/conversations/semanticEval.ts' 'lib/ai/conversations/semantic-eval.test.ts' \
-            'lib/ai/conversations/runSupervisorTurn.server.test.ts' 'lib/ai/conversations/supervisorRequest.mjs' 'lib/ai/conversations/supervisorRequest.test.ts' \
-            'scripts/supervisor-provider-smoke.mjs' 'lib/ai/conversations/diagnostics.server.ts' 'lib/ai/conversations/diagnostics.server.test.ts' 'lib/ai/supervisorReads.server.ts' 'lib/ai/conversations/usage.increment.test.ts' \
-            'lib/ai/conversations/replyValidation.ts' 'components/home/SupervisorChatComposer.tsx' \
-            'components/home/SupervisorHomePanel.tsx' 'app/[locale]/page.tsx' \
-            'components/shared/AddCostFab.tsx' 'components/home/SupervisorFabOverlap.test.ts' \
-            'app/api/ai/usage/route.ts' 'app/api/ai/threads/[threadId]/messages/route.ts' 'app/api/ai/threads/[threadId]/messages/route.test.ts'
-      # Keep repository-wide lint findings visible without blocking scoped changes:
-      # baseline main has existing errors in AggregateProductCostEditor and seed/demoData.mjs.
+          mapfile -d '' -t changed < <(git diff --name-only --diff-filter=ACMR -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.mjs' '*.cjs')
+          if (( ${#changed[@]} > 0 )); then
+            npx eslint "${changed[@]}"
+          else
+            echo "No changed JS/TS sources."
+          fi
       - name: Full repository ESLint (baseline audit)
         continue-on-error: true
         run: npm run lint
