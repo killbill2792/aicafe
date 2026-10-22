@@ -1137,3 +1137,19 @@ describe("systemic review: signed typed speech and locally bound totals",()=>{
      .map(x=>x.text)).toEqual(["$12"]);
  });
 });
+
+
+describe("spoken grammar: compound order and quantity boundaries",()=>{
+ it("parses Arabic units-before-tens without leaking component amounts",()=>{
+   expect(checkNumbers("$55","السعر خمسة وخمسون دولار",[],"ar")).toEqual([]);
+   expect(checkNumbers("$5","السعر خمسة وخمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("$50","السعر خمسة وخمسون دولار",[],"ar")
+     .map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("does not treat item quantities as prices when money follows in a sentence",()=>{
+   expect(checkNumbers("Price is $5","We sold five lattes for ten dollars",[],"en")
+     .map(x=>x.text)).toEqual(["$5"]);
+   expect(checkNumbers("We sold 5 lattes","We sold five lattes for ten dollars",[],"en")).toEqual([]);
+ });
+});
