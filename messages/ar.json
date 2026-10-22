@@ -663,7 +663,9 @@
     "sizeUnitG": "غ",
     "sizeUnitEach": "قطعة",
     "editRecipe": "تعديل الوصفة",
-    "done": "حفظ الوصفة"
+    "done": "حفظ الوصفة",
+    "newSizeNeedsRecipe": "تم إنشاء الحجم، لكن تعذر حفظ الوصفة المعدلة. افتح الحجم الجديد لإكمالها.",
+    "finishNewSize": "فتح الحجم الجديد"
   },
   "Staff": {
     "title": "الموظفون",
@@ -2329,6 +2331,10 @@
     "savesYou": "توفر {amount}",
     "aboutSame": "تكلفتها متقاربة",
     "costBasisForSize": "فرق التكلفة لحجم {size}",
-    "priceEstimate": "تقديري"
+    "priceEstimate": "تقديري",
+    "quantity": "الكمية",
+    "unit": "الوحدة",
+    "editQuantityForSize": "تعديل {ingredient} للحجم {size}",
+    "invalidQuantity": "أدخل كمية أكبر من صفر بوحدة صالحة."
   }
 }
