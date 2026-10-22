@@ -74,7 +74,8 @@ describe("numbers, statuses, and strict tool contracts", () => {
   });
   it("does not silently join ASCII space-separated numbers", () => {
     const record = { source:"counts",period:null,missing:[],count:1234 };
-    expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["234"]);
+    expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["1","234"]);
+    expect(checkNumbers("1", "", [], "en")).toEqual([]);
     expect(checkNumbers("1\u202f234", "", [record], "es")).toEqual([]);
     expect(checkNumbers("1\u00a0234", "", [record], "ar")).toEqual([]);
   });
@@ -181,5 +182,21 @@ describe("owner quantity versus money evidence isolation",()=>{
   it("does treat an owner's stated menu price as money",()=>{
     expect(checkNumbers("Latte is $6.","latte is 6",[],"en")).toEqual([]);
     expect(checkNumbers("Rent costs $900.","Rent costs 900",[],"en")).toEqual([]);
+  });
+});
+
+describe("fresh reads replace saved numeric evidence",()=>{
+  const previous=[{tool:"menu_items",values:[{key:"items:latte/priceCents",
+    value:600,unit:"cents" as const}]}];
+  const fresh={source:"menu_items",period:null,missing:[],items:[{
+    id:"latte",name:"Latte",priceCents:850,
+  }]};
+  it("rejects a superseded price even when it was verified on an earlier turn",()=>{
+    expect(checkNumbers("Latte costs $6.","",[fresh],"en",previous,
+      "The latte costs $6.").map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[fresh],"en",previous)).toEqual([]);
+  });
+  it("still permits saved evidence in a no-tool follow-up",()=>{
+    expect(checkNumbers("Latte costs $6.","",[],"en",previous)).toEqual([]);
   });
 });
