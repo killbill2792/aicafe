@@ -5,6 +5,7 @@ const db=new pg.Client({host:process.env.PGHOST??"127.0.0.1",port:Number(process
 const A="11111111-1111-4111-8111-111111111111",B="22222222-2222-4222-8222-222222222222";
 const owner="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",other="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const latte="11111111-1111-4111-8111-222222222222",combo="11111111-1111-4111-8111-333333333333",foreignItem="22222222-2222-4222-8222-333333333333";
+const latteSize="11111111-1111-4111-8111-555555555555";
 const milkA="11111111-1111-4111-8111-444444444444",milkB="22222222-2222-4222-8222-444444444444";
 async function ownerTx(fn,who=owner){
  await db.query("begin");try{
@@ -47,6 +48,7 @@ try{
  await db.query("insert into businesses(id) values ($1),($2)",[A,B]);
  await db.query("insert into memberships values($1,$2),($3,$4)",[A,owner,B,other]);
  await db.query("insert into menu_items(id,business_id,name,base_name,price_cents) values ($1,$2,'Latte','Latte',550),($3,$2,'Combo','Combo',900),($4,$5,'Foreign','Foreign',500)",[latte,A,combo,foreignItem,B]);
+ await db.query("insert into menu_items(id,business_id,name,base_name,price_cents) values ($1,$2,'Latte Large','Latte',650)",[latteSize,A]);
  await db.query("insert into ingredients(id,business_id,name,base_unit) values ($1,$2,'Milk A','ml'),($3,$4,'Milk B','ml')",[milkA,A,milkB,B]);
  await ownerTx(async()=>{
   await db.query("select public.save_menu_product_addons($1,$2,$3)",[A,latte,JSON.stringify([settings(milkA,true)])]);
@@ -62,5 +64,21 @@ try{
   assert.equal((await db.query("select count(*) from menu_product_addons")).rows[0].count,"0");
   assert.equal((await db.query("select count(*) from menu_combo_components")).rows[0].count,"0");
  },other);
+ // Two editors saving from opposite size IDs must serialize, never deadlock.
+ const second=new pg.Client({host:process.env.PGHOST??"127.0.0.1",port:Number(process.env.PGPORT??5432),user:"postgres",password:"postgres",database:"postgres"});
+ await second.connect();
+ try{
+  await db.query("begin");await db.query("set local role authenticated");
+  await db.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+  await db.query("select public.save_menu_product_addons($1,$2,$3)",[A,latte,JSON.stringify([settings(milkA,true)])]);
+  await second.query("begin");await second.query("set local role authenticated");
+  await second.query("select set_config('request.jwt.claim.sub',$1,true)",[owner]);
+  const waiting=second.query("select public.save_menu_product_addons($1,$2,$3)",[A,latteSize,JSON.stringify([settings(milkA,true)])]);
+  await new Promise(resolve=>setTimeout(resolve,80));
+  await db.query("commit");
+  await Promise.race([waiting,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Family option save timed out")),4000))]);
+  await second.query("commit");
+  assert.equal((await db.query("select count(*) from menu_product_addons where business_id=$1",[A])).rows[0].count,"1");
+ }finally{await db.query("rollback");await second.query("rollback");await second.end();}
  console.log("Menu add-ons/combo PostgreSQL: tenant isolation, RLS, price rows, rollback, cross-tenant FK passed.");
 }finally{await db.end();}
