@@ -35,7 +35,7 @@ export default function RecoveryOrderStep({
           </div>
         ))}
       </div>
-      <Link href="/" className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+      <Link href="/" className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
         {labels.finish}
       </Link>
     </div>
