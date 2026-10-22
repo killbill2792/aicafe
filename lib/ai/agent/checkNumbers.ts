@@ -685,17 +685,19 @@ const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
  ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"ثلاثة":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"تسعة":9,"عشرة":10,"عشرون":20,"خمسون":50}
 };
 const MONEY_WORDS=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|latte|mocha|wages?|precio|cuesta|costo|coste|dólares?|centavos?|alquiler)\b|(?:سعر|ثمن|تكلفة|دولارات?|سنتات?|ربح)/iu;
-function spokenOwnerMoney(text:string,locale:AgentLocale):number[]{
+function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;kind:"money"|"number"}>{
  const dict=WORD_NUMBERS[locale];
  const terms=Object.keys(dict).sort((a,b)=>b.length-a.length).join("|");
  const decimalSep=locale==="en"?"point":locale==="es"?"(?:coma|punto|con)":"(?:فاصلة|فاصل)";
  const cash=locale==="en"?"dollars?":locale==="es"?"dólares?":"دولارات?";
  const coins=locale==="en"?"cents?":locale==="es"?"centavos?":"سنتات?|سنتا";
  const re=new RegExp("(?<!\\p{L})("+terms+")(?:\\s+("+decimalSep+")\\s+("+terms+")(?:\\s+("+terms+"))?|\\s+("+cash+")(?:\\s+(?:and|y|و)?\\s*("+terms+")(?:\\s+("+terms+"))?\\s*(?:"+coins+")?)?|\\s+("+terms+"))?(?!\\p{L})","giu");
- const out:number[]=[];
+ const out:Array<{value:number;kind:"money"|"number"}>=[];
  for(const m of text.matchAll(re)){
-   const context=text.slice(Math.max(0,m.index-70),m.index)+" "+m[0]+" "+text.slice(m.index+m[0].length,m.index+m[0].length+35);
-   if(!MONEY_WORDS.test(context))continue;
+   const before=text.slice(0,m.index).split(/[.!?;\n]/u).pop()??"";
+   const after=(text.slice(m.index+m[0].length).split(/[.!?;\n]/u)[0]??"").slice(0,35);
+   const isQuantity=/^\s*(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|bebidas?|personas?|días?|semanas?|أيام|أشخاص|موظفين)/iu.test(after);
+   const monetary=!isQuantity&&(Boolean(m[5])||MONEY_WORDS.test(before)||MONEY_WORDS.test(after));
    const integer=dict[m[1].toLowerCase()];
    const fractional=m[3]?dict[m[3].toLowerCase()]:undefined;
    const fractionTail=m[4]?dict[m[4].toLowerCase()]:undefined;
@@ -706,7 +708,7 @@ function spokenOwnerMoney(text:string,locale:AgentLocale):number[]{
    if(fractional!==undefined)value+=fractionTail===undefined?fractional*10:fractional*10+fractionTail;
    else if(cents!==undefined)value+=cents+(centsTail??0);
    else if(colloquial!==undefined&&colloquial>=10)value+=colloquial;
-   out.push(value);
+   out.push({value:monetary?value:value/100,kind:monetary?"money":"number"});
  }
  return out;
 }
@@ -781,7 +783,7 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
-  for(const cents of spokenOwnerMoney(ownerText,locale))allowed.money.add(cents);
+  for(const spoken of spokenOwnerValues(ownerText,locale))allowed[spoken.kind].add(spoken.value);
   // Assistant prose is NEVER numeric evidence, even if it had no unverified
   // chips. Clock formatting and list markers can pass without a source.
   // Only owner statements and typed tool evidence can authorize a claim.
