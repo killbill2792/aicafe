@@ -139,6 +139,46 @@ function isCurrencylessMoneyClaim(text: string, start: number, end: number): boo
   return moneyWords.test(before) || /^\s*(?:in\s+)?(?:profit|revenue|sales|costs?|expenses?|income|cash|rent|wages?|payroll|ganancia|beneficio|ingresos)\b/iu.test(after);
 }
 
+/** Known configured hours remain evidence for their own weekday even when
+ * other weekdays are missing. An unknown weekday is never silently closed. */
+const DAY_MENTIONS = [
+  {key:"sun", pattern:/\b(?:sunday|sun|domingo)\b|الأحد/iu},
+  {key:"mon", pattern:/\b(?:monday|mon|lunes)\b|(?:الإثنين|الاثنين)/iu},
+  {key:"tue", pattern:/\b(?:tuesday|tue|martes)\b|الثلاثاء/iu},
+  {key:"wed", pattern:/\b(?:wednesday|wed|miércoles|miercoles)\b|الأربعاء/iu},
+  {key:"thu", pattern:/\b(?:thursday|thu|jueves)\b|الخميس/iu},
+  {key:"fri", pattern:/\b(?:friday|fri|viernes)\b|الجمعة/iu},
+  {key:"sat", pattern:/\b(?:saturday|sat|sábado|sabado)\b|السبت/iu},
+];
+function mentionedWeekdays(text: string, start: number, end: number): string[] {
+  const prefix = text.slice(0,start);
+  const sentenceStart = Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf("."),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),prefix.lastIndexOf(";"))+1;
+  const suffix = text.slice(end);
+  const sentenceEnd = suffix.search(/[.!?;\n]/u);
+  const clause = text.slice(sentenceStart,sentenceEnd<0?text.length:end+sentenceEnd);
+  return DAY_MENTIONS.filter(d=>d.pattern.test(clause)).map(d=>d.key);
+}
+function observedHours(results: readonly AgentToolResult[]): Array<{day:string;time:string;complete:boolean}> {
+  const observed: Array<{day:string;time:string;complete:boolean}> = [];
+  for(const r of results) {
+    if(!/hours/.test(r.source))continue;
+    const raw=r.hours??r.weekly;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))continue;
+    for(const day of DAY_MENTIONS.map(d=>d.key)){
+      const intervals=(raw as Record<string,unknown>)[day];
+      if(!Array.isArray(intervals))continue;
+      for(const interval of intervals) {
+        if(!Array.isArray(interval)||interval.length!==2)continue;
+        for(const time of interval){
+          if(typeof time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(time))
+            observed.push({day,time,complete:r.missing.length===0});
+        }
+      }
+    }
+  }
+  return observed;
+}
+
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
   if (NON_EVIDENCE_FIELDS.has(key)) return;
   if (Array.isArray(data)) {
@@ -163,7 +203,7 @@ function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = 
 }
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
-  previousEvidence:readonly NumericEvidence[] = [], previousAssistantText = ""): UnverifiedNumber[] {
+  previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
   const allowed: Record<Kind, Set<number>> = { money: new Set(), percent: new Set(), number: new Set() };
   results.forEach(r => allowFromData(r, allowed));
   // A successful read of a source supersedes every older claim from that
@@ -181,10 +221,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   }
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
-  // Earlier assistant text has no item-level source map. Never use it to
-  // override new evidence; retained typed evidence remains valid across no-read turns.
-  if(freshSources.size===0)
-    candidates(previousAssistantText,locale).forEach(v=>allowed[v.kind].add(v.value));
+  // Assistant prose is NEVER numeric evidence, even if it had no unverified
+  // chips. Clock formatting and list markers can pass without a source.
+  // Only owner statements and typed tool evidence can authorize a claim.
   // Explicit owner-provided quantities are not prices. Infer dollars only from
   // a nearby monetary / menu-price statement, never from "sold 9 drinks".
   for(const v of ownerNumbers){
@@ -210,8 +249,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
 
     }
   }
-  const knownTimes = results.filter(r=>r.missing.length===0&&/hours|schedule/.test(r.source))
+  const knownScheduleTimes = results.filter(r=>r.missing.length===0&&/schedule/.test(r.source))
     .map(r=>JSON.stringify(r)).join(" ");
+  const configuredHours = observedHours(results);
   // Clock tokens are formatting only for their *own* numeric spans. A nearby
   // time must never exempt an unrelated sale, staffing, or monetary number.
   const clocks = [...text.matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu)];
@@ -227,7 +267,12 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         let hour=Number(matched[1]);
         if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
         const canonical=String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
-        return !(knownTimes.includes(canonical)||ownerText.includes(clock[0])||ownerText.includes(canonical));
+        const claimedDays=mentionedWeekdays(text,clock.index,clock.index+clock[0].length);
+        const configured=claimedDays.length>0
+          ? claimedDays.every(day=>configuredHours.some(h=>h.day===day&&h.time===canonical))
+          : configuredHours.some(h=>h.complete&&h.time===canonical);
+        return !(configured||knownScheduleTimes.includes(canonical)||
+          ownerText.includes(clock[0])||ownerText.includes(canonical));
       }
       return true; // Unparseable business-hour claims remain unverified.
     }
