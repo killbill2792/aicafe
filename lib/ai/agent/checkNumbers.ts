@@ -2,10 +2,11 @@ import type { AgentLocale, AgentToolResult } from "./tools";
 import { menuPriceDifferenceCents } from "@/lib/calc/agentPriceDifferences";
 
 export type MenuPrice = {id:string;name:string;priceCents:number};
-export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string};
+export type TimeScope = {kind:"hours";days:string[]} | {kind:"schedule";from:string;to:string;exhaustive?:boolean};
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>;
   times?:VerifiedTime[];timeScope?:TimeScope;prices?:MenuPrice[];
-  invalidatedKeys?:string[];invalidatedPriceIds?:string[]};
+  invalidatedKeys?:string[];invalidatedPriceIds?:string[];
+  priceUpdates?:Array<{id:string;priceCents:number}>};
 // Only business collections, not diagnostics or metadata, establish counts.
 // This same contract applies to current-turn and persisted numeric evidence.
 const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
@@ -34,11 +35,17 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     const walk=(v:unknown,key:string,depth:number,scope="")=>{
       if(depth>6||NON_EVIDENCE_FIELDS.has(key))return;
       if(Array.isArray(v)){
-        if(COUNTABLE_COLLECTIONS.has(key))
-          values.push({key:periodKey+scope+key+"Length",value:v.length,unit:"count"});
+        if(COUNTABLE_COLLECTIONS.has(key)){
+          const lengthKey=periodKey+scope+key+"Length";
+          invalidatedKeys.push(lengthKey);
+          values.push({key:lengthKey,value:v.length,unit:"count"});
+        }
         for(const item of v){
           const scoped=item&&typeof item==="object"&&!Array.isArray(item)&&"id" in item&&
-            typeof item.id==="string"?scope+key+":"+item.id+"/":scope;
+            typeof item.id==="string"?scope+key+":"+item.id+"/":
+            item&&typeof item==="object"&&!Array.isArray(item)&&
+              key==="days"&&"date" in item&&typeof item.date==="string"?
+              scope+"day:"+item.date+"/":scope;
           walk(item,key,depth+1,scoped);
         }
         return;
@@ -81,9 +88,11 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     // A failed schedule read is not an empty observed schedule. Clear an
     // existing window only if a successful reader explicitly returned shifts.
     if(r.source==="recurring_schedule"&&Array.isArray(r.shifts)&&r.period?.from&&r.period?.to)
-      timeScope={kind:"schedule",from:r.period.from,to:r.period.to};
+      timeScope={kind:"schedule",from:r.period.from,to:r.period.to,
+        exhaustive:!r.missing.includes("scheduleResultTruncated")};
     const prices:MenuPrice[]=[];
     const invalidatedPriceIds:string[]=[];
+    const priceUpdates:Array<{id:string;priceCents:number}>=[];
     const record=(item:unknown)=>{
       if(!item||typeof item!=="object"||Array.isArray(item))return;
       const row=item as Record<string,unknown>;
@@ -95,10 +104,15 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     };
     if(r.source==="menu_items"&&Array.isArray(r.items))r.items.forEach(record);
     if(r.source==="product_costs")record(r.item);
-    // Pricing recommendations can report a singleton itemId, but its
-    // display name is not available: retain scoped cents, not invented names.
+    // Pricing engine exposes a stable itemId and the CURRENT price; do not
+    // substitute its recommendation, or fabricate a display name.
+    if(r.source==="pricing_engine"&&typeof r.itemId==="string"){
+      if(typeof r.currentPriceCents==="number"&&Number.isSafeInteger(r.currentPriceCents))
+        priceUpdates.push({id:r.itemId,priceCents:r.currentPriceCents});
+      else if(r.currentPriceCents===null)invalidatedPriceIds.push(r.itemId);
+    }
     return {tool:r.source,values,times,timeScope,prices:prices.slice(0,25),
-      invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds};
+      invalidatedKeys:[...new Set(invalidatedKeys)],invalidatedPriceIds,priceUpdates};
   });
   if(Number.isFinite(limit)){
     // Latest reads and item prices are the most valuable persisted evidence.
@@ -114,7 +128,7 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
   return gathered.filter(e=>e.values.length>0||e.times.length>0||
     (e.timeScope?.kind==="hours"&&e.timeScope.days.length>0)||
     e.timeScope?.kind==="schedule"||e.prices.length>0||
-    e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0);
+    e.invalidatedKeys.length>0||e.invalidatedPriceIds.length>0||e.priceUpdates.length>0);
 }
 /** Saved turns arrive oldest first. An updated value for the same
  * source/item/period key replaces its predecessor, never unions with it.
@@ -125,10 +139,10 @@ function offsetDate(date:string,days:number):string {
 function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvidence[]{
   type Value=NumericEvidence["values"][number];
   const bySource=new Map<string,{values:Map<string,Value[]>;times:VerifiedTime[];
-    prices:Map<string,MenuPrice>}>();
+    prices:Map<string,MenuPrice>;priceUpdates:Array<{id:string;priceCents:number}>}>();
   for(const entry of entries){
     let slot=bySource.get(entry.tool);
-    if(!slot){slot={values:new Map(),times:[],prices:new Map()};bySource.set(entry.tool,slot);}
+    if(!slot){slot={values:new Map(),times:[],prices:new Map(),priceUpdates:[]};bySource.set(entry.tool,slot);}
     const grouped=new Map<string,Value[]>();
     for(const v of entry.values){
       if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
@@ -153,6 +167,8 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
       if(typeof price.id==="string"&&typeof price.name==="string"&&
         Number.isSafeInteger(price.priceCents))slot.prices.set(price.id,price);
     }
+    slot.priceUpdates.push(...(entry.priceUpdates??[]).filter(p=>
+      typeof p.id==="string"&&Number.isSafeInteger(p.priceCents)));
     const times=(entry.times??[]).slice(0,60).filter(t=>
       t&&typeof t.time==="string"&&/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(t.time)&&
       typeof t.day==="string"&&typeof t.role==="string"&&typeof t.complete==="boolean");
@@ -188,8 +204,9 @@ function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvide
   }
   return [...bySource].map(([tool,slot])=>({
     tool,values:[...slot.values.values()].flat(),times:slot.times,
-    prices:[...slot.prices.values()]
-  })).filter(e=>e.values.length>0||e.times.length>0||e.prices.length>0);
+    prices:[...slot.prices.values()],priceUpdates:slot.priceUpdates
+  })).filter(e=>e.values.length>0||e.times.length>0||e.prices.length>0||
+    (e.priceUpdates?.length??0)>0);
 }
 
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
