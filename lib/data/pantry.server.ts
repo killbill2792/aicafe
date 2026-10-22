@@ -339,7 +339,7 @@ export async function scaleRecipeToSize(fromItemId: string, toItemId: string): P
   const siblings = await productSiblings(scope, fromItemId);
   const from = siblings?.find((item) => item.id === fromItemId);
   const to = siblings?.find((item) => item.id === toItemId);
-  if (!from || !to) return bad("items_not_siblings");
+  if (!siblings || !from || !to) return bad("items_not_siblings");
   const fromSize = /^(\d+) oz$/.exec(from.size_label ?? "");
   const toSize = /^(\d+) oz$/.exec(to.size_label ?? "");
   if (!fromSize || !toSize) return bad("size_label_required");
