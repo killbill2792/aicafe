@@ -30,6 +30,19 @@ describe("catalog-scoped initiative numeric verification",()=>{
     ]));
     expect(saved[0].values.every(v=>v.key.includes("metric:"+metricId))).toBe(true);
   });
+  it("matches daily sales by date and catalog metric rather than identical money alone",()=>{
+    const source=fixture("net_sales","cents",12000);
+    expect(checkNumbers("Sales on 2026-10-20 were $120","",[source],"en")).toEqual([]);
+    expect(checkNumbers("Sales on 2026-10-19 were $120","",[source],"en").length)
+      .toBeGreaterThan(0);
+    const unrelated:AgentToolResult={...source,metricDetail:{
+      ...source.metricDetail as object,metricKey:"avg_ticket",
+    }};
+    expect(checkNumbers("Sales on 2026-10-20 were $120","",[unrelated],"en").length)
+      .toBeGreaterThan(0);
+    const prior=compactEvidence([source]);
+    expect(checkNumbers("Sales on 2026-10-20 were $120","",[],"en",prior)).toEqual([]);
+  });
   it("recognizes catalog counts and basis-point percentages, not unrelated numbers",()=>{
     const orders=fixture("orders","count",15);
     const percent=fixture("cogs_pct","bps",1250);

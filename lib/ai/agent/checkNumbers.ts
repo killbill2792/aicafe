@@ -46,7 +46,7 @@ function appendInitiativeNumericEvidence(
     !metricCatalog[keyParsed.data].paramsSchema.safeParse(detail.params).success)return;
   const unit=metricCatalog[keyParsed.data].unit;
   if(detail.unit!==unit||unit==="microcents_per_base_unit")return;
-  const metricRoot="initiative:"+initiative.id+"/metric:"+detail.id+"/";
+  const metricRoot="initiative:"+initiative.id+"/metric:"+detail.id+"/key:"+keyParsed.data+"/";
   // Relative improvement targets are themselves percentages, not an
   // implicit dollar/count threshold. Treat the owner's approved spec as
   // typed percentage evidence, separate from the computed test target.
@@ -726,6 +726,17 @@ function datedFinancialScope(text:string,start:number,end:number):{date:string|n
 function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
   date:string,cents:number,metric:string):boolean {
   return evidence.some(entry=>{
+    // Initiative observations carry their *validated* metric identity
+    // alongside the date. Money from item margin or per-hour sales cannot
+    // prove TOTAL daily sales just because the cent amounts happen to match.
+    if(entry.tool==="owner_initiatives"){
+      const allowedKey=metric==="sales"?"net_sales":
+        metric==="labor"?"labor_cost":metric==="profit"?"net_profit":null;
+      return allowedKey!==null&&entry.values.some(v=>
+        v.unit==="cents"&&Math.abs(v.value-cents)<=1&&
+        v.key.includes("/key:"+allowedKey+"/day:"+date+"/")&&
+        v.key.endsWith("/observationCents"));
+    }
     const correctSource=metric==="sales"?entry.tool==="daily_rollups"||entry.tool==="item_sales":
       metric==="labor"?entry.tool==="labor_and_attendance":
       metric==="expenses"?entry.tool==="expenses":entry.tool==="profitability";
