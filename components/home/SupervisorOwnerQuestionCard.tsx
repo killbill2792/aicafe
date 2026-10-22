@@ -24,7 +24,7 @@ export default function SupervisorOwnerQuestionCard({
   const options=card.input.kind==="options"?card.input.options:[];
   const typing=card.input.kind==="free_text"||showOther;
   return <section dir={locale==="ar"?"rtl":"ltr"}
-    className="w-full max-w-2xl rounded-[22px] border border-line bg-white p-4 text-ink shadow-sm"
+    className="w-full max-w-2xl rounded-[22px] border border-line bg-surface p-4 text-ink shadow-sm"
     aria-label={card.title[locale]}>
     <div className="flex items-start gap-3">
       <h3 className="min-w-0 flex-1 font-headline text-xl font-bold leading-snug">{card.title[locale]}</h3>
@@ -38,7 +38,7 @@ export default function SupervisorOwnerQuestionCard({
       {options.map((option,index)=><button key={option.id} type="button" disabled={disabled}
         onClick={()=>onAnswer(option.id,true)}
         className="flex min-h-12 w-full items-center gap-3 rounded-xl border border-line bg-surface2 p-2 text-start text-[17px] hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink">
-        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-white font-bold text-ink-muted">{String.fromCharCode(65+index)}</span>
+        <span aria-hidden="true" className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface font-bold text-ink-muted">{String.fromCharCode(65+index)}</span>
         <span className="min-w-0 flex-1">{option.label[locale]}</span>
       </button>)}
     </div>}
@@ -54,9 +54,9 @@ export default function SupervisorOwnerQuestionCard({
       <input id={"owner-input-"+card.questionId} type="text" value={answer}
         maxLength={200} disabled={disabled} onChange={e=>setAnswer(e.target.value)}
         placeholder={card.input.kind==="free_text"?card.input.hint[locale]:copy.other}
-        className="min-h-12 w-full rounded-xl border border-line bg-white px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"/>
+        className="min-h-12 w-full rounded-xl border border-line bg-surface px-3 text-[17px] text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"/>
       <button type="submit" disabled={disabled||!answer.trim()}
-        className="min-h-12 self-start rounded-xl bg-ink px-5 text-[17px] font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
+        className="min-h-12 self-start rounded-xl bg-accent px-5 text-[17px] font-semibold text-on-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50">
         {copy.confirm}
       </button>
     </form>}

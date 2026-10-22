@@ -110,7 +110,7 @@ export default function VoiceRecorder({
         onMouseUp={stopListening}
         onTouchStart={startListening}
         onTouchEnd={stopListening}
-        className={`flex h-28 w-28 items-center justify-center rounded-full text-white ${listening ? "bg-warn" : "bg-good"}`}
+        className={`flex h-28 w-28 items-center justify-center rounded-full ${listening ? "bg-warn-text text-on-warn" : "bg-good text-on-pos"}`}
         aria-label={labels.holdToTalk}
       >
         <Mic aria-hidden="true" size={40} />
