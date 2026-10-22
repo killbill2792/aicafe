@@ -19,7 +19,7 @@ vi.mock("@/lib/ai/supervisor/p3/operandProjection.server",()=>({projectP1Evidenc
 vi.mock("@/lib/scheduling/oliviaP3Capabilities.server",()=>({buildOliviaP3Registrations:()=>[]}));
 vi.mock("@/lib/pricing/alexCapabilities.server",()=>({buildAlexPricingRegistrations:()=>[{}]}));
 vi.mock("@/lib/scheduling/oliviaInvestigation.server",()=>({buildOliviaInvestigationRegistration:()=>({})}));
-vi.mock("./datasets.server",()=>({buildDatasetRegistration:()=>({}),datasetFor:()=>null}));
+vi.mock("./datasets.server",async original=>({...await original<object>(),buildDatasetRegistration:()=>({})}));
 vi.mock("./records.server",()=>({buildRecordsRegistration:()=>({}),recordCollections:()=>[]}));
 vi.mock("@/lib/data/getMenuControlCenter",()=>({getMenuControlCenter:vi.fn(async()=>fixtures.rows.map(r=>({
  id:r.id,name:r.name,baseName:"Latte",sizeLabel:r.name.split(" ").slice(-2).join(" "),
