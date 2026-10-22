@@ -65,7 +65,7 @@ const tools=[
 ] as const;
 type Fact={id:string;label:string;value:string;raw:SimpleOperand|null;
  source:EvidenceReference|null;sources?:EvidenceReference[];observationIds?:string[];
- conditional?:boolean;estimated?:boolean;period?:string;};
+ conditional?:boolean;estimated?:boolean;period?:string;evidenceOnly?:boolean;};
 const LIMITS={rounds:INVESTIGATION_LIMITS.modelCalls,
  operations:INVESTIGATION_LIMITS.operations,elapsedMs:INVESTIGATION_LIMITS.elapsedMs,
  previewRows:8,maxFacts:500};
@@ -93,7 +93,7 @@ function factBlocks(selected:Fact[]):{blocks:SupervisorReplyBlock[];evidence:Evi
  for(const fact of selected){
   const sources=fact.sources??(fact.source?[fact.source]:[]);
   for(const source of sources)if(!evidence.some(r=>r.identifier===source.identifier))evidence.push(source);
-  if(!fact.source)continue;
+  if(!fact.source||fact.evidenceOnly)continue;
   if(fact.raw?.unit==="USD_cents")
     blocks.push({type:"metric",label:fact.label,valueCents:fact.raw.value,source:fact.source});
   else if(fact.raw?.unit==="count"&&fact.raw.value>=0)
@@ -231,6 +231,14 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
  const addFacts=(observation:Observation)=>{
    const output=observation.result;
    if(!["verified","partial","estimated","conditional"].includes(String(output.status)))return;
+   // Give every cited source a selection handle, even a Team task collection
+   // with no numeric fields. Do not turn internal IDs or duplicate menu names
+   // into user-facing "facts" merely to make an observation selectable.
+   if(observation.reference){
+     const id="f"+(facts.size+1);
+     facts.set(id,{id,label:"Authorized source",value:"",raw:null,
+       source:observation.reference,observationIds:[observation.id],evidenceOnly:true});
+   }
    const value=output.value;
    const rows=Array.isArray(value)?value:isRecord(value)&&Array.isArray(value.items)?value.items:isRecord(value)?[value]:[];
    const flat=rows.filter(isRecord);
@@ -257,6 +265,10 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      const row=rowIndex>=0?flat[Number(segments[rowIndex])]:flat[0];
      const item=String(row?.name??row?.productName??row?.employeeName??row?.base_name??"").slice(0,110);
      const field=segments.at(-1)??path,unit=authoritativeUnits.get(field);
+     // Names and identifiers are already in the authenticated record labels.
+     // They are never treated as standalone financial conclusions.
+     if(["id","name","base_name","productName","employeeName","displayName","productId",
+       "sourceId","taskId"].includes(field))continue;
      // Only a declared USD amount is a valid operand. Wage rates,
      // dimensional quantities, percentages and unknown numeric fields are
      // for display but cannot be silently treated as ordinary cents/counts.
