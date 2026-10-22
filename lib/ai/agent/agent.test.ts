@@ -1082,3 +1082,19 @@ describe("review: no arithmetic or owner-speech laundering",()=>{
    expect(checkNumbers("Sales declined over 2 weeks.","",[],"en").map(x=>x.text)).toEqual(["2"]);
  });
 });
+
+
+describe("review: cents and compound amounts preserve owner intent",()=>{
+ it("standalone cents cannot silently become whole dollars",()=>{
+   expect(checkNumbers("$0.50","The price is fifty cents.",[],"en")).toEqual([]);
+   expect(checkNumbers("$50","The price is fifty cents.",[],"en").map(x=>x.text)).toEqual(["$50"]);
+   expect(checkNumbers("$0.50","El precio es cincuenta centavos.",[],"es")).toEqual([]);
+   expect(checkNumbers("$50","El precio es cincuenta centavos.",[],"es").map(x=>x.text)).toEqual(["$50"]);
+ });
+ it("compound twenties and thirties are whole prices",()=>{
+   expect(checkNumbers("$25","The price is twenty five dollars.",[],"en")).toEqual([]);
+   expect(checkNumbers("$20","The price is twenty five dollars.",[],"en").map(x=>x.text)).toEqual(["$20"]);
+   expect(checkNumbers("$35","El precio es treinta y cinco dólares.",[],"es")).toEqual([]);
+   expect(checkNumbers("$30","El precio es treinta y cinco dólares.",[],"es").map(x=>x.text)).toEqual(["$30"]);
+ });
+});
