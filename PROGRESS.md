@@ -4,12 +4,14 @@
 - [ ] Run a live owner agent smoke test with credentials before production release.
 
 ## Next
+- [ ] Add grounded quick-reply chips and reconcile remaining AI usage ledger limits.
 - [ ] Review eight-theme UI foundation for screen contrast and owner RTL behavior.
 - [ ] Add an actual owner-click approval card and persistence in UI; only then enable production propose_initiative registration (backend-only M1 deliberately gates it).
 - [ ] Add staff WhatsApp check-in handling in W2; no staff messaging in M1.
 - [ ] Add rolling conversation summaries and remove unused legacy routes.
 
 ## Done (last 10)
+- PR #150 merged: pantry starter ingredients, recipe-size templates and pricing helpers; deployment remains separate.
 - PR #147 merged: team_updates owner-scoped storage and service-role writer.
 - PR #146 merged: streaming agent with bounded calls and verified money extraction.
 - Existing P1 source inventory and business data boundary remain enforced.

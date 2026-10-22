@@ -1,5 +1,8 @@
 import "server-only";
 import { formatInTimeZone } from "date-fns-tz";
+import { getTranslations } from "next-intl/server";
+import { displayPantryStarterName } from "@/lib/menu/pantryStarter";
+import { visiblePricedMenuItems } from "@/lib/menu/pricedMenuVisibility";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getActiveBusinessId } from "./getActiveBusinessId";
@@ -72,7 +75,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       .select("id, name, base_name, size_label, price_cents, prep_seconds, category, menu_group, is_active, pos_item_id, catalog_source, catalog_last_synced_at")
       .eq("business_id", businessId)
       .order("name"),
-    supabase.from("ingredients").select("id, name, base_unit").eq("business_id", businessId).order("name"),
+    supabase.from("ingredients").select("id, name, base_unit, starter_key").eq("business_id", businessId).order("name"),
     supabase.from("businesses").select("timezone").eq("id", businessId).single(),
   ]);
   if (itemsResult.error) {
@@ -86,7 +89,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   // The business's timezone has a safe, documented fallback below, so a failure here degrades
   // gracefully rather than blocking the whole menu — still logged, never silently unnoticed.
   if (businessResult.error) logQueryError("getMenuItemsForEdit:businesses", businessResult.error);
-  const items = itemsResult.data;
+  const items = visiblePricedMenuItems(itemsResult.data ?? []);
   const ingredients = ingredientsResult.data;
   const business = businessResult.data;
   const todayDateStr = formatInTimeZone(new Date(), business?.timezone ?? "America/Los_Angeles", "yyyy-MM-dd");
@@ -95,7 +98,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const [recipeLinesResult, aggregateCostsResult] =
     itemIds.length > 0
       ? await Promise.all([
-          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit)").in("menu_item_id", itemIds),
+          supabase.from("recipe_lines").select("menu_item_id, ingredient_id, quantity, display_unit, display_quantity, ingredients(name, base_unit, starter_key)").in("menu_item_id", itemIds),
           supabase.from("menu_item_cost_fallbacks").select("menu_item_id, cost_cents, source_type, status").eq("business_id", businessId).in("menu_item_id", itemIds),
         ])
       : [{ data: [] as never[], error: null }, { data: [] as never[], error: null }];
@@ -110,21 +113,24 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
   const recipeLines = recipeLinesResult.data;
   const aggregateCostByItem = new Map((aggregateCostsResult.data ?? []).map((row) => [row.menu_item_id, row]));
 
+  const translate = await getTranslations("Pantry.starters");
+  const localized = (name: string, key: string | null | undefined) =>
+    displayPantryStarterName(name, key, (k) => translate(k as never));
   const ingredientOptions: IngredientOption[] = (ingredients ?? []).map((i) => ({
     id: i.id,
-    name: i.name,
+    name: localized(i.name, i.starter_key),
     baseUnit: i.base_unit as "g" | "ml" | "each",
   }));
 
   const recipeByItem = new Map<string, RawRecipeLine[]>();
   for (const row of recipeLines ?? []) {
-    const ing = row.ingredients as unknown as { name: string; base_unit: string } | { name: string; base_unit: string }[] | null;
+    const ing = row.ingredients as unknown as { name: string; base_unit: string; starter_key: string | null } | { name: string; base_unit: string; starter_key: string | null }[] | null;
     const ingRow = Array.isArray(ing) ? ing[0] : ing;
     if (!ingRow) continue;
     const list = recipeByItem.get(row.menu_item_id) ?? [];
     list.push({
       ingredientId: row.ingredient_id,
-      ingredientName: ingRow.name,
+      ingredientName: localized(ingRow.name, ingRow.starter_key),
       baseUnit: ingRow.base_unit as "g" | "ml" | "each",
       quantity: Number(row.quantity),
       displayUnit: row.display_unit ?? null,
@@ -144,7 +150,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
           .select("ingredient_id, effective_from, cost_per_base_unit_micros, source")
           .in("ingredient_id", recipeIngredientIds)
           .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true })
+          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
       : { data: [] as never[], error: null };
   if (priceRowsResult.error) {
     logQueryError("getMenuItemsForEdit:ingredient_prices", priceRowsResult.error);
@@ -178,7 +184,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
       name: item.name,
       baseName: item.base_name ?? item.name,
       sizeLabel: item.size_label ?? null,
-      priceCents: item.price_cents ?? 0,
+      priceCents: Number(item.price_cents),
       prepSeconds: item.prep_seconds,
       category: (item.category === "food" ? "FOOD" : item.category === "drink" ? "ESPRESSO_DRINK" : item.category) as MenuItemCategoryCode,
       menuGroup: item.menu_group ?? null,

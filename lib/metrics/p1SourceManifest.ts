@@ -105,6 +105,16 @@ export const SOURCE_SURFACES = {
     releaseMonitorInitiative:{restricted:"Service-role fenced monitor lease release; not a model business read"},
     readMetricDay:{restricted:"Owner-private initiative readMetricDay access; not an unrestricted P1 model tool"},
   },
+  "lib/data/pantry.server.ts": {
+    listPantry:{restricted:"Owner-scoped pantry and supplier cost inventory; no direct agent read contract"},
+    addFromStarter:{restricted:"Writes starter ingredients; requires explicit owner action and tenant checks"},
+    savePackPrice:{restricted:"Creates effective-date supplier pricing; not a read-only agent capability"},
+    previewPriceImpact:{restricted:"Owner-requested hypothetical margin preview; not an authorized agent source"},
+    applyTemplate:{restricted:"Replaces size-family recipes; requires explicit owner action"},
+    swapIngredient:{restricted:"Mutates all matching recipe sizes; not a model-readable source"},
+    scaleRecipeToSize:{restricted:"Mutates a target recipe; not a model-readable source"},
+  },
+
   "lib/data/teamUpdates.server.ts": {
     insertTeamUpdate:{restricted:"Service-role owner-inbox write; not a model-readable business metric"},
     selectTeamUpdates:{restricted:"Private owner-scoped team update inbox; not a P1 numeric source"},

@@ -2143,5 +2143,53 @@
       "caramelSky": "سماء الكراميل",
       "cherryCola": "كرز وكولا"
     }
+  },
+  "Pantry": {
+    "quantity": {
+      "shot": "{quantity} {count, plural, zero {جرعات} one {جرعة} two {جرعتان} few {جرعات} many {جرعة} other {جرعة}}",
+      "pump": "{quantity} {count, plural, zero {ضغطات} one {ضغطة} two {ضغطتان} few {ضغطات} many {ضغطة} other {ضغطة}}",
+      "fl_oz": "{quantity} أونصة",
+      "oz_wt": "{quantity} أونصة",
+      "g": "{quantity} غ",
+      "ml": "{quantity} مل",
+      "each": "{quantity} {count, plural, zero {قطع} one {قطعة} two {قطعتان} few {قطع} many {قطعة} other {قطعة}}",
+      "cup": "{quantity} {count, plural, zero {أكواب} one {كوب} two {كوبان} few {أكواب} many {كوب} other {كوب}}"
+    },
+    "starters": {
+      "milk-whole": "حليب كامل الدسم",
+      "milk-2-percent": "حليب ٢٪",
+      "milk-skim": "حليب خالي الدسم",
+      "milk-oat": "حليب الشوفان",
+      "milk-almond": "حليب اللوز",
+      "milk-soy": "حليب الصويا",
+      "milk-coconut": "حليب جوز الهند",
+      "half-and-half": "نصف حليب ونصف كريمة",
+      "heavy-cream": "كريمة خفق ثقيلة",
+      "espresso-beans": "حبوب الإسبريسو",
+      "drip-coffee": "حبوب قهوة الترشيح",
+      "cold-brew-concentrate": "مركز القهوة المنقوعة باردة",
+      "syrup-vanilla": "شراب الفانيليا",
+      "syrup-caramel": "شراب الكراميل",
+      "syrup-hazelnut": "شراب البندق",
+      "syrup-vanilla-sugar-free": "شراب فانيليا خالٍ من السكر",
+      "sauce-mocha": "صلصة الموكا",
+      "sauce-white-mocha": "صلصة الموكا البيضاء",
+      "sauce-caramel": "صلصة الكراميل",
+      "matcha": "مسحوق الماتشا",
+      "chai-concentrate": "مركز شاي التشاي",
+      "tea-bag": "أكياس الشاي",
+      "filtered-water": "ماء مُرشّح",
+      "lid-hot": "أغطية الأكواب الساخنة",
+      "lid-cold": "أغطية الأكواب الباردة",
+      "sleeve": "أغلفة الأكواب العازلة",
+      "straw": "شفاطات",
+      "cup-hot-8": "كوب ساخن 8 أونصة",
+      "cup-hot-12": "كوب ساخن 12 أونصة",
+      "cup-hot-16": "كوب ساخن 16 أونصة",
+      "cup-hot-20": "كوب ساخن 20 أونصة",
+      "cup-cold-16": "كوب بارد 16 أونصة",
+      "cup-cold-20": "كوب بارد 20 أونصة",
+      "cup-cold-24": "كوب بارد 24 أونصة"
+    }
   }
 }

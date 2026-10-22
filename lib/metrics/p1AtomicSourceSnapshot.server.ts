@@ -28,6 +28,7 @@ export const atomicP1SourceSchema=z.strictObject({
       id:z.string().uuid(),name:z.string(),base_unit:z.enum(["g","ml","each"])}),501),
     ingredientPrices:bounded(z.strictObject({
       id:z.string().uuid(),ingredient_id:z.string().uuid(),effective_from:day,
+      recorded_at:z.string().datetime({offset:true}).optional(),
       cost_per_base_unit_micros:cents,source:z.enum(["manual","receipt","statement","invoice"])}),501),
     recipes:bounded(z.strictObject({
       menu_item_id:z.string().uuid(),ingredient_id:z.string().uuid(),

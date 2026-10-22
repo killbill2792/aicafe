@@ -262,7 +262,7 @@ async function getMenuItemSnapshots(
           .select("ingredient_id, effective_from, cost_per_base_unit_micros")
           .in("ingredient_id", ingredientIds)
           .lte("effective_from", todayDateStr)
-          .order("effective_from", { ascending: true })
+          .order("effective_from", { ascending: true }).order("recorded_at", { ascending: true }).order("id", { ascending: true })
       : { data: [], error: null };
   if (priceError) throw priceError;
 
