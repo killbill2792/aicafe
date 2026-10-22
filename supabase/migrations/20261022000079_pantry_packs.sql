@@ -64,6 +64,12 @@ begin
     where id=p_product_item_id and business_id=p_business_id;
   if not found then raise exception 'product not found'; end if;
   perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || parent_base));
+  -- Legacy single-line recipe writes do not participate in the product advisory
+  -- lock. Take a short relation-level write conflict lock before validating any
+  -- read snapshot, so their INSERT/UPDATE/DELETE cannot commit between CAS
+  -- verification and replacing rows. This deliberately trades rare bulk-edit
+  -- throughput for prevention of silent cross-writer data loss.
+  LOCK TABLE public.recipe_lines IN SHARE ROW EXCLUSIVE MODE;
   perform 1 from public.menu_items where id=p_product_item_id
     and business_id=p_business_id and base_name=parent_base for update;
   if not found then raise exception 'product changed'; end if;
