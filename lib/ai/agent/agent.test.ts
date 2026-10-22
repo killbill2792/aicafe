@@ -28,7 +28,20 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(flagged.map(number => number.text)).toEqual(["9"]);
     expect(checkNumbers("2026-10-21", "", [], "en")).toEqual([]);
     expect(checkNumbers("21 October", "", [], "en")).toEqual([]);
-    expect(checkNumbers("٢٠٢٦ and ٢١ أكتوبر", "", [], "ar")).toEqual([]);
+    expect(checkNumbers("عام ٢٠٢٦ and ٢١ أكتوبر", "", [], "ar")).toEqual([]);
+  });
+  it("checks unqualified year-sized quantities while exempting calendar contexts", () => {
+    expect(checkNumbers("We sold 2026 coffees", "", [], "en").map(n => n.text)).toEqual(["2026"]);
+    expect(checkNumbers("We sold ٢٠٢٦ coffees", "", [], "ar").map(n => n.text)).toEqual(["٢٠٢٦"]);
+    expect(checkNumbers("in 2026", "", [], "en")).toEqual([]);
+    expect(checkNumbers("October 2026", "", [], "en")).toEqual([]);
+    expect(checkNumbers("Q3 2026", "", [], "en")).toEqual([]);
+    expect(checkNumbers("FY 2026", "", [], "en")).toEqual([]);
+    expect(checkNumbers("del 2026", "", [], "es")).toEqual([]);
+    expect(checkNumbers("año 2026", "", [], "es")).toEqual([]);
+    expect(checkNumbers("عام ٢٠٢٦", "", [], "ar")).toEqual([]);
+    expect(checkNumbers("2026/10/21", "", [], "en")).toEqual([]);
+    expect(checkNumbers("2026 coffees", "2026", [], "en")).toEqual([]);
   });
   it("does not silently join ASCII space-separated numbers", () => {
     const record = { source:"counts",period:null,missing:[],count:1234 };

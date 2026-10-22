@@ -99,20 +99,52 @@ describe("recorded Responses streaming fixtures", () => {
     expect(requests[1].tools).toEqual(requests[0].tools);
     expect(requests[1].tool_choice).toBe("none");
   });
-  it("keeps streamed text after provider error without making another provider call", async () => {
+  it("recovers after a tool read and provider disconnect using one bounded final call", async () => {
     const requests: Record<string, unknown>[] = [];
     const provider: AgentProvider = async function* (params) {
       requests.push(params);
       if (requests.length === 1) {
-        yield text("Sales are ");
+        yield call("get_menu_items",'{"query":null,"limit":null}',"read-1");
+        yield completed;
+      } else if (requests.length === 2) {
+        yield text("Interrupted ");
         throw new Error("connection lost");
-      }
-      yield text("not confirmed.");yield completed;
+      } else { yield text("not confirmed."); yield completed; }
     };
-    const result = await runAgentTurn({ownerText:"Sales?",context,provider});
-    expect(result.text).toBe("Sales are ");
+    const result = await runAgentTurn({ownerText:"Menu?",context,provider});
+    expect(requests).toHaveLength(3);
+    expect(requests[2].tool_choice).toBe("none");
+    expect(requests[2].tools).toEqual(requests[1].tools);
+    expect(result.usage.modelCalls).toBe(3);
+    expect(result.usage.toolCalls).toBe(1);
+    expect(result.text).toBe("Interrupted not confirmed.");
     expect(result.endReason).toBe("provider_error");
-    expect(requests).toHaveLength(1);
+  });
+  it("retries an incomplete first response once with no tools", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const provider: AgentProvider = async function* (params) {
+      requests.push(params);
+      if (requests.length === 1) return; // provider_incomplete, no completed event
+      yield text("Recovered."); yield completed;
+    };
+    const result = await runAgentTurn({ownerText:"Hello",context,provider});
+    expect(requests).toHaveLength(2);
+    expect(requests[1].tool_choice).toBe("none");
+    expect(result.text).toBe("Recovered.");
+    expect(result.endReason).toBe("provider_error");
+  });
+  it("does not call the provider more than six times when recovering an interruption", async () => {
+    let count = 0;
+    const provider: AgentProvider = async function* () {
+      count++;
+      if (count === 5) throw new Error("lost");
+      yield call("get_menu_items",'{"query":null,"limit":null}',"read-"+count);
+      yield completed;
+    };
+    const result = await runAgentTurn({ownerText:"Menu?",context,provider});
+    expect(result.usage.modelCalls).toBe(6);
+    expect(count).toBe(6);
+    expect(result.endReason).toBe("provider_error");
   });
   it.each(["response.failed", "error", "no_completion"])(
     "rejects a %s event on the final no-tool request", async (failure) => {

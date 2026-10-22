@@ -23,6 +23,12 @@ describe("database-safe agent persistence payload", () => {
     expect(persistedAgentStatus(failed)).toBe("unavailable");
     expect(persistedAgentStatus(partial)).toBe("partial");
     expect(persistedAgentStatus({ ...greeting, endReason:"provider_error" })).toBe("unavailable");
+    expect(persistedAgentStatus({ ...turn("Interrupted"), endReason:"provider_error" })).toBe("partial");
+    expect(persistedAgentStatus({ ...turn("Budget"), endReason:"budget" })).toBe("partial");
+  });
+  it("rejects blank or whitespace-only assistant text instead of storing a replayable placeholder", () => {
+    expect(() => agentReplyPayload(turn(""))).toThrow("agent_turn_failed");
+    expect(() => agentReplyPayload({ ...turn("  "), endReason:"provider_error" })).toThrow("agent_turn_failed");
   });
   it("splits on paragraphs, newlines, and whitespace without bisecting a word or number", () => {
     const number = "$99.99";
