@@ -91,6 +91,11 @@ export const SOURCE_SURFACES = {
   "lib/data/getMonthCalendar.ts": {
     getMonthCalendar:{restricted:"Owner calendar view-model contains aggregate projections; source underlying registered money readers"},
   },
+  "lib/data/teamUpdates.server.ts": {
+    insertTeamUpdate:{restricted:"Service-role owner-inbox write; not a model-readable business metric"},
+    selectTeamUpdates:{restricted:"Private owner-scoped team update inbox; not a P1 numeric source"},
+    updateTeamUpdateStatus:{restricted:"Owner-only status mutation; not a read capability"},
+  },
   "lib/data/operatingTasks.ts": {
     syncAndGetOperatingTasks:{restricted:"Task reconciliation writes are not read-only P1 capabilities"},
     readPersistedOperatingTasks:{capabilities:["team.tasks"]},
