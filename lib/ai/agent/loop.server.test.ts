@@ -259,7 +259,7 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
     ]),onTool:(name,agentId)=>starts.push({name,agentId})});
     expect(starts).toEqual([{name:"get_menu_items",agentId:"alex"}]);
     expect(result.agentIds).toEqual(["alex"]);
-    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="priceCents")?.value).toBe(450);
+    expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="items:item-1/priceCents")?.value).toBe(450);
   });
   it("reuses a prior tool's cents evidence without a new read",async()=>{
     const result=await runAgentTurn({ownerText:"Repeat that price",context,
