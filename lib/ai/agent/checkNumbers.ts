@@ -120,7 +120,16 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
   candidates(previousAssistantText,locale).forEach(v=>allowed[v.kind].add(v.value));
-  for(const v of ownerNumbers)if(v.kind==="number")allowed.money.add(Math.round(v.value*100));
+  // Explicit owner-provided quantities are not prices. Infer dollars only from
+  // a nearby monetary / menu-price statement, never from "sold 9 drinks".
+  for(const v of ownerNumbers){
+    if(v.kind!=="number")continue;
+    const before=ownerText.slice(Math.max(0,v.start-90),v.start);
+    const after=ownerText.slice(v.end,v.end+24);
+    if(/^\s*(?:drinks?|orders?|people|staff|items?|cups?|units?|hours?|days?|coffees?)\b/iu.test(after))continue;
+    if(/\b(?:price|cost|charge|rent|bill|fee|salary|wage|revenue|profit|latte|mocha|espresso|cappuccino|americano|tea|coffee|sandwich|croissant|muffin|brownie)\b[^.!?\n]{0,45}$/iu.test(before))
+      allowed.money.add(Math.round(v.value*100));
+  }
   // One monetary amount can be expressed as dollars without a currency symbol; owner numbers can be monetary.
   for(const cents of [...allowed.money])allowed.number.add(cents/100);
 
