@@ -169,12 +169,21 @@ export async function executeInitiativeTool(
     };
     if(metricId&&date){
       if(!selected)throw new Error("initiative metric unavailable");
+      // The default directory stays compact; selected detail must still
+      // identify WHAT was measured. Catalog schemas strip extra JSON fields,
+      // so we never forward arbitrary stored params into the model context.
+      const parsedParams=selected.metric_key?
+        metricCatalog[selected.metric_key].paramsSchema.safeParse(selected.params):null;
+      if(selected.source==="computed"&&!parsedParams?.success)
+        throw new Error("initiative metric parameters unavailable");
+      const selectedParams=parsedParams?.success?parsedParams.data:
+        selected.params.changeConfirmation===true?{changeConfirmation:true}:{};
       const observation=graph.observations.find(o=>
         o.metric_id===metricId&&o.business_date===date);
       return {...result,
         metricDetail:{
           id:selected.id,role:selected.role,source:selected.source,
-          metricKey:selected.metric_key,
+          metricKey:selected.metric_key,params:selectedParams,
           unit:selected.metric_key?metricCatalog[selected.metric_key].unit:null,
           comparator:selected.comparator,targetKind:selected.target_kind,target:selected.target,
           question:selected.checkin_question,audience:selected.checkin_audience,
