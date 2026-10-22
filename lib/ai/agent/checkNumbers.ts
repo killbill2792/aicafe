@@ -190,7 +190,11 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         if(knownTimes.includes(canonical)||ownerText.includes(matched[0])||ownerText.includes(canonical))return false;
       }
     }
-    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&!/^\s*(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?|coffees?)/iu.test(after))return false;
+    // Adjacent separate numeric tokens are not a standalone casual small number.
+    // "1 234" must retain both unverified spans (not a silently joined 1,234).
+    const adjacentNumber=/^\s+\d/u.test(after)||/\d\s+$/u.test(before);
+    if(v.kind==="number"&&Number.isInteger(v.value)&&v.value>=0&&v.value<=12&&
+      !adjacentNumber&&!/^\s*(?:drinks?|items?|orders?|staff|people|hours?|days?|oz|cups?|units?|coffees?)/iu.test(after))return false;
     return ![...allowed[v.kind]].some(x =>
     Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
   })
