@@ -185,7 +185,11 @@ export async function executeInitiativeTool(
           value:observation.value,coverage:observation.coverage,
           source:observation.source,revision:observation.revision,
         }:null,
-        metricEvaluation:graph.evaluation?.results?.[metricId]??null,
+        metricEvaluation:z.strictObject({
+          baseline:z.number().finite().nullable(),current:z.number().finite().nullable(),
+          target:z.number().finite().nullable(),coverage:z.number().finite(),
+          met:z.boolean().nullable(),
+        }).safeParse(graph.evaluation?.results?.[metricId]).data??null,
       };
     }
     return result;
