@@ -4,12 +4,15 @@
  * This does not authorize any business effect or assert semantic proof of prose.
  */
 import {NUMERIC_SPAN} from "./formulaVerification";
+import en from "@/messages/en.json";
+import es from "@/messages/es.json";
+import ar from "@/messages/ar.json";
 export type OwnerLocale="en"|"es"|"ar";
 const token=new RegExp(NUMERIC_SPAN,"giu");
 const words={
- en:{unknown:"a value I couldn't verify",action:"I haven't verified that the requested action was completed."},
- es:{unknown:"un valor que no pude verificar",action:"No he verificado que la acción solicitada se haya completado."},
- ar:{unknown:"قيمة لم أتمكن من التحقق منها",action:"لم أتحقق من اكتمال الإجراء المطلوب."},
+ en:{unknown:en.SupervisorInvestigation.naturalUnverifiedValue,action:en.SupervisorInvestigation.naturalUnverifiedAction},
+ es:{unknown:es.SupervisorInvestigation.naturalUnverifiedValue,action:es.SupervisorInvestigation.naturalUnverifiedAction},
+ ar:{unknown:ar.SupervisorInvestigation.naturalUnverifiedValue,action:ar.SupervisorInvestigation.naturalUnverifiedAction},
 };
 const normalize=(s:string)=>s.normalize("NFKC").toLocaleLowerCase().replace(/\s+/gu," ").trim();
 function category(span:string,following:string){
