@@ -30,7 +30,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   },
 }));
 const context:AgentToolContext={
-  asOf:"2026-10-22",locale:"en",threadId,
+  asOf:"2026-10-22",locale:"en",threadId,ownerMessageId:"55555555-5555-4555-8555-555555555555",
   tools:{
     getProfitability:async()=>({available:false,value:null,
       quality:{level:"low",missingInputs:["unavailable"],estimatedInputs:[],staleInputs:[]}}),
@@ -66,7 +66,7 @@ describe("owner-scoped initiative agent handlers",()=>{
     expect(list.items).toEqual([expect.objectContaining({id:initiativeId,status:"active"})]);
     const detail=await executeInitiativeTool("get_initiative_status",{id:initiativeId},context);
     expect(detail.metrics).toEqual([expect.objectContaining({id:metricId,question:"Was everything ready?"})]);
-    expect(detail.missing).toEqual(["Needs owner answer"]);
+    expect(detail.missing).toEqual(["evaluationPending"]);
   });
   it("records only referenced check-ins and rejects unknown arguments",async()=>{
     const result=await executeInitiativeTool("record_checkin",{
