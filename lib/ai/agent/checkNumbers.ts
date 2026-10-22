@@ -26,7 +26,7 @@ function numberPattern(locale: AgentLocale): RegExp {
   // grouping spaces are allowed between digits only in ES/AR.
   const separators = locale === "en" ? "[.,٬٫]" : "[.,٬٫\\u00a0\\u202f]";
   const number = digits + "(?:" + separators + "[٠-٩۰-۹\\d]+)*";
-  return new RegExp("(?<![\\p{L}\\p{N}_])(?:" + currency + "\\s*)?" + number +
+  return new RegExp("(?<![\\p{L}\\p{N}_])(?:[-+−]\\s*" + currency + "\\s*|" + currency + "\\s*)?" + number +
     "(?:\\s*(?:[%٪]|" + currency + "))?(?![\\p{L}\\p{N}_])", "gu");
 }
 const months = "(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre|يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر)";
