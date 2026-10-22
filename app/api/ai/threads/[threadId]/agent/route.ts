@@ -58,7 +58,8 @@ export async function POST(request: Request, context: RouteContext) {
             reply = await persistAgentReply(scope, owner, result);
           } finally {
             // Billable usage must be counted even for blank, oversized or failed writes.
-            await recordAgentTurnUsage(scope, owner, result);
+            try { await recordAgentTurnUsage(scope, owner, result); }
+            catch { console.error("agent_usage_write_failed"); } // no owner data logged
           }
           emit("done", { reply, status: result.status, endReason: result.endReason,
             unverified: result.unverified, usage: result.usage });
