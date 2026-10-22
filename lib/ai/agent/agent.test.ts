@@ -141,9 +141,10 @@ describe("realistic multi-turn numeric claims",()=>{
   });
   it("keeps prior cents evidence across turns and validates supported differences",()=>{
     const saved=[{tool:"menu_items",values:[
-      {key:"priceCents",value:850,unit:"cents" as const},
-      {key:"priceCents",value:600,unit:"cents" as const},
-    ]}];
+      {key:"items:latte/priceCents",value:850,unit:"cents" as const},
+      {key:"items:mocha/priceCents",value:600,unit:"cents" as const},
+    ],prices:[{id:"latte",name:"Latte",priceCents:850},
+      {id:"mocha",name:"Mocha",priceCents:600}]}];
     expect(checkNumbers("Latte costs $8.50.","",[],"en",saved)).toEqual([]);
     expect(checkNumbers("Latte is $2.50 more than Mocha.","",[],"en",saved)).toEqual([]);
     expect(checkNumbers("Latte costs $9.75.","",[],"en",saved).map(v=>v.text)).toEqual(["$9.75"]);
@@ -638,5 +639,119 @@ describe("Codex: typed partial updates and temporal cross-turn evidence",()=>{
     expect(checkNumbers("نفتح الساعة ٠٨:٠٠ يوم الاثنين.","",[],"ar",saved)).toEqual([]);
     expect(checkNumbers("نفتح الساعة ٢٣:٥٩ يوم الاثنين.","",[hours],"ar")
       .length).toBeGreaterThan(0);
+  });
+});
+
+
+describe("Codex: observation scopes, source identities and comparison operands",()=>{
+  const monday={source:"locations.open_hours",period:null,missing:[],
+    hours:{mon:[["08:00","17:00"]]}};
+  it("retains an explicit closed-day refresh and invalidates saved opening times",()=>{
+    const prior=compactEvidence([monday]);
+    const closed={source:"locations.open_hours",period:null,missing:["businessHoursNotSet:tue"],
+      hours:{mon:[]}};
+    const refresh=compactEvidence([closed]);
+    expect(refresh).toHaveLength(1);
+    expect(refresh[0].timeScope).toEqual({kind:"hours",days:["mon"]});
+    expect(refresh[0].times).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[closed],"en",prior)
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[],"en",
+      [...prior,...refresh]).length).toBeGreaterThan(0);
+  });
+  it("observes fresh values before the 100-value persistence cap",()=>{
+    const earlier=compactEvidence([{source:"menu_items",period:null,missing:[],
+      items:[{id:"latte",name:"Latte",priceCents:600}]}]);
+    const labor={source:"labor_and_attendance",period:null,missing:[],
+      laborDays:Array.from({length:31},(_,i)=>({date:"2026-10-"+String(i+1).padStart(2,"0"),
+        wagesCents:1500,staffTaxCents:100,loadedStaffCostCents:1600}))};
+    const menu={source:"menu_items",period:null,missing:[],
+      items:["A","B","C","D","E"].map((name,i)=>({id:name,name,priceCents:500+i*100}))
+        .concat([{id:"latte",name:"Latte",priceCents:850}])};
+    const persisted=compactEvidence([labor,menu]);
+    expect(persisted.flatMap(x=>x.values).length).toBeLessThanOrEqual(100);
+    expect(persisted.flatMap(x=>x.values).some(v=>
+      v.key==="items:latte/priceCents"&&v.value===850)).toBe(true);
+    expect(checkNumbers("Latte costs $6.","",[labor,menu],"en",earlier)
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $6.","",[],"en",earlier.concat(persisted))
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[],"en",earlier.concat(persisted))).toEqual([]);
+  });
+  it("shares a trailing weekday across both ends of a true hours range",()=>{
+    const hours={source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["08:00","17:00"]],tue:[["09:00","18:00"]]}};
+    expect(checkNumbers("We open from 8:00 AM to 6:00 PM on Tuesday.",
+      "",[hours],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("We open from 9:00 AM to 6:00 PM on Tuesday.",
+      "",[hours],"en")).toEqual([]);
+    expect(checkNumbers("We open from 8:00 AM to 5:00 PM on Monday.",
+      "",[hours],"en")).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on Monday and 9:00 AM on Tuesday.",
+      "",[hours],"en")).toEqual([]);
+  });
+  it("tracks named employees in Spanish shift assertions",()=>{
+    const schedule={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},
+      missing:[],shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",endTime:"16:00",
+        effectiveFrom:"2026-11-02",effectiveTo:null}]};
+    expect(checkNumbers("El turno de Bob empieza a las 8:00 el lunes.",
+      "",[schedule],"es").length).toBeGreaterThan(0);
+    expect(checkNumbers("El turno de Ada empieza a las 8:00 el lunes.",
+      "",[schedule],"es")).toEqual([]);
+  });
+  it("keeps nonoverlapping schedule periods and invalidates overlapping windows",()=>{
+    const ada={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},missing:[],
+      shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",endTime:"16:00",
+        effectiveFrom:"2026-11-02",effectiveTo:null}]};
+    const bob={source:"recurring_schedule",period:{from:"2026-11-09",to:"2026-11-15"},missing:[],
+      shifts:[{displayName:"Bob",dayOfWeek:2,startTime:"09:00",endTime:"17:00",
+        effectiveFrom:"2026-11-09",effectiveTo:null}]};
+    const saved=[...compactEvidence([ada]),...compactEvidence([bob])];
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026-11-02.",
+      "",[],"en",saved)).toEqual([]);
+    expect(checkNumbers("Bob’s shift starts at 9:00 AM on Tuesday, 2026-11-10.",
+      "",[],"en",saved)).toEqual([]);
+    const changed={...ada,shifts:[{displayName:"Ada",dayOfWeek:1,
+      startTime:"10:00",endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]};
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, 2026-11-02.",
+      "",[],"en",[...saved,...compactEvidence([changed])]).length).toBeGreaterThan(0);
+    expect(checkNumbers("Bob’s shift starts at 9:00 AM on Tuesday, 2026-11-10.",
+      "",[],"en",[...saved,...compactEvidence([changed])])).toEqual([]);
+  });
+  it("keeps singleton and root item identifiers in price keys",()=>{
+    const cost=(id:string,priceCents:number)=>({source:"product_costs",period:null,
+      missing:[],item:{id,name:id,priceCents}});
+    const saved=[...compactEvidence([cost("latte",600)]),
+      ...compactEvidence([cost("mocha",850)])];
+    expect(saved[0].values.some(v=>v.key==="item:latte/priceCents")).toBe(true);
+    expect(saved[1].values.some(v=>v.key==="item:mocha/priceCents")).toBe(true);
+    expect(checkNumbers("Latte costs $6.","",[],"en",saved)).toEqual([]);
+    const root=compactEvidence([{source:"pricing_engine",period:null,missing:[],
+      itemId:"latte",currentPriceCents:600}]);
+    expect(root[0].values[0].key).toBe("item:latte/currentPriceCents");
+  });
+  it("does not mistake employee names containing month prefixes for dates",()=>{
+    for(const name of ["Mark","Mary","Marcus","Omar"]){
+      const schedule={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},
+        missing:[],shifts:[{displayName:name,dayOfWeek:1,startTime:"08:00",
+          endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:null}]};
+      expect(checkNumbers(name+"’s shift starts at 8:00 AM on Monday.",
+        "",[schedule],"en")).toEqual([]);
+    }
+  });
+  it("requires actual item identities and comparison direction in computed deltas",()=>{
+    const menu={source:"menu_items",period:null,missing:[],
+      items:[{id:"latte",name:"Latte",priceCents:850},
+        {id:"mocha",name:"Mocha",priceCents:600},
+        {id:"tea",name:"Tea",priceCents:450}]};
+    expect(checkNumbers("Latte is $2.50 more than Mocha.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Mocha is $2.50 less than Latte.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Tea is $2.50 more than Latte.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+    expect(checkNumbers("Mocha is $2.50 more than Latte.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
+    expect(checkNumbers("Tea is $1.50 less than Mocha.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Profit is $2.50 more than yesterday.","",[menu],"en")
+      .map(v=>v.text)).toEqual(["$2.50"]);
   });
 });
