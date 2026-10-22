@@ -4,7 +4,7 @@ import {z} from "zod";
 import { createAdminSupabaseClient } from "@/lib/supabase/admin";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { formatInTimeZone } from "date-fns-tz";
-import {reconcileAttributedItemRevenue} from "@/lib/calc/metrics/reconcileItemRevenue";
+import {reconcileAttributedItemRevenue,reconcileItemUnitsToCanonical} from "@/lib/calc/metrics/reconcileItemRevenue";
 import { initiativeAdapters } from "@/lib/initiatives/adapters";
 import en from "@/messages/en.json";
 import es from "@/messages/es.json";
@@ -296,26 +296,72 @@ export async function readMetricDay(businessId:string,date:string,
     // Item economics cannot be inferred from a covered daily total alone.
     // Canonical POS provenance first proves exact item participation.
     const coverage=await readPeriodItemSales(db,businessId,{from:date,to:date});
-    if(coverage.covered){
-    const lines=await db.from("order_lines")
-      .select("order_id,menu_item_id,quantity,net_sales_cents,modifiers,orders!inner(business_id,business_date)")
-      .eq("orders.business_id",businessId).eq("orders.business_date",date)
-      .eq("voided",false).limit(1001);
-    if(lines.error)throw lines.error;
-    if((lines.data??[]).length<=1000 && !(lines.data??[]).some(x=>x.menu_item_id===null)){
-      const ids=[...new Set((lines.data??[]).map(x=>x.menu_item_id).filter((x):x is string=>!!x))];
-      // Order-level discounts/refunds cannot be assigned to items by assumption.
-      const orders=await db.from("orders").select("id,net_sales_cents")
-        .eq("business_id",businessId).eq("business_date",date).limit(1001);
-      if(orders.error)throw orders.error;
-      const reconciled=reconcileAttributedItemRevenue(
-        (orders.data??[]).map(o=>({id:o.id,netSalesCents:Number(o.net_sales_cents)})),
-        (lines.data??[]).map(line=>({
-          orderId:line.order_id,itemId:line.menu_item_id!,
-          quantity:Number(line.quantity),revenueCents:Number(line.net_sales_cents),
-        })),
-      );
-      input.itemRevenueVerified=(orders.data??[]).length<=1000&&reconciled.verified;
+    if(!coverage.covered){
+      // Distinguish an authoritative unlinked POS line from a temporary read
+      // outage. Only the former invalidates previously verified item values.
+      const unlinked=await db.from("order_lines")
+        .select("id,orders!inner(business_id,business_date)",{count:"exact",head:true})
+        .is("menu_item_id",null).eq("voided",false)
+        .eq("orders.business_id",businessId).eq("orders.business_date",date);
+      input.itemCoverageInvalidated=Boolean(!unlinked.error&&
+        unlinked.count!==null&&unlinked.count!==undefined&&unlinked.count>0);
+    }else{
+      // PostgreSQL/PostgREST production limit is 1000 rows per query.
+      // Multiple 500-row ordered pages avoid falsely certifying a truncated
+      // daily order_lines result. Bounded to 5000; beyond that, fail closed.
+      const linePage=(from:number,to:number)=>db.from("order_lines")
+        .select("id,order_id,menu_item_id,quantity,net_sales_cents,modifiers,orders!inner(business_id,business_date)")
+        .eq("orders.business_id",businessId).eq("orders.business_date",date)
+        .eq("voided",false).order("id",{ascending:true}).range(from,to);
+      const first=await linePage(0,499);
+      if(first.error)throw first.error;
+      let lines=first.data??[];
+      let complete=lines.length<500;
+      for(let offset=500;!complete&&offset<5000;offset+=500){
+        const next=await linePage(offset,offset+499);
+        if(next.error)throw next.error;
+        const rows=next.data??[];
+        lines=[...lines,...rows];
+        complete=rows.length<500;
+      }
+      if(!complete){
+        input.itemCoverageInvalidated=true;
+      }else if(lines.some(x=>x.menu_item_id===null)){
+        input.itemCoverageInvalidated=true;
+      }else{
+        const ids=[...new Set(lines.map(x=>x.menu_item_id).filter((x):x is string=>!!x))];
+        // A separate SQL aggregation is the source-completeness witness.
+        // Quantity for a missing item must NEVER silently become zero.
+        const lineUnits=new Map<string,number>();
+        for(const line of lines)
+          lineUnits.set(line.menu_item_id!, (lineUnits.get(line.menu_item_id!)??0)+Number(line.quantity));
+        const quantities=[...lineUnits].map(([itemId,units])=>({itemId,units}));
+        if(!reconcileItemUnitsToCanonical(quantities,coverage.soldItems)){
+          input.itemCoverageInvalidated=true;
+        }else{
+          // Revenue attribution must ALSO reconcile every exact order total.
+          const orderPage=(from:number,to:number)=>db.from("orders")
+            .select("id,net_sales_cents").eq("business_id",businessId)
+            .eq("business_date",date).order("id",{ascending:true}).range(from,to);
+          const firstOrders=await orderPage(0,499);
+          if(firstOrders.error)throw firstOrders.error;
+          let orders=firstOrders.data??[];
+          let ordersComplete=orders.length<500;
+          for(let offset=500;!ordersComplete&&offset<5000;offset+=500){
+            const next=await orderPage(offset,offset+499);
+            if(next.error)throw next.error;
+            const rows=next.data??[];
+            orders=[...orders,...rows];
+            ordersComplete=rows.length<500;
+          }
+          const reconciled=reconcileAttributedItemRevenue(
+            orders.map(o=>({id:o.id,netSalesCents:Number(o.net_sales_cents)})),
+            lines.map(line=>({
+              orderId:line.order_id,itemId:line.menu_item_id!,
+              quantity:Number(line.quantity),revenueCents:Number(line.net_sales_cents),
+            })),
+          );
+          input.itemRevenueVerified=ordersComplete&&reconciled.verified;
       const [fallback,recipes]=await Promise.all([
         ids.length?db.from("menu_item_cost_fallbacks").select("menu_item_id,cost_cents").eq("business_id",businessId).in("menu_item_id",ids)
           .eq("status","confirmed"):Promise.resolve({data:[],error:null}),
@@ -340,7 +386,8 @@ export async function readMetricDay(businessId:string,date:string,
         ownerCostCents:fallbackMap.get(itemId)??null,
         hasUnverifiedModifiers:unverifiedItems.has(itemId),
       }));
-    }
+        }
+      }
     }
   }
   if(needed.size){
