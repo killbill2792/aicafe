@@ -220,7 +220,7 @@ export default function CafeProfileForm({ profile, labels }: { profile: Profile;
 
       {error && <p className="rounded-xl bg-warn-tint p-3 text-sm font-semibold text-warn">{error}</p>}
       {status === "saved" && <p className="rounded-xl bg-good-tint p-3 text-sm font-semibold text-good">{labels.saved}</p>}
-      <button type="button" onClick={save} disabled={isPending || !name.trim() || currency.trim().length !== 3} className="min-h-14 rounded-full bg-ink px-5 text-base font-bold text-paper disabled:opacity-40">
+      <button type="button" onClick={save} disabled={isPending || !name.trim() || currency.trim().length !== 3} className="min-h-14 rounded-full bg-accent px-5 text-base font-bold text-on-accent disabled:opacity-40">
         {isPending ? labels.saving : labels.save}
       </button>
     </div>

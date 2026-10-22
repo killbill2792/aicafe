@@ -15,7 +15,7 @@ function CardShell({ href, step, title, children }: { href: string; step: number
     <Link href={href} className={`flex min-h-12 flex-col gap-3.5 rounded-card-lg p-[18px] text-ink no-underline ${surfaces[step] ?? "bg-card"}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-ink text-xs font-extrabold text-paper">{step}</span>
+          <span className="flex h-6 w-6 items-center justify-center rounded-xl bg-accent text-xs font-extrabold text-on-accent">{step}</span>
           <span className="text-lg font-bold">{title}</span>
         </div>
         <ChevronRight aria-hidden="true" size={20} className="text-ink-muted rtl:rotate-180" />

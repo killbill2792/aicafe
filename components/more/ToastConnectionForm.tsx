@@ -150,7 +150,7 @@ export default function ToastConnectionForm({businessId,locations,enabled,approv
      {entries.length?entries:<p>{labels.noLocations}</p>}
      <button disabled={pending||!secret||!approvedOrigins.includes(apiUrl)||!clientId||!Object.values(mapping).some(Boolean)}
        onClick={()=>void perform("save")} type="button"
-       className="min-h-12 rounded-full bg-ink p-3 font-semibold text-paper disabled:opacity-40">
+       className="min-h-12 rounded-full bg-accent p-3 font-semibold text-on-accent disabled:opacity-40">
        {pending?labels.pending:labels.save}
      </button>
      <button disabled={pending||!connection||connection.state==="not_connected"}

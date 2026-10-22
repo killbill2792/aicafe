@@ -60,7 +60,7 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
 
       <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-[#6E2A07]">{t("neverAccusatoryNote")}</div>
 
-      <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-ink text-lg font-bold text-paper">
+      <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
         {content.actionLabel}
       </a>
 
