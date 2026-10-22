@@ -35,7 +35,7 @@ vi.mock("@/lib/supabase/admin",()=>({
         return [];
       };
       const result=()=>({data:head?null:get(),count:head?state.unlinkedCount:null,error:null});
-      const q={
+      const q:Record<string,unknown>={
         select:(_columns:string,opts?:{head?:boolean})=>{head=opts?.head===true;return q;},
         eq:()=>q,is:()=>q,gte:()=>q,lte:()=>q,order:()=>q,in:()=>q,
         limit:(n:number)=>Promise.resolve({...result(),data:get().slice(0,n)}),
