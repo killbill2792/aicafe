@@ -25,7 +25,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   }),
   saveOwnerCheckin:async(scope:{ownerUserId:string},id:string,date:string,value:number|null)=>{
     if(scope.ownerUserId!==state.owner||id!=="44444444-4444-4444-8444-444444444444"||
-        date!=="2026-10-22"||value!==1)throw Error("wrong check-in scope");
+        date!=="2026-10-22"||(value!==1&&value!==null))throw Error("wrong check-in scope");
     state.checkins++;return {created:true,corrected:false};
   },
 }));
@@ -78,6 +78,12 @@ describe("owner-scoped initiative agent handlers",()=>{
       metricId,date:"2026-10-22",value:1,note:null,ownerUserId:"forged",
     },context)).rejects.toThrow();
     expect(state.checkins).toBe(1);
+  });
+  it("preserves missing evidence for a note-only check-in",async()=>{
+    const note=await executeInitiativeTool("record_checkin",{
+      metricId,date:"2026-10-22",value:null,note:"The delivery was late",
+    },context);
+    expect(note.missing).toContain("checkinNumericValueMissing");
   });
   it("keeps the strict tool declaration set closed",()=>{
     expect(initiativeToolDefinitions.map(x=>x.name)).toEqual([

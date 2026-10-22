@@ -21,6 +21,8 @@ export const initiativeMetricSchema = z.strictObject({
       ctx.addIssue({code:"custom",message:"computed metric requires key and no question"});
     else if(!metricCatalog[metric.metricKey].paramsSchema.safeParse(metric.params).success)
       ctx.addIssue({code:"custom",message:"invalid metric parameters"});
+  } else if(metric.checkinAudience==="staff") {
+    ctx.addIssue({code:"custom",message:"staff check-ins are not collected in M1"});
   } else if(metric.targetKind==="relative_pct") {
     ctx.addIssue({code:"custom",message:"check-in relative targets need an observed baseline"});
   } else if(metric.metricKey!==null||!metric.checkinQuestion||!metric.checkinAudience||!metric.dataGap) {

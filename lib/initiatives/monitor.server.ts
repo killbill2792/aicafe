@@ -62,22 +62,33 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
         byMetric.set(metric.id,graph.observations.filter(o=>o.metric_id===metric.id));
       // Process up to seven previously unsampled dates per run to bound the cron.
       // Rotation means long outages catch up over successive runs without starving tenants.
-      const fresh=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
-        !byMetric.get(m.id)?.some(o=>o.business_date===d)));
-      const incomplete=days.filter(d=>graph.metrics.some(m=>m.source==="computed" &&
-        byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage<1)));
-      // Shift retry selection on every rotation, including older baseline dates.
+      const missingFor=(d:string)=>graph.metrics.some(metric=>metric.source==="computed" &&
+        !byMetric.get(metric.id)?.some(o=>o.business_date===d));
+      // Current test evidence must not sit behind months of baseline history.
+      // Match each expected test weekday to its nearest prior baseline day.
+      const testDates=allDays(initiative.starts_on,asOf);
+      const baseDates=allDays(first,lastBaseline);
+      const closestBaseline=[...new Set(testDates.map(test=>{
+        const targetWeekday=new Date(test+"T12:00:00Z").getUTCDay();
+        return [...baseDates].reverse().find(base=>
+          new Date(base+"T12:00:00Z").getUTCDay()===targetWeekday);
+      }).filter((date):date is string=>Boolean(date)))];
+      const freshTest=testDates.filter(missingFor).reverse();
+      const freshBaseline=closestBaseline.filter(missingFor).reverse();
+      const incomplete=days.filter(d=>graph.metrics.some(metric=>metric.source==="computed" &&
+        byMetric.get(metric.id)?.some(o=>o.business_date===d&&o.coverage<1)));
       const rotated=(items:string[],max:number)=>{
         if(!items.length)return [];
-        const start=initiative.revision%items.length;
-        return [...items.slice(start),...items.slice(0,start)].slice(0,max);
+        const offset=initiative.revision%items.length;
+        return [...items.slice(offset),...items.slice(0,offset)].slice(0,max);
       };
       const eligibleCorrection=today<=dayOffset(initiative.ends_on,14);
-      const covered=eligibleCorrection?days.filter(d=>d>=initiative.baseline_from &&
-        graph.metrics.some(m=>m.source==="computed" &&
-          byMetric.get(m.id)?.some(o=>o.business_date===d&&o.coverage>=1))):[];
-      const pending=[...fresh.slice(0,3),...rotated(incomplete,2),
-        ...rotated(covered,2)].filter((day,index,array)=>array.indexOf(day)===index).slice(0,7);
+      const covered=eligibleCorrection?days.filter(d=>graph.metrics.some(metric=>
+        metric.source==="computed" &&
+        byMetric.get(metric.id)?.some(o=>o.business_date===d&&o.coverage>=1))):[];
+      const pending=[...freshTest.slice(0,3),...freshBaseline.slice(0,2),
+        ...rotated(incomplete,1),...rotated(covered,1)]
+        .filter((day,index,array)=>array.indexOf(day)===index).slice(0,7);
       for(const date of pending){
         const computed=graph.metrics.filter(m=>m.source==="computed" &&
           (eligibleCorrection || !byMetric.get(m.id)?.some(o=>o.business_date===date&&o.coverage>=1)));
@@ -168,7 +179,12 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       });
       if(written.created)stats.updates++;
       // Keep a 14-day correction window for delayed POS/timecard evidence.
-      completed=asOf>=initiative.ends_on&&today>dayOffset(initiative.ends_on,14);
+      const testAttempted=graph.metrics.filter(metric=>metric.source==="computed").every(metric=>
+        testDates.every(date=>(byMetric.get(metric.id)??[]).some(o=>o.business_date===date)));
+      const baselineAttempted=graph.metrics.filter(metric=>metric.source==="computed").every(metric=>
+        closestBaseline.every(date=>(byMetric.get(metric.id)??[]).some(o=>o.business_date===date)));
+      completed=asOf>=initiative.ends_on&&today>dayOffset(initiative.ends_on,14)&&
+        testAttempted&&baselineAttempted;
     }catch{stats.failed++;}
     finally{
       if(completed&&claim){

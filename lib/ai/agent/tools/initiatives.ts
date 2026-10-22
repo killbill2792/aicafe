@@ -159,5 +159,7 @@ export async function executeInitiativeTool(
   }
   const args=checkinArgs.parse(raw);
   const saved=await saveOwnerCheckin(scope,args.metricId,args.date,args.value,args.note);
-  return {source:"owner_checkin",period:null,missing:[],created:saved.created,corrected:saved.corrected};
+  return {source:"owner_checkin",period:null,
+    missing:args.value===null?["checkinNumericValueMissing"]:[],
+    created:saved.created,corrected:saved.corrected};
 }
