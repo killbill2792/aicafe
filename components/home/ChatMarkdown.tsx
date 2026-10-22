@@ -34,7 +34,7 @@ function listMarker(line: SourceLine): ListMarker | null {
  * delimiters have been interpreted. Both verified and regular text share the
  * same block parser; labels cannot switch lists back to raw source text. */
 function annotatedText(
-  text: string, absoluteStart: number, spans: readonly Verification[], label: string,
+  text: string, absoluteStart: number, spans: readonly Verification[], label: string, badged: Set<number>,
 ): ReactNode[] {
   const end = absoluteStart + text.length;
   const out: ReactNode[] = [];
@@ -47,9 +47,10 @@ function annotatedText(
     if (from < to) {
       out.push(<span className="inline" key={from}>
         <span className="underline decoration-dotted">{text.slice(from - absoluteStart, to - absoluteStart)}</span>
-        {to === span.end && <span role="note" className="ms-1 rounded-full border border-current px-1 text-xs">{label}</span>}
+        {!badged.has(span.start) && <span role="note" className="ms-1 rounded-full border border-current px-1 text-xs">{label}</span>}
       </span>);
     }
+    if (from < to) badged.add(span.start);
     cursor = Math.max(cursor, to);
   }
   if (cursor < end) out.push(text.slice(cursor - absoluteStart));
@@ -57,7 +58,7 @@ function annotatedText(
 }
 
 function inlineMarkdown(
-  text: string, absoluteStart: number, spans: readonly Verification[], label: string,
+  text: string, absoluteStart: number, spans: readonly Verification[], label: string, badged: Set<number>,
 ): ReactNode[] {
   const nodes: ReactNode[] = [];
   // No model-authored HTML or links: React escapes literal source text. Inline
@@ -67,11 +68,11 @@ function inlineMarkdown(
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
     if (match.index > cursor) {
-      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, label));
+      nodes.push(...annotatedText(text.slice(cursor, match.index), absoluteStart + cursor, spans, label, badged));
     }
     const delimiter = match[2] !== undefined || match[3] !== undefined ? 2 : 1;
     const content = match[2] ?? match[3] ?? match[4] ?? match[5] ?? match[6];
-    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, label);
+    const inner = annotatedText(content, absoluteStart + match.index + delimiter, spans, label, badged);
     const key = absoluteStart + match.index;
     nodes.push(match[2] !== undefined || match[3] !== undefined
       ? <strong key={key} className="font-bold">{inner}</strong>
@@ -80,7 +81,7 @@ function inlineMarkdown(
         : <em key={key}>{inner}</em>);
     cursor = match.index + match[0].length;
   }
-  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, label));
+  if (cursor < text.length) nodes.push(...annotatedText(text.slice(cursor), absoluteStart + cursor, spans, label, badged));
   return nodes;
 }
 
@@ -93,6 +94,7 @@ export function ChatMarkdown({ text, unverified = [], label }: {
   ).sort((a,b) => a.start - b.start)
     .filter((s, i, all) => i === 0 || s.start >= all[i - 1].end);
 
+  const badged = new Set<number>();
   const lines = sourceLines(text);
   const blocks: ReactNode[] = [];
   let index = 0;
@@ -117,7 +119,7 @@ export function ChatMarkdown({ text, unverified = [], label }: {
           }
           break;
         }
-        const item = inlineMarkdown(marker.content, marker.contentStart, spans, label);
+        const item = inlineMarkdown(marker.content, marker.contentStart, spans, label, badged);
         entries.push(ordered
           ? <li key={index} value={marker.number} className="ps-1">{item}</li>
           : <li key={index} className="ps-1">{item}</li>);
@@ -133,7 +135,7 @@ export function ChatMarkdown({ text, unverified = [], label }: {
     while (index < lines.length && lines[index].text.trim() && !listMarker(lines[index])) {
       if (rows.length) rows.push("\n");
       const line = lines[index];
-      rows.push(...inlineMarkdown(line.text, line.start, spans, label));
+      rows.push(...inlineMarkdown(line.text, line.start, spans, label, badged));
       index++;
     }
     if (index === start) index++;
