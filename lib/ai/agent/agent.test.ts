@@ -74,7 +74,7 @@ describe("numbers, statuses, and strict tool contracts", () => {
   });
   it("does not silently join ASCII space-separated numbers", () => {
     const record = { source:"counts",period:null,missing:[],count:1234 };
-    expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["1","234"]);
+    expect(checkNumbers("1 234", "", [record], "es").map(n => n.text)).toEqual(["234"]);
     expect(checkNumbers("1\u202f234", "", [record], "es")).toEqual([]);
     expect(checkNumbers("1\u00a0234", "", [record], "ar")).toEqual([]);
   });
@@ -118,5 +118,33 @@ describe("numbers, statuses, and strict tool contracts", () => {
     expect(result.agentId).toBe("alex");
     await expect(executeAgentTool("get_menu_items",{businessId:"other"},context)).rejects.toThrow();
     await expect(executeAgentTool("get_menu_items",{query:null,limit:26},context)).rejects.toThrow();
+  });
+});
+
+describe("realistic multi-turn numeric claims",()=>{
+  const menu={source:"menu_items",period:null,missing:[],
+    items:[{id:"latte",name:"Latte",priceCents:850},{id:"mocha",name:"Mocha",priceCents:600}]};
+  it("compares money in cents and accepts owner-supplied money",()=>{
+    expect(checkNumbers("Latte is $8.50.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Latte is 8.50 dollars.","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("Latte is $6.","latte is 6",[],"en")).toEqual([]);
+    expect(checkNumbers("Latte is $9.75.","",[menu],"en").map(v=>v.text)).toEqual(["$9.75"]);
+    expect(checkNumbers("Latte is -$8.50.","",[menu],"en").map(v=>v.text)).toEqual(["-$8.50"]);
+  });
+  it("allows menu lists, time claims, and counts evidenced by array lengths",()=>{
+    expect(checkNumbers("1. Latte 2. Mocha","",[],"en")).toEqual([]);
+    expect(checkNumbers("2 drinks","",[menu],"en")).toEqual([]);
+    expect(checkNumbers("We open at 7:00 AM","",[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 3 PM","",[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 15h","",[],"en")).toEqual([]);
+  });
+  it("keeps prior cents evidence across turns and validates supported differences",()=>{
+    const saved=[{tool:"menu_items",values:[
+      {key:"priceCents",value:850,unit:"cents" as const},
+      {key:"priceCents",value:600,unit:"cents" as const},
+    ]}];
+    expect(checkNumbers("Latte costs $8.50.","",[],"en",saved)).toEqual([]);
+    expect(checkNumbers("Latte is $2.50 more than Mocha.","",[],"en",saved)).toEqual([]);
+    expect(checkNumbers("Latte costs $9.75.","",[],"en",saved).map(v=>v.text)).toEqual(["$9.75"]);
   });
 });
