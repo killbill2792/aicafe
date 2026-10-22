@@ -1,19 +1,24 @@
 "use client";
 import {useEffect,useState,useTransition} from "react";
 import {useRouter} from "next/navigation";
+import {dismissStaffRuleAlert} from "@/lib/actions/ruleAlerts";
 import Link from "next/link";
 import {addPerson,updatePerson,setPersonActive} from "@/lib/actions/teamWorkspace";
 import {upsertShift,removeShift,restoreShift,copyWeek,sendSchedule} from "@/lib/actions/schedule";
 type Data=Extract<Awaited<ReturnType<typeof import("@/lib/actions/schedule").getWeekSchedule>>,{ok:true}>["data"];
 const fmt=(c:number|null,currency:string)=>c==null?"—":new Intl.NumberFormat(undefined,{style:"currency",currency}).format(c/100);
 const hours=(n:number)=>Number((n/60).toFixed(1));
-export default function StaffWorkspace({initial,tab="schedule",locale="en"}:{initial:Data;tab?:string;locale?:string}){
+type Alert={id:string;employee_id:string;rule_key:string;message:string;created_at:string};
+export default function StaffWorkspace({initial,tab="schedule",locale="en",initialAlerts=[],alertError=null}:{
+ initial:Data;tab?:string;locale?:string;initialAlerts?:Alert[];alertError?:string|null
+}){
  const router=useRouter();
  const [version,setVersion]=useState({initial,local:initial});
  const data=version.initial===initial?version.local:initial;
  const setData=(value:Data)=>setVersion({initial,local:value});
  const [screen,setScreen]=useState(tab),[sheet,setSheet]=useState<"person"|"shift"|null>(null);
  const [busy,startTransition]=useTransition(),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [dismissed,setDismissed]=useState<string[]>([]);
  const [name,setName]=useState(""),[role,setRole]=useState("Barista"),[wage,setWage]=useState<number|null>(null);
  const [phone,setPhone]=useState(""),[minWeeklyMinutes,setMinWeeklyMinutes]=useState<number|null>(null),
   [maxWeeklyMinutes,setMaxWeeklyMinutes]=useState<number|null>(null),[personEditing,setPersonEditing]=useState<string|null>(null);
@@ -81,6 +86,14 @@ export default function StaffWorkspace({initial,tab="schedule",locale="en"}:{ini
   <div className="grid grid-cols-2 rounded-2xl bg-surface2 p-1">{["schedule","team"].map(k=><button key={k} onClick={()=>setScreen(k)} aria-pressed={screen===k}
     className={`min-h-12 rounded-xl font-bold ${screen===k?"bg-surface shadow":"text-muted"}`}>{k==="schedule"?"Schedule":"Team"}</button>)}</div>
   {screen==="schedule"?<>
+   {alertError&&<p role="alert" className="rounded-xl bg-warn-soft p-3 text-warn-text">Rule alerts could not be refreshed: {alertError}</p>}
+   {initialAlerts.filter(a=>!dismissed.includes(a.id)).length>0&&<section className="rounded-2xl border border-line bg-surface p-4">
+    <h2 className="text-lg font-bold">Rule alerts · {initialAlerts.filter(a=>!dismissed.includes(a.id)).length}</h2>
+    {initialAlerts.filter(a=>!dismissed.includes(a.id)).map(a=><div key={a.id} className="flex items-start gap-3 border-t border-line py-3">
+      <span aria-hidden="true">⚠</span><div className="min-w-0 flex-1"><p className="font-semibold">{a.rule_key.replaceAll("_"," ")}</p><p className="text-sm text-muted">{a.message}</p></div>
+      <button disabled={busy} className="min-h-12 rounded-lg border border-line px-3" onClick={()=>{setDismissed(ids=>[...ids,a.id]);run(()=>dismissStaffRuleAlert({id:a.id}));}}>Dismiss</button>
+    </div>)}
+   </section>}
    <div className="flex items-center justify-between gap-4 rounded-2xl border border-line bg-surface p-3">
     <Link href={`?week=${new Date(Date.parse(data.weekStart+"T12:00:00Z")-7*86400000).toISOString().slice(0,10)}`} className="p-3">‹</Link>
     <div className="text-center font-semibold">{dayLabel(data.dates[0])} – {dayLabel(data.dates[6])}<div className="text-sm text-muted">{status}</div></div>
