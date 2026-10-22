@@ -7,7 +7,8 @@ describe("initiatives monitor cron auth",()=>{
   it("rejects no bearer, wrong bearer and missing configured secret",async()=>{
     process.env.CRON_SECRET="test-secret";
     for(const token of [null,"Bearer wrong","test-secret"]){
-      const headers=token?{authorization:token}:{};
+      const headers:Record<string,string>={};
+      if(token)headers.authorization=token;
       const response=await GET(new Request("https://example.com/api/cron/initiatives-monitor",{headers}));
       expect(response.status).toBe(401);
     }
