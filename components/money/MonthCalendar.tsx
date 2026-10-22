@@ -158,7 +158,7 @@ export default function MonthCalendar({
               : cell.state.kind === "closed"
                 ? "border border-line bg-paper text-ink-muted"
                 : cell.state.kind === "missing"
-                  ? "border-2 border-dotted border-[#C9BBA6] text-ink-muted"
+                  ? "border-2 border-dotted border-line text-ink-muted"
                   : "border-2 border-dashed border-line text-ink-muted opacity-70";
           return (
             <button
@@ -190,7 +190,7 @@ export default function MonthCalendar({
           {labels.legendLoss}
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-3.5 w-3.5 rounded-[4px] border-2 border-dotted border-[#C9BBA6]" />
+          <span className="h-3.5 w-3.5 rounded-[4px] border-2 border-dotted border-line" />
           {labels.legendMissing}
         </span>
         <span className="flex items-center gap-1.5">
@@ -204,7 +204,7 @@ export default function MonthCalendar({
       </div>
 
       {selectedDetail && (
-        <div className="mx-4 flex flex-col gap-2 rounded-2xl bg-[#F7F1E8] p-3.5">
+        <div className="mx-4 flex flex-col gap-2 rounded-2xl bg-surface p-3.5">
           <span className="text-base font-bold text-ink">
             {new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(new Date(`${selectedDetail.date}T00:00:00`))}
           </span>

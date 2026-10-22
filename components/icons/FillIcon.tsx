@@ -36,11 +36,11 @@ export default function FillIcon({
       <svg width={size} height={size} viewBox="0 0 48 48" role="img" aria-label={label} aria-hidden={label ? undefined : true}>
         <defs>
           <linearGradient id={gradientId} x1="0" y1="1" x2="0" y2="0">
-            <stop offset={pct} stopColor="#1E6B4B" />
-            <stop offset={pct} stopColor="#E7DFD3" />
+            <stop offset={pct} stopColor="rgb(var(--c-pos))" />
+            <stop offset={pct} stopColor="rgb(var(--c-surface2))" />
           </linearGradient>
         </defs>
-        <use href={`#ic-${code}`} fill={`url(#${gradientId})`} style={hasDetail ? undefined : ({ "--sil": "#2A1D14" } as React.CSSProperties)} />
+        <use href={`#ic-${code}`} fill={`url(#${gradientId})`} style={hasDetail ? undefined : ({ "--sil": "rgb(var(--c-text))" } as React.CSSProperties)} />
       </svg>
       {covered && (
         <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border-[3px] border-card bg-good">

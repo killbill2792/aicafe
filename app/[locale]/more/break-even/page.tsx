@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 const WHATIF_ICONS: Record<string, { Icon: typeof TrendingUp; bg: string; fg: string }> = {
   price: { Icon: TrendingUp, bg: "bg-good-tint", fg: "text-good" },
-  staffing: { Icon: Users, bg: "bg-[#E8EEF5]", fg: "text-staff" },
+  staffing: { Icon: Users, bg: "bg-surface", fg: "text-staff" },
   milk: { Icon: Milk, bg: "bg-warn-tint", fg: "text-warn" },
 };
 
@@ -59,14 +59,14 @@ export default async function BreakEvenPage() {
           <span className="flex-1">{t("plannedStaffRow")}</span>
           <span className="font-bold">{t("perDay", { amount: formatCents(vm.avgDailyStaffCostCents) })}</span>
         </div>
-        <div className="h-px bg-[#EFE7DB]" />
+        <div className="h-px bg-surface" />
         <div className="flex items-center gap-3 text-[15px]">
           <span className="flex-1 font-semibold">{t("eachDrinkLeaves")}</span>
           <span className="font-bold text-good">
             <Money cents={vm.avgMoneyLeftPerDrinkCents} />
           </span>
         </div>
-        <div className="rounded-[10px] bg-[#FAF6F0] px-3 py-2.5 text-sm text-ink-muted">
+        <div className="rounded-[10px] bg-surface px-3 py-2.5 text-sm text-ink-muted">
           {formatCents(vm.dailyCostsToCoverCents)} ÷ {formatCents(vm.avgMoneyLeftPerDrinkCents)} ={" "}
           {Number.isFinite(vm.drinksNeededPerDay) ? t("drinksCount", { count: vm.drinksNeededPerDay }) : "—"}
         </div>
@@ -80,7 +80,7 @@ export default async function BreakEvenPage() {
           const Icon = icon.Icon;
           const better = w.needed < vm.drinksNeededPerDay;
           return (
-            <div key={w.key} className="flex items-center gap-3 rounded-2xl bg-[#FAF6F0] p-3">
+            <div key={w.key} className="flex items-center gap-3 rounded-2xl bg-surface p-3">
               <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${icon.bg} ${icon.fg}`}>
                 <Icon aria-hidden="true" size={20} />
               </span>
