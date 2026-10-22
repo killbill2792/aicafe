@@ -124,7 +124,7 @@ export async function getMenuItemsForEdit(): Promise<{ items: MenuItemForEdit[];
 
   const recipeByItem = new Map<string, RawRecipeLine[]>();
   for (const row of recipeLines ?? []) {
-    const ing = row.ingredients as unknown as { name: string; base_unit: string; starter_key: string | null } | { name: string; base_unit: string }[] | null;
+    const ing = row.ingredients as unknown as { name: string; base_unit: string; starter_key: string | null } | { name: string; base_unit: string; starter_key: string | null }[] | null;
     const ingRow = Array.isArray(ing) ? ing[0] : ing;
     if (!ingRow) continue;
     const list = recipeByItem.get(row.menu_item_id) ?? [];
