@@ -54,14 +54,14 @@ try{
   const metric=[{role:"primary",source:"computed",metric_key:"net_sales",
     params:{},comparator:"gte",target_kind:"absolute",target:100,
     checkin_question:null,checkin_audience:null,data_gap:null}];
-  const args=[BIZ,A,THREAD,"idempotent-key-123456",payload,metric];
+  const args=[BIZ,A,THREAD,"idempotent-key-123456",JSON.stringify(payload),JSON.stringify(metric)];
   const rpc="select create_owner_initiative_atomic($1,$2,$3,$4,$5,$6) as id";
   const created=(await db.query(rpc,args)).rows[0].id;
   const retried=(await db.query(rpc,args)).rows[0].id;
   assert.equal(created,retried,"logical proposal retry must return the original initiative");
   assert.equal((await db.query("select id from initiative_metrics where initiative_id=$1",[created])).rowCount,1);
-  await assert.rejects(db.query(rpc,[BIZ,A,THREAD,"bad-metric-request-123456",payload,
-    [{...metric[0],role:"invented"}]]),{code:"23514"});
+  await assert.rejects(db.query(rpc,[BIZ,A,THREAD,"bad-metric-request-123456",JSON.stringify(payload),
+    JSON.stringify([{...metric[0],role:"invented"}])]),{code:"23514"});
   assert.equal((await db.query("select id from owner_initiatives where request_key='bad-metric-request-123456'")).rowCount,0,
     "a rejected child metric must roll back its parent in the same transaction");
   await db.query("insert into initiative_metrics(id,initiative_id,role,source,metric_key,comparator,target_kind,target) values($1,$2,'primary','computed','net_sales','gte','absolute',100)",[MID,ID]);
