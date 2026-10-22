@@ -15,7 +15,7 @@ describe("Maya read-only costs and unavailable inventory",()=>{
           prepSeconds:90,category:"drink",ingredientsCentsToday:0,hasRecipe:false,
           costStatus:"NO_RECIPE",quantitySoldLast28Days:5}}),
     }));
-    expect((r.item as {ingredientsCentsToday:number|null}).ingredientsCentsToday).toBeNull();
+    expect(r.item).toMatchObject({ingredientsCentsToday:null});
   });
   it("returns dated micros without pretending they are cents",async()=>{
     const r=await suppliesTools.get_ingredient_costs.execute({query:null,limit:null},ctx({
