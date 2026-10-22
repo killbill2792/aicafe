@@ -2101,6 +2101,17 @@
     "priceCents": "السعر",
     "days": "المبيعات اليومية",
     "missing": "بيانات ناقصة"
+  },
+  "Pantry": {
+    "quantity": {
+      "shot": "{quantity} {count, plural, zero {جرعات} one {جرعة} two {جرعتان} few {جرعات} many {جرعة} other {جرعة}}",
+      "pump": "{quantity} {count, plural, zero {ضغطات} one {ضغطة} two {ضغطتان} few {ضغطات} many {ضغطة} other {ضغطة}}",
+      "fl_oz": "{quantity} أونصة",
+      "oz_wt": "{quantity} أونصة",
+      "g": "{quantity} غ",
+      "ml": "{quantity} مل",
+      "each": "{quantity} {count, plural, zero {قطع} one {قطعة} two {قطعتان} few {قطع} many {قطعة} other {قطعة}}",
+      "cup": "{quantity} {count, plural, zero {أكواب} one {كوب} two {كوبان} few {أكواب} many {كوب} other {كوب}}"
+    }
   }
-
 }
