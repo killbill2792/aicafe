@@ -75,7 +75,7 @@ export default function LoginForm({ callbackError = false }: { callbackError?: b
       <button
         type="submit"
         disabled={status === "sending"}
-        className="h-[60px] rounded-full bg-ink text-[18px] font-bold text-paper disabled:opacity-60"
+        className="h-[60px] rounded-full bg-accent text-[18px] font-bold text-on-accent disabled:opacity-60"
       >
         {status === "sending" ? t("sending") : mode === "password" ? t("signIn") : t("sendLink")}
       </button>

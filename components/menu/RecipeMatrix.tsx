@@ -250,7 +250,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
                   {suggestions.length === 0 && !exactIngredient && <button type="button" onClick={() => setIngredientOpen(false)} className="min-h-12 w-full rounded-lg px-3 text-start font-bold text-good"><Plus className="me-2 inline" size={17} />{labels.createNamed.replace("{name}", newRow.name.trim())}</button>}
                 </div>}
                 {!newRow.ingredient && <div className="mt-2 grid grid-cols-3 gap-1" aria-label={labels.type}>
-                  {(["g", "ml", "each"] as const).map((baseUnit) => <button type="button" key={baseUnit} onClick={() => setBaseUnit(baseUnit)} className={`min-h-12 rounded-xl px-1 text-sm font-bold ${newRow.baseUnit === baseUnit ? "bg-ink text-paper" : "border border-line bg-card text-ink-muted"}`}>{labels[baseUnit]}</button>)}
+                  {(["g", "ml", "each"] as const).map((baseUnit) => <button type="button" key={baseUnit} onClick={() => setBaseUnit(baseUnit)} className={`min-h-12 rounded-xl px-1 text-sm font-bold ${newRow.baseUnit === baseUnit ? "bg-accent text-on-accent" : "border border-line bg-card text-ink-muted"}`}>{labels[baseUnit]}</button>)}
                 </div>}
                 {!newRow.ingredient && !exactIngredient && <div className="mt-2 rounded-xl border border-line bg-card p-2">
                   <span className="text-sm font-bold text-ink-muted">{labels.purchaseCost}</span>
@@ -276,7 +276,7 @@ export default function RecipeMatrix({ items, ingredients, ingredientConversions
     {saved && <p className="mt-3 flex items-center gap-2 font-semibold text-good"><Check size={18} />{labels.saved}</p>}
     <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
       <button type="button" disabled={pending} onClick={reset} className="min-h-12 rounded-full border border-line px-7 font-bold">{labels.cancel}</button>
-      <button type="button" disabled={pending} onClick={save} className="min-h-12 rounded-full bg-ink px-7 font-bold text-paper disabled:opacity-40">{labels.saveRecipe}</button>
+      <button type="button" disabled={pending} onClick={save} className="min-h-12 rounded-full bg-accent px-7 font-bold text-on-accent disabled:opacity-40">{labels.saveRecipe}</button>
     </div>
   </section>;
 }

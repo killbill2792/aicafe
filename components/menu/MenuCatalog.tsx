@@ -101,7 +101,7 @@ export default function MenuCatalog({ items, photos }: { items: MenuControlItem[
       </label>
       <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label={t("all")}>
         {tabs.map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${filter === value ? "bg-ink text-paper" : "bg-card text-ink"}`}>
+          <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={`min-h-12 shrink-0 rounded-full px-4 text-sm font-bold ${filter === value ? "bg-accent text-on-accent" : "bg-card text-ink"}`}>
             {label}
           </button>
         ))}
