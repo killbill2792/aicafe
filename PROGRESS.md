@@ -1,6 +1,6 @@
 ## Now
-- [ ] Review draft PR #146 and verify TypeScript, lint, Vitest, production build, and one live owner smoke test before merge.
-- [ ] Remove remaining legacy investigation/reviewer modules only after import dependents and old route tests can be retired without orphaned references.
+- [ ] Review PR M0: team_updates storage/writer/owner reads, including PostgreSQL RLS and full CI; migration not deployed.
+- [ ] Run one live owner agent smoke test before production deployment of #146.
 
 ## Next
 - [ ] Add grounded quick-reply chips and proposal/approval flows.
@@ -8,8 +8,9 @@
 - [ ] Reconcile the AI usage ledger's per-increment limits with the agent's budget before general release.
 
 ## Done (last 10)
-- New streaming agent SSE endpoint is the default home chat send path, without /progress polling.
+- PR #146 merged: streaming agent is the default chat path; signed-currency and usage-attempt fixes included.
+- New streaming agent SSE endpoint, without /progress polling.
 - Strict three-tool schema, tool-call pairing, six-call total budget, error recovery and logical retry status.
-- Locale-aware money/percent checks, plus validated multi-block persistence and database-compatible grounding statuses.
+- Locale-aware money/percent checks, validated multi-block persistence and database-compatible grounding statuses.
 - Added recorded fixture and reply-writer tests; retired the supervisor-gap regression workflow.
-- AGENTS.md now includes code-review blockers for retired designs and invalid tests.
+- AGENTS.md includes review blockers for retired designs and invalid tests.

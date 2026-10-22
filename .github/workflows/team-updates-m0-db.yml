@@ -1,0 +1,30 @@
+name: M0 Team Updates Database
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "supabase/migrations/20261022000077_team_updates.sql"
+      - "scripts/test-team-updates-rls.mjs"
+      - ".github/workflows/team-updates-m0-db.yml"
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: node scripts/test-team-updates-rls.mjs
