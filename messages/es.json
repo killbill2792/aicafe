@@ -1978,6 +1978,8 @@
     "field_laborCostEstimated": "Los costos laborales incluyen estimaciones"
   },
   "SupervisorInvestigation": {
+    "naturalUnverifiedValue": "un valor que no pude verificar",
+    "naturalUnverifiedAction": "No he verificado que la acción solicitada se haya completado.",
     "unansweredGoal": "Una parte de tu solicitud sigue sin respuesta: ",
     "yes": "sí",
     "no": "no",
