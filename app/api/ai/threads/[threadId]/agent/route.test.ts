@@ -50,7 +50,7 @@ vi.mock("@/lib/ai/conversations/usage.server", () => ({
 vi.mock("@/lib/ai/agent/loop.server", () => ({
   runAgentTurn: async (args: {onDelta?: (delta:string)=>void;onReset?: (count:number)=>void}) => {
     fake.loopCalls++;
-    const next = fake.queued.shift() ?? {text:"Here is the answer.",endReason:"complete"};
+    const next = fake.queued.shift() ?? {text:"Here is the answer.",endReason:"complete",resetChars:0};
     if (next.resetChars) {
       args.onDelta?.("Wrong");
       args.onReset?.(next.resetChars);
