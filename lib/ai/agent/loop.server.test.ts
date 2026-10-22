@@ -171,6 +171,35 @@ describe("recorded Responses streaming fixtures", () => {
       expect(resets).toEqual(["Partial final answer.".length]);
       expect(result.endReason).toBe("provider_error");
     });
+
+  it("checks a current amount against owner history but not prior assistant prose", async () => {
+    const first=await runAgentTurn({ownerText:"Repeat my rent.",context,
+      history:[{role:"user",content:"My rent is $2,000"}],
+      provider:fixture([[text("The rent is $2,000."),completed]])});
+    expect(first.unverified).toEqual([]);
+    const second=await runAgentTurn({ownerText:"Repeat the rent.",context,
+      history:[{role:"assistant",content:"The rent is $2,000."}],
+      provider:fixture([[text("The rent is $2,000."),completed]])});
+    expect(second.unverified.map(v=>v.text)).toEqual(["$2,000"]);
+  });
+  it("preserves earlier completed prose when a later model call fails", async () => {
+    const deltas: string[] = [], resets: number[] = [];
+    let calls=0;
+    const provider: AgentProvider = async function* () {
+      calls++;
+      if(calls===1){
+        yield text("Safe. ");
+        yield call("get_menu_items", '{"query":null,"limit":null}', "read-1");
+        yield completed;
+      }else if(calls===2){yield text("Wrong");throw new Error("lost");}
+      else {yield text("Final.");yield completed;}
+    };
+    const reply=await runAgentTurn({ownerText:"Menu?",context,provider,
+      onDelta:d=>deltas.push(d),onReset:n=>resets.push(n)});
+    expect(reply.text).toBe("Safe. Final.");
+    expect(deltas).toEqual(["Safe. ","Wrong","Final."]);
+    expect(resets).toEqual([5]);
+  });
   it("stops after six regular model calls and only one final call", async () => {
     let count = 0;
     const provider: AgentProvider = async function* () {
