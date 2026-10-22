@@ -238,7 +238,7 @@ export default function LaborCsvImporter({
             <div className="mt-1 flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
               {parsed.rejected.map((r) => (
-                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                <span key={r.reason} className="text-[17px] text-warn-text">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}
@@ -285,7 +285,7 @@ export default function LaborCsvImporter({
             <div className="flex flex-col gap-1 rounded-xl bg-warn-tint p-3">
               <span className="text-[17px] font-bold text-warn">{labels.rejectedTitle}</span>
               {summary.rejectedRows.map((r) => (
-                <span key={r.reason} className="text-[17px] text-[#6E2A07]">
+                <span key={r.reason} className="text-[17px] text-warn-text">
                   {labels.rejectedReasons[r.reason]} ({r.count})
                 </span>
               ))}

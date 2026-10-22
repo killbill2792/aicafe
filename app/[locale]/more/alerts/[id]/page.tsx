@@ -54,11 +54,11 @@ export default async function AlertDetailPage({ params }: { params: Promise<{ id
         <Detail label={t("clockIn")} value={formatShiftTime(alert.payload.clockIn, snapshot.business.timezone, locale)} />
         <Detail label={alert.payload.clockOut ? t("clockOut") : t("currentElapsed")} value={alert.payload.clockOut ? formatShiftTime(alert.payload.clockOut, snapshot.business.timezone, locale) : t("hoursElapsed", { hours: Number(alert.payload.shiftHours ?? 0).toFixed(1) })} />
         <Detail label={t("recordedBreak")} value={qualifyingBreakText(alert.payload.breaks, t("noQualifyingBreak"), snapshot.business.timezone, locale)} />
-        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-[#6E2A07]">{t("mealBreakExactReason")}</p>
+        <p className="mt-2 rounded-xl bg-warn-tint p-3 text-[15px] text-warn-text">{t("mealBreakExactReason")}</p>
         <p className="text-sm text-ink-muted">{t("mealBreakImpactBasis")}</p>
       </section>}
 
-      <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-[#6E2A07]">{t("neverAccusatoryNote")}</div>
+      <div className="rounded-2xl bg-warn-tint p-4 text-sm leading-snug text-warn-text">{t("neverAccusatoryNote")}</div>
 
       <a href={content.actionHref} className="flex h-14 items-center justify-center rounded-full bg-accent text-lg font-bold text-on-accent">
         {content.actionLabel}
