@@ -377,7 +377,7 @@ export async function readMetricDay(businessId:string,date:string,
         recipesByItem.set(recipe.menu_item_id,arr);
       }
       const fallbackMap=new Map((fallback.data??[]).map(r=>[r.menu_item_id,Number(r.cost_cents)]));
-      const unverifiedItems=new Set((lines.data??[]).filter(line=>
+      const unverifiedItems=new Set(lines.filter(line=>
         !Array.isArray(line.modifiers)||line.modifiers.length>0)
         .map(line=>line.menu_item_id));
       input.items=reconciled.items.map(({itemId,...total}):ItemEvidence=>({
