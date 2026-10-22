@@ -6,7 +6,6 @@
 import {NUMERIC_SPAN} from "./formulaVerification";
 export type OwnerLocale="en"|"es"|"ar";
 const token=new RegExp(NUMERIC_SPAN,"giu");
-const sourceNumber=(s:string)=>[...s.matchAll(token)].map(m=>m[0]);
 const words={
  en:{unknown:"a value I couldn't verify",action:"I haven't verified that the requested action was completed."},
  es:{unknown:"un valor que no pude verificar",action:"No he verificado que la acción solicitada se haya completado."},
@@ -25,15 +24,31 @@ function magnitude(span:string):string{
  const number=span.match(/[\p{Nd}]+(?:[.,٫٬][\p{Nd}]+)*/u)?.[0]??"";
  return number.replace(/,/gu,"").replace(/٫/gu,".").replace(/٬/gu,"");
 }
-function authorized(source:string):{amount:string;kind:string}[]{
- return [...source.matchAll(token)].map(m=>({
-   amount:magnitude(m[0]),kind:category(m[0],source.slice(m.index+m[0].length)),
- }));
+function claimKey(span:string,after:string):string{
+ const kind=category(span,after);
+ const n=magnitude(span);
+ // Monetary spelling is flexible but money is still exact integer cents.
+ // "$7", "$7.00" and "7 dollars" are the same value; "10 cents" is
+ // not the same as "$10". Avoid floating-point arithmetic here.
+ if(kind==="money"){
+   const minor=/(?:\bcents?\b|\bcentavos?\b|سنت)/iu.test(span);
+   const [whole,fraction=""]=n.split(".");
+   if(!/^\d+$/u.test(whole)||fraction.length>2||!/^\d*$/u.test(fraction))return kind+":"+n;
+   const cents=BigInt(whole)*(minor?BigInt(1):BigInt(100))+
+     (minor?BigInt(0):BigInt((fraction+"00").slice(0,2)));
+   return "money:"+cents.toString();
+ }
+ if(kind==="percent"){
+   const [whole,fraction=""]=n.split(".");
+   if(!/^\d+$/u.test(whole)||fraction.length>2)return kind+":"+n;
+   return "percent:"+(BigInt(whole)*BigInt(100)+BigInt((fraction+"00").slice(0,2))).toString();
+ }
+ return kind+":"+n;
 }
 function approved(span:string,after:string,known:readonly string[]):boolean{
- const n=magnitude(span),kind=category(span,after);
- return known.some(source=>authorized(source).some(item=>
-   item.amount===n&&item.kind===kind));
+ const claim=claimKey(span,after);
+ return known.some(source=>[...source.matchAll(token)]
+   .some(m=>claimKey(m[0],source.slice(m.index+m[0].length))===claim));
 }
 /** Numbers are permitted in *natural* model text when sourced; unsupported
  * spans are redacted locally, never replaced by a generic question.
