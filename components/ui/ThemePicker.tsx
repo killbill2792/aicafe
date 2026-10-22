@@ -16,7 +16,7 @@ export function ThemePicker({initialTheme, initialMode}: {initialTheme: ThemeId;
   const pickMode = (id: ThemeMode) => { document.documentElement.setAttribute('data-mode', id); setMode(id); persist("cp_mode",id); };
   return <section aria-labelledby="theme-heading" className="rounded-card-lg border border-line bg-surface p-4">
     <h2 id="theme-heading" className="font-headline text-xl font-bold text-fg">{t("theme")}</h2>
-    <p className="mt-1 text-sm text-muted">{t("themeDescription")}</p>
+    <p className="mt-1 text-[17px] leading-[1.4] text-muted">{t("themeDescription")}</p>
     <div role="radiogroup" aria-label={t("chooseTheme")} className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
       {themes.map((item) => {
         const selected=theme===item.id;
