@@ -59,7 +59,7 @@ describe("database-safe agent persistence payload", () => {
   });
   it("keeps a currency token intact even when its suffix would cross 1200", () => {
     const content = "x".repeat(1193) + " 123,45 €" + " rest ".repeat(90);
-    const blocks = splitAgentText(content);
+    const blocks = splitAgentText(content).map(block => block.text);
     expect(blocks.join("")).toBe(content);
     const firstBoundary = blocks[0].length;
     expect(firstBoundary <= 1194).toBe(true);
