@@ -222,6 +222,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      blocks.push({type:"text",text:(fact.label+": "+fact.value).slice(0,1200)});
    if(!blocks.length)blocks.push({type:"text",text:copy.gap});
    const status=complete?"verified":
+     hadUnavailable&&!structured.evidence.length?"unavailable":
      structured.evidence.length||conditional.length||prose.text?"partial":"unavailable";
    return {intent:"unknown",status:requestedStatus==="unavailable"&&
      !structured.evidence.length&&!prose.text?"unavailable":status,
