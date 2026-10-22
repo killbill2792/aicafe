@@ -61,6 +61,7 @@ create table initiative_observations (
   coverage numeric not null check (coverage between 0 and 1),
   source text not null check (source in ('computed','owner_checkin','staff_checkin')),
   revision int not null default 1 check(revision>0),
+  verified_at timestamptz not null default now(),
   note text,
   unique(metric_id,business_date),
   check (value is not null or coverage < 1),
@@ -305,7 +306,8 @@ grant execute on function release_owner_initiative_monitor(uuid,uuid,boolean) to
 -- its lease can never write a late observation, including after a long timeout.
 create or replace function write_owner_initiative_monitor_observation(
   p_business_id uuid,p_owner_user_id uuid,p_initiative_id uuid,p_token uuid,
-  p_metric_id uuid,p_date date,p_value numeric,p_coverage numeric,p_note text
+  p_metric_id uuid,p_date date,p_value numeric,p_coverage numeric,p_note text,
+  p_allow_invalidation boolean
 ) returns boolean language plpgsql security definer set search_path=public
 as $$
 declare permitted uuid; stored uuid;
@@ -324,19 +326,22 @@ begin
   ) values (p_metric_id,p_date,p_value,p_coverage,'computed',p_note,1)
   on conflict (metric_id,business_date) do update set
     value=excluded.value,coverage=excluded.coverage,note=excluded.note,
-    revision=existing.revision+1
-    where existing.source='computed' and existing.coverage<=excluded.coverage
-      and (existing.value is distinct from excluded.value
-        or existing.coverage is distinct from excluded.coverage
-        or existing.note is distinct from excluded.note)
+    verified_at=now(),
+    revision=existing.revision+case when
+      existing.value is distinct from excluded.value
+      or existing.coverage is distinct from excluded.coverage
+      or existing.note is distinct from excluded.note
+      then 1 else 0 end
+    where existing.source='computed'
+      and (existing.coverage<=excluded.coverage or p_allow_invalidation)
   returning metric_id into stored;
   return stored is not null;
 end;
 $$;
 revoke all on function write_owner_initiative_monitor_observation(
-  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text) from public,anon,authenticated;
+  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text,boolean) from public,anon,authenticated;
 grant execute on function write_owner_initiative_monitor_observation(
-  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text) to service_role;
+  uuid,uuid,uuid,uuid,uuid,date,numeric,numeric,text,boolean) to service_role;
 
 create or replace function write_owner_initiative_monitor_evaluation(
   p_business_id uuid,p_owner_user_id uuid,p_initiative_id uuid,p_token uuid,
