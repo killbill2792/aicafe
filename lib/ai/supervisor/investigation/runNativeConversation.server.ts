@@ -597,8 +597,11 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
    const right=resolve(args.rightFactId,args.rightOwnerQuote);
    const operation=String(args.operation??"");
    const allowed=["add","subtract","multiply","divide","percent_increase","percent_decrease"];
-   const differentPeriods=Boolean(left?.fact?.period&&right?.fact?.period&&
-      left.fact.period!==right.fact.period);
+   const differentPeriods=Boolean(
+     left?.fact?.period==="incompatible_source_periods"||
+     right?.fact?.period==="incompatible_source_periods"||
+     (left?.fact?.period&&right?.fact?.period&&
+       left.fact.period!==right.fact.period));
    const calculated=left&&right&&!differentPeriods&&identity.currency==="USD"&&
      allowed.includes(operation)?calculateSimple(operation as SimpleOperation,
        left.operand,right.operand):null;
