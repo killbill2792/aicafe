@@ -48,7 +48,8 @@ declare
   ln jsonb;
   item uuid;
   ingredient uuid;
-  valid_count integer := 0;
+  actual jsonb;
+  source_expected jsonb;
   seen_items uuid[] := '{}';
   seen_ingredients uuid[];
   updated_ids uuid[] := '{}';
@@ -56,13 +57,30 @@ begin
   if auth.uid() is null or not public.is_member(p_business_id) then
     raise exception 'not authorized' using errcode='42501';
   end if;
+  -- Resolve product identity without a row lock, then acquire the shared product
+  -- advisory lock BEFORE locking any sibling row, avoiding cross-size deadlocks.
   select base_name into parent_base from public.menu_items
-    where id=p_product_item_id and business_id=p_business_id for update;
+    where id=p_product_item_id and business_id=p_business_id;
   if not found then raise exception 'product not found'; end if;
-  if jsonb_typeof(p_changes) <> 'array' or jsonb_array_length(p_changes) not between 1 and 64
-    then raise exception 'invalid recipe changes'; end if;
-  -- Keep siblings serialized, including concurrent update attempts.
   perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || parent_base));
+  perform 1 from public.menu_items where id=p_product_item_id
+    and business_id=p_business_id and base_name=parent_base for update;
+  if not found then raise exception 'product changed'; end if;
+  if jsonb_typeof(p_changes) is distinct from 'array'
+     or jsonb_array_length(p_changes) not between 1 and 64
+    then raise exception 'invalid recipe changes'; end if;
+  -- If the source recipe was read before this transaction, detect any intervening
+  -- edits, including legacy single-line writes, before applying derived changes.
+  source_expected := p_changes->0->'expectedSourceLines';
+  if source_expected is not null then
+    select coalesce(jsonb_agg(jsonb_build_object(
+      'ingredientId',ingredient_id::text,'quantity',quantity,
+      'displayUnit',display_unit,'displayQuantity',display_quantity
+    ) order by ingredient_id),'[]'::jsonb) into actual
+      from public.recipe_lines where menu_item_id=p_product_item_id;
+    if actual is distinct from source_expected then
+      raise exception 'recipe_changed' using errcode='40001'; end if;
+  end if;
   for c in select value from jsonb_array_elements(p_changes) loop
     item := (c->>'menuItemId')::uuid;
     if item=any(seen_items) then raise exception 'duplicate menu item'; end if;
@@ -70,8 +88,17 @@ begin
     perform 1 from public.menu_items
       where id=item and business_id=p_business_id and base_name=parent_base for update;
     if not found then raise exception 'item not in product'; end if;
-    if jsonb_typeof(c->'lines') <> 'array' or jsonb_array_length(c->'lines') > 80
-      then raise exception 'invalid recipe lines'; end if;
+    if jsonb_typeof(c->'lines') is distinct from 'array'
+      or jsonb_array_length(c->'lines') > 80 then raise exception 'invalid recipe lines'; end if;
+    if c ? 'expectedLines' then
+      select coalesce(jsonb_agg(jsonb_build_object(
+        'ingredientId',ingredient_id::text,'quantity',quantity,
+        'displayUnit',display_unit,'displayQuantity',display_quantity
+      ) order by ingredient_id),'[]'::jsonb) into actual
+        from public.recipe_lines where menu_item_id=item;
+      if actual is distinct from c->'expectedLines' then
+        raise exception 'recipe_changed' using errcode='40001'; end if;
+    end if;
     seen_ingredients := '{}';
     for ln in select value from jsonb_array_elements(c->'lines') loop
       ingredient := (ln->>'ingredientId')::uuid;
@@ -118,16 +145,23 @@ declare
   changes jsonb := '[]'::jsonb;
   seen_labels text[] := '{}';
   default_size text;
+  original_base text;
 begin
   if auth.uid() is null or not public.is_member(p_business_id) then
     raise exception 'not authorized' using errcode='42501';
   end if;
   select * into parent_row from public.menu_items
-    where id=p_product_item_id and business_id=p_business_id for update;
+    where id=p_product_item_id and business_id=p_business_id;
   if not found then raise exception 'product not found'; end if;
-  if jsonb_typeof(p_sizes) <> 'array' or jsonb_array_length(p_sizes) not between 3 and 4
+  original_base := parent_row.base_name;
+  perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || original_base));
+  select * into parent_row from public.menu_items
+    where id=p_product_item_id and business_id=p_business_id for update;
+  if not found or parent_row.base_name is distinct from original_base
+    then raise exception 'product changed'; end if;
+  if jsonb_typeof(p_sizes) is distinct from 'array'
+    or jsonb_array_length(p_sizes) not between 3 and 4
     then raise exception 'invalid size set'; end if;
-  perform pg_advisory_xact_lock(hashtext(p_business_id::text || ':' || parent_row.base_name));
   default_size := case when jsonb_array_length(p_sizes)=3 then '16 oz' else '12 oz' end;
   for size_row in select value from jsonb_array_elements(p_sizes) loop
     label := size_row->>'sizeLabel';
@@ -140,7 +174,10 @@ begin
     if coalesce(array_length(matches,1),0)>1 then raise exception 'duplicate size in menu'; end if;
     chosen := matches[1];
     if chosen is null and parent_row.size_label is null and label=default_size then
-      chosen := parent_row.id;
+      -- Keep the POS-linked parent ID/name/price intact; only persist size metadata.
+      update public.menu_items set size_label=label
+        where id=parent_row.id and business_id=p_business_id
+        returning id into chosen;
     end if;
     if chosen is null then
       insert into public.menu_items (
