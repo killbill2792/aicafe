@@ -18,8 +18,7 @@ import { activeOwnerQuestionMessageId, beginOptimisticOwner, sendKey, visibleCon
 import FactSummary from "./FactSummary";
 import SupervisorExperiment, {type ExperimentCopy} from "./SupervisorExperiment";
 import { groupReplyBlocks } from "./supervisorReplyPresentation";
-import SupervisorOwnerQuestionCard from "./SupervisorOwnerQuestionCard";
-import {ownerQuestionSchema,pendingOwnerInputSchema,type OwnerInputResponse}
+import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type SupervisorChatCopy = {
@@ -148,14 +147,7 @@ function SupervisorMessage({ message, copy, locale, onOwnerResponse, disabled }:
         if(group.kind==="facts")
           return <FactSummary key={i} blocks={group.blocks} locale={locale} sourceText={copy.source}/>;
         const candidate=ownerQuestionSchema.safeParse(group.block);
-        if(candidate.success)return <SupervisorOwnerQuestionCard key={i} card={candidate.data}
-          locale={locale} disabled={disabled}
-          allowOther={!isOwnerConfirmation(message)}
-          locallyDismissible={!pendingOwnerInputSchema.safeParse(message.grounding?.ownerInput).success}
-          copy={{dismiss:copy.ownerInputDismiss,confirm:copy.ownerInputConfirm,
-            other:copy.ownerInputOther,answer:copy.ownerInputAnswer}}
-          onAnswer={(value,isOption)=>onOwnerResponse(message,value,isOption)}
-          onDismiss={()=>onOwnerResponse(message,"",false,true)}/>;
+        if (candidate.success) return <ReplyBlock key={i} block={{type:"text",text:candidate.data.title[locale]}} copy={copy} locale={locale}/>;
         const possibleMetadata = message.grounding?.agentMetadata;
         const metadata = record(possibleMetadata) ? possibleMetadata : null;
         const rawSpans = Array.isArray(metadata?.unverified) ? metadata.unverified : [];
@@ -376,7 +368,7 @@ export default function SupervisorChatComposer({
     threadRequestId.current = null;
     return created.thread.id;
   }
-  async function sendText(value: string, existingKey?: string,ownerInputResponse?:OwnerInputResponse) {
+  async function sendText(value: string, existingKey?: string) {
     const text = value.trim();
     if (!enabled || !text || sending || uploading || recorder.current || dictation === "recognizing" || text.length > 4000) return;
     const clientMessageId = sendKey(existingKey, retryId.current, () => crypto.randomUUID());
@@ -395,7 +387,7 @@ export default function SupervisorChatComposer({
       attemptedThreadId = id;
       const response = await fetch("/api/ai/threads/" + encodeURIComponent(id) + "/agent", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ clientMessageId, text, locale, ...(ownerInputResponse ? { ownerInputResponse } : {}) }),
+        body: JSON.stringify({ clientMessageId, text, locale }),
       });
       if (!response.ok || !response.body) throw new Error("agent_request_failed");
       const reader = response.body.getReader();
@@ -700,7 +692,7 @@ export default function SupervisorChatComposer({
         {pendingOwnerIds.has(message.id) && <div className="flex max-w-[94%] items-center gap-3 rounded-xl border border-[#F2D59F] bg-[#FFF3DD] p-3 text-[15px] text-ink" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           <span className="flex-1">{copy.answerFailed}</span>
-          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined, message.ownerInputResponse)}
+          <button type="button" onClick={() => void sendText(message.text ?? "", message.clientMessageId ?? undefined)}
             className="min-h-10 rounded-xl bg-ink px-3 font-bold text-white">{copy.retryAnswer}</button>
         </div>}
       </div>)}
