@@ -31,6 +31,11 @@ describe("native Supervisor prose grounding without generic questions",()=>{
   expect(out.text).not.toContain("$999");
   expect(out.text).toContain("I can still check its recipe.");
  });
+ it("does not treat a negative or fractional-cent claim as a verified positive amount",()=>{
+  expect(groundedNaturalProse("The net effect is -$7.",["$7"],"en").redacted).toBe(true);
+  expect(groundedNaturalProse("The increase is 10.5 cents.",["10 cents"],"en").redacted).toBe(true);
+  expect(groundedNaturalProse("The increase is $0.10.",["10 cents"],"en").redacted).toBe(false);
+ });
  it("rejects a model assertion of an executed action without a receipt",()=>{
   const out=groundedNaturalProse("I published your schedule. Would you like to review the coverage?",
     [],"en");
