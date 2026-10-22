@@ -776,9 +776,11 @@ function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
     const before=prefix.split(/[.!?;\n]/u).pop()??"";
     const after=text.slice(words[next-1].end).split(/[.!?;\n]/u)[0]??"";
     const explicitQuantity=quantities.test(after.trimStart());
-    const unsupportedAdjacent=words[initial-1]&&unsupported.includes(words[initial-1].word)||
-      words[next]&&unsupported.includes(words[next].word);
-    if(unsupportedAdjacent){i=next;continue;}
+    // A larger unsupported numeral contaminates its entire clause: never
+    // reinterpret just the trailing "fifty" in "one hundred and fifty".
+    const clause=[before,after].join(" ").toLocaleLowerCase();
+    const unsupportedAdjacent=unsupported.some(word=>new RegExp("(?<!\\p{L})"+word+"(?!\\p{L})","iu").test(clause));
+    if(unsupportedAdjacent||(explicitQuantity&&attachedMoney)){i=next;continue;}
     const money=!explicitQuantity&&(attachedMoney||monetaryContext.test(before)||monetaryContext.test(after.slice(0,30)));
     const signed=negative?-1:1;
     result.push({value:signed*(attachedPercent?value:money?value:value/100),
@@ -794,25 +796,26 @@ function proposedDuration(text:string,start:number,end:number):boolean{
   /(?:\b(?:try|test|plan|propose|recommend|suggest|run a trial|prueba|probar|propongo|recomiendo|sugiero)\b|(?:نجرب|اقترح|جرب|جرّب|أوصي))/iu.test(before);
 }
 function explicitLocalArithmetic(text:string,v:{start:number;end:number;kind:Kind;value:number},
- locale:AgentLocale,allowed:ReadonlySet<number>):boolean{
+ locale:AgentLocale,allowed:ReadonlySet<number>):boolean|null{
  const money=candidates(text,locale).filter(c=>c.kind==="money"||
    (c.kind==="number"&&isCurrencylessMoneyClaim(text,c.start,c.end)));
  const index=money.findIndex(c=>c.start===v.start&&c.end===v.end);
- if(index<2)return false;
+ if(index<2)return null;
  const prefix=text.slice(0,v.start);
  const sentenceStops=[...prefix.matchAll(/(?<!\d)\.(?=\s+[A-Z])/gu)].map(m=>m.index);
  const boundary=Math.max(prefix.lastIndexOf("\n"),prefix.lastIndexOf(";"),prefix.lastIndexOf("!"),prefix.lastIndexOf("?"),...sentenceStops);
  const operands=money.slice(0,index).filter(c=>c.start>boundary);
- if(operands.length<2||operands.length>3)return false;
+ if(operands.length<2)return null;
+ const phrase=text.slice(operands[0].end,v.start);
+ const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
+ if(!marker.test(phrase))return null;
+ if(operands.length>3)return false;
  const toCents=(c:{kind:Kind;value:number})=>c.kind==="money"?c.value:Math.round(c.value*100);
  const amounts=operands.map(toCents);
  if(!amounts.every(c=>[...allowed].some(a=>Math.abs(a-c)<=1)))return false;
- const phrase=text.slice(operands[0].end,v.start);
  // Arithmetic in descriptive prose cannot manufacture a business KPI.
  const targetClause=text.slice(operands[operands.length-1].end,v.start);
  if(/\b(?:profit|revenue|sales|wages|payroll|staff costs|expenses|operating margin)\b/iu.test(targetClause))return false;
- const marker=/\b(?:together|altogether|combined|total|sum|in all|en total|juntos|suma|difference|minus|vs|versus|more|less|menos|más)\b|(?:المجموع|الإجمالي|الفرق|ناقص|معا|معًا)|=/iu;
- if(!marker.test(phrase))return false;
  const subtraction=/\b(?:difference|minus|vs|versus|more|less|menos)\b|(?:الفرق|ناقص)/iu.test(phrase);
  const expected=sumCents(amounts,(amount,index)=>subtraction&&index>0?-amount:amount);
  return Math.abs(expected-toCents(v))<=1;
@@ -957,11 +960,16 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       const itemPrice=directItemPriceClaim(text,v.start,v.end,itemPrices);
       if(itemPrice!==null)return Math.abs(itemPrice-cents)>1;
     }
+    // An explicit arithmetic claim is checked before raw value membership:
+    // an unrelated observed $12 must never validate 5.50 + 6.00 = $12.
+    if(moneyLike){
+      const derived=explicitLocalArithmetic(text,v,locale,allowed.money);
+      if(derived!==null)return !derived;
+    }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
     if (supported) return false;
-    if((v.kind==="money"||(v.kind==="number"&&isCurrencylessMoneyClaim(text,v.start,v.end)))&&
-      explicitLocalArithmetic(text,v,locale,allowed.money))return false;
+
     // Never promote a money amount into count evidence, even for saved reads.
     if (v.kind === "number" && isCurrencylessMoneyClaim(text, v.start, v.end))
       return ![...allowed.money].some(cents => Math.abs(cents - Math.round(v.value * 100)) <= 1);
