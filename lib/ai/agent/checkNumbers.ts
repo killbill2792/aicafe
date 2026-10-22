@@ -56,27 +56,32 @@ export function compactEvidence(results:readonly AgentToolResult[]):NumericEvide
  * source/item/period key replaces its predecessor, never unions with it.
  * Legacy unscoped keys cannot overrule newer scoped values. */
 function reconcileSavedEvidence(entries:readonly NumericEvidence[]):NumericEvidence[]{
-  const bySource=new Map<string,Map<string,NumericEvidence["values"][number]>>();
+  type Value=NumericEvidence["values"][number];
+  // Each entry describes one read. Repeated legacy keys *within* a read may
+  // represent distinct items; the same key in a *later* read supersedes it.
+  const bySource=new Map<string,Map<string,Value[]>>();
   for(const entry of entries){
     let values=bySource.get(entry.tool);
     if(!values){values=new Map();bySource.set(entry.tool,values);}
-    const later=entry.values.filter(v=>typeof v.key==="string"&&Number.isFinite(v.value));
-    if(later.length===0)continue;
-    for(const v of later){
-      const leaf=v.key.split("/").at(-1)??"";
-      if(v.key.includes("/")){
-        // An item-scoped price supersedes old pre-provenance price entries.
-        if(values.has(leaf))values.delete(leaf);
-      }else{
-        // Later unscoped reads cannot retain older unscoped versions.
-        for(const key of [...values.keys()])
-          if(key===v.key)values.delete(key);
+    const grouped=new Map<string,Value[]>();
+    for(const v of entry.values){
+      if(typeof v.key!=="string"||!Number.isFinite(v.value))continue;
+      const group=grouped.get(v.key)??[];
+      group.push(v);
+      grouped.set(v.key,group);
+    }
+    for(const [key,group] of grouped){
+      if(key.includes("/")){
+        const leaf=key.split("/").at(-1)??"";
+        // Scoped evidence invalidates legacy unscoped values of that metric.
+        values.delete(leaf);
       }
-      values.set(v.key,v);
+      values.set(key,group);
     }
   }
-  return [...bySource].map(([tool,values])=>({tool,values:[...values.values()]}))
-    .filter(e=>e.values.length>0);
+  return [...bySource].map(([tool,values])=>({
+    tool,values:[...values.values()].flat()
+  })).filter(e=>e.values.length>0);
 }
 
 export type UnverifiedNumber = { text: string; start: number; end: number; kind: "money" | "percent" | "number" };
