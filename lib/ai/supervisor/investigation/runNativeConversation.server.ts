@@ -350,16 +350,24 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
     const requestedQuestion=result.text.trim().slice(0,220);
     if(!requestedQuestion)break;
     const resolved=pickIds(result.optionIds,optionRows);
-    // Preserve the model's genuine question. Numeric sizes from the verified
-    // option IDs and owner-stated prices are permitted, not blanket-rejected.
-    const question=groundedNaturalProse(requestedQuestion,
-      [...statements,...resolved.map(o=>o.label)],input.locale).text;
-    const loc={en:question,es:question,ar:question};
-    // A selected menu variant must survive the owner reply as an authenticated
-    // catalog identity; a generic option label is never a product ID or a money quote.
+    // Variant labels are derived from the authenticated full menu, including
+    // the size_label when the P1 catalog uses the same base name for variants.
+    // Neither option names nor their UUID identities are model-authored.
     const catalog=resolved.length>=2?await getMenuControlCenter():[];
     const matched=resolved.length>=2?resolved.map(o=>catalog.find(row=>row.id===o.id&&row.active)):[];
     const menuOptions=matched.length>=2&&matched.every(Boolean);
+    const displayOptions=resolved.map((option,index)=>{
+      const item=menuOptions?matched[index]:null;
+      if(!item)return option.label;
+      const name=item.name.trim(),size=item.sizeLabel?.trim();
+      return size&&!name.toLocaleLowerCase().includes(size.toLocaleLowerCase())?
+        name+" · "+size:name;
+    });
+    // Keep OpenAI's actual question, including sourced menu sizes and
+    // owner-provided numerical context. Never substitute a generic question.
+    const question=groundedNaturalProse(requestedQuestion,
+      [...statements,...displayOptions],input.locale).text;
+    const loc={en:question,es:question,ar:question};
     const priorContext=input.inertProposal?.knownClarificationContext?.()??{};
     const rememberedProduct=priorContext.selectedProductId??input.trustedCatalogProductId;
     const savedItem=rememberedProduct?await getMenuControlCenter().then(items=>
@@ -378,7 +386,8 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
         base_name:savedItem.baseName,size_label:savedItem.sizeLabel}),
     }:undefined;
     const request=ownerResolutionRequest({question:loc,input:resolved.length>=2?
-      {kind:"options",options:resolved.map(o=>({id:o.id,label:{en:o.label,es:o.label,ar:o.label}}))}:
+      {kind:"options",options:resolved.map((o,i)=>({id:o.id,
+        label:{en:displayOptions[i],es:displayOptions[i],ar:displayOptions[i]}}))}:
       {kind:"free_text",hint:{en:localeCopy.en.hint,es:localeCopy.es.hint,ar:localeCopy.ar.hint}},
       context});
     const checked=await authorizedOwnerP1();
