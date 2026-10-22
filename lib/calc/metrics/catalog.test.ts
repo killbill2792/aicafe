@@ -45,7 +45,7 @@ describe("M1 typed metric catalog",()=>{
   });
   it("rejects malformed hour range and reports labor-hour gaps",()=>{
     expect(()=>computeMetric("sales_per_labor_hour",{fromHour:18,toHour:9},recorded)).toThrow();
-    const result=computeMetric("sales_per_labor_hour",{fromHour:10,toHour:11},recorded);
+    const result=computeMetric("sales_per_labor_hour",{fromHour:9,toHour:10},recorded);
     expect(result.value).toBeNull();
     expect(result.coverage).toBe(0);
   });

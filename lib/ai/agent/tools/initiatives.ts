@@ -1,15 +1,13 @@
 import "server-only";
 import { z } from "zod";
 import { authenticatedConversationContext } from "@/lib/ai/conversations/auth.server";
-import { proposeInitiativeSchema, initiativeMetricSchema,initiativeStatusSchema }
+import { proposeInitiativeSchema, initiativeProposalBaseSchema,initiativeStatusSchema }
   from "@/lib/initiatives/contracts";
 import { createOwnerInitiative,listOwnerInitiatives,readOwnerInitiative,saveOwnerCheckin }
   from "@/lib/data/initiatives.server";
 import type { AgentToolContext,AgentToolResult } from "./index";
 
-const proposalArgs=proposeInitiativeSchema.safeExtend({
-  // The thread comes only from the server's authenticated agent route, never the model.
-}).omit({threadId:true});
+const proposalArgs=initiativeProposalBaseSchema.omit({threadId:true});
 const listArgs=z.strictObject({status:initiativeStatusSchema.nullable()});
 const statusArgs=z.strictObject({id:z.uuid()});
 const checkinArgs=z.strictObject({

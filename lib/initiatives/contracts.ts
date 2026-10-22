@@ -25,7 +25,7 @@ export const initiativeMetricSchema = z.strictObject({
     ctx.addIssue({code:"custom",message:"unavailable metric requires a check-in question"});
   }
 });
-export const proposeInitiativeSchema=z.strictObject({
+export const initiativeProposalBaseSchema=z.strictObject({
   threadId:z.uuid(),
   kind:z.enum(["goal","experiment"]),
   title:z.string().trim().min(1).max(160),
@@ -38,7 +38,8 @@ export const proposeInitiativeSchema=z.strictObject({
   baselineTo:z.iso.date().nullable(),
   checkinCadence:z.enum(["daily","every_3_days","weekly","end_only"]),
   metrics:z.array(initiativeMetricSchema).min(1).max(12),
-}).superRefine((value,ctx)=>{
+});
+export const proposeInitiativeSchema=initiativeProposalBaseSchema.superRefine((value,ctx)=>{
   const start=Date.parse(value.startsOn+"T12:00:00Z"),end=Date.parse(value.endsOn+"T12:00:00Z");
   const length=(end-start)/86400000+1;
   if(length<7||length>92||!Number.isInteger(length))
