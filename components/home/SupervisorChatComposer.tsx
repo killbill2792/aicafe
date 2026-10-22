@@ -404,13 +404,13 @@ export default function SupervisorChatComposer({
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-          let separator: number;
-          while ((separator = buffer.indexOf("\n\n")) >= 0) {
-            const frame = buffer.slice(0, separator);
-            buffer = buffer.slice(separator + 2);
-            const type = frame.split("\n").find(line => line.startsWith("event: "))?.slice(7);
-            const data = frame.split("\n").find(line => line.startsWith("data: "))?.slice(6);
+          buffer += decoder.decode(value, { stream: true });
+          let boundary: RegExpExecArray | null;
+          while ((boundary = /\r?\n\r?\n/.exec(buffer)) !== null) {
+            const frame = buffer.slice(0, boundary.index);
+            buffer = buffer.slice(boundary.index + boundary[0].length);
+            const type = frame.split(/\r?\n/).find(line => line.startsWith("event: "))?.slice(7);
+            const data = frame.split(/\r?\n/).find(line => line.startsWith("data: "))?.slice(6);
             if (!data) continue;
             const event = JSON.parse(data) as { text?: string; code?: string };
             if (type === "delta" && typeof event.text === "string") {
