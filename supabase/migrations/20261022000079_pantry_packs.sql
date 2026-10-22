@@ -180,6 +180,13 @@ begin
   if jsonb_typeof(p_sizes) is distinct from 'array'
     or jsonb_array_length(p_sizes) not between 3 and 4
     then raise exception 'invalid size set'; end if;
+  -- Canonical menu_items revision triggers update a per-business epoch row.
+  -- Lock EVERY existing sibling in deterministic order before the first INSERT
+  -- or UPDATE can acquire that epoch lock. Otherwise a concurrent activation
+  -- may hold the sibling and wait on the epoch while this RPC waits on sibling.
+  PERFORM 1 FROM public.menu_items
+    WHERE business_id=p_business_id AND base_name=original_base
+    ORDER BY id FOR UPDATE;
   default_size := case when jsonb_array_length(p_sizes)=3 then '16 oz' else '12 oz' end;
   for size_row in select value from jsonb_array_elements(p_sizes) loop
     label := size_row->>'sizeLabel';
