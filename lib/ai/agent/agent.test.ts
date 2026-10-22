@@ -148,3 +148,25 @@ describe("realistic multi-turn numeric claims",()=>{
     expect(checkNumbers("Latte costs $9.75.","",[],"en",saved).map(v=>v.text)).toEqual(["$9.75"]);
   });
 });
+
+describe("Codex adversarial numbers and source units",()=>{
+  it("never silently accepts unsupported staff or sales counts",()=>{
+    expect(checkNumbers("You sold 9 drinks.","",[],"en").map(x=>x.text)).toEqual(["9"]);
+    expect(checkNumbers("Nine? You sold 9 coffees.","",[],"en").map(x=>x.text)).toEqual(["9"]);
+  });
+  it("does not manufacture negated profit or doubled sales by arithmetic closure",()=>{
+    const result={source:"profitability",period:null,missing:[],
+      netSalesCents:20000,totalCostsCents:10000,ownerProfitCents:10000};
+    expect(checkNumbers("Your profit is -$100","",[result],"en").map(x=>x.text)).toEqual(["-$100"]);
+    expect(checkNumbers("Your sales were $400","",[result],"en").map(x=>x.text)).toEqual(["$400"]);
+  });
+  it("understands progress percentages and micro-cents in source-native units",()=>{
+    expect(checkNumbers("63% progress","",[{source:"break_even",period:null,missing:[],
+      estimate:{progressPercent:63}}],"en")).toEqual([]);
+    expect(checkNumbers("Ingredient costs $0.02 per gram","",[{source:"ingredient_prices",period:null,missing:[],
+      items:[{costPerBaseUnitMicros:2_000_000}]}],"en")).toEqual([]);
+  });
+  it("does not trust fabricated opening hours merely because they look like a clock",()=>{
+    expect(checkNumbers("We open at 23:59","",[],"en").length).toBeGreaterThan(0);
+  });
+});
