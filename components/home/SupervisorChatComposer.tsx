@@ -23,7 +23,7 @@ import {ownerQuestionSchema,pendingOwnerInputSchema}
   from "@/lib/ai/supervisor/ownerInput/contracts";
 
 export type SupervisorChatCopy = {
-  askAnything: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
+  askAnything: string; newMessage: string; composerLabel: string; addAttachment: string; voiceInput: string; sendMessage: string; teamButton: string;
   comingSoon: string; suggestions: string[];
   live: string; threads: string; newThread: string; empty: string; loading: string; sending: string;
   statusAlexReading: string; statusLeoReading: string; statusOliviaReading: string;
@@ -709,7 +709,7 @@ export default function SupervisorChatComposer({
       </div>}
       </div>
     </div>
-    {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{locale === "ar" ? "رسالة جديدة" : locale === "es" ? "Mensaje nuevo" : "New message"}</button>}
+    {showNewMessage && <button type="button" onClick={scrollToLatest} className="absolute bottom-28 left-1/2 z-10 inline-flex min-h-12 -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-accent-text shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink"><ArrowDown size={16} aria-hidden="true" />{copy.newMessage}</button>}
     {enabled&&threadId&&experimentCopy&&<SupervisorExperiment threadId={threadId} locale={locale} copy={experimentCopy} initialProposalId={initialProposalId} refreshVersion={messages.length}/>}
     <div className="mt-auto shrink-0 border-t border-line bg-surface2 px-2 py-2 md:px-4">
       {displayedMessages.length === 0 && copy.suggestions.length > 0 && <div className="mb-2 flex max-w-full gap-2 overflow-x-auto pb-1" aria-label={copy.askAnything} >{copy.suggestions.slice(0,3).map(suggestion => <button key={suggestion} type="button" disabled={!enabled || sending} onClick={() => { setDraft(suggestion); retryId.current = null; composer.current?.focus(); }} className="inline-flex min-h-12 w-max shrink-0 items-center whitespace-nowrap rounded-full bg-accent-soft px-4 py-2 text-[15px] font-semibold text-accent-text hover:brightness-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ink disabled:opacity-50">{suggestion}</button>)}</div>}
