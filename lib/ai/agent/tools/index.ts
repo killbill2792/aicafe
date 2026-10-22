@@ -28,7 +28,7 @@ const schemas = { get_profit: periodSchema, get_sales: periodSchema, get_menu_it
   ...staffTools, ...hoursTools, ...moneyTools, ...suppliesTools, ...salesTools } as const;
 export type AgentToolName = keyof typeof schemas;
 export function agentForTool(name:string):"alex"|"olivia"|"maya"|"leo"{return name in staffTools||name in hoursTools?"olivia":name in moneyTools||name==="get_profit"?"leo":name in suppliesTools?"maya":"alex";}
-const descriptions: Record<AgentToolName, string> = {
+const descriptions: Record<string, string> = {
   get_profit: "Read profit for today, trailing seven days or the calendar month. Report missing inputs.",
   get_sales: "Read covered daily sales in a current calendar period.",
   get_menu_items: "Search active menu items by optional query, with optional limit up to 25. Send null when omitted.",
@@ -39,7 +39,7 @@ const descriptions: Record<AgentToolName, string> = {
   ...Object.fromEntries(Object.entries(salesTools).map(([k,v])=>[k,v.description])),
 };
 export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
-  const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema : schemas[name], { target: "draft-07" });
+  const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
   return { type: "function" as const, name, description: descriptions[name], strict: true as const, parameters };
 });
