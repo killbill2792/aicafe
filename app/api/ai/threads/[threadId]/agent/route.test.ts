@@ -203,9 +203,9 @@ describe("default authenticated streaming agent route", () => {
           text:"Menu?",locale:"en"}),
       }),{params:Promise.resolve({threadId:"11111111-1111-4111-8111-111111111111"})});
     const output=await reply.text();
-    expect(output).toContain('event: delta\\ndata: {"text":"Wrong"}');
-    expect(output).toContain('event: reset\\ndata: {"discardChars":5}');
-    expect(output).toContain('event: delta\\ndata: {"text":"not confirmed."}');
+    expect(output).toContain('event: delta\ndata: {"text":"Wrong"}');
+    expect(output).toContain('event: reset\ndata: {"discardChars":5}');
+    expect(output).toContain('event: delta\ndata: {"text":"not confirmed."}');
     expect(output).toContain('event: done');
     expect(fake.usageRecorded).toHaveLength(1);
   });
