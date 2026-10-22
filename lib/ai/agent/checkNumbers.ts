@@ -186,8 +186,8 @@ function timeRole(text:string, clock:ClockSpan):TimeRole|null {
   if(previous){
     const between=phrase.slice(previous.index+previous[0].length);
     const beforeFirst=phrase.slice(0,previous.index);
-    if(/\\bto\\s*$/iu.test(between)&&
-      /\\b(?:open|opens|opening|abrimos|abre|abren)\\s+from\\s*$/iu.test(beforeFirst))
+    if(/\bto\s*$/iu.test(between)&&
+      /\b(?:open|opens|opening|abrimos|abre|abren)\s+from\s*$/iu.test(beforeFirst))
       return "close";
   }
   // EN/ES/AR owner prose is free-form. Recognize common shift paraphrases
@@ -240,7 +240,7 @@ function normalizedEmployeeName(raw:string):string {
   const weekdays=new Set(["monday","tuesday","wednesday","thursday","friday","saturday",
     "sunday","mon","tue","wed","thu","fri","sat","sun","lunes","martes","miércoles",
     "miercoles","jueves","viernes","sábado","sabado","domingo"]);
-  const parts=raw.trim().toLocaleLowerCase().split(/\\s+/u);
+  const parts=raw.trim().toLocaleLowerCase().split(/\s+/u);
   while(parts.length>1&&(connectors.has(parts[0])||weekdays.has(parts[0])))parts.shift();
   while(parts.length>1&&(connectors.has(parts.at(-1)??"")||weekdays.has(parts.at(-1)??"")))parts.pop();
   return parts.join(" ");
