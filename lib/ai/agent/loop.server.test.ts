@@ -261,6 +261,17 @@ describe("tool start labels and cross-turn numeric grounding",()=>{
     expect(result.agentIds).toEqual(["alex"]);
     expect(result.evidence?.flatMap(entry=>entry.values).find(v=>v.key==="items:item-1/priceCents")?.value).toBe(450);
   });
+  it("does not convert a previously formatted assistant list into sales evidence",async()=>{
+    const formatted="1. Review your menu\n2. Check your staffing";
+    const unsupported=await runAgentTurn({ownerText:"What happened?",context,
+      history:[{role:"assistant",content:formatted}],
+      provider:fixture([[text("You sold 2 drinks."),completed]])});
+    expect(unsupported.unverified.map(v=>v.text)).toEqual(["2"]);
+    const ownerGrounded=await runAgentTurn({ownerText:"Repeat my quantity",context,
+      history:[{role:"user",content:"I sold 2 drinks."},{role:"assistant",content:formatted}],
+      provider:fixture([[text("You sold 2 drinks."),completed]])});
+    expect(ownerGrounded.unverified).toEqual([]);
+  });
   it("reuses a prior tool's cents evidence without a new read",async()=>{
     const result=await runAgentTurn({ownerText:"Repeat that price",context,
       previousEvidence:[{tool:"menu_items",values:[{key:"priceCents",value:850,unit:"cents"}]}],
