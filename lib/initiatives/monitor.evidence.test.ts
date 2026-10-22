@@ -29,7 +29,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
       target_kind:"absolute",target:100}],
   }),
   readMetricDay:async(_business:string,date:string)=>({
-    date,facts:{date,netSalesCents:date==="2026-10-07"?state.current:200,
+    date,salesTotalCoverageVerified:true,facts:{date,netSalesCents:date==="2026-10-07"?state.current:200,
       ordersCount:1,drinksCount:1,ingredientsCents:0,wagesCents:0,
       staffTaxCents:0,cardFeesCents:0,voidsCents:0,salesDataStatus:"actual"},
   }),

@@ -34,7 +34,7 @@ vi.mock("@/lib/data/initiatives.server",()=>({
   }),
   readMetricDay:async(_business:string,date:string)=>{
     state.dates.push(date);
-    return {date,facts:{
+    return {date,salesTotalCoverageVerified:true,facts:{
       date,netSalesCents:1000,ordersCount:1,drinksCount:1,
       ingredientsCents:0,wagesCents:0,staffTaxCents:0,
       cardFeesCents:0,voidsCents:0,salesDataStatus:"actual",
