@@ -680,43 +680,112 @@ function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
 }
 
 
+// Owner-spoken numbers are parsed as complete, bounded expressions. A monetary
+// sign, major unit, cents, and quantity unit may not be separated or borrowed
+// from another sentence. Unsupported/ambiguous expressions fail closed.
 const WORD_NUMBERS:Record<AgentLocale,Record<string,number>>={
- en:{zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,twenty:20,thirty:30,forty:40,fifty:50,sixty:60},
- es:{cero:0,uno:1,una:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,veinte:20,treinta:30,cuarenta:40,cincuenta:50},
- ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"ثلاثة":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"تسعة":9,"عشرة":10,"عشرون":20,"خمسون":50}
+  en:{zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19,twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90},
+  es:{cero:0,uno:1,una:1,un:1,dos:2,tres:3,cuatro:4,cinco:5,seis:6,siete:7,ocho:8,nueve:9,diez:10,once:11,doce:12,trece:13,catorce:14,quince:15,dieciseis:16,dieciséis:16,diecisiete:17,dieciocho:18,diecinueve:19,veinte:20,veintiuno:21,veintidós:22,veintidos:22,veintitrés:23,veintitres:23,veinticuatro:24,veinticinco:25,veintiséis:26,veintiseis:26,veintisiete:27,veintiocho:28,veintinueve:29,treinta:30,cuarenta:40,cincuenta:50,sesenta:60,setenta:70,ochenta:80,noventa:90},
+  ar:{"صفر":0,"واحد":1,"واحدة":1,"اثنين":2,"اثنان":2,"اثنتان":2,"اثنتين":2,"ثلاثة":3,"ثلاث":3,"أربعة":4,"اربعة":4,"خمسة":5,"ستة":6,"سبعة":7,"ثمانية":8,"ثمان":8,"تسعة":9,"عشرة":10,"عشرون":20,"ثلاثون":30,"أربعون":40,"اربعون":40,"خمسون":50,"ستون":60,"سبعون":70,"ثمانون":80,"تسعون":90}
 };
-const MONEY_WORDS=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|latte|mocha|wages?|precio|cuesta|costo|coste|dólares?|centavos?|alquiler)\b|(?:سعر|ثمن|تكلفة|دولارات?|سنتات?|ربح)/iu;
-function spokenOwnerValues(text:string,locale:AgentLocale):Array<{value:number;kind:"money"|"number"}>{
- const dict=WORD_NUMBERS[locale];
- const terms=Object.keys(dict).sort((a,b)=>b.length-a.length).join("|");
- const decimalSep=locale==="en"?"point":locale==="es"?"(?:coma|punto|con)":"(?:فاصلة|فاصل)";
- const cash=locale==="en"?"dollars?":locale==="es"?"dólares?":"دولارات?";
- const coins=locale==="en"?"cents?":locale==="es"?"centavos?":"سنتات?|سنتا";
- const re=new RegExp("(?<!\\p{L})("+terms+")(?:\\s+("+decimalSep+")\\s+("+terms+")(?:\\s+("+terms+"))?|\\s+("+cash+")(?:\\s+(?:and|y|و)?\\s*("+terms+")(?:\\s+("+terms+"))?\\s*(?:"+coins+")?)?|\\s+(?:y\\s+|و)?("+terms+"))?(?!\\p{L})","giu");
- const out:Array<{value:number;kind:"money"|"number"}>=[];
- for(const m of text.matchAll(re)){
-   const before=text.slice(0,m.index).split(/[.!?;\n]/u).pop()??"";
-   const after=(text.slice(m.index+m[0].length).split(/[.!?;\n]/u)[0]??"").slice(0,35);
-   const isQuantity=/^\s*(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|bebidas?|personas?|días?|semanas?|أيام|أشخاص|موظفين)/iu.test(after);
-   const monetary=!isQuantity&&(Boolean(m[5])||MONEY_WORDS.test(before)||MONEY_WORDS.test(after));
-   const integer=dict[m[1].toLowerCase()];
-   const fractional=m[3]?dict[m[3].toLowerCase()]:undefined;
-   const fractionTail=m[4]?dict[m[4].toLowerCase()]:undefined;
-   const cents=m[6]?dict[m[6].toLowerCase()]:undefined;
-   const centsTail=m[7]?dict[m[7].toLowerCase()]:undefined;
-   const colloquial=m[8]?dict[m[8].toLowerCase()]:undefined;
-   let value=integer*100;
-   if(fractional!==undefined)value+=fractionTail===undefined?(fractional<10?fractional*10:fractional):fractional*10+fractionTail;
-   else if(cents!==undefined)value+=cents+(centsTail??0);
-   else if(colloquial!==undefined){
-     if(integer>=20&&integer%10===0&&colloquial<10)value+=colloquial*100;
-     else if(colloquial>=10)value+=colloquial;
-   }
-   const unitAfter=text.slice(m.index+m[0].length).trimStart();
-   if(m[3]===undefined&&m[5]===undefined&&/^(?:cents?\b|centavos?\b|céntimos?\b|سنتا|سنتات|سنت\b)/iu.test(unitAfter))value/=100;
-   out.push({value:monetary?value:value/100,kind:monetary?"money":"number"});
- }
- return out;
+type SpokenWord={word:string;start:number;end:number};
+type SpokenValue={value:number;kind:Kind};
+function ownerWordTokens(text:string,locale:AgentLocale):SpokenWord[]{
+  const words:SpokenWord[]=[];
+  for(const match of text.matchAll(/[\p{L}\p{M}]+/gu)){
+    const word=match[0].replace(/[\u064b-\u065f]/gu,"").toLocaleLowerCase();
+    if(locale==="ar"&&word.startsWith("و")&&
+      !Object.hasOwn(WORD_NUMBERS.ar,word)&&
+      Object.hasOwn(WORD_NUMBERS.ar,word.slice(1))){
+      words.push({word:"و",start:match.index,end:match.index+1});
+      words.push({word:word.slice(1),start:match.index+1,end:match.index+match[0].length});
+    }else words.push({word,start:match.index,end:match.index+match[0].length});
+  }
+  return words;
+}
+function spokenOwnerValues(text:string,locale:AgentLocale):SpokenValue[]{
+  const words=ownerWordTokens(text,locale),dict=WORD_NUMBERS[locale];
+  const signs=locale==="en"?["minus","negative"]:locale==="es"?["menos","negativo","negativa"]:["سالب","ناقص"];
+  const joiners=locale==="en"?["and"]:locale==="es"?["y"]:["و"];
+  const decimalWords=locale==="en"?["point"]:locale==="es"?["coma","punto","con"]:["فاصلة","فاصل"];
+  const dollars=locale==="en"?["dollar","dollars","buck","bucks"]:
+    locale==="es"?["dólar","dólares","dolar","dolares","euro","euros"]:["دولار","دولارات","ريال","ريالات","درهم","دراهم"];
+  const centsUnits=locale==="en"?["cent","cents"]:
+    locale==="es"?["centavo","centavos","céntimo","céntimos"]:["سنت","سنتا","سنتات"];
+  const percents=locale==="en"?["percent"]:locale==="es"?["porciento"]:["بالمئة","بالمائة"];
+  const unsupported=locale==="en"?["hundred","thousand","million"]:
+    locale==="es"?["cien","ciento","cientos","mil","millón","millon"]:["مئة","مائة","ألف","الف"];
+  const monetaryContext=/\b(?:price|cost|costs|dollars?|cents?|rent|profit|loss|salary|wages?|fee|bill|latte|mocha|espresso|precio|cuesta|costo|coste|dólares?|centavos?|alquiler|ganancia)\b|(?:سعر|ثمن|تكلفة|دولار|سنت|ربح|خسارة)/iu;
+  const quantities=/^(?:drinks?|orders?|people|employees?|staff|cups?|days?|weeks?|coffees?|customers?|bebidas?|personas?|días?|semanas?|أيام|ايام|أسابيع|موظفين|أشخاص|اشخاص)(?!\p{L})/iu;
+  const result:SpokenValue[]=[];
+  const is=(i:number,list:readonly string[])=>i<words.length&&list.includes(words[i].word);
+  const number=(at:number):{value:number;next:number}|null=>{
+    const major=words[at]&&dict[words[at].word];
+    if(major===undefined)return null;
+    let next=at+1,value=major;
+    const connector=is(next,joiners)?1:0;
+    const minor=words[next+connector]&&dict[words[next+connector].word];
+    if(major>=20&&major%10===0&&minor!==undefined&&minor>0&&minor<10){
+      value+=minor;next+=connector+1;
+    }
+    return {value,next};
+  };
+  for(let i=0;i<words.length;){
+    const initial=i,negative=is(i,signs);
+    if(negative)i++;
+    const whole=number(i);
+    if(!whole){i=initial+1;continue;}
+    let next=whole.next,value=whole.value*100;
+    let attachedMoney=false,attachedPercent=false;
+    if(is(next,decimalWords)){
+      const fractional=number(next+1);
+      if(!fractional){i=next+1;continue;}
+      const component= fractional.value<10 ? fractional.value*10 : fractional.value;
+      value+=component;
+      next=fractional.next;
+      // "point zero five" is five cents, not fifty cents.
+      if(fractional.value===0){
+        const second=number(next);
+        if(second&&second.value<10){value+=second.value;next=second.next;}
+      }
+    } else if(is(next,dollars)){
+      attachedMoney=true;next++;
+      const conjunct=is(next,joiners)?1:0;
+      const fractional=number(next+conjunct);
+      if(fractional&&fractional.value<=99){
+        value+=fractional.value<10?fractional.value*10:fractional.value;
+        next=fractional.next;
+        if(is(next,centsUnits))next++;
+      }
+    } else if(is(next,centsUnits)){
+      attachedMoney=true;value=whole.value;next++;
+    } else {
+      const colloquial=number(next);
+      if(colloquial&&whole.value<=19&&colloquial.value>=10&&colloquial.value<=99){
+        value+=colloquial.value;next=colloquial.next;
+        attachedMoney=true;
+      }
+    }
+    if(is(next,dollars)){attachedMoney=true;next++;}
+    if(is(next,percents)){attachedPercent=true;next++;}
+    else if(locale==="es"&&is(next,["por"])&&is(next+1,["ciento"])){
+      attachedPercent=true;next+=2;
+    }
+    if(is(next,centsUnits)&&!attachedMoney){attachedMoney=true;value=Math.round(value/100);next++;}
+    const prefix=text.slice(Math.max(0,words[initial].start-100),words[initial].start);
+    const before=prefix.split(/[.!?;\n]/u).pop()??"";
+    const after=text.slice(words[next-1].end).split(/[.!?;\n]/u)[0]??"";
+    const explicitQuantity=quantities.test(after.trimStart());
+    const unsupportedAdjacent=words[initial-1]&&unsupported.includes(words[initial-1].word)||
+      words[next]&&unsupported.includes(words[next].word);
+    if(unsupportedAdjacent){i=next;continue;}
+    const money=!explicitQuantity&&(attachedMoney||monetaryContext.test(before)||monetaryContext.test(after.slice(0,30)));
+    const signed=negative?-1:1;
+    result.push({value:signed*(attachedPercent?value:money?value:value/100),
+      kind:attachedPercent?"percent":money?"money":"number"});
+    i=next;
+  }
+  return result;
 }
 function proposedDuration(text:string,start:number,end:number):boolean{
  const before=text.slice(Math.max(0,start-55),start),after=text.slice(end,end+25);
