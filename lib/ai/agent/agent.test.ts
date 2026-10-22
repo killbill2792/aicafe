@@ -397,3 +397,21 @@ describe("Codex: typed roles, weekdays and staff identity in time evidence", () 
       "", [schedule], "en").length).toBeGreaterThan(0);
   });
 });
+
+
+describe("Owner-reported times retain semantic context",()=>{
+  it("does not promote the owner's shift time into unrelated opening hours",()=>{
+    const owner="Ada’s shift starts at 8:00 AM on Monday.";
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday.",owner,[],"en")).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on Monday.",owner,[],"en")
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Tuesday.",owner,[],"en")
+      .length).toBeGreaterThan(0);
+  });
+  it("does not use an owner-described opening as evidence for closing",()=>{
+    const owner="We open at 8:00 AM on Monday.";
+    expect(checkNumbers(owner,owner,[],"en")).toEqual([]);
+    expect(checkNumbers("We close at 8:00 AM on Monday.",owner,[],"en")
+      .length).toBeGreaterThan(0);
+  });
+});
