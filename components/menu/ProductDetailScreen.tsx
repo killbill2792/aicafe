@@ -18,6 +18,7 @@ import MenuPricePreview from "./MenuPricePreview";
 import AllSizesRecipe from "./AllSizesRecipe";
 import MenuAddonsPanel, {type PricedPantry} from "./MenuAddonsPanel";
 import type {MenuAddon} from "@/lib/actions/menuAddons";
+import type {UnpricedMenuSize} from "@/lib/data/getUnpricedProductSizes";
 import { getItemPricingStatus } from "@/lib/viewmodels/menuCatalogViewModel";
 
 type Period="today"|"days7"|"days30";
@@ -26,7 +27,7 @@ const EMPTY_PRICE_EVIDENCE = {
  salesResponse: { status: "no_change_history" as const },
  nearbyMarket: { status: "unavailable" as const, verifiedNearbyCount: 0, minimumCompetitors: 3 },
 };
-export default function ProductDetailScreen({item,pantry,savedAddons,ingredients,ingredientConversions,siblingSizes,productEditItems,photo,businessId,focusedSizeId,initialTab,initialPriceItemId}:{item:MenuControlItem;pantry:PricedPantry[];savedAddons:MenuAddon[];ingredients:IngredientOption[];menuGroupOptions:string[];ingredientConversions:Record<string,IngredientUnitConversion[]>;siblingSizes:MenuControlItem[];productEditItems:MenuItemForEdit[];photo:ProductPhoto;businessId:string|null;focusedSizeId?:string;justCreated?:boolean;initialTab:MenuDetailTab;initialPriceItemId?:string;copiedFrom?:string}){
+export default function ProductDetailScreen({item,pantry,savedAddons,draftSizes,ingredients,ingredientConversions,siblingSizes,productEditItems,photo,businessId,focusedSizeId,initialTab,initialPriceItemId}:{item:MenuControlItem;pantry:PricedPantry[];savedAddons:MenuAddon[];draftSizes:UnpricedMenuSize[];ingredients:IngredientOption[];menuGroupOptions:string[];ingredientConversions:Record<string,IngredientUnitConversion[]>;siblingSizes:MenuControlItem[];productEditItems:MenuItemForEdit[];photo:ProductPhoto;businessId:string|null;focusedSizeId?:string;justCreated?:boolean;initialTab:MenuDetailTab;initialPriceItemId?:string;copiedFrom?:string}){
  const t=useTranslations("Menu");const te=useTranslations("ManageMenu");const builder=useTranslations("MenuBuilder");const useAddonsLabel=builder("addons");const router=useRouter();const pathname=usePathname();const statusChip=usePricingStatusChip();const all=stableSortSizes([item,...siblingSizes]);const [tab,setTab]=useState(initialTab);const [editingPriceId,setEditingPriceId]=useState<string|null>(all.some(size=>size.id===initialPriceItemId)?initialPriceItemId??null:null);const [renaming,setRenaming]=useState(false);const [name,setName]=useState(item.baseName);const [pending,start]=useTransition();const [error,setError]=useState<string|null>(null);const productActive=all.some(size=>size.active);
  function navigate(next:MenuDetailTab,size?:string){setTab(next);router.replace(`${pathname}?tab=${next}${size?`&size=${encodeURIComponent(size)}`:""}`,{scroll:false});}
  function saveName(){start(async()=>{const r=await renameProduct({menuItemId:item.id,name});if(r.ok){setRenaming(false);router.refresh();}else setError(r.error);});}
@@ -41,7 +42,7 @@ export default function ProductDetailScreen({item,pantry,savedAddons,ingredients
   {tab==="recipe"&&<>
    {productEditItems.some(entry=>entry.recipe.length===0)&&<AggregateProductCostEditor items={productEditItems.filter(entry=>entry.recipe.length===0)}
      labels={{title:t("aggregateCostTitle"),help:t("aggregateCostHelp"),perSize:t("aggregateCostPerSize"),input:t("aggregateCostInput"),save:t("aggregateCostSave"),remove:t("aggregateCostRemove"),saved:t("aggregateCostSaved"),usingOwner:t("aggregateCostOwnerActive"),usingOwnerEstimate:t("aggregateCostOwnerEstimateActive"),usingImported:t("aggregateCostImportedActive"),usingImportedEstimate:t("aggregateCostImportedEstimateActive"),usingRecipe:t("aggregateCostRecipeActive"),recipeOnly:t("aggregateCostRecipeOnly"),missing:t("aggregateCostMissing"),recipeHigher:t("aggregateCostRecipeHigher"),recipeLower:t("aggregateCostRecipeLower"),same:t("aggregateCostSame"),invalid:t("aggregateCostInvalid"),error:t("aggregateCostError")}}/>}
-   <AllSizesRecipe items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry}/>
+   <AllSizesRecipe items={productEditItems} ingredients={ingredients} conversions={ingredientConversions} pantry={pantry} draftSizes={draftSizes}/>
   </>} 
  </>;
 }
