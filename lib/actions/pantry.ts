@@ -105,6 +105,8 @@ export async function listPantry(): Promise<Array<{
   });
 }
 
+/** One RPC transaction uses the database's partial unique index to handle concurrent
+ * "add starters" requests. Retrying is safe and preserves edited pump/shot conversions. */
 export async function addFromStarter(keys: string[]): Promise<PantryResult> {
   const parsed = z.array(z.string().trim().min(1)).min(1).max(80).safeParse(keys);
   if (!parsed.success) return bad("invalid_starter_keys");
@@ -112,41 +114,18 @@ export async function addFromStarter(keys: string[]): Promise<PantryResult> {
   if (chosen.some((key) => !PANTRY_STARTERS_BY_KEY.has(key))) return bad("unknown_starter_key");
   const scope = await activeScope();
   if (!scope) return bad("sign_in_required");
-  const { db, businessId } = scope;
-  const { data: before, error: lookupError } = await db.from("ingredients")
-    .select("id, starter_key").eq("business_id", businessId).in("starter_key", chosen);
-  if (lookupError) return queryFailed("pantry:addStarter:lookup", lookupError);
-  const existing = new Set((before ?? []).map((row) => row.starter_key));
-  const toInsert = chosen.filter((key) => !existing.has(key)).map((key) => {
+  const items = chosen.map((key) => {
     const starter = PANTRY_STARTERS_BY_KEY.get(key)!;
-    return { business_id: businessId, starter_key: starter.key, name: starter.name,
-      category: starter.category, base_unit: starter.baseUnit };
+    return { starterKey: starter.key, name: starter.name, baseUnit: starter.baseUnit,
+      category: starter.category, operationalUnit: starter.operationalUnit ?? null,
+      baseUnitsPerOperationalUnit: starter.baseUnitsPerOperationalUnit ?? null };
   });
-  if (toInsert.length) {
-    const { error } = await db.from("ingredients").insert(toInsert);
-    // Parallel requests can both observe missing rows. The partial unique index is the
-    // concurrency backstop; on 23505 re-read rather than create a duplicate.
-    if (error && error.code !== "23505") return queryFailed("pantry:addStarter:insert", error);
-  }
-  const { data: all, error: allError } = await db.from("ingredients")
-    .select("id, starter_key").eq("business_id", businessId).in("starter_key", chosen);
-  if (allError || !all || all.length !== chosen.length) return queryFailed("pantry:addStarter:confirm", allError);
-  // INSERT only, never UPSERT: revisiting starters must not overwrite an owner's pump size.
-  for (const row of all) {
-    const starter = PANTRY_STARTERS_BY_KEY.get(row.starter_key!)!;
-    if (!starter.operationalUnit) continue;
-    const { data: already, error: readError } = await db.from("ingredient_unit_conversions")
-      .select("id").eq("ingredient_id", row.id).eq("unit", starter.operationalUnit).maybeSingle();
-    if (readError) return queryFailed("pantry:addStarter:conversionRead", readError);
-    if (already) continue;
-    const { error: insertError } = await db.from("ingredient_unit_conversions")
-      .insert({ ingredient_id: row.id, unit: starter.operationalUnit,
-        base_units_per_unit: starter.baseUnitsPerOperationalUnit });
-    if (insertError && insertError.code !== "23505")
-      return queryFailed("pantry:addStarter:conversion", insertError);
-  }
+  const { data, error } = await scope.db.rpc("pantry_add_starters", {
+    p_business_id: scope.businessId, p_items: items,
+  });
+  if (error) return queryFailed("pantry:addFromStarter:atomic", error);
   changedMenu();
-  return { ok: true, addedKeys: chosen.filter((key) => !existing.has(key)) };
+  return { ok: true, addedKeys: (data as { addedKeys?: string[] } | null)?.addedKeys ?? [] };
 }
 
 export async function savePackPrice(input: z.infer<typeof packInput>): Promise<PantryResult> {
