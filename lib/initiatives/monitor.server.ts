@@ -95,22 +95,25 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
       const correctionExpiry=dayOffset(initiative.ends_on,14);
       const afterWindow=today>correctionExpiry;
       const requiredDates=[...new Set([...testDates,...closestBaseline])];
+      // Every attempted source sample, including a previously uncovered one,
+      // needs a final successful source recheck after the correction window.
+      // A null observation value is a valid *rechecked gap*, not verified zero.
       const requiresFreshVerification=(date:string)=>graph.metrics.some(metric=>
         metric.source==="computed"&&(byMetric.get(metric.id)??[]).some(o=>
-          o.business_date===date&&o.coverage>=1&&
+          o.business_date===date&&
           (!o.verified_at||o.verified_at.slice(0,10)<=correctionExpiry)));
       const eligibleCorrection=!afterWindow||requiredDates.some(requiresFreshVerification);
       // Oldest successfully verified evidence first: revisiting a day moves it
       // to the tail, so large windows cannot repeatedly starve older samples.
       const covered=requiredDates.filter(d=>graph.metrics.some(metric=>
         metric.source==="computed"&&
-        byMetric.get(metric.id)?.some(o=>o.business_date===d&&o.coverage>=1)))
+        byMetric.get(metric.id)?.some(o=>o.business_date===d)))
         .filter(d=>!afterWindow||requiresFreshVerification(d))
         .sort((a,b)=>{
           const earliest=(d:string)=>graph.metrics
             .filter(metric=>metric.source==="computed")
             .flatMap(metric=>(byMetric.get(metric.id)??[])
-              .filter(o=>o.business_date===d&&o.coverage>=1)
+              .filter(o=>o.business_date===d)
               .map(o=>o.verified_at??""))
             .sort()[0]??"";
           return earliest(a).localeCompare(earliest(b))||a.localeCompare(b);
@@ -136,15 +139,22 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           assertBudget();
           if(!metric.metric_key)continue;
           const result=computeMetric(metric.metric_key as MetricKey,metric.params,input);
+          const prior=byMetric.get(metric.id)!;
+          const position=prior.findIndex(o=>o.business_date===date);
+          const previous=position>=0?prior[position]:undefined;
+          const note=result.missing.join(",")||null;
+          // The SQL writer increments the observation revision only for a
+          // changed value, coverage or note, not merely a recheck timestamp.
+          const evidenceChanged=!previous||Number(previous.coverage)!==result.coverage||
+            previous.value!==result.value||previous.note!==note;
           const row:ObservationRow={
             metric_id:metric.id,business_date:date,value:result.value,
-            coverage:result.coverage,source:"computed",note:result.missing.join(",")||null,
-            revision:1,verified_at:now.toISOString(),
+            coverage:result.coverage,source:"computed",note,
+            revision:(previous?.revision??0)+(evidenceChanged?1:0),
+            verified_at:now.toISOString(),
           };
           if(await persistMetricObservation(scope,initiative.id,token,row,result.invalidatesPrevious===true)){
             stats.sampled++;
-            const prior=byMetric.get(metric.id)!;
-            const position=prior.findIndex(o=>o.business_date===date);
             if(position>=0)prior[position]=row;
             else prior.push(row);
           }
@@ -208,8 +218,16 @@ export async function monitorInitiatives(now:Date=new Date()):Promise<MonitorSta
           evaluation.status,evaluation.recommendation,
         ].join(":")).digest("hex");
       // Replayable immutable snapshot: definitions, baseline and test day inputs.
+      // Evidence identity must survive A -> B -> A corrections with an
+      // unchanged status/recommendation. Each changed persisted observation
+      // has a monotonically increasing revision, including owner check-ins.
+      const versions=[...byMetric].flatMap(([metricId,obs])=>obs.map(o=>({
+        metricId,date:o.business_date,revision:o.revision,source:o.source,
+      }))).sort((a,b)=>a.metricId.localeCompare(b.metricId)||
+        a.date.localeCompare(b.date));
       const inputs={asOf,endsOn:initiative.ends_on,kind:initiative.kind,
-        minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id))};
+        minCoverage:0.8,metrics:[...goalMetrics].sort((a,b)=>a.id.localeCompare(b.id)),
+        evidenceVersions:versions};
       await persistInitiativeEvaluation(scope,initiative.id,asOf,
         evaluation.status,evaluation.recommendation,evaluation.results,inputs,transitionKey,token);
       // Retry an undelivered status notification independently. The M0 unique
