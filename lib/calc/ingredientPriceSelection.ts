@@ -11,6 +11,16 @@ export type EffectivePriceChoice<T> =
   | { status: "ready"; price: T }
   | { status: "missing" | "ambiguous" | "invalid" };
 
+/** UTC microsecond ordering. Date.parse drops digits after milliseconds; that would
+ * make distinct PostgreSQL recorded_at values look tied and select the wrong row. */
+function microsecondEpoch(iso: string): bigint | null {
+  const match = /^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})(?:\\.(\\d{1,6}))?(Z|[+-]\\d{2}:\\d{2})$/.exec(iso);
+  if (!match) return null;
+  const seconds = Date.parse(match[1] + match[3]);
+  if (!Number.isFinite(seconds)) return null;
+  return BigInt(seconds) * 1000n + BigInt((match[2] ?? "").padEnd(6,"0") || "0");
+}
+
 export function latestEffectiveIngredientPrice<T extends EffectiveIngredientPrice>(
   prices: readonly T[], ingredientId: string, day: string,
 ): EffectivePriceChoice<T> {
@@ -22,10 +32,12 @@ export function latestEffectiveIngredientPrice<T extends EffectiveIngredientPric
   // same-day order for historical/fixture payloads where it is absent.
   if (latest.length > 1 && latest.some(p => !p.recorded_at))
     return { status: "ambiguous" };
-  const dates = latest.map(p => p.recorded_at ? Date.parse(p.recorded_at) : 0);
-  if (dates.some(n => !Number.isFinite(n))) return { status: "invalid" };
-  const ordered = latest.map((price, index) => ({ price, timestamp: dates[index] }))
-    .sort((a,b) => b.timestamp-a.timestamp || b.price.id.localeCompare(a.price.id,"en"));
+  const dates = latest.map(p => p.recorded_at ? microsecondEpoch(p.recorded_at) : 0n);
+  if (dates.some(n => n === null)) return { status: "invalid" };
+  const ordered = latest.map((price, index) => ({ price, timestamp: dates[index]! }))
+    .sort((a,b) => a.timestamp === b.timestamp
+      ? (a.price.id === b.price.id ? 0 : a.price.id < b.price.id ? 1 : -1)
+      : a.timestamp < b.timestamp ? 1 : -1);
   const selected = ordered[0]?.price;
   if (!selected || !Number.isSafeInteger(selected.cost_per_base_unit_micros) ||
       selected.cost_per_base_unit_micros < 0) return { status: "invalid" };
