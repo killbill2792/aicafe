@@ -1,15 +1,21 @@
 import type { AgentLocale, AgentToolResult } from "./tools";
 
 export type NumericEvidence = {tool:string;values:Array<{key:string;value:number;unit:"cents"|"bps"|"ratio"|"count"}>};
+// Only business collections, not diagnostics or metadata, establish counts.
+// This same contract applies to current-turn and persisted numeric evidence.
+const COUNTABLE_COLLECTIONS = new Set(["items","people","shifts","laborDays","days","categories","attendanceRecords"]);
+const NON_EVIDENCE_FIELDS = new Set(["source","agentId","labels","period","date",
+  "missing","estimated","warnings","stale","quality","missingInputs","estimatedInputs","staleInputs"]);
+
 export function compactEvidence(results:readonly AgentToolResult[]):NumericEvidence[]{
   let remaining=100;
   return results.map(r=>{
     const values:NumericEvidence["values"]=[];
     const periodKey=r.period?r.period.from+"/"+r.period.to+"/":"";
     const walk=(v:unknown,key:string,depth:number,scope="")=>{
-      if(remaining<=0||depth>6)return;
+      if(remaining<=0||depth>6||NON_EVIDENCE_FIELDS.has(key))return;
       if(Array.isArray(v)){
-        if(key!=="missing"&&remaining>0){
+        if(COUNTABLE_COLLECTIONS.has(key)&&remaining>0){
           values.push({key:periodKey+scope+key+"Length",value:v.length,unit:"count"});remaining--;
         }
         for(const item of v){
@@ -111,8 +117,8 @@ function isListMarker(text: string, start: number, end: number, value: number): 
   // A standalone "9. Sales are missing" is not safely a list marker.
   if (/^[ \t]*$/u.test(line)) {
     if (value === 1) return true;
-    const earlier = before.slice(0, breakAt);
-    const priorLine = earlier.slice(earlier.lastIndexOf("\n") + 1);
+    const priorLine = before.slice(0, breakAt).split("\n").reverse()
+      .find(candidate => candidate.trim().length > 0) ?? "";
     const priorMarker = priorLine.match(/^[ \t]*([1-9]\d?)[.)][ \t]+\S/u);
     return priorMarker !== null && Number(priorMarker[1]) + 1 === value;
   }
@@ -134,10 +140,15 @@ function isCurrencylessMoneyClaim(text: string, start: number, end: number): boo
 }
 
 function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
-  if (Array.isArray(data)) { if(/^(?:items|people|shifts|laborDays|days|categories|attendanceRecords)$/u.test(key))allowed.number.add(data.length); data.forEach(v => allowFromData(v, allowed, key)); return; }
+  if (NON_EVIDENCE_FIELDS.has(key)) return;
+  if (Array.isArray(data)) {
+    if (COUNTABLE_COLLECTIONS.has(key)) allowed.number.add(data.length);
+    data.forEach(v => allowFromData(v, allowed, key));
+    return;
+  }
   if (data && typeof data === "object") {
     for (const [k,v] of Object.entries(data)) {
-      if (k === "labels" || k === "period" || k === "date") continue;
+      if (NON_EVIDENCE_FIELDS.has(k)) continue;
       allowFromData(v, allowed, k);
     }
     return;
@@ -201,19 +212,24 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
   }
   const knownTimes = results.filter(r=>r.missing.length===0&&/hours|schedule/.test(r.source))
     .map(r=>JSON.stringify(r)).join(" ");
+  // Clock tokens are formatting only for their *own* numeric spans. A nearby
+  // time must never exempt an unrelated sale, staffing, or monetary number.
+  const clocks = [...text.matchAll(/(?<!\d)\d{1,2}:\d{2}(?:\s*(?:AM|PM))?(?!\d)|(?<!\d)\d{1,2}\s*(?:AM|PM)\b|(?<!\d)\d{1,2}h(?:\d{2})?\b/giu)];
+  const businessTimeClaim = /\b(?:we\s+open|we\s+close|open\s+at|close\s+at|shift\s+(?:starts|ends)|business\s+hours)\b/iu.test(text);
   return candidates(text, locale).filter(v => {
     if(v.kind==="number" && isListMarker(text,v.start,v.end,v.value))return false;
-    const local=text.slice(Math.max(0,v.start-5),Math.min(text.length,v.end+7));
-    if(v.kind==="number" && (/\d{1,2}:\d{2}/u.test(local) || /\b\d{1,2}\s*(?:AM|PM)\b/iu.test(local) ||
-      /\b\d{1,2}h(?:\d{2})?\b/iu.test(local))) {
-      if(!/\b(?:we\s+open|we\s+close|open\s+at|close\s+at|shift\s+(?:starts|ends)|business\s+hours)\b/i.test(text))return false;
-      const matched=local.match(/(\d{1,2}):(\d{2})(?:\s*(AM|PM))?/i);
+    const clock = v.kind==="number" ? clocks.find(m =>
+      v.start < m.index + m[0].length && v.end > m.index) : undefined;
+    if(clock){
+      if(!businessTimeClaim)return false;
+      const matched=clock[0].match(/^(\d{1,2})(?::(\d{2}))?(?:\s*(AM|PM)|h(\d{2})?)?$/iu);
       if(matched){
         let hour=Number(matched[1]);
         if(matched[3])hour=(hour%12)+(matched[3].toUpperCase()==="PM"?12:0);
-        const canonical=String(hour).padStart(2,"0")+":"+matched[2];
-        if(knownTimes.includes(canonical)||ownerText.includes(matched[0])||ownerText.includes(canonical))return false;
+        const canonical=String(hour).padStart(2,"0")+":"+(matched[2]??matched[4]??"00");
+        return !(knownTimes.includes(canonical)||ownerText.includes(clock[0])||ownerText.includes(canonical));
       }
+      return true; // Unparseable business-hour claims remain unverified.
     }
     const supported = [...allowed[v.kind]].some(x =>
       Math.abs(x - v.value) <= (v.kind === "money" ? 1 : v.kind === "percent" ? v.wholePercent ? 50 : 10 : 0));
