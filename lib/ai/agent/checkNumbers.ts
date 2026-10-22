@@ -375,7 +375,15 @@ function mentionedWeekdays(text:string,clock:ClockSpan,clocks:ClockSpan[]):strin
   // Names following one clock belong to that clock, not to the next clock.
   // Prefer a closer preceding weekday for "Monday at 8 and Tuesday at 9".
   const selected=nearestAfter<=nearestBefore?after:before;
-  return [...new Set(selected.map(m=>m.day))];
+  if(selected.length>0)return [...new Set(selected.map(m=>m.day))];
+  // A single trailing weekday can govern *both* endpoints of a genuine
+  // "open from 8:00 to 17:00 on Tuesday" interval.
+  if(next&&timeRole(text,clock)==="open"&&timeRole(text,next)==="close"){
+    const tail=mentions(text.slice(clockEnd(next),sentenceEnd),clockEnd(next));
+    return [...new Set(tail.map(m=>m.day))];
+  }
+  return [];
+
 }
 type ShiftPersonClaim = {kind:"general"}|{kind:"named";name:string}|{kind:"unresolved"};
 // Candidate captures intentionally include a possible second name word. Trim
@@ -400,6 +408,14 @@ function assertedShiftPerson(text:string,clock:ClockSpan):ShiftPersonClaim {
   const before=text.slice(start,clock.index), after=text.slice(clockEnd(clock),sentenceEnd);
   // Preserve the named person across qualifiers such as "Bob's morning
   // shift" and after-the-clock "shift ... for Bob" constructions.
+  // Localized constructions must retain the employee identity. Never
+  // degrade "El turno de Bob..." to an anonymous shift backed by Ada.
+  const spanish=before.match(/\b(?:turno|jornada)\s+(?:de|del)\s+([\p{L}\p{M}]+)/iu);
+  if(spanish)return {kind:"named",name:normalizedEmployeeName(spanish[1])};
+  const arabic=before.match(/(?:وردية|مناوبة)\s+(?:لـ?\s*)?([\p{L}\p{M}]+)/u);
+  if(arabic)return {kind:"named",name:normalizedEmployeeName(arabic[1])};
+  if(/\b(?:turno|jornada)\s+(?:de|del)\s+\S+|(?:وردية|مناوبة)\s+\S+/iu.test(before))
+    return {kind:"unresolved"};
   const possessive=[...before.matchAll(/([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)['’]s\s+(?:[\p{L}\p{M}\d-]+\s+){0,5}shift\b/giu)].at(-1);
   if(possessive)return {kind:"named",name:normalizedEmployeeName(possessive[1])};
   const subject=[...before.matchAll(/(?:^|[^\p{L}\p{M}])([\p{L}\p{M}]+(?:[ \t-]+[\p{L}\p{M}]+)?)\s+(?:starts?|begins?|ends?|finishes?)\s+(?:his|her|their)\s+(?:[\p{L}\p{M}]+\s+){0,3}shift\b/giu)].at(-1);
@@ -436,7 +452,7 @@ function parseCalendarReference(raw:string):string|null|undefined {
   if(iso)return isoCalendarDate(Number(iso[1]),Number(iso[2]),Number(iso[3]));
   // Short slash dates are locale-ambiguous; keep the clock unverified.
   if(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/u.test(clause))return null;
-  const months=new RegExp("("+MONTH_LABEL+")","iu");
+  const months=new RegExp("(?<![\\p{L}\\p{M}])("+MONTH_LABEL+")(?![\\p{L}\\p{M}])","iu");
   if(!months.test(clause))return undefined;
   const forward=clause.match(new RegExp("("+MONTH_LABEL+")\\s+(\\d{1,2})(?:st|nd|rd|th)?[,]?\\s+(\\d{4})","iu"));
   if(forward)return isoCalendarDate(Number(forward[3]),CALENDAR_MONTHS[forward[1].toLocaleLowerCase()],Number(forward[2]));
