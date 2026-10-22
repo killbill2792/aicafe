@@ -680,9 +680,7 @@ export default function SupervisorChatComposer({
               const displayValue=isOption&&question.data.input.kind==="options"?
                 question.data.input.options.find(o=>o.id===value)?.label[locale]??value:value;
               void sendText(action==="dismiss"?copy.ownerInputDismiss:
-                action==="confirm"?copy.ownerInputConfirm:displayValue,undefined,{
-                questionId:question.data.questionId,action,
-                ...(action==="supply"?{value}:{})});
+                action==="confirm"?copy.ownerInputConfirm:displayValue);
               return;
             }
             // Existing known-record clarification remains a normal owner statement.
