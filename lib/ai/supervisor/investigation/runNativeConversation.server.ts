@@ -268,7 +268,7 @@ export async function runNativeConversationTurn(input:InvestigationInput,transpo
      // Names and identifiers are already in the authenticated record labels.
      // They are never treated as standalone financial conclusions.
      if(["id","name","base_name","productName","employeeName","displayName","productId",
-       "sourceId","taskId"].includes(field))continue;
+       "sourceId","taskId","sizeLabel","size_label","category","active"].includes(field))continue;
      // Only a declared USD amount is a valid operand. Wage rates,
      // dimensional quantities, percentages and unknown numeric fields are
      // for display but cannot be silently treated as ordinary cents/counts.
