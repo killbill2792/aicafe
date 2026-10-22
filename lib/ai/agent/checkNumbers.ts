@@ -627,6 +627,9 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
         Number.isSafeInteger(price.priceCents))canonicalPrices.set(price.id,price);
   }
   const itemPrices=[...canonicalPrices.values()];
+  // Unnamed money statements may refer to a current menu price, but never
+  // to an old price superseded by another tool's fresh product observation.
+  for(const item of itemPrices)allowed.money.add(item.priceCents);
   const menuPrices=itemPrices;
   const ownerNumbers=candidates(ownerText,locale);
   ownerNumbers.forEach(v=>allowed[v.kind].add(v.value));
