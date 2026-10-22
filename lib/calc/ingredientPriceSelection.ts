@@ -18,7 +18,7 @@ function microsecondEpoch(iso: string): bigint | null {
   if (!match) return null;
   const seconds = Date.parse(match[1] + match[3]);
   if (!Number.isFinite(seconds)) return null;
-  return BigInt(seconds) * 1000n + BigInt((match[2] ?? "").padEnd(6,"0") || "0");
+  return BigInt(seconds) * BigInt(1000) + BigInt((match[2] ?? "").padEnd(6,"0") || "0");
 }
 
 export function latestEffectiveIngredientPrice<T extends EffectiveIngredientPrice>(
@@ -32,7 +32,7 @@ export function latestEffectiveIngredientPrice<T extends EffectiveIngredientPric
   // same-day order for historical/fixture payloads where it is absent.
   if (latest.length > 1 && latest.some(p => !p.recorded_at))
     return { status: "ambiguous" };
-  const dates = latest.map(p => p.recorded_at ? microsecondEpoch(p.recorded_at) : 0n);
+  const dates = latest.map(p => p.recorded_at ? microsecondEpoch(p.recorded_at) : BigInt(0));
   if (dates.some(n => n === null)) return { status: "invalid" };
   const ordered = latest.map((price, index) => ({ price, timestamp: dates[index]! }))
     .sort((a,b) => a.timestamp === b.timestamp
