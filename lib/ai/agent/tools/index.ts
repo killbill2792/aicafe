@@ -36,7 +36,12 @@ const descriptions: Record<string, string> = {
 export const agentToolDefinitions = (Object.keys(schemas) as AgentToolName[]).map(name => {
   const { $schema: _schema, ...parameters } = z.toJSONSchema("schema" in schemas[name] ? schemas[name].schema as z.ZodType : schemas[name], { target: "draft-07" });
   void _schema;
-  return { type: "function" as const, name, description: "description" in schemas[name] ? schemas[name].description : descriptions[name], strict: true as const, parameters };
+  // Empty strict Zod objects omit required in JSON Schema; OpenAI needs it explicitly.
+  const properties=parameters.properties;
+  const required=properties && typeof properties==="object" ? Object.keys(properties) : [];
+  return { type: "function" as const, name,
+    description: "description" in schemas[name] ? schemas[name].description : descriptions[name],
+    strict: true as const, parameters:{...parameters,required} };
 });
 export const agentLabelsPrompt = "Field labels by language (use matching language, not translated numeric units): " +
   JSON.stringify({ en: en.AgentFields, es: es.AgentFields, ar: ar.AgentFields });
