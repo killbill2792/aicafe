@@ -407,28 +407,6 @@ function observedShifts(results:readonly AgentToolResult[]):VerifiedTime[] {
   return known;
 }
 
-function allowFromData(data: unknown, allowed: Record<Kind, Set<number>>, key = ""): void {
-  if (NON_EVIDENCE_FIELDS.has(key)) return;
-  if (Array.isArray(data)) {
-    if (COUNTABLE_COLLECTIONS.has(key)) allowed.number.add(data.length);
-    data.forEach(v => allowFromData(v, allowed, key));
-    return;
-  }
-  if (data && typeof data === "object") {
-    for (const [k,v] of Object.entries(data)) {
-      if (NON_EVIDENCE_FIELDS.has(k)) continue;
-      allowFromData(v, allowed, k);
-    }
-    return;
-  }
-  if (typeof data !== "number" || !Number.isFinite(data)) return;
-  if (/Cents$/.test(key)) allowed.money.add(Math.round(data));
-  else if (/Micros$/.test(key)) allowed.money.add(data/1000000);
-  else if (/Percent$/.test(key)) allowed.percent.add(Math.round(data*100));
-  else if (/Bps$/.test(key)) allowed.percent.add(Math.round(data));
-  else if (/Margin$|Ratio$/.test(key)) allowed.percent.add(Math.round(data * 10000));
-  else if(COUNTABLE_FIELDS.has(key))allowed.number.add(data);
-}
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
