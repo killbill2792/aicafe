@@ -58,9 +58,15 @@ export function compactEvidence(results:readonly AgentToolResult[],limit=100):Nu
     walk(r,"",0,rootScope);
     const times=[...observedHours([r]),...observedShifts([r])].slice(0,60);
     let timeScope:TimeScope|undefined;
-    if(r.source==="locations.open_hours"&&r.hours&&typeof r.hours==="object"&&!Array.isArray(r.hours))
-      timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key).filter(d=>Object.hasOwn(r.hours as object,d))};
-    if(r.source==="recurring_schedule"&&r.period?.from&&r.period?.to)
+    if(r.source==="locations.open_hours"){
+      if(r.hours&&typeof r.hours==="object"&&!Array.isArray(r.hours))
+        timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key).filter(d=>Object.hasOwn(r.hours as object,d))};
+      else if(r.hours===null&&r.missing.includes("businessHoursNotSet"))
+        timeScope={kind:"hours",days:DAY_MENTIONS.map(d=>d.key)};
+    }
+    // A failed schedule read is not an empty observed schedule. Clear an
+    // existing window only if a successful reader explicitly returned shifts.
+    if(r.source==="recurring_schedule"&&Array.isArray(r.shifts)&&r.period?.from&&r.period?.to)
       timeScope={kind:"schedule",from:r.period.from,to:r.period.to};
     const prices:MenuPrice[]=[];
     const record=(item:unknown)=>{
