@@ -328,19 +328,11 @@ function isoCalendarDate(year:number,month:number,day:number):string|null{
   return d.toISOString().slice(0,10);
 }
 /** undefined = no asserted date; null = asserted but unparsable date. */
-function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string|null|undefined{
-  const prior=text.slice(0,clock.index);
-  const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
-    prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
-  const endAfter=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
-  const sentenceEnd=endAfter<0?text.length:clockEnd(clock)+endAfter;
-  const previous=clocks.filter(c=>c.index<clock.index&&c.index>=sentenceStart).at(-1);
-  const next=clocks.find(c=>c.index>clock.index&&c.index<sentenceEnd);
-  const clause=ascii(text.slice(previous?clockEnd(previous):sentenceStart,next?next.index:sentenceEnd));
+function parseCalendarReference(raw:string):string|null|undefined {
+  const clause=ascii(raw);
   const iso=clause.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/u);
   if(iso)return isoCalendarDate(Number(iso[1]),Number(iso[2]),Number(iso[3]));
-  // Locale-ambiguous short slash dates are an explicit claim, not a reason
-  // to silently treat a shift as undated.
+  // Short slash dates are locale-ambiguous; keep the clock unverified.
   if(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/u.test(clause))return null;
   const months=new RegExp("("+MONTH_LABEL+")","iu");
   if(!months.test(clause))return undefined;
@@ -349,6 +341,21 @@ function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string
   const reverse=clause.match(new RegExp("(\\d{1,2})\\s+(?:de\\s+)?("+MONTH_LABEL+")\\s+(?:de\\s+)?(\\d{4})","iu"));
   if(reverse)return isoCalendarDate(Number(reverse[3]),CALENDAR_MONTHS[reverse[2].toLocaleLowerCase()],Number(reverse[1]));
   return null;
+}
+function claimedClockDate(text:string,clock:ClockSpan,clocks:ClockSpan[]):string|null|undefined{
+  const prior=text.slice(0,clock.index);
+  const sentenceStart=Math.max(prior.lastIndexOf("\n"),prior.lastIndexOf("."),
+    prior.lastIndexOf("!"),prior.lastIndexOf("?"),prior.lastIndexOf(";"))+1;
+  const endAfter=text.slice(clockEnd(clock)).search(/[.!?;\n]/u);
+  const sentenceEnd=endAfter<0?text.length:clockEnd(clock)+endAfter;
+  const previous=clocks.filter(c=>c.index<clock.index&&c.index>=sentenceStart).at(-1);
+  const next=clocks.find(c=>c.index>clock.index&&c.index<sentenceEnd);
+  const local=parseCalendarReference(text.slice(previous?clockEnd(previous):sentenceStart,
+    next?next.index:sentenceEnd));
+  if(local!==undefined)return local;
+  // One trailing calendar qualifier can apply to both start and end clocks
+  // in a single shift assertion; don't silently treat the first as undated.
+  return parseCalendarReference(text.slice(sentenceStart,sentenceEnd));
 }
 
 function observedHours(results:readonly AgentToolResult[]):VerifiedTime[] {
