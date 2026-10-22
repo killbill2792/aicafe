@@ -128,11 +128,15 @@ export async function executeInitiativeTool(
     const {id}=statusArgs.parse(raw);
     const graph=await readOwnerInitiative(scope,id);
     if(!graph)return {source:"owner_initiatives",period:null,missing:["initiativeUnavailable"]};
-    const unresolved=graph.metrics.filter(m=>!(graph.observations.some(o=>
-      o.metric_id===m.id&&o.coverage>=0.8&&o.value!==null)));
+    const unresolved=graph.metrics.filter(m=>{
+      const result=graph.evaluation?.results[m.id];
+      if(!result||typeof result!=="object"||!("coverage" in result))return true;
+      return typeof result.coverage!=="number"||result.coverage<0.8;
+    });
     return {source:"owner_initiatives",period:null,
-      missing:graph.evaluation?.status==="insufficient_data"||!graph.evaluation?
-        (unresolved.map(m=>m.data_gap??(m.metric_key??"missingObservation"))):[],
+      missing:graph.evaluation?.status==="insufficient_data"?
+        (unresolved.length?unresolved.map(m=>m.metric_key??m.data_gap??"checkinPending"):["insufficientEvidence"]):
+        (!graph.evaluation?["evaluationPending"]:[]),
       metrics:graph.metrics.slice(0,12).map(m=>({id:m.id,role:m.role,source:m.source,
         metricKey:m.metric_key,unit:m.metric_key?metricCatalog[m.metric_key].unit:null,
         comparator:m.comparator,targetKind:m.target_kind,target:m.target,
