@@ -2275,6 +2275,15 @@
     "boughtAt": "Comprado a {amount} cada uno",
     "separateNote": "Frente a venderlos por separado",
     "suggestedPrices": "Precios sugeridos",
-    "missing": "No disponible"
+    "missing": "No disponible",
+    "priceNotSet": "Precio pendiente",
+    "setPrice": "Fijar precio del tamaño",
+    "buyInCost": "Comprado a, por unidad",
+    "customerPaysMore": "El cliente paga más",
+    "decreaseQuantity": "Reducir cantidad",
+    "increaseQuantity": "Aumentar cantidad",
+    "lowerPrice": "Bajar precio del combo",
+    "raisePrice": "Subir precio del combo",
+    "savedCombo": "Combo guardado"
   }
 }
