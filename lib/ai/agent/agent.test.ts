@@ -576,3 +576,67 @@ describe("Codex: chronological evidence and claim-local calculations",()=>{
       .map(v=>v.text)).toEqual(["8"]);
   });
 });
+
+
+describe("Codex: typed partial updates and temporal cross-turn evidence",()=>{
+  const savedMenu={source:"menu_items",period:null,missing:[],
+    items:[{id:"latte",name:"Latte",priceCents:600}]};
+  const partialMenu={source:"menu_items",period:null,missing:["moreMenuItems"],
+    items:[{id:"latte",name:"Latte",priceCents:850}]};
+  it("supersedes matching observed keys even when other menu rows are truncated",()=>{
+    const old=compactEvidence([savedMenu]),fresh=compactEvidence([partialMenu]);
+    expect(fresh.flatMap(e=>e.values).some(v=>v.key==="items:latte/priceCents"&&v.value===850))
+      .toBe(true);
+    expect(checkNumbers("Latte costs $6.","",[partialMenu],"en",old)
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[partialMenu],"en",old)).toEqual([]);
+    expect(checkNumbers("Latte costs $6.","",[],"en",[...old,...fresh])
+      .map(v=>v.text)).toEqual(["$6"]);
+    expect(checkNumbers("Latte costs $8.50.","",[],"en",[...old,...fresh])).toEqual([]);
+  });
+  it("keeps typed partial Monday opening hours across a no-read follow-up",()=>{
+    const partial={source:"locations.open_hours",period:null,missing:["businessHoursNotSet:tue"],
+      hours:{mon:[["08:00","17:00"]]}};
+    const saved=compactEvidence([partial]);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].times).toEqual(expect.arrayContaining([
+      expect.objectContaining({day:"mon",time:"08:00",role:"open"}),
+      expect.objectContaining({day:"mon",time:"17:00",role:"close"}),
+    ]));
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[],"en",saved)).toEqual([]);
+    expect(checkNumbers("We close at 5:00 PM on Monday.","",[],"en",saved)).toEqual([]);
+    expect(checkNumbers("We open at 8:00 AM on Tuesday.","",[],"en",saved)
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 5:00 PM on Monday.","",[],"en",saved)
+      .length).toBeGreaterThan(0);
+  });
+  it("replaces an older opening-time snapshot when new observed hours arrive",()=>{
+    const old=compactEvidence([{source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["07:00","15:00"]]}}]);
+    const newer=compactEvidence([{source:"locations.open_hours",period:null,missing:["businessHoursNotSet:tue"],
+      hours:{mon:[["08:00","17:00"]]}}]);
+    expect(checkNumbers("We open at 7:00 AM on Monday.","",[],"en",[...old,...newer])
+      .length).toBeGreaterThan(0);
+    expect(checkNumbers("We open at 8:00 AM on Monday.","",[],"en",[...old,...newer])).toEqual([]);
+  });
+  it("applies a shared trailing date to both a shift's starting and ending clocks",()=>{
+    const schedule={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},
+      missing:[],shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",
+        endTime:"16:00",effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"}]};
+    const bad="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday, 2026-10-26.";
+    expect(checkNumbers(bad,"",[schedule],"en").map(v=>v.text))
+      .toEqual(["8","00","4","00"]);
+    const good="Ada’s shift starts at 8:00 AM and her shift ends at 4:00 PM on Monday, 2026-11-02.";
+    expect(checkNumbers(good,"",[schedule],"en")).toEqual([]);
+    expect(checkNumbers(good,"",[],"en",compactEvidence([schedule]))).toEqual([]);
+  });
+  it("matches Arabic digits to typed hour evidence without losing source offsets",()=>{
+    const hours={source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["08:00","17:00"]]}};
+    const saved=compactEvidence([hours]);
+    expect(checkNumbers("نفتح الساعة ٠٨:٠٠ يوم الاثنين.","",[hours],"ar")).toEqual([]);
+    expect(checkNumbers("نفتح الساعة ٠٨:٠٠ يوم الاثنين.","",[],"ar",saved)).toEqual([]);
+    expect(checkNumbers("نفتح الساعة ٢٣:٥٩ يوم الاثنين.","",[hours],"ar")
+      .length).toBeGreaterThan(0);
+  });
+});
