@@ -47,8 +47,10 @@ describe("initiative tools adhere to strict agent contracts",()=>{
   });
   it("requires source checkin for noncomputed measurements",()=>{
     const question={...proposal.metrics[0],source:"checkin",metricKey:null,
+      targetKind:"absolute",target:1,
       checkinQuestion:"Did deliveries arrive?",checkinAudience:"owner",dataGap:"No POS inventory measurement"};
     expect(proposeInitiativeSchema.safeParse({...proposal,metrics:[question]}).success).toBe(true);
+    expect(proposeInitiativeSchema.safeParse({...proposal,metrics:[{...question,targetKind:"relative_pct"}]}).success).toBe(false);
     expect(proposeInitiativeSchema.safeParse({...proposal,metrics:[{...question,metricKey:"net_sales"}]}).success).toBe(false);
   });
 });
