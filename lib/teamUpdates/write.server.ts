@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { createAdminSupabaseClient } from "@/lib/supabase/admin";
+import { insertTeamUpdate } from "@/lib/data/teamUpdates.server";
 import { agentForTask, type OperatingTaskKind } from "@/lib/operating/tasks";
 import { teamUpdateActionKindSchema, teamUpdateDomainSchema } from "./contracts";
 
@@ -27,18 +27,10 @@ const domainTaskKind: Record<z.infer<typeof teamUpdateDomainSchema>, OperatingTa
   money: "money_update",
 };
 
-/** Trusted server writer. Business/dedupe unique index makes retries safe. */
+/** Validate and map owner-facing messages; persistence lives exclusively in lib/data. */
 export async function writeTeamUpdate(input: WriteTeamUpdateInput): Promise<{ created: boolean }> {
   const value = writeTeamUpdateSchema.parse(input);
-  const db = createAdminSupabaseClient();
-  // The service-role client bypasses RLS; validate the owner/business pair.
-  const { data: membership, error: membershipError } = await db.from("memberships")
-    .select("user_id").eq("business_id", value.businessId)
-    .eq("user_id", value.ownerUserId).eq("role", "owner").maybeSingle();
-  if (membershipError) throw membershipError;
-  if (!membership) throw new Error("Team update owner membership required");
-
-  const { data, error } = await db.from("team_updates").upsert({
+  const created = await insertTeamUpdate({
     business_id: value.businessId,
     owner_user_id: value.ownerUserId,
     agent_id: agentForTask(domainTaskKind[value.domain]),
@@ -52,8 +44,6 @@ export async function writeTeamUpdate(input: WriteTeamUpdateInput): Promise<{ cr
     locale: value.locale,
     actions: value.actions,
     dedupe_key: value.dedupeKey,
-  }, { onConflict: "business_id,dedupe_key", ignoreDuplicates: true })
-    .select("id").maybeSingle();
-  if (error) throw error;
-  return { created: data !== null };
+  });
+  return { created };
 }
