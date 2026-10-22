@@ -246,6 +246,10 @@ begin
   if jsonb_typeof(p_items) is distinct from 'array'
     or jsonb_array_length(p_items) not between 1 and 80
     then raise exception 'invalid starters'; end if;
+  -- The canonical ingredients trigger also locks the per-café source epoch.
+  -- Serialize starter requests BEFORE their first insert; otherwise overlapping
+  -- out-of-order starter keys can form an epoch/unique-index deadlock.
+  perform pg_advisory_xact_lock(hashtext('pantry-starters:' || p_business_id::text));
   for item in select value from jsonb_array_elements(p_items) loop
     key := item->>'starterKey';
     operational := item->>'operationalUnit';
@@ -408,3 +412,51 @@ $$;
   END IF;
 END;
 $pantry_do$;
+
+-- Coordinate existing grouped product renames with all-size recipe mutations.
+-- The previous RPC updated sibling menu rows without the family advisory lock,
+-- allowing its row/epoch locks to cross those of pantry_apply_sized_recipes.
+-- Keep exactly the same signature, authorization, result and stored naming rule.
+CREATE OR REPLACE FUNCTION public.rename_menu_product(
+  target_business_id uuid, target_menu_item_id uuid, new_base_name text
+) RETURNS boolean
+LANGUAGE plpgsql SECURITY INVOKER SET search_path=public
+AS $pantry_rename$
+DECLARE
+  old_base_name text;
+BEGIN
+  IF NOT public.is_member(target_business_id)
+     OR length(trim(new_base_name))=0 OR length(trim(new_base_name))>80 THEN
+    RETURN false;
+  END IF;
+  SELECT coalesce(base_name,name) INTO old_base_name
+    FROM public.menu_items
+    WHERE id=target_menu_item_id AND business_id=target_business_id;
+  IF old_base_name IS NULL THEN RETURN false; END IF;
+
+  -- Same lock order as pantry_apply_sized_recipes / pantry_replace_recipes:
+  -- family advisory -> recipe table -> menu sibling rows in stable ID order.
+  PERFORM pg_advisory_xact_lock(
+    hashtext(target_business_id::text || ':' || old_base_name)
+  );
+  LOCK TABLE public.recipe_lines IN SHARE ROW EXCLUSIVE MODE;
+  PERFORM 1 FROM public.menu_items
+    WHERE id=target_menu_item_id AND business_id=target_business_id
+      AND coalesce(base_name,name)=old_base_name;
+  IF NOT FOUND THEN RETURN false; END IF;
+  PERFORM 1 FROM public.menu_items
+    WHERE business_id=target_business_id
+      AND coalesce(base_name,name)=old_base_name
+    ORDER BY id FOR UPDATE;
+
+  UPDATE public.menu_items
+    SET base_name=trim(new_base_name),
+        name=CASE WHEN nullif(trim(size_label),'') IS NULL
+          THEN trim(new_base_name)
+          ELSE trim(new_base_name) || ' ' || trim(size_label) END
+    WHERE business_id=target_business_id
+      AND coalesce(base_name,name)=old_base_name;
+  RETURN FOUND;
+END;
+$pantry_rename$;
+GRANT EXECUTE ON FUNCTION public.rename_menu_product(uuid,uuid,text) TO authenticated;
