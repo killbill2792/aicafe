@@ -12,3 +12,9 @@ export function keepPreview(priceCents:number,costCents:number|null):{keepCents:
  if(costCents===null||!Number.isFinite(priceCents)||priceCents<=0)return{keepCents:null,keepPercent:null};
  return{keepCents:Math.round(priceCents-costCents),keepPercent:Math.round((priceCents-costCents)*100/priceCents)};
 }
+
+/** Same per-base cost as the footer, only scaled to a draft displayed amount. */
+export function draftLineCostCents(originalCostCents:number|null,originalDisplayAmount:number,newDisplayAmount:number):number|null{
+ if(originalCostCents===null||!(originalDisplayAmount>0)||!Number.isFinite(newDisplayAmount)||newDisplayAmount<0)return null;
+ return originalCostCents*newDisplayAmount/originalDisplayAmount;
+}
