@@ -2275,6 +2275,15 @@
     "boughtAt": "Bought at {amount} each",
     "separateNote": "Compared with selling these items separately",
     "suggestedPrices": "Suggested prices",
-    "missing": "Not available"
+    "missing": "Not available",
+    "priceNotSet": "Price not set",
+    "setPrice": "Set size price",
+    "buyInCost": "Bought at, each",
+    "customerPaysMore": "Customer pays more",
+    "decreaseQuantity": "Decrease quantity",
+    "increaseQuantity": "Increase quantity",
+    "lowerPrice": "Lower combo price",
+    "raisePrice": "Raise combo price",
+    "savedCombo": "Combo saved"
   }
 }
