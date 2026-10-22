@@ -114,3 +114,112 @@ CREATE POLICY "staff rule alerts owner read" ON public.staff_rule_alerts FOR SEL
  USING (public.scheduling_is_owner(business_id));
 CREATE POLICY "staff rule alerts owner write" ON public.staff_rule_alerts FOR ALL TO authenticated
  USING (public.scheduling_is_owner(business_id)) WITH CHECK (public.scheduling_is_owner(business_id));
+
+-- An id-only shift Undo keeps the original trusted row on the server.
+ALTER TABLE public.scheduled_shifts ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+CREATE INDEX IF NOT EXISTS scheduled_shifts_not_deleted_idx
+ ON public.scheduled_shifts(business_id,local_date) WHERE deleted_at IS NULL;
+
+-- One transaction covers a person's profile and their complete weekly availability.
+-- The current availability foundation keeps audit/revision triggers active.
+CREATE OR REPLACE FUNCTION public.staff_write_person(
+ p_business_id uuid, p_id uuid, p_payload jsonb
+) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+ v_id uuid;
+ v_today date;
+ v_previous date;
+ v_day jsonb;
+ v_days smallint[];
+ v_start text;
+ v_end text;
+BEGIN
+ IF p_business_id IS NULL OR p_payload IS NULL OR
+    NOT public.scheduling_is_owner(p_business_id) OR
+    NOT EXISTS(SELECT 1 FROM public.businesses
+     WHERE id=p_business_id AND is_demo=false) THEN
+   RAISE EXCEPTION 'owner authorization required' USING ERRCODE='42501';
+ END IF;
+ IF jsonb_typeof(p_payload)<>'object' OR
+   jsonb_typeof(p_payload->'availability')<>'array' OR
+   jsonb_array_length(p_payload->'availability')>7 OR
+   length(btrim(p_payload->>'name')) NOT BETWEEN 1 AND 80 OR
+   length(coalesce(p_payload->>'role',''))>60 OR
+   length(coalesce(p_payload->>'phone',''))>32 OR
+   EXISTS (SELECT 1 FROM jsonb_object_keys(p_payload) as k(key)
+     WHERE k.key NOT IN ('name','role','wageCents','phone',
+       'minWeeklyMinutes','maxWeeklyMinutes','availability')) OR
+   EXISTS (SELECT 1 FROM jsonb_array_elements(p_payload->'availability') a
+     WHERE jsonb_typeof(a)<>'object'
+        OR (a->>'day') !~ '^[0-6]$'
+        OR jsonb_typeof(a->'start') NOT IN ('string','null')
+        OR jsonb_typeof(a->'end') NOT IN ('string','null')
+        OR (a->>'start') IS NULL AND (a->>'end') IS NOT NULL
+        OR (a->>'start') IS NOT NULL AND (a->>'end') IS NULL
+        OR ((a->>'start') IS NOT NULL AND (
+          (a->>'start') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' OR
+          (a->>'end') !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' OR
+          (a->>'start')=(a->>'end'))))
+   ) OR
+   (SELECT count(*) FROM jsonb_array_elements(p_payload->'availability')) <>
+   (SELECT count(DISTINCT a->>'day')
+      FROM jsonb_array_elements(p_payload->'availability') a) THEN
+  RAISE EXCEPTION 'invalid person request' USING ERRCODE='22023';
+ END IF;
+ PERFORM 1 FROM public.businesses WHERE id=p_business_id FOR SHARE;
+ SELECT (now() AT TIME ZONE b.timezone)::date INTO v_today
+ FROM public.businesses b WHERE b.id=p_business_id;
+ v_previous := v_today - 1;
+ SELECT coalesce(array_agg((a->>'day')::smallint),ARRAY[]::smallint[])
+ INTO v_days FROM jsonb_array_elements(p_payload->'availability') a;
+ IF p_id IS NULL THEN
+  INSERT INTO public.employees(business_id,display_name,role,
+   wage_period,wage_amount_cents,default_hourly_wage_cents,
+   phone_e164,min_weekly_minutes,max_weekly_minutes,available_days,active)
+  VALUES(p_business_id,btrim(p_payload->>'name'),nullif(btrim(p_payload->>'role'),''),
+   'hour',(p_payload->>'wageCents')::bigint,(p_payload->>'wageCents')::bigint,
+   nullif(p_payload->>'phone',''),(p_payload->>'minWeeklyMinutes')::int,
+   (p_payload->>'maxWeeklyMinutes')::int,v_days,true) RETURNING id INTO v_id;
+ ELSE
+  PERFORM 1 FROM public.employees
+   WHERE business_id=p_business_id AND id=p_id FOR UPDATE;
+  IF NOT FOUND THEN
+   RAISE EXCEPTION 'employee not found' USING ERRCODE='P0002';
+  END IF;
+  v_id:=p_id;
+  UPDATE public.employees SET display_name=btrim(p_payload->>'name'),
+   role=nullif(btrim(p_payload->>'role'),''),
+   wage_period='hour',
+   wage_amount_cents=(p_payload->>'wageCents')::bigint,
+   default_hourly_wage_cents=(p_payload->>'wageCents')::bigint,
+   phone_e164=nullif(p_payload->>'phone',''),
+   min_weekly_minutes=(p_payload->>'minWeeklyMinutes')::int,
+   max_weekly_minutes=(p_payload->>'maxWeeklyMinutes')::int,
+   available_days=v_days
+   WHERE business_id=p_business_id AND id=v_id;
+ END IF;
+ -- Retain historical rules, replacing only active/future owner-set windows.
+ -- Existing availability audit triggers still run in this transaction.
+ UPDATE public.staff_availability_rules
+ SET effective_to=v_previous
+ WHERE business_id=p_business_id AND employee_id=v_id
+   AND source='owner_direct' AND effective_from < v_today
+   AND (effective_to IS NULL OR effective_to>=v_today);
+ DELETE FROM public.staff_availability_rules
+ WHERE business_id=p_business_id AND employee_id=v_id
+   AND source='owner_direct' AND effective_from>=v_today;
+ FOR v_day IN SELECT value FROM jsonb_array_elements(p_payload->'availability') LOOP
+  v_start:=v_day->>'start'; v_end:=v_day->>'end';
+  IF v_start IS NOT NULL THEN
+   INSERT INTO public.staff_availability_rules
+    (business_id,employee_id,day_of_week,start_local,end_local,
+     overnight,effective_from,effective_to,source,confirmation)
+   VALUES (p_business_id,v_id,(v_day->>'day')::smallint,
+      v_start::time,v_end::time,(v_end < v_start),v_today,NULL,
+      'owner_direct','unconfirmed');
+  END IF;
+ END LOOP;
+ RETURN v_id;
+END $$;
+REVOKE ALL ON FUNCTION public.staff_write_person(uuid,uuid,jsonb) FROM public,anon;
+GRANT EXECUTE ON FUNCTION public.staff_write_person(uuid,uuid,jsonb) TO authenticated;
