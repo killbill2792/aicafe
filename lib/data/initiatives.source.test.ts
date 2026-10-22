@@ -5,6 +5,7 @@ const itemA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const itemB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const state=vi.hoisted(()=>({
   covered:true,unlinkedCount:0,
+  sqlNetCents:1200,sqlOrderCount:1,sqlSyntheticCount:0,
   priceRows:[] as Array<{id:string;ingredient_id:string;effective_from:string;recorded_at:string;cost_per_base_unit_micros:number}>,
   ingredientIds:[] as string[],
   canonical:[] as Array<{id:string;units:number}>,
@@ -19,6 +20,8 @@ vi.mock("./periodItemSales.server",()=>({
 }));
 vi.mock("@/lib/supabase/admin",()=>({
   createAdminSupabaseClient:()=>({
+    rpc:()=>({single:async()=>({data:{order_count:state.sqlOrderCount,
+      net_sales_cents:state.sqlNetCents,synthetic_count:state.sqlSyntheticCount},error:null})}),
     from:(table:string)=>{
       let head=false;
       let queryKind:"all"|"csv"|"missing"="all";
@@ -32,6 +35,7 @@ vi.mock("@/lib/supabase/admin",()=>({
         if(table==="orders")return [{id:"order-1",pos_order_id:"square:order-1",
           net_sales_cents:1200}];
         if(table==="order_lines")return state.lines;
+        if(table==="menu_items")return [{id:itemA},{id:itemB}];
         if(table==="ingredients")return state.ingredientIds.map(id=>({id}));
         if(table==="ingredient_prices")return state.priceRows;
         if(table==="menu_item_cost_fallbacks")return [
@@ -57,6 +61,7 @@ vi.mock("@/lib/supabase/admin",()=>({
 }));
 beforeEach(()=>{
   state.covered=true;state.unlinkedCount=0;
+  state.sqlNetCents=1200;state.sqlOrderCount=1;state.sqlSyntheticCount=0;
   state.canonical.length=0;state.lines.length=0;
   state.priceRows.length=0;state.ingredientIds.length=0;
   for(let i=0;i<1200;i++)state.lines.push({
@@ -68,7 +73,7 @@ beforeEach(()=>{
 describe("M1 canonical item evidence reader",()=>{
   it("collects every detailed line across the production 1000-row response cap",async()=>{
     const day=await readMetricDay("business","2026-10-05",{
-      items:true,hours:false,ingredientIds:[],
+      items:true,hours:false,ingredientIds:[],itemIds:[itemA,itemB],
     });
     expect(computeMetric("item_units",{itemId:itemA},day).value).toBe(1000);
     expect(computeMetric("item_units",{itemId:itemB},day).value).toBe(200);
@@ -77,7 +82,7 @@ describe("M1 canonical item evidence reader",()=>{
   it("invalidates previously verified item participation when SQL quantities disagree",async()=>{
     state.lines.splice(1000);
     const day=await readMetricDay("business","2026-10-05",{
-      items:true,hours:false,ingredientIds:[],
+      items:true,hours:false,ingredientIds:[],itemIds:[itemA,itemB],
     });
     expect(day.items).toBeUndefined();
     expect(day.itemCoverageInvalidated).toBe(true);
@@ -88,12 +93,12 @@ describe("M1 canonical item evidence reader",()=>{
   it("distinguishes a confirmed unlinked line from transient coverage loss",async()=>{
     state.covered=false;state.unlinkedCount=1;
     const day=await readMetricDay("business","2026-10-05",{
-      items:true,hours:false,ingredientIds:[],
+      items:true,hours:false,ingredientIds:[],itemIds:[itemA,itemB],
     });
     expect(day.itemCoverageInvalidated).toBe(true);
     state.unlinkedCount=0;
     const unavailable=await readMetricDay("business","2026-10-05",{
-      items:true,hours:false,ingredientIds:[],
+      items:true,hours:false,ingredientIds:[],itemIds:[itemA,itemB],
     });
     expect(unavailable.itemCoverageInvalidated).toBe(false);
   });
@@ -113,5 +118,31 @@ describe("M1 canonical item evidence reader",()=>{
       items:false,hours:false,ingredientIds:[ingredientId],
     });
     expect(computeMetric("ingredient_unit_cost",{ingredientId},day).value).toBe(150000);
+  });
+  it("rejects truncated rollup sales despite an actual status",async()=>{
+    state.sqlNetCents=1500;state.sqlOrderCount=1200;
+    const day=await readMetricDay("business","2026-10-05",{
+      items:false,hours:false,ingredientIds:[],
+    });
+    expect(day.salesTotalCoverageVerified).toBe(false);
+    expect(computeMetric("net_sales",{},day).coverage).toBe(0);
+    expect(computeMetric("orders",{},day).value).toBeNull();
+  });
+  it("retains proven aggregate-only sales without inventing ticket counts",async()=>{
+    state.sqlSyntheticCount=1;
+    const day=await readMetricDay("business","2026-10-05",{
+      items:false,hours:false,ingredientIds:[],
+    });
+    expect(computeMetric("net_sales",{},day).value).toBe(1200);
+    expect(computeMetric("avg_ticket",{},day).value).toBeNull();
+  });
+  it("does not treat a foreign or deleted item id as covered zero",async()=>{
+    const missingId="dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const day=await readMetricDay("business","2026-10-05",{
+      items:true,hours:false,ingredientIds:[],itemIds:[missingId],
+    });
+    const result=computeMetric("item_units",{itemId:missingId},day);
+    expect(result.value).toBeNull();
+    expect(result.invalidatesPrevious).toBe(true);
   });
 });
