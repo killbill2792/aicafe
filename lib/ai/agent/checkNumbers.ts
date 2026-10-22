@@ -640,6 +640,44 @@ function canonicalPricesExistInRead(previous:readonly NumericEvidence[],
     });
 }
 
+/** Date-qualified financial claims may only cite that date's observed metric.
+ * Period aggregates are not evidence about an arbitrary day within the range. */
+function datedFinancialScope(text:string,start:number,end:number):{date:string|null;metric:string}|null {
+  const before=text.slice(0,start);
+  const from=Math.max(before.lastIndexOf("\n"),before.lastIndexOf("!"),
+    before.lastIndexOf("?"),before.lastIndexOf(";"))+1;
+  const after=text.slice(end);
+  const stop=after.search(/[!?;\n]/u);
+  const clause=text.slice(from,stop<0?text.length:end+stop);
+  const metric=/\b(?:sales|revenue|sold|drinks sold)\b/iu.test(clause)?"sales":
+    /\b(?:staff tax|wages|labor|payroll)\b/iu.test(clause)?"labor":
+    /\b(?:expenses?|spending)\b/iu.test(clause)?"expenses":
+    /\b(?:profit|margin)\b/iu.test(clause)?"profit":null;
+  if(!metric)return null;
+  const date=parseCalendarReference(clause);
+  if(date===undefined)return null;
+  return {date,metric};
+}
+function evidenceSupportsDatedMoney(evidence:readonly NumericEvidence[],
+  date:string,cents:number,metric:string):boolean {
+  return evidence.some(entry=>{
+    const correctSource=metric==="sales"?entry.tool==="daily_rollups"||entry.tool==="item_sales":
+      metric==="labor"?entry.tool==="labor_and_attendance":
+      metric==="expenses"?entry.tool==="expenses":entry.tool==="profitability";
+    if(!correctSource)return false;
+    return entry.values.some(v=>{
+      if(v.unit!=="cents"||Math.abs(v.value-cents)>1)return false;
+      const key=v.key;
+      const dated=key.startsWith(date+"/"+date+"/")||key.includes("day:"+date+"/");
+      if(!dated)return false;
+      return metric==="sales"?/netSalesCents$|grossSalesCents$/u.test(key):
+        metric==="labor"?/Cents$/u.test(key):
+        metric==="expenses"?/recordedActualTotalCents$/u.test(key):
+        /ownerProfitCents$/u.test(key);
+    });
+  });
+}
+
 /** Report unsupported numbers at their original prose offsets; never change the owner's text. */
 export function checkNumbers(text: string, ownerText: string, results: readonly AgentToolResult[], locale: AgentLocale,
   previousEvidence:readonly NumericEvidence[] = []): UnverifiedNumber[] {
@@ -763,6 +801,15 @@ export function checkNumbers(text: string, ownerText: string, results: readonly 
       (v.kind==="number"&&isCurrencylessMoneyClaim(text,v.start,v.end));
     if(moneyLike){
       const cents=v.kind==="money"?v.value:Math.round(v.value*100);
+      const dated=datedFinancialScope(text,v.start,v.end);
+      if(dated){
+        if(!dated.date)return true;
+        const observedForDate=evidenceSupportsDatedMoney(evidence,dated.date,cents,dated.metric);
+        const ownerBacked=ownerNumbers.some(owner=>(owner.kind==="money"?owner.value:
+          owner.kind==="number"?Math.round(owner.value*100):NaN)===cents&&
+          datedFinancialScope(ownerText,owner.start,owner.end)?.date===dated.date);
+        return !(observedForDate||ownerBacked);
+      }
       const comparison=/^\s*(?:more than|less than|cheaper than|pricier than)\b/iu.test(text.slice(v.end));
       if(comparison)return !verifiedMenuDifference(text,v.start,v.end,cents,menuPrices);
       const itemPrice=directItemPriceClaim(text,v.start,v.end,itemPrices);
