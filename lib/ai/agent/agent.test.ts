@@ -456,3 +456,67 @@ describe("Codex: localized time actions and qualified shift identities",()=>{
       owner,[],"en").length).toBeGreaterThan(0);
   });
 });
+
+
+describe("Codex: immutable evidence semantics for dates, counts, names and ranges",()=>{
+  const schedule={source:"recurring_schedule",period:{from:"2026-11-02",to:"2026-11-08"},
+    missing:[],shifts:[{displayName:"Ada",dayOfWeek:1,startTime:"08:00",endTime:"16:00",
+      effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"},
+      {displayName:"Ada",dayOfWeek:6,startTime:"09:00",endTime:"15:00",
+        effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"}]};
+  it("does not recycle weekday enum 6 as a drinks-sold count, now or next turn",()=>{
+    const saturdays={...schedule,shifts:[
+      {displayName:"Ada",dayOfWeek:6,startTime:"09:00",endTime:"15:00",
+        effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"},
+      {displayName:"Bob",dayOfWeek:6,startTime:"10:00",endTime:"16:00",
+        effectiveFrom:"2026-11-02",effectiveTo:"2026-11-30"}]};
+    const saved=compactEvidence([saturdays]);
+    expect(saved.flatMap(x=>x.values).filter(v=>v.unit==="count").map(v=>v.value)).toEqual([2]);
+    expect(checkNumbers("You sold 6 drinks.","",[saturdays],"en").map(x=>x.text)).toEqual(["6"]);
+    expect(checkNumbers("You sold 6 drinks.","",[],"en",saved).map(x=>x.text)).toEqual(["6"]);
+    const oldSaved=[{tool:"recurring_schedule",values:[{
+      key:"shifts:ada/dayOfWeek",value:6,unit:"count" as const}]}];
+    expect(checkNumbers("You sold 6 drinks.","",[],"en",oldSaved).map(x=>x.text)).toEqual(["6"]);
+  });
+  it("checks a claimed schedule date against period, effective window and weekday",()=>{
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, October 26, 2026.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, November 2, 2026.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, November 9, 2026.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Tuesday, November 2, 2026.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on 2026-11-02.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on 2026-10-26.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+  });
+  it("does not use the owner's statement about a different date as evidence",()=>{
+    const owner="Ada’s shift starts at 8:00 AM on Monday, November 2, 2026.";
+    expect(checkNumbers("Ada’s shift starts at 8:00 AM on Monday, October 26, 2026.",
+      owner,[],"en").length).toBeGreaterThan(0);
+  });
+  it("recognizes employee boundaries beside weekday words and prepositions",()=>{
+    expect(checkNumbers("On Monday Ada’s shift starts at 8:00 AM.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("On Monday Ada starts her shift at 8:00 AM.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("The shift starts at 8:00 AM for Ada on Monday.",
+      "",[schedule],"en")).toEqual([]);
+    expect(checkNumbers("On Monday Bob’s shift starts at 8:00 AM.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("The shift starts at 8:00 AM for Bob on Monday.",
+      "",[schedule],"en").length).toBeGreaterThan(0);
+  });
+  it("interprets opening-hour ranges as distinct opening and closing facts",()=>{
+    const hours={source:"locations.open_hours",period:null,missing:[],
+      hours:{mon:[["08:00","17:00"]]}};
+    expect(checkNumbers("We open from 8:00 AM to 5:00 PM on Monday.",
+      "",[hours],"en")).toEqual([]);
+    expect(checkNumbers("We open from 8:00 AM to 6:00 PM on Monday.",
+      "",[hours],"en").length).toBeGreaterThan(0);
+    expect(checkNumbers("We open from 7:00 AM to 5:00 PM on Monday.",
+      "",[hours],"en").length).toBeGreaterThan(0);
+  });
+});
